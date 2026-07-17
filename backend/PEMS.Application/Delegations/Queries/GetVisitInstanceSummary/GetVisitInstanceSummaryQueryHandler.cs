@@ -12,6 +12,7 @@ using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceContribution;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceParticipants;
 using PEMS.Application.Delegations.Common;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Enums;
 using PEMS.Shared;
 
@@ -21,11 +22,14 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IVisitFormReadService _formReadService;
 
-    public GetVisitInstanceSummaryQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public GetVisitInstanceSummaryQueryHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
+        _formReadService = formReadService;
     }
 
     public async Task<ProcessSummaryPageDto> Handle(GetVisitInstanceSummaryQuery request, CancellationToken cancellationToken)
@@ -74,6 +78,37 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             hostName = await _db.Users.Where(u => u.UserId == instance.CurrentHostUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken);
         }
 
+        // ── Per-campus form v2 (INSTANCE-LEVEL: keyed by visit_instance_id → a MIXED request still
+        // returns 200; source ONLY the TARGET instance's form content + member links, never global,
+        // never a sibling campus). v1 keeps the global projection. ──
+        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+        string delegationName = visit.DelegationName;
+        string? visitType = visit.VisitType, visitTypeOther = visit.VisitTypeOther;
+        string? purpose = visit.Purpose, workingContent = visit.WorkingContent;
+        string? workingLanguage = visit.WorkingLanguage;
+        string? mediaConsentStatus = visit.MediaConsentStatus, mediaConsentNote = visit.MediaConsentNote;
+        string? transportationNote = visit.TransportationNote, noteToFptu = visit.NoteToFptu;
+        var guestMembers = visit.GuestMembers
+            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
+        var externalSupportMembers = visit.GuestMembers
+            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
+        if (isV2)
+        {
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { instance.VisitInstanceId }, cancellationToken);
+            var d = content[instance.VisitInstanceId];
+            delegationName = d.DelegationName;
+            visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
+            purpose = d.Purpose; workingContent = d.WorkingContent;
+            workingLanguage = d.WorkingLanguage;
+            mediaConsentStatus = d.MediaConsentStatus; mediaConsentNote = d.MediaConsentNote;
+            transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
+            guestMembers = d.Visitors.Select(MapRow).ToList();
+            externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
+        }
+
         // Mapping RequestSummary
         var requestCampusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
         var campusNamesById = requestCampusIds.Count == 0
@@ -91,17 +126,17 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             RegistrantJobTitle = visit.RegistrantJobTitle,
             RegistrantNationality = visit.RegistrantNationality,
 
-            DelegationName = visit.DelegationName,
+            DelegationName = delegationName,
             VisitScope = visit.VisitScope,
-            VisitType = visit.VisitType,
-            VisitTypeOther = visit.VisitTypeOther,
-            Purpose = visit.Purpose,
-            WorkingContent = visit.WorkingContent,
-            WorkingLanguage = visit.WorkingLanguage,
-            MediaConsentStatus = visit.MediaConsentStatus,
-            MediaConsentNote = visit.MediaConsentNote,
-            TransportationNote = visit.TransportationNote,
-            NoteToFptu = visit.NoteToFptu,
+            VisitType = visitType,
+            VisitTypeOther = visitTypeOther,
+            Purpose = purpose,
+            WorkingContent = workingContent,
+            WorkingLanguage = workingLanguage,
+            MediaConsentStatus = mediaConsentStatus,
+            MediaConsentNote = mediaConsentNote,
+            TransportationNote = transportationNote,
+            NoteToFptu = noteToFptu,
 
             ContactPersonFullName = visit.ContactPersonFullName,
             ContactPersonOrganization = visit.ContactPersonOrganization,
@@ -121,16 +156,8 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
                 })
                 .ToList(),
 
-            GuestMembers = visit.GuestMembers
-                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(MapGuestMember)
-                .ToList(),
-            ExternalSupportMembers = visit.GuestMembers
-                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(MapGuestMember)
-                .ToList(),
+            GuestMembers = guestMembers,
+            ExternalSupportMembers = externalSupportMembers,
         };
 
         var agenda = await _db.VisitAgendas
@@ -229,7 +256,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
                 IsReadOnly = true,
                 InstanceStatus = instance.Status,
                 CampusName = campusName,
-                DelegationName = visit.DelegationName,
+                DelegationName = delegationName,
                 HostName = hostName,
                 PlannedStartAt = instance.PlannedStartAt,
                 PlannedEndAt = instance.PlannedEndAt
@@ -253,5 +280,17 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
         JobTitle = m.JobTitle,
         Nationality = m.Nationality,
         DisplayOrder = (int)m.DisplayOrder,
+    };
+
+    // Maps a v2 per-campus member row (resolved via IVisitFormReadService for the TARGET instance).
+    private static VisitProcessGuestMemberDto MapRow(VisitFormMemberRow r) => new()
+    {
+        GuestMemberId = (ulong)r.GuestMemberId,
+        MemberType = r.MemberType,
+        FullName = r.FullName,
+        Organization = r.Organization,
+        JobTitle = r.JobTitle,
+        Nationality = r.Nationality,
+        DisplayOrder = r.DisplayOrder,
     };
 }

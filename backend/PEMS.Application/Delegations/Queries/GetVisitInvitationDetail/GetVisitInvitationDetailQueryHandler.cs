@@ -7,6 +7,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Queries.GetVisitInvitationDetail;
@@ -16,12 +17,14 @@ public sealed class GetVisitInvitationDetailQueryHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IVisitFormReadService _formReadService;
 
     public GetVisitInvitationDetailQueryHandler(
-        IApplicationDbContext context, ICurrentUserService currentUser)
+        IApplicationDbContext context, ICurrentUserService currentUser, IVisitFormReadService formReadService)
     {
         _context = context;
         _currentUser = currentUser;
+        _formReadService = formReadService;
     }
 
     public async Task<VisitInvitationDetailDto> Handle(
@@ -47,6 +50,18 @@ public sealed class GetVisitInvitationDetailQueryHandler
         var data = await query.FirstOrDefaultAsync(cancellationToken);
         if (data == null)
             throw new NotFoundException("VisitInvitation", request.ParticipantId);
+
+        // ── Per-campus form v2 (INSTANCE-LEVEL: the invitation is bound to ONE campus instance via the
+        // participant, so a MIXED request still returns 200; the only form field this DTO exposes —
+        // DelegationName — is sourced ONLY from the invited instance's detail, never global, never a
+        // sibling campus. Auth is already applied above (p.UserId == current user). ──
+        string delegationName = data.vr.DelegationName;
+        if (data.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                data.vr, new[] { data.p.VisitInstanceId }, cancellationToken);
+            delegationName = content[data.p.VisitInstanceId].DelegationName;
+        }
 
         var campusName = await _context.Campuses
             .Where(x => x.CampusId == data.c.CampusId)
@@ -77,7 +92,7 @@ public sealed class GetVisitInvitationDetailQueryHandler
             VisitInstanceId = data.p.VisitInstanceId,
             VisitRequestId = data.c.VisitRequestId,
             RequestCode = data.vr.RequestCode,
-            DelegationName = data.vr.DelegationName,
+            DelegationName = delegationName,
             OrganizationName = data.vr.RegistrantOrganization,
             CampusName = campusName ?? "-",
             VisitScope = data.vr.VisitScope,

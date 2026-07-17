@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Domain.Constants;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -98,10 +100,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
     public class GetRequestDetailQueryHandler : IRequestHandler<GetRequestDetailQuery, RequestDetailDto>
     {
         private readonly IApplicationDbContext _context;
+        private readonly IVisitFormReadService _formReadService;
 
-        public GetRequestDetailQueryHandler(IApplicationDbContext context)
+        public GetRequestDetailQueryHandler(IApplicationDbContext context, IVisitFormReadService formReadService)
         {
             _context = context;
+            _formReadService = formReadService;
         }
 
         public async Task<RequestDetailDto> Handle(GetRequestDetailQuery request, CancellationToken cancellationToken)
@@ -213,12 +217,37 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             var borrowHandover = handovers.FirstOrDefault(h => h.HandoverType == "BORROW");
             var returnHandover = handovers.FirstOrDefault(h => h.HandoverType == "RETURN");
 
+            // ── Per-campus form v2 (INSTANCE-LEVEL: this reception detail is keyed by a logistics item that
+            // belongs to exactly ONE campus instance — camp.VisitInstanceId — so a MIXED request still returns
+            // 200, sourcing the delegation name, the working content/purpose and the operational (contact-person)
+            // fields ONLY from THAT target instance's per-campus detail, never the global fields and never a
+            // sibling campus. Registrant identity fields stay request-level in both versions. v1 keeps the global
+            // projection, so its response is byte-identical. The item is already scoped to one instance. ──
+            var visit = camp.VisitRequest;
+            var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+            string delegationName = visit.DelegationName;
+            string purpose = visit.Purpose ?? "";
+            string workingContent = visit.WorkingContent ?? "";
+            string contactPersonFullName = visit.ContactPersonFullName ?? "";
+            string contactPersonPhone = visit.ContactPersonPhone ?? "";
+            if (isV2)
+            {
+                var content = await _formReadService.ResolveCampusFormContentAsync(
+                    visit, new[] { camp.VisitInstanceId }, cancellationToken);
+                var d = content[camp.VisitInstanceId];
+                delegationName = d.DelegationName;
+                purpose = d.Purpose ?? "";
+                workingContent = d.WorkingContent ?? "";
+                contactPersonFullName = d.OperationalContact.FullName ?? "";
+                contactPersonPhone = d.OperationalContact.Phone ?? "";
+            }
+
             return new RequestDetailDto
             {
                 LogisticsItemId = l.LogisticsItemId,
                 SenderName = senderName,
                 RequestedAt = l.RequestedAt?.ToString("HH:mm dd-MM-yyyy") ?? "",
-                DelegationName = camp.VisitRequest.DelegationName,
+                DelegationName = delegationName,
                 StartTime = l.UsageStartAt?.ToString("HH:mm") ?? "",
                 EndTime = l.UsageEndAt?.ToString("HH:mm") ?? "",
                 Date = l.UsageStartAt?.ToString("dd-MM-yyyy") ?? "",
@@ -261,10 +290,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 RegistrantPhone = camp.VisitRequest.RegistrantPhone ?? "",
                 RegistrantOrganization = camp.VisitRequest.RegistrantOrganization ?? "",
                 RegistrantJobTitle = camp.VisitRequest.RegistrantJobTitle ?? "",
-                Purpose = camp.VisitRequest.Purpose ?? "",
-                WorkingContent = camp.VisitRequest.WorkingContent ?? "",
-                ContactPersonFullName = camp.VisitRequest.ContactPersonFullName ?? "",
-                ContactPersonPhone = camp.VisitRequest.ContactPersonPhone ?? "",
+                Purpose = purpose,
+                WorkingContent = workingContent,
+                ContactPersonFullName = contactPersonFullName,
+                ContactPersonPhone = contactPersonPhone,
 
                 AssignmentHistory = historyDtos,
                 LatestAttemptStatus = latestAttemptStatus

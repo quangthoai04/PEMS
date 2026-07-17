@@ -8,11 +8,12 @@ import { useActiveCampuses } from '../hooks/useActiveCampuses';
 import { AUTH_CONFIG } from '../../../shared/constants/auth';
 import type { CampusOption, LoginPortal } from '../types/authentication.types';
 import { useTranslation } from 'react-i18next';
+import { showSuccessToast, showMessageErrorToast } from '../../../shared/utils/toast';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
-  const { t } = useTranslation(['loginModal']);
+  const { t } = useTranslation(['loginModal', 'toast']);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -23,7 +24,6 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const [selectedCampusId, setSelectedCampusId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; campus?: string }>({});
-  const [formError, setFormError] = useState('');
   const [googleCampusError, setGoogleCampusError] = useState<string | null>(null);
   const [googleLoginAttempted, setGoogleLoginAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +32,6 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const { campuses, loading: loadingCampuses, error: campusError, reload: reloadCampuses } = useActiveCampuses('INTERNAL');
 
   const clearLoginErrors = () => {
-    setFormError('');
     setFieldErrors({});
     setGoogleCampusError(null);
     setGoogleLoginAttempted(false);
@@ -86,6 +85,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
     setSubmitting(true);
     try {
       const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId ? Number(selectedCampusId) : undefined);
+      showSuccessToast(t('toast:auth.loginSuccess'), 'login-success');
       if (onSuccess) onSuccess();
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
@@ -93,7 +93,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
         navigate('/', { replace: true });
       }
     } catch (err) {
-      setFormError(getAuthErrorMessage(err, t('loginModal:internalError')));
+      showMessageErrorToast(getAuthErrorMessage(err, t('loginModal:internalError')), 'login-error');
     } finally {
       setSubmitting(false);
     }
@@ -101,12 +101,6 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
   return (
     <>
-      {formError && (
-        <div className="mb-4 p-3 bg-red-50 text-red-600 text-[13px] rounded-lg border border-red-100" role="alert">
-          {formError}
-        </div>
-      )}
-
       {/* Campus selector */}
       <div className="mb-2.5">
         <label className="block text-gray-700 font-semibold text-[13px] mb-0.5">{t('loginModal:campusLabel')}</label>
@@ -247,7 +241,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
         <GoogleSignInButton
           portal="INTERNAL"
           selectedCampusId={selectedCampusId ? Number(selectedCampusId) : null}
-          onError={setFormError}
+          onError={(msg) => showMessageErrorToast(msg, 'login-error')}
           onSuccess={onSuccess}
           onValidateCampus={() => {
             setGoogleLoginAttempted(true);
@@ -273,7 +267,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 }
 
 export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
-  const { t } = useTranslation(['loginModal']);
+  const { t } = useTranslation(['loginModal', 'toast']);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -281,11 +275,9 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
-  const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const clearLoginErrors = () => {
-    setFormError('');
     setFieldErrors({});
   };
 
@@ -312,6 +304,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
     setSubmitting(true);
     try {
       const user = await login(email.trim(), password, 'VISITOR');
+      showSuccessToast(t('toast:auth.loginSuccess'), 'login-success');
       if (onSuccess) onSuccess();
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
@@ -319,7 +312,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
         navigate('/', { replace: true });
       }
     } catch (err) {
-      setFormError(getAuthErrorMessage(err, t('loginModal:visitorError')));
+      showMessageErrorToast(getAuthErrorMessage(err, t('loginModal:visitorError')), 'login-error');
     } finally {
       setSubmitting(false);
     }
@@ -327,12 +320,6 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
   return (
     <>
-      {formError && (
-        <div className="mb-4 p-3 bg-red-50 text-red-600 text-[13px] rounded-lg border border-red-100" role="alert">
-          {formError}
-        </div>
-      )}
-
       {AUTH_CONFIG.enablePasswordLogin && (
         <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <div>
@@ -406,7 +393,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
       {AUTH_CONFIG.enableGoogleSso && (
         <GoogleSignInButton
           portal="VISITOR"
-          onError={setFormError}
+          onError={(msg) => showMessageErrorToast(msg, 'login-error')}
           onSuccess={onSuccess}
         />
       )}
@@ -427,7 +414,7 @@ export function GoogleSignInButton({
   onSuccess?: () => void;
   onValidateCampus?: () => boolean;
 }) {
-  const { t, i18n } = useTranslation(['loginModal']);
+  const { t, i18n } = useTranslation(['loginModal', 'toast']);
   const { loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const clientId = AUTH_CONFIG.googleClientId;
@@ -462,6 +449,7 @@ export function GoogleSignInButton({
 
       try {
         const user = await loginWithGoogle(response.credential, portal, selectedCampusId);
+        showSuccessToast(t('toast:auth.loginSuccess'), 'login-success');
         if (onSuccess) onSuccess();
         if (user.mustChangePassword || user.mustSetPassword) navigate('/change-password', { replace: true });
         else navigate('/', { replace: true });

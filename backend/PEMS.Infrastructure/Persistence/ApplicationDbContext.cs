@@ -64,6 +64,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
     public DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; set; }
 
+    // ── Per-campus form v2 (PR-2 migration percampus_v2_migration) ────────────
+    public DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails { get; set; }
+    public DbSet<VisitInstanceGuestMember> VisitInstanceGuestMembers { get; set; }
+    public DbSet<VisitRequestIdentityChange> VisitRequestIdentityChanges { get; set; }
+    public DbSet<VisitRequestIdentityChangeEvent> VisitRequestIdentityChangeEvents { get; set; }
+    public DbSet<VisitInstanceAmendment> VisitInstanceAmendments { get; set; }
+    public DbSet<VisitInstanceAmendmentChange> VisitInstanceAmendmentChanges { get; set; }
+    public DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; set; }
+    public DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; set; }
+
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
     public DbSet<MinuteActionItem> MinuteActionItems { get; set; }
@@ -318,6 +328,112 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitGuestMember>()
             .HasOne(g => g.VisitRequest).WithMany(v => v.GuestMembers)
             .HasForeignKey(g => g.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
+
+        // ── Per-campus form v2 (percampus_v2_migration) ───────────────────────
+        // These configurations MIRROR the already-validated PR-2 SQL. The project uses raw SQL as the
+        // schema source (no EF migrations run against the DB), so the alternate keys / composite FKs
+        // below are model metadata that map onto the existing uq_vrc_request_instance /
+        // uq_vgm_request_member unique keys. The DB-owned VIRTUAL guard columns (pending_guard,
+        // amendment_pending_guard) are deliberately NOT mapped, so EF never writes them.
+
+        // Alternate keys used by the composite FKs of the per-campus link/amendment/history tables.
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasAlternateKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId });
+        modelBuilder.Entity<VisitGuestMember>()
+            .HasAlternateKey(g => new { g.VisitRequestId, g.GuestMemberId });
+
+        // visit_instance_form_details: one-to-one with the campus instance (shared PK), CASCADE.
+        modelBuilder.Entity<VisitInstanceFormDetail>(b =>
+        {
+            b.HasKey(d => d.VisitInstanceId);
+            b.HasOne(d => d.VisitInstance).WithOne(vc => vc.FormDetail)
+                .HasForeignKey<VisitInstanceFormDetail>(d => d.VisitInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // visit_instance_guest_members: composite PK; composite FKs bind member+instance to the same
+        // request (both CASCADE). Removing a campus instance cascades only its link rows.
+        modelBuilder.Entity<VisitInstanceGuestMember>(b =>
+        {
+            b.HasKey(l => new { l.VisitInstanceId, l.GuestMemberId });
+            b.HasOne(l => l.VisitInstance).WithMany(vc => vc.GuestMemberLinks)
+                .HasForeignKey(l => new { l.VisitRequestId, l.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(l => l.GuestMember).WithMany(g => g.InstanceLinks)
+                .HasForeignKey(l => new { l.VisitRequestId, l.GuestMemberId })
+                .HasPrincipalKey(g => new { g.VisitRequestId, g.GuestMemberId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(l => l.VisitRequestId).HasDatabaseName("idx_vigm_request");
+        });
+
+        // visit_request_identity_changes → request (CASCADE) + old/new/requested_by users.
+        modelBuilder.Entity<VisitRequestIdentityChange>(b =>
+        {
+            b.HasOne<VisitRequest>().WithMany(v => v.IdentityChanges)
+                .HasForeignKey(c => c.VisitRequestId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(c => c.OldUserId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(c => c.NewUserId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(c => c.RequestedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(c => new { c.VisitRequestId, c.TargetRelation, c.Status })
+                .HasDatabaseName("idx_identity_change_request_relation_status");
+        });
+
+        // visit_request_identity_change_events → identity change (CASCADE) + actor.
+        modelBuilder.Entity<VisitRequestIdentityChangeEvent>(b =>
+        {
+            b.HasOne(e => e.IdentityChange).WithMany(c => c.Events)
+                .HasForeignKey(e => e.IdentityChangeId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(e => e.ActorUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // visit_instance_amendments: composite FK to the instance (CASCADE) + requested_by/decided_by.
+        modelBuilder.Entity<VisitInstanceAmendment>(b =>
+        {
+            b.HasOne(a => a.VisitInstance).WithMany(vc => vc.Amendments)
+                .HasForeignKey(a => new { a.VisitRequestId, a.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(a => a.RequestedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(a => a.DecidedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(a => new { a.VisitInstanceId, a.Status, a.RequestedAt })
+                .HasDatabaseName("idx_amendment_instance_status_time");
+        });
+
+        // visit_instance_amendment_changes → amendment (CASCADE).
+        modelBuilder.Entity<VisitInstanceAmendmentChange>()
+            .HasOne(ac => ac.Amendment).WithMany(a => a.Changes)
+            .HasForeignKey(ac => ac.AmendmentId).OnDelete(DeleteBehavior.Cascade);
+
+        // visit_instance_form_revision_history: composite FK to the instance (CASCADE) + applied_by.
+        modelBuilder.Entity<VisitInstanceFormRevisionHistory>(b =>
+        {
+            b.HasOne(h => h.VisitInstance).WithMany(vc => vc.FormRevisionHistory)
+                .HasForeignKey(h => new { h.VisitRequestId, h.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(h => h.AppliedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(h => new { h.VisitInstanceId, h.FormRevision })
+                .IsUnique().HasDatabaseName("uq_vifrh_instance_form_revision");
+        });
+
+        // visit_request_revision_history → request (CASCADE) + applied_by.
+        modelBuilder.Entity<VisitRequestRevisionHistory>(b =>
+        {
+            b.HasOne(h => h.VisitRequest).WithMany(v => v.RevisionHistory)
+                .HasForeignKey(h => h.VisitRequestId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(h => h.AppliedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(h => new { h.VisitRequestId, h.RequestRevision })
+                .IsUnique().HasDatabaseName("uq_vrrh_request_revision");
+        });
 
         // VisitParticipant → VisitRequestCampus, User, InvitedBy, AssignedBy
         modelBuilder.Entity<VisitParticipant>()

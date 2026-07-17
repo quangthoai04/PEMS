@@ -121,4 +121,18 @@ public static class VisitRequestErrorCodes
     public const string DirectModeCampusNotSelected = "DIRECT_MODE_CAMPUS_NOT_SELECTED";
     // The acting Staff does not qualify for direct self-host (not ACTIVE IC staff of that campus).
     public const string SelfHostNotEligible = "SELF_HOST_NOT_ELIGIBLE";
+
+    // ── Per-campus form v2 edit / resubmit (plan §6.4) ──
+    // The v2 edit endpoints only accept form_schema_version >= 2 requests (v1 keeps its own endpoints).
+    public const string NotPerCampusV2 = "VISIT_REQUEST_NOT_PER_CAMPUS_V2";
+    // Optimistic concurrency: the payload's expected request row_version is stale — reload and retry.
+    public const string RequestVersionConflict = "VISIT_REQUEST_VERSION_CONFLICT";
+    // Optimistic concurrency: an edited campus instance's expected row_version is stale.
+    public const string InstanceVersionConflict = "VISIT_INSTANCE_VERSION_CONFLICT";
+    // A campus removal was blocked: the instance already carries downstream data (participants/
+    // agendas/logistics) or is past the removable lifecycle.
+    public const string InstanceNotRemovable = "VISIT_INSTANCE_NOT_REMOVABLE";
+    // An edited instance id does not belong to this request (or its campus code was changed —
+    // moving an instance to another campus is remove + add, never an in-place mutation).
+    public const string InstanceEditInvalid = "VISIT_INSTANCE_EDIT_INVALID";
 }

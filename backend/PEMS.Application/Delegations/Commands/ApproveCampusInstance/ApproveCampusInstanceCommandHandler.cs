@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -22,17 +23,20 @@ public sealed class ApproveCampusInstanceCommandHandler
     private readonly IDateTimeService _clock;
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IVisitFormReadService _formReadService;
 
     public ApproveCampusInstanceCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IVisitRequestAggregateStatusService aggregateStatus,
-        PEMS.Application.Notifications.Common.INotificationService notificationService)
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _aggregateStatus = aggregateStatus;
         _notificationService = notificationService;
+        _formReadService = formReadService;
     }
 
     public async Task<ApproveCampusInstanceResponse> Handle(
@@ -206,6 +210,17 @@ public sealed class ApproveCampusInstanceCommandHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"#{instance.CampusId}";
 
+        // Delegation name for the notification text: this whole command acts on ONE campus instance, so v2
+        // (incl. mixed) sources it from THIS instance's per-campus detail — never the global field, never a
+        // sibling. v1 keeps the global projection (byte-identical text). No global fallback for v2.
+        var delegationName = visit.DelegationName;
+        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var formContent = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { instance.VisitInstanceId }, cancellationToken);
+            delegationName = formContent[instance.VisitInstanceId].DelegationName;
+        }
+
         var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var visitProcessUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 
@@ -234,7 +249,7 @@ public sealed class ApproveCampusInstanceCommandHandler
             notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                 RecipientUserId: request.HostUserId,
                 Title: "Bạn được gán phụ trách đoàn khách",
-                Message: $"Bạn được phân công làm host chính cho đoàn {visit.DelegationName} tại {campusName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
+                Message: $"Bạn được phân công làm host chính cho đoàn {delegationName} tại {campusName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
                 NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
                 RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
                 RelatedId: instance.VisitInstanceId,
@@ -261,7 +276,7 @@ public sealed class ApproveCampusInstanceCommandHandler
             notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                 RecipientUserId: id,
                 Title: "Cơ sở đã duyệt đơn liên cơ sở",
-                Message: $"Cơ sở {campusName} đã duyệt đơn {visit.RequestCode} ({visit.DelegationName}).",
+                Message: $"Cơ sở {campusName} đã duyệt đơn {visit.RequestCode} ({delegationName}).",
                 NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
                 RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                 RelatedId: visit.VisitRequestId,
@@ -281,7 +296,7 @@ public sealed class ApproveCampusInstanceCommandHandler
                     notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: id,
                         Title: "Đơn liên cơ sở được duyệt một phần",
-                        Message: $"Đơn {visit.RequestCode} ({visit.DelegationName}) hiện đã được duyệt một phần.",
+                        Message: $"Đơn {visit.RequestCode} ({delegationName}) hiện đã được duyệt một phần.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                         RelatedId: visit.VisitRequestId,
@@ -297,7 +312,7 @@ public sealed class ApproveCampusInstanceCommandHandler
                     notifications.AddRange(hoUsers.Select(id => new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: id,
                         Title: "Đơn liên cơ sở đã xử lý xong",
-                        Message: $"Tất cả cơ sở của đơn {visit.RequestCode} ({visit.DelegationName}) đã xử lý xong.",
+                        Message: $"Tất cả cơ sở của đơn {visit.RequestCode} ({delegationName}) đã xử lý xong.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                         RelatedId: visit.VisitRequestId,

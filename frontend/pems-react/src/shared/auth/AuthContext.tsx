@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { showSuccessToast } from '../utils/toast';
 import { authenticationApi } from '../../features/authentication/api/authenticationApi';
 import type {
   AuthUser,
@@ -31,6 +33,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation(['toast']);
   const [user, setUser] = useState<AuthUser | null>(() => authStorage.getUser());
 
   const [loginPortal, setLoginPortal] = useState<LoginPortal | null>(() => authStorage.getLoginPortal());
@@ -128,12 +131,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await authenticationApi.logout(authStorage.getRefreshToken());
+      showSuccessToast(t('toast:auth.logoutSuccess'), 'logout-success');
     } catch {
       // Ignore network/expired errors — we always clear locally.
+      showSuccessToast(t('toast:auth.logoutSuccess'), 'logout-success');
     } finally {
       clearSession();
     }
-  }, [clearSession]);
+  }, [clearSession, t]);
 
   const refreshProfile = useCallback(async () => {
     const profile = await authenticationApi.getMe();

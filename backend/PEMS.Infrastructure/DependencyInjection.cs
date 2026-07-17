@@ -72,8 +72,14 @@ public static class DependencyInjection
 
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
+        services.AddScoped<IVisitRequestV2CreateService, VisitRequestV2CreateService>();
+        services.AddScoped<IVisitRequestV2EditService, VisitRequestV2EditService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();
         services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
+
+        // Per-campus v2 identity claim (plan §16.4/§16.8): invitation token+email + expiry/redaction.
+        services.AddScoped<IVisitContactClaimService, VisitContactClaimService>();
+        services.AddScoped<IVisitContactClaimMaintenanceService, VisitContactClaimMaintenanceService>();
 
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
@@ -113,6 +119,9 @@ public static class DependencyInjection
         // Background job — HO visibility alert for multi-campus requests with an unprocessed
         // campus close to its planned start (spec §5 HO rule).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.HoUnprocessedCampusAlertHostedService>();
+
+        // Background job — identity-claim expiry (72h) + retention redaction (90d), plan §16.8.
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitContactClaimMaintenanceHostedService>();
 
         return services;
     }

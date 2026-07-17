@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Dashboard.Common;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -17,7 +18,8 @@ namespace PEMS.Application.Dashboard.Queries.GetStaffCalendarDetail;
 /// Scope (backend là nguồn chuẩn):
 ///   • Staff Leader — instance thuộc campus mình; đơn liên cơ sở chỉ sau khi HO duyệt.
 ///   • Staff thường — instance thuộc campus mình (xem lịch văn phòng) hoặc mình là host.
-/// Chỉ đọc: visit_requests / visit_request_campuses / visit_guest_members / visit_participants.
+/// Chỉ đọc: visit_requests / visit_request_campuses / visit_guest_members / visit_participants
+/// (+ visit_instance_form_details / visit_instance_guest_members của instance đích khi form_schema_version = 2).
 /// </summary>
 public sealed class GetStaffCalendarDetailQueryHandler
     : IRequestHandler<GetStaffCalendarDetailQuery, StaffCalendarDetailDto>
@@ -25,13 +27,16 @@ public sealed class GetStaffCalendarDetailQueryHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly IVisitFormReadService _formReadService;
 
     public GetStaffCalendarDetailQueryHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _formReadService = formReadService;
     }
 
     public async Task<StaffCalendarDetailDto> Handle(
@@ -120,6 +125,39 @@ public sealed class GetStaffCalendarDetailQueryHandler
         var guestCount = await _db.VisitGuestMembers
             .CountAsync(g => g.VisitRequestId == visit.VisitRequestId, cancellationToken);
 
+        // ── Per-campus form v2 (INSTANCE-LEVEL: this modal is keyed by visit_instance_id, so a MIXED
+        // request still returns 200 — we source the form fields, the operational (contact-person)
+        // fields and the guest count ONLY from the TARGET instance's per-campus detail + member links,
+        // never the global fields and never a sibling campus). v1 keeps the global projection, so its
+        // response is byte-identical. Scope/quyền đã được kiểm tra ở trên, trước projection này. ──
+        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+        string? delegationName = visit.DelegationName;
+        string? contactFullName = visit.ContactPersonFullName;
+        string? contactPhone = visit.ContactPersonPhone;
+        string? contactEmail = visit.ContactPersonEmail;
+        string? purpose = visit.Purpose, workingContent = visit.WorkingContent;
+        string? visitType = visit.VisitType, visitTypeOther = visit.VisitTypeOther;
+        string? workingLanguage = visit.WorkingLanguage;
+        string? mediaConsentStatus = visit.MediaConsentStatus, mediaConsentNote = visit.MediaConsentNote;
+        string? transportationNote = visit.TransportationNote, noteToFptu = visit.NoteToFptu;
+        if (isV2)
+        {
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { instance.VisitInstanceId }, cancellationToken);
+            var d = content[instance.VisitInstanceId];
+            delegationName = d.DelegationName;
+            contactFullName = d.OperationalContact.FullName;
+            contactPhone = d.OperationalContact.Phone;
+            contactEmail = d.OperationalContact.Email;
+            purpose = d.Purpose; workingContent = d.WorkingContent;
+            visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
+            workingLanguage = d.WorkingLanguage;
+            mediaConsentStatus = d.MediaConsentStatus; mediaConsentNote = d.MediaConsentNote;
+            transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
+            // Guest count for v2 is the TARGET instance's linked members only (never the request-wide total).
+            guestCount = d.Visitors.Count + d.SupportMembers.Count;
+        }
+
         // Phản hồi của thành phần hỗ trợ (đã nhận / đã từ chối / đã gán) — hiển thị lịch sử phản hồi.
         var participantResponses = await (
                 from p in _db.VisitParticipants
@@ -155,7 +193,7 @@ public sealed class GetStaffCalendarDetailQueryHandler
             VisitRequestId = visit.VisitRequestId,
             VisitInstanceId = instance.VisitInstanceId,
             RequestCode = visit.RequestCode,
-            DelegationName = visit.DelegationName,
+            DelegationName = delegationName,
             VisitScope = visit.VisitScope,
             RequestStatus = visit.Status,
             CampusStatus = instance.Status,
@@ -171,19 +209,19 @@ public sealed class GetStaffCalendarDetailQueryHandler
             RegistrantNationality = visit.RegistrantNationality,
             RegistrantPhone = visit.RegistrantPhone,
             RegistrantEmail = visit.RegistrantEmail,
-            ContactPersonFullName = visit.ContactPersonFullName,
-            ContactPersonPhone = visit.ContactPersonPhone,
-            ContactPersonEmail = visit.ContactPersonEmail,
-            Purpose = visit.Purpose,
-            WorkingContent = visit.WorkingContent,
-            VisitType = visit.VisitType,
-            VisitTypeOther = visit.VisitTypeOther,
+            ContactPersonFullName = contactFullName,
+            ContactPersonPhone = contactPhone,
+            ContactPersonEmail = contactEmail,
+            Purpose = purpose,
+            WorkingContent = workingContent,
+            VisitType = visitType,
+            VisitTypeOther = visitTypeOther,
             GuestCount = guestCount,
-            WorkingLanguage = visit.WorkingLanguage,
-            MediaConsentStatus = visit.MediaConsentStatus,
-            MediaConsentNote = visit.MediaConsentNote,
-            TransportationNote = visit.TransportationNote,
-            NoteToFptu = visit.NoteToFptu,
+            WorkingLanguage = workingLanguage,
+            MediaConsentStatus = mediaConsentStatus,
+            MediaConsentNote = mediaConsentNote,
+            TransportationNote = transportationNote,
+            NoteToFptu = noteToFptu,
             CurrentHostUserId = instance.CurrentHostUserId,
             CurrentHostName = hostName,
             CurrentHostEmail = hostEmail,

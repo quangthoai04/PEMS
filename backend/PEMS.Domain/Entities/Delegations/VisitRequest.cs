@@ -26,13 +26,19 @@ public class VisitRequest
     [Column("business_fingerprint")]
     public string? BusinessFingerprint { get; set; }
 
-    // CONTACT OWNER (đầu mối liên hệ) — the request's action owner. Always a VISITOR
-    // account; every request-level mutation (edit/resubmit/cancel/feedback) checks this.
+    // PRIMARY CONTACT owner (đầu mối chính quản lý yêu cầu). Always a VISITOR account.
+    // NULL until contact B claims the request (PrimaryContactAccessStatus = PENDING_CONFIRMATION).
+    // Once the contact is ACTIVE this is the cancel owner. It is NO LONGER the sole form editor:
+    // per-campus form v2 makes the registrant a co-editor (see RegistrantUserId). Every mutation
+    // still re-checks the relation from the DB at request time — never from a cached JWT claim.
     [Column("visitor_user_id")]
     public ulong? VisitorUserId { get; set; }
 
-    // REGISTRANT (người đăng ký / submitter) — read-only tracking relation only.
-    // May be a VISITOR or an internal STAFF/STAFF LEADER account; never grants mutations.
+    // REGISTRANT (người đăng ký / submitter). NOT read-only under per-campus form v2: a co-editor
+    // together with the primary contact for form edit / resubmit / safe-edit / amendment (enforced
+    // per lifecycle by the write handlers in PR-4+). May also cancel under exception 3A while the
+    // initial contact is still PENDING_CONFIRMATION (DB trigger enforces it). May be a VISITOR or an
+    // internal STAFF/STAFF LEADER account.
     [Column("registrant_user_id")]
     public ulong? RegistrantUserId { get; set; }
 
@@ -41,6 +47,15 @@ public class VisitRequest
 
     [Column("created_source")]
     public string CreatedSource { get; set; } = "VISITOR_SUBMITTED";
+
+    // Per-campus form v2. FormSchemaVersion: 1 = legacy global form, 2 = per-campus detail
+    // (active data in VisitInstanceFormDetail). HasMixedCampusDetails is backend-derived only.
+    [Column("form_schema_version")]
+    public byte FormSchemaVersion { get; set; } = 1;
+
+    [Column("has_mixed_campus_details")]
+    public bool HasMixedCampusDetails { get; set; }
+
     [Column("registrant_full_name")]
     public string RegistrantFullName { get; set; } = null!;
 
@@ -59,6 +74,12 @@ public class VisitRequest
     [Column("registrant_email")]
     public string RegistrantEmail { get; set; } = null!;
 
+    // ── COMPATIBILITY PROJECTION (per-campus form v2) ──────────────────────────
+    // For FormSchemaVersion = 2 the ACTIVE source of truth for delegation name, visit type,
+    // purpose, working content, contact, language, transportation, media consent and note-to-FPTU
+    // is per campus in VisitInstanceFormDetail. These global columns are kept only for v1
+    // compatibility; when HasMixedCampusDetails is true they hold the smallest-campus_id snapshot
+    // and MUST NOT be read as the shared value. Read v2 form content through IVisitFormReadService.
     [Column("delegation_name")]
     public string DelegationName { get; set; } = null!;
 
@@ -77,6 +98,9 @@ public class VisitRequest
     public string? WorkingContent { get; set; }
 
 
+    // PRIMARY CONTACT snapshot (đầu mối chính) at REQUEST level — the email used to link/claim the
+    // VISITOR account (see VisitorUserId + PrimaryContactAccessStatus). This is NOT a campus
+    // operational contact; each campus keeps its own in VisitInstanceFormDetail.OperationalContact*.
     [Column("contact_person_full_name")]
     public string ContactPersonFullName { get; set; } = null!;
 
@@ -106,6 +130,15 @@ public class VisitRequest
 
     [Column("note_to_fptu")]
     public string? NoteToFptu { get; set; }
+
+    // Primary-contact claim state (per-campus form v2). PENDING_CONFIRMATION = contact B has not
+    // claimed the request yet; ACTIVE = contact owner confirmed. Backfilled ACTIVE where
+    // VisitorUserId IS NOT NULL. See PrimaryContactAccessStatuses.
+    [Column("primary_contact_access_status")]
+    public string PrimaryContactAccessStatus { get; set; } = "PENDING_CONFIRMATION";
+
+    [Column("primary_contact_verified_at")]
+    public DateTime? PrimaryContactVerifiedAt { get; set; }
 
     // Aggregate status only (PENDING_APPROVAL/PARTIALLY_APPROVED/APPROVED/REJECTED/CANCELLED),
     // derived from campus-instance decisions. The real approve/reject decision fields
@@ -160,4 +193,8 @@ public class VisitRequest
     public virtual Partner? Partner { get; set; }
     public virtual ICollection<VisitRequestCampus> CampusInstances { get; set; } = new List<VisitRequestCampus>();
     public virtual ICollection<VisitGuestMember> GuestMembers { get; set; } = new List<VisitGuestMember>();
+
+    // Per-campus form v2 navigations.
+    public virtual ICollection<VisitRequestIdentityChange> IdentityChanges { get; set; } = new List<VisitRequestIdentityChange>();
+    public virtual ICollection<VisitRequestRevisionHistory> RevisionHistory { get; set; } = new List<VisitRequestRevisionHistory>();
 }

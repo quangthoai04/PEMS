@@ -95,6 +95,29 @@ public static class DatabaseResetHelper
                     "No active campus found in pems_test to attach an internal test user to.");
         }
 
+        // A campus must have EXACTLY ONE valid Staff Leader for visit-registration availability
+        // (BR-86-19/20: >1 leader = configuration-invalid, blocking every visit-request create for that
+        // campus). The seed already provides exactly one active IC Staff Leader per campus, so REUSE it
+        // instead of adding a second — otherwise create/OTP tests on that campus fail with
+        // CAMPUS_STAFF_LEADER_CONFIGURATION_INVALID. Deterministic + repeatable against a fresh master.
+        if (effectiveRole == EffectiveRole.StaffLeader && primaryCampusId is not null)
+        {
+            var seededLeaderId = await db.Users.AsNoTracking()
+                .Where(u => u.Role!.RoleCode == roleCode
+                            && u.SubRole == SubRole.Leader
+                            && u.Status == UserStatuses.Active
+                            && u.PrimaryCampusId == primaryCampusId
+                            && u.Department != null
+                            && u.Department.DepartmentType == "IC"
+                            && u.Department.Status == EntityStatuses.Active
+                            && u.Department.CampusId == u.PrimaryCampusId)
+                .OrderBy(u => u.UserId)
+                .Select(u => (ulong?)u.UserId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (seededLeaderId is not null)
+                return seededLeaderId.Value;
+        }
+
         // DB trigger trg_users_validate_bi/bu requires STAFF/DEPARTMENT users to have a
         // department_id whose department_type matches the role: STAFF -> IC, DEPARTMENT ->
         // GENERAL (regardless of sub_role STAFF/LEADER). Look up an existing active department

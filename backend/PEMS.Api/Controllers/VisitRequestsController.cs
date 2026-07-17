@@ -10,6 +10,7 @@ using PEMS.Application.Delegations.Commands.UpdatePendingVisitRequest;
 using PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
 using PEMS.Application.Delegations.Queries.GetCreateHostCandidates;
 using PEMS.Application.Delegations.Queries.GetEditableVisitRequestDetail;
+using PEMS.Application.Delegations.Queries.GetVisitRequestFormV2;
 
 namespace PEMS.Api.Controllers;
 
@@ -156,6 +157,69 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// PR-3 reference read path — returns the fully per-campus resolved form via the central
+    /// dual-read <c>IVisitFormReadService</c> (v1 or v2, correctly scoped to the caller). Gated by
+    /// the <c>PerCampusFormV2</c> feature flag: 404 when the flag is OFF. v1 endpoints are unchanged.
+    /// </summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}")]
+    [Authorize]
+    public async Task<IActionResult> GetFormV2(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetVisitRequestFormV2Query(visitRequestId), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Per-campus form v2 authenticated create. Gated by BOTH flags: the write flag OFF makes this 404
+    /// (the v1 create flow is unchanged); write ON with read OFF is rejected. Idempotent by submissionId.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests")]
+    [Authorize]
+    public async Task<IActionResult> CreateFormV2(
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestFormDataV2 form, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.CreateVisitRequestV2.CreateVisitRequestV2Command(form),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Per-campus form v2 PUBLIC (OTP-gated) create — the unauthenticated sibling of <see cref="CreateFormV2"/>.
+    /// Verifies the OTP challenge (bound to the registrant email + submissionId), then creates the v2 request.
+    /// Gated by BOTH flags: write OFF makes this 404 (the v1 public verify flow is unchanged). Retries of the
+    /// same submission intent replay idempotently.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/verify")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyAndCreateFormV2(
+        [FromBody] PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequestV2.VerifyAndCreateVisitRequestV2Command command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Per-campus form v2 PENDING EDIT — per-campus content/schedule/members (copy-on-write), add campus,
+    /// remove pending campus; explicit optimistic concurrency (expected request + per-instance row versions →
+    /// stable 409). Gated by BOTH flags like create-v2 (write OFF → 404). Editors: registrant or ACTIVE
+    /// primary contact. Account-binding emails are immutable here (identity edit is a separate workflow).
+    /// </summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/pending-edit")]
+    [Authorize]
+    public async Task<IActionResult> UpdatePendingFormV2(
+        ulong visitRequestId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestEditV2Dto edit,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.UpdatePendingVisitRequestV2.UpdatePendingVisitRequestV2Command(visitRequestId, edit),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits a still-fully-pending request (every campus WAITING_REQUEST_APPROVAL,
     /// ≥ 24h before the earliest start). Campus list may change; status stays PENDING_APPROVAL.
     /// </summary>
@@ -167,6 +231,24 @@ public sealed class VisitRequestsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(command with { VisitRequestId = visitRequestId }, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Per-campus form v2 RESUBMIT after full rejection — campus set fixed, every visitInstanceId kept, old
+    /// decisions snapshotted to audit before being cleared, instances re-routed to the current Staff Leaders.
+    /// Same two-flag gate, editor policy and optimistic-concurrency contract as pending-edit v2.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/resubmit")]
+    [Authorize]
+    public async Task<IActionResult> ResubmitFormV2(
+        ulong visitRequestId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestEditV2Dto edit,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequestV2.ResubmitRejectedVisitRequestV2Command(visitRequestId, edit),
+            cancellationToken);
         return Ok(result);
     }
 
@@ -184,4 +266,78 @@ public sealed class VisitRequestsController : ControllerBase
         var result = await _mediator.Send(command with { VisitRequestId = visitRequestId }, cancellationToken);
         return Ok(result);
     }
+
+    // ── Per-campus v2 primary-contact INITIAL_CLAIM (plan §16.4) ─────────────────────────────
+    // The generic /api/public/email-actions handler REJECTS the claim context: possession of the
+    // email link alone never applies a claim. The landing page is anonymous + masked-only; accept
+    // and decline require a logged-in session whose email matches the invitation.
+
+    /// <summary>Anonymous masked landing summary for a contact-claim link.</summary>
+    [HttpGet("/api/public/visit-contact-claims/{token}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetContactClaimInfo(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.GetVisitContactClaimInfoQuery(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited contact (logged in with the matching Google account) ACCEPTS the claim:
+    /// visitor_user_id is linked and the contact becomes ACTIVE in one transaction.</summary>
+    [HttpPost("/api/v2/visit-contact-claims/{token}/accept")]
+    [Authorize]
+    public async Task<IActionResult> AcceptContactClaim(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.AcceptVisitContactClaimCommand(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited contact DECLINES the claim. The request is not cancelled.</summary>
+    [HttpPost("/api/v2/visit-contact-claims/{token}/decline")]
+    [Authorize]
+    public async Task<IActionResult> DeclineContactClaim(
+        string token,
+        [FromBody] DeclineContactClaimBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.DeclineVisitContactClaimCommand(
+                token, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record DeclineContactClaimBody(string? Reason);
+
+    /// <summary>Registrant re-sends the pending contact invitation (old links die, 72h restarts).</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-claim/resend")]
+    [Authorize]
+    public async Task<IActionResult> ResendContactClaim(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.ResendVisitContactClaimCommand(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Registrant replaces the still-unclaimed pending contact (typo fix): supersedes the old
+    /// invitation and either links the registrant (same email) or invites the new email.</summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/contact-claim")]
+    [Authorize]
+    public async Task<IActionResult> ReplacePendingContact(
+        ulong visitRequestId,
+        [FromBody] ReplacePendingContactBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactClaim.ReplacePendingVisitContactCommand(
+                visitRequestId, body.FullName, body.Organization, body.Phone, body.Email),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record ReplacePendingContactBody(string FullName, string Organization, string Phone, string Email);
 }

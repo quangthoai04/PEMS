@@ -100,6 +100,21 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
     private static async Task EnsureLeaderOnCampusAsync(ApplicationDbContext db, ulong campusId)
     {
+        // A campus must have EXACTLY ONE valid Staff Leader for visit-registration availability
+        // (BR-86-19/20). The seed already provides one per campus, so reuse it — never add a second,
+        // which would make the campus configuration-invalid and fail every create on it.
+        var alreadyHasValidLeader = await db.Users.AsNoTracking().AnyAsync(u =>
+            u.Role!.RoleCode == "STAFF"
+            && u.SubRole == "LEADER"
+            && u.Status == "ACTIVE"
+            && u.PrimaryCampusId == campusId
+            && u.Department != null
+            && u.Department.DepartmentType == "IC"
+            && u.Department.Status == "ACTIVE"
+            && u.Department.CampusId == campusId);
+        if (alreadyHasValidLeader)
+            return;
+
         var email = $"it-actor-rel-leader-c{campusId}@it-uc63.pems.local";
         if (await db.Users.AsNoTracking().AnyAsync(u => u.Email == email))
             return;

@@ -6,6 +6,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Queries.ViewMyVisitInvitations;
@@ -20,11 +21,14 @@ public sealed class GetVisitInvitationByIdQueryHandler
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IVisitFormReadService _formReadService;
 
-    public GetVisitInvitationByIdQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public GetVisitInvitationByIdQueryHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
+        _formReadService = formReadService;
     }
 
     public async Task<VisitInvitationDto> Handle(
@@ -64,9 +68,28 @@ public sealed class GetVisitInvitationByIdQueryHandler
                 OrganizationName = vr.RegistrantOrganization,
                 Purpose = vr.Purpose,
                 WorkingContent = vr.WorkingContent,
+                FormSchemaVersion = vr.FormSchemaVersion,
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("VisitInvitation", request.ParticipantId);
+
+        // ── Per-campus form v2 (INSTANCE-LEVEL: an invitation is bound to exactly ONE campus instance, so a
+        // MIXED request still returns 200 — the delegation name, purpose and working content are sourced ONLY
+        // from the TARGET instance's per-campus detail, never the global fields and never a sibling campus.
+        // OrganizationName is the registrant organisation (request-level identity) and is unchanged. Missing
+        // detail → 409 VISIT_FORM_DETAIL_MISSING, no global fallback. Ownership was enforced in the query
+        // above, before this projection. v1 keeps the global projection, so its response is byte-identical. ──
+        if (flat.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var visit = await _db.VisitRequests.AsNoTracking()
+                .FirstAsync(v => v.VisitRequestId == flat.VisitRequestId, cancellationToken);
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { flat.VisitInstanceId }, cancellationToken);
+            var d = content[flat.VisitInstanceId];
+            flat.DelegationName = d.DelegationName;
+            flat.Purpose = d.Purpose;
+            flat.WorkingContent = d.WorkingContent;
+        }
 
         var dto = VisitInvitationProjection.ToDto(flat);
         var list = new List<VisitInvitationDto> { dto };

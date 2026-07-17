@@ -7,6 +7,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -18,13 +19,16 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly IVisitFormReadService _formReadService;
 
     public GetEditableVisitRequestDetailQueryHandler(
-        IApplicationDbContext context, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext context, ICurrentUserService currentUser, IDateTimeService clock,
+        IVisitFormReadService formReadService)
     {
         _context = context;
         _currentUser = currentUser;
         _clock = clock;
+        _formReadService = formReadService;
     }
 
     public async Task<EditableVisitRequestDetailDto> Handle(
@@ -102,6 +106,65 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             }
         }
 
+        // ── Dual-read (per-campus form v2). This is a Visitor-owner-only, single-form editor, so the
+        // owner sees every campus; the FORM CONTENT is version-specific (v1 = global projection,
+        // v2 = per-campus detail) while Registrant / primary Contact / Partner stay request-level. ──
+        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+
+        // The flat single-form editor cannot represent a v2 request whose campuses hold DIFFERENT
+        // content — that needs the per-campus v2 editor. Guard it with a stable coded 409.
+        if (isV2 && visit.HasMixedCampusDetails)
+        {
+            throw new ConflictException(
+                "Đơn này có nội dung khác nhau theo từng cơ sở; vui lòng dùng màn hình chỉnh sửa theo cơ sở.",
+                VisitFormV2ErrorCodes.FormVersionUpgradeRequired);
+        }
+
+        // Form-content locals default to the v1 global projection; for a (non-mixed) v2 request they are
+        // re-sourced from the per-campus detail + instance member links (never the global fields).
+        string delegationName = visit.DelegationName;
+        string? visitType = visit.VisitType;
+        string? visitTypeOther = visit.VisitTypeOther;
+        string? purpose = visit.Purpose;
+        string? workingContent = visit.WorkingContent;
+        string? workingLanguage = visit.WorkingLanguage;
+        string? transportationNote = visit.TransportationNote;
+        string? mediaConsentStatus = visit.MediaConsentStatus;
+        string? mediaConsentNote = visit.MediaConsentNote;
+        string? noteToFptu = visit.NoteToFptu;
+        var orderedInstances = instances.OrderBy(i => i.PlannedStartAt).ToList();
+        var visitorMembers = visit.GuestMembers
+            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+            .OrderBy(m => m.DisplayOrder)
+            .Select(MapMember)
+            .ToList();
+        var supportMembers = visit.GuestMembers
+            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+            .OrderBy(m => m.DisplayOrder)
+            .Select(MapMember)
+            .ToList();
+
+        if (isV2)
+        {
+            // Non-mixed v2: every campus shares the same content — source it from a representative
+            // instance's per-campus detail (owner is authorized for all instances).
+            var allInstanceIds = orderedInstances.Select(i => i.VisitInstanceId).ToList();
+            var content = await _formReadService.ResolveCampusFormContentAsync(visit, allInstanceIds, cancellationToken);
+            var rep = content[orderedInstances[0].VisitInstanceId];
+            delegationName = rep.DelegationName;
+            visitType = rep.VisitType;
+            visitTypeOther = rep.VisitTypeOther;
+            purpose = rep.Purpose;
+            workingContent = rep.WorkingContent;
+            workingLanguage = rep.WorkingLanguage;
+            transportationNote = rep.TransportationNote;
+            mediaConsentStatus = rep.MediaConsentStatus;
+            mediaConsentNote = rep.MediaConsentNote;
+            noteToFptu = rep.NoteToFptu;
+            visitorMembers = rep.Visitors.Select(MapRow).ToList();
+            supportMembers = rep.SupportMembers.Select(MapRow).ToList();
+        }
+
         return new EditableVisitRequestDetailDto
         {
             VisitRequestId = (long)visit.VisitRequestId,
@@ -119,26 +182,26 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             RegistrantPhone = visit.RegistrantPhone,
             RegistrantEmail = visit.RegistrantEmail,
 
-            DelegationName = visit.DelegationName,
-            VisitType = visit.VisitType,
-            VisitTypeOther = visit.VisitTypeOther,
-            Purpose = visit.Purpose,
-            WorkingContent = visit.WorkingContent,
+            DelegationName = delegationName,
+            VisitType = visitType,
+            VisitTypeOther = visitTypeOther,
+            Purpose = purpose,
+            WorkingContent = workingContent,
 
             ContactPersonFullName = visit.ContactPersonFullName,
             ContactPersonOrganization = visit.ContactPersonOrganization,
             ContactPersonPhone = visit.ContactPersonPhone,
             ContactPersonEmail = visit.ContactPersonEmail,
 
-            WorkingLanguage = visit.WorkingLanguage,
-            TransportationNote = visit.TransportationNote,
-            MediaConsentStatus = visit.MediaConsentStatus,
-            MediaConsentNote = visit.MediaConsentNote,
+            WorkingLanguage = workingLanguage,
+            TransportationNote = transportationNote,
+            MediaConsentStatus = mediaConsentStatus,
+            MediaConsentNote = mediaConsentNote,
             PartnerId = visit.PartnerId.HasValue ? (long)visit.PartnerId.Value : null,
             PartnerName = partnerName,
             PartnerIsActive = partnerIsActive,
             PartnerProfileStatus = partnerProfileStatus,
-            NoteToFptu = visit.NoteToFptu,
+            NoteToFptu = noteToFptu,
 
             CampusVisits = instances
                 .OrderBy(i => i.PlannedStartAt)
@@ -154,28 +217,8 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
                 })
                 .ToList(),
 
-            Visitors = visit.GuestMembers
-                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(m => new EditableGuestMemberDto
-                {
-                    FullName = m.FullName,
-                    Organization = m.Organization,
-                    JobTitle = m.JobTitle,
-                    Nationality = m.Nationality,
-                })
-                .ToList(),
-            SupportMembers = visit.GuestMembers
-                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(m => new EditableGuestMemberDto
-                {
-                    FullName = m.FullName,
-                    Organization = m.Organization,
-                    JobTitle = m.JobTitle,
-                    Nationality = m.Nationality,
-                })
-                .ToList(),
+            Visitors = visitorMembers,
+            SupportMembers = supportMembers,
 
             ResubmissionCount = (int)visit.ResubmissionCount,
             LastResubmittedAt = visit.LastResubmittedAt,
@@ -196,4 +239,21 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
                 : new List<PreviousCampusDecisionDto>(),
         };
     }
+
+    private static EditableGuestMemberDto MapMember(Domain.Entities.Delegations.VisitGuestMember m) => new()
+    {
+        FullName = m.FullName,
+        Organization = m.Organization,
+        JobTitle = m.JobTitle,
+        Nationality = m.Nationality,
+    };
+
+    // Maps a v2 per-campus member row (resolved via IVisitFormReadService) to the flat editable DTO.
+    private static EditableGuestMemberDto MapRow(VisitFormMemberRow r) => new()
+    {
+        FullName = r.FullName,
+        Organization = r.Organization,
+        JobTitle = r.JobTitle,
+        Nationality = r.Nationality,
+    };
 }
