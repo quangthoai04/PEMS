@@ -95,6 +95,100 @@ export const verifyAndCreateVisitRequestV2 = (
   .post<V2CreateResponse>('/v2/visit-requests/verify', { form: payload, otpCode, sessionToken })
   .then(r => r.data);
 
+// ── Central v2 read model (GET /v2/visit-requests/{id}) ──────────────────────
+// The backend resolves v1 (projection dual-read) and v2 (per-campus details) into ONE
+// shape and returns ONLY the campus instances the caller may see — hidden campuses never
+// appear and never influence counts. The client renders this payload verbatim.
+
+export interface ResolvedMember {
+  guestMemberId: number;
+  memberType: string;
+  fullName: string;
+  organization: string;
+  jobTitle: string;
+  nationality: string;
+  displayOrder: number;
+}
+
+export interface ResolvedCampusVisit {
+  visitInstanceId: number;
+  campusId: number;
+  campusCode: string;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  timezone: string;
+  instanceStatus: string;
+  currentHostUserId: number | null;
+  currentHostName: string | null;
+  decidedByUserId: number | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionActorRole: string | null;
+  decisionNote: string | null;
+  delegationName: string;
+  visitType: string;
+  visitTypeOther: string | null;
+  purpose: string;
+  workingContent: string | null;
+  visitors: ResolvedMember[];
+  supportMembers: ResolvedMember[];
+  operationalContact: V2ContactPointDto;
+  workingLanguage: string;
+  transportationNote: string | null;
+  mediaConsentStatus: string;
+  mediaConsentNote: string | null;
+  noteToFptu: string | null;
+  formRevision: number;
+  approvalRevision: number;
+  rowVersion: number;
+  activeAmendment: {
+    amendmentId: number;
+    amendmentNo: number;
+    status: string;
+    requestedAt: string;
+    changedFieldCount: number;
+  } | null;
+}
+
+export interface ResolvedVisitForm {
+  visitRequestId: number;
+  requestCode: string;
+  formSchemaVersion: number;
+  hasMixedCampusDetails: boolean;
+  visitScope: string;
+  requestStatus: string;
+  createdSource: string;
+  submittedAt: string;
+  partnerId: number | null;
+  registrant: {
+    fullName: string;
+    organization: string;
+    jobTitle: string;
+    phone: string;
+    email: string;
+    nationality: string;
+  };
+  primaryContact: {
+    fullName: string;
+    organization: string;
+    phone: string;
+    email: string;
+    accessStatus: string; // PENDING_CONFIRMATION | ACTIVE
+    verifiedAt: string | null;
+  };
+  campusVisits: ResolvedCampusVisit[];
+  viewer: {
+    relation: string; // HOST | STAFF_LEADER | HO | VISITOR_OWNER | REGISTRANT | IC_SUPPORT | DEPT_SUPPORT | STUDENT | NONE
+    canViewAllCampuses: boolean;
+    isReadOnly: boolean;
+    allowedActions: string[];
+  };
+}
+
+export const getVisitRequestFormV2 = (visitRequestId: number) =>
+  httpClient.get<ResolvedVisitForm>(`/v2/visit-requests/${visitRequestId}`).then(r => r.data);
+
 // ── Pending edit / resubmit (stable visitInstanceId + row versions) ───────────
 
 export interface V2CampusVisitEdit extends V2CampusVisitForm {

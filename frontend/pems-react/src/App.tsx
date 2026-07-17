@@ -7,6 +7,7 @@ import React, { useEffect } from 'react';
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import VisitContactInvitationPage from './pages/identity/VisitContactInvitationPage';
 import VisitRequestV2Page from './pages/visit/VisitRequestV2Page';
+import VisitRequestV2DetailPage from './pages/dashboard/visit/VisitRequestV2DetailPage';
 import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -192,6 +193,7 @@ export default function App() {
             <Route path="visit/create" element={<CreateVisitRequest />} />
             {/* Visitor sửa đơn pending / sửa & gửi lại đơn bị từ chối (owner-only, backend re-check) */}
             <Route path="visit/edit/:visitRequestId" element={<EditVisitRequest />} />
+            <Route path="visit/v2/:visitRequestId" element={<VisitRequestV2DetailPage />} />
             <Route path="visit/resubmit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />

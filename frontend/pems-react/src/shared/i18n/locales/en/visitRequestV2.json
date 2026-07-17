@@ -102,5 +102,36 @@
   },
   "common": {
     "cancel": "Cancel"
+  },
+  "detail": {
+    "cardAria": "Campus detail {{campus}}",
+    "amendmentBadge": "Amendment #{{no}} pending",
+    "peopleToggle": "Delegation list ({{visitors}} guests, {{support}} support)",
+    "host": "Host",
+    "decision": "Decision",
+    "revision": "Revision",
+    "revisionValue": "Content v{{form}} · Approval v{{approval}}",
+    "loading": "Loading request detail…",
+    "notfound": "Request not found or the per-campus feature is not enabled.",
+    "forbidden": "You are not allowed to view this request.",
+    "generic": "Could not load the request detail. Please retry.",
+    "campusTotal": "{{count}} campus(es)",
+    "mixedLabel": "Varies by campus",
+    "submittedAt": "Submitted at",
+    "primaryContact": "Contact person",
+    "contactPending": "Unconfirmed",
+    "historyTitle": "Change history",
+    "backToList": "Back to request list"
+  },
+  "status": {
+    "PENDING": "Pending",
+    "ASSIGNED": "Assigned",
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "CANCELLED": "Cancelled",
+    "COMPLETED": "Completed",
+    "PENDING_APPROVAL": "Pending approval",
+    "PARTIALLY_APPROVED": "Partially approved",
+    "IN_PROGRESS": "In progress"
   }
 }

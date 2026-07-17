@@ -285,7 +285,33 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
     migration + never-shadow rule, secret sanitize), hook (add/copy/remove independence, two-step
     apply-to-all, public initiate→verify same submissionId + real v2 payload, authenticated direct
     create, invalid → no API call + first-error campus index).
-- **G-3 read/detail/workflow UX** — ⬜ pending.
+- **G-3 read/detail/workflow UX** — ✅ DONE:
+  - API: `getVisitRequestFormV2` typed to the central dual-read model (`ResolvedVisitForm` —
+    viewer relation/canViewAllCampuses/isReadOnly/allowedActions + per-campus decision/host/
+    revisions/activeAmendment). The client renders the scoped payload VERBATIM: hidden campuses
+    never appear, no role-name authorization on the client, no first-campus projection.
+  - `CampusVisitDetailCard` — the ONE read-only per-campus component (status chip, schedule,
+    content, collapsible people tables with aria-expanded, operational contact, requirements,
+    host/decision/revision block, pending-amendment badge, children slot).
+  - `VisitRequestV2DetailView` — request-level data exactly once (+ `Khác nhau theo cơ sở` /
+    `Varies by campus` badge only when >1 VISIBLE campuses differ), wires the G-1 panels into a
+    real screen: ContactIdentityPanel (registrant/ACTIVE-contact manager only, hidden for
+    read-only HO), per-campus VisitAmendmentPanel (decide = STAFF_LEADER, withdraw = manager;
+    allowedActions stay UX-only — backend re-authorizes), VisitHistoryTimeline (masked, scoped).
+  - Route `/dashboard/visit/v2/:visitRequestId` (`VisitRequestV2DetailPage`).
+  - Legacy conflict routing: `formVersionErrors.ts` (`isFormVersionUpgradeRequired` matches the
+    stable errorCode only) + EditVisitRequest load AND submit paths now navigate to the v2
+    detail instead of showing the raw 409.
+  - i18n `visitRequestV2.detail/status.*` (vi+en); statuses degrade gracefully via defaultValue.
+  - Tests **46/46** total (`npm run test:unit`; +13 for G-3): card renders own snapshot only,
+    accessible people toggle, amendment badge, OTHER-type text; view mixed-vs-same label rules,
+    scoped single-card-no-sibling-hint case, identity panel present/absent by viewer, Staff-
+    Leader amendment decision vs read-only HO, masked history rendered as-is, 404 (flag OFF)
+    friendly message with no fallback fetch; 409 code-not-message matching.
+- **Deferred within Phase G (documented)**: a dedicated v2 EDIT/RESUBMIT form page (the
+  pending-edit/resubmit API client, payload builder + tests shipped in G-2; the create form
+  component is reusable for it) and the public form's OTP initiate remains the v1 endpoint
+  (backend gap — report §6). Neither blocks flag-OFF production.
 ## Phase H — final verification + E2E + rollout readiness — ⬜ pending
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

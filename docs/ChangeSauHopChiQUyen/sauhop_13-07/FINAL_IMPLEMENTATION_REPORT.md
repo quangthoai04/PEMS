@@ -208,10 +208,18 @@ unregisters; error badge; ≤5MB per-campus Excel), `VisitRequestFormV2` + `Visi
 no silent v1 fallback), i18n namespace `visitRequestV2` (vi+en). **Vitest+RTL introduced**: `npm run
 test:unit` → 33/33. Fixed two G-1 client/contract bugs (flattened verify body; V2EditPayload missing
 registrant/primaryContact/partnerId).
-**G-3 ⬜ remaining** detail view per campus with own status/host/revision; edit-pending/resubmit v2 UI;
-wiring identity/amendment/history panels into the real detail screens; mixed-state labels; legacy 409 routed
-to a v2 experience (no raw technical error); VI/EN + a11y + component tests. Gate: `npm run build` AND
-`npm run lint` AND `npm run test:unit` all 0 failures.
+**G-3 ✅** per-campus read/detail/workflow UX: `getVisitRequestFormV2` client on the central dual-read model;
+`CampusVisitDetailCard` (ONE read-only component reused everywhere — status/schedule/content/people tables
+with aria-expanded, operational contact, host/decision/revision, amendment badge); `VisitRequestV2DetailView`
+(request-level once + "Khác nhau theo cơ sở"/"Varies by campus" only when >1 VISIBLE campuses, G-1 panels
+wired: identity for the manager, amendment decide for STAFF_LEADER / withdraw for the manager, masked
+history; the scoped payload is rendered verbatim — hidden campuses never appear and read-only HO gets no
+action buttons); route `/dashboard/visit/v2/:id`; legacy `FORM_VERSION_UPGRADE_REQUIRED` (code-matched, never
+message text) now routes EditVisitRequest load+submit to the v2 screen instead of a raw 409; i18n
+detail/status keys vi+en. Gates: `npm run lint` 0, `npm run test:unit` **46/46**, `npm run build` green.
+**Deferred within G (documented, not flag-OFF-blocking)**: a dedicated v2 EDIT/RESUBMIT form page (its API
+client + payload builder + tests shipped in G-2; the create form component is reusable) and the public OTP
+initiate v2 endpoint (backend gap below).
 
 ### Phase H — final verification + E2E + rollout readiness
 SQL fresh import + verify + upgrade/backfill/idempotency/rollback on disposable MySQL; dotnet build; full
@@ -235,15 +243,16 @@ schema; test on disposable DB; **never run destructive migration on a real DB**;
   appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test/pems_it_regression
   v2_requests = 0, identity_changes = 0, claim tokens = 0; no live appsettings carries a PerCampusFormV2
   section (both flags default OFF).
-- Frontend (new since G-2): `npm run test:unit` (Vitest+RTL, first suite in the repo) **33/33**;
+- Frontend (end of G-3): `npm run test:unit` (Vitest+RTL, first suite in the repo) **46/46**;
   `npm run lint` (tsc) 0 errors; `vite build` green (pre-existing chunk-size warning only).
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
   commits (B-1 `1d056fd7`, B-2 `a5cb3977`). The merged tree is green, so Phase-A/B behavior is intact.
-- Phases B, C, D (incl. **D-4 TRANSFER 24h**), E (safe-edit + amendments + history) and F (Class-C surface
-  migration + zero-unclassified report) are **done**; frontend G-1 + G-2 are done, G-3 (detail/workflow
-  wiring) remains; then H (E2E/rollout) and I (guarded contract-drop prep).
+- Phases B, C, D (incl. **D-4 TRANSFER 24h**), E (safe-edit + amendments + history), F (Class-C surface
+  migration + zero-unclassified report) and G (frontend G-1/G-2/G-3, with the two documented in-phase
+  deferrals: v2 edit-form page + v2 public initiate endpoint) are **done**; next: H (E2E/rollout
+  verification), then I (guarded contract-drop prep, disposable DB only).
 - **Public v2 OTP initiate gap (backend, needed before flag-ON)**: there is no `/api/v2/visit-requests/initiate`.
   The public v2 form mints its OTP through the v1 `POST /visit-requests/initiate`, whose validator
   (`ApplyVisitRequestFormRules`) enforces the v1 shape — ≥3h slot duration and ≥1 support member — while v2

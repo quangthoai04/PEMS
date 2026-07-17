@@ -102,5 +102,36 @@
   },
   "common": {
     "cancel": "Hủy"
+  },
+  "detail": {
+    "cardAria": "Chi tiết cơ sở {{campus}}",
+    "amendmentBadge": "Đề xuất #{{no}} chờ duyệt",
+    "peopleToggle": "Danh sách đoàn ({{visitors}} khách, {{support}} hỗ trợ)",
+    "host": "Người tiếp đón (Host)",
+    "decision": "Quyết định",
+    "revision": "Phiên bản",
+    "revisionValue": "Nội dung v{{form}} · Phê duyệt v{{approval}}",
+    "loading": "Đang tải chi tiết đơn…",
+    "notfound": "Không tìm thấy đơn hoặc tính năng theo-từng-cơ-sở chưa được bật.",
+    "forbidden": "Bạn không có quyền xem đơn này.",
+    "generic": "Không tải được chi tiết đơn. Vui lòng thử lại.",
+    "campusTotal": "{{count}} cơ sở",
+    "mixedLabel": "Khác nhau theo cơ sở",
+    "submittedAt": "Gửi lúc",
+    "primaryContact": "Đầu mối liên hệ",
+    "contactPending": "Chưa xác nhận",
+    "historyTitle": "Lịch sử thay đổi",
+    "backToList": "Về danh sách đơn"
+  },
+  "status": {
+    "PENDING": "Chờ xử lý",
+    "ASSIGNED": "Đã phân công",
+    "APPROVED": "Đã duyệt",
+    "REJECTED": "Từ chối",
+    "CANCELLED": "Đã hủy",
+    "COMPLETED": "Hoàn tất",
+    "PENDING_APPROVAL": "Chờ duyệt",
+    "PARTIALLY_APPROVED": "Duyệt một phần",
+    "IN_PROGRESS": "Đang diễn ra"
   }
 }
