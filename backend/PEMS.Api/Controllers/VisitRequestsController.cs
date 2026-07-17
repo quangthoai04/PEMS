@@ -340,4 +340,104 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     public sealed record ReplacePendingContactBody(string FullName, string Organization, string Phone, string Email);
+
+    // ── Per-campus v2 primary-contact TRANSFER, 24h (plan §16.4/§4.4, D-4) ───────────────────
+    // The current ACTIVE owner keeps every right until the invited person logs in with the matching
+    // Google account and explicitly accepts. The generic anonymous email-action handler rejects
+    // the transfer context; the anonymous landing below is masked-only and mutation-free.
+
+    /// <summary>Registrant or current ACTIVE contact proposes handing the contact role to a new email.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer")]
+    [Authorize]
+    public async Task<IActionResult> InitiateContactTransfer(
+        ulong visitRequestId,
+        [FromBody] InitiateContactTransferBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.InitiateVisitContactTransferCommand(
+                visitRequestId, body.FullName, body.Organization, body.Phone, body.Email, body.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record InitiateContactTransferBody(
+        string FullName, string Organization, string Phone, string Email, string? Reason);
+
+    /// <summary>Owner-side state of the pending transfer (masked email only).</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/contact-transfer")]
+    [Authorize]
+    public async Task<IActionResult> GetActiveContactTransfer(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.GetActiveVisitContactTransferQuery(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Re-sends the pending transfer invitation (old links die, 24h restarts).</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer/resend")]
+    [Authorize]
+    public async Task<IActionResult> ResendContactTransfer(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.ResendVisitContactTransferCommand(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Cancels the pending transfer; the current owner stays ACTIVE.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer/cancel")]
+    [Authorize]
+    public async Task<IActionResult> CancelContactTransfer(
+        ulong visitRequestId,
+        [FromBody] CancelContactTransferBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.CancelVisitContactTransferCommand(
+                visitRequestId, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record CancelContactTransferBody(string? Reason);
+
+    /// <summary>Anonymous masked landing summary for a contact-transfer link.</summary>
+    [HttpGet("/api/public/visit-contact-transfers/{token}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetContactTransferInfo(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.GetVisitContactTransferInfoQuery(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited person (logged in with the matching Google account) ACCEPTS the transfer:
+    /// visitor_user_id + the contact snapshot swap in one transaction; the old account stays ACTIVE.</summary>
+    [HttpPost("/api/v2/visit-contact-transfers/{token}/accept")]
+    [Authorize]
+    public async Task<IActionResult> AcceptContactTransfer(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.AcceptVisitContactTransferCommand(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited person DECLINES the transfer. The current owner keeps everything.</summary>
+    [HttpPost("/api/v2/visit-contact-transfers/{token}/decline")]
+    [Authorize]
+    public async Task<IActionResult> DeclineContactTransfer(
+        string token,
+        [FromBody] DeclineContactClaimBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.DeclineVisitContactTransferCommand(
+                token, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
 }

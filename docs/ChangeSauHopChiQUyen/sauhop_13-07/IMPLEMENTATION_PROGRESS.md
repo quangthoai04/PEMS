@@ -101,7 +101,7 @@ v1 byte-identical): GetVisitInvitationDetail `5ee29ab3`, GetStaffCalendarDetail 
 fresh `pems_it_regression` from the PR-2 master; appsettings restored `pems_test`; pems_db/pems_pr3_test
 v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
 
-## Phase D — identity claim + cancel 3A + expiry/redaction job — 🚧 IN PROGRESS
+## Phase D — identity claim + TRANSFER + cancel 3A + expiry/redaction job — 🚧 IN PROGRESS (D-4 in flight)
 - **D-1 INITIAL_CLAIM workflow (plan §16.4/§4.4)** — ✅ DONE.
   - SQL: master + idempotent `06_up_identity_claim_tokens.sql` extend the `email_action_tokens` ENUMs with
     `VISIT_CONTACT_CLAIM` / `VISIT_REQUEST_IDENTITY_CHANGE` (applied to pems_pr3_test; pems_db/pems_test untouched).
@@ -138,14 +138,49 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   masked email/kind/status/actors/timestamps KEPT; event `IDENTITY_CHANGE_REDACTED` + audit). Hosted job
   `VisitContactClaimMaintenanceHostedService` (poll `IdentityClaims:PollSeconds` 600s, batch 200) runs
   flag-independent (existing v2 data must age out even if flags turn off). APPLIED never redacted here.
-  - Deferred (documented, out of DoD scope for D): TRANSFER workflow (owner→owner handoff, 24h) — plan
-    explicitly separates it; OTP_FALLBACK confirmation method (Product hasn't enabled non-Google).
   - Tests `VisitContactClaimWorkflowTests` **7/7** (committed + child-first cleanup, pems_pr3_test v2=0):
     accept happy path (link/ACTIVE/rowversion/campus untouched/replay-blocked) · wrong-account EMAIL_MISMATCH +
     flag-off 404 write nothing · decline terminal-but-alive · resend supersedes old link + new link works ·
     maintenance expiry→accept-refused→EXPIRED→redaction (PII gone, masked kept, idempotent) · cancel-3A allowed
     while pending (claim CANCELLED + 3A audit) and Forbidden after accept · replace re-invite (old claim
     SUPERSEDED, C accepts new link) + replace-with-registrant-email instant ACTIVE. v2 group **46/46**.
+- **D-4 primary-contact TRANSFER 24h (handoff §6)** — ✅ DONE.
+  - SQL: master + idempotent `07_up_transfer_tokens.sql` append `VISIT_CONTACT_TRANSFER` to the
+    `email_action_tokens.action_context` ENUM (applied twice to pems_pr3_test — idempotent; pems_db/pems_test
+    untouched). Transfer reuses the identity-change row (`change_kind=TRANSFER`, DB pending-guard = one
+    PENDING change per request/relation across BOTH kinds) + token store; NO new tables.
+  - Initiate `POST /api/v2/visit-requests/{id}/contact-transfer` — registrant or CURRENT ACTIVE contact only;
+    requires an established owner (unclaimed contact → `CONTACT_ACCOUNT_NOT_ACTIVE`, that's claim territory);
+    lifecycle gate: CANCELLED / any instance DURING_VISIT+ / earliest active start <24h all block; target
+    rules: same-email `IDENTITY_CHANGE_EMAIL_UNCHANGED`, internal account
+    `CONTACT_EMAIL_INTERNAL_ACCOUNT_CONFLICT`, inactive visitor `IDENTITY_CHANGE_TARGET_NOT_ALLOWED`;
+    captures old_user_id/old_email + pending snapshot + `expected_request_row_version`; expiry **24h**
+    (never 72h); pending pre-check (FOR UPDATE) + DB guard race both → stable 409
+    `IDENTITY_CHANGE_ALREADY_PENDING`; event+audit `PRIMARY_CONTACT_TRANSFER_REQUESTED` (masked); invitation
+    token+email post-commit (own context, FE page `/visit-contact-transfer/{token}`).
+  - Landing `GET /api/public/visit-contact-transfers/{token}` — masked-only, mutation-free, unknown token ==
+    malformed (no enumeration). Accept/decline `POST /api/v2/visit-contact-transfers/{token}/accept|decline`
+    ([Authorize], exact invited email via the actor's DB row, VISITOR+ACTIVE): accept = one txn on the
+    FOR-UPDATE-locked change — re-checks owner still == old_user_id, `expected_request_row_version` stamp
+    (resend RE-STAMPS it so legit edits between invitations never brick the accept), lifecycle window —
+    then swaps ONLY `visitor_user_id` + contact snapshot, keeps access ACTIVE, bumps row version, burns
+    tokens, event+audit `PRIMARY_CONTACT_TRANSFER_APPLIED`; campus decision/status/host/schedule untouched;
+    the OLD account is never locked/deleted (only the relation moves); post-commit notifications to old
+    owner + registrant. Replay by the accepted user → idempotent applied response (no second swap);
+    concurrent accepts serialize on the row lock (one winner). Decline/cancel/expire keep the old owner.
+  - Manage: `GET/POST .../contact-transfer[/resend|/cancel]` (registrant or current ACTIVE owner; resend
+    supersedes-tokens-first, restarts **24h**, cap 5; cancel → CANCELLED + retention stamp). Maintenance
+    sweep now kind-aware: expiry event `PRIMARY_CONTACT_TRANSFER_EXPIRED` for TRANSFER rows (deadline is
+    per-row: claim 72h / transfer 24h); redaction (90d) unchanged, APPLIED never redacted. Generic anonymous
+    email-action handlers reject the transfer context too. Cancel-3A is NOT opened by a pending transfer
+    (access stays ACTIVE with an owner → the registrant exception never fires; tested).
+  - OTP_FALLBACK remains deliberately deferred (Product has not enabled non-Google confirmation).
+  - Tests `VisitContactTransferWorkflowTests` **6/6**: accept-swaps-relation-only (old rights until apply,
+    24h stamp, campus+old-account untouched, idempotent replay) · initiate guard matrix (unrelated
+    forbidden/same-email/internal/flag-off/double-pending/unclaimed-contact) · wrong-account + stale
+    row-version → resend re-stamps → new link applies · decline/cancel/expiry all keep the old owner
+    (kind-aware expiry event) · pending transfer does NOT open cancel-3A · masked landing + owner state view
+    (old owner loses the view after apply).
 
 ## Phase E — safe edit + post-approval amendment — ⬜ pending
 ## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending

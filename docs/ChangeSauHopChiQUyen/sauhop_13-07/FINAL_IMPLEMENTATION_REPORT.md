@@ -135,12 +135,26 @@ territory). Cancel-3A: the REGISTRANT may cancel a PENDING request while access 
 the same 24h/reason rules, audited `VISIT_REQUEST_CANCELLED_BY_REGISTRANT_PENDING_CONTACT`, pending claims
 CANCELLED + tokens burned in-txn; exception disappears once ACTIVE.
 **D-3 job**: `VisitContactClaimMaintenanceService.RunOnceAsync` — idempotent FOR-UPDATE-batched EXPIRE
-(PENDING past 72h → EXPIRED + retention + event + tokens dead; request NOT cancelled) and REDACT (terminal past
-90d → full email/snapshot/reason nulled + token recipient masked; masked email/kind/status/actors/timestamps
-kept; `IDENTITY_CHANGE_REDACTED` event+audit); hosted `VisitContactClaimMaintenanceHostedService` (600s/200,
-flag-independent). **Deferred to a later phase (documented)**: TRANSFER workflow (24h owner handoff) and
-OTP_FALLBACK confirmation (non-Google not enabled by Product).
-Tests: `VisitContactClaimWorkflowTests` **7/7**; v2 group **46/46**.
+(PENDING past its per-row deadline → EXPIRED + retention + event + tokens dead; request NOT cancelled) and
+REDACT (terminal past 90d → full email/snapshot/reason nulled + token recipient masked; masked
+email/kind/status/actors/timestamps kept; `IDENTITY_CHANGE_REDACTED` event+audit); hosted
+`VisitContactClaimMaintenanceHostedService` (600s/200, flag-independent).
+**D-4 primary-contact TRANSFER 24h (handoff §6)**: the registrant or the CURRENT ACTIVE contact proposes
+handing the role to a new email (`POST /api/v2/visit-requests/{id}/contact-transfer` + GET state/resend/
+cancel); the old owner keeps every right until the invited person — logged in with the exactly-matching
+Google account — explicitly accepts (`/api/v2/visit-contact-transfers/{token}/accept`); the swap of
+`visitor_user_id` + the contact snapshot happens in the same transaction as PENDING→APPLIED on the
+FOR-UPDATE-locked change row; access stays ACTIVE throughout; campus decisions/status/host/schedule are never
+touched and the old ACCOUNT is never locked/deleted. 24h expiry (resend restarts 24h + re-stamps
+`expected_request_row_version` so legit edits between invitations never brick the accept), one PENDING change
+per request via the DB guard (`IDENTITY_CHANGE_ALREADY_PENDING`), masked anonymous landing
+(`/api/public/visit-contact-transfers/{token}`, enumeration-safe), invited-side decline + owner-side cancel
+keep the old owner, kind-aware expiry event `PRIMARY_CONTACT_TRANSFER_EXPIRED`, and a pending transfer does
+NOT open cancel-3A (contact is still ACTIVE). New SQL: `07_up_transfer_tokens.sql` (+master) appends the
+`VISIT_CONTACT_TRANSFER` token context (additive+idempotent; applied to pems_pr3_test only).
+**Deferred (documented)**: OTP_FALLBACK confirmation (non-Google not enabled by Product) — TRANSFER does not
+depend on it (Google SSO exact-email, same as the claim).
+Tests: `VisitContactClaimWorkflowTests` **7/7** + `VisitContactTransferWorkflowTests` **6/6**.
 
 ### Phase E — safe edit + post-approval amendment (plan §16.6)
 Safe/correction fields apply immediately (+revision, audit, notify); privacy-urgent media→DECLINED applies even
@@ -191,13 +205,13 @@ schema; test on disposable DB; **never run destructive migration on a real DB**;
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
   commits (B-1 `1d056fd7`, B-2 `a5cb3977`). The merged tree is green, so Phase-A/B behavior is intact.
 - Phases B (create-v2 + B-2.5 close-out), C (pending-edit + resubmit) and D (INITIAL_CLAIM + cancel-3A +
-  expiry/redaction job) are **done**. Everything downstream (TRANSFER workflow, amendments/safe-edit,
+  expiry/redaction job + **D-4 TRANSFER 24h**) are **done**. Everything downstream (amendments/safe-edit,
   list/search/report/export/email migration, frontend, E2E, contract cleanup) is **not yet implemented**;
   §4 is the ready-to-execute spec, Phase E next.
-- Phase D scope note: the TRANSFER (owner→owner, 24h) state machine and the OTP_FALLBACK confirmation method
-  are deliberately deferred (plan treats them as separable; Product has not enabled non-Google confirmation).
-  The `06_up_identity_claim_tokens.sql` additive ENUM patch was applied to **pems_pr3_test** (the dedicated
-  direct-handler test DB) so claim tokens can be minted there; pems_db/pems_test remain untouched.
+- Phase D scope note: only the OTP_FALLBACK confirmation method remains deliberately deferred (Product has
+  not enabled non-Google confirmation; TRANSFER does not depend on it). The `06_up_identity_claim_tokens.sql`
+  and `07_up_transfer_tokens.sql` additive ENUM patches were applied to **pems_pr3_test** (the dedicated
+  direct-handler test DB) so claim/transfer tokens can be minted there; pems_db/pems_test remain untouched.
 - v2 create/edit notifications are post-commit **best-effort** (no outbox in the project): a rollback never
   notifies and an idempotent replay never re-notifies, but a crash between commit and dispatch can drop a
   notification — documented, not exactly-once.
