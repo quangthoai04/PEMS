@@ -440,4 +440,109 @@ public sealed class VisitRequestsController : ControllerBase
             cancellationToken);
         return Ok(result);
     }
+
+    // ── Per-campus v2 safe edit + amendments (plan §16.6, Phase E) ───────────────────────────
+    // The backend classifier is the only authority: the safe endpoint fails closed on anything
+    // approval-sensitive; approval-sensitive/structural changes of a DECIDED campus go through
+    // per-campus amendments and the ACTIVE snapshot never moves before the Staff Leader approves.
+
+    /// <summary>Applies safe/correction fields immediately (registrant/contact display data, notes,
+    /// media consent — a consent WITHDRAWAL applies even &lt;24h with an URGENT notification).</summary>
+    [HttpPatch("/api/v2/visit-requests/{visitRequestId}/safe-details")]
+    [Authorize]
+    public async Task<IActionResult> PatchSafeDetails(
+        ulong visitRequestId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestSafeEditDto patch,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.SubmitVisitSafeEditCommand(visitRequestId, patch),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Submits an approval-sensitive change proposal for ONE decided campus instance.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/amendments")]
+    [Authorize]
+    public async Task<IActionResult> SubmitAmendment(
+        ulong visitRequestId, ulong visitInstanceId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitAmendmentProposalDto proposal,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.SubmitVisitAmendmentCommand(
+                visitRequestId, visitInstanceId, proposal),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The instance's pending amendment (scoped; null when none).</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/amendments/active")]
+    [Authorize]
+    public async Task<IActionResult> GetActiveAmendment(
+        ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.GetActiveVisitAmendmentQuery(
+                visitRequestId, visitInstanceId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Requester withdraws their pending amendment; the active snapshot stays.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/amendments/{amendmentId}/withdraw")]
+    [Authorize]
+    public async Task<IActionResult> WithdrawAmendment(
+        ulong visitRequestId, ulong visitInstanceId, ulong amendmentId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.WithdrawVisitAmendmentCommand(
+                visitRequestId, visitInstanceId, amendmentId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Current campus Staff Leader APPROVES the amendment — the patch applies atomically,
+    /// form+approval revisions bump, sibling campuses and approval statuses never reset.</summary>
+    [HttpPost("/api/v2/visit-instances/{visitInstanceId}/amendments/{amendmentId}/approve")]
+    [Authorize]
+    public async Task<IActionResult> ApproveAmendment(
+        ulong visitInstanceId, ulong amendmentId,
+        [FromBody] AmendmentDecisionBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.ApproveVisitAmendmentCommand(
+                visitInstanceId, amendmentId, body?.Note),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Current campus Staff Leader REJECTS the amendment (reason required); nothing changes.</summary>
+    [HttpPost("/api/v2/visit-instances/{visitInstanceId}/amendments/{amendmentId}/reject")]
+    [Authorize]
+    public async Task<IActionResult> RejectAmendment(
+        ulong visitInstanceId, ulong amendmentId,
+        [FromBody] AmendmentDecisionBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.RejectVisitAmendmentCommand(
+                visitInstanceId, amendmentId, body.Note ?? string.Empty),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record AmendmentDecisionBody(string? Note);
+
+    /// <summary>Scoped, masked business-history timeline of the request.</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/history")]
+    [Authorize]
+    public async Task<IActionResult> GetHistory(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.GetVisitRequestHistoryQuery(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
 }

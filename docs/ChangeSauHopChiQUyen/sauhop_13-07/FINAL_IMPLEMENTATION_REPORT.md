@@ -156,12 +156,24 @@ NOT open cancel-3A (contact is still ACTIVE). New SQL: `07_up_transfer_tokens.sq
 depend on it (Google SSO exact-email, same as the claim).
 Tests: `VisitContactClaimWorkflowTests` **7/7** + `VisitContactTransferWorkflowTests` **6/6**.
 
-### Phase E — safe edit + post-approval amendment (plan §16.6)
-Safe/correction fields apply immediately (+revision, audit, notify); privacy-urgent media→DECLINED applies even
-<24h HIGH/URGENT; approval-sensitive fields → per-campus amendment PENDING_APPROVAL (one pending per instance);
-approved snapshot stays active until Staff-Leader approves; approve = atomic patch + bump form_revision &
-approval_revision + immutable revision snapshot + field-level old/new; reject/withdraw leaves snapshot; no
-reset of sibling campuses; lock self-service from DURING_VISIT.
+### Phase E — safe edit + post-approval amendment (plan §16.6) — ✅ DONE (this session)
+`VisitFieldClassifier` = THE single backend classification table (SAFE / PRIVACY_URGENT [media→DECLINED only] /
+APPROVAL_SENSITIVE / STRUCTURAL; unknown paths fail closed — the primary-contact email is deliberately
+unclassified: identity workflow only). Safe edit `PATCH /api/v2/visit-requests/{id}/safe-details`
+(`VisitSafeEditService`): server-side diff of the safe subset, FOR-UPDATE + request/instance row-version 409s,
+24h cutoff with the media-WITHDRAWAL exemption (applies even <24h, URGENT notification incl. Host), target-only
+apply + form_revision bump + SAFE_EDIT revision snapshots + canonical (mixed/fingerprint/projection) recompute +
+field-level audit `VISIT_SAFE_FIELDS_UPDATED`. Amendments (`VisitAmendmentService`): submit stores an IMMUTABLE
+per-field proposal for ONE decided (ASSIGNED/BEFORE_VISIT) instance ≥24h before start — one PENDING per
+instance (DB guard), base form/approval-revision conflicts are stable 409s, NOTHING active mutates; approve is
+restricted to the CURRENT campus Staff Leader and applies target-only on the locked amendment (scalars +
+schedule + member copy-on-write) with form+approval revision bumps, post-apply revision snapshot, canonical
+recompute and audits (`VISIT_AMENDMENT_APPROVED` + `VISIT_INSTANCE_FORM_REVISION_APPLIED`) — sibling campuses
+and approval statuses never reset; reject (reason required)/withdraw/expire leave the active snapshot;
+`VisitAmendmentExpiryHostedService` sweeps overdue/started pending amendments idempotently. Scoped
+metadata-only history timeline at `GET /api/v2/visit-requests/{id}/history` (masked identity events for
+managers/HO only; leaders/hosts see only their scope; proposals never presented as active).
+Tests: `VisitSafeEditV2Tests` 4/4 + `VisitAmendmentV2Tests` 4/4; v2 group **60/60**.
 
 ### Phase F — list/search/dashboard/calendar/report/export/email (audit map §5/§6, plan §16.9)
 Migrate every Class-C surface in `PR3_PRE_PR4_AUDIT_MAP.md`: dashboards, calendars, invitation lists, search

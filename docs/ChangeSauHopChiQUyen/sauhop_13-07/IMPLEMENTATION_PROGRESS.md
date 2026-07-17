@@ -182,7 +182,45 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
     (kind-aware expiry event) · pending transfer does NOT open cancel-3A · masked landing + owner state view
     (old owner loses the view after apply).
 
-## Phase E — safe edit + post-approval amendment — ⬜ pending
+## Phase E — safe edit + post-approval amendment — 🚧 IN PROGRESS
+- **E-1 classifier + safe edit (plan §16.6)** — ✅ DONE.
+  - `VisitFieldClassifier` (Application) — THE single backend classification table over stable dotted field
+    paths: SAFE (registrant name/org/job/phone; contact name/org/phone — NEVER the email; transportation
+    note; note-to-FPTU; media note), PRIVACY_URGENT (`instance.mediaConsentStatus → DECLINED` only),
+    APPROVAL_SENSITIVE (delegation/type/purpose/content/language/operational-contact/members), STRUCTURAL
+    (schedule). Unknown paths return null → every caller fails closed.
+  - `PATCH /api/v2/visit-requests/{id}/safe-details` + `IVisitSafeEditService`/`VisitSafeEditService`:
+    full-snapshot-of-the-safe-subset convention, server-side diff, FOR-UPDATE row-version guard →
+    stable 409 `VISIT_FORM_CONCURRENCY_CONFLICT` (request + per-instance), started/closed instances
+    rejected, the 24h cutoff blocks normal safe edits but the media WITHDRAWAL (+its note) applies even
+    inside it; apply = target-only detail mutation + form_revision bump + SAFE_EDIT instance/request
+    revision snapshots + canonical recompute (mixed can flip from a note change) + field-level audit
+    `VISIT_SAFE_FIELDS_UPDATED`; post-commit notify (URGENT priority + Host included for the withdrawal).
+- **E-2 amendments + history (plan §16.6)** — ✅ DONE.
+  - Submit `POST /api/v2/visit-requests/{id}/instances/{iid}/amendments`: requester side (registrant or
+    ACTIVE contact); instance must be DECIDED (ASSIGNED/BEFORE_VISIT — WAITING routes to pending-edit) and
+    start ≥24h away (`AMENDMENT_WINDOW_EXPIRED`); base form/approval revisions + instance row version must
+    match (`AMENDMENT_BASE_REVISION_CONFLICT` / concurrency 409); diff vs the ACTIVE detail → immutable
+    change rows (field_path, class, old/new JSON; empty diff rejected); ONE pending per instance (DB
+    guard + pre-check → `AMENDMENT_ALREADY_PENDING`); NOTHING active mutates; audit
+    `VISIT_AMENDMENT_SUBMITTED`; notify current campus leader + host.
+  - Decide: approve/reject `POST /api/v2/visit-instances/{iid}/amendments/{aid}/approve|reject` — ONLY the
+    CURRENT Staff Leader of that campus (`AMENDMENT_APPROVER_SCOPE_FORBIDDEN` for other-campus leader/HO/
+    Admin/Host/requester); approve = FOR-UPDATE-locked amendment + base re-check + target-only apply
+    (scalars/schedule/members via the C-1 copy-on-write ops) + form_revision AND approval_revision bump +
+    post-apply revision snapshot (history has exactly one row per revision by unique key) + canonical
+    recompute + audits `VISIT_AMENDMENT_APPROVED` + `VISIT_INSTANCE_FORM_REVISION_APPLIED`; sibling
+    campuses and approval statuses NEVER reset. Reject requires a reason; withdraw = requester side;
+    both leave the active snapshot untouched. Expire = `ExpireDueAsync` sweep (window passed or instance
+    started) + `VisitAmendmentExpiryHostedService` (600s/200, flag-independent, idempotent).
+  - History `GET /api/v2/visit-requests/{id}/history` — scoped metadata-only timeline (request/instance
+    revisions, amendments + decisions, campus decisions, masked identity events for managers/HO only);
+    leaders see only their campus, hosts only their instance; proposals never presented as active content.
+  - Tests: `VisitSafeEditV2Tests` **4/4** (classifier table incl. fail-closed contact-email; apply+revision+
+    audit+mixed-recompute+sibling-untouched; editor policy + stale-409s; cutoff + URGENT withdrawal) and
+    `VisitAmendmentV2Tests` **4/4** (submit immutability + duplicate/base/empty guards; approve scope matrix +
+    target-only apply + member copy-on-write + no-status-reset; reject/withdraw/expire keep active;
+    pending-instance + late-window rejections). v2 group **60/60**.
 ## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending
 ## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ⬜ pending
 ## Phase H — final verification + E2E + rollout readiness — ⬜ pending

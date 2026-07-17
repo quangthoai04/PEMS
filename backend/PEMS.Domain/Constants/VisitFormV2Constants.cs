@@ -62,6 +62,16 @@ public static class FormRevisionSourceTypes
     public const string Resubmit = "RESUBMIT";
 }
 
+/// <summary>visit_instance_amendment_changes.change_class — the BACKEND field classification
+/// (plan §16.6). The backend is the only source of classification; the frontend merely predicts.</summary>
+public static class AmendmentChangeClasses
+{
+    public const string Safe = "SAFE";
+    public const string PrivacyUrgent = "PRIVACY_URGENT";
+    public const string ApprovalSensitive = "APPROVAL_SENSITIVE";
+    public const string Structural = "STRUCTURAL";
+}
+
 // Stable error codes for per-campus form v2 read paths (surfaced as response.errorCode).
 public static class VisitFormV2ErrorCodes
 {
@@ -73,4 +83,18 @@ public static class VisitFormV2ErrorCodes
 
     // The actor is not allowed to view the requested campus instance scope.
     public const string VisitInstanceScopeForbidden = "VISIT_INSTANCE_SCOPE_FORBIDDEN";
+
+    // ── Phase E — safe edit + amendments (plan §16.6, handoff §7.8) ──
+
+    // The safe-edit endpoint received a change to a field outside the SAFE allowlist (fail closed).
+    public const string SafeEditFieldNotAllowed = "SAFE_EDIT_FIELD_NOT_ALLOWED";
+
+    // Optimistic-concurrency conflict on the safe-edit/amendment payload versions.
+    public const string VisitFormConcurrencyConflict = "VISIT_FORM_CONCURRENCY_CONFLICT";
+
+    public const string AmendmentAlreadyPending = "AMENDMENT_ALREADY_PENDING";
+    public const string AmendmentNotEditable = "AMENDMENT_NOT_EDITABLE";
+    public const string AmendmentBaseRevisionConflict = "AMENDMENT_BASE_REVISION_CONFLICT";
+    public const string AmendmentApproverScopeForbidden = "AMENDMENT_APPROVER_SCOPE_FORBIDDEN";
+    public const string AmendmentWindowExpired = "AMENDMENT_WINDOW_EXPIRED";
 }
