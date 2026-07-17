@@ -58,7 +58,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineInvitation
                     .Where(u => u.UserId == userId.Value)
                     .Select(u => u.FullName)
                     .FirstOrDefaultAsync(cancellationToken) ?? "Phòng ban";
-                var delegationName = p.VisitInstance.VisitRequest?.DelegationName ?? "Đoàn khách";
+                // Mixed per-campus v2: notification text uses THIS instance's detail name.
+                var delegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                    .ForInstancesAsync(_context, new[] { p.VisitInstanceId }, cancellationToken))
+                    .GetValueOrDefault(p.VisitInstanceId) ?? "Đoàn khách";
 
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(

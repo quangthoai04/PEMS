@@ -175,12 +175,20 @@ metadata-only history timeline at `GET /api/v2/visit-requests/{id}/history` (mas
 managers/HO only; leaders/hosts see only their scope; proposals never presented as active).
 Tests: `VisitSafeEditV2Tests` 4/4 + `VisitAmendmentV2Tests` 4/4; v2 group **60/60**.
 
-### Phase F — list/search/dashboard/calendar/report/export/email (audit map §5/§6, plan §16.9)
-Migrate every Class-C surface in `PR3_PRE_PR4_AUDIT_MAP.md`: dashboards, calendars, invitation lists, search
-(parent + campuses actor may see; scope-before-search; request once with match context; no hidden-campus leak),
-reports/invoice/export/print (instance output = target instance; request aggregate = per-campus SECTIONS, no
-smallest-campus projection), email preview/templates. Then a repository-wide 10-field audit producing a
-**zero-unclassified-reference** report.
+### Phase F — list/search/dashboard/calendar/report/export/email (audit map §5/§6, plan §16.9) — ✅ DONE (this session)
+~35 Class-C surfaces migrated with one uniform rule (audit map §10 lists them all): instance rows read
+`mixed-v2 ? instance.FormDetail.<field> : vr.<field>` (single FormDetail-nav JOIN, no N+1, NO global
+fallback for mixed), request rows that cannot show per-campus content are labeled "Khác nhau theo cơ sở",
+v1/non-mixed keep the byte-identical projection. Covers dashboards (HO/DeptLeader), calendars (staff/dept),
+invitation + assignment lists, guest delegation list (staff + visitor paths), feedback surfaces (search/
+summary/targets/pending/submit snapshots), minutes search + PDF/Excel exports, eligible-news, all report
+overviews + invoice/V2 item queries + send-email commands (visit_type filters mixed-aware; the Staff-Leader
+report resolves mixed via THEIR campus's detail), conflict/busy labels, related-visitor + document detail,
+and instance-scoped notification/email texts. Keyword search is scope-before-keyword and matches per-
+instance details for mixed v2 — a hidden sibling campus's content can no longer produce a hit for an
+instance-scoped actor. Repository-wide 10-field sweep → **ZERO unclassified production references**
+(classification table in audit map §10). Tests: `V2MixedListSurfacesTests` 2/2 (helper matrix + Staff
+calendar end-to-end per-campus names).
 
 ### Phase G — frontend (plan §7/§8/§9)
 Common registrant + request-level primary contact + campus cards/tabs, each with independent schedule/form/

@@ -51,6 +51,11 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken);
 
+        // Mixed per-campus v2: this feedback screen is INSTANCE-scoped → THIS instance's detail name.
+        var effectiveDelegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(instance.VisitInstanceId);
+
         var myFeedbacks = await _db.Feedbacks.AsNoTracking()
             .Where(f => f.VisitInstanceId == instance.VisitInstanceId && f.SubmittedByUserId == userId)
             .ToListAsync(cancellationToken);
@@ -60,7 +65,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
             ActorType = actorType,
             VisitRequestId = visitRequest.VisitRequestId,
             VisitInstanceId = instance.VisitInstanceId,
-            DelegationName = visitRequest.DelegationName,
+            DelegationName = effectiveDelegationName,
             CampusName = campusName,
             InstanceStatus = instance.Status,
             PlannedStartAt = instance.PlannedStartAt.ToString("yyyy-MM-ddTHH:mm:ss"),
@@ -80,8 +85,8 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
         };
 
         response.Groups = actorType == FeedbackSubmitterRoles.Visitor
-            ? BuildVisitorGroups(visitRequest, campusName, myFeedbacks)
-            : await BuildHostGroupsAsync(visitRequest, instance, myFeedbacks, cancellationToken);
+            ? BuildVisitorGroups(visitRequest, campusName, myFeedbacks, effectiveDelegationName)
+            : await BuildHostGroupsAsync(visitRequest, instance, myFeedbacks, effectiveDelegationName, cancellationToken);
 
         var allTargets = response.Groups.SelectMany(g => g.Targets).ToList();
         response.AlreadySubmittedAllRequired = allTargets.Count > 0 && allTargets.All(t => t.AlreadySubmitted);
@@ -98,7 +103,8 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
 
     // ── Visitor: one overall target on the campus instance ──────────────────
     private static List<FeedbackGroupDto> BuildVisitorGroups(
-        Domain.Entities.Delegations.VisitRequest visitRequest, string? campusName, List<Feedback> myFeedbacks)
+        Domain.Entities.Delegations.VisitRequest visitRequest, string? campusName, List<Feedback> myFeedbacks,
+        string? effectiveDelegationName)
     {
         var existing = myFeedbacks.FirstOrDefault(f => f.FeedbackType == FeedbackTypes.VisitorOverall);
         return new List<FeedbackGroupDto>
@@ -114,7 +120,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
                         TargetKey = "INSTANCE:OVERALL",
                         FeedbackType = FeedbackTypes.VisitorOverall,
                         TargetType = FeedbackTargetTypes.VisitInstance,
-                        Name = visitRequest.DelegationName,
+                        Name = effectiveDelegationName,
                         Subtitle = campusName is null ? "Đoàn tiếp đón" : $"Đoàn tiếp đón • {campusName}",
                         TargetContext = "Đoàn tiếp đón",
                         AlreadySubmitted = existing != null,
@@ -136,6 +142,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
         Domain.Entities.Delegations.VisitRequest visitRequest,
         Domain.Entities.Delegations.VisitRequestCampus instance,
         List<Feedback> myFeedbacks,
+        string? effectiveDelegationName,
         CancellationToken ct)
     {
         var groups = new List<FeedbackGroupDto>();
@@ -167,7 +174,7 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
             TargetKey = $"INSTANCE:DELEGATION:{instance.VisitInstanceId}",
             FeedbackType = FeedbackTypes.HostDelegationOverall,
             TargetType = FeedbackTargetTypes.VisitInstance,
-            Name = visitRequest.DelegationName,
+            Name = effectiveDelegationName,
             Subtitle = string.Join(" • ", new[]
             {
                 visitRequest.RegistrantOrganization,

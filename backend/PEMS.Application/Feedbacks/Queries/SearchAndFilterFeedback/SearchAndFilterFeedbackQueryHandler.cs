@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
 
@@ -83,16 +84,29 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             .Take(request.PageSize)
             .ToListAsync(cancellationToken);
 
-        var requestIds = list.Select(x => x.VisitRequestId).Distinct().ToList();
-        var visitTitles = await _context.VisitRequests.Where(r => requestIds.Contains(r.VisitRequestId))
-            .ToDictionaryAsync(r => r.VisitRequestId, r => r.DelegationName, cancellationToken);
+        // Feedback rows are INSTANCE-scoped: a MIXED per-campus v2 visit titles the row with THIS
+        // instance's detail name (v1/non-mixed keep the global projection — byte-identical there).
+        var instanceIds = list.Where(x => x.VisitInstanceId.HasValue)
+            .Select(x => x.VisitInstanceId!.Value).Distinct().ToList();
+        var visitTitles = await _context.VisitRequestCampuses
+            .Where(c => instanceIds.Contains(c.VisitInstanceId))
+            .Select(c => new
+            {
+                c.VisitInstanceId,
+                Title = c.VisitRequest!.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                        && c.VisitRequest.HasMixedCampusDetails
+                    ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
+                    : c.VisitRequest.DelegationName,
+            })
+            .ToDictionaryAsync(c => c.VisitInstanceId, c => c.Title, cancellationToken);
 
         var items = list.Select(x => new FeedbackListItem
         {
             FeedbackId = x.FeedbackId,
             VisitRequestId = x.VisitRequestId,
             VisitInstanceId = x.VisitInstanceId,
-            VisitTitle = visitTitles.TryGetValue(x.VisitRequestId, out var title) ? title : "",
+            VisitTitle = x.VisitInstanceId.HasValue
+                         && visitTitles.TryGetValue(x.VisitInstanceId.Value, out var title) ? title : "",
             FeedbackType = x.FeedbackType,
             SubmittedByUserId = x.SubmittedByUserId,
             SubmitterRole = x.SubmitterRole,

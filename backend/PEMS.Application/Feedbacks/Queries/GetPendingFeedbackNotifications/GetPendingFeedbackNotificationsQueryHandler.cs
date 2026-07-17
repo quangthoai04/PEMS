@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Feedbacks.Common;
 
@@ -42,7 +43,10 @@ public sealed class GetPendingFeedbackNotificationsQueryHandler
             {
                 i.VisitInstanceId,
                 r.VisitRequestId,
-                r.DelegationName,
+                // Mixed per-campus v2 rows show THIS instance's detail name (no global fallback).
+                DelegationName = r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
+                    ? (i.FormDetail != null ? i.FormDetail.DelegationName : null)
+                    : r.DelegationName,
                 CampusName = c.Name,
                 i.Status,
                 i.PlannedStartAt,

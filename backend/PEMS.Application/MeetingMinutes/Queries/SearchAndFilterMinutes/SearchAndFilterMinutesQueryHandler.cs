@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Exceptions;
 using System;
@@ -143,6 +144,7 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
         {
             var vrc = await _db.VisitRequestCampuses
                 .Include(v => v.VisitRequest)
+                .Include(v => v.FormDetail) // per-campus v2: mixed rows title from THIS instance's detail
                 .FirstOrDefaultAsync(v => v.VisitInstanceId == minute.VisitInstanceId, cancellationToken);
                 
             var campusName = vrc != null ? await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken) : null;
@@ -183,7 +185,10 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
                 CreatedByName = createdByName,
                 UpdatedAt = minute.UpdatedAt.HasValue ? DateTime.SpecifyKind(minute.UpdatedAt.Value, DateTimeKind.Utc).ToString("O") : null,
                 UpdatedByName = updatedByName,
-                VisitTitle = vrc?.VisitRequest?.DelegationName,
+                VisitTitle = vrc?.VisitRequest is { } vvr
+                             && vvr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vvr.HasMixedCampusDetails
+                    ? vrc.FormDetail?.DelegationName
+                    : vrc?.VisitRequest?.DelegationName,
                 VisitRequestId = vrc?.VisitRequestId,
                 CampusName = campusName,
                 HostName = hostName,

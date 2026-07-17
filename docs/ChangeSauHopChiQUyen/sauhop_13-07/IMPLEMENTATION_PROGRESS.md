@@ -221,7 +221,23 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
     `VisitAmendmentV2Tests` **4/4** (submit immutability + duplicate/base/empty guards; approve scope matrix +
     target-only apply + member copy-on-write + no-status-reset; reject/withdraw/expire keep active;
     pending-instance + late-window rejections). v2 group **60/60**.
-## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending
+## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — 🚧 IN PROGRESS
+- **F-1 Class-C surface migration** — ✅ DONE (~35 surfaces; full list in `PR3_PRE_PR4_AUDIT_MAP.md` §10).
+  Uniform rule: INSTANCE rows read the conditional `mixed-v2 ? instance.FormDetail.<field> : vr.<field>`
+  (single JOIN via the FormDetail nav — no N+1, no correlated scalar subquery; mixed-with-missing-detail
+  yields NULL, never the global value); REQUEST rows that cannot show per-campus content are labeled
+  `"Khác nhau theo cơ sở"`; v1/non-mixed keep the projection (byte-identical by construction). Batched
+  helper `VisitInstanceEffectiveName.ForInstancesAsync` + in-memory `Of`. Report visit_type FILTERS are
+  mixed-aware (match any campus detail for request-level, own detail for instance-level); the Staff-Leader
+  report resolves a mixed request through THEIR OWN campus's detail. Keyword search is scope-before-keyword
+  everywhere it existed and matches per-instance details for mixed v2 (never the projection, never a
+  hidden sibling for instance-scoped actors; the visitor path matches any owned campus's detail).
+- **F-2 zero-unclassified report** — ✅ DONE (audit map §10): every remaining raw global-field read is a
+  classified else-branch / already-effective row / dual-read handler / Class-P v1 writer / v1 fingerprint-
+  validator / v2-safe-DTO renderer / non-VisitRequest false positive. ZERO unclassified.
+- Tests: `V2MixedListSurfacesTests` **2/2** (helper matrix mixed/non-mixed + Staff-calendar end-to-end:
+  each campus leader sees THEIR campus's name, never the sibling's, proving the Pomelo CASE+JOIN
+  translation on a real surface).
 ## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ⬜ pending
 ## Phase H — final verification + E2E + rollout readiness — ⬜ pending
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending

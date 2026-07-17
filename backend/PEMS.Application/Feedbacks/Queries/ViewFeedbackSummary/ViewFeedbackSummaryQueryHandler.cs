@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
 
@@ -58,8 +59,13 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
 
         if (!string.IsNullOrEmpty(request.Q))
         {
+            // Mixed per-campus v2 requests match when ANY campus detail matches — the global
+            // projection is never business content for mixed requests.
+            var q = request.Q;
             var matchingRequestIds = _context.VisitRequests
-                .Where(r => r.DelegationName.Contains(request.Q))
+                .Where(r => (r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails)
+                    ? r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.DelegationName.Contains(q))
+                    : r.DelegationName.Contains(q))
                 .Select(r => r.VisitRequestId);
             query = query.Where(x =>
                 matchingRequestIds.Contains(x.VisitRequestId) ||
@@ -99,10 +105,18 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
             .ToListAsync(cancellationToken);
 
         var requestIds = projections.Select(x => x.VisitRequestId).Distinct().ToList();
+        // Request-level fallback title: a MIXED v2 request has no single business name (plan §8.3).
         var visitTitles = await _context.VisitRequests.Where(r => requestIds.Contains(r.VisitRequestId))
-            .ToDictionaryAsync(r => r.VisitRequestId, r => r.DelegationName, cancellationToken);
-            
+            .ToDictionaryAsync(r => r.VisitRequestId,
+                r => r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : r.DelegationName,
+                cancellationToken);
+
         var instanceIds = projections.Where(x => x.VisitInstanceId.HasValue).Select(x => x.VisitInstanceId!.Value).ToList();
+        // Instance-scoped rows title from THIS instance's detail (mixed v2), single batched query.
+        var effectiveInstanceTitles = await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_context, instanceIds, cancellationToken);
         var campusIds = await _context.VisitRequestCampuses.Where(rc => instanceIds.Contains(rc.VisitInstanceId))
             .ToDictionaryAsync(rc => rc.VisitInstanceId, rc => rc.CampusId, cancellationToken);
             
@@ -112,7 +126,10 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
 
         foreach (var item in projections)
         {
-            item.VisitTitle = visitTitles.TryGetValue(item.VisitRequestId, out var title) ? title : "";
+            item.VisitTitle = item.VisitInstanceId.HasValue
+                              && effectiveInstanceTitles.TryGetValue(item.VisitInstanceId.Value, out var instTitle)
+                ? instTitle ?? ""
+                : (visitTitles.TryGetValue(item.VisitRequestId, out var title) ? title : "");
             if (item.VisitInstanceId.HasValue && campusIds.TryGetValue(item.VisitInstanceId.Value, out var cId) && campusNames.TryGetValue(cId, out var cName))
             {
                 item.CampusName = cName;

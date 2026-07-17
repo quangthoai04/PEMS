@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
@@ -85,7 +86,18 @@ public sealed class SendStaffLeaderPersonnelReportCommandHandler
                     from p in _db.VisitParticipants.AsNoTracking()
                     join ci in instances on p.VisitInstanceId equals ci.VisitInstanceId
                     where p.UserId == person.UserId && p.Status == "ACCEPTED"
-                    select new { ci.VisitInstanceId, ci.VisitRequest.RequestCode, ci.VisitRequest.DelegationName, ci.PlannedStartAt, ci.PlannedEndAt, ci.Status })
+                    select new
+                    {
+                        ci.VisitInstanceId,
+                        ci.VisitRequest.RequestCode,
+                        DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                         && ci.VisitRequest.HasMixedCampusDetails
+                            ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                            : ci.VisitRequest.DelegationName,
+                        ci.PlannedStartAt,
+                        ci.PlannedEndAt,
+                        ci.Status,
+                    })
                 .ToListAsync(cancellationToken))
                 .GroupBy(x => x.VisitInstanceId).Select(g => g.First())
                 .Select(x => (x.RequestCode ?? "", x.DelegationName ?? "", x.PlannedStartAt, x.PlannedEndAt, x.Status))
@@ -101,7 +113,17 @@ public sealed class SendStaffLeaderPersonnelReportCommandHandler
         {
             visitRows = (await instances
                     .Where(ci => ci.CurrentHostUserId == person.UserId)
-                    .Select(ci => new { ci.VisitRequest.RequestCode, ci.VisitRequest.DelegationName, ci.PlannedStartAt, ci.PlannedEndAt, ci.Status })
+                    .Select(ci => new
+                    {
+                        ci.VisitRequest.RequestCode,
+                        DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                         && ci.VisitRequest.HasMixedCampusDetails
+                            ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                            : ci.VisitRequest.DelegationName,
+                        ci.PlannedStartAt,
+                        ci.PlannedEndAt,
+                        ci.Status,
+                    })
                     .ToListAsync(cancellationToken))
                 .Select(x => (x.RequestCode ?? "", x.DelegationName ?? "", x.PlannedStartAt, x.PlannedEndAt, x.Status))
                 .ToList();

@@ -57,12 +57,17 @@ public sealed class GetMyHostFeedbackQueryHandler
             .OrderByDescending(f => f.SubmittedAt)
             .ToListAsync(cancellationToken);
 
+        // Mixed per-campus v2: instance-scoped screen → THIS instance's detail name.
+        var effectiveDelegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(instance.VisitInstanceId);
+
         return new GetMyHostFeedbackResponse
         {
             VisitInstanceId = instance.VisitInstanceId,
             VisitRequestId = instance.VisitRequestId,
             RequestCode = visitRequest.RequestCode,
-            DelegationName = visitRequest.DelegationName,
+            DelegationName = effectiveDelegationName,
             OrganizationName = visitRequest.RegistrantOrganization,
             CampusName = campusName,
             HostName = hostName,
