@@ -235,6 +235,24 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 RESUBMIT after full rejection — campus set fixed, every visitInstanceId kept, old
+    /// decisions snapshotted to audit before being cleared, instances re-routed to the current Staff Leaders.
+    /// Same two-flag gate, editor policy and optimistic-concurrency contract as pending-edit v2.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/resubmit")]
+    [Authorize]
+    public async Task<IActionResult> ResubmitFormV2(
+        ulong visitRequestId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestEditV2Dto edit,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequestV2.ResubmitRejectedVisitRequestV2Command(visitRequestId, edit),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits &amp; resubmits a fully-rejected request. The campus set must stay the
     /// same; old decisions are snapshotted to audit before being cleared.
     /// </summary>

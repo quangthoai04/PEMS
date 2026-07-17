@@ -16,11 +16,18 @@ public sealed record V2EditResult(string VisitScope, bool HasMixed, int RequestR
 /// writes immutable revision history. Flows share the primitives:
 /// <list type="bullet">
 ///   <item><see cref="ApplyPendingEditAsync"/> — a still-fully-pending request (campus set may change);</item>
-///   <item>rejected-resubmit (campus set fixed, instance ids kept, decisions cleared) — added with that slice.</item>
+///   <item><see cref="ApplyResubmitAsync"/> — a fully-REJECTED request: campus set fixed, instance ids KEPT
+///         (no delete/recreate → history/FKs intact), old decisions snapshotted to audit then cleared,
+///         resubmission_count++, instances reset to WAITING and re-routed to the CURRENT Staff Leaders.</item>
 /// </list>
+/// Both start with a <c>SELECT … FOR UPDATE</c> row-version guard so concurrent writers serialize and exactly
+/// one wins; the loser gets a stable 409.
 /// </summary>
 public interface IVisitRequestV2EditService
 {
     Task<V2EditResult> ApplyPendingEditAsync(
+        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct);
+
+    Task<V2EditResult> ApplyResubmitAsync(
         VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct);
 }

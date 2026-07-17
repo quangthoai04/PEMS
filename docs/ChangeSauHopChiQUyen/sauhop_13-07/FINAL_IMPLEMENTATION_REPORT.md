@@ -108,9 +108,13 @@ field-level audit) + handler/`PUT /api/v2/visit-requests/{id}/pending-edit` (bot
 registrant or ACTIVE primary contact; v1 requests → `VISIT_REQUEST_NOT_PER_CAMPUS_V2`; 24h window;
 post-commit best-effort leader notifications) + structural validator sharing the create-v2 campus rules.
 Service 14/14 + command 1/1 targeted green.
-**C-2 resubmit all-REJECTED — NEXT:** keep instance IDs (no reset of other campuses' decisions), campus set
-fixed, snapshot old decisions before clearing, resubmission_count++, re-route to current leaders, RESUBMIT
-revisions, idempotent audit/notification.
+**C-2 resubmit all-REJECTED — ✅ DONE (this session):** `ApplyResubmitAsync` + `POST /api/v2/visit-requests/{id}/resubmit`.
+Campus set fixed + instance IDs KEPT (drop/add/swap → `RESUBMIT_CAMPUS_LIST_CHANGED`); `SELECT … FOR UPDATE`
+row-version guard on BOTH edit flows (one winner under concurrency, stable 409 for the loser); decisions
+snapshotted to audit_log_changes before clearing (history never deleted); three-phase flush honouring the
+campus trigger (parent → PENDING first); availability recheck + re-route to CURRENT leaders;
+resubmission_count++; RESUBMIT revisions; post-commit re-process notifications. Service 6/6 + command 1/1;
+v2 test group 39/39.
 
 ### Phase D — identity claim/transfer + cancel-3A + expiry jobs (plan §16.4/16.7/16.8, §4.4)
 INITIAL_CLAIM (72h) + TRANSFER (24h) state machines; exact-email Google SSO / OTP-fallback + explicit accept;
@@ -154,17 +158,23 @@ prove flag-on flow by test; never auto-enable.
 Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
 schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
-## 5. Test counts (latest, verified)
+## 5. Test counts (latest, verified — end of Phase C)
 - UnitTests **474/474** (the historical "435" baseline was a stale incremental build; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **320/320** on a fresh disposable `pems_it_regression` (Phase-A read V2 classes + Phase-B-2
-  create-v2 service (11) + command (3) classes). pems_pr3_test verified v2_requests = 0 after runs.
+- IntegrationTests **345/345** on a fresh disposable `pems_it_regression` recreated from the PR-2 master
+  (Phase-A read V2 classes + the full v2 write group: create service 11 + create command 3 + public OTP verify 3
+  + pending-edit service 14 + pending-edit command 1 + resubmit service 6 + resubmit command 1 = 39 v2 tests).
+  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test v2_requests = 0;
+  no live appsettings carries a PerCampusFormV2 section (both flags default OFF).
 
 ## 6. Known limitations / notes
-- A **Dev merge** (`ae060dcf`) landed mid-session; Phase-A commits were consolidated into `770caa33`/`fb9a11c6`.
-  The merged tree is green (306/306), so Phase-A behavior is intact.
-- create-v2 (Phase B-2) is **done** (service + command + endpoint, 14 tests, IT 320/320). Everything downstream
-  of it (edit/resubmit, identity confirm/transfer, amendments, list/search/report/export/email migration,
-  frontend, E2E, contract cleanup) is **not yet implemented**; §4 is the ready-to-execute spec, Phase C next.
+- A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
+  commits (B-1 `1d056fd7`, B-2 `a5cb3977`). The merged tree is green, so Phase-A/B behavior is intact.
+- Phases B (create-v2 + B-2.5 close-out) and C (pending-edit + resubmit) are **done**. Everything downstream
+  (identity confirm/transfer + cancel-3A + expiry jobs, amendments, list/search/report/export/email migration,
+  frontend, E2E, contract cleanup) is **not yet implemented**; §4 is the ready-to-execute spec, Phase D next.
+- v2 create/edit notifications are post-commit **best-effort** (no outbox in the project): a rollback never
+  notifies and an idempotent replay never re-notifies, but a crash between commit and dispatch can drop a
+  notification — documented, not exactly-once.
 - No production seed/code was changed to make tests pass; the only test-infra change was adding the new
   `IVisitFormReadService` constructor arg (a bare mock) to one unit test.

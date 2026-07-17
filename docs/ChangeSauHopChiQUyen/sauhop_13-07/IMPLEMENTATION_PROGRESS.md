@@ -80,8 +80,28 @@ v1 byte-identical): GetVisitInvitationDetail `5ee29ab3`, GetStaffCalendarDetail 
   campus rules via `ToFormDto()`. Tests: service **14/14** (rolled-back txns) + command **1/1** (committed +
   child-first cleanup; flags/editor-policy/v1-reject/stale-409/notification lifecycle) — v2 group 32/32,
   pems_pr3_test v2=0.
-- **C-2 resubmit rejected v2** — ⬜ next.
-## Phase D — identity claim/transfer + cancel 3A + expiry/redaction jobs — ⬜ pending
+- **C-2 resubmit rejected v2** — ✅ DONE. `ApplyResubmitAsync` on the shared edit service: `SELECT … FOR UPDATE`
+  request row-version guard added to BOTH edit flows (plain-int row_version has no EF concurrency token —
+  concurrent writers now serialize on the lock; exactly one winner, loser gets stable 409); in-txn all-REJECTED
+  re-check; campus set FIXED + every `visitInstanceId` KEPT (drop/add/campus-swap all →
+  `RESUBMIT_CAMPUS_LIST_CHANGED`); per-instance expected-row-version checks; schedule ≥ now+24h/≥30min;
+  full operational-availability recheck per campus (same bar as create); decisions snapshotted to
+  `audit_log_changes` (`campus_decisions_before_resubmit_json`) BEFORE clearing — rejection history never
+  deleted; three-phase flush (parent → PENDING first so the campus trigger accepts REJECTED→WAITING, then
+  instance resets + member staging, then links + RESUBMIT revisions); content full-replace via the C-1
+  copy-on-write ops; re-route to CURRENT Staff Leader; resubmission_count++ + `LastResubmittedAt/By`;
+  recompute scope/mixed/fingerprint/projection; RESUBMIT instance+request revision snapshots. Handler +
+  `POST /api/v2/visit-requests/{id}/resubmit` (same two-flag gate + editor policy as pending-edit; post-commit
+  best-effort re-process notifications) + structural validator (every slot must carry an instance id).
+  Tests: service **6/6** (main flow: ids kept/decisions cleared/reroute/history preserved/canonical read-back;
+  partially-rejected block; set-change ×3; stale request+instance 409 + winner + replay-409; <24h; immutable
+  contact email) + command **1/1** (gates/policy/not-resubmittable fire before any write, no notification,
+  request untouched). v2 group **39/39**, pems_pr3_test v2=0.
+### Phase C verification (final): Unit **474/474** · Arch **14/14** · full IntegrationTests **345/345** on
+fresh `pems_it_regression` from the PR-2 master; appsettings restored `pems_test`; pems_db/pems_pr3_test
+v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
+
+## Phase D — identity claim/transfer + cancel 3A + expiry/redaction jobs — ⬜ pending (NEXT)
 ## Phase E — safe edit + post-approval amendment — ⬜ pending
 ## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending
 ## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ⬜ pending

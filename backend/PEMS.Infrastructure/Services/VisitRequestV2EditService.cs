@@ -36,11 +36,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     public async Task<V2EditResult> ApplyPendingEditAsync(
         VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
     {
-        // ── 0. Optimistic concurrency — request level (stable 409, never last-write-wins) ──
-        if (edit.ExpectedRequestRowVersion != request.RowVersion)
-            throw new ConflictException(
-                "Đơn đã được thay đổi bởi một thao tác khác. Vui lòng tải lại và thử lại.",
-                VisitRequestErrorCodes.RequestVersionConflict);
+        // ── 0. Optimistic concurrency — request level (stable 409, never last-write-wins).
+        //       row_version is a plain int (no EF concurrency token), so the guard is an explicit
+        //       SELECT … FOR UPDATE against the CURRENT committed row: concurrent editors serialize on the
+        //       lock and the loser sees the winner's bumped version → 409. ──
+        await AssertCurrentRequestVersionAsync(request, edit.ExpectedRequestRowVersion, ct);
 
         if (edit.CampusVisits is null || edit.CampusVisits.Count == 0)
             throw new BusinessRuleException("Phải chọn ít nhất 1 cơ sở.", VisitRequestErrorCodes.InvalidVisitScope);
@@ -389,6 +389,282 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         await _db.SaveChangesAsync(ct);
 
         return new V2EditResult(scope, hasMixed, request.RowVersion);
+    }
+
+    public async Task<V2EditResult> ApplyResubmitAsync(
+        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
+    {
+        // ── 0. Concurrency guard (FOR UPDATE — concurrent resubmits serialize; exactly one winner,
+        //       the loser gets a stable 409 after seeing the winner's bumped version/status). ──
+        await AssertCurrentRequestVersionAsync(request, edit.ExpectedRequestRowVersion, ct);
+
+        // ── 1. Resubmittable gate re-checked IN-transaction: request REJECTED + EVERY campus REJECTED ──
+        if (request.Status != VisitRequestStatuses.Rejected
+            || request.CampusInstances.Count == 0
+            || request.CampusInstances.Any(c => c.Status != VisitInstanceStatuses.Rejected))
+            throw new BusinessRuleException(
+                "Chỉ có thể gửi lại đơn khi toàn bộ yêu cầu đã bị từ chối ở tất cả các cơ sở.",
+                VisitRequestErrorCodes.VisitRequestNotResubmittable);
+
+        if (edit.CampusVisits is null || edit.CampusVisits.Count == 0)
+            throw new BusinessRuleException("Phải chọn ít nhất 1 cơ sở.", VisitRequestErrorCodes.InvalidVisitScope);
+
+        ValidateImmutableFields(request, edit);
+
+        // ── 2. Campus set is FIXED and instance ids are KEPT (đổi campus ⇒ tạo đơn mới). Every slot must
+        //       reference an existing instance; every existing instance must be present exactly once. ──
+        var instancesById = request.CampusInstances.ToDictionary(c => c.VisitInstanceId);
+        var pairs = new List<(CampusVisitEditV2Dto Content, VisitRequestCampus Instance)>();
+        foreach (var cv in edit.CampusVisits)
+        {
+            if (cv.VisitInstanceId is not { } id || !instancesById.TryGetValue(id, out var instance))
+                throw new BusinessRuleException(
+                    "Không thể đổi danh sách cơ sở khi gửi lại đơn. Nếu muốn thăm cơ sở khác, vui lòng tạo đơn đăng ký mới.",
+                    VisitRequestErrorCodes.ResubmitCampusListChanged);
+            pairs.Add((cv, instance));
+        }
+        if (pairs.Select(p => p.Instance.VisitInstanceId).Distinct().Count() != request.CampusInstances.Count)
+            throw new BusinessRuleException(
+                "Không thể đổi danh sách cơ sở khi gửi lại đơn. Nếu muốn thăm cơ sở khác, vui lòng tạo đơn đăng ký mới.",
+                VisitRequestErrorCodes.ResubmitCampusListChanged);
+
+        var campusIdsByCode = await _db.Campuses
+            .Where(c => request.CampusInstances.Select(i => i.CampusId).Contains(c.CampusId))
+            .Select(c => new { c.CampusCode, c.CampusId })
+            .ToDictionaryAsync(c => c.CampusCode, c => c.CampusId, StringComparer.OrdinalIgnoreCase, ct);
+        foreach (var (content, instance) in pairs)
+        {
+            var code = (content.CampusId ?? string.Empty).Trim().ToUpperInvariant();
+            if (!campusIdsByCode.TryGetValue(code, out var campusId) || campusId != instance.CampusId)
+                throw new BusinessRuleException(
+                    "Không thể đổi danh sách cơ sở khi gửi lại đơn. Nếu muốn thăm cơ sở khác, vui lòng tạo đơn đăng ký mới.",
+                    VisitRequestErrorCodes.ResubmitCampusListChanged);
+        }
+
+        // ── 3. Per-instance optimistic concurrency ──
+        foreach (var (content, instance) in pairs)
+            if (content.ExpectedRowVersion is null || content.ExpectedRowVersion != instance.RowVersion)
+                throw new ConflictException(
+                    "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
+                    VisitRequestErrorCodes.InstanceVersionConflict);
+
+        // ── 4. New schedule: every start ≥ now + 24h, end > start, ≥ 30 min ──
+        foreach (var cv in edit.CampusVisits)
+        {
+            if (cv.PlannedEndAt <= cv.PlannedStartAt)
+                throw new BusinessRuleException("Thời gian kết thúc phải sau thời gian bắt đầu.", VisitRequestErrorCodes.InvalidVisitTime);
+            if ((cv.PlannedEndAt - cv.PlannedStartAt).TotalMinutes < MinDurationMinutes)
+                throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
+            if (cv.PlannedStartAt < now.AddHours(EditWindowHours))
+                throw new BusinessRuleException(
+                    "Thời gian bắt đầu mới phải cách hiện tại ít nhất 24 giờ.",
+                    VisitRequestErrorCodes.InvalidVisitTime);
+        }
+
+        // ── 5. Every campus must STILL be operationally available (re-entry uses the same bar as create) ──
+        var campusIds = request.CampusInstances.Select(c => c.CampusId).ToList();
+        var availability = await CampusAvailabilityEvaluator.EvaluateAsync(_db, campusIds, ct);
+        var leadersByCampus = new Dictionary<ulong, ulong>();
+        foreach (var (content, instance) in pairs)
+        {
+            var s = availability.TryGetValue(instance.CampusId, out var snap)
+                ? snap
+                : throw new BusinessRuleException("Cơ sở không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
+            if (!string.Equals(s.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
+                throw new BusinessRuleException($"Cơ sở '{s.CampusCode}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
+            if (s.ValidStaffLeaderCount == 0)
+                throw new BusinessRuleException($"Cơ sở {s.Name} chưa có Staff Leader đang hoạt động nên chưa thể tiếp nhận lại yêu cầu.", VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
+            if (!s.IsAvailableForVisitRegistration)
+                throw new BusinessRuleException($"Cấu hình tiếp nhận của cơ sở {s.Name} không hợp lệ.", VisitRequestErrorCodes.CampusStaffLeaderConfigurationInvalid);
+            leadersByCampus[instance.CampusId] = s.ValidStaffLeaderUserId!.Value;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Apply. Old rejection history is NEVER deleted — the decisions are snapshotted to
+        // audit_log_changes (v1 parity §7.3) and the old revision rows stay untouched.
+        // ─────────────────────────────────────────────────────────────────────────────
+        var correlationId = Guid.NewGuid().ToString("N");
+        var oldCount = request.ResubmissionCount;
+
+        var deciderSnapshot = request.CampusInstances
+            .OrderBy(c => c.CampusId)
+            .Select(c => new
+            {
+                visitInstanceId = c.VisitInstanceId,
+                campusId = c.CampusId,
+                oldStatus = c.Status,
+                decidedBy = c.DecidedBy,
+                decidedAt = c.DecidedAt,
+                decisionActorRole = c.DecisionActorRole,
+                decisionNote = c.DecisionNote,
+            })
+            .ToList();
+
+        var audit = new AuditLog
+        {
+            ActorUserId = actorId,
+            Action = "RESUBMIT_REJECTED_VISIT_REQUEST_V2",
+            EntityType = "VisitRequest",
+            EntityId = request.VisitRequestId,
+            VisitRequestId = request.VisitRequestId,
+            CorrelationId = correlationId,
+            SourceType = "RESUBMIT",
+            CreatedAt = now,
+        };
+        audit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "request.status",
+            OldValueText = VisitRequestStatuses.Rejected,
+            NewValueText = VisitRequestStatuses.PendingApproval,
+            CreatedAt = now,
+        });
+        audit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "resubmission_count",
+            OldValueText = oldCount.ToString(),
+            NewValueText = (oldCount + 1).ToString(),
+            CreatedAt = now,
+        });
+        audit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "campus_decisions_before_resubmit_json",
+            OldValueText = System.Text.Json.JsonSerializer.Serialize(deciderSnapshot),
+            NewValueText = "cleared_for_resubmission",
+            CreatedAt = now,
+        });
+        _db.AuditLogs.Add(audit);
+
+        // ── Phase 1: request-level fields + status back to PENDING_APPROVAL + canonical recompute. The
+        //    parent MUST be flushed before any instance status flips (campus trigger only allows
+        //    REJECTED → WAITING_REQUEST_APPROVAL under a pending parent). ──
+        var finalContents = edit.CampusVisits.Select(c => c.ToFormDto()).ToList();
+        var scope = VisitRequestV2Canonical.ScopeOf(finalContents.Count);
+        var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(finalContents);
+        var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
+            VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail),
+            VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail),
+            scope, finalContents);
+        var projection = pairs.OrderBy(p => p.Instance.CampusId).First().Content;
+
+        var commonChanged = ApplyCommonFields(request, edit, audit, now);
+        request.VisitScope = scope;
+        request.HasMixedCampusDetails = hasMixed;
+        request.BusinessFingerprint = fingerprint;
+        request.DelegationName = projection.DelegationName;
+        request.VisitType = projection.VisitType;
+        request.VisitTypeOther = projection.VisitType == "OTHER" ? projection.VisitTypeOther : null;
+        request.Purpose = projection.Purpose;
+        request.WorkingContent = projection.WorkingContent;
+        request.WorkingLanguage = projection.WorkingLanguage;
+        request.TransportationNote = VisitRequestV2EditOps.Clean(projection.TransportationNote);
+        request.MediaConsentStatus = projection.MediaConsentStatus;
+        request.MediaConsentNote = projection.MediaConsentNote;
+        request.NoteToFptu = projection.Notes;
+        request.Status = VisitRequestStatuses.PendingApproval;
+        request.ResubmissionCount = oldCount + 1;
+        request.LastResubmittedAt = now;
+        request.LastResubmittedBy = actorId;
+        request.CancelledBy = null;
+        request.CancelledAt = null;
+        request.CancellationReason = null;
+        request.RowVersion += 1;
+        request.UpdatedAt = now;
+        request.UpdatedBy = actorId;
+
+        await _db.SaveChangesAsync(ct); // FLUSH #1 — parent is PENDING_APPROVAL
+
+        // ── Phase 2: per instance — KEEP the id; replace content + members (copy-on-write), clear the old
+        //    decision (already snapshotted), reset to WAITING and re-route to the CURRENT Staff Leader. ──
+        var staging = new List<(VisitRequestCampus Instance, List<VisitGuestMember> Members)>();
+        foreach (var (content, instance) in pairs)
+        {
+            VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
+            var newMembers = VisitRequestV2EditOps.StageReplaceMembers(
+                _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
+
+            instance.PlannedStartAt = content.PlannedStartAt;
+            instance.PlannedEndAt = content.PlannedEndAt;
+            instance.Status = VisitInstanceStatuses.WaitingRequestApproval;
+            instance.DecisionActorRole = null;
+            instance.DecisionSource = null;
+            instance.DecidedBy = null;
+            instance.DecidedAt = null;
+            instance.DecisionNote = null;
+            instance.CurrentHostUserId = null;
+            instance.HostAssignedBy = null;
+            instance.HostAssignedAt = null;
+            instance.CancelledBy = null;
+            instance.CancelledAt = null;
+            instance.CancellationActorType = null;
+            instance.CancellationSource = null;
+            instance.CancellationReason = null;
+            instance.CoordinatorUserId = leadersByCampus[instance.CampusId];
+            instance.CoordinatorAssignedBy = actorId;
+            instance.CoordinatorAssignedAt = now;
+            instance.RowVersion += 1;
+            instance.UpdatedAt = now;
+            instance.UpdatedBy = actorId;
+            staging.Add((instance, newMembers));
+        }
+
+        await _db.SaveChangesAsync(ct); // FLUSH #2 — instance resets + new member ids
+
+        // ── Phase 3: member links + RESUBMIT revision snapshots (history keeps every prior revision). ──
+        foreach (var (instance, members) in staging)
+        {
+            VisitRequestV2EditOps.LinkMembers(_db, request, instance, members, now, actorId);
+            _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
+            {
+                VisitRequestId = request.VisitRequestId,
+                VisitInstanceId = instance.VisitInstanceId,
+                FormRevision = instance.FormDetail!.FormRevision,
+                ApprovalRevision = instance.FormDetail.ApprovalRevision,
+                SourceType = "RESUBMIT",
+                SnapshotJson = VisitRequestV2EditOps.SnapshotJson(instance.FormDetail, members),
+                AppliedBy = actorId,
+                AppliedAt = now,
+                Reason = correlationId,
+            });
+        }
+
+        var nextRevision = (await _db.VisitRequestRevisionHistories
+            .Where(r => r.VisitRequestId == request.VisitRequestId)
+            .MaxAsync(r => (uint?)r.RequestRevision, ct) ?? 0) + 1;
+        _db.VisitRequestRevisionHistories.Add(new VisitRequestRevisionHistory
+        {
+            VisitRequestId = request.VisitRequestId,
+            RequestRevision = nextRevision,
+            SourceType = "RESUBMIT",
+            SnapshotJson = VisitRequestV2EditOps.RequestSnapshotJson(request),
+            AppliedBy = actorId,
+            AppliedAt = now,
+            Reason = correlationId,
+        });
+        _ = commonChanged; // resubmit always records a request revision; the audit already carries field diffs
+
+        await _db.SaveChangesAsync(ct); // FLUSH #3 — links + revisions. Caller commits.
+
+        return new V2EditResult(scope, hasMixed, request.RowVersion);
+    }
+
+    /// <summary>
+    /// Locks the request row (<c>SELECT … FOR UPDATE</c>) and compares the payload's expected version AND the
+    /// tracked entity's loaded version against the CURRENT committed row_version. Concurrent writers serialize
+    /// on the lock; the loser wakes up, sees the winner's bump and gets a stable 409 — exactly one winner.
+    /// </summary>
+    private async Task AssertCurrentRequestVersionAsync(VisitRequest request, int expectedVersion, CancellationToken ct)
+    {
+        // No LINQ composition on purpose: composing (Select/First) would wrap the SQL in a derived table and
+        // MySQL would not lock through it. Uncomposed FromSqlRaw executes the statement verbatim.
+        var rows = await _db.VisitRequests
+            .FromSqlRaw("SELECT * FROM visit_requests WHERE visit_request_id = {0} FOR UPDATE", request.VisitRequestId)
+            .AsNoTracking()
+            .ToListAsync(ct);
+        var current = rows.Count == 1 ? rows[0].RowVersion : (int?)null;
+        if (current is null || expectedVersion != current.Value || request.RowVersion != current.Value)
+            throw new ConflictException(
+                "Đơn đã được thay đổi bởi một thao tác khác. Vui lòng tải lại và thử lại.",
+                VisitRequestErrorCodes.RequestVersionConflict);
     }
 
     /// <summary>Registrant snapshot, partner and BOTH account-binding emails are immutable in a form edit.
