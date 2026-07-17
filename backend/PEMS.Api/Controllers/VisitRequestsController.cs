@@ -201,6 +201,25 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 PENDING EDIT — per-campus content/schedule/members (copy-on-write), add campus,
+    /// remove pending campus; explicit optimistic concurrency (expected request + per-instance row versions →
+    /// stable 409). Gated by BOTH flags like create-v2 (write OFF → 404). Editors: registrant or ACTIVE
+    /// primary contact. Account-binding emails are immutable here (identity edit is a separate workflow).
+    /// </summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/pending-edit")]
+    [Authorize]
+    public async Task<IActionResult> UpdatePendingFormV2(
+        ulong visitRequestId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestEditV2Dto edit,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.UpdatePendingVisitRequestV2.UpdatePendingVisitRequestV2Command(visitRequestId, edit),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits a still-fully-pending request (every campus WAITING_REQUEST_APPROVAL,
     /// ≥ 24h before the earliest start). Campus list may change; status stays PENDING_APPROVAL.
     /// </summary>

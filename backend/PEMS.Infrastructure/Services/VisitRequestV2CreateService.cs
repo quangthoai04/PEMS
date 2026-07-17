@@ -103,9 +103,9 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         }
 
         // ── Backend-derived scope + mixed flag (NEVER from the client). has_mixed compares only normalized
-        //    COPYABLE form content + member sets — not campus_id, not schedule. ──
-        var scope = form.CampusVisits.Count > 1 ? VisitScopes.MultiCampus : VisitScopes.SingleCampus;
-        var hasMixed = ComputeHasMixed(form.CampusVisits);
+        //    COPYABLE form content + member sets — not campus_id, not schedule. Shared with edit/resubmit. ──
+        var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits.Count);
+        var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(form.CampusVisits);
 
         // Compatibility projection = the smallest-campus_id campus (transition only; real data is per-instance).
         var projection = form.CampusVisits
@@ -118,9 +118,8 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         var contactEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(form.PrimaryContact.Email);
         var contactIsRegistrant = registrantEmailNorm == contactEmailNorm;
 
-        var fingerprint = VisitRequestFingerprintBuilder.BuildV2(
-            registrantEmailNorm, contactEmailNorm, scope,
-            form.CampusVisits.Select(cv => (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther)));
+        var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
+            registrantEmailNorm, contactEmailNorm, scope, form.CampusVisits);
 
         var request = new VisitRequest
         {
@@ -350,34 +349,6 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         await _db.SaveChangesAsync(cancellationToken);
 
         return request;
-    }
-
-    // has_mixed = any campus differs in normalized copyable form content OR member set (ignores campus/time).
-    private static bool ComputeHasMixed(IList<CampusVisitFormDto> campuses)
-    {
-        if (campuses.Count <= 1) return false;
-        var first = CanonicalContent(campuses[0]);
-        for (var i = 1; i < campuses.Count; i++)
-            if (CanonicalContent(campuses[i]) != first) return true;
-        return false;
-    }
-
-    private static string CanonicalContent(CampusVisitFormDto cv)
-    {
-        string N(string? s) => VisitRequestFingerprintBuilder.NormalizeText(s);
-        string C(string? s) => VisitRequestFingerprintBuilder.NormalizeCode(s);
-        string E(string? s) => VisitRequestFingerprintBuilder.NormalizeEmail(s);
-        // Members are order-independent: sort the normalized tuples.
-        static string People(IEnumerable<string> xs) => string.Join(';', xs.OrderBy(x => x, StringComparer.Ordinal));
-        var visitors = People(cv.Visitors.Select(v => $"{N(v.FullName)}|{N(v.Organization)}|{N(v.JobTitle)}|{C(v.Nationality)}"));
-        var support = People(cv.ExternalSupportMembers.Select(m => $"{N(m.FullName)}|{N(m.Organization)}|{N(m.JobTitle)}|{C(m.Nationality)}"));
-        return string.Join('#', new[]
-        {
-            N(cv.DelegationName), C(cv.VisitType), N(cv.VisitTypeOther), N(cv.Purpose), N(cv.WorkingContent),
-            N(cv.OperationalContact.FullName), N(cv.OperationalContact.Organization), C(cv.OperationalContact.Phone), E(cv.OperationalContact.Email),
-            C(cv.WorkingLanguage), N(cv.TransportationNote), C(cv.MediaConsentStatus), N(cv.MediaConsentNote), N(cv.Notes),
-            $"V[{visitors}]", $"S[{support}]",
-        });
     }
 
     private static object SnapshotOf(VisitInstanceFormDetail d, IEnumerable<VisitGuestMember> members) => new

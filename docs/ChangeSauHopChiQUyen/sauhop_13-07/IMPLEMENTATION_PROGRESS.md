@@ -60,7 +60,27 @@ v1 byte-identical): GetVisitInvitationDetail `5ee29ab3`, GetStaffCalendarDetail 
     provision fake proves neither is consulted). Targeted **17/17** (11 service + 3 command + 3 public verify).
     pems_pr3_test/pems_db v2_requests = 0. Both flags remain default OFF.
 
-## Phase C — edit pending + resubmit v2 — ⬜ pending
+## Phase C — edit pending + resubmit v2 — 🚧 IN PROGRESS
+- **C-1 pending edit v2** — ✅ DONE. `VisitRequestV2Canonical` (single source for scope/has_mixed/fingerprint —
+  create service refactored onto it, no behavior change) + `VisitFormV2EditDtos` (`VisitRequestEditV2Dto` with
+  `ExpectedRequestRowVersion`; `CampusVisitEditV2Dto` with stable `VisitInstanceId` + `ExpectedRowVersion`,
+  null id = add-campus) + `VisitRequestV2EditOps` (copy-on-write member full-replace: removes only THIS
+  instance's links, deletes a member row only when no sibling still links it; two-phase stage→flush→link) +
+  `VisitRequestV2EditService.ApplyPendingEditAsync` (explicit request+instance row-version checks → stable 409
+  `VISIT_REQUEST_VERSION_CONFLICT`/`VISIT_INSTANCE_VERSION_CONFLICT`; immutable registrant/partner/BOTH
+  account-binding emails; per-instance change detection so untouched siblings get NO member churn/revision/
+  row-version bump; add campus (availability recheck + Staff-Leader routing + baseline CREATE revision);
+  remove campus only while WAITING with no participants/agendas/logistics (`VISIT_INSTANCE_NOT_REMOVABLE`),
+  orphan member cleanup; campus-of-instance change rejected (`VISIT_INSTANCE_EDIT_INVALID` — remove+add);
+  recompute scope/mixed/fingerprint/projection; SAFE_EDIT instance+request revision snapshots; field-level
+  audit `UPDATE_PENDING_VISIT_REQUEST_V2` with correlation id). Handler + `PUT /api/v2/visit-requests/{id}/pending-edit`
+  (both-flag gate; editor policy = registrant OR ACTIVE primary contact — PENDING contact/unrelated blocked;
+  v1 requests rejected `VISIT_REQUEST_NOT_PER_CAMPUS_V2`; lifecycle gate fully-pending + 24h; post-commit
+  best-effort leader notifications, failure-path sends none) + structural validator reusing the create-v2
+  campus rules via `ToFormDto()`. Tests: service **14/14** (rolled-back txns) + command **1/1** (committed +
+  child-first cleanup; flags/editor-policy/v1-reject/stale-409/notification lifecycle) — v2 group 32/32,
+  pems_pr3_test v2=0.
+- **C-2 resubmit rejected v2** — ⬜ next.
 ## Phase D — identity claim/transfer + cancel 3A + expiry/redaction jobs — ⬜ pending
 ## Phase E — safe edit + post-approval amendment — ⬜ pending
 ## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending

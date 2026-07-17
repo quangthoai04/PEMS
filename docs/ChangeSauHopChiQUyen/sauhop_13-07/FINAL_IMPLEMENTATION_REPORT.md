@@ -97,12 +97,20 @@ workflow). Original spec kept below for reference.
   invitation-pending; idempotency; against disposable DB.
 </details>
 
-### Phase C — edit pending + resubmit v2 (plan §6.4) — ⬅️ NEXT
-Per-campus edit; add/remove campus per lifecycle; full-replace guest/support scoped to target instance;
-copy-on-write for legacy shared members; request+instance optimistic concurrency; recompute
-scope/mixed/fingerprint/projection; resubmit all-REJECTED keeping instance IDs (no reset of other campuses'
-decisions); idempotent audit/revision/notification. Editor policy = `actor == visitor_user_id || actor ==
-registrant_user_id` (not extended to cancel/approve/etc.).
+### Phase C — edit pending + resubmit v2 (plan §6.4) — 🚧 IN PROGRESS
+**C-1 pending edit — ✅ DONE (this session):** `VisitRequestV2Canonical` shared recompute + edit DTOs (stable
+visitInstanceId + expected row versions) + `VisitRequestV2EditService.ApplyPendingEditAsync` (stable-409
+optimistic concurrency on request AND instance; immutable registrant/partner/account-binding emails;
+change-detection so untouched siblings are true no-ops; add campus with availability recheck + routing +
+baseline revision; remove campus only WAITING with no downstream data + orphan-member cleanup; copy-on-write
+member full-replace; recompute scope/mixed/fingerprint/projection; SAFE_EDIT revisions + correlated
+field-level audit) + handler/`PUT /api/v2/visit-requests/{id}/pending-edit` (both-flag gate; editors =
+registrant or ACTIVE primary contact; v1 requests → `VISIT_REQUEST_NOT_PER_CAMPUS_V2`; 24h window;
+post-commit best-effort leader notifications) + structural validator sharing the create-v2 campus rules.
+Service 14/14 + command 1/1 targeted green.
+**C-2 resubmit all-REJECTED — NEXT:** keep instance IDs (no reset of other campuses' decisions), campus set
+fixed, snapshot old decisions before clearing, resubmission_count++, re-route to current leaders, RESUBMIT
+revisions, idempotent audit/notification.
 
 ### Phase D — identity claim/transfer + cancel-3A + expiry jobs (plan §16.4/16.7/16.8, §4.4)
 INITIAL_CLAIM (72h) + TRANSFER (24h) state machines; exact-email Google SSO / OTP-fallback + explicit accept;
