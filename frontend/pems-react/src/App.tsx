@@ -5,6 +5,7 @@
 
 import React, { useEffect } from 'react';
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
+import VisitContactInvitationPage from './pages/identity/VisitContactInvitationPage';
 import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -148,6 +149,11 @@ export default function App() {
 
           {/* Notification Center — yêu cầu đăng nhập, KHÔNG lồng trong /dashboard để giữ Header/Footer public */}
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+
+          {/* Per-campus v2 identity invitations: anonymous MASKED landing; accept/decline require the
+              matching Google login (the page itself guides the user — no ProtectedRoute redirect). */}
+          <Route path="/visit-contact-claim/:token" element={<VisitContactInvitationPage kind="claim" />} />
+          <Route path="/visit-contact-transfer/:token" element={<VisitContactInvitationPage kind="transfer" />} />
 
           {/* Dashboard Routes (require authentication) */}
           <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>
