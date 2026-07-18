@@ -43,8 +43,10 @@ Missing v2 detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback.
 
 - `PerCampusFormV2` read flag **OFF** (no appsettings override; default `false`). Write flag **not created** yet.
 - **No v2 data**: `visit_requests.form_schema_version >= 2` count = 0 in pems_db, pems_pr3_test, pems_it_regression.
-- **Real DBs untouched**: pems_db / pems_test never mutated; all integration runs on disposable
-  `pems_it_regression` recreated from the PR-2 master each run.
+- **Protected DBs**: `pems_db` and `pems_test` are **never mutated**. `pems_pr3_test` is the sanctioned
+  direct-handler test DB — it carries the **additive schema patches 06/07/08 by design** (so it is NOT
+  "unmutated"; only its v2/pending DATA rows stay 0). Full integration/E2E runs use disposable
+  `pems_it_regression`; Phase H drills use disposable `pems_h_fresh` / `pems_h_upgrade` / `pems_h_rollback`.
 - **appsettings.Testing.json** = `pems_test` (restored; the file is gitignored — verified by grep, not git diff).
 - **Plan doc** `PEMS_MULTI_CAMPUS_PER_CAMPUS_FORM_AND_IDENTITY_EDIT_PLAN.md` remains **untracked** (not committed).
 

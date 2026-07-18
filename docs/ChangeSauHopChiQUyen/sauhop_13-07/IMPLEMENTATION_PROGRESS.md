@@ -328,7 +328,19 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   view wires Edit/Resubmit by manager + status. Gates: backend build 0 · v2 read IT **23/23** · FE tsc 0 /
   lint 0 / unit **56/56** (10 new) / build ✓.
 - **Phase G is DONE** (G-1/2/3 + G-4A + G-4B). Next: Phase H (E2E + SQL drill + rollout docs), then I.
-## Phase H — final verification + E2E + rollout readiness — ⬜ pending
+## Phase H — final verification + E2E + rollout readiness — 🟨 IN PROGRESS
+- **H-1 SQL migration lifecycle drill** — ✅ DONE (full evidence: `percampus_v2_migration/H1_MIGRATION_DRILL_REPORT.md`).
+  Fixed a real **fresh-vs-upgrade drift**: `visit_request_pending_forms` (G-4A `08_up`) was missing from the
+  fresh master → added to `pems_full_v10_..._FIXED.sql` + documented in README (patches 06/07/08). Drills on
+  disposable DBs only (`pems_h_fresh`/`pems_h_upgrade`/`pems_h_rollback`; pems_db/pems_test never mutated):
+  fresh import (all 9 v2 tables incl pending_forms), upgrade from pre-v2 baseline `ed693f6d` → `04_verify`
+  **V01–V15 = 0** / presence 1 (762/762 links, 204/204 details), idempotent re-run (identical `204|762|0|0|71`),
+  **schema diff fresh-vs-upgrade IDENTICAL** (71=71 tables, columns+indexes byte-identical), constraint
+  boundaries (29m59s→3819, 30m OK, end=start→3819, pending dup submission→1062), rollback **refusal guard**
+  (has_mixed=1 → aborts, no partial drop) + **clean DOWN** (0 of 9 v2 tables/columns/constraints left),
+  EXPLAIN index usage (submission_id→const/uq, expires_at→range/idx, form_details→PK point lookup).
+- **H-2 E2E + full regression** — ⬜ pending.
+- **H-3 observability + rollout/canary/rollback docs** — ⬜ pending.
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)

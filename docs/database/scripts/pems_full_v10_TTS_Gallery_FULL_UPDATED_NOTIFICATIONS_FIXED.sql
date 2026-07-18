@@ -1364,6 +1364,27 @@ CREATE TABLE visit_request_revision_history (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Lịch sử snapshot cấp request (display fields). Quan hệ email/account lấy identity-change events làm lịch sử chính.';
 
+-- Public per-campus form v2 pending submission store (Phase G-4A). Binds the FULL canonical v2 snapshot
+-- and its v2 fingerprint to a submit intent at `initiate` so `verify` builds the request from EXACTLY what
+-- was OTP-verified (campus/member/contact/time/content cannot change between initiate and verify). One row
+-- per submission intent, created at initiate, reused across OTP resends, consumed at verify. Standalone (no
+-- FK) — bound to a submission intent, not to a created request. Kept in sync with 08_up_pending_v2_forms.sql.
+CREATE TABLE visit_request_pending_forms (
+  pending_form_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  submission_id        VARCHAR(36)     NOT NULL,
+  registrant_email     VARCHAR(255)    NOT NULL,
+  form_schema_version  SMALLINT        NOT NULL DEFAULT 2,
+  fingerprint_v2       CHAR(64)        NOT NULL,
+  snapshot_json        LONGTEXT        NOT NULL,
+  created_at           DATETIME        NOT NULL,
+  expires_at           DATETIME        NOT NULL,
+  consumed_at          DATETIME        NULL,
+  PRIMARY KEY (pending_form_id),
+  UNIQUE KEY uq_pending_forms_submission (submission_id),
+  KEY idx_pending_forms_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Bind snapshot v2 vào submit intent lúc initiate; verify tạo request từ snapshot đã bind. Consumed at verify.';
+
 -- =====================================================================
 -- AGENDA TEMPLATE MODULE (4 tables: agenda_templates, agenda_template_items,
 -- agenda_template_defaults, visit_agendas).
