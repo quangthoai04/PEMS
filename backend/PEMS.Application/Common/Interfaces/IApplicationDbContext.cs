@@ -46,6 +46,10 @@ public interface IApplicationDbContext
     DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; }
     DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; }
 
+    // ── Student visit photo storage (Google Drive, independent from Gallery) ──
+    DbSet<VisitPhotoFolder> VisitPhotoFolders { get; }
+    DbSet<VisitPhoto> VisitPhotos { get; }
+
     // ── Per-campus form v2 (percampus_v2_migration) ──────────────────────────
     DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails { get; }
     DbSet<VisitInstanceGuestMember> VisitInstanceGuestMembers { get; }

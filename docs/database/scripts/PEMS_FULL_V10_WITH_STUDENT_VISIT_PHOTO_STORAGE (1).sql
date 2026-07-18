@@ -4,6 +4,18 @@
 -- =====================================================================
 
 -- =====================================================================
+-- ADDITIVE UPDATE 2026-07-18 — STUDENT VISIT/DELEGATION PHOTO STORAGE
+--   + Keeps every existing schema object and seed from the supplied base.
+--   + Adds visit_photo_folders: one private Google Drive child folder per
+--     visit request/delegation, beneath configured VisitRequestPhotoFolderId.
+--   + Adds visit_photos: image metadata linkage to files + exact campus instance.
+--   + Independent from Gallery; no gallery table, publication or public visibility.
+--   + Defense-in-depth triggers require an ACTIVE role STUDENT with an ACCEPTED
+--     STUDENT participation row in the exact visit instance.
+--   + Required application file purpose: VISIT_REQUEST_PHOTO.
+-- =====================================================================
+
+-- =====================================================================
 -- SEED RULE FIX APPLIED
 -- ASSIGNED in visit_participants is kept only for:
 --   1) IC_HOST assigned as main host; or
@@ -249,6 +261,8 @@ DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bi;
 DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bu;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bi;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bu;
+DROP TRIGGER IF EXISTS trg_visit_photos_validate_bi;
+DROP TRIGGER IF EXISTS trg_visit_photos_validate_bu;
 
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS agenda_template_defaults;
@@ -280,6 +294,8 @@ DROP TABLE IF EXISTS feedbacks;
 DROP TABLE IF EXISTS minutes;
 DROP TABLE IF EXISTS visit_logistics_items;
 DROP TABLE IF EXISTS visit_agendas;
+DROP TABLE IF EXISTS visit_photos;
+DROP TABLE IF EXISTS visit_photo_folders;
 DROP TABLE IF EXISTS visit_participants;
 DROP TABLE IF EXISTS visit_guest_members;
 DROP TABLE IF EXISTS visit_request_campuses;
@@ -1108,6 +1124,101 @@ CREATE TABLE visit_participants (
     FOREIGN KEY (assigned_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Người nội bộ tham gia visit instance. Chỉ gồm IC_HOST, IC_SUPPORT, DEPT_SUPPORT, STUDENT. Host chính lưu bằng is_host.';
+
+-- =====================================================================
+-- STUDENT VISIT PHOTO STORAGE (GOOGLE DRIVE, INDEPENDENT FROM GALLERY)
+-- =====================================================================
+-- Binary images are stored on Google Drive. The files table stores the
+-- provider metadata. These two tables only model the business ownership:
+-- one Drive child folder per visit request/delegation, and photo rows per
+-- campus instance. Nothing here creates or publishes Gallery content.
+
+CREATE TABLE visit_photo_folders (
+  visit_photo_folder_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+
+  storage_provider ENUM('GOOGLE_DRIVE') NOT NULL DEFAULT 'GOOGLE_DRIVE',
+  external_folder_id VARCHAR(255) NOT NULL
+    COMMENT 'Google Drive folder id below configured VisitRequestPhotoFolderId root',
+  folder_name VARCHAR(255) NOT NULL
+    COMMENT 'Stable application-generated name, recommended: VR-{visit_request_id or request_code}',
+  web_view_url VARCHAR(700) NULL,
+
+  status ENUM('ACTIVE','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (visit_photo_folder_id),
+  UNIQUE KEY uq_visit_photo_folders_request (visit_request_id),
+  UNIQUE KEY uq_visit_photo_folders_external (external_folder_id),
+  UNIQUE KEY uq_visit_photo_folders_folder_request (visit_photo_folder_id, visit_request_id),
+  KEY idx_visit_photo_folders_status (status, created_at),
+  KEY idx_visit_photo_folders_created_by (created_by, created_at),
+
+  CONSTRAINT fk_visit_photo_folders_request
+    FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photo_folders_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_photo_folders_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CHECK (TRIM(external_folder_id) <> ''),
+  CHECK (TRIM(folder_name) <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='One private Google Drive child folder per visit request/delegation; root folder id is application configuration, not Gallery data.';
+
+CREATE TABLE visit_photos (
+  visit_photo_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  visit_photo_folder_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
+
+  caption VARCHAR(500) NULL,
+  taken_at DATETIME NULL,
+
+  status ENUM('ACTIVE','REMOVED') NOT NULL DEFAULT 'ACTIVE',
+  uploaded_by BIGINT UNSIGNED NOT NULL
+    COMMENT 'Student user who uploaded the image; validated against ACCEPTED STUDENT participation by trigger and backend',
+  uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  removed_at DATETIME NULL,
+  removed_by BIGINT UNSIGNED NULL,
+  removal_reason VARCHAR(500) NULL,
+
+  PRIMARY KEY (visit_photo_id),
+  UNIQUE KEY uq_visit_photos_file (file_id),
+  KEY idx_visit_photos_request_time (visit_request_id, uploaded_at),
+  KEY idx_visit_photos_instance_time (visit_instance_id, uploaded_at),
+  KEY idx_visit_photos_folder_time (visit_photo_folder_id, uploaded_at),
+  KEY idx_visit_photos_uploader_time (uploaded_by, uploaded_at),
+  KEY idx_visit_photos_status_time (status, uploaded_at),
+
+  CONSTRAINT fk_visit_photos_request_instance
+    FOREIGN KEY (visit_request_id, visit_instance_id)
+    REFERENCES visit_request_campuses(visit_request_id, visit_instance_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_folder_request
+    FOREIGN KEY (visit_photo_folder_id, visit_request_id)
+    REFERENCES visit_photo_folders(visit_photo_folder_id, visit_request_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_file
+    FOREIGN KEY (file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_uploaded_by
+    FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_removed_by
+    FOREIGN KEY (removed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+
+  CHECK (caption IS NULL OR TRIM(caption) <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Private visit/delegation photos uploaded by an ACCEPTED Student participant. Binary is on Drive and metadata is in files; independent from Gallery.';
 
 -- =====================================================================
 -- PER-CAMPUS FORM v2 + IDENTITY EDIT + AMENDMENT MODULE
@@ -3820,6 +3931,93 @@ BEGIN
   IF NEW.target_user_id IS NOT NULL AND NEW.submitted_by_user_id = NEW.target_user_id THEN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'Feedback submitter and target user cannot be the same';
+  END IF;
+END$$
+
+-- Visit photo upload must be an image stored on Google Drive with the dedicated
+-- purpose, and the uploader must be an ACTIVE Student who ACCEPTED participation
+-- in the exact campus instance. Application authorization must perform the same
+-- checks before calling IFileUploadService; these triggers are defense-in-depth.
+CREATE TRIGGER trg_visit_photos_validate_bi
+BEFORE INSERT ON visit_photos
+FOR EACH ROW
+BEGIN
+  DECLARE v_valid_participant INT DEFAULT 0;
+  DECLARE v_valid_file INT DEFAULT 0;
+
+  SELECT COUNT(*) INTO v_valid_participant
+  FROM visit_participants vp
+  JOIN users u ON u.user_id = vp.user_id
+  JOIN roles r ON r.role_id = u.role_id
+  WHERE vp.visit_instance_id = NEW.visit_instance_id
+    AND vp.user_id = NEW.uploaded_by
+    AND vp.participant_role = 'STUDENT'
+    AND vp.status = 'ACCEPTED'
+    AND r.role_code = 'STUDENT'
+    AND u.status = 'ACTIVE';
+
+  IF v_valid_participant = 0 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE Student with ACCEPTED participation in this visit instance';
+  END IF;
+
+  SELECT COUNT(*) INTO v_valid_file
+  FROM files f
+  WHERE f.file_id = NEW.file_id
+    AND f.storage_provider = 'GOOGLE_DRIVE'
+    AND f.file_purpose = 'VISIT_REQUEST_PHOTO'
+    AND f.mime_type LIKE 'image/%';
+
+  IF v_valid_file = 0 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo file must be a Google Drive image with VISIT_REQUEST_PHOTO purpose';
+  END IF;
+
+  IF NOT (
+    (NEW.status = 'ACTIVE'
+      AND NEW.removed_at IS NULL
+      AND NEW.removed_by IS NULL
+      AND NEW.removal_reason IS NULL)
+    OR
+    (NEW.status = 'REMOVED'
+      AND NEW.removed_at IS NOT NULL
+      AND NEW.removed_by IS NOT NULL
+      AND NEW.removal_reason IS NOT NULL
+      AND TRIM(NEW.removal_reason) <> '')
+  ) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo removal metadata is inconsistent with status';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_visit_photos_validate_bu
+BEFORE UPDATE ON visit_photos
+FOR EACH ROW
+BEGIN
+  IF NEW.visit_request_id <> OLD.visit_request_id
+     OR NEW.visit_instance_id <> OLD.visit_instance_id
+     OR NEW.visit_photo_folder_id <> OLD.visit_photo_folder_id
+     OR NEW.file_id <> OLD.file_id
+     OR NEW.uploaded_by <> OLD.uploaded_by
+     OR NEW.uploaded_at <> OLD.uploaded_at THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo ownership, file and original upload metadata are immutable';
+  END IF;
+
+  IF NOT (
+    (NEW.status = 'ACTIVE'
+      AND NEW.removed_at IS NULL
+      AND NEW.removed_by IS NULL
+      AND NEW.removal_reason IS NULL)
+    OR
+    (NEW.status = 'REMOVED'
+      AND NEW.removed_at IS NOT NULL
+      AND NEW.removed_by IS NOT NULL
+      AND NEW.removal_reason IS NOT NULL
+      AND TRIM(NEW.removal_reason) <> '')
+  ) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo removal metadata is inconsistent with status';
   END IF;
 END$$
 

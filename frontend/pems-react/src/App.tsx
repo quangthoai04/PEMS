@@ -51,6 +51,7 @@ import { AccountManagement } from './pages/dashboard/accounts/AccountManagement'
 import { VisitFPTUPage } from './pages/VisitFPTUPage';
 import { CampusDetailVisitPage } from './pages/CampusDetailVisitPage';
 import { VisitRequestManagement } from './pages/dashboard/visit/VisitRequestManagement';
+import { VisitPhotoManagement } from './pages/dashboard/visit/VisitPhotoManagement';
 import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTasksPage';
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
@@ -183,6 +184,8 @@ export default function App() {
             <Route path="visit/edit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/resubmit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
+            {/* Student: quản lý ảnh đoàn khách (visit_photos) — backend enforce scope, FE chỉ ẩn menu */}
+            <Route path="visit-photos" element={<VisitPhotoManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />
             <Route path="visit/feedback/:visitInstanceId" element={<VisitFeedbackPage />} />
             <Route path="visit/process-summary/:visitInstanceId" element={<VisitProcessSummaryPage />} />
