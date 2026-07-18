@@ -401,8 +401,22 @@ byte-identical when the flags are OFF.
     default-OFF HTTP shape + ON/ON via real DI). Frontend Vitest **+14** (entry decision, provider enabled/off/
     fail-safe/session-cache/outside-provider, FinalCta cutover on/off/error/loading). Full Vitest **70**, tsc 0, build ✓.
 
-- **Slices 2–6** — ⬜ pending (version-aware detail/edit routing; per-campus post-submit summary; safe-edit/
-  amendment UX + allowedActions-driven UI; scoped search match contexts; auth Journey B–H real-stack).
+- **Slice 2 — version-aware detail/edit/resubmit routing** — ✅ DONE.
+  - Backend: `VisitRequestManagementItemDto` now exposes `formSchemaVersion` (+ `hasMixedCampusDetails`),
+    projected at both construction sites of `ViewGuestDelegationListQueryHandler` from the database — so the
+    frontend routes on the real version, never guessed from mixed/campus-count.
+  - Frontend: `visitVersionRouting` (`isPerCampusV2`, `resolveVisitRowRoutes`) drives VisitRequestManagement's
+    detail / edit / resubmit / per-campus-form actions — v2 (mixed OR non-mixed) → `/dashboard/visit/v2/:id`
+    (+ `/edit`, `/resubmit`); v1 → the legacy routes/flat modal. A v2 row no longer opens the flat modal or
+    waits for a v1 409. Missing version (older cached payload) falls back to v1. The existing code-matched
+    `FORM_VERSION_UPGRADE_REQUIRED` handling stays as defense-in-depth.
+  - Deferred within Slice 2: making the *other* shared-modal call sites (HoVisitProcessDetail,
+    VisitParticipantInvitationDetail) version-aware — those still rely on the backend 409 guard.
+  - Tests: backend `V2MixedListSurfacesTests.Management_list_exposes_form_schema_version…` (list DTO carries
+    v2 + mixed label). Frontend Vitest **+6** (`visitVersionRouting`). Full Vitest **76**, tsc 0, build ✓.
+
+- **Slices 3–6** — ⬜ pending (per-campus post-submit summary; safe-edit/amendment UX + allowedActions-driven
+  UI; scoped search match contexts; auth Journey B–H real-stack).
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

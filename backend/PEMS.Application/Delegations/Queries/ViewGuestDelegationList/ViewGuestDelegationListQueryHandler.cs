@@ -340,6 +340,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CampusCancellationSource = x.c.CancellationSource,
                 CampusCancelledBy = x.c.CancelledBy,
                 x.vr.RequestCode,
+                x.vr.FormSchemaVersion,
+                x.vr.HasMixedCampusDetails,
                 DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.vr.DelegationName,
@@ -432,6 +434,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestStatus = r.RequestStatus,
                 CampusStatus = r.CampusStatus,
                 VisitScope = r.VisitScope,
+                FormSchemaVersion = r.FormSchemaVersion,
+                HasMixedCampusDetails = r.HasMixedCampusDetails,
                 CampusId = r.CampusId,
                 CampusName = campusName,
                 CampusCount = campusCountByRequest.TryGetValue(r.VisitRequestId, out var cc2) ? cc2 : 1,
@@ -765,6 +769,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestStatus = vr.Status,
                 CampusStatus = single?.Status,
                 VisitScope = vr.VisitScope,
+                FormSchemaVersion = vr.FormSchemaVersion,
+                HasMixedCampusDetails = vr.HasMixedCampusDetails,
                 CampusId = single?.CampusId,
                 CampusName = campusName,
                 CampusCount = count,

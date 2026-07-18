@@ -10,6 +10,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Dashboard.Queries.GetStaffCalendar;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
@@ -263,6 +264,44 @@ public sealed class V2MixedListSurfacesTests
                     new GetStaffCalendarQuery("office", start, start.AddDays(3)), CancellationToken.None);
                 var row = result.Items.Single(i => i.VisitRequestId == requestId);
                 Assert.Equal(hcmName, row.DelegationName);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Management_list_exposes_form_schema_version_so_frontend_routes_to_v2()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            (requestId, _, _) = await CreateMixedApprovedAsync(
+                "Đoàn Ver HN " + Guid.NewGuid().ToString("N")[..6],
+                "Đoàn Ver HCM " + Guid.NewGuid().ToString("N")[..6], start);
+
+            string requestCode;
+            using (var db = NewContext())
+                requestCode = await db.VisitRequests.AsNoTracking()
+                    .Where(v => v.VisitRequestId == requestId)
+                    .Select(v => v.RequestCode!)
+                    .SingleAsync();
+
+            // The Visitor owner's management list must carry form_schema_version=2 (+ mixed flag) so the
+            // frontend routes this row straight to the v2 UI — never waiting for a v1 endpoint 409.
+            using (var db = NewContext())
+            {
+                var handler = new ViewGuestDelegationListQueryHandler(
+                    db, new FakeUser(Registrant), new FixedClock());
+                var result = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = requestCode },
+                    CancellationToken.None);
+
+                var row = result.Items.Single(i => i.VisitRequestId == requestId);
+                Assert.Equal(FormSchemaVersions.PerCampus, row.FormSchemaVersion); // 2
+                Assert.True(row.HasMixedCampusDetails);
+                Assert.Equal("Khác nhau theo cơ sở", row.DelegationName);          // mixed request-level label
             }
         }
         finally { await CleanupAsync(requestId); }

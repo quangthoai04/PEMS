@@ -755,6 +755,16 @@ export interface VisitRequestManagementItem {
   campusStatus: VisitInstanceStatus | null;
   visitScope: VisitScope | null;
 
+  /**
+   * Form schema version from the database: 1 = legacy global form, 2 = per-campus (v2).
+   * Detail/edit/resubmit routing branches on THIS value so a v2 request always opens the v2 UI
+   * without waiting for a v1 endpoint to reply 409 FORM_VERSION_UPGRADE_REQUIRED. Optional so
+   * older cached list payloads (no field) fall back to v1.
+   */
+  formSchemaVersion?: number;
+  /** True when a v2 request stores different content per campus. */
+  hasMixedCampusDetails?: boolean;
+
   campusId: number | null;
   campusName: string | null;
   campusCount: number;
