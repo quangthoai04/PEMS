@@ -36,6 +36,7 @@ import {
   PanelLeftOpen,
   KeyRound,
   ScrollText,
+  Camera,
 } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
@@ -250,6 +251,12 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
             <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
               <Briefcase className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý tiếp khách</span>
+            </NavLink>
+          )}
+          {roleForSidebar === "STUDENT" && (
+            <NavLink to="/dashboard/visit-photos" className={navItemClass} onClick={handleLinkClick}>
+              <Camera className="w-5 h-5 flex-shrink-0" />
+              <span>Quản lý ảnh đoàn khách</span>
             </NavLink>
           )}
           {(["HO", "STAFF"].includes(roleForSidebar)) && (

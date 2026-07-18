@@ -43,13 +43,36 @@ public sealed class FileUploadService : IFileUploadService
         _logger = logger;
     }
 
-    public async Task<UploadedFileDto> UploadBusinessFileAsync(
+    public Task<UploadedFileDto> UploadBusinessFileAsync(
         Stream stream,
         string originalFileName,
         string contentType,
         long fileSize,
         FilePurpose purpose,
         long uploadedBy,
+        CancellationToken cancellationToken)
+        => UploadCoreAsync(stream, originalFileName, contentType, purpose, uploadedBy,
+            targetFolderId: null, cancellationToken);
+
+    public Task<UploadedFileDto> UploadBusinessFileAsync(
+        Stream stream,
+        string originalFileName,
+        string contentType,
+        long fileSize,
+        FilePurpose purpose,
+        long uploadedBy,
+        string targetFolderId,
+        CancellationToken cancellationToken)
+        => UploadCoreAsync(stream, originalFileName, contentType, purpose, uploadedBy,
+            targetFolderId, cancellationToken);
+
+    private async Task<UploadedFileDto> UploadCoreAsync(
+        Stream stream,
+        string originalFileName,
+        string contentType,
+        FilePurpose purpose,
+        long uploadedBy,
+        string? targetFolderId,
         CancellationToken cancellationToken)
     {
         // Buffer once: validation needs the leading bytes, checksum needs a rewindable stream, and the
@@ -65,7 +88,9 @@ public sealed class FileUploadService : IFileUploadService
         var checksum = await _checksum.ComputeSha256HexAsync(buffered, cancellationToken);
 
         var objectKey = _objectKeyBuilder.Build(purpose, uploadedBy, originalFileName);
-        var folderId = _folderResolver.ResolveFolderId(purpose);
+        var folderId = string.IsNullOrWhiteSpace(targetFolderId)
+            ? _folderResolver.ResolveFolderId(purpose)
+            : targetFolderId!;
 
         string? uploadedExternalFileId = null;
         try

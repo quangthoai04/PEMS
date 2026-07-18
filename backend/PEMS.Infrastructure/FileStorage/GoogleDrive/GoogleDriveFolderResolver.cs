@@ -42,6 +42,7 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
             FilePurpose.Document => _options.DocumentPartnerFolderId,
             FilePurpose.MinutesAttachment => _options.MinutesFolderId,
             FilePurpose.VisitRequestAttachment => _options.VisitRequestDocumentFolderId,
+            FilePurpose.VisitRequestPhoto => _options.VisitRequestPhotoFolderId,
             FilePurpose.PartnerDocument => _options.DocumentPartnerFolderId,
             FilePurpose.LogisticsAttachment => _options.DocumentPartnerFolderId,
             FilePurpose.BusinessCard => _options.DocumentPartnerFolderId,
@@ -50,12 +51,15 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
 
         // The dedicated gallery folders must never fall back silently — a missing id would quietly
         // put covers/items/delegation media in the wrong folder, defeating the per-folder routing.
+        // Visit request photos are equally strict: their VR-{id}/{campus} tree hangs off the
+        // configured root, so landing anywhere else would break the mandated Drive structure.
         var isDedicatedGalleryPurpose = purpose is
             FilePurpose.GalleryAreaCover or FilePurpose.GalleryAreaCoverVideo
             or FilePurpose.GalleryLocationCover
             or FilePurpose.GalleryItemImage or FilePurpose.GalleryItemVideo
             or FilePurpose.GalleryDelegationImage or FilePurpose.GalleryDelegationVideo
-            or FilePurpose.GalleryAudio;
+            or FilePurpose.GalleryAudio
+            or FilePurpose.VisitRequestPhoto;
 
         // Fall back to the root folder so an un-provisioned purpose still has somewhere to land.
         if (string.IsNullOrWhiteSpace(folderId) && !isDedicatedGalleryPurpose)

@@ -25,6 +25,7 @@ import {
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import toast from 'react-hot-toast';
 import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
+import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 
 function fmtDateTime(value?: string | null): string {
   if (!value) return '—';
@@ -802,6 +803,9 @@ export function TaskDetail() {
           );
         })()}
 
+        {isTaskComplete && (
+          <LogisticsExpensePanel logisticsItemId={detailData.logisticsItemId} />
+        )}
       </div>
 
       {/* FOOTER ACTION */}

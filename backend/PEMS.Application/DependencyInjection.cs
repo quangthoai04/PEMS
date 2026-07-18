@@ -50,6 +50,10 @@ public static class DependencyInjection
         // Per-campus form v2 central dual-read resolver (PR-3).
         services.AddScoped<PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService, PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService>();
 
+        // Student visit photo Drive-folder provisioning (VR-{request}/{campus} tree, one row per request).
+        services.AddScoped<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService,
+            PEMS.Application.Delegations.VisitPhotos.VisitPhotoFolderService>();
+
         return services;
     }
 }

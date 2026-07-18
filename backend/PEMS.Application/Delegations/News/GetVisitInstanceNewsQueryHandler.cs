@@ -33,7 +33,7 @@ public sealed class GetVisitInstanceNewsQueryHandler
 
         var acceptedRole = await _db.VisitParticipants
             .Where(p => p.VisitInstanceId == instance.VisitInstanceId && p.UserId == userId
-                && p.Status == ParticipantStatuses.Accepted && !p.IsHost)
+                && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned) && !p.IsHost)
             .Select(p => p.ParticipantRole)
             .FirstOrDefaultAsync(cancellationToken);
 

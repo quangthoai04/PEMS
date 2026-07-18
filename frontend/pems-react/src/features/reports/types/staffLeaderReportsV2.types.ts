@@ -69,6 +69,24 @@ export interface StaffLeaderV2Departments {
   rows: StaffLeaderV2DepartmentRow[];
 }
 
+export interface StaffLeaderV2ExpenseRow {
+  visitInstanceId: number;
+  groupCode: string;
+  delegationName: string;
+  visitDate: string | null;
+  generalExpense: number;
+  logisticsExpense: number;
+  totalExpense: number;
+  status: string;
+}
+
+export interface StaffLeaderV2Expenses {
+  totalAmount: number;
+  totalGeneral: number;
+  totalLogistics: number;
+  rows: StaffLeaderV2ExpenseRow[];
+}
+
 export interface StaffLeaderReportV2 {
   generatedAt: string;
   campusName: string;
@@ -78,6 +96,7 @@ export interface StaffLeaderReportV2 {
   visits: StaffLeaderV2Visits;
   personnel: StaffLeaderV2Personnel;
   departments: StaffLeaderV2Departments;
+  expenses: StaffLeaderV2Expenses;
 }
 
 /** 1 chữ ký trong biên bản bàn giao (panel hóa đơn). */
