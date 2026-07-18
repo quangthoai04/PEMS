@@ -50,7 +50,22 @@ member resolution, invoice, reports, export, email, notification/audit — all g
 made (no regression found). Frontend `tsc` + `build` + the 78 Playwright browser tests confirm no UI
 regression from the Phase-G / G-4 / H-1 changes.
 
-## Full real-stack E2E — honest infrastructure status
+## Full real-stack E2E — H-4 UPDATE (harness built; journey A running real-stack)
+
+**H-4 delivered the real-stack harness and ran journey A end to end** (see `IMPLEMENTATION_PROGRESS.md`):
+real Chromium → real React (Vite) → real .NET API (Testing, both v2 flags ON) → disposable
+`pems_e2e_realstack` MySQL, with the OTP read from a Testing-only file sink (never a public endpoint).
+`npm run test:e2e:realstack` (`scripts/run-realstack-e2e.mjs`) creates the DB from the fixed master,
+publishes + starts the backend with env overrides, points Vite at it, runs
+`tests-realstack/public-create-v2.realstack.spec.ts`, and tears everything down. This journey **caught a real
+production bug** (blank operational-contact org/email → 500), which was fixed with a regression test.
+
+Still a documented follow-on: journeys **B–H are auth-gated** and need the `TestAuthHandler` header scheme
+wired into the real host (it currently lives only in `WebApplicationFactory`). Those journeys remain covered
+at the Integration (authorization/concurrency/hidden-search) and Vitest (component) layers per the matrix
+above; promoting them to real-stack is the next H-4 increment.
+
+## Original infrastructure notes (pre-H-4)
 
 The existing Playwright suite (and the 2 new per-campus specs) are **browser component/contract tests with
 mocked network** — the `webServer` starts only Vite (frontend); the backend and OTP are mocked via

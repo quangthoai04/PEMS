@@ -10,7 +10,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test:unit": "vitest run --config vitest.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:realstack": "node scripts/run-realstack-e2e.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -359,7 +359,27 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   now **374/374**. Rollout doc: exact flag names/defaults from source (`PerCampusFormV2` + `PerCampusFormV2Write`,
   both default `false`), ordered rollout, internal canary, log/audit-derived metrics with rollback actions
   (numeric thresholds = documented placeholders pending Product), and flag-OFF (not DOWN) as the production
-  rollback. **Phase H DONE** (H-1/H-2/H-3); report stays IN PROGRESS (Phase I pending).
+  rollback.
+- **H-4 real-stack E2E** — ✅ DONE. Built the real-stack harness: Testing-only `FileSinkEmailService` (double-
+  gated by `ASPNETCORE_ENVIRONMENT=Testing` + `PEMS_E2E_TEST_SINK_ENABLED=true` + a sink path; fail-closed;
+  never in prod), a real `.NET` backend published + run on a dedicated port (env overrides — never edits
+  appsettings; both v2 flags ON; connection → disposable `pems_e2e_realstack`), Vite pointed at it via
+  `VITE_API_BASE_URL`, and `playwright.realstack.config.ts` + `scripts/run-realstack-e2e.mjs`
+  (`npm run test:e2e:realstack`, full create→run→teardown). **Journey A (public per-campus v2 create) RAN
+  real-stack** (real Chromium → real React → real API → real MySQL; OTP read from the sink) — **1 passed**,
+  request persisted (verified in the DB). It **caught a real production bug** (below). Sink guard tests **3/3**.
+  Coverage: journeys B–H (auth-gated) still use the `TestAuthHandler` header scheme not yet wired into the
+  real host — documented as the remaining H-4 follow-on; they stay covered at the Integration/Vitest layers.
+- **H-4 production bug fixed** (caught by the real-stack E2E): a public v2 submit that left the operational
+  contact **organization/email blank** hit `Check constraint 'ck_vifd_op_contact_email' is violated` (500).
+  Those fields are optional (the validator + frontend allow blank; the field is a display snapshot) but the
+  columns were `NOT NULL` with a `TRIM(x) <> ''` CHECK. Fix: columns → NULL (master + `09_up`), entity → `string?`,
+  create/edit services normalize blank → NULL (`Clean`), read service coalesces to `""`. Regression
+  `CreateVisitRequestV2ServiceTests.Blank_operational_contact_org_and_email_persist_as_null…`. Gates: Unit
+  **482**, Arch **14**, full IT **378/378** (374 + op-contact regression + 3 sink guard; first run had 1
+  transient flake — hardened `FileSinkEmailService.IsEnabledFor` to also require the sink path, then rerun
+  clean 378/0), Vitest **56**, tsc/lint 0, build ✓; H-1 fresh+upgrade schema re-verified (op org/email nullable,
+  fresh-vs-upgrade IDENTICAL). **Phase H DONE** (H-1/H-2/H-3/H-4); report stays IN PROGRESS (Phase I pending).
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)

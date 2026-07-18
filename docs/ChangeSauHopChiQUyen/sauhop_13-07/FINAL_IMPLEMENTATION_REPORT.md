@@ -246,7 +246,7 @@ detail/status keys vi+en. Gates: `npm run lint` 0, `npm run test:unit` **46/46**
 client + payload builder + tests shipped in G-2; the create form component is reusable) and the public OTP
 initiate v2 endpoint (backend gap below).
 
-### Phase H — final verification + E2E + rollout readiness — ✅ DONE (H-1/H-2/H-3)
+### Phase H — final verification + E2E + rollout readiness — ✅ DONE (H-1/H-2/H-3/H-4)
 - **H-1 SQL drill** (`percampus_v2_migration/H1_MIGRATION_DRILL_REPORT.md`): fixed a real **fresh-vs-upgrade
   drift** (`visit_request_pending_forms` was missing from the fresh master → added + README). Drills on
   disposable DBs (`pems_h_fresh`/`pems_h_upgrade`/`pems_h_rollback`): fresh import (9 v2 tables), upgrade from
@@ -276,9 +276,10 @@ schema; test on disposable DB; **never run destructive migration on a real DB**;
 ## 5. Test counts (latest, verified — end of Phase F backend, G-2 frontend)
 - UnitTests **482/482** (474 + 8 new `InitiateVisitRequestV2CommandValidator` tests; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **374/374** (372 + 2 H-3 `ExceptionHandlingObservabilityTests`) on a fresh disposable
-  `pems_it_regression` recreated from the **fixed** master (v10, which now integrates pending_forms — H-1),
-  run via the repo-root junction so the
+- IntegrationTests **378/378** (H-4 added 1 op-contact regression + 3 FileSink guard tests to the prior 374;
+  a first full run had 1 transient flake, hardened + rerun clean 378/0) on a fresh disposable
+  `pems_it_regression` recreated from the **fixed** master (v10, which now integrates pending_forms + the
+  op-contact nullability — H-1/H-4), run via the repo-root junction so the
   WebApplicationFactory API tests resolve their content root (368 prior + **4 new G-4A**
   `PublicInitiateVisitRequestV2Tests`: initiate-flag-off binds nothing, initiate→verify builds from the
   bound snapshot, tampered-verify rejected creating nothing, verify-without-initiate rejected).
