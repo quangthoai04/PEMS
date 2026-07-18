@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VisitRequestFormV2 } from '../../features/visit-request/components/v2/VisitRequestFormV2';
+import { VisitRequestV2SubmittedSummary } from '../../features/visit-request/components/v2/VisitRequestV2SubmittedSummary';
 import type { V2CreateResponse } from '../../features/visit-request/api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../../features/visit-request/schema/visitRequestV2.schema';
 import { useAuth } from '../../shared/hooks/useAuth';
@@ -26,7 +27,7 @@ export default function VisitRequestV2Page({ mode }: Props) {
   const draftNamespace = mode === 'authenticated' ? (user?.email ?? undefined) : undefined;
 
   if (result) {
-    const { response } = result;
+    const { response, values } = result;
     return (
       <div className="mx-auto max-w-3xl px-4 py-10">
         <div className="rounded-2xl border border-green-200 bg-green-50 p-6">
@@ -57,6 +58,11 @@ export default function VisitRequestV2Page({ mode }: Props) {
               {t('visitRequestV2:success.backHome')}
             </Link>
           </div>
+        </div>
+
+        {/* Full per-campus summary from the immutable submitted snapshot. */}
+        <div className="mt-6">
+          <VisitRequestV2SubmittedSummary response={response} values={values} />
         </div>
       </div>
     );

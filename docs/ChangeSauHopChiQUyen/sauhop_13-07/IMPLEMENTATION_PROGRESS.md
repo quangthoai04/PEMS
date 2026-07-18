@@ -415,8 +415,21 @@ byte-identical when the flags are OFF.
   - Tests: backend `V2MixedListSurfacesTests.Management_list_exposes_form_schema_version…` (list DTO carries
     v2 + mixed label). Frontend Vitest **+6** (`visitVersionRouting`). Full Vitest **76**, tsc 0, build ✓.
 
-- **Slices 3–6** — ⬜ pending (per-campus post-submit summary; safe-edit/amendment UX + allowedActions-driven
-  UI; scoped search match contexts; auth Journey B–H real-stack).
+- **Slice 3 — post-submit per-campus summary** — ✅ DONE (frontend-only; no backend change).
+  - After a successful authenticated create or public OTP verify, `VisitRequestV2Page` now renders
+    `VisitRequestV2SubmittedSummary`: request-level identity (request code, registrant, primary contact + claim
+    state, partner, aggregate status, campus count, mixed/uniform badge) plus ONE card per campus built from the
+    IMMUTABLE submitted snapshot (`values`) — schedule/duration/timezone, delegation name, visit type (+other),
+    purpose, working content, visitors, support team, operational contact, working language, transportation,
+    media consent/note, campus note, and per-campus instance status linked reliably by campus code → campusId →
+    `response.instances` (never positional). Never the first campus as representative; editing one campus cannot
+    change another's card (immutable snapshot). No new form model — reads the existing schema + create response.
+  - i18n: new `visitRequestV2:summary.*` block (VI + EN). Tests: Vitest **+3** (mixed keeps each campus its own
+    content; multi-same renders every campus; blank optional operational contact renders without crashing).
+    Full Vitest **79**, tsc 0, build ✓.
+
+- **Slices 4–6** — ⬜ pending (safe-edit/amendment UX + allowedActions-driven UI; scoped search match contexts;
+  auth Journey B–H real-stack).
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
