@@ -185,10 +185,27 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 PUBLIC initiate (STEP 1) — validates the FULL v2 form (same canonical rules as
+    /// authenticated create-v2; NOT the v1 3-hour / mandatory-support rules), mints an OTP challenge, and
+    /// BINDS the canonical v2 snapshot to the submit intent so <see cref="VerifyAndCreateFormV2"/> builds the
+    /// request from exactly what was OTP-verified. No request is created here. Gated by BOTH flags: write OFF
+    /// makes this 404 (the v1 initiate flow is unchanged).
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/initiate")]
+    [AllowAnonymous]
+    public async Task<IActionResult> InitiateFormV2(
+        [FromBody] PEMS.Application.Delegations.Commands.InitiateVisitRequestV2.InitiateVisitRequestV2Command command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Per-campus form v2 PUBLIC (OTP-gated) create — the unauthenticated sibling of <see cref="CreateFormV2"/>.
-    /// Verifies the OTP challenge (bound to the registrant email + submissionId), then creates the v2 request.
-    /// Gated by BOTH flags: write OFF makes this 404 (the v1 public verify flow is unchanged). Retries of the
-    /// same submission intent replay idempotently.
+    /// Verifies the OTP challenge (bound to the registrant email + submissionId), then creates the v2 request
+    /// FROM THE SNAPSHOT BOUND AT INITIATE (never the verify-time form). Gated by BOTH flags: write OFF makes
+    /// this 404 (the v1 public verify flow is unchanged). Retries of the same submission intent replay idempotently.
     /// </summary>
     [HttpPost("/api/v2/visit-requests/verify")]
     [AllowAnonymous]

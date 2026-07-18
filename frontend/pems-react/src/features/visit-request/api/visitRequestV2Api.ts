@@ -83,6 +83,23 @@ export interface V2CreateResponse {
 export const createVisitRequestV2 = (payload: V2CreatePayload) =>
   httpClient.post<V2CreateResponse>('/v2/visit-requests', payload).then(r => r.data);
 
+/** Public v2 OTP initiate (step 1). Validates the v2 form, mints the OTP and BINDS the
+ * snapshot server-side so verify builds from exactly this form — the client's verify-time
+ * form can no longer change campus/member/contact/time/content. Body is nested `{ form }`. */
+export interface V2InitiateResponse {
+  sessionToken: string;
+  message: string;
+  maskedEmail: string;
+  expiresAt: string;
+  resendAfterSeconds: number;
+  maxAttempts: number;
+}
+
+export const initiateVisitRequestV2 = (payload: V2CreatePayload) =>
+  httpClient
+    .post<V2InitiateResponse>('/v2/visit-requests/initiate', { form: payload })
+    .then(r => r.data);
+
 /**
  * Public OTP sibling of create-v2 (step 2 of the public flow). The backend command binds
  * `{ form, otpCode, sessionToken }` — the form payload is NESTED, not flattened.

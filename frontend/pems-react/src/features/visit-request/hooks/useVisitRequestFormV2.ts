@@ -18,7 +18,6 @@ import {
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
   newClientKey,
-  projectV2ToV1FormValues,
 } from '../utils/visitRequestV2Form';
 import {
   clearVisitRequestV2Draft,
@@ -26,7 +25,12 @@ import {
   saveVisitRequestV2Draft,
 } from '../utils/visitRequestV2DraftStorage';
 import { visitRequestApi, type CampusProcessingChoice } from '../api/visitRequestApi';
-import { createVisitRequestV2, verifyAndCreateVisitRequestV2, type V2CreateResponse } from '../api/visitRequestV2Api';
+import {
+  createVisitRequestV2,
+  initiateVisitRequestV2,
+  verifyAndCreateVisitRequestV2,
+  type V2CreateResponse,
+} from '../api/visitRequestV2Api';
 import { getApiErrorMessage } from '../../../shared/utils/toast';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
@@ -353,15 +357,16 @@ export const useVisitRequestFormV2 = (
       await submitAuthenticated(data);
       return;
     }
-    // Public: mint the OTP challenge through the v1 initiate endpoint (v1-shaped
-    // projection — see projectV2ToV1FormValues). The CREATE itself is pure v2.
+    // Public: mint the OTP challenge through the v2 initiate endpoint. The FULL v2 form is
+    // sent and its snapshot is bound server-side, so 30-minute / zero-support submissions
+    // work and verify builds from exactly this form — no v1 projection, no silent fallback.
     setIsSubmitting(true);
     setSubmitError(null);
     setFirstErrorCampusIndex(null);
     try {
       const submissionId = crypto.randomUUID();
       submissionIdRef.current = submissionId;
-      const res = await visitRequestApi.initiate(projectV2ToV1FormValues(data), submissionId);
+      const res = await initiateVisitRequestV2(buildV2CreatePayload(data, submissionId));
       if (!res?.sessionToken) throw new Error(t('toast:visitRequest.otpTokenMissing'));
       resetOtpChallengeState();
       setRemainingAttempts(res.maxAttempts ?? null);

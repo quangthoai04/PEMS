@@ -190,7 +190,20 @@ instance-scoped actor. Repository-wide 10-field sweep → **ZERO unclassified pr
 (classification table in audit map §10). Tests: `V2MixedListSurfacesTests` 2/2 (helper matrix + Staff
 calendar end-to-end per-campus names).
 
-### Phase G — frontend (plan §7/§8/§9) — 🚧 IN PROGRESS (G-1 + G-2 done)
+### Phase G — frontend (plan §7/§8/§9) — 🚧 CORE DELIVERED · G-4 EXIT GATES PENDING
+> Phase G core (G-1/G-2/G-3) delivered; exit gates: **G-4A ✅ DONE** (public v2 OTP initiate + snapshot
+> binding — §6), **G-4B ⬜ pending** (dedicated pending-edit/resubmit v2 screen). Phase G is DONE only after
+> G-4B is tested + committed; full Phase H verification begins after that.
+>
+> **G-4A ✅** `POST /api/v2/visit-requests/initiate`: entity `VisitRequestPendingForm` + additive migration
+> `08_up_pending_v2_forms.sql` (+ rollback line); `InitiateVisitRequestV2Command`/Validator (reuses the
+> create-v2 structural validator — v2 rules, not v1)/Handler (fail-fast emails → OTP mint → bind canonical
+> snapshot + fingerprint); verify-v2 now builds FROM THE BOUND SNAPSHOT (never the verify-time form), with
+> stable conflicts on fingerprint mismatch / missing binding; frontend switched to initiate-v2 (v1 projection
+> removed). Gates: build 0-err · Unit 482/482 · Arch 14/14 · full IT 372/372 (fresh `pems_it_regression`) ·
+> targeted v2 IT 7/7 · FE tsc 0 / unit 46/46 / build ✓. Migration additive+idempotent, applied to
+> pems_pr3_test + pems_it_regression only; pems_db/pems_test untouched; flags OFF.
+
 **G-1 ✅** typed v2 API client + invitation landing (`/visit-contact-claim|transfer/:token`, masked, explicit
 accept, wrong-account hint) + `ContactIdentityPanel` + `VisitAmendmentPanel` + `VisitHistoryTimeline`; routes
 wired and the two internal planning docs untracked in the forward-fix commit `0cec2972` (the G-1 commit had
@@ -234,17 +247,19 @@ Prepare guarded migration to drop the 10 global form columns/index/check; update
 schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
 ## 5. Test counts (latest, verified — end of Phase F backend, G-2 frontend)
-- UnitTests **474/474** (the historical "435" baseline was a stale incremental build; 0 failures throughout).
+- UnitTests **482/482** (474 + 8 new `InitiateVisitRequestV2CommandValidator` tests; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **368/368** on a fresh disposable `pems_it_regression` recreated from the PR-2 master
-  (352 through Phase D-4, +8 Phase E safe-edit/amendment, +2 Phase F mixed-surface, plus the v2 write group:
-  create service 11 + create command 3 + public OTP verify 3 + pending-edit service 14 + pending-edit
-  command 1 + resubmit service 6 + resubmit command 1 + contact-claim workflow 7 + transfer workflow 6).
-  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test/pems_it_regression
-  v2_requests = 0, identity_changes = 0, claim tokens = 0; no live appsettings carries a PerCampusFormV2
+- IntegrationTests **372/372** on a fresh disposable `pems_it_regression` recreated from the PR-2 master
+  (v10) + additive patches 06/07/**08_up_pending_v2_forms**, run via the repo-root junction so the
+  WebApplicationFactory API tests resolve their content root (368 prior + **4 new G-4A**
+  `PublicInitiateVisitRequestV2Tests`: initiate-flag-off binds nothing, initiate→verify builds from the
+  bound snapshot, tampered-verify rejected creating nothing, verify-without-initiate rejected).
+  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_pr3_test/pems_it_regression
+  v2_requests = 0, pending_forms = 0, identity_changes = 0; **pems_db and pems_test do NOT have the
+  `visit_request_pending_forms` table** (never mutated); no live appsettings carries a PerCampusFormV2
   section (both flags default OFF).
-- Frontend (end of G-3): `npm run test:unit` (Vitest+RTL, first suite in the repo) **46/46**;
-  `npm run lint` (tsc) 0 errors; `vite build` green (pre-existing chunk-size warning only).
+- Frontend (end of G-4A): `npm run test:unit` (Vitest+RTL) **46/46**; `npm run lint` (tsc) 0 errors;
+  `vite build` green (pre-existing chunk-size warning only).
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
@@ -253,15 +268,14 @@ schema; test on disposable DB; **never run destructive migration on a real DB**;
   migration + zero-unclassified report) and G (frontend G-1/G-2/G-3, with the two documented in-phase
   deferrals: v2 edit-form page + v2 public initiate endpoint) are **done**; next: H (E2E/rollout
   verification), then I (guarded contract-drop prep, disposable DB only).
-- **Public v2 OTP initiate gap (backend, needed before flag-ON)**: there is no `/api/v2/visit-requests/initiate`.
-  The public v2 form mints its OTP through the v1 `POST /visit-requests/initiate`, whose validator
-  (`ApplyVisitRequestFormRules`) enforces the v1 shape — ≥3h slot duration and ≥1 support member — while v2
-  legitimately allows 30-minute visits and 0 support members. The frontend sends an explicit v1 PROJECTION
-  for initiate only (the CREATE always posts the full v2 contract to `/v2/visit-requests/verify`), so
-  requests satisfying the v1 constraints work end-to-end, but a <3h or no-support public v2 submit is
-  rejected at the OTP step. Both flags are OFF so nothing user-facing is affected today; a v2-shape-aware
-  initiate endpoint should ship with the rollout (Phase H checklist item). Authenticated create-v2 has no
-  such constraint.
+- **Public v2 OTP initiate gap — ✅ CLOSED by G-4A.** `POST /api/v2/visit-requests/initiate` now validates the
+  FULL v2 form (the same `VisitRequestFormDataV2Validator` as create-v2 — 30-minute minimum, zero support
+  members allowed — never the v1 3-hour / mandatory-support rules), mints the OTP via the existing primitive,
+  and BINDS the canonical v2 snapshot to the submit intent in `visit_request_pending_forms`. Verify now builds
+  the request from the BOUND snapshot (not the verify-time form): a client cannot change campus/member/contact/
+  time/content between initiate and verify (fingerprint-mismatch → stable `PER_CAMPUS_V2_SUBMISSION_FORM_MISMATCH`;
+  missing/expired/consumed binding → `PER_CAMPUS_V2_PENDING_NOT_FOUND`). The frontend public flow calls
+  initiate-v2 directly (the v1 projection is gone; no silent fallback). Both flags remain default OFF.
 - The G-1 commit `f9aa43f0` had been pushed to origin before its scope could be amended, so the correction
   landed as the FORWARD commit `0cec2972` (App.tsx invitation routes + untracking the two internal planning
   documents; the files remain in the worktree, local-only). History was not rewritten.

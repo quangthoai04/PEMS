@@ -110,6 +110,7 @@ DELIMITER ;
 -- ---------------------------------------------------------------------
 -- 2. Drop v2 tables (children first to satisfy FKs).
 -- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS visit_request_pending_forms;
 DROP TABLE IF EXISTS visit_instance_amendment_changes;
 DROP TABLE IF EXISTS visit_instance_amendments;
 DROP TABLE IF EXISTS visit_instance_form_revision_history;

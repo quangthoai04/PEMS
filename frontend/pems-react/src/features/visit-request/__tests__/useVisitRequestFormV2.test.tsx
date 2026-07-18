@@ -14,11 +14,16 @@ vi.mock('../api/visitRequestApi', () => ({
 
 vi.mock('../api/visitRequestV2Api', () => ({
   createVisitRequestV2: vi.fn(),
+  initiateVisitRequestV2: vi.fn(),
   verifyAndCreateVisitRequestV2: vi.fn(),
 }));
 
 import { visitRequestApi } from '../api/visitRequestApi';
-import { createVisitRequestV2, verifyAndCreateVisitRequestV2 } from '../api/visitRequestV2Api';
+import {
+  createVisitRequestV2,
+  initiateVisitRequestV2,
+  verifyAndCreateVisitRequestV2,
+} from '../api/visitRequestV2Api';
 
 const futureAt = (extraMs = 0): string => {
   const d = new Date(Date.now() + 200 * 3600 * 1000 + extraMs);
@@ -146,9 +151,10 @@ describe('useVisitRequestFormV2', () => {
     expect(list[1].campus).toBe('HCM');
   });
 
-  it('PUBLIC: initiate mints the OTP with a v1 projection; verify sends the REAL v2 contract', async () => {
-    vi.mocked(visitRequestApi.initiate).mockResolvedValue({
-      sessionToken: 'sess-1', maskedEmail: 'r***@example.com', maxAttempts: 5, resendAfterSeconds: 60,
+  it('PUBLIC: initiate sends the REAL v2 form (no v1 projection); verify replays the same submissionId', async () => {
+    vi.mocked(initiateVisitRequestV2).mockResolvedValue({
+      sessionToken: 'sess-1', message: 'ok', maskedEmail: 'r***@example.com', expiresAt: '',
+      maxAttempts: 5, resendAfterSeconds: 60,
     } as never);
     vi.mocked(verifyAndCreateVisitRequestV2).mockResolvedValue(mockCreateResponse as never);
 
@@ -161,9 +167,13 @@ describe('useVisitRequestFormV2', () => {
       await result.current.onSubmit();
     });
 
-    expect(visitRequestApi.initiate).toHaveBeenCalledTimes(1);
-    const [v1Projection, submissionId] = vi.mocked(visitRequestApi.initiate).mock.calls[0];
-    expect((v1Projection as { visits: unknown[] }).visits).toHaveLength(1);
+    // The v1 initiate endpoint is never called — the public flow is pure v2 now.
+    expect(visitRequestApi.initiate).not.toHaveBeenCalled();
+    expect(initiateVisitRequestV2).toHaveBeenCalledTimes(1);
+    const [initPayload] = vi.mocked(initiateVisitRequestV2).mock.calls[0];
+    expect(initPayload.campusVisits[0].campusId).toBe('HN');
+    expect(initPayload.campusVisits[0].plannedStartAt).toBeTruthy();
+    const submissionId = initPayload.submissionId;
     expect(typeof submissionId).toBe('string');
     await waitFor(() => expect(result.current.sessionToken).toBe('sess-1'));
 
@@ -175,7 +185,7 @@ describe('useVisitRequestFormV2', () => {
     const [payload, otpCode, sessionToken] = vi.mocked(verifyAndCreateVisitRequestV2).mock.calls[0];
     expect(otpCode).toBe('123456');
     expect(sessionToken).toBe('sess-1');
-    expect(payload.submissionId).toBe(submissionId); // same intent across initiate → verify
+    expect(payload.submissionId).toBe(submissionId); // same intent across initiate → verify (binding key)
     expect(payload.campusVisits[0].campusId).toBe('HN');
     expect(payload.campusVisits[0].visitors[0].fullName).toBe('Khách 1');
     expect(payload.campusVisits[0].processing).toBeNull();

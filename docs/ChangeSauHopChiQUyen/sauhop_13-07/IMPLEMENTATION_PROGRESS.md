@@ -238,7 +238,7 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
 - Tests: `V2MixedListSurfacesTests` **2/2** (helper matrix mixed/non-mixed + Staff-calendar end-to-end:
   each campus leader sees THEIR campus's name, never the sibling's, proving the Pomelo CASE+JOIN
   translation on a real surface).
-## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — 🟨 in progress
+## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — 🟨 CORE DELIVERED (G-1/2/3), G-4 exit gates pending
 - **G-1 foundation** — ✅ DONE: typed v2 API client (`visitRequestV2Api.ts`), invitation landing page
   (`/visit-contact-claim/:token`, `/visit-contact-transfer/:token` — anonymous MASKED info; accept/decline
   need the matching Google login), `ContactIdentityPanel` (claim resend/replace; transfer initiate/
@@ -308,10 +308,18 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
     scoped single-card-no-sibling-hint case, identity panel present/absent by viewer, Staff-
     Leader amendment decision vs read-only HO, masked history rendered as-is, 404 (flag OFF)
     friendly message with no fallback fetch; 409 code-not-message matching.
-- **Deferred within Phase G (documented)**: a dedicated v2 EDIT/RESUBMIT form page (the
-  pending-edit/resubmit API client, payload builder + tests shipped in G-2; the create form
-  component is reusable for it) and the public form's OTP initiate remains the v1 endpoint
-  (backend gap — report §6). Neither blocks flag-OFF production.
+- **G-4A public v2 OTP initiate + snapshot binding** — ✅ DONE (exit gate): `POST /api/v2/visit-requests/initiate`
+  validates the FULL v2 form (create-v2 structural validator — 30-min minimum, zero support OK — NOT the v1
+  3h/1-support rules), mints the OTP, and binds the canonical snapshot to the submit intent
+  (`visit_request_pending_forms`, additive migration `08_up`). Verify-v2 now builds the request FROM THE BOUND
+  SNAPSHOT, never the verify-time form: changing campus/member/contact/time/content between initiate and verify
+  is a stable conflict (`PER_CAMPUS_V2_SUBMISSION_FORM_MISMATCH` / `..._PENDING_NOT_FOUND`). Frontend public flow
+  switched to initiate-v2 (v1 projection removed; no silent fallback). Gates: build 0-err · Unit **482/482** ·
+  Arch **14/14** · full IT **372/372** (fresh `pems_it_regression` via junction) · targeted v2 IT **7/7** ·
+  FE tsc 0 / unit **46/46** / build ✓. Migration additive+idempotent (pems_pr3_test + pems_it_regression only;
+  pems_db/pems_test untouched); flags OFF.
+- **G-4B dedicated v2 EDIT/RESUBMIT form page** — ⬜ pending (last Phase-G exit gate; the pending-edit/resubmit
+  API client + `buildV2EditPayload` + tests shipped in G-2, and the create form component is reusable).
 ## Phase H — final verification + E2E + rollout readiness — ⬜ pending
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

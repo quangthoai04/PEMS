@@ -9,6 +9,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Delegations.Commands.InitiateVisitRequestV2;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -116,19 +117,50 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
 
             var otpToken = otpResult.Token!;
 
-            // ── 2. Provision ONLY the registrant account. The primary contact, if different, is deliberately
-            //       NOT provisioned here — CreateV2Async leaves visitor_user_id NULL and creates the
-            //       INITIAL_CLAIM (Phase D confirms/links contact B only after B explicitly accepts). ──
-            await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(email, cancellationToken);
+            // ── 2. Load the snapshot BOUND at initiate. The request is built from THIS, never the verify-time
+            //       form: the client cannot alter campus/member/contact/time/content between initiate and
+            //       verify. Absent/expired/consumed → the submission was never initiated (or a concurrent
+            //       create already won): re-check idempotency, else a stable conflict (no request created). ──
+            var pending = await _db.VisitRequestPendingForms
+                .FirstOrDefaultAsync(p => p.SubmissionId == form.SubmissionId, cancellationToken);
+            if (pending is null || pending.ConsumedAt is not null || pending.ExpiresAt <= now)
+            {
+                var lateReplay = await CheckIdempotentReplayAsync(form.SubmissionId, cancellationToken);
+                if (lateReplay is not null)
+                {
+                    await tx.CommitAsync(cancellationToken);
+                    committed = true;
+                    return lateReplay;
+                }
+                throw new ConflictException(
+                    "Không tìm thấy phiên đăng ký đã khởi tạo. Vui lòng bắt đầu lại.",
+                    InitiateVisitRequestV2ErrorCodes.PendingSubmissionNotFound);
+            }
+
+            // Defence-in-depth: the verify-time form must match the bound snapshot's canonical fingerprint.
+            // A mismatch means the client changed core content after initiate → stable conflict, no create.
+            if (V2PendingFormSnapshot.Fingerprint(form) != pending.FingerprintV2)
+                throw new ConflictException(
+                    "Nội dung biểu mẫu đã thay đổi so với lúc khởi tạo. Vui lòng gửi lại.",
+                    InitiateVisitRequestV2ErrorCodes.SubmissionFormMismatch);
+
+            var boundForm = V2PendingFormSnapshot.Deserialize(pending.SnapshotJson);
+            var boundEmail = boundForm.Registrant.Email.Trim().ToLowerInvariant();
+
+            // ── 3. Provision ONLY the registrant account (from the BOUND snapshot). The primary contact, if
+            //       different, is deliberately NOT provisioned here — CreateV2Async leaves visitor_user_id
+            //       NULL and creates the INITIAL_CLAIM (Phase D links contact B only after B accepts). ──
+            await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(boundEmail, cancellationToken);
             var registrantUserId = await _userProvisionService.EnsureVisitorAccountAsync(
-                email, form.Registrant.FullName, form.Registrant.Phone, now, cancellationToken);
+                boundEmail, boundForm.Registrant.FullName, boundForm.Registrant.Phone, now, cancellationToken);
 
-            // ── 3. Build the whole v2 aggregate in this transaction. ──
+            // ── 4. Build the whole v2 aggregate FROM THE BOUND SNAPSHOT in this transaction. ──
             created = await _createService.CreateV2Async(
-                form, registrantUserId, "VISITOR_SUBMITTED", now, cancellationToken);
+                boundForm, registrantUserId, "VISITOR_SUBMITTED", now, cancellationToken);
 
-            // ── 4. Consume the OTP atomically with the request. A rollback below un-consumes it. ──
+            // ── 5. Consume the OTP AND the bound snapshot atomically with the request. A rollback un-consumes both. ──
             otpToken.UsedAt = now;
+            pending.ConsumedAt = now;
             await _db.SaveChangesAsync(cancellationToken);
 
             await tx.CommitAsync(cancellationToken);
@@ -151,7 +183,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             throw;
         }
 
-        // ── 5. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
+        // ── 6. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
         await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
