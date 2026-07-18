@@ -32,6 +32,7 @@ public class VisitExpenseItem
     public decimal UnitPrice { get; set; }
 
     [Column("total_amount")]
+    [DatabaseGenerated(DatabaseGeneratedOption.Computed)]
     public decimal TotalAmount { get; private set; } // Database computed
 
     [Column("item_note")]
