@@ -4,6 +4,11 @@
 -- =====================================================================
 
 -- =====================================================================
+-- ADDITIVE UPDATE 2026-07-18 — VISIT EXPENSE STATISTICS
+-- Only new expense objects are added. Every supplied base object is preserved.
+-- =====================================================================
+
+-- =====================================================================
 -- ADDITIVE UPDATE 2026-07-18 — STUDENT VISIT/DELEGATION PHOTO STORAGE
 --   + Keeps every existing schema object and seed from the supplied base.
 --   + Adds visit_photo_folders: one private Google Drive child folder per
@@ -263,6 +268,8 @@ DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bi;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bu;
 DROP TRIGGER IF EXISTS trg_visit_photos_validate_bi;
 DROP TRIGGER IF EXISTS trg_visit_photos_validate_bu;
+DROP TRIGGER IF EXISTS trg_expense_reports_scope_bi;
+DROP TRIGGER IF EXISTS trg_expense_reports_scope_bu;
 
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS agenda_template_defaults;
@@ -292,6 +299,9 @@ DROP TABLE IF EXISTS minute_action_items;
 DROP TABLE IF EXISTS feedback_rating_items;
 DROP TABLE IF EXISTS feedbacks;
 DROP TABLE IF EXISTS minutes;
+DROP TABLE IF EXISTS visit_expense_report_events;
+DROP TABLE IF EXISTS visit_expense_items;
+DROP TABLE IF EXISTS visit_expense_reports;
 DROP TABLE IF EXISTS visit_logistics_items;
 DROP TABLE IF EXISTS visit_agendas;
 DROP TABLE IF EXISTS visit_photos;
@@ -1790,6 +1800,132 @@ CREATE TABLE visit_logistics_item_handovers (
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Bảng lưu ký nhận/ký trả đồ mượn cho logistics item';
+
+-- =====================================================================
+-- VISIT EXPENSE STATISTICS (ADDITIVE)
+-- GENERAL: Host/Staff/Staff Leader records costs in AFTER_VISIT.
+-- LOGISTICS: Department records costs after logistics handover/signing.
+-- =====================================================================
+
+CREATE TABLE visit_expense_reports (
+  expense_report_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  report_scope ENUM('GENERAL','LOGISTICS') NOT NULL,
+  logistics_item_id BIGINT UNSIGNED NULL,
+  department_id BIGINT UNSIGNED NULL,
+  status ENUM('DRAFT','SAVED','FINALIZED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
+  report_note TEXT NULL,
+  currency_code CHAR(3) NOT NULL DEFAULT 'VND',
+  saved_at DATETIME NULL,
+  saved_by BIGINT UNSIGNED NULL,
+  finalized_at DATETIME NULL,
+  finalized_by BIGINT UNSIGNED NULL,
+  cancelled_at DATETIME NULL,
+  cancelled_by BIGINT UNSIGNED NULL,
+  cancellation_reason TEXT NULL,
+  row_version INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  general_instance_guard BIGINT UNSIGNED NULL
+    COMMENT 'Trigger-maintained uniqueness guard: visit_instance_id for GENERAL, otherwise NULL',
+  logistics_item_guard BIGINT UNSIGNED NULL
+    COMMENT 'Trigger-maintained uniqueness guard: logistics_item_id for LOGISTICS, otherwise NULL',
+
+  PRIMARY KEY (expense_report_id),
+  UNIQUE KEY uq_expense_general_instance (general_instance_guard),
+  UNIQUE KEY uq_expense_logistics_item (logistics_item_guard),
+  KEY idx_expense_reports_instance_scope_status (visit_instance_id, report_scope, status),
+  KEY idx_expense_reports_department_status (department_id, status),
+  KEY idx_expense_reports_logistics_item (logistics_item_id),
+  KEY idx_expense_reports_saved_time (saved_at),
+
+  CONSTRAINT ck_expense_report_currency CHECK (currency_code = 'VND'),
+
+  CONSTRAINT fk_expense_reports_instance
+    FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT fk_expense_reports_logistics
+    FOREIGN KEY (logistics_item_id) REFERENCES visit_logistics_items(logistics_item_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT fk_expense_reports_department
+    FOREIGN KEY (department_id) REFERENCES departments(department_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_expense_reports_saved_by
+    FOREIGN KEY (saved_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_finalized_by
+    FOREIGN KEY (finalized_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_cancelled_by
+    FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Bảng đầu chi phí theo campus instance; GENERAL do Host nhập, LOGISTICS do Department nhập theo đơn hậu cần.';
+
+CREATE TABLE visit_expense_items (
+  expense_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  expense_report_id BIGINT UNSIGNED NOT NULL,
+  item_origin ENUM('REQUEST_ITEM','MANUAL','ADDITIONAL','DAMAGE_LOSS','OTHER') NOT NULL DEFAULT 'MANUAL',
+  item_name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  quantity DECIMAL(12,2) NOT NULL DEFAULT 1,
+  unit_name VARCHAR(50) NULL,
+  unit_price DECIMAL(18,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(18,2) GENERATED ALWAYS AS (ROUND(quantity * unit_price, 2)) STORED,
+  item_note TEXT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  row_version INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (expense_item_id),
+  KEY idx_expense_items_report_order (expense_report_id, display_order, expense_item_id),
+  KEY idx_expense_items_origin (item_origin),
+  CONSTRAINT ck_expense_item_name CHECK (CHAR_LENGTH(TRIM(item_name)) > 0),
+  CONSTRAINT ck_expense_item_quantity CHECK (quantity > 0),
+  CONSTRAINT ck_expense_item_unit_price CHECK (unit_price >= 0),
+  CONSTRAINT fk_expense_items_report
+    FOREIGN KEY (expense_report_id) REFERENCES visit_expense_reports(expense_report_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_expense_items_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_items_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Chi tiết các khoản chi; thành tiền được tính tự động bằng số lượng nhân đơn giá.';
+
+CREATE TABLE visit_expense_report_events (
+  expense_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  expense_report_id BIGINT UNSIGNED NOT NULL,
+  event_type ENUM('CREATED','SAVED','UPDATED','FINALIZED','REOPENED','CANCELLED','EXPORTED') NOT NULL,
+  event_note TEXT NULL,
+  snapshot_json JSON NULL,
+  performed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  performed_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (expense_event_id),
+  KEY idx_expense_events_report_time (expense_report_id, performed_at),
+  KEY idx_expense_events_actor_time (performed_by, performed_at),
+  CONSTRAINT fk_expense_events_report
+    FOREIGN KEY (expense_report_id) REFERENCES visit_expense_reports(expense_report_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_expense_events_actor
+    FOREIGN KEY (performed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Lịch sử lưu/chốt/mở lại/xuất thống kê chi phí.';
 
 
 -- =====================================================================
@@ -4018,6 +4154,77 @@ BEGIN
   ) THEN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'Visit photo removal metadata is inconsistent with status';
+  END IF;
+END$$
+
+-- MySQL 8 rejects CHECK constraints that use logistics_item_id/department_id
+-- because those columns also participate in foreign-key referential actions
+-- (Error 3823). Enforce the same scope rule, plus ownership consistency, here.
+CREATE TRIGGER trg_expense_reports_scope_bi
+BEFORE INSERT ON visit_expense_reports
+FOR EACH ROW
+BEGIN
+  DECLARE v_valid_logistics_owner INT DEFAULT 0;
+
+  IF NEW.report_scope = 'GENERAL' THEN
+    IF NEW.logistics_item_id IS NOT NULL OR NEW.department_id IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'GENERAL expense report must not have logistics_item_id or department_id';
+    END IF;
+    SET NEW.general_instance_guard = NEW.visit_instance_id;
+    SET NEW.logistics_item_guard = NULL;
+  ELSEIF NEW.report_scope = 'LOGISTICS' THEN
+    IF NEW.logistics_item_id IS NULL OR NEW.department_id IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report requires logistics_item_id and department_id';
+    END IF;
+    SET NEW.general_instance_guard = NULL;
+    SET NEW.logistics_item_guard = NEW.logistics_item_id;
+
+    SELECT COUNT(*) INTO v_valid_logistics_owner
+    FROM visit_logistics_items vli
+    WHERE vli.logistics_item_id = NEW.logistics_item_id
+      AND vli.visit_instance_id = NEW.visit_instance_id
+      AND vli.requested_to_department_id = NEW.department_id;
+
+    IF v_valid_logistics_owner = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report must match the logistics item visit instance and requested department';
+    END IF;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_expense_reports_scope_bu
+BEFORE UPDATE ON visit_expense_reports
+FOR EACH ROW
+BEGIN
+  DECLARE v_valid_logistics_owner INT DEFAULT 0;
+
+  IF NEW.report_scope = 'GENERAL' THEN
+    IF NEW.logistics_item_id IS NOT NULL OR NEW.department_id IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'GENERAL expense report must not have logistics_item_id or department_id';
+    END IF;
+    SET NEW.general_instance_guard = NEW.visit_instance_id;
+    SET NEW.logistics_item_guard = NULL;
+  ELSEIF NEW.report_scope = 'LOGISTICS' THEN
+    IF NEW.logistics_item_id IS NULL OR NEW.department_id IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report requires logistics_item_id and department_id';
+    END IF;
+    SET NEW.general_instance_guard = NULL;
+    SET NEW.logistics_item_guard = NEW.logistics_item_id;
+
+    SELECT COUNT(*) INTO v_valid_logistics_owner
+    FROM visit_logistics_items vli
+    WHERE vli.logistics_item_id = NEW.logistics_item_id
+      AND vli.visit_instance_id = NEW.visit_instance_id
+      AND vli.requested_to_department_id = NEW.department_id;
+
+    IF v_valid_logistics_owner = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report must match the logistics item visit instance and requested department';
+    END IF;
   END IF;
 END$$
 

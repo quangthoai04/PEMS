@@ -29,6 +29,7 @@ public sealed class DeptLeaderReportV2Dto
     public string ToDate { get; set; } = string.Empty;
     public DeptLeaderV2Tasks Tasks { get; set; } = new();
     public DeptLeaderV2Personnel Personnel { get; set; } = new();
+    public DeptLeaderV2Expenses Expenses { get; set; } = new();
 }
 
 // ── Phần 2: báo cáo nhiệm vụ (thư mời + đơn yêu cầu) ─────────────────────────
@@ -75,6 +76,23 @@ public sealed class DeptLeaderV2PersonnelRow
     public double? FeedbackAverage { get; set; }
     public int FeedbackCount { get; set; }
     public int DeclinedCount { get; set; }
+}
+
+// ── Phần 4: Thống kê chi phí ────────────────────────────────────────────────
+public sealed class DeptLeaderV2Expenses
+{
+    public decimal TotalAmount { get; set; }
+    public List<DeptLeaderV2ExpenseRow> Rows { get; set; } = new();
+}
+
+public sealed class DeptLeaderV2ExpenseRow
+{
+    public ulong LogisticsItemId { get; set; }
+    public string GroupCode { get; set; } = string.Empty;
+    public string ItemName { get; set; } = string.Empty;
+    public DateTime? VisitDate { get; set; }
+    public decimal TotalExpense { get; set; }
+    public string Status { get; set; } = string.Empty;
 }
 
 /// <summary>Guard + khoảng thời gian dùng chung cho các endpoint report v2 của Department Leader.</summary>

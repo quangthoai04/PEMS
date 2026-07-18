@@ -9,14 +9,13 @@ using PEMS.Application.Reports.Queries.GetStaffLeaderReportOverview;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReport;
 using PEMS.Application.Reports.Commands.SendStaffLeaderPersonnelReport;
-using PEMS.Application.Reports.Commands.SendStaffLeaderDeptInvoice;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetHoReportV2;
 using PEMS.Application.Reports.Commands.SendHoCampusReport;
 using PEMS.Application.Reports.Commands.ExportHoReportV2;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportV2;
 using PEMS.Application.Reports.Commands.SendDeptLeaderPersonnelReport;
-using PEMS.Application.Reports.Commands.SendDeptLeaderInvoiceToStaffLeader;
+
 using PEMS.Application.Reports.Commands.ExportDeptLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 using PEMS.Application.Reports.Commands.ExportDeptLeaderReport;
@@ -135,17 +134,6 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        /// <summary>Gửi hóa đơn hậu cần (kèm đơn giá đã nhập) qua email cho phòng ban (Staff Leader).</summary>
-        [HttpPost("staff-leader-report-v2/departments/{departmentId}/send-invoice")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
-        public async Task<IActionResult> SendStaffLeaderDeptInvoice(
-            ulong departmentId, [FromBody] SendStaffLeaderDeptInvoiceCommand command, CancellationToken cancellationToken)
-        {
-            command.DepartmentId = departmentId;
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
         /// <summary>Báo cáo phòng ban 2 phần của Department Leader (nhiệm vụ + nhân sự) — lọc theo thời gian.</summary>
         [HttpGet("dept-leader-report-v2")]
         [RoleAuthorize(EffectiveRole.DepartmentLead)]
@@ -169,16 +157,6 @@ namespace PEMS.Api.Controllers
         [RoleAuthorize(EffectiveRole.DepartmentLead)]
         public async Task<IActionResult> SendDeptLeaderPersonnelReport(
             [FromBody] SendDeptLeaderPersonnelReportCommand command, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        /// <summary>Gửi hóa đơn hậu cần đã hoàn thành cho Staff Leader của campus (Dept Leader).</summary>
-        [HttpPost("dept-leader-report-v2/send-invoice")]
-        [RoleAuthorize(EffectiveRole.DepartmentLead)]
-        public async Task<IActionResult> SendDeptLeaderInvoiceToStaffLeader(
-            [FromBody] SendDeptLeaderInvoiceToStaffLeaderCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);

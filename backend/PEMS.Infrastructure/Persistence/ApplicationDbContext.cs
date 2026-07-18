@@ -63,6 +63,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
     public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
     public DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; set; }
+    
+    // ── Expense Statistics (v11) ─────────────────────────────────────────
+    public DbSet<VisitExpenseReport> VisitExpenseReports { get; set; }
+    public DbSet<VisitExpenseItem> VisitExpenseItems { get; set; }
+    public DbSet<VisitExpenseReportEvent> VisitExpenseReportEvents { get; set; }
 
     // ── Student visit photo storage (Google Drive, independent from Gallery) ──
     public DbSet<VisitPhotoFolder> VisitPhotoFolders { get; set; }
@@ -582,6 +587,59 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .IsUnique().HasDatabaseName("uq_visit_reminder_channel_target");
             b.HasIndex(r => new { r.Status, r.ScheduledAt })
                 .HasDatabaseName("idx_visit_reminder_schedule");
+        });
+
+        // ── Visit Expense Statistics (v11) ────────────────────────────────
+        modelBuilder.Entity<VisitExpenseReport>(b =>
+        {
+            b.HasOne(r => r.VisitInstance).WithMany()
+                .HasForeignKey(r => r.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.LogisticsItem).WithMany()
+                .HasForeignKey(r => r.LogisticsItemId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Department>().WithMany()
+                .HasForeignKey(r => r.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.SavedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.FinalizedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CancelledBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(r => new { r.VisitInstanceId, r.ReportScope, r.Status })
+                .HasDatabaseName("idx_expense_reports_instance_scope_status");
+            b.HasIndex(r => new { r.DepartmentId, r.Status })
+                .HasDatabaseName("idx_expense_reports_department_status");
+            b.HasIndex(r => r.LogisticsItemId)
+                .HasDatabaseName("idx_expense_reports_logistics_item");
+        });
+
+        modelBuilder.Entity<VisitExpenseItem>(b =>
+        {
+            b.HasOne(i => i.ExpenseReport).WithMany(r => r.Items)
+                .HasForeignKey(i => i.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(i => i.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(i => i.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(i => new { i.ExpenseReportId, i.DisplayOrder, i.ExpenseItemId })
+                .HasDatabaseName("idx_expense_items_report_order");
+            b.HasIndex(i => i.ItemOrigin)
+                .HasDatabaseName("idx_expense_items_origin");
+        });
+
+        modelBuilder.Entity<VisitExpenseReportEvent>(b =>
+        {
+            b.HasOne(e => e.ExpenseReport).WithMany(r => r.Events)
+                .HasForeignKey(e => e.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(e => e.PerformedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(e => new { e.ExpenseReportId, e.PerformedAt })
+                .HasDatabaseName("idx_expense_events_report_time");
+            b.HasIndex(e => new { e.PerformedBy, e.PerformedAt })
+                .HasDatabaseName("idx_expense_events_actor_time");
         });
 
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
