@@ -72,6 +72,37 @@ public sealed class CreateVisitRequestV2ServiceTests
 
     // ── Tests ──
 
+    /// <summary>
+    /// H-4 regression (caught by the real-stack public-create E2E): the operational contact organization and
+    /// email are OPTIONAL. A blank value must persist as NULL — the DB CHECK (TRIM(x) &lt;&gt; '') rejects an
+    /// empty string, so before the fix a blank operational-contact email produced a 500 at create. Name +
+    /// phone stay required.
+    /// </summary>
+    [Fact]
+    public async Task Blank_operational_contact_org_and_email_persist_as_null_not_a_check_violation()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var start = Now.AddDays(20);
+        var campus = new CampusVisitFormDto(
+            "HN", start, start.AddMinutes(30), "Đoàn Optional Op", "MEETING", null, "Thăm", "Nội dung",
+            new List<VisitorDto> { V("Guest A") }, new List<SupportTeamMemberDto>(),
+            new ContactPointDto("Op Contact", "", "+8410", ""), // blank org + email (name + phone present)
+            "EN", null, "DECLINED", null, null, null);
+
+        var req = await Svc(db).CreateV2Async(
+            Form("registrant@example.com", campus), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+
+        var instance = await db.VisitRequestCampuses.FirstAsync(c => c.VisitRequestId == req.VisitRequestId);
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instance.VisitInstanceId);
+        Assert.Null(detail.OperationalContactEmail);         // blank → NULL (CHECK satisfied)
+        Assert.Null(detail.OperationalContactOrganization);  // blank → NULL
+        Assert.Equal("Op Contact", detail.OperationalContactFullName);
+        Assert.Equal("+8410", detail.OperationalContactPhone);
+    }
+
     [Fact]
     public async Task Single_campus_creates_request_instance_detail_members_revisions_audit()
     {

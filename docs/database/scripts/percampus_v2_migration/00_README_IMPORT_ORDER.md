@@ -36,8 +36,9 @@ run on v1 until later PRs; the feature flag `PerCampusVisitFormV2` stays **OFF**
 | 6 | `06_up_identity_claim_tokens.sql` | DDL (ENUM extend) | `email_action_tokens` gains `VISIT_CONTACT_CLAIM` context + `VISIT_REQUEST_IDENTITY_CHANGE` target (Phase D claim). |
 | 7 | `07_up_transfer_tokens.sql` | DDL (ENUM extend) | `email_action_tokens` gains `VISIT_CONTACT_TRANSFER` context (Phase D-4 transfer). |
 | 8 | `08_up_pending_v2_forms.sql` | DDL | Adds `visit_request_pending_forms` (Phase G-4A public v2 OTP initiate — binds the validated v2 snapshot to a submit intent). `CREATE TABLE IF NOT EXISTS` → re-runnable. |
+| 9 | `09_up_op_contact_optional.sql` | DDL | Relaxes `visit_instance_form_details.operational_contact_organization` + `operational_contact_email` to NULL (Phase H-4 fix — the operational contact org/email are OPTIONAL; a blank value now persists as NULL instead of violating the `TRIM(x) <> ''` CHECK). Guarded MODIFY → re-runnable. |
 
-The fresh master (below) already integrates 06/07/08 — these patches are only for an existing v1/PR-2 DB.
+The fresh master (below) already integrates 06/07/08/09 — these patches are only for an existing v1/PR-2 DB.
 
 `05_rollback_down.sql` is the **destructive** DOWN. It is *not* the normal rollback —
 the safe rollback is "flag OFF + dual-read" (see below). Only run DOWN with a backup
