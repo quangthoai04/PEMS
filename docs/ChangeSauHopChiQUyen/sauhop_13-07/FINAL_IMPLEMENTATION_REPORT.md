@@ -39,6 +39,28 @@ InviteVisitParticipant, AssignDepartmentStaff, ExecuteEmailAction, GetEmailActio
 ResolveCampusFormContentAsync(visit, new[]{ targetInstanceId }, ct))[targetInstanceId]; override locals; }`.
 Missing v2 detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback.
 
+### 1b. Frontend V2 Cutover & Workflow Completion (this session, post-H-4)
+
+Phase G shipped the v2 components/routes but the default runtime entry points still opened v1. This session
+closed the first three cutover slices (each committed + gated independently; author/committer Tcanh12, no AI):
+
+| Slice | Scope | Commit | Gate |
+|---|---|---|---|
+| 1 | v2 capability endpoint (`GET /api/public/features/per-campus-form-v2`, anonymous, read-only, `enabled = read && write`) + shared `PerCampusV2CapabilityProvider` (session-cached, **fail-safe to v1**) + default entry-point cutover (Hero/FinalCta CTAs, VisitRequestManagement create, `/dashboard/visit/create` redirect) | `3e7d4d5d` | capability IT **6/6** · Vitest +14 |
+| 2 | version-aware routing: `VisitRequestManagementItemDto.formSchemaVersion` (+ `hasMixedCampusDetails`) from the DB; FE `visitVersionRouting` routes detail/edit/resubmit to v2 (mixed or not) without waiting for a 409 | `fa7849e6` | list-DTO IT (V2MixedList) · Vitest +6 |
+| 3 | full per-campus post-submit summary from the immutable submitted snapshot (`VisitRequestV2SubmittedSummary`, one card per campus, never the first as representative) | `2cd948f8` | Vitest +3 |
+
+**Session gates (real, on the merged HEAD `2cd948f8`):** full `PEMS.IntegrationTests` **385/385** on disposable
+`pems_it_regression` (V11 master; appsettings trap-restored to pems_test) · Architecture **14/14** · Vitest **79** ·
+tsc 0 · build ✓. **Pre-existing inherited break (NOT this session's changes):** `PEMS.UnitTests` fails to COMPILE
+because the Dev-merge feature `34ab5ba4` ("thống kê chi phí ver 1") added `VisitExpenseReports/Items/ReportEvents`
+to `IApplicationDbContext` but never updated the test doubles (`DelegationsTestDbContext`, `PartnersTestDbContext`) —
+broken already at merge commit `e7619b83`, before any slice work; left untouched (another dev's feature area).
+
+**Deferred (Slices 4–6):** safe-edit/amendment submission UX + `allowedActions`-driven detail UI; other shared-modal
+call sites (HoVisitProcessDetail, VisitParticipantInvitationDetail) → version-aware; scoped search matched-context;
+authenticated Journey B–H real-stack (needs `TestAuthHandler` wired into the published host).
+
 ## 2. Safety invariants (all holding)
 
 - `PerCampusFormV2` read flag **OFF** (no appsettings override; default `false`). Write flag **not created** yet.

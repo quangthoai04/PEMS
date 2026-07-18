@@ -430,6 +430,13 @@ byte-identical when the flags are OFF.
 
 - **Slices 4–6** — ⬜ pending (safe-edit/amendment UX + allowedActions-driven UI; scoped search match contexts;
   auth Journey B–H real-stack).
+- **Session gates (real, merged HEAD `2cd948f8`)** — full `PEMS.IntegrationTests` **385/385** on disposable
+  `pems_it_regression` (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`; appsettings trap-restored
+  to pems_test) · Architecture **14/14** · capability IT **6/6** · Vitest **79** · tsc 0 · build ✓.
+  **Inherited pre-existing break (not this session):** `PEMS.UnitTests` fails to COMPILE — the Dev-merge feature
+  `34ab5ba4` added `VisitExpense*` DbSets to `IApplicationDbContext` without updating the test doubles; broken at
+  merge `e7619b83` before any slice work; left untouched (out-of-scope, another dev's feature). Environment
+  auto-merged Dev into Canh-Iter1 mid-session (`ba4ea97d`); no manual push/merge/PR was run.
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
