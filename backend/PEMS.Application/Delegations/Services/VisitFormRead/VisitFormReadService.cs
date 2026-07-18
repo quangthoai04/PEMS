@@ -16,15 +16,21 @@ public sealed class VisitFormReadService : IVisitFormReadService
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly ILogger<VisitFormReadService> _logger;
+    private readonly IDateTimeService? _clock;
+
+    /// <summary>Self-service amendment cutoff — mirrors VisitAmendmentService.SelfServiceCutoffHours.</summary>
+    private const int SelfServiceCutoffHours = 24;
 
     public VisitFormReadService(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
-        ILogger<VisitFormReadService> logger)
+        ILogger<VisitFormReadService> logger,
+        IDateTimeService? clock = null)
     {
         _db = db;
         _currentUser = currentUser;
         _logger = logger;
+        _clock = clock;
     }
 
     public async Task<ResolvedVisitFormDto> ResolveAsync(ulong visitRequestId, CancellationToken cancellationToken)
@@ -62,6 +68,40 @@ public sealed class VisitFormReadService : IVisitFormReadService
         var visibleInstances = instances.Where(c => scope.AuthorizedInstanceIds.Contains(c.VisitInstanceId)).ToList();
         var visibleInstanceIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
         var isV2 = request.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+
+        // Action computation (viewer.allowedActions + per-instance allowedActions). These MIRROR the
+        // authorization each command handler enforces — the handlers still re-authorize independently.
+        var now = _clock?.VietnamNow ?? DateTime.Now;
+        var requesterSide = request.RegistrantUserId == userId
+            || (request.VisitorUserId == userId
+                && request.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active);
+        bool IsCurrentCampusLeader(ulong campusId) =>
+            _currentUser.RoleCode == RoleCodes.Staff
+            && _currentUser.SubRole == UserSubRoles.Leader
+            && _currentUser.PrimaryCampusId == campusId;
+        // SUBMIT_AMENDMENT: requester side, ASSIGNED/BEFORE_VISIT, ≥24h out, no pending amendment
+        // (VisitAmendmentService.SubmitAsync rules). APPROVE/REJECT: current campus leader + pending.
+        // WITHDRAW: requester side + pending.
+        List<string> InstanceActions(VisitRequestCampus c, bool hasPendingAmendment)
+        {
+            var actions = new List<string>();
+            if (!isV2) return actions;
+            if (requesterSide)
+            {
+                var amendable = c.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit;
+                if (amendable && !hasPendingAmendment
+                    && c.PlannedStartAt >= now.AddHours(SelfServiceCutoffHours))
+                    actions.Add(VisitFormActions.SubmitAmendment);
+                if (hasPendingAmendment)
+                    actions.Add(VisitFormActions.WithdrawAmendment);
+            }
+            if (hasPendingAmendment && IsCurrentCampusLeader(c.CampusId))
+            {
+                actions.Add(VisitFormActions.ApproveAmendment);
+                actions.Add(VisitFormActions.RejectAmendment);
+            }
+            return actions;
+        }
 
         // 3. Batch-load display names, per-campus members (v2), and active amendments (v2).
         var campusIds = visibleInstances.Select(c => c.CampusId).Distinct().ToList();
@@ -249,8 +289,27 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 FormRevision = formRevision,
                 ApprovalRevision = approvalRevision,
                 RowVersion = rowVersion,
-                ActiveAmendment = activeAmendmentByInstance.TryGetValue(c.VisitInstanceId, out var am) ? am : null
+                ActiveAmendment = activeAmendmentByInstance.TryGetValue(c.VisitInstanceId, out var am) ? am : null,
+                AllowedActions = InstanceActions(c, activeAmendmentByInstance.ContainsKey(c.VisitInstanceId))
             });
+        }
+
+        // EDIT_PENDING: fully pending + ≥24h out. RESUBMIT: rejected. SUBMIT_SAFE_EDIT: v2 + not cancelled.
+        // (Mirrors UpdatePendingVisitRequestV2 / ResubmitRejectedVisitRequestV2 / SubmitVisitSafeEdit handlers.)
+        List<string> BuildRequestActions()
+        {
+            var actions = new List<string> { VisitFormActions.View };
+            if (!requesterSide) return actions;
+            var fullyPending = instances.Count > 0
+                && request.Status == VisitRequestStatuses.PendingApproval
+                && instances.All(c => c.Status == VisitInstanceStatuses.WaitingRequestApproval);
+            if (fullyPending && instances.Min(c => c.PlannedStartAt) >= now.AddHours(SelfServiceCutoffHours))
+                actions.Add(VisitFormActions.EditPendingRequest);
+            if (request.Status == VisitRequestStatuses.Rejected)
+                actions.Add(VisitFormActions.ResubmitRejectedRequest);
+            if (isV2 && request.Status != VisitRequestStatuses.Cancelled)
+                actions.Add(VisitFormActions.SubmitSafeEdit);
+            return actions;
         }
 
         return new ResolvedVisitFormDto
@@ -289,7 +348,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 Relation = scope.Relation,
                 CanViewAllCampuses = scope.CanViewAllCampuses,
                 IsReadOnly = scope.IsReadOnly,
-                AllowedActions = new List<string> { "VIEW" }
+                AllowedActions = BuildRequestActions()
             }
         };
     }

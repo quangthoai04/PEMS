@@ -109,6 +109,13 @@ public sealed class ResolvedCampusVisitDto
 
     /// <summary>Present only when the actor may see it; carries no PII/full-diff JSON (summary only).</summary>
     public ResolvedActiveAmendmentDto? ActiveAmendment { get; init; }
+
+    /// <summary>
+    /// Backend-derived mutation actions the caller may take on THIS instance (per-campus scoped) — e.g.
+    /// SUBMIT_AMENDMENT / APPROVE_AMENDMENT / REJECT_AMENDMENT / WITHDRAW_AMENDMENT. The frontend gates
+    /// per-instance UI on this list; command handlers re-authorize. Empty for read-only viewers.
+    /// </summary>
+    public List<string> AllowedActions { get; init; } = new();
 }
 
 public sealed class ResolvedMemberDto
