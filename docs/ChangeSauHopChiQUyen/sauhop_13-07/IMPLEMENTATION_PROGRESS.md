@@ -339,7 +339,15 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   boundaries (29m59s→3819, 30m OK, end=start→3819, pending dup submission→1062), rollback **refusal guard**
   (has_mixed=1 → aborts, no partial drop) + **clean DOWN** (0 of 9 v2 tables/columns/constraints left),
   EXPLAIN index usage (submission_id→const/uq, expires_at→range/idx, form_details→PK point lookup).
-- **H-2 E2E + full regression** — ⬜ pending.
+- **H-2 E2E + full regression** — ✅ DONE (matrix: `H2_VERIFICATION_MATRIX.md`). Full regression re-run green:
+  Unit **482**, Arch **14**, full IT **372** (fresh `pems_it_regression` from the FIXED master — validates
+  the H-1 master fix end-to-end), Vitest **56**, `tsc`/lint 0, `build` ✓. Playwright: added `test:e2e` script
+  + a new per-campus v2 browser spec (accordion CSS-hide keeps data; apply-to-all confirm dialog) → full
+  browser suite **78 passed** (76 existing, no regression + 2 new). `npm ci` blocked by a Windows native-file
+  lock (`lightningcss.node` EPERM) — environment defect, documented; reproducible install =
+  `npm install --legacy-peer-deps` (the command that produced the lockfile). Existing Playwright specs are
+  **mocked-network component/contract** tests (not full real-stack E2E — §12); the real-stack harness
+  (real backend + disposable MySQL + Testing-only OTP sink) is a documented follow-on, not claimed passed.
 - **H-3 observability + rollout/canary/rollback docs** — ⬜ pending.
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
