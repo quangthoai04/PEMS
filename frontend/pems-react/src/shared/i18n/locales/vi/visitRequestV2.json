@@ -133,5 +133,21 @@
     "PENDING_APPROVAL": "Chờ duyệt",
     "PARTIALLY_APPROVED": "Duyệt một phần",
     "IN_PROGRESS": "Đang diễn ra"
+  },
+  "edit": {
+    "titleEdit": "Sửa đơn (đang chờ duyệt)",
+    "titleResubmit": "Gửi lại đơn đã bị từ chối",
+    "subtitle": "Chỉnh sửa nội dung từng cơ sở. Email người đăng ký và đầu mối không thể đổi ở đây.",
+    "emailImmutable": "Không thể thay đổi",
+    "contactImmutable": "Email đầu mối gắn với tài khoản đăng nhập — không đổi ở bước sửa đơn.",
+    "resubmitCampusFixed": "Khi gửi lại, danh sách cơ sở giữ nguyên; chỉ chỉnh sửa nội dung.",
+    "forbidden": "Bạn không có quyền sửa đơn này.",
+    "notEditable": "Đơn không còn ở trạng thái có thể sửa. Vui lòng quay lại.",
+    "notResubmittable": "Đơn không ở trạng thái có thể gửi lại. Vui lòng quay lại.",
+    "conflict": "Đơn đã được cập nhật ở nơi khác. Vui lòng tải lại dữ liệu mới nhất rồi thử lại — thay đổi của bạn chưa được lưu.",
+    "reload": "Tải lại dữ liệu mới",
+    "submitFailed": "Không thể lưu. Vui lòng thử lại.",
+    "saveEdit": "Lưu thay đổi",
+    "saveResubmit": "Gửi lại đơn"
   }
 }

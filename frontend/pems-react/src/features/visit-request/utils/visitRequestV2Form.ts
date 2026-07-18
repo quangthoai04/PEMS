@@ -5,6 +5,7 @@ import type {
   V2CampusVisitEdit,
   V2CreatePayload,
   V2EditPayload,
+  ResolvedVisitForm,
 } from '../api/visitRequestV2Api';
 import type { CampusProcessingChoice } from '../api/visitRequestApi';
 
@@ -374,6 +375,72 @@ export const mapServerFieldPathToFormPath = (serverPath: string): string | null 
   for (const [from, to] of renames) path = path.replace(from, to);
   return path;
 };
+
+/** "2026-08-01T09:00:00" (wall-clock) → "2026-08-01T09:00" for a datetime-local input. */
+const toLocalInputValue = (value: string | null | undefined): string => (value ? value.slice(0, 16) : '');
+
+/**
+ * Hydrates the per-campus v2 EDIT form from the scoped read model (`ResolvedVisitForm`). Every campus card
+ * carries its STABLE `visitInstanceId` and its `expectedRowVersion` (from the instance's `rowVersion`) so the
+ * edit payload can enforce per-instance optimistic concurrency; the request-level `rowVersion` is returned
+ * separately for `expectedRequestRowVersion`. Fresh clientKeys are minted (the read model has none). The
+ * component renders ONLY the campuses the backend scoped into `form.campusVisits` — hidden campuses never appear.
+ */
+export const resolvedFormToV2Schema = (
+  form: ResolvedVisitForm,
+): { values: VisitRequestV2Schema; expectedRequestRowVersion: number } => ({
+  expectedRequestRowVersion: form.rowVersion,
+  values: {
+    registerInfo: {
+      fullName: form.registrant.fullName,
+      organization: form.registrant.organization,
+      jobTitle: form.registrant.jobTitle,
+      phone: form.registrant.phone,
+      email: form.registrant.email,
+      nationality: form.registrant.nationality,
+    },
+    contactPoint: {
+      fullName: form.primaryContact.fullName,
+      organization: form.primaryContact.organization,
+      phone: form.primaryContact.phone,
+      email: form.primaryContact.email,
+    },
+    partnerSelectionMode: form.partnerId != null ? 'EXISTING_PARTNER' : 'NEW_ORGANIZATION',
+    partnerId: form.partnerId ?? null,
+    campusVisits: form.campusVisits.map((cv): CampusVisitSchema => ({
+      clientKey: newClientKey(),
+      visitInstanceId: cv.visitInstanceId,
+      expectedRowVersion: cv.rowVersion,
+      campus: cv.campusCode,
+      startDatetime: toLocalInputValue(cv.plannedStartAt),
+      endDatetime: toLocalInputValue(cv.plannedEndAt),
+      delegationName: cv.delegationName,
+      visitType: cv.visitType as CampusVisitSchema['visitType'],
+      visitTypeOther: cv.visitTypeOther ?? '',
+      purpose: cv.purpose,
+      workingContent: cv.workingContent ?? '',
+      visitors: cv.visitors.length
+        ? cv.visitors.map(v => ({
+            fullName: v.fullName, jobTitle: v.jobTitle, organization: v.organization, nationality: v.nationality,
+          }))
+        : [{ fullName: '', jobTitle: '', organization: '', nationality: '' }],
+      supportTeam: cv.supportMembers.map(s => ({
+        fullName: s.fullName, jobTitle: s.jobTitle, organization: s.organization, nationality: s.nationality,
+      })),
+      operationalContact: {
+        fullName: cv.operationalContact.fullName,
+        organization: cv.operationalContact.organization,
+        phone: cv.operationalContact.phone,
+        email: cv.operationalContact.email,
+      },
+      workingLanguage: cv.workingLanguage === 'VI' ? 'VI' : 'EN',
+      transportationNote: cv.transportationNote ?? '',
+      mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',
+      mediaConsentNote: cv.mediaConsentNote ?? '',
+      notes: cv.noteToFptu ?? '',
+    })),
+  },
+});
 
 /** Applies imported Excel rows to ONE campus card only — never a global member list. */
 export const applyImportedMembersToCampus = (

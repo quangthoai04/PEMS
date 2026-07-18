@@ -190,10 +190,20 @@ instance-scoped actor. Repository-wide 10-field sweep → **ZERO unclassified pr
 (classification table in audit map §10). Tests: `V2MixedListSurfacesTests` 2/2 (helper matrix + Staff
 calendar end-to-end per-campus names).
 
-### Phase G — frontend (plan §7/§8/§9) — 🚧 CORE DELIVERED · G-4 EXIT GATES PENDING
-> Phase G core (G-1/G-2/G-3) delivered; exit gates: **G-4A ✅ DONE** (public v2 OTP initiate + snapshot
-> binding — §6), **G-4B ⬜ pending** (dedicated pending-edit/resubmit v2 screen). Phase G is DONE only after
-> G-4B is tested + committed; full Phase H verification begins after that.
+### Phase G — frontend (plan §7/§8/§9) — ✅ DONE (G-1/2/3 + exit gates G-4A/G-4B)
+> Phase G core (G-1/G-2/G-3) + exit gates **G-4A ✅** (public v2 OTP initiate + snapshot binding — §6) and
+> **G-4B ✅** (dedicated pending-edit/resubmit v2 screen) are DONE. Phase H verification may now begin.
+>
+> **G-4B ✅** per-campus v2 pending-edit / rejected-resubmit screen (`EditVisitRequestV2Page`, routes
+> `/dashboard/visit/v2/:id/edit|resubmit`) reusing the SAME `VisitRequestV2Schema` + `CampusVisitCard` + utils
+> (no third form model). New pure util `resolvedFormToV2Schema` hydrates from the scoped read model carrying
+> stable `visitInstanceId` + per-instance/request `rowVersion` for optimistic concurrency; submit builds
+> `buildV2EditPayload` → `updatePendingVisitRequestV2` / `resubmitVisitRequestV2`; a 409 shows a stable
+> conflict message + reload; resubmit keeps the campus set fixed (no add/remove), pending-edit may add/remove;
+> account-binding emails are read-only; the backend re-authorizes editor/lifecycle. **Backend read-model gap
+> closed (proven necessary)**: `ResolvedVisitFormDto.RowVersion` added + populated (the edit payload's
+> `ExpectedRequestRowVersion` had no source). Detail view wires Edit/Resubmit actions by manager + status.
+> Gates: backend build 0-err · v2 read IT 23/23 · FE tsc 0 / lint 0 / unit **56/56** (10 new) / build ✓.
 >
 > **G-4A ✅** `POST /api/v2/visit-requests/initiate`: entity `VisitRequestPendingForm` + additive migration
 > `08_up_pending_v2_forms.sql` (+ rollback line); `InitiateVisitRequestV2Command`/Validator (reuses the
@@ -258,8 +268,10 @@ schema; test on disposable DB; **never run destructive migration on a real DB**;
   v2_requests = 0, pending_forms = 0, identity_changes = 0; **pems_db and pems_test do NOT have the
   `visit_request_pending_forms` table** (never mutated); no live appsettings carries a PerCampusFormV2
   section (both flags default OFF).
-- Frontend (end of G-4A): `npm run test:unit` (Vitest+RTL) **46/46**; `npm run lint` (tsc) 0 errors;
-  `vite build` green (pre-existing chunk-size warning only).
+- Frontend (end of G-4B): `npm run test:unit` (Vitest+RTL) **56/56** (10 new: 4 `resolvedFormToV2Schema`
+  hydration + 6 `EditVisitRequestV2Page`); `npm run lint` (tsc) 0 errors; `vite build` green.
+- G-4B backend read-model change verified: v2 read IntegrationTests (PerCampusFormV2Read + RequestDetailV2 +
+  EditableVisitRequestDetailV2) **23/23** with `ResolvedVisitFormDto.RowVersion` added.
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional

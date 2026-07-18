@@ -255,6 +255,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
         {
             VisitRequestId = (long)request.VisitRequestId,
             RequestCode = request.RequestCode,
+            RowVersion = request.RowVersion,
             FormSchemaVersion = request.FormSchemaVersion,
             HasMixedCampusDetails = request.HasMixedCampusDetails,
             VisitScope = request.VisitScope,

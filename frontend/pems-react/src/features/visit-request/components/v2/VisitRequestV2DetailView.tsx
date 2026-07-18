@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, PencilLine, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getVisitRequestFormV2, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
@@ -64,6 +65,9 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const isManager = (viewer.relation === 'REGISTRANT' || viewer.relation === 'VISITOR_OWNER') && !viewer.isReadOnly;
   const canDecideAmendment = viewer.relation === 'STAFF_LEADER' && !viewer.isReadOnly;
   const showMixedLabel = data.hasMixedCampusDetails && data.campusVisits.length > 1;
+  // Owner-only lifecycle actions; the backend re-authorizes editor identity + lifecycle on submit.
+  const canEditPending = isManager && (data.requestStatus === 'PENDING_APPROVAL' || data.requestStatus === 'PENDING');
+  const canResubmit = isManager && data.requestStatus === 'REJECTED';
 
   return (
     <div className="space-y-6">
@@ -81,6 +85,16 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-800">
               {t('visitRequestV2:detail.mixedLabel')}
             </span>
+          )}
+          {canEditPending && (
+            <Link to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
+              <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
+            </Link>
+          )}
+          {canResubmit && (
+            <Link to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
+              <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
+            </Link>
           )}
         </div>
         <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">

@@ -238,7 +238,7 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
 - Tests: `V2MixedListSurfacesTests` **2/2** (helper matrix mixed/non-mixed + Staff-calendar end-to-end:
   each campus leader sees THEIR campus's name, never the sibling's, proving the Pomelo CASE+JOIN
   translation on a real surface).
-## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — 🟨 CORE DELIVERED (G-1/2/3), G-4 exit gates pending
+## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ✅ DONE (G-1/2/3 + G-4A/G-4B)
 - **G-1 foundation** — ✅ DONE: typed v2 API client (`visitRequestV2Api.ts`), invitation landing page
   (`/visit-contact-claim/:token`, `/visit-contact-transfer/:token` — anonymous MASKED info; accept/decline
   need the matching Google login), `ContactIdentityPanel` (claim resend/replace; transfer initiate/
@@ -318,8 +318,16 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   Arch **14/14** · full IT **372/372** (fresh `pems_it_regression` via junction) · targeted v2 IT **7/7** ·
   FE tsc 0 / unit **46/46** / build ✓. Migration additive+idempotent (pems_pr3_test + pems_it_regression only;
   pems_db/pems_test untouched); flags OFF.
-- **G-4B dedicated v2 EDIT/RESUBMIT form page** — ⬜ pending (last Phase-G exit gate; the pending-edit/resubmit
-  API client + `buildV2EditPayload` + tests shipped in G-2, and the create form component is reusable).
+- **G-4B dedicated v2 EDIT/RESUBMIT form page** — ✅ DONE (last Phase-G exit gate): `EditVisitRequestV2Page`
+  (routes `/dashboard/visit/v2/:id/edit|resubmit`) reuses the SAME v2 schema + `CampusVisitCard` + utils (no
+  third form model). New pure `resolvedFormToV2Schema` hydrates from the scoped read model with stable
+  `visitInstanceId` + per-instance/request `rowVersion`; submit → `buildV2EditPayload` → update/resubmit;
+  409 → stable conflict + reload; resubmit keeps campus set fixed, pending-edit may add/remove; account-binding
+  emails read-only; backend re-authorizes. **Proven backend gap closed**: `ResolvedVisitFormDto.RowVersion`
+  added + populated (the edit payload's `ExpectedRequestRowVersion` had no source in the read model). Detail
+  view wires Edit/Resubmit by manager + status. Gates: backend build 0 · v2 read IT **23/23** · FE tsc 0 /
+  lint 0 / unit **56/56** (10 new) / build ✓.
+- **Phase G is DONE** (G-1/2/3 + G-4A + G-4B). Next: Phase H (E2E + SQL drill + rollout docs), then I.
 ## Phase H — final verification + E2E + rollout readiness — ⬜ pending
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

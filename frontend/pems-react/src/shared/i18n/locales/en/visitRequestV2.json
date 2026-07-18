@@ -133,5 +133,21 @@
     "PENDING_APPROVAL": "Pending approval",
     "PARTIALLY_APPROVED": "Partially approved",
     "IN_PROGRESS": "In progress"
+  },
+  "edit": {
+    "titleEdit": "Edit request (pending approval)",
+    "titleResubmit": "Resubmit a rejected request",
+    "subtitle": "Edit each campus independently. The registrant and contact emails cannot be changed here.",
+    "emailImmutable": "Cannot be changed",
+    "contactImmutable": "The contact email is bound to the login account — not editable while editing the request.",
+    "resubmitCampusFixed": "On resubmit the campus set stays fixed; only the content is edited.",
+    "forbidden": "You are not allowed to edit this request.",
+    "notEditable": "This request is no longer editable. Please go back.",
+    "notResubmittable": "This request cannot be resubmitted. Please go back.",
+    "conflict": "This request was updated elsewhere. Reload the latest data and try again — your changes were not saved.",
+    "reload": "Reload latest data",
+    "submitFailed": "Could not save. Please try again.",
+    "saveEdit": "Save changes",
+    "saveResubmit": "Resubmit request"
   }
 }

@@ -11,9 +11,11 @@ import {
   mapServerFieldPathToFormPath,
   migrateV1DraftToV2,
   projectV2ToV1FormValues,
+  resolvedFormToV2Schema,
 } from '../utils/visitRequestV2Form';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 import type { VisitRequestSchema } from '../schema/visitRequest.schema';
+import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
 
 const campus = (overrides: Partial<CampusVisitSchema>): CampusVisitSchema => ({
   ...createEmptyCampusVisit(overrides.clientKey ?? 'ck-test'),
@@ -270,6 +272,102 @@ describe('mapServerFieldPathToFormPath', () => {
     expect(mapServerFieldPathToFormPath('Form.SubmissionId')).toBeNull();
     expect(mapServerFieldPathToFormPath('SomethingElse')).toBeNull();
     expect(mapServerFieldPathToFormPath('')).toBeNull();
+  });
+});
+
+describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
+  const resolved = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => ({
+    visitRequestId: 5,
+    requestCode: 'VR-5',
+    rowVersion: 7,
+    formSchemaVersion: 2,
+    hasMixedCampusDetails: true,
+    visitScope: 'MULTI_CAMPUS',
+    requestStatus: 'PENDING_APPROVAL',
+    createdSource: 'PUBLIC',
+    submittedAt: '2026-07-15T08:00:00',
+    partnerId: 3,
+    registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+8491', email: 'reg@x.vn', nationality: 'VN' },
+    primaryContact: { fullName: 'ĐM', organization: 'ĐH X', phone: '+8492', email: 'c@x.vn', accessStatus: 'ACTIVE', verifiedAt: null },
+    campusVisits: [
+      {
+        visitInstanceId: 10, campusId: 1, campusCode: 'HN', campusName: 'FPTU HN',
+        plannedStartAt: '2026-08-01T09:00:00', plannedEndAt: '2026-08-01T11:30:00', timezone: 'Asia/Ho_Chi_Minh',
+        instanceStatus: 'PENDING', currentHostUserId: null, currentHostName: null, decidedByUserId: null,
+        decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
+        delegationName: 'Đoàn HN', visitType: 'MEETING', visitTypeOther: null, purpose: 'MĐ HN', workingContent: 'ND HN',
+        visitors: [{ guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách HN', organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
+        supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', phone: '+8493', email: 'op@x.vn' },
+        workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null, noteToFptu: 'ghi chú HN',
+        formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
+      },
+      {
+        visitInstanceId: 11, campusId: 2, campusCode: 'HCM', campusName: 'FPTU HCM',
+        plannedStartAt: '2026-08-02T13:00:00', plannedEndAt: '2026-08-02T15:00:00', timezone: 'Asia/Ho_Chi_Minh',
+        instanceStatus: 'PENDING', currentHostUserId: null, currentHostName: null, decidedByUserId: null,
+        decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
+        delegationName: 'Đoàn HCM', visitType: 'WORKSHOP', visitTypeOther: null, purpose: 'MĐ HCM', workingContent: null,
+        visitors: [{ guestMemberId: 2, memberType: 'VISITOR', fullName: 'Khách HCM', organization: 'ĐH Y', jobTitle: 'TS', nationality: 'VN', displayOrder: 1 }],
+        supportMembers: [{ guestMemberId: 3, memberType: 'SUPPORT', fullName: 'HT HCM', organization: 'ĐH Y', jobTitle: 'TL', nationality: 'VN', displayOrder: 1 }],
+        operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', phone: '+8494', email: '' },
+        workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', mediaConsentNote: 'ok', noteToFptu: null,
+        formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,
+      },
+    ],
+    viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+    ...overrides,
+  });
+
+  it('carries request + per-instance rowVersions and stable visitInstanceIds for optimistic concurrency', () => {
+    const { values, expectedRequestRowVersion } = resolvedFormToV2Schema(resolved());
+    expect(expectedRequestRowVersion).toBe(7);
+    expect(values.campusVisits.map(c => c.visitInstanceId)).toEqual([10, 11]);
+    expect(values.campusVisits.map(c => c.expectedRowVersion)).toEqual([4, 6]);
+    // Fresh, distinct client keys minted (the read model has none):
+    expect(values.campusVisits[0].clientKey).toBeTruthy();
+    expect(values.campusVisits[0].clientKey).not.toBe(values.campusVisits[1].clientKey);
+  });
+
+  it('hydrates each campus with ITS OWN content — never a first-campus projection', () => {
+    const { values } = resolvedFormToV2Schema(resolved());
+    const [hn, hcm] = values.campusVisits;
+    expect(hn.campus).toBe('HN');
+    expect(hn.delegationName).toBe('Đoàn HN');
+    expect(hn.startDatetime).toBe('2026-08-01T09:00'); // datetime-local (16 chars)
+    expect(hn.workingLanguage).toBe('VI');
+    expect(hn.notes).toBe('ghi chú HN');
+    expect(hcm.campus).toBe('HCM');
+    expect(hcm.delegationName).toBe('Đoàn HCM');
+    expect(hcm.visitType).toBe('WORKSHOP');
+    expect(hcm.workingLanguage).toBe('EN');
+    expect(hcm.mediaConsentStatus).toBe('AGREED');
+    expect(hcm.supportTeam[0].fullName).toBe('HT HCM');
+    // The two campuses are independent copies:
+    hn.visitors[0].fullName = 'SỬA HN';
+    expect(hcm.visitors[0].fullName).toBe('Khách HCM');
+  });
+
+  it('maps partner + registrant/contact request-level once', () => {
+    const { values } = resolvedFormToV2Schema(resolved());
+    expect(values.partnerSelectionMode).toBe('EXISTING_PARTNER');
+    expect(values.partnerId).toBe(3);
+    expect(values.registerInfo.email).toBe('reg@x.vn');
+    expect(values.contactPoint.email).toBe('c@x.vn');
+
+    const noPartner = resolvedFormToV2Schema(resolved({ partnerId: null }));
+    expect(noPartner.values.partnerSelectionMode).toBe('NEW_ORGANIZATION');
+    expect(noPartner.values.partnerId).toBeNull();
+  });
+
+  it('round-trips through buildV2EditPayload with the correct row versions and instance ids', () => {
+    const { values, expectedRequestRowVersion } = resolvedFormToV2Schema(resolved());
+    const payload = buildV2EditPayload(values, expectedRequestRowVersion);
+    expect(payload.expectedRequestRowVersion).toBe(7);
+    expect(payload.campusVisits[0].visitInstanceId).toBe(10);
+    expect(payload.campusVisits[0].expectedRowVersion).toBe(4);
+    expect(payload.campusVisits[1].visitInstanceId).toBe(11);
+    expect(payload.campusVisits[1].expectedRowVersion).toBe(6);
+    expect(payload.campusVisits[1].campusId).toBe('HCM');
   });
 });
 
