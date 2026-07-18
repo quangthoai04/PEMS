@@ -22,6 +22,8 @@ import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
+import { usePerCampusV2Capability } from '../../../shared/features/perCampusV2Capability';
+import { resolveAuthenticatedCreateEntry } from '../../../shared/features/perCampusV2Entry';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
 import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
@@ -204,6 +206,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Default create-entry cutover: route to the v2 create page when the capability is enabled,
+  // otherwise open the v1 authenticated create popup. Fail-safe to v1 while loading / on error.
+  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
+  const handleCreateVisitRequest = () => {
+    const entry = resolveAuthenticatedCreateEntry(v2Enabled);
+    if (entry.kind === 'v2-route') navTo(entry.to);
+    else setShowCreateModal(true);
+  };
 
   const filterConfig = getVisitRequestFilterConfig({
     roleCode,
@@ -1443,8 +1454,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <div className="flex shrink-0 flex-wrap items-center gap-3 w-full md:w-auto">
               {canCreateVisitRequest && (
                 <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-[#F37021]/50 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto"
+                  onClick={handleCreateVisitRequest}
+                  disabled={v2Status === 'loading'}
+                  aria-busy={v2Status === 'loading'}
+                  className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-[#F37021]/50 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto disabled:opacity-70 disabled:cursor-wait"
                 >
                   <Plus className="w-5 h-5" /> Tạo đoàn khách
                 </button>

@@ -380,6 +380,30 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   transient flake — hardened `FileSinkEmailService.IsEnabledFor` to also require the sink path, then rerun
   clean 378/0), Vitest **56**, tsc/lint 0, build ✓; H-1 fresh+upgrade schema re-verified (op org/email nullable,
   fresh-vs-upgrade IDENTICAL). **Phase H DONE** (H-1/H-2/H-3/H-4); report stays IN PROGRESS (Phase I pending).
+## Frontend V2 Cutover & Workflow Completion (post-H-4) — 🚧 in progress
+Phase G shipped the v2 components/routes but the default runtime entry points still opened v1; this workstream
+closes those frontend gaps so a normal user reaches v2 when the backend capability is ON, while v1 stays
+byte-identical when the flags are OFF.
+
+- **Slice 1 — v2 capability + default entry-point cutover** — ✅ DONE.
+  - Backend: new PUBLIC read-only capability endpoint `GET /api/public/features/per-campus-form-v2` →
+    `{ readEnabled, writeEnabled, enabled }` with `enabled = readEnabled && writeEnabled`. Anonymous, no
+    mutation, exposes ONLY those three flags (no secret/other config). Both flags stay default OFF.
+  - Frontend: single shared capability source — `getPerCampusFormV2Capability` API + `PerCampusV2CapabilityProvider`
+    /`usePerCampusV2Capability` (session-cached one fetch, loading/error state, **fail-safe to v1** while loading,
+    on error, or outside the provider — the client never guesses the flag). Canonical routes + branching centralised
+    in `perCampusV2Entry`.
+  - Entry-point cutover (capability ENABLED → v2, else v1, no flicker; CTA disabled while resolving):
+    HeroSection CTA + FinalCtaSection CTA → `/visit-registration/v2`; VisitRequestManagement "Tạo đoàn khách" →
+    `/visit/create-v2`; the dead `/dashboard/visit/create` prototype replaced by `CreateVisitRequestEntry`
+    (version-aware redirect). v1 popup path unchanged when OFF. No v1 code deleted.
+  - Tests: backend capability `PublicFeaturesCapabilityApiTests` **6/6** (4 flag combos DB-free + anonymous
+    default-OFF HTTP shape + ON/ON via real DI). Frontend Vitest **+14** (entry decision, provider enabled/off/
+    fail-safe/session-cache/outside-provider, FinalCta cutover on/off/error/loading). Full Vitest **70**, tsc 0, build ✓.
+
+- **Slices 2–6** — ⬜ pending (version-aware detail/edit routing; per-campus post-submit summary; safe-edit/
+  amendment UX + allowedActions-driven UI; scoped search match contexts; auth Journey B–H real-stack).
+
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)

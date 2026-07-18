@@ -4,13 +4,26 @@
  */
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CalendarDays, Mail } from 'lucide-react';
 import { VisitingFormPopup } from '../modals/VisitingFormPopup';
 import { useTranslation } from 'react-i18next';
+import { usePerCampusV2Capability } from '../../shared/features/perCampusV2Capability';
+import { resolvePublicVisitEntry } from '../../shared/features/perCampusV2Entry';
 
 export function FinalCtaSection() {
   const { t } = useTranslation(['home']);
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
+  const navigate = useNavigate();
+
+  // Default entry point cutover (mirrors HeroSection): v2 route when enabled, else v1 popup.
+  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
+  const capabilityResolving = v2Status === 'loading';
+  const handleBookVisit = () => {
+    const entry = resolvePublicVisitEntry(v2Enabled);
+    if (entry.kind === 'v2-route') navigate(entry.to);
+    else setIsVisitorFormOpen(true);
+  };
 
   return (
     <>
@@ -26,8 +39,10 @@ export function FinalCtaSection() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => setIsVisitorFormOpen(true)}
-              className="inline-flex items-center justify-center gap-2 w-full sm:w-[280px] h-14 bg-fpt-orange text-white font-bold px-6 rounded-2xl hover:bg-fpt-orange-hover hover:-translate-y-1 transition-all duration-300 shadow-xl"
+              onClick={handleBookVisit}
+              disabled={capabilityResolving}
+              aria-busy={capabilityResolving}
+              className="inline-flex items-center justify-center gap-2 w-full sm:w-[280px] h-14 bg-fpt-orange text-white font-bold px-6 rounded-2xl hover:bg-fpt-orange-hover hover:-translate-y-1 transition-all duration-300 shadow-xl disabled:opacity-70 disabled:cursor-wait disabled:translate-y-0"
             >
               <CalendarDays className="w-5 h-5 shrink-0" />
               <span className="truncate">{t('home:cta.bookVisit')}</span>

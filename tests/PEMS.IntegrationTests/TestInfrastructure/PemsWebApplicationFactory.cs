@@ -81,6 +81,21 @@ public sealed class PemsWebApplicationFactory : WebApplicationFactory<FaqsContro
                         ?? new AuthOptions();
                     services.AddSingleton(authOptions);
 
+                    // Per-campus form v2 feature flags (default OFF) — mirrors Program.cs so the flag-gated
+                    // handlers and the public capability endpoint resolve. Individual tests override these via
+                    // WithWebHostBuilder when they need a specific flag combination.
+                    var perCampusV2Read = configuration
+                        .GetSection(PEMS.Application.Common.Options.PerCampusFormV2Options.SectionName)
+                        .Get<PEMS.Application.Common.Options.PerCampusFormV2Options>()
+                        ?? new PEMS.Application.Common.Options.PerCampusFormV2Options();
+                    services.AddSingleton(perCampusV2Read);
+
+                    var perCampusV2Write = configuration
+                        .GetSection(PEMS.Application.Common.Options.PerCampusFormV2WriteOptions.SectionName)
+                        .Get<PEMS.Application.Common.Options.PerCampusFormV2WriteOptions>()
+                        ?? new PEMS.Application.Common.Options.PerCampusFormV2WriteOptions();
+                    services.AddSingleton(perCampusV2Write);
+
                     var connectionString = configuration.GetConnectionString("DefaultConnection")
                         ?? throw new InvalidOperationException(
                             "ConnectionStrings:DefaultConnection is not configured in appsettings.Testing.json.");
