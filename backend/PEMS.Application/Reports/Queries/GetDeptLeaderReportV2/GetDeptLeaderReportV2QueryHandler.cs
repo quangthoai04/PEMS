@@ -247,7 +247,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                 where ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive
                 join item in _db.VisitExpenseItems.AsNoTracking() on r.ExpenseReportId equals item.ExpenseReportId
                 join li in _db.VisitLogisticsItems.AsNoTracking() on r.LogisticsItemId equals (ulong?)li.LogisticsItemId
-                group new { r, item, ci, li } by new { r.LogisticsItemId, ci.VisitRequest.GroupCode, li.Title, ci.PlannedStartAt, r.Status } into g
+                group new { r, item, ci, li } by new { r.LogisticsItemId, GroupCode = ci.VisitRequest.RequestCode, li.Title, ci.PlannedStartAt, r.Status } into g
                 select new
                 {
                     LogisticsItemId = g.Key.LogisticsItemId!.Value,

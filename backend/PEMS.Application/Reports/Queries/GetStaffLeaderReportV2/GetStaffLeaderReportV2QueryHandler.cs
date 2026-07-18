@@ -371,7 +371,7 @@ public sealed class GetStaffLeaderReportV2QueryHandler
         
         var expenseInstances = await instances
             .Where(ci => expenseInstanceIds.Contains(ci.VisitInstanceId))
-            .Select(ci => new { ci.VisitInstanceId, ci.VisitRequest.GroupCode, ci.VisitRequest.DelegationName, ci.PlannedStartAt })
+            .Select(ci => new { ci.VisitInstanceId, GroupCode = ci.VisitRequest.RequestCode, ci.VisitRequest.DelegationName, ci.PlannedStartAt })
             .ToListAsync(cancellationToken);
 
         var expenseRows = new List<StaffLeaderV2ExpenseRow>();
