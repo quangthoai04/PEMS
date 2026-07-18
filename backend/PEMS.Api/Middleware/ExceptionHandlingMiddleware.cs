@@ -113,11 +113,18 @@ public sealed class ExceptionHandlingMiddleware
                 payload = conflict.Data is null
                     ? new { success = false, errorCode = conflict.ErrorCode, message = conflict.Message, traceId }
                     : new { success = false, errorCode = conflict.ErrorCode, message = conflict.Message, data = conflict.Data, traceId };
+                // Observable by STABLE code only (no message/PII) — covers the v2 conflict codes
+                // (VERSION_CONFLICT / PENDING_NOT_FOUND / SUBMISSION_FORM_MISMATCH / READ_REQUIRED …).
+                _logger.LogInformation("Conflict ({Code}) on {Path} (traceId {TraceId}).",
+                    conflict.ErrorCode ?? "n/a", context.Request.Path, traceId);
                 break;
 
             case BusinessRuleException business:
                 status = StatusCodes.Status422UnprocessableEntity;
                 payload = new { success = false, errorCode = business.ErrorCode, message = business.Message, traceId };
+                // Observable by STABLE code only (no message/PII) — covers v2 validation/business codes.
+                _logger.LogInformation("Business rule failure ({Code}) on {Path} (traceId {TraceId}).",
+                    business.ErrorCode ?? "n/a", context.Request.Path, traceId);
                 break;
 
             case BadHttpRequestException badRequest:

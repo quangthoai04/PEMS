@@ -348,7 +348,18 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   `npm install --legacy-peer-deps` (the command that produced the lockfile). Existing Playwright specs are
   **mocked-network component/contract** tests (not full real-stack E2E — §12); the real-stack harness
   (real backend + disposable MySQL + Testing-only OTP sink) is a documented follow-on, not claimed passed.
-- **H-3 observability + rollout/canary/rollback docs** — ⬜ pending.
+- **H-3 observability + rollout/canary/rollback docs** — ✅ DONE (`H3_ROLLOUT_OBSERVABILITY.md`).
+  Source audit: **no metrics framework** in the project (none introduced — per §20); observability model =
+  structured `ILogger` + append-only `audit_logs` (correlation_id + stable codes + masked PII). **Instrumentation
+  gap closed**: `ExceptionHandlingMiddleware` now logs `ConflictException` + `BusinessRuleException` by STABLE
+  errorCode + path + traceId ONLY (no message/PII) — makes the v2 failure codes observable
+  (`PENDING_NOT_FOUND`/`SUBMISSION_FORM_MISMATCH`/`VERSION_CONFLICT`/`READ_REQUIRED`/`FORM_DETAIL_MISSING`/
+  `FORM_VERSION_UPGRADE_REQUIRED`), which were previously silent. Regression test
+  `ExceptionHandlingObservabilityTests` **2/2** (409/422 + code logged + PII/message NOT logged) → full IT
+  now **374/374**. Rollout doc: exact flag names/defaults from source (`PerCampusFormV2` + `PerCampusFormV2Write`,
+  both default `false`), ordered rollout, internal canary, log/audit-derived metrics with rollback actions
+  (numeric thresholds = documented placeholders pending Product), and flag-OFF (not DOWN) as the production
+  rollback. **Phase H DONE** (H-1/H-2/H-3); report stays IN PROGRESS (Phase I pending).
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)

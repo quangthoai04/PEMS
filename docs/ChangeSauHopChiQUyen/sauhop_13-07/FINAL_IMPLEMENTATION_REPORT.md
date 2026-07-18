@@ -246,13 +246,28 @@ detail/status keys vi+en. Gates: `npm run lint` 0, `npm run test:unit` **46/46**
 client + payload builder + tests shipped in G-2; the create form component is reusable) and the public OTP
 initiate v2 endpoint (backend gap below).
 
-### Phase H — final verification + E2E + rollout readiness
-SQL fresh import + verify + upgrade/backfill/idempotency/rollback on disposable MySQL; dotnet build; full
-Unit/Arch/Integration on fresh disposable DB; frontend typecheck/lint/unit/build; backend+frontend E2E (single/
-multi-same/multi-mixed; per-role permissions; missing detail; 29m59s fail / 30m pass; B claim/transfer/expiry;
-cancel-3A; safe-edit/amendment; search no-leak; export/email per-campus; concurrency/idempotency); N+1 &
-query-count bounds; assert no raw token/OTP/PII in logs/audit. Read & write flags separate, both default OFF;
-prove flag-on flow by test; never auto-enable.
+### Phase H — final verification + E2E + rollout readiness — ✅ DONE (H-1/H-2/H-3)
+- **H-1 SQL drill** (`percampus_v2_migration/H1_MIGRATION_DRILL_REPORT.md`): fixed a real **fresh-vs-upgrade
+  drift** (`visit_request_pending_forms` was missing from the fresh master → added + README). Drills on
+  disposable DBs (`pems_h_fresh`/`pems_h_upgrade`/`pems_h_rollback`): fresh import (9 v2 tables), upgrade from
+  the pre-v2 baseline `ed693f6d` with `04_verify` V01–V15 = 0 (762/762 links, 204/204 details), idempotent
+  re-run identical, schema diff fresh-vs-upgrade **IDENTICAL** (71=71), constraint boundaries (29m59s/end=start
+  → 3819, 30m OK, dup submission → 1062), rollback **refusal guard + clean DOWN** both correct, EXPLAIN index
+  usage confirmed. `pems_db`/`pems_test` never mutated.
+- **H-2 regression + E2E** (`H2_VERIFICATION_MATRIX.md`): full regression green — Unit **482**, Arch **14**,
+  full IT (below), Vitest **56**, tsc/lint 0, build ✓; `test:e2e` script + new per-campus v2 browser spec →
+  Playwright **78 passed** (mocked-network component/contract; real-stack E2E harness documented as a
+  follow-on, not claimed). `npm ci` blocked by a Windows `lightningcss` native-file lock (env defect;
+  reproducible install = `npm install --legacy-peer-deps`).
+- **H-3 observability + rollout** (`H3_ROLLOUT_OBSERVABILITY.md`): no metrics framework in the project (none
+  added); observability = structured logs + `audit_logs`. Closed a gap — the middleware now logs
+  `ConflictException`/`BusinessRuleException` by **stable code only** (no PII), making the v2 failure codes
+  observable; regression `ExceptionHandlingObservabilityTests` 2/2. Rollout/canary/exit-criteria documented
+  with exact flag names/defaults from source; production rollback = **flags OFF**, never DOWN.
+
+### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled)
+Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
+schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
 ### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled)
 Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
@@ -261,8 +276,9 @@ schema; test on disposable DB; **never run destructive migration on a real DB**;
 ## 5. Test counts (latest, verified — end of Phase F backend, G-2 frontend)
 - UnitTests **482/482** (474 + 8 new `InitiateVisitRequestV2CommandValidator` tests; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **372/372** on a fresh disposable `pems_it_regression` recreated from the PR-2 master
-  (v10) + additive patches 06/07/**08_up_pending_v2_forms**, run via the repo-root junction so the
+- IntegrationTests **374/374** (372 + 2 H-3 `ExceptionHandlingObservabilityTests`) on a fresh disposable
+  `pems_it_regression` recreated from the **fixed** master (v10, which now integrates pending_forms — H-1),
+  run via the repo-root junction so the
   WebApplicationFactory API tests resolve their content root (368 prior + **4 new G-4A**
   `PublicInitiateVisitRequestV2Tests`: initiate-flag-off binds nothing, initiate→verify builds from the
   bound snapshot, tampered-verify rejected creating nothing, verify-without-initiate rejected).
