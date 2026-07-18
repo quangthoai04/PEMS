@@ -103,11 +103,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
             await OutboundEmailAttachments.ValidateAsync(_context, userId, attachInputs, cancellationToken);
             var now = _clock.VietnamNow;
-            var delegationName = await (
-                from c in _context.VisitRequestCampuses
-                join v in _context.VisitRequests on c.VisitRequestId equals v.VisitRequestId
-                where c.VisitInstanceId == l.VisitInstanceId
-                select v.DelegationName).FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+            // Mixed per-campus v2: the email uses THIS instance's detail name.
+            var delegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_context, new[] { l.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(l.VisitInstanceId) ?? "FPT University";
             var templateId = await _context.EmailTemplates
                 .Where(t => t.TemplateCode == EmailActionTemplates.LogisticsAssigneeAssignment)
                 .Select(t => (ulong?)t.EmailTemplateId)

@@ -68,10 +68,11 @@ public sealed class ExecuteEmailActionCommandHandler
         result.Action = token.IntendedAction;
         result.Context = token.ActionContext;
 
-        // v2 identity-claim links are NEVER executable anonymously (plan §4.4): applying a claim
+        // v2 identity claim/transfer links are NEVER executable anonymously (plan §4.4): applying one
         // requires a logged-in session whose email matches the invitation. Possession of the email
         // link alone must not grant request ownership — reject here, unused, without touching state.
-        if (token.ActionContext == EmailActionContexts.VisitContactClaim)
+        if (token.ActionContext == EmailActionContexts.VisitContactClaim
+            || token.ActionContext == EmailActionContexts.VisitContactTransfer)
         {
             result.Status = EmailActionViewStatuses.Invalid;
             result.Message = "Liên kết này yêu cầu đăng nhập. Vui lòng mở trang xác nhận đầu mối liên hệ từ email.";

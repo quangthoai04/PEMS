@@ -57,10 +57,11 @@ public sealed class GetEmailActionInfoQueryHandler
 
         var result = new EmailActionInfoResult { Action = token.IntendedAction, Context = token.ActionContext };
 
-        // v2 identity-claim links are NEVER served by the anonymous email-action flow (plan §4.4):
-        // the claim page requires a logged-in session whose email matches the invitation — the
-        // dedicated /api/public/visit-contact-claims/{token} + /api/v2/visit-contact-claims flow.
-        if (token.ActionContext == EmailActionContexts.VisitContactClaim)
+        // v2 identity claim/transfer links are NEVER served by the anonymous email-action flow
+        // (plan §4.4): those pages require a logged-in session whose email matches the invitation —
+        // the dedicated /api/public/visit-contact-{claims|transfers}/{token} + /api/v2 flows.
+        if (token.ActionContext == EmailActionContexts.VisitContactClaim
+            || token.ActionContext == EmailActionContexts.VisitContactTransfer)
             return invalid;
 
         if (token.ActionContext == EmailActionContexts.ParticipationResponse

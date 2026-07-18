@@ -82,12 +82,10 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
         var requestIds  = eligibleInstances.Select(v => v.VisitRequestId).Distinct().ToList();
         var campusIds   = eligibleInstances.Select(v => v.CampusId).Distinct().ToList();
 
-        // Step 3: Batch fetch delegation names
-        var delegationNames = await _dbContext.VisitRequests
-            .AsNoTracking()
-            .Where(vr => requestIds.Contains(vr.VisitRequestId))
-            .Select(vr => new { vr.VisitRequestId, vr.DelegationName })
-            .ToDictionaryAsync(vr => vr.VisitRequestId, vr => vr.DelegationName, cancellationToken);
+        // Step 3: Batch fetch EFFECTIVE per-instance delegation names (mixed per-campus v2 rows use
+        // THIS instance's detail; v1/non-mixed keep the global projection — byte-identical there).
+        var delegationNames = await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_dbContext, instanceIds, cancellationToken);
 
         // Step 4: Batch fetch campus names
         var campusNames = await _dbContext.Campuses
@@ -113,7 +111,7 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
             if (hasNews && !request.IncludeAlreadyHasNews)
                 continue;
 
-            delegationNames.TryGetValue(inst.VisitRequestId, out var delegationName);
+            delegationNames.TryGetValue(inst.VisitInstanceId, out var delegationName);
             campusNames.TryGetValue(inst.CampusId, out var campusName);
 
             var title = !string.IsNullOrEmpty(delegationName)

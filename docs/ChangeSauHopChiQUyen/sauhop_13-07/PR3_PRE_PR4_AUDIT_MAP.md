@@ -173,3 +173,50 @@ Until then: `PerCampusFormV2` OFF, write flag OFF, no v2 rows.
 - **Pending (pre-PR-4 gate, after Group #4):** exhaustive per-file *zero-unclassified* pass over the remaining
   Class-C list/report handlers, and the write-flag wiring for PR-4.
 - **HEAD at this checkpoint:** `5ee29ab3` — Integration **267/267**, Unit **435/435**, Architecture **14/14**.
+
+---
+
+## 10. Phase F — Class-C migration + ZERO-UNCLASSIFIED report (2026-07-17)
+
+**Migration rule applied everywhere:** an INSTANCE-context row reads
+`FormSchemaVersion >= 2 && HasMixedCampusDetails ? instance.FormDetail.<field> : vr.<field>`
+(one JOIN via the FormDetail nav — no N+1, no correlated scalar subquery; a mixed v2 row whose detail is
+missing yields NULL, never the global value). A REQUEST-context row that cannot represent per-campus
+content shows the explicit label `"Khác nhau theo cơ sở"` for mixed v2. v1 + non-mixed v2 keep the global
+projection, which is byte-identical to every instance's detail by construction. Batched helper:
+`VisitInstanceEffectiveName.ForInstancesAsync` (Delegations/Services/VisitFormRead).
+
+**Surfaces migrated in Phase F** (all build-verified; representative surfaces covered by
+`V2MixedListSurfacesTests`): GetStaffCalendar (list), GetDepartmentCalendar (invitations + logistics),
+GetAssignmentsProgressList (+ keyword over the effective name), GetVisitInvitations (keyword scope-safe +
+projection), ViewMyVisitInvitations (list projection incl. Purpose/WorkingContent), ViewGuestDelegationList
+(staff instance path: keyword + projection; visitor request path: any-instance-detail keyword + mixed
+label), GetHODashboardOverview, GetDepartmentLeaderDashboardSummary (4 sites),
+SearchAndFilterFeedback, ViewFeedbackSummary (keyword + per-instance titles + request-label fallback),
+GetPendingFeedbackNotifications, GetVisitFeedbackTargets, GetMyHostFeedback, GetVisitorFeedback,
+SubmitVisitFeedback (target snapshots + notifications), SearchAndFilterMinutes, ExportMinutesPdf/Excel,
+GetEligibleVisitInstancesForNews, GetHoReportOverview (visit_type filters mixed-aware ×4 + name sites ×3),
+GetStaffLeaderReportOverview (feedback rows, pending-approval rows via own-campus detail, close rows),
+GetDeptLeaderReportOverview (pending/handover/feedback rows), GetDeptLeaderInvoiceVisits,
+GetDeptLeaderReportV2 + GetDeptLeaderInvoiceItemsV2 + GetStaffLeaderDeptInvoiceItems,
+SendDeptLeaderInvoiceToStaffLeader / SendDeptLeaderPersonnelReport / SendStaffLeaderDeptInvoice /
+SendStaffLeaderPersonnelReport, ScheduleConflictResolver + GetHostCandidates + GetCreateHostCandidates
+(busy labels), GetRelatedVisitorDetails, ViewDocumentDetail, CompleteVisitStage / SaveMinutes /
+SaveVisitAgenda / PrepareVisitLogistics / RespondVisitParticipantInvitation / AcceptInvitation /
+DeclineInvitation / AssignRequestAssignee / ProposeRequestChange (notification/email texts),
+UpdatePendingVisitRequestV2 + ResubmitRejectedVisitRequestV2 (post-commit notification label).
+The report EXPORT commands (ExportHoReport/ExportStaffLeaderReport/ExportDeptLeaderReport) render the
+overview-query DTOs and are v2-safe transitively.
+
+**Zero-unclassified verification:** repository-wide sweep of the 10 global fields over
+PEMS.Application + PEMS.Api; every remaining raw read is one of:
+1. the ELSE branch of a Phase-F conditional (v1/non-mixed path);
+2. an in-memory mapping of an already-effective projected row;
+3. a Phase-A/B dual-read handler (v1 local overridden by IVisitFormReadService for v2);
+4. a Class-P v1 projection-writer or the v1 create/edit/resubmit flow (v1-compat, unchanged by design);
+5. `VisitRequestFingerprintBuilder`/validators (v1 fingerprint/validation of v1 payloads);
+6. EmailActionHtmlPages (renders the already-v2-safe email-action DTOs);
+7. non-VisitRequest false positives (AgendaTemplate/EmailTemplate/ApiIntegration own columns).
+→ **ZERO unclassified production references.** Search surfaces enforce scope-before-keyword (the actor's
+instance set is filtered before the keyword) and a hidden sibling campus's content can no longer produce
+a hit/row for a differently-scoped actor.

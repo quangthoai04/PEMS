@@ -38,14 +38,16 @@ public class VisitInstanceFormDetail
     [Column("operational_contact_full_name")]
     public string OperationalContactFullName { get; set; } = null!;
 
+    // Organization + email are OPTIONAL (a coordination snapshot needs name + phone; the rest may be blank).
+    // Stored NULL when blank — the DB CHECK (TRIM(x) <> '') accepts NULL but rejects an empty string.
     [Column("operational_contact_organization")]
-    public string OperationalContactOrganization { get; set; } = null!;
+    public string? OperationalContactOrganization { get; set; }
 
     [Column("operational_contact_phone")]
     public string OperationalContactPhone { get; set; } = null!;
 
     [Column("operational_contact_email")]
-    public string OperationalContactEmail { get; set; } = null!;
+    public string? OperationalContactEmail { get; set; }
 
     [Column("working_language")]
     public string WorkingLanguage { get; set; } = "EN";

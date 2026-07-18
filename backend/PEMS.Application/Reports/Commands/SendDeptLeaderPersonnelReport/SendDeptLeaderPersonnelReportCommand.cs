@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
@@ -75,7 +76,17 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
                 join ci in _db.VisitRequestCampuses.AsNoTracking() on p.VisitInstanceId equals ci.VisitInstanceId
                 where p.UserId == person.UserId && p.AssignedBy != null && p.Status != "REMOVED"
                       && ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive
-                select new { ci.VisitRequest.RequestCode, ci.VisitRequest.DelegationName, ci.PlannedStartAt, ci.PlannedEndAt, p.Status })
+                select new
+                {
+                    ci.VisitRequest.RequestCode,
+                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                     && ci.VisitRequest.HasMixedCampusDetails
+                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                        : ci.VisitRequest.DelegationName,
+                    ci.PlannedStartAt,
+                    ci.PlannedEndAt,
+                    p.Status,
+                })
             .ToListAsync(cancellationToken);
 
         // Đơn hậu cần người này được gán.
@@ -85,7 +96,17 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
                 let startAt = li.UsageStartAt ?? ci.PlannedStartAt
                 where li.AssignedToUserId == person.UserId
                       && startAt >= fromVn && startAt < toVnExclusive
-                select new { ci.VisitRequest.RequestCode, ci.VisitRequest.DelegationName, PlannedStartAt = startAt, PlannedEndAt = li.UsageEndAt ?? ci.PlannedEndAt, li.Status })
+                select new
+                {
+                    ci.VisitRequest.RequestCode,
+                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                     && ci.VisitRequest.HasMixedCampusDetails
+                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                        : ci.VisitRequest.DelegationName,
+                    PlannedStartAt = startAt,
+                    PlannedEndAt = li.UsageEndAt ?? ci.PlannedEndAt,
+                    li.Status,
+                })
             .ToListAsync(cancellationToken);
 
         var taskRows = invitationRows

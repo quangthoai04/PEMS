@@ -31,6 +31,10 @@ import { VisitorListSection } from '../../../features/visit-request/components/s
 import { ContactSection } from '../../../features/visit-request/components/sections/ContactSection';
 import { AdditionalSection } from '../../../features/visit-request/components/sections/AdditionalSection';
 import { DEFAULT_VISIT_REQUEST_VALUES } from '../../../features/visit-request/hooks/useVisitRequestForm';
+import {
+  isFormVersionUpgradeRequired,
+  v2DetailPath,
+} from '../../../features/visit-request/utils/formVersionErrors';
 import { showSuccessToast, showErrorToast, getApiErrorMessage } from '../../../shared/utils/toast';
 
 type FormMode = 'edit' | 'resubmit';
@@ -159,7 +163,14 @@ export function EditVisitRequest() {
           supportTeamFields.replace(values.supportTeam);
         }
       } catch (err) {
-        if (!cancelled) setLoadError(getApiErrorMessage(err, 'Không tải được dữ liệu đơn. Vui lòng thử lại.'));
+        if (cancelled) return;
+        // Đơn v2 (per-campus) không sửa được bằng form v1 → điều hướng thẳng sang màn v2,
+        // tuyệt đối không hiện mã lỗi kỹ thuật cho người dùng.
+        if (isFormVersionUpgradeRequired(err)) {
+          navigate(v2DetailPath(visitRequestId!), { replace: true });
+          return;
+        }
+        setLoadError(getApiErrorMessage(err, 'Không tải được dữ liệu đơn. Vui lòng thử lại.'));
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -220,6 +231,12 @@ export function EditVisitRequest() {
         showSuccessToast(res.message || (mode === 'edit' ? 'Đã cập nhật đơn.' : 'Đã gửi lại đơn.'));
         navigate('/dashboard/visit');
       } catch (err) {
+        // Đơn đã được nâng lên per-campus v2 giữa chừng → chuyển sang trải nghiệm v2
+        // thay vì hiển thị lỗi kỹ thuật.
+        if (isFormVersionUpgradeRequired(err)) {
+          navigate(v2DetailPath(visitRequestId), { replace: true });
+          return;
+        }
         const message = getApiErrorMessage(
           err,
           mode === 'edit' ? 'Không thể cập nhật đơn. Vui lòng thử lại.' : 'Không thể gửi lại đơn. Vui lòng thử lại.'

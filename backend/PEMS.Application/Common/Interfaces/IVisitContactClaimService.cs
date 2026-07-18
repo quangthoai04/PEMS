@@ -23,6 +23,13 @@ public interface IVisitContactClaimService
     Task<string?> SendInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Mints + persists a TRANSFER token for the identity change (must be a PENDING TRANSFER) and sends
+    /// the 24h transfer invitation email (frontend transfer page URL). Same guarantees as
+    /// <see cref="SendInvitationAsync"/>: raw token returned once, email best-effort.
+    /// </summary>
+    Task<string?> SendTransferInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Locks (<c>SELECT … FOR UPDATE</c>) and returns the identity-change row, tracked, or null. MUST be
     /// called inside the caller's transaction — concurrent accept/decline/resend/replace serialize on it.
     /// (Raw-SQL locking lives here because the Application layer has no relational EF dependency.)
@@ -31,4 +38,11 @@ public interface IVisitContactClaimService
 
     /// <summary>Locks (FOR UPDATE) and returns the request's PENDING INITIAL_CLAIM, if any (tracked).</summary>
     Task<VisitRequestIdentityChange?> LockPendingInitialClaimAsync(ulong visitRequestId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Locks (FOR UPDATE) and returns the request's PENDING identity change of the given kind
+    /// (null kind = any kind — the DB allows at most one PENDING per request/relation), if any (tracked).
+    /// </summary>
+    Task<VisitRequestIdentityChange?> LockPendingChangeAsync(
+        ulong visitRequestId, string? changeKind, CancellationToken cancellationToken);
 }

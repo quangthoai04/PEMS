@@ -207,9 +207,14 @@ public sealed class ViewGuestDelegationListQueryHandler
         // â”€â”€ Common filters â”€â”€
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
+            // Scope-before-keyword: q is already reduced to the staff actor's own campus/instances above.
+            // Mixed per-campus v2 rows match on THIS instance's detail name — never the global projection,
+            // never a hidden sibling campus's content.
             var keyword = request.Keyword.ToLower();
             q = q.Where(x =>
-                (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword)) ||
+                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails)
+                    ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
+                    : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)) ||
                 (x.vr.RegistrantOrganization != null && x.vr.RegistrantOrganization.ToLower().Contains(keyword)) ||
                 _context.Partners.Any(p => p.PartnerId == x.vr.PartnerId && p.Name != null && p.Name.ToLower().Contains(keyword)) ||
@@ -335,7 +340,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CampusCancellationSource = x.c.CancellationSource,
                 CampusCancelledBy = x.c.CancelledBy,
                 x.vr.RequestCode,
-                x.vr.DelegationName,
+                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
+                    : x.vr.DelegationName,
                 x.vr.PartnerId,
                 x.vr.RegistrantOrganization,
                 RequestStatus = x.vr.Status,
@@ -495,9 +502,15 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
+            // Visitor tabs: the actor is the registrant/contact, so EVERY campus of their own request is
+            // in scope — a mixed v2 request matches when ANY of its per-campus details matches (the
+            // global projection is never business content for mixed requests).
             var kw = request.Keyword.ToLower();
             q = q.Where(vr =>
-                (vr.DelegationName != null && vr.DelegationName.ToLower().Contains(kw)) ||
+                ((vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails)
+                    ? vr.CampusInstances.Any(ci => ci.FormDetail != null
+                        && ci.FormDetail.DelegationName.ToLower().Contains(kw))
+                    : (vr.DelegationName != null && vr.DelegationName.ToLower().Contains(kw))) ||
                 (vr.RequestCode != null && vr.RequestCode.ToLower().Contains(kw)) ||
                 (vr.RegistrantOrganization != null && vr.RegistrantOrganization.ToLower().Contains(kw)) ||
                 (vr.Partner != null && vr.Partner.Name != null && vr.Partner.Name.ToLower().Contains(kw)));
@@ -742,7 +755,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                 VisitRequestId = vr.VisitRequestId,
                 VisitInstanceId = single?.VisitInstanceId,
                 RequestCode = vr.RequestCode,
-                DelegationName = vr.DelegationName,
+                // A request-level row cannot represent a MIXED v2 request with one name — the projection
+                // (smallest campus) is never shown as business content; the row is explicitly labeled and
+                // the per-campus names live in the campus progress items/detail view (plan §8.3).
+                DelegationName = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : vr.DelegationName,
                 PartnerName = vr.Partner != null ? vr.Partner.Name : vr.RegistrantOrganization,
                 RequestStatus = vr.Status,
                 CampusStatus = single?.Status,

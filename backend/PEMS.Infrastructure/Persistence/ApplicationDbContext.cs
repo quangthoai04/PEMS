@@ -73,6 +73,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitInstanceAmendmentChange> VisitInstanceAmendmentChanges { get; set; }
     public DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; set; }
     public DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; set; }
+    public DbSet<VisitRequestPendingForm> VisitRequestPendingForms { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -380,6 +381,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .HasForeignKey(c => c.RequestedBy).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(c => new { c.VisitRequestId, c.TargetRelation, c.Status })
                 .HasDatabaseName("idx_identity_change_request_relation_status");
+        });
+
+        // visit_request_pending_forms: standalone pending v2 snapshot store (no FK — it is
+        // bound to a submission intent, not to a created request; consumed at verify).
+        modelBuilder.Entity<VisitRequestPendingForm>(b =>
+        {
+            b.HasIndex(p => p.SubmissionId).IsUnique().HasDatabaseName("uq_pending_forms_submission");
+            b.HasIndex(p => p.ExpiresAt).HasDatabaseName("idx_pending_forms_expires");
         });
 
         // visit_request_identity_change_events → identity change (CASCADE) + actor.

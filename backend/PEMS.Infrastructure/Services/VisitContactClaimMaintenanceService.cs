@@ -68,7 +68,12 @@ public sealed class VisitContactClaimMaintenanceService : IVisitContactClaimMain
             {
                 IdentityChangeId = claim.IdentityChangeId,
                 VisitRequestId = claim.VisitRequestId,
-                EventType = "PRIMARY_CONTACT_INVITATION_EXPIRED",
+                // Kind-aware event name: the deadline itself is per-row (INITIAL_CLAIM 72h, TRANSFER 24h —
+                // both stamped at creation/resend), the sweep just enforces whatever has passed.
+                // An expired TRANSFER changes nothing for the current owner.
+                EventType = claim.ChangeKind == IdentityChangeKinds.Transfer
+                    ? "PRIMARY_CONTACT_TRANSFER_EXPIRED"
+                    : "PRIMARY_CONTACT_INVITATION_EXPIRED",
                 FromStatus = IdentityChangeStatuses.Pending,
                 ToStatus = IdentityChangeStatuses.Expired,
                 ActorUserId = null, // system transition
