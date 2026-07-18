@@ -36,6 +36,13 @@ public class ExportMinutesExcelQueryHandler : IRequestHandler<ExportMinutesExcel
 
         var campusName = vrc != null ? await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken) : null;
 
+        // Per-campus v2: this export is INSTANCE-scoped → a MIXED request uses THIS instance's detail.
+        var effectiveDelegationName = vrc is null
+            ? null
+            : (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_db, new[] { vrc.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(vrc.VisitInstanceId);
+
         if (_currentUser.PrimaryCampusId != null && vrc?.CampusId != _currentUser.PrimaryCampusId)
         {
             throw new ForbiddenException("Không có quyền tải Excel của campus này");
@@ -46,7 +53,7 @@ public class ExportMinutesExcelQueryHandler : IRequestHandler<ExportMinutesExcel
         // Sheet 1: General Info
         var wsGeneral = workbook.Worksheets.Add("Thông tin chung");
         wsGeneral.Cell(1, 1).Value = "Tiêu đề"; wsGeneral.Cell(1, 2).Value = minute.Title;
-        wsGeneral.Cell(2, 1).Value = "Đoàn khách"; wsGeneral.Cell(2, 2).Value = vrc?.VisitRequest?.DelegationName ?? "N/A";
+        wsGeneral.Cell(2, 1).Value = "Đoàn khách"; wsGeneral.Cell(2, 2).Value = effectiveDelegationName ?? "N/A";
         wsGeneral.Cell(3, 1).Value = "Campus"; wsGeneral.Cell(3, 2).Value = campusName ?? "N/A";
         wsGeneral.Cell(4, 1).Value = "Trạng thái"; wsGeneral.Cell(4, 2).Value = minute.Status;
         wsGeneral.Cell(5, 1).Value = "Ngày tạo"; wsGeneral.Cell(5, 2).Value = minute.CreatedAt.ToString("dd/MM/yyyy HH:mm");

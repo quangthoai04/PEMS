@@ -187,9 +187,12 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     Purpose = cv.Purpose,
                     WorkingContent = cv.WorkingContent,
                     OperationalContactFullName = cv.OperationalContact.FullName,
-                    OperationalContactOrganization = cv.OperationalContact.Organization,
+                    // Organization + email are OPTIONAL (validator/frontend allow blank); the DB CHECKs
+                    // reject an empty string, so normalize blank → NULL (which the CHECKs and the now-nullable
+                    // columns accept). Name + phone stay required upstream.
+                    OperationalContactOrganization = Clean(cv.OperationalContact.Organization),
                     OperationalContactPhone = cv.OperationalContact.Phone,
-                    OperationalContactEmail = cv.OperationalContact.Email,
+                    OperationalContactEmail = Clean(cv.OperationalContact.Email),
                     WorkingLanguage = cv.WorkingLanguage,
                     TransportationNote = Clean(cv.TransportationNote),
                     MediaConsentStatus = cv.MediaConsentStatus,

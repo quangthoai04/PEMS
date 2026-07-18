@@ -102,9 +102,10 @@ internal static class VisitRequestV2EditOps
         detail.Purpose = content.Purpose;
         detail.WorkingContent = content.WorkingContent;
         detail.OperationalContactFullName = content.OperationalContact.FullName;
-        detail.OperationalContactOrganization = content.OperationalContact.Organization;
+        // Org + email are optional — blank normalizes to NULL (the DB CHECK rejects an empty string).
+        detail.OperationalContactOrganization = Clean(content.OperationalContact.Organization);
         detail.OperationalContactPhone = content.OperationalContact.Phone;
-        detail.OperationalContactEmail = content.OperationalContact.Email;
+        detail.OperationalContactEmail = Clean(content.OperationalContact.Email);
         detail.WorkingLanguage = content.WorkingLanguage;
         detail.TransportationNote = Clean(content.TransportationNote);
         detail.MediaConsentStatus = content.MediaConsentStatus;
@@ -127,9 +128,9 @@ internal static class VisitRequestV2EditOps
             Purpose = content.Purpose,
             WorkingContent = content.WorkingContent,
             OperationalContactFullName = content.OperationalContact.FullName,
-            OperationalContactOrganization = content.OperationalContact.Organization,
+            OperationalContactOrganization = Clean(content.OperationalContact.Organization),
             OperationalContactPhone = content.OperationalContact.Phone,
-            OperationalContactEmail = content.OperationalContact.Email,
+            OperationalContactEmail = Clean(content.OperationalContact.Email),
             WorkingLanguage = content.WorkingLanguage,
             TransportationNote = Clean(content.TransportationNote),
             MediaConsentStatus = content.MediaConsentStatus,

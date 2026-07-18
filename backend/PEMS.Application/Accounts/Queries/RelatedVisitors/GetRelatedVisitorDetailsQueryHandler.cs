@@ -65,7 +65,11 @@ public sealed class GetRelatedVisitorDetailsQueryHandler
                 VisitRequestId = vrc.VisitRequestId,
                 VisitInstanceId = vrc.VisitInstanceId,
                 RequestCode = vrc.VisitRequest.RequestCode,
-                DelegationName = vrc.VisitRequest.DelegationName,
+                // Instance row: mixed v2 shows THIS instance's detail name.
+                DelegationName = vrc.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                 && vrc.VisitRequest.HasMixedCampusDetails
+                    ? (vrc.FormDetail != null ? vrc.FormDetail.DelegationName : null)
+                    : vrc.VisitRequest.DelegationName,
                 VisitScope = vrc.VisitRequest.VisitScope,
                 RequestStatus = vrc.VisitRequest.Status,
                 CampusInstanceStatus = vrc.Status,

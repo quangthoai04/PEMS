@@ -15,6 +15,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// TESTING-ONLY real-stack E2E email/OTP sink. DOUBLE-GATED: only when the environment is Testing AND
+// PEMS_E2E_TEST_SINK_ENABLED=true. This override (last registration wins) redirects mail to a file inbox so
+// a browser E2E can read the OTP / invitation link without any public endpoint. NEVER registered in
+// Development/Staging/Production; fail-closed if PEMS_E2E_TEST_SINK_PATH is missing (throws on construction).
+if (PEMS.Infrastructure.Email.FileSinkEmailService.IsEnabledFor(builder.Environment.EnvironmentName))
+{
+    builder.Services.AddScoped<PEMS.Application.Common.Interfaces.IEmailService,
+        PEMS.Infrastructure.Email.FileSinkEmailService>();
+}
+
 // ── Auth policy options (SSO-first / dual-portal). Bound once and shared. ─────
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>()
     ?? new AuthOptions();

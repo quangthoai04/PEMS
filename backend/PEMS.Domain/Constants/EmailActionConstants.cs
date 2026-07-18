@@ -10,10 +10,12 @@ public static class EmailActionContexts
     public const string LogisticsProposalResponse = "LOGISTICS_PROPOSAL_RESPONSE";
     public const string LogisticsHandoverSignature = "LOGISTICS_HANDOVER_SIGNATURE";
 
-    // Per-campus form v2 identity claim (plan §4.4). Deliberately NOT in All: the generic anonymous
-    // email-action handler must REJECT this context — accepting a contact claim requires an
-    // authenticated session whose email matches the claim (dedicated v2 handler).
+    // Per-campus form v2 identity claim/transfer (plan §4.4). Deliberately NOT in All: the generic
+    // anonymous email-action handler must REJECT these contexts — accepting a contact claim or a
+    // 24h contact transfer requires an authenticated session whose email matches the invitation
+    // (dedicated v2 handlers).
     public const string VisitContactClaim = "VISIT_CONTACT_CLAIM";
+    public const string VisitContactTransfer = "VISIT_CONTACT_TRANSFER";
 
     public static readonly string[] All =
     {

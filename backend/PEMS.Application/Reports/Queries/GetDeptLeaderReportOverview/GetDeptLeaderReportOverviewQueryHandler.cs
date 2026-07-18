@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Delegations;
@@ -255,7 +256,11 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.LogisticsItemId,
                 li.VisitInstanceId,
                 li.VisitInstance.VisitRequest.RequestCode,
-                li.VisitInstance.VisitRequest.DelegationName,
+                // Instance row: mixed v2 shows THIS instance's detail name.
+                DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
+                    ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
+                    : li.VisitInstance.VisitRequest.DelegationName,
                 li.Title,
                 li.ItemType,
                 li.Quantity,
@@ -295,7 +300,11 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.ItemType,
                 li.Quantity,
                 li.VisitInstance.VisitRequest.RequestCode,
-                li.VisitInstance.VisitRequest.DelegationName,
+                // Instance row: mixed v2 shows THIS instance's detail name.
+                DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
+                    ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
+                    : li.VisitInstance.VisitRequest.DelegationName,
                 h.HandoverType,
                 h.BorrowerSignedAt,
                 h.ProviderSignedAt,
@@ -646,7 +655,10 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 f.SubmittedAt,
                 DelegationName = _db.VisitRequestCampuses
                     .Where(ci => (ulong?)ci.VisitInstanceId == f.VisitInstanceId)
-                    .Select(ci => ci.VisitRequest.DelegationName)
+                    .Select(ci => ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                  && ci.VisitRequest.HasMixedCampusDetails
+                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                        : ci.VisitRequest.DelegationName)
                     .FirstOrDefault(),
             })
             .ToListAsync(cancellationToken);

@@ -1,0 +1,153 @@
+{
+  "page": {
+    "title": "Đăng ký tham quan theo từng cơ sở",
+    "subtitle": "Mỗi cơ sở là một phần nội dung độc lập: thời gian, đoàn khách, đầu mối phối hợp và yêu cầu riêng."
+  },
+  "sections": {
+    "registrant": "Thông tin người đăng ký",
+    "contact": "Đầu mối liên hệ của đơn",
+    "contactDesc": "Đầu mối liên hệ quản lý đơn và đăng nhập bằng Google với email này. Nếu là người khác, họ sẽ nhận email xác nhận vai trò.",
+    "contactSameAsRegistrant": "Dùng thông tin người đăng ký",
+    "campuses": "Nội dung tham quan theo cơ sở",
+    "campusesDesc": "Thêm một thẻ cho mỗi cơ sở. Có thể sao chép nội dung giữa các cơ sở — sau khi sao chép, mỗi cơ sở vẫn chỉnh sửa độc lập."
+  },
+  "registrant": {
+    "fullName": "Họ và tên",
+    "organization": "Đơn vị công tác",
+    "jobTitle": "Chức vụ",
+    "nationality": "Quốc tịch"
+  },
+  "person": {
+    "fullName": "Họ và tên",
+    "jobTitle": "Chức vụ",
+    "organization": "Đơn vị công tác",
+    "nationality": "Quốc tịch"
+  },
+  "card": {
+    "cardN": "Cơ sở {{n}}",
+    "unselectedCampus": "Chưa chọn cơ sở",
+    "errorBadge": "{{count}} lỗi",
+    "removeCampus": "Xóa cơ sở này",
+    "removeRow": "Xóa dòng",
+    "copyFromLabel": "Sao chép nội dung từ:",
+    "copyFromPlaceholder": "Chọn cơ sở nguồn…",
+    "applyToAll": "Áp dụng nội dung này cho các cơ sở còn lại…",
+    "campus": "Cơ sở",
+    "campusPlaceholder": "Chọn cơ sở",
+    "startAt": "Bắt đầu",
+    "endAt": "Kết thúc",
+    "minDurationHint": "Tối thiểu 30 phút",
+    "delegationName": "Tên đoàn",
+    "visitType": "Loại hình tham quan",
+    "visitTypeOther": "Loại hình khác",
+    "purpose": "Mục đích",
+    "workingContent": "Nội dung làm việc",
+    "visitors": "Danh sách khách",
+    "memberCount": "({{count}}/{{max}})",
+    "addVisitor": "Thêm khách",
+    "supportTeam": "Nhân sự hỗ trợ",
+    "addSupport": "Thêm nhân sự hỗ trợ",
+    "operationalContact": "Đầu mối phối hợp tại cơ sở",
+    "operationalContactHint": "Chỉ dùng để phối hợp tại cơ sở này — không phải tài khoản đăng nhập",
+    "phone": "Số điện thoại",
+    "email": "Email",
+    "additional": "Yêu cầu bổ sung",
+    "workingLanguage": "Ngôn ngữ làm việc",
+    "languageVi": "Tiếng Việt",
+    "languageEn": "Tiếng Anh",
+    "mediaConsent": "Đồng ý truyền thông",
+    "mediaAgreed": "Đồng ý ghi hình/chụp ảnh",
+    "mediaDeclined": "Không đồng ý",
+    "mediaNote": "Ghi chú truyền thông",
+    "transportationNote": "Nhận diện phương tiện di chuyển",
+    "notes": "Ghi chú gửi FPTU",
+    "addCampus": "Thêm cơ sở ({{count}}/{{max}})"
+  },
+  "excel": {
+    "template": "Tải mẫu",
+    "importForCampus": "Nhập Excel cho cơ sở này",
+    "invalidType": "Chỉ chấp nhận tệp .xlsx hoặc .xls.",
+    "tooLarge": "Tệp vượt quá {{maxMb}}MB.",
+    "parseFailed": "Không đọc được tệp Excel.",
+    "importedVisitors": "Đã nhập {{count}} khách cho cơ sở này.",
+    "importedSupport": "Đã nhập {{count}} nhân sự hỗ trợ cho cơ sở này."
+  },
+  "applyAll": {
+    "title": "Áp dụng cho các cơ sở còn lại?",
+    "overwrites": "Nội dung đã nhập của các cơ sở sau sẽ bị GHI ĐÈ: {{campuses}}.",
+    "noOverwrites": "Các cơ sở còn lại chưa có nội dung — sẽ nhận bản sao của cơ sở này.",
+    "independentAfter": "Sau khi áp dụng, mỗi cơ sở vẫn chỉnh sửa độc lập (không đồng bộ tự động).",
+    "confirm": "Áp dụng"
+  },
+  "remove": {
+    "title": "Xóa cơ sở đã nhập nội dung?",
+    "body": "\"{{campus}}\" đã có dữ liệu. Xóa thẻ này sẽ mất toàn bộ nội dung đã nhập cho cơ sở đó.",
+    "confirm": "Xóa cơ sở"
+  },
+  "draft": {
+    "migrated": "Bản nháp cũ (biểu mẫu chung) đã được chuyển sang dạng theo từng cơ sở — kiểm tra lại nội dung từng thẻ trước khi gửi."
+  },
+  "submit": {
+    "public": "Gửi yêu cầu & nhận mã OTP",
+    "authenticated": "Gửi yêu cầu"
+  },
+  "success": {
+    "title": "Đã gửi yêu cầu tham quan",
+    "requestCode": "Mã yêu cầu: {{code}}",
+    "campusCount": "Số cơ sở đăng ký: {{count}}",
+    "mixedNote": "nội dung khác nhau theo cơ sở",
+    "idempotentReplay": "Yêu cầu này đã được ghi nhận trước đó (gửi lại không tạo đơn mới).",
+    "claimPending": "Đầu mối liên hệ khác người đăng ký: hệ thống đã gửi email mời xác nhận vai trò (hiệu lực 72 giờ). Việc duyệt của các cơ sở không phụ thuộc xác nhận này.",
+    "backHome": "Về trang chủ"
+  },
+  "common": {
+    "cancel": "Hủy"
+  },
+  "detail": {
+    "cardAria": "Chi tiết cơ sở {{campus}}",
+    "amendmentBadge": "Đề xuất #{{no}} chờ duyệt",
+    "peopleToggle": "Danh sách đoàn ({{visitors}} khách, {{support}} hỗ trợ)",
+    "host": "Người tiếp đón (Host)",
+    "decision": "Quyết định",
+    "revision": "Phiên bản",
+    "revisionValue": "Nội dung v{{form}} · Phê duyệt v{{approval}}",
+    "loading": "Đang tải chi tiết đơn…",
+    "notfound": "Không tìm thấy đơn hoặc tính năng theo-từng-cơ-sở chưa được bật.",
+    "forbidden": "Bạn không có quyền xem đơn này.",
+    "generic": "Không tải được chi tiết đơn. Vui lòng thử lại.",
+    "campusTotal": "{{count}} cơ sở",
+    "mixedLabel": "Khác nhau theo cơ sở",
+    "submittedAt": "Gửi lúc",
+    "primaryContact": "Đầu mối liên hệ",
+    "contactPending": "Chưa xác nhận",
+    "historyTitle": "Lịch sử thay đổi",
+    "backToList": "Về danh sách đơn"
+  },
+  "status": {
+    "PENDING": "Chờ xử lý",
+    "ASSIGNED": "Đã phân công",
+    "APPROVED": "Đã duyệt",
+    "REJECTED": "Từ chối",
+    "CANCELLED": "Đã hủy",
+    "COMPLETED": "Hoàn tất",
+    "PENDING_APPROVAL": "Chờ duyệt",
+    "PARTIALLY_APPROVED": "Duyệt một phần",
+    "IN_PROGRESS": "Đang diễn ra"
+  },
+  "edit": {
+    "titleEdit": "Sửa đơn (đang chờ duyệt)",
+    "titleResubmit": "Gửi lại đơn đã bị từ chối",
+    "subtitle": "Chỉnh sửa nội dung từng cơ sở. Email người đăng ký và đầu mối không thể đổi ở đây.",
+    "emailImmutable": "Không thể thay đổi",
+    "contactImmutable": "Email đầu mối gắn với tài khoản đăng nhập — không đổi ở bước sửa đơn.",
+    "resubmitCampusFixed": "Khi gửi lại, danh sách cơ sở giữ nguyên; chỉ chỉnh sửa nội dung.",
+    "forbidden": "Bạn không có quyền sửa đơn này.",
+    "notEditable": "Đơn không còn ở trạng thái có thể sửa. Vui lòng quay lại.",
+    "notResubmittable": "Đơn không ở trạng thái có thể gửi lại. Vui lòng quay lại.",
+    "conflict": "Đơn đã được cập nhật ở nơi khác. Vui lòng tải lại dữ liệu mới nhất rồi thử lại — thay đổi của bạn chưa được lưu.",
+    "reload": "Tải lại dữ liệu mới",
+    "submitFailed": "Không thể lưu. Vui lòng thử lại.",
+    "saveEdit": "Lưu thay đổi",
+    "saveResubmit": "Gửi lại đơn"
+  }
+}

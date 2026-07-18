@@ -35,5 +35,7 @@
   "passwordPolicy": "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.",
   "emailAndCodeRequired": "Please enter your email and reset code.",
   "passwordsDoNotMatch": "The confirmation password does not match.",
-  "currentPasswordRequired": "Please enter your current password."
+  "currentPasswordRequired": "Please enter your current password.",
+  "minDurationMinutes": "Each visit must last at least {{minutes}} minutes",
+  "maxCampuses": "A request cannot include more than {{max}} campuses"
 }

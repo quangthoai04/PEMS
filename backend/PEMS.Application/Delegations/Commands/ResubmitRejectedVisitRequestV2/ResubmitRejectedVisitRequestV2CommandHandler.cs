@@ -122,7 +122,7 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
                 leaders.Select(id => new CreateNotificationRequest(
                     RecipientUserId: id,
                     Title: "Visitor đã gửi lại đơn bị từ chối",
-                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({visit.DelegationName}). Vui lòng xử lý lại tại cơ sở của bạn.",
+                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({(visit.FormSchemaVersion >= FormSchemaVersions.PerCampus && visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : visit.DelegationName)}). Vui lòng xử lý lại tại cơ sở của bạn.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                     RelatedId: visit.VisitRequestId,

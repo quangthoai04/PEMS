@@ -108,7 +108,12 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
         }
 
         // ── Post-commit notifications (best-effort; a rolled-back edit never notifies) ──
-        await NotifyLeadersAfterCommitAsync(visit.VisitRequestId, visit.RequestCode, visit.DelegationName,
+        // Mixed v2: the projection is not business content — the generic notification names the request
+        // by code with the explicit mixed label (leaders read their own campus's content in the detail).
+        var notifyName = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus && visit.HasMixedCampusDetails
+            ? "Khác nhau theo cơ sở"
+            : visit.DelegationName;
+        await NotifyLeadersAfterCommitAsync(visit.VisitRequestId, visit.RequestCode, notifyName,
             campusIdsBefore.Concat(visit.CampusInstances.Select(c => c.CampusId)).Distinct().ToList(),
             actorId, cancellationToken);
 

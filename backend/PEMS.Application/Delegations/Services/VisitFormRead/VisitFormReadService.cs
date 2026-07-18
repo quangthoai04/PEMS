@@ -173,9 +173,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 opContact = new ResolvedOperationalContactDto
                 {
                     FullName = d.OperationalContactFullName,
-                    Organization = d.OperationalContactOrganization,
+                    // Organization + email are optional (nullable in the DB). Surface "" not null so the
+                    // read DTO/JSON contract stays a non-null string for the client.
+                    Organization = d.OperationalContactOrganization ?? string.Empty,
                     Phone = d.OperationalContactPhone,
-                    Email = d.OperationalContactEmail
+                    Email = d.OperationalContactEmail ?? string.Empty
                 };
                 formRevision = d.FormRevision;
                 approvalRevision = d.ApprovalRevision;
@@ -255,6 +257,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
         {
             VisitRequestId = (long)request.VisitRequestId,
             RequestCode = request.RequestCode,
+            RowVersion = request.RowVersion,
             FormSchemaVersion = request.FormSchemaVersion,
             HasMixedCampusDetails = request.HasMixedCampusDetails,
             VisitScope = request.VisitScope,

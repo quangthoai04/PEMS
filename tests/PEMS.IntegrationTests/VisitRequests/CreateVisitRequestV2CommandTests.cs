@@ -93,11 +93,16 @@ public sealed class CreateVisitRequestV2CommandTests
             Invitations.Add(identityChangeId);
             return Task.FromResult<string?>(null);
         }
+        public Task<string?> SendTransferInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken)
+            => Task.FromResult<string?>(null);
         public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockClaimAsync(
             ulong identityChangeId, CancellationToken cancellationToken)
             => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
         public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockPendingInitialClaimAsync(
             ulong visitRequestId, CancellationToken cancellationToken)
+            => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
+        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockPendingChangeAsync(
+            ulong visitRequestId, string? changeKind, CancellationToken cancellationToken)
             => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
     }
 

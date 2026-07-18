@@ -29,9 +29,21 @@ run on v1 until later PRs; the feature flag `PerCampusVisitFormV2` stays **OFF**
 | 4 | `03_backfill.sql` | DML | Clones per-campus detail, links members to every instance, sets `primary_contact_access_status`, seeds baseline revision history. Idempotent. |
 | 5 | `04_verify.sql` | No (report only) | Post-backfill checks. **All `violation_count` = 0** and all presence checks = 1. |
 
+### Additive follow-on patches (apply after `02_up`, any order; each idempotent)
+
+| # | File | Mutates? | Purpose |
+|---|------|----------|---------|
+| 6 | `06_up_identity_claim_tokens.sql` | DDL (ENUM extend) | `email_action_tokens` gains `VISIT_CONTACT_CLAIM` context + `VISIT_REQUEST_IDENTITY_CHANGE` target (Phase D claim). |
+| 7 | `07_up_transfer_tokens.sql` | DDL (ENUM extend) | `email_action_tokens` gains `VISIT_CONTACT_TRANSFER` context (Phase D-4 transfer). |
+| 8 | `08_up_pending_v2_forms.sql` | DDL | Adds `visit_request_pending_forms` (Phase G-4A public v2 OTP initiate — binds the validated v2 snapshot to a submit intent). `CREATE TABLE IF NOT EXISTS` → re-runnable. |
+| 9 | `09_up_op_contact_optional.sql` | DDL | Relaxes `visit_instance_form_details.operational_contact_organization` + `operational_contact_email` to NULL (Phase H-4 fix — the operational contact org/email are OPTIONAL; a blank value now persists as NULL instead of violating the `TRIM(x) <> ''` CHECK). Guarded MODIFY → re-runnable. |
+
+The fresh master (below) already integrates 06/07/08/09 — these patches are only for an existing v1/PR-2 DB.
+
 `05_rollback_down.sql` is the **destructive** DOWN. It is *not* the normal rollback —
 the safe rollback is "flag OFF + dual-read" (see below). Only run DOWN with a backup
-and a conscious decision; it drops the v2 tables and the data they hold.
+and a conscious decision; it drops the v2 tables (including `visit_request_pending_forms`)
+and the data they hold.
 
 ## Fresh / new environment
 
@@ -74,6 +86,10 @@ that is expected).
 - **`audit_logs` / `audit_log_changes`** — additive context/masking columns and
   indexes (no FK on the nullable `visit_request_id` / `visit_instance_id` so audit
   survives business-row deletion; audit is never cascade-deleted).
+- **`visit_request_pending_forms`** (patch `08_up`, Phase G-4A) — public v2 OTP
+  initiate binding: one row per submit intent holding the full canonical v2 snapshot
+  + its fingerprint, so `verify` builds the request from exactly what was OTP-verified.
+  Standalone (no FK — bound to a submission intent, not a request); consumed at verify.
 - **`trg_visit_requests_cancel_validate_bu`** — rewritten for cancel exception **3A**
   (registrant may cancel only while the initial contact is `PENDING_CONFIRMATION`;
   once `ACTIVE` it reverts to the exact contact-owner rule; every other guard kept).

@@ -185,10 +185,27 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 PUBLIC initiate (STEP 1) — validates the FULL v2 form (same canonical rules as
+    /// authenticated create-v2; NOT the v1 3-hour / mandatory-support rules), mints an OTP challenge, and
+    /// BINDS the canonical v2 snapshot to the submit intent so <see cref="VerifyAndCreateFormV2"/> builds the
+    /// request from exactly what was OTP-verified. No request is created here. Gated by BOTH flags: write OFF
+    /// makes this 404 (the v1 initiate flow is unchanged).
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/initiate")]
+    [AllowAnonymous]
+    public async Task<IActionResult> InitiateFormV2(
+        [FromBody] PEMS.Application.Delegations.Commands.InitiateVisitRequestV2.InitiateVisitRequestV2Command command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Per-campus form v2 PUBLIC (OTP-gated) create — the unauthenticated sibling of <see cref="CreateFormV2"/>.
-    /// Verifies the OTP challenge (bound to the registrant email + submissionId), then creates the v2 request.
-    /// Gated by BOTH flags: write OFF makes this 404 (the v1 public verify flow is unchanged). Retries of the
-    /// same submission intent replay idempotently.
+    /// Verifies the OTP challenge (bound to the registrant email + submissionId), then creates the v2 request
+    /// FROM THE SNAPSHOT BOUND AT INITIATE (never the verify-time form). Gated by BOTH flags: write OFF makes
+    /// this 404 (the v1 public verify flow is unchanged). Retries of the same submission intent replay idempotently.
     /// </summary>
     [HttpPost("/api/v2/visit-requests/verify")]
     [AllowAnonymous]
@@ -340,4 +357,209 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     public sealed record ReplacePendingContactBody(string FullName, string Organization, string Phone, string Email);
+
+    // ── Per-campus v2 primary-contact TRANSFER, 24h (plan §16.4/§4.4, D-4) ───────────────────
+    // The current ACTIVE owner keeps every right until the invited person logs in with the matching
+    // Google account and explicitly accepts. The generic anonymous email-action handler rejects
+    // the transfer context; the anonymous landing below is masked-only and mutation-free.
+
+    /// <summary>Registrant or current ACTIVE contact proposes handing the contact role to a new email.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer")]
+    [Authorize]
+    public async Task<IActionResult> InitiateContactTransfer(
+        ulong visitRequestId,
+        [FromBody] InitiateContactTransferBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.InitiateVisitContactTransferCommand(
+                visitRequestId, body.FullName, body.Organization, body.Phone, body.Email, body.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record InitiateContactTransferBody(
+        string FullName, string Organization, string Phone, string Email, string? Reason);
+
+    /// <summary>Owner-side state of the pending transfer (masked email only).</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/contact-transfer")]
+    [Authorize]
+    public async Task<IActionResult> GetActiveContactTransfer(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.GetActiveVisitContactTransferQuery(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Re-sends the pending transfer invitation (old links die, 24h restarts).</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer/resend")]
+    [Authorize]
+    public async Task<IActionResult> ResendContactTransfer(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.ResendVisitContactTransferCommand(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Cancels the pending transfer; the current owner stays ACTIVE.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer/cancel")]
+    [Authorize]
+    public async Task<IActionResult> CancelContactTransfer(
+        ulong visitRequestId,
+        [FromBody] CancelContactTransferBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.CancelVisitContactTransferCommand(
+                visitRequestId, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record CancelContactTransferBody(string? Reason);
+
+    /// <summary>Anonymous masked landing summary for a contact-transfer link.</summary>
+    [HttpGet("/api/public/visit-contact-transfers/{token}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetContactTransferInfo(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.GetVisitContactTransferInfoQuery(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited person (logged in with the matching Google account) ACCEPTS the transfer:
+    /// visitor_user_id + the contact snapshot swap in one transaction; the old account stays ACTIVE.</summary>
+    [HttpPost("/api/v2/visit-contact-transfers/{token}/accept")]
+    [Authorize]
+    public async Task<IActionResult> AcceptContactTransfer(string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.AcceptVisitContactTransferCommand(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The invited person DECLINES the transfer. The current owner keeps everything.</summary>
+    [HttpPost("/api/v2/visit-contact-transfers/{token}/decline")]
+    [Authorize]
+    public async Task<IActionResult> DeclineContactTransfer(
+        string token,
+        [FromBody] DeclineContactClaimBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitContactTransfer.DeclineVisitContactTransferCommand(
+                token, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    // ── Per-campus v2 safe edit + amendments (plan §16.6, Phase E) ───────────────────────────
+    // The backend classifier is the only authority: the safe endpoint fails closed on anything
+    // approval-sensitive; approval-sensitive/structural changes of a DECIDED campus go through
+    // per-campus amendments and the ACTIVE snapshot never moves before the Staff Leader approves.
+
+    /// <summary>Applies safe/correction fields immediately (registrant/contact display data, notes,
+    /// media consent — a consent WITHDRAWAL applies even &lt;24h with an URGENT notification).</summary>
+    [HttpPatch("/api/v2/visit-requests/{visitRequestId}/safe-details")]
+    [Authorize]
+    public async Task<IActionResult> PatchSafeDetails(
+        ulong visitRequestId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitRequestSafeEditDto patch,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.SubmitVisitSafeEditCommand(visitRequestId, patch),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Submits an approval-sensitive change proposal for ONE decided campus instance.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/amendments")]
+    [Authorize]
+    public async Task<IActionResult> SubmitAmendment(
+        ulong visitRequestId, ulong visitInstanceId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitAmendmentProposalDto proposal,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.SubmitVisitAmendmentCommand(
+                visitRequestId, visitInstanceId, proposal),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>The instance's pending amendment (scoped; null when none).</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/amendments/active")]
+    [Authorize]
+    public async Task<IActionResult> GetActiveAmendment(
+        ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.GetActiveVisitAmendmentQuery(
+                visitRequestId, visitInstanceId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Requester withdraws their pending amendment; the active snapshot stays.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/amendments/{amendmentId}/withdraw")]
+    [Authorize]
+    public async Task<IActionResult> WithdrawAmendment(
+        ulong visitRequestId, ulong visitInstanceId, ulong amendmentId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.WithdrawVisitAmendmentCommand(
+                visitRequestId, visitInstanceId, amendmentId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Current campus Staff Leader APPROVES the amendment — the patch applies atomically,
+    /// form+approval revisions bump, sibling campuses and approval statuses never reset.</summary>
+    [HttpPost("/api/v2/visit-instances/{visitInstanceId}/amendments/{amendmentId}/approve")]
+    [Authorize]
+    public async Task<IActionResult> ApproveAmendment(
+        ulong visitInstanceId, ulong amendmentId,
+        [FromBody] AmendmentDecisionBody? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.ApproveVisitAmendmentCommand(
+                visitInstanceId, amendmentId, body?.Note),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Current campus Staff Leader REJECTS the amendment (reason required); nothing changes.</summary>
+    [HttpPost("/api/v2/visit-instances/{visitInstanceId}/amendments/{amendmentId}/reject")]
+    [Authorize]
+    public async Task<IActionResult> RejectAmendment(
+        ulong visitInstanceId, ulong amendmentId,
+        [FromBody] AmendmentDecisionBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.RejectVisitAmendmentCommand(
+                visitInstanceId, amendmentId, body.Note ?? string.Empty),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    public sealed record AmendmentDecisionBody(string? Note);
+
+    /// <summary>Scoped, masked business-history timeline of the request.</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/history")]
+    [Authorize]
+    public async Task<IActionResult> GetHistory(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.GetVisitRequestHistoryQuery(visitRequestId),
+            cancellationToken);
+        return Ok(result);
+    }
 }

@@ -151,6 +151,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitInstanceAmendmentChange> IApplicationDbContext.VisitInstanceAmendmentChanges => Set<VisitInstanceAmendmentChange>();
     DbSet<VisitInstanceFormRevisionHistory> IApplicationDbContext.VisitInstanceFormRevisionHistories => Set<VisitInstanceFormRevisionHistory>();
     DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
+    DbSet<VisitRequestPendingForm> IApplicationDbContext.VisitRequestPendingForms => Set<VisitRequestPendingForm>();
     DbSet<VisitParticipant> IApplicationDbContext.VisitParticipants => Set<VisitParticipant>();
     DbSet<VisitAgenda> IApplicationDbContext.VisitAgendas => Set<VisitAgenda>();
     DbSet<VisitLogisticsItem> IApplicationDbContext.VisitLogisticsItems => Set<VisitLogisticsItem>();

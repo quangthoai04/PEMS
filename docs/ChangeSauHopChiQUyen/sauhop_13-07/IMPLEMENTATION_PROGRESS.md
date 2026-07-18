@@ -101,7 +101,7 @@ v1 byte-identical): GetVisitInvitationDetail `5ee29ab3`, GetStaffCalendarDetail 
 fresh `pems_it_regression` from the PR-2 master; appsettings restored `pems_test`; pems_db/pems_pr3_test
 v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
 
-## Phase D — identity claim + cancel 3A + expiry/redaction job — 🚧 IN PROGRESS
+## Phase D — identity claim + TRANSFER + cancel 3A + expiry/redaction job — 🚧 IN PROGRESS (D-4 in flight)
 - **D-1 INITIAL_CLAIM workflow (plan §16.4/§4.4)** — ✅ DONE.
   - SQL: master + idempotent `06_up_identity_claim_tokens.sql` extend the `email_action_tokens` ENUMs with
     `VISIT_CONTACT_CLAIM` / `VISIT_REQUEST_IDENTITY_CHANGE` (applied to pems_pr3_test; pems_db/pems_test untouched).
@@ -138,19 +138,248 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   masked email/kind/status/actors/timestamps KEPT; event `IDENTITY_CHANGE_REDACTED` + audit). Hosted job
   `VisitContactClaimMaintenanceHostedService` (poll `IdentityClaims:PollSeconds` 600s, batch 200) runs
   flag-independent (existing v2 data must age out even if flags turn off). APPLIED never redacted here.
-  - Deferred (documented, out of DoD scope for D): TRANSFER workflow (owner→owner handoff, 24h) — plan
-    explicitly separates it; OTP_FALLBACK confirmation method (Product hasn't enabled non-Google).
   - Tests `VisitContactClaimWorkflowTests` **7/7** (committed + child-first cleanup, pems_pr3_test v2=0):
     accept happy path (link/ACTIVE/rowversion/campus untouched/replay-blocked) · wrong-account EMAIL_MISMATCH +
     flag-off 404 write nothing · decline terminal-but-alive · resend supersedes old link + new link works ·
     maintenance expiry→accept-refused→EXPIRED→redaction (PII gone, masked kept, idempotent) · cancel-3A allowed
     while pending (claim CANCELLED + 3A audit) and Forbidden after accept · replace re-invite (old claim
     SUPERSEDED, C accepts new link) + replace-with-registrant-email instant ACTIVE. v2 group **46/46**.
+- **D-4 primary-contact TRANSFER 24h (handoff §6)** — ✅ DONE.
+  - SQL: master + idempotent `07_up_transfer_tokens.sql` append `VISIT_CONTACT_TRANSFER` to the
+    `email_action_tokens.action_context` ENUM (applied twice to pems_pr3_test — idempotent; pems_db/pems_test
+    untouched). Transfer reuses the identity-change row (`change_kind=TRANSFER`, DB pending-guard = one
+    PENDING change per request/relation across BOTH kinds) + token store; NO new tables.
+  - Initiate `POST /api/v2/visit-requests/{id}/contact-transfer` — registrant or CURRENT ACTIVE contact only;
+    requires an established owner (unclaimed contact → `CONTACT_ACCOUNT_NOT_ACTIVE`, that's claim territory);
+    lifecycle gate: CANCELLED / any instance DURING_VISIT+ / earliest active start <24h all block; target
+    rules: same-email `IDENTITY_CHANGE_EMAIL_UNCHANGED`, internal account
+    `CONTACT_EMAIL_INTERNAL_ACCOUNT_CONFLICT`, inactive visitor `IDENTITY_CHANGE_TARGET_NOT_ALLOWED`;
+    captures old_user_id/old_email + pending snapshot + `expected_request_row_version`; expiry **24h**
+    (never 72h); pending pre-check (FOR UPDATE) + DB guard race both → stable 409
+    `IDENTITY_CHANGE_ALREADY_PENDING`; event+audit `PRIMARY_CONTACT_TRANSFER_REQUESTED` (masked); invitation
+    token+email post-commit (own context, FE page `/visit-contact-transfer/{token}`).
+  - Landing `GET /api/public/visit-contact-transfers/{token}` — masked-only, mutation-free, unknown token ==
+    malformed (no enumeration). Accept/decline `POST /api/v2/visit-contact-transfers/{token}/accept|decline`
+    ([Authorize], exact invited email via the actor's DB row, VISITOR+ACTIVE): accept = one txn on the
+    FOR-UPDATE-locked change — re-checks owner still == old_user_id, `expected_request_row_version` stamp
+    (resend RE-STAMPS it so legit edits between invitations never brick the accept), lifecycle window —
+    then swaps ONLY `visitor_user_id` + contact snapshot, keeps access ACTIVE, bumps row version, burns
+    tokens, event+audit `PRIMARY_CONTACT_TRANSFER_APPLIED`; campus decision/status/host/schedule untouched;
+    the OLD account is never locked/deleted (only the relation moves); post-commit notifications to old
+    owner + registrant. Replay by the accepted user → idempotent applied response (no second swap);
+    concurrent accepts serialize on the row lock (one winner). Decline/cancel/expire keep the old owner.
+  - Manage: `GET/POST .../contact-transfer[/resend|/cancel]` (registrant or current ACTIVE owner; resend
+    supersedes-tokens-first, restarts **24h**, cap 5; cancel → CANCELLED + retention stamp). Maintenance
+    sweep now kind-aware: expiry event `PRIMARY_CONTACT_TRANSFER_EXPIRED` for TRANSFER rows (deadline is
+    per-row: claim 72h / transfer 24h); redaction (90d) unchanged, APPLIED never redacted. Generic anonymous
+    email-action handlers reject the transfer context too. Cancel-3A is NOT opened by a pending transfer
+    (access stays ACTIVE with an owner → the registrant exception never fires; tested).
+  - OTP_FALLBACK remains deliberately deferred (Product has not enabled non-Google confirmation).
+  - Tests `VisitContactTransferWorkflowTests` **6/6**: accept-swaps-relation-only (old rights until apply,
+    24h stamp, campus+old-account untouched, idempotent replay) · initiate guard matrix (unrelated
+    forbidden/same-email/internal/flag-off/double-pending/unclaimed-contact) · wrong-account + stale
+    row-version → resend re-stamps → new link applies · decline/cancel/expiry all keep the old owner
+    (kind-aware expiry event) · pending transfer does NOT open cancel-3A · masked landing + owner state view
+    (old owner loses the view after apply).
 
-## Phase E — safe edit + post-approval amendment — ⬜ pending
-## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — ⬜ pending
-## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ⬜ pending
-## Phase H — final verification + E2E + rollout readiness — ⬜ pending
+## Phase E — safe edit + post-approval amendment — 🚧 IN PROGRESS
+- **E-1 classifier + safe edit (plan §16.6)** — ✅ DONE.
+  - `VisitFieldClassifier` (Application) — THE single backend classification table over stable dotted field
+    paths: SAFE (registrant name/org/job/phone; contact name/org/phone — NEVER the email; transportation
+    note; note-to-FPTU; media note), PRIVACY_URGENT (`instance.mediaConsentStatus → DECLINED` only),
+    APPROVAL_SENSITIVE (delegation/type/purpose/content/language/operational-contact/members), STRUCTURAL
+    (schedule). Unknown paths return null → every caller fails closed.
+  - `PATCH /api/v2/visit-requests/{id}/safe-details` + `IVisitSafeEditService`/`VisitSafeEditService`:
+    full-snapshot-of-the-safe-subset convention, server-side diff, FOR-UPDATE row-version guard →
+    stable 409 `VISIT_FORM_CONCURRENCY_CONFLICT` (request + per-instance), started/closed instances
+    rejected, the 24h cutoff blocks normal safe edits but the media WITHDRAWAL (+its note) applies even
+    inside it; apply = target-only detail mutation + form_revision bump + SAFE_EDIT instance/request
+    revision snapshots + canonical recompute (mixed can flip from a note change) + field-level audit
+    `VISIT_SAFE_FIELDS_UPDATED`; post-commit notify (URGENT priority + Host included for the withdrawal).
+- **E-2 amendments + history (plan §16.6)** — ✅ DONE.
+  - Submit `POST /api/v2/visit-requests/{id}/instances/{iid}/amendments`: requester side (registrant or
+    ACTIVE contact); instance must be DECIDED (ASSIGNED/BEFORE_VISIT — WAITING routes to pending-edit) and
+    start ≥24h away (`AMENDMENT_WINDOW_EXPIRED`); base form/approval revisions + instance row version must
+    match (`AMENDMENT_BASE_REVISION_CONFLICT` / concurrency 409); diff vs the ACTIVE detail → immutable
+    change rows (field_path, class, old/new JSON; empty diff rejected); ONE pending per instance (DB
+    guard + pre-check → `AMENDMENT_ALREADY_PENDING`); NOTHING active mutates; audit
+    `VISIT_AMENDMENT_SUBMITTED`; notify current campus leader + host.
+  - Decide: approve/reject `POST /api/v2/visit-instances/{iid}/amendments/{aid}/approve|reject` — ONLY the
+    CURRENT Staff Leader of that campus (`AMENDMENT_APPROVER_SCOPE_FORBIDDEN` for other-campus leader/HO/
+    Admin/Host/requester); approve = FOR-UPDATE-locked amendment + base re-check + target-only apply
+    (scalars/schedule/members via the C-1 copy-on-write ops) + form_revision AND approval_revision bump +
+    post-apply revision snapshot (history has exactly one row per revision by unique key) + canonical
+    recompute + audits `VISIT_AMENDMENT_APPROVED` + `VISIT_INSTANCE_FORM_REVISION_APPLIED`; sibling
+    campuses and approval statuses NEVER reset. Reject requires a reason; withdraw = requester side;
+    both leave the active snapshot untouched. Expire = `ExpireDueAsync` sweep (window passed or instance
+    started) + `VisitAmendmentExpiryHostedService` (600s/200, flag-independent, idempotent).
+  - History `GET /api/v2/visit-requests/{id}/history` — scoped metadata-only timeline (request/instance
+    revisions, amendments + decisions, campus decisions, masked identity events for managers/HO only);
+    leaders see only their campus, hosts only their instance; proposals never presented as active content.
+  - Tests: `VisitSafeEditV2Tests` **4/4** (classifier table incl. fail-closed contact-email; apply+revision+
+    audit+mixed-recompute+sibling-untouched; editor policy + stale-409s; cutoff + URGENT withdrawal) and
+    `VisitAmendmentV2Tests` **4/4** (submit immutability + duplicate/base/empty guards; approve scope matrix +
+    target-only apply + member copy-on-write + no-status-reset; reject/withdraw/expire keep active;
+    pending-instance + late-window rejections). v2 group **60/60**.
+## Phase F — list/search/dashboard/calendar/report/export/email + zero-unclassified audit — 🚧 IN PROGRESS
+- **F-1 Class-C surface migration** — ✅ DONE (~35 surfaces; full list in `PR3_PRE_PR4_AUDIT_MAP.md` §10).
+  Uniform rule: INSTANCE rows read the conditional `mixed-v2 ? instance.FormDetail.<field> : vr.<field>`
+  (single JOIN via the FormDetail nav — no N+1, no correlated scalar subquery; mixed-with-missing-detail
+  yields NULL, never the global value); REQUEST rows that cannot show per-campus content are labeled
+  `"Khác nhau theo cơ sở"`; v1/non-mixed keep the projection (byte-identical by construction). Batched
+  helper `VisitInstanceEffectiveName.ForInstancesAsync` + in-memory `Of`. Report visit_type FILTERS are
+  mixed-aware (match any campus detail for request-level, own detail for instance-level); the Staff-Leader
+  report resolves a mixed request through THEIR OWN campus's detail. Keyword search is scope-before-keyword
+  everywhere it existed and matches per-instance details for mixed v2 (never the projection, never a
+  hidden sibling for instance-scoped actors; the visitor path matches any owned campus's detail).
+- **F-2 zero-unclassified report** — ✅ DONE (audit map §10): every remaining raw global-field read is a
+  classified else-branch / already-effective row / dual-read handler / Class-P v1 writer / v1 fingerprint-
+  validator / v2-safe-DTO renderer / non-VisitRequest false positive. ZERO unclassified.
+- Tests: `V2MixedListSurfacesTests` **2/2** (helper matrix mixed/non-mixed + Staff-calendar end-to-end:
+  each campus leader sees THEIR campus's name, never the sibling's, proving the Pomelo CASE+JOIN
+  translation on a real surface).
+## Phase G — frontend multi-campus form + detail/edit/identity/amendment UI — ✅ DONE (G-1/2/3 + G-4A/G-4B)
+- **G-1 foundation** — ✅ DONE: typed v2 API client (`visitRequestV2Api.ts`), invitation landing page
+  (`/visit-contact-claim/:token`, `/visit-contact-transfer/:token` — anonymous MASKED info; accept/decline
+  need the matching Google login), `ContactIdentityPanel` (claim resend/replace; transfer initiate/
+  resend/cancel), `VisitAmendmentPanel` (old→new diff, approve/reject-with-reason/withdraw),
+  `VisitHistoryTimeline` (scoped masked timeline). NOTE: the G-1 commit was pushed before its scope
+  could be amended, so the fix landed FORWARD (`0cec2972`): App.tsx routes wired + the two internal
+  planning docs untracked (kept local-only). tsc 0 errors, vite build ✓.
+- **G-2 per-campus form v2** — ✅ DONE:
+  - `visitRequestV2.schema.ts` — registrant + primaryContact request-level; `campusVisits[]` each a
+    COMPLETE independent snapshot (schedule/content/people/operationalContact/requirements) with stable
+    `clientKey` identity; 30-MINUTE minimum in ms math (29m59s fails, 30m00s passes — never auto-adjusts
+    the typed end time), 10-campus / 200-member caps, per-index duplicate-campus errors.
+  - `visitRequestV2Form.ts` pure utils — `cloneCampusVisitContent` (deep copy; target keeps identity/
+    campus/schedule), confirmed `applyContentToAllCampuses`, `buildV2CreatePayload`/`buildV2EditPayload`
+    (REAL `VisitRequestFormDataV2`/`VisitRequestEditV2Dto` contracts — no sameForAll, no client-sent
+    scope), `migrateV1DraftToV2` (global draft duplicated into every selected campus),
+    `mapServerFieldPathToFormPath` (FluentValidation path → exact RHF campus/nested field),
+    `applyImportedMembersToCampus` (per-campus Excel, never global).
+  - `visitRequestV2DraftStorage.ts` — draftSchemaVersion **3** under its OWN key (v1 form + its draft
+    untouched); load = v3 first, else one-time IN-MEMORY migration of the global draft (an existing v3
+    draft is never overwritten by the older global one); sanitize strips OTP/session/files.
+  - `useVisitRequestFormV2.ts` — `useFieldArray` campusVisits; add(copy)/remove(confirm-if-dirty)/
+    copy-into/two-step confirmed apply-to-all; server-error mapping lands on the exact campus card +
+    `firstErrorCampusIndex` drives expand/scroll; PUBLIC flow mints the OTP via the v1 initiate
+    endpoint with an explicit v1 projection (see report §6 gap) and creates via
+    `POST /v2/visit-requests/verify` with the REAL nested `{form, otpCode, sessionToken}` contract;
+    AUTHENTICATED posts `/v2/visit-requests` directly. Fixed two G-1 client bugs against backend
+    source: verify-v2 body was flattened (Form would bind null) and `V2EditPayload` was missing
+    registrant/primaryContact/partnerId.
+  - UI: `CampusVisitCard` (accordion that only CSS-hides its body — fields stay mounted, nothing
+    unregisters; per-card error badge; per-campus Excel import ≤5MB via the existing validated parser;
+    one-time copy-from + apply-to-all triggers), `VisitRequestFormV2` (registrant/contact once, cards,
+    both destructive confirms as accessible dialogs, reuse of `OtpVerificationModal`),
+    `VisitRequestV2Page` on NEW routes `/visit-registration/v2` (public) + `/visit/create-v2`
+    (authenticated) — the v1 flow is untouched and flags stay OFF server-side (backend 404 surfaces
+    honestly; no silent v1 fallback).
+  - i18n: new `visitRequestV2` namespace (vi+en, registered in config) + `minDurationMinutes`/
+    `maxCampuses` validation keys.
+  - Tests: **Vitest + RTL introduced** (`npm run test:unit`, vitest.config.ts + jsdom + setup);
+    33/33 — schema (30-min boundary, duplicate-campus paths, caps, OTHER-type), utils (deep-copy
+    independence, apply-to-all purity + overwrite list, payload contracts incl. processing matching &
+    partner mode, v1 projection dedupe, draft migration duplication + independence, server-path
+    mapping, per-campus Excel apply), draft storage (round-trip stable clientKeys, expiry, namespace,
+    migration + never-shadow rule, secret sanitize), hook (add/copy/remove independence, two-step
+    apply-to-all, public initiate→verify same submissionId + real v2 payload, authenticated direct
+    create, invalid → no API call + first-error campus index).
+- **G-3 read/detail/workflow UX** — ✅ DONE:
+  - API: `getVisitRequestFormV2` typed to the central dual-read model (`ResolvedVisitForm` —
+    viewer relation/canViewAllCampuses/isReadOnly/allowedActions + per-campus decision/host/
+    revisions/activeAmendment). The client renders the scoped payload VERBATIM: hidden campuses
+    never appear, no role-name authorization on the client, no first-campus projection.
+  - `CampusVisitDetailCard` — the ONE read-only per-campus component (status chip, schedule,
+    content, collapsible people tables with aria-expanded, operational contact, requirements,
+    host/decision/revision block, pending-amendment badge, children slot).
+  - `VisitRequestV2DetailView` — request-level data exactly once (+ `Khác nhau theo cơ sở` /
+    `Varies by campus` badge only when >1 VISIBLE campuses differ), wires the G-1 panels into a
+    real screen: ContactIdentityPanel (registrant/ACTIVE-contact manager only, hidden for
+    read-only HO), per-campus VisitAmendmentPanel (decide = STAFF_LEADER, withdraw = manager;
+    allowedActions stay UX-only — backend re-authorizes), VisitHistoryTimeline (masked, scoped).
+  - Route `/dashboard/visit/v2/:visitRequestId` (`VisitRequestV2DetailPage`).
+  - Legacy conflict routing: `formVersionErrors.ts` (`isFormVersionUpgradeRequired` matches the
+    stable errorCode only) + EditVisitRequest load AND submit paths now navigate to the v2
+    detail instead of showing the raw 409.
+  - i18n `visitRequestV2.detail/status.*` (vi+en); statuses degrade gracefully via defaultValue.
+  - Tests **46/46** total (`npm run test:unit`; +13 for G-3): card renders own snapshot only,
+    accessible people toggle, amendment badge, OTHER-type text; view mixed-vs-same label rules,
+    scoped single-card-no-sibling-hint case, identity panel present/absent by viewer, Staff-
+    Leader amendment decision vs read-only HO, masked history rendered as-is, 404 (flag OFF)
+    friendly message with no fallback fetch; 409 code-not-message matching.
+- **G-4A public v2 OTP initiate + snapshot binding** — ✅ DONE (exit gate): `POST /api/v2/visit-requests/initiate`
+  validates the FULL v2 form (create-v2 structural validator — 30-min minimum, zero support OK — NOT the v1
+  3h/1-support rules), mints the OTP, and binds the canonical snapshot to the submit intent
+  (`visit_request_pending_forms`, additive migration `08_up`). Verify-v2 now builds the request FROM THE BOUND
+  SNAPSHOT, never the verify-time form: changing campus/member/contact/time/content between initiate and verify
+  is a stable conflict (`PER_CAMPUS_V2_SUBMISSION_FORM_MISMATCH` / `..._PENDING_NOT_FOUND`). Frontend public flow
+  switched to initiate-v2 (v1 projection removed; no silent fallback). Gates: build 0-err · Unit **482/482** ·
+  Arch **14/14** · full IT **372/372** (fresh `pems_it_regression` via junction) · targeted v2 IT **7/7** ·
+  FE tsc 0 / unit **46/46** / build ✓. Migration additive+idempotent (pems_pr3_test + pems_it_regression only;
+  pems_db/pems_test untouched); flags OFF.
+- **G-4B dedicated v2 EDIT/RESUBMIT form page** — ✅ DONE (last Phase-G exit gate): `EditVisitRequestV2Page`
+  (routes `/dashboard/visit/v2/:id/edit|resubmit`) reuses the SAME v2 schema + `CampusVisitCard` + utils (no
+  third form model). New pure `resolvedFormToV2Schema` hydrates from the scoped read model with stable
+  `visitInstanceId` + per-instance/request `rowVersion`; submit → `buildV2EditPayload` → update/resubmit;
+  409 → stable conflict + reload; resubmit keeps campus set fixed, pending-edit may add/remove; account-binding
+  emails read-only; backend re-authorizes. **Proven backend gap closed**: `ResolvedVisitFormDto.RowVersion`
+  added + populated (the edit payload's `ExpectedRequestRowVersion` had no source in the read model). Detail
+  view wires Edit/Resubmit by manager + status. Gates: backend build 0 · v2 read IT **23/23** · FE tsc 0 /
+  lint 0 / unit **56/56** (10 new) / build ✓.
+- **Phase G is DONE** (G-1/2/3 + G-4A + G-4B). Next: Phase H (E2E + SQL drill + rollout docs), then I.
+## Phase H — final verification + E2E + rollout readiness — 🟨 IN PROGRESS
+- **H-1 SQL migration lifecycle drill** — ✅ DONE (full evidence: `percampus_v2_migration/H1_MIGRATION_DRILL_REPORT.md`).
+  Fixed a real **fresh-vs-upgrade drift**: `visit_request_pending_forms` (G-4A `08_up`) was missing from the
+  fresh master → added to `pems_full_v10_..._FIXED.sql` + documented in README (patches 06/07/08). Drills on
+  disposable DBs only (`pems_h_fresh`/`pems_h_upgrade`/`pems_h_rollback`; pems_db/pems_test never mutated):
+  fresh import (all 9 v2 tables incl pending_forms), upgrade from pre-v2 baseline `ed693f6d` → `04_verify`
+  **V01–V15 = 0** / presence 1 (762/762 links, 204/204 details), idempotent re-run (identical `204|762|0|0|71`),
+  **schema diff fresh-vs-upgrade IDENTICAL** (71=71 tables, columns+indexes byte-identical), constraint
+  boundaries (29m59s→3819, 30m OK, end=start→3819, pending dup submission→1062), rollback **refusal guard**
+  (has_mixed=1 → aborts, no partial drop) + **clean DOWN** (0 of 9 v2 tables/columns/constraints left),
+  EXPLAIN index usage (submission_id→const/uq, expires_at→range/idx, form_details→PK point lookup).
+- **H-2 E2E + full regression** — ✅ DONE (matrix: `H2_VERIFICATION_MATRIX.md`). Full regression re-run green:
+  Unit **482**, Arch **14**, full IT **372** (fresh `pems_it_regression` from the FIXED master — validates
+  the H-1 master fix end-to-end), Vitest **56**, `tsc`/lint 0, `build` ✓. Playwright: added `test:e2e` script
+  + a new per-campus v2 browser spec (accordion CSS-hide keeps data; apply-to-all confirm dialog) → full
+  browser suite **78 passed** (76 existing, no regression + 2 new). `npm ci` blocked by a Windows native-file
+  lock (`lightningcss.node` EPERM) — environment defect, documented; reproducible install =
+  `npm install --legacy-peer-deps` (the command that produced the lockfile). Existing Playwright specs are
+  **mocked-network component/contract** tests (not full real-stack E2E — §12); the real-stack harness
+  (real backend + disposable MySQL + Testing-only OTP sink) is a documented follow-on, not claimed passed.
+- **H-3 observability + rollout/canary/rollback docs** — ✅ DONE (`H3_ROLLOUT_OBSERVABILITY.md`).
+  Source audit: **no metrics framework** in the project (none introduced — per §20); observability model =
+  structured `ILogger` + append-only `audit_logs` (correlation_id + stable codes + masked PII). **Instrumentation
+  gap closed**: `ExceptionHandlingMiddleware` now logs `ConflictException` + `BusinessRuleException` by STABLE
+  errorCode + path + traceId ONLY (no message/PII) — makes the v2 failure codes observable
+  (`PENDING_NOT_FOUND`/`SUBMISSION_FORM_MISMATCH`/`VERSION_CONFLICT`/`READ_REQUIRED`/`FORM_DETAIL_MISSING`/
+  `FORM_VERSION_UPGRADE_REQUIRED`), which were previously silent. Regression test
+  `ExceptionHandlingObservabilityTests` **2/2** (409/422 + code logged + PII/message NOT logged) → full IT
+  now **374/374**. Rollout doc: exact flag names/defaults from source (`PerCampusFormV2` + `PerCampusFormV2Write`,
+  both default `false`), ordered rollout, internal canary, log/audit-derived metrics with rollback actions
+  (numeric thresholds = documented placeholders pending Product), and flag-OFF (not DOWN) as the production
+  rollback.
+- **H-4 real-stack E2E** — ✅ DONE. Built the real-stack harness: Testing-only `FileSinkEmailService` (double-
+  gated by `ASPNETCORE_ENVIRONMENT=Testing` + `PEMS_E2E_TEST_SINK_ENABLED=true` + a sink path; fail-closed;
+  never in prod), a real `.NET` backend published + run on a dedicated port (env overrides — never edits
+  appsettings; both v2 flags ON; connection → disposable `pems_e2e_realstack`), Vite pointed at it via
+  `VITE_API_BASE_URL`, and `playwright.realstack.config.ts` + `scripts/run-realstack-e2e.mjs`
+  (`npm run test:e2e:realstack`, full create→run→teardown). **Journey A (public per-campus v2 create) RAN
+  real-stack** (real Chromium → real React → real API → real MySQL; OTP read from the sink) — **1 passed**,
+  request persisted (verified in the DB). It **caught a real production bug** (below). Sink guard tests **3/3**.
+  Coverage: journeys B–H (auth-gated) still use the `TestAuthHandler` header scheme not yet wired into the
+  real host — documented as the remaining H-4 follow-on; they stay covered at the Integration/Vitest layers.
+- **H-4 production bug fixed** (caught by the real-stack E2E): a public v2 submit that left the operational
+  contact **organization/email blank** hit `Check constraint 'ck_vifd_op_contact_email' is violated` (500).
+  Those fields are optional (the validator + frontend allow blank; the field is a display snapshot) but the
+  columns were `NOT NULL` with a `TRIM(x) <> ''` CHECK. Fix: columns → NULL (master + `09_up`), entity → `string?`,
+  create/edit services normalize blank → NULL (`Clean`), read service coalesces to `""`. Regression
+  `CreateVisitRequestV2ServiceTests.Blank_operational_contact_org_and_email_persist_as_null…`. Gates: Unit
+  **482**, Arch **14**, full IT **378/378** (374 + op-contact regression + 3 sink guard; first run had 1
+  transient flake — hardened `FileSinkEmailService.IsEnabledFor` to also require the sink path, then rerun
+  clean 378/0), Vitest **56**, tsc/lint 0, build ✓; H-1 fresh+upgrade schema re-verified (op org/email nullable,
+  fresh-vs-upgrade IDENTICAL). **Phase H DONE** (H-1/H-2/H-3/H-4); report stays IN PROGRESS (Phase I pending).
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)
