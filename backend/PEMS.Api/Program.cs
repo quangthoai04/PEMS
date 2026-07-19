@@ -82,7 +82,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ── AuthN / AuthZ ────────────────────────────────────────────────────────────
-builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddAppAuthorization();
 
 // ── CORS (origins from config; falls back to common dev origins) ─────────────
