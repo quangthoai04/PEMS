@@ -1,7 +1,7 @@
 -- Preflight Script for Phase I Guarded Drop
 -- 1. Check if DB is disposable (starts with pems_i_)
 SET @db_name = DATABASE();
-SELECT IF(@db_name LIKE 'pems_i_%', 'PASS', 'FAIL') AS disposable_db_check;
+SELECT IF(@db_name IN ('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback'), 'PASS', 'FAIL') AS disposable_db_check;
 
 -- 2. Verify existence of the 10 legacy columns
 SELECT count(*) AS legacy_columns_count 

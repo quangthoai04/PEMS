@@ -1,4 +1,19 @@
 -- Down Restore Script
+DELIMITER //
+CREATE PROCEDURE `ExecutePhase1Restore`()
+BEGIN
+    DECLARE db_name VARCHAR(255);
+    SELECT DATABASE() INTO db_name;
+    
+    IF db_name NOT IN ('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Refused: Not an allowed disposable database.';
+    END IF;
+
+    IF @ENABLE_PHASE_1_RESTORE != 1 OR @ENABLE_PHASE_1_RESTORE IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Refused: Explicit opt-in required (@ENABLE_PHASE_1_RESTORE = 1)';
+    END IF;
+
+    -- 1. Add columns back
 -- 1. Add columns back
 ALTER TABLE `visit_requests`
     ADD COLUMN `delegation_name` varchar(255) NULL,
@@ -34,3 +49,11 @@ SET vr.delegation_name = sub.delegation_name,
     vr.media_consent_note = sub.media_consent_note,
     vr.note_to_fptu = sub.note_to_fptu
 WHERE vr.form_schema_version >= 2;
+
+    SELECT 'Phase I Restore Completed' as result;
+END//
+
+DELIMITER ;
+
+CALL ExecutePhase1Restore();
+DROP PROCEDURE ExecutePhase1Restore;

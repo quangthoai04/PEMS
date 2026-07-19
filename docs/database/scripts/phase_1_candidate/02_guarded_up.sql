@@ -7,8 +7,8 @@ BEGIN
     DECLARE db_name VARCHAR(255);
     SELECT DATABASE() INTO db_name;
     
-    IF db_name NOT LIKE 'pems_i_%' THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Refused: Not a disposable database. Target must start with pems_i_';
+    IF db_name NOT IN ('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Refused: Not an allowed disposable database.';
     END IF;
 
     IF @ENABLE_PHASE_1_DROP != 1 OR @ENABLE_PHASE_1_DROP IS NULL THEN
