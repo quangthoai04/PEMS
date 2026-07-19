@@ -94,17 +94,17 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             </span>
           )}
           {canEditPending && (
-            <Link to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
+            <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
               <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
             </Link>
           )}
           {canResubmit && (
-            <Link to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
+            <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
               <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
             </Link>
           )}
           {canSafeEdit && (
-            <button type="button" onClick={() => setSafeEditOpen(true)}
+            <button type="button" data-testid="safe-edit-open" onClick={() => setSafeEditOpen(true)}
               className={`${canEditPending || canResubmit ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50`}>
               <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:safeEdit.open')}
             </button>
@@ -167,7 +167,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               )}
               {canSubmitAmendment && (
                 <div className="mt-4">
-                  <button type="button" onClick={() => setAmendCampus(cv)}
+                  <button type="button" data-testid={`amendment-open-${cv.visitInstanceId}`} onClick={() => setAmendCampus(cv)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
                     <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:amend.open')}
                   </button>

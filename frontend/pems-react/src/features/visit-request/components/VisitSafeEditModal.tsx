@@ -112,7 +112,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
         <p className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">{t('visitRequestV2:safeEdit.applyNowNote')}</p>
 
         {applied ? (
-          <div className="space-y-2">
+          <div className="space-y-2" data-testid="safe-edit-applied">
             <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
               {t('visitRequestV2:safeEdit.appliedCount', { count: applied.appliedChanges.length })}
             </p>
@@ -147,7 +147,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                 <legend className="px-1 text-sm font-bold text-[#004c91]">{i.campusName}</legend>
                 <label className="mt-1 block text-sm">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.transportation')}</span>
-                  <input className={field} value={i.transportationNote} onChange={e => setInstance(i.visitInstanceId, { transportationNote: e.target.value })} />
+                  <input data-testid={`safe-edit-transportation-${i.visitInstanceId}`} className={field} value={i.transportationNote} onChange={e => setInstance(i.visitInstanceId, { transportationNote: e.target.value })} />
                 </label>
                 <label className="mt-2 block text-sm">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.campusNote')}</span>
@@ -155,7 +155,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                 </label>
                 <label className="mt-2 block text-sm">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.mediaConsent')}</span>
-                  <select className={field} value={i.mediaConsentStatus} onChange={e => setInstance(i.visitInstanceId, { mediaConsentStatus: e.target.value })}>
+                  <select data-testid={`safe-edit-media-${i.visitInstanceId}`} className={field} value={i.mediaConsentStatus} onChange={e => setInstance(i.visitInstanceId, { mediaConsentStatus: e.target.value })}>
                     <option value="AGREED">{t('visitRequestV2:summary.mediaAgreed')}</option>
                     <option value="DECLINED">{t('visitRequestV2:summary.mediaDeclined')}</option>
                   </select>
@@ -178,7 +178,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
               <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
                 {t('visitRequestV2:common.cancel')}
               </button>
-              <button type="button" disabled={busy} onClick={() => void save()}
+              <button type="button" data-testid="safe-edit-submit" disabled={busy} onClick={() => void save()}
                 className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white hover:bg-[#003a6f] disabled:opacity-50">
                 {t('visitRequestV2:safeEdit.save')}
               </button>

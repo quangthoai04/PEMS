@@ -103,6 +103,7 @@ export default function VisitAmendmentPanel({
 
   return (
     <section
+      data-testid={`amendment-panel-${visitInstanceId}`}
       aria-label="Đề xuất thay đổi đang chờ duyệt"
       className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-900/20 p-4"
     >
@@ -148,6 +149,7 @@ export default function VisitAmendmentPanel({
           <>
             <button
               type="button"
+              data-testid={`amendment-approve-${amendment.amendmentId}`}
               disabled={busy}
               className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
               onClick={() => void run(() => approveAmendment(visitInstanceId, amendment.amendmentId, note || undefined))}
@@ -156,6 +158,7 @@ export default function VisitAmendmentPanel({
             </button>
             <button
               type="button"
+              data-testid={`amendment-reject-${amendment.amendmentId}`}
               disabled={busy}
               className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-300"
               onClick={() => setRejectMode(true)}
@@ -181,6 +184,7 @@ export default function VisitAmendmentPanel({
             <div className="flex gap-2">
               <button
                 type="button"
+                data-testid={`amendment-reject-confirm-${amendment.amendmentId}`}
                 disabled={busy || note.trim().length === 0}
                 className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
                 onClick={() => void run(() => rejectAmendment(visitInstanceId, amendment.amendmentId, note.trim()))}
@@ -200,6 +204,7 @@ export default function VisitAmendmentPanel({
         {canWithdraw && !canDecide && (
           <button
             type="button"
+            data-testid={`amendment-withdraw-${amendment.amendmentId}`}
             disabled={busy}
             className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm"
             onClick={() => void run(() => withdrawAmendment(visitRequestId, visitInstanceId, amendment.amendmentId))}

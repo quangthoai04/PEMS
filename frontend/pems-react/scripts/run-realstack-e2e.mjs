@@ -28,7 +28,7 @@ import process from 'node:process';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..', '..');            // …/PEMS
 const API_PROJ = join(REPO, 'backend', 'PEMS.Api', 'PEMS.Api.csproj');
-const MASTER = join(REPO, 'docs', 'database', 'scripts', 'PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql');
+const MASTER = join(REPO, 'docs', 'database', 'scripts', 'PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql');
 
 const DB = process.env.PEMS_E2E_DB ?? 'pems_e2e_realstack';
 const API_PORT = process.env.PEMS_E2E_API_PORT ?? '5299';
@@ -184,7 +184,9 @@ try {
   if (!healthy) throw new Error('backend did not become healthy within 120s');
 
   console.log('[e2e] run real-stack Playwright specs');
-  await run('npx', ['playwright', 'test', '--config', 'playwright.realstack.config.ts'], {
+  // Optional PEMS_E2E_GREP narrows the run to matching titles (debugging a subset); default = full suite.
+  const grepArgs = process.env.PEMS_E2E_GREP ? ['--grep', process.env.PEMS_E2E_GREP] : [];
+  await run('npx', ['playwright', 'test', '--config', 'playwright.realstack.config.ts', ...grepArgs], {
     cwd: join(REPO, 'frontend', 'pems-react'),
     env: {
       ...process.env,

@@ -182,6 +182,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
             {(['fullName', 'jobTitle', 'organization', 'nationality'] as const).map(f => (
               <input
                 key={f}
+                data-testid={`amendment-${kind}-${f.toLowerCase()}`}
                 className={cell}
                 value={m[f]}
                 placeholder={t(`visitRequestV2:person.${f}`)}
@@ -203,6 +204,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
       </div>
       <button
         type="button"
+        data-testid={kind === 'visitors' ? 'amendment-add-visitor' : 'amendment-add-support'}
         className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50"
         onClick={() => setList(prev => [
           ...prev,
@@ -296,7 +298,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           </label>
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:amend.reason')} <span className="text-red-500">*</span></span>
-            <textarea className={field} rows={2} value={reason} onChange={e => setReason(e.target.value)} required />
+            <textarea data-testid="amendment-reason" className={field} rows={2} value={reason} onChange={e => setReason(e.target.value)} required />
           </label>
         </div>
 
@@ -306,7 +308,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
             {t('visitRequestV2:common.cancel')}
           </button>
-          <button type="button" disabled={busy || !reasonValid || !hasVisitor} onClick={() => void submit()}
+          <button type="button" data-testid="amendment-submit" disabled={busy || !reasonValid || !hasVisitor} onClick={() => void submit()}
             className="rounded-lg bg-[#f37021] px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50">
             {t('visitRequestV2:amend.submit')}
           </button>

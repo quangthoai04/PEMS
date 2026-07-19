@@ -1606,7 +1606,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Tìm kiếm</label>
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 shrink-0" />
-              <input type="text" placeholder="Tìm tên đoàn, host, đối tác..." value={draftFilters.keyword}
+              <input type="text" data-testid="visit-search-input" placeholder="Tìm tên đoàn, host, đối tác..." value={draftFilters.keyword}
                 onChange={(e) => {
                   const val = e.target.value;
                   setDraftFilters({ ...draftFilters, keyword: val });

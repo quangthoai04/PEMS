@@ -358,7 +358,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
         )}
 
         <div className="flex justify-end pt-4">
-          <button type="submit" disabled={isSubmitting} className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60">
+          <button type="submit" data-testid="v2-edit-submit" disabled={isSubmitting} className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60">
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {mode === 'edit' ? t('visitRequestV2:edit.saveEdit') : t('visitRequestV2:edit.saveResubmit')}
           </button>
