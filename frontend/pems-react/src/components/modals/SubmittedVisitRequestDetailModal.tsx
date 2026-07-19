@@ -19,6 +19,9 @@ import { VISIT_SCOPE_LABELS } from '../../features/delegations/types/delegations
 import { SubmittedVisitRequestInfoPanel } from '../../features/delegations/components/SubmittedVisitRequestInfoPanel';
 import { DecisionReasonPanel } from '../../features/delegations/components/DecisionReasonPanel';
 import { CancellationReasonPanel } from '../../features/delegations/components/CancellationReasonPanel';
+import VisitRequestV2DetailView from '../../features/visit-request/components/v2/VisitRequestV2DetailView';
+import { isPerCampusV2 } from '../../features/visit-request/utils/visitVersionRouting';
+import { isFormVersionUpgradeRequired } from '../../features/visit-request/utils/formVersionErrors';
 
 import { formatVietnamDateTime } from '../../shared/utils/vietnamTime';
 interface Props {
@@ -28,6 +31,9 @@ interface Props {
   onApprove?: (data: SubmittedVisitRequestFormDetail) => void;
   onReject?: (data: SubmittedVisitRequestFormDetail) => void;
   onAssignHost?: (data: SubmittedVisitRequestFormDetail) => void;
+  /** When a caller already knows the request's schema version, pass it so a v2 request opens the v2
+   * detail immediately — no flat fetch, no waiting for a v1 409. Omitted → discovered from the fetch. */
+  formSchemaVersion?: number | null;
 }
 
 const formatDateTime = (value?: string | null) => {
@@ -61,11 +67,15 @@ const headerTitle = (status?: string) => {
 };
 
 export function SubmittedVisitRequestDetailModal({
-  isOpen, visitRequestId, onClose, onApprove, onReject, onAssignHost,
+  isOpen, visitRequestId, onClose, onApprove, onReject, onAssignHost, formSchemaVersion,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SubmittedVisitRequestFormDetail | null>(null);
+  // A v2 request must render the per-campus v2 UI — even a UNIFORM v2 request that looks flat. The
+  // discriminator is the schema version (prop when the caller knows it; otherwise the fetched field or
+  // a v1 upgrade-required 409), NEVER the scope, campus count, or mixed flag.
+  const [renderV2, setRenderV2] = useState(false);
 
   useEffect(() => {
     if (isOpen) document.body.style.overflow = 'hidden';
@@ -76,17 +86,70 @@ export function SubmittedVisitRequestDetailModal({
   useEffect(() => {
     if (!isOpen || visitRequestId == null) return;
     let active = true;
-    setLoading(true);
     setError(null);
     setData(null);
+    // Caller already knows it is v2 → open the v2 detail straight away (no flat fetch, no 409 wait).
+    if (isPerCampusV2(formSchemaVersion)) {
+      setRenderV2(true);
+      setLoading(false);
+      return;
+    }
+    setRenderV2(false);
+    setLoading(true);
     delegationsApi.getSubmittedVisitRequestFormDetail(visitRequestId)
-      .then((res) => { if (active) setData(res); })
-      .catch((e) => { if (active) setError(getFriendlyError(e)); })
+      .then((res) => {
+        if (!active) return;
+        // Uniform v2 returns a flat-looking projection; branch to the v2 UI on its version field.
+        if (isPerCampusV2(res.formSchemaVersion)) setRenderV2(true);
+        else setData(res);
+      })
+      .catch((e) => {
+        if (!active) return;
+        // Mixed v2 flat-fetch → stable upgrade-required 409; route to the v2 UI instead of a raw error.
+        if (isFormVersionUpgradeRequired(e)) setRenderV2(true);
+        else setError(getFriendlyError(e));
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [isOpen, visitRequestId]);
+  }, [isOpen, visitRequestId, formSchemaVersion]);
 
   if (!isOpen) return null;
+
+  // ── v2 branch: render the per-campus v2 detail (server-scoped to this caller) inside the modal
+  // chrome. No v1 approve/reject footer here — v2 decisions run through the per-campus v2 flow. ──
+  if (renderV2 && visitRequestId != null) {
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
+          >
+            <div className="flex-none px-4 sm:px-6 py-3 flex items-start justify-between text-white bg-[#004c91]">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight pr-8">Chi tiết đơn đăng ký tham quan</h2>
+              <button
+                type="button" onClick={onClose} aria-label="Đóng"
+                className="absolute top-2.5 right-3 p-1.5 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-white">
+              <VisitRequestV2DetailView visitRequestId={visitRequestId} />
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
 
   const scopeLabel = data ? (VISIT_SCOPE_LABELS[data.visitScope] ?? data.visitScope) : '';
   const isRejected = data?.requestStatus === 'REJECTED';

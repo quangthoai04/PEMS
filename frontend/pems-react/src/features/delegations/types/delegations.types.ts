@@ -920,6 +920,11 @@ export interface SubmittedVisitRequestFormDetail {
   emailVerifiedAt?: string | null;
   requestStatus: string;
   visitScope: string;
+  /** Per-campus form v2 discriminator from the DB (1 = legacy global, 2 = per-campus). A shared detail
+   * surface renders the v2 UI when this is >= 2 — never inferred from scope/campus count. Optional so
+   * older cached payloads fail safe to v1. */
+  formSchemaVersion?: number;
+  hasMixedCampusDetails?: boolean;
 
   delegationName: string;
   visitType?: string | null;
