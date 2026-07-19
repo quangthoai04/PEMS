@@ -49,17 +49,20 @@ closed the first three cutover slices (each committed + gated independently; aut
 | 1 | v2 capability endpoint (`GET /api/public/features/per-campus-form-v2`, anonymous, read-only, `enabled = read && write`) + shared `PerCampusV2CapabilityProvider` (session-cached, **fail-safe to v1**) + default entry-point cutover (Hero/FinalCta CTAs, VisitRequestManagement create, `/dashboard/visit/create` redirect) | `3e7d4d5d` | capability IT **6/6** · Vitest +14 |
 | 2 | version-aware routing: `VisitRequestManagementItemDto.formSchemaVersion` (+ `hasMixedCampusDetails`) from the DB; FE `visitVersionRouting` routes detail/edit/resubmit to v2 (mixed or not) without waiting for a 409 | `fa7849e6` | list-DTO IT (V2MixedList) · Vitest +6 |
 | 3 | full per-campus post-submit summary from the immutable submitted snapshot (`VisitRequestV2SubmittedSummary`, one card per campus, never the first as representative) | `2cd948f8` | Vitest +3 |
+| S0 | restore `PEMS.UnitTests` compile — implement the 3 `VisitExpense*` DbSet members in the 4 EF InMemory test doubles the Dev expense-stats merge left unimplemented (no production/test-behaviour change) | `7895be2d` | Unit **510/510** |
+| 4 | **allowedActions-driven UI + safe-edit/amendment workflows**. Backend: read model computes real actions (request `EDIT_PENDING`/`RESUBMIT`/`SUBMIT_SAFE_EDIT`; per-instance `SUBMIT`/`WITHDRAW`/`APPROVE`/`REJECT_AMENDMENT`) mirroring handler auth. FE: `VisitRequestV2DetailView` gates all mutation UI on `allowedActions` (never relation/status) + new `VisitAmendmentSubmitModal` + `VisitSafeEditModal` | `603abd46` + `e30ad6a2` | read-model auth IT **+6** (17/17) · Vitest **+6** |
 
-**Session gates (real, on the merged HEAD `2cd948f8`):** full `PEMS.IntegrationTests` **385/385** on disposable
-`pems_it_regression` (V11 master; appsettings trap-restored to pems_test) · Architecture **14/14** · Vitest **79** ·
-tsc 0 · build ✓. **Pre-existing inherited break (NOT this session's changes):** `PEMS.UnitTests` fails to COMPILE
-because the Dev-merge feature `34ab5ba4` ("thống kê chi phí ver 1") added `VisitExpenseReports/Items/ReportEvents`
-to `IApplicationDbContext` but never updated the test doubles (`DelegationsTestDbContext`, `PartnersTestDbContext`) —
-broken already at merge commit `e7619b83`, before any slice work; left untouched (another dev's feature area).
+**Session gates (real, merged HEAD `e30ad6a2`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
+`PEMS.IntegrationTests` **391/391** on disposable `pems_it_regression` (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`;
+appsettings trap-restored to pems_test) · Vitest **85** · tsc 0 · build ✓. The inherited `PEMS.UnitTests` compile
+break (Dev feature `34ab5ba4` added `VisitExpense*` to `IApplicationDbContext` without updating the test doubles)
+was **fixed in S0** (`7895be2d`) — it is now green.
 
-**Deferred (Slices 4–6):** safe-edit/amendment submission UX + `allowedActions`-driven detail UI; other shared-modal
-call sites (HoVisitProcessDetail, VisitParticipantInvitationDetail) → version-aware; scoped search matched-context;
-authenticated Journey B–H real-stack (needs `TestAuthHandler` wired into the published host).
+**Deferred (Slices 5–6):** scoped search `matchedContexts` (backend DTO + scoped projection + security tests + FE
+render) and making the other shared-modal call sites (HoVisitProcessDetail, VisitParticipantInvitationDetail)
+version-aware; authenticated Journey B–H real-stack (needs `TestAuthHandler` wired into the published host).
+Within Slice 4, inline guest/support LIST editing inside an amendment proposal is deferred (scalar/schedule fields
+are editable; member lists are carried through unchanged).
 
 ## 2. Safety invariants (all holding)
 

@@ -453,13 +453,12 @@ byte-identical when the flags are OFF.
 
 - **Slices 5–6** — ⬜ pending (scoped search matchedContexts + remaining shared-modal call sites version-aware;
   auth Journey B–H real-stack).
-- **Session gates (real, merged HEAD `2cd948f8`)** — full `PEMS.IntegrationTests` **385/385** on disposable
-  `pems_it_regression` (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`; appsettings trap-restored
-  to pems_test) · Architecture **14/14** · capability IT **6/6** · Vitest **79** · tsc 0 · build ✓.
-  **Inherited pre-existing break (not this session):** `PEMS.UnitTests` fails to COMPILE — the Dev-merge feature
-  `34ab5ba4` added `VisitExpense*` DbSets to `IApplicationDbContext` without updating the test doubles; broken at
-  merge `e7619b83` before any slice work; left untouched (out-of-scope, another dev's feature). Environment
-  auto-merged Dev into Canh-Iter1 mid-session (`ba4ea97d`); no manual push/merge/PR was run.
+- **Session gates (real, after Slice 4, HEAD `e30ad6a2`)** — `PEMS.UnitTests` **510/510** (restored in S0) ·
+  Architecture **14/14** · full `PEMS.IntegrationTests` **391/391** on disposable `pems_it_regression`
+  (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`; appsettings trap-restored to pems_test) ·
+  read-model auth IT 17/17 · capability IT 6/6 · Vitest **85** · tsc 0 · build ✓. The previously-inherited
+  `PEMS.UnitTests` compile break (Dev feature `34ab5ba4` added `VisitExpense*` to `IApplicationDbContext` without
+  updating the test doubles) is **fixed in S0** (`7895be2d`). No manual push/merge/PR was run this session.
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
