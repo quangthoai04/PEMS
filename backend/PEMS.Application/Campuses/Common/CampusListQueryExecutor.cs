@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -55,13 +56,19 @@ internal static class CampusListQueryExecutor
         var query = db.Campuses.AsNoTracking();
 
         // ── Keyword search: campus code OR name OR IC Head full name (BR-83-01) ──
-        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword!.Trim().ToLower();
+        // Whitespace-insensitive: collapse every run of whitespace in the keyword away and compare
+        // against the space-stripped columns, so "FPT   Hà   Nội" still matches "FPT Hà Nội".
+        // REPLACE(x,' ','') is EF-translatable; these columns only ever hold regular spaces.
+        var keyword = string.IsNullOrWhiteSpace(request.Keyword)
+            ? null
+            : Regex.Replace(request.Keyword!, @"\s+", string.Empty).ToLower();
         if (keyword is { Length: > 0 })
         {
             query = query.Where(c =>
-                c.CampusCode.ToLower().Contains(keyword) ||
-                c.Name.ToLower().Contains(keyword) ||
-                (c.IcHeadUser != null && c.IcHeadUser.FullName.ToLower().Contains(keyword)));
+                c.CampusCode.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                c.Name.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                (c.IcHeadUser != null &&
+                 c.IcHeadUser.FullName.ToLower().Replace(" ", string.Empty).Contains(keyword)));
         }
 
         // ── Whitelisted filters (AND logic, BR-83-03) ──
