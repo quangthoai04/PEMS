@@ -551,6 +551,27 @@ byte-identical when the flags are OFF.
   `pems_i_refusal`/`pems_i_rollback` only. Expected honest conclusion: "guarded contract-drop prepared/tested on
   disposable databases; execution NOT READY while V1 fallback + legacy runtime reads remain; no real database modified."
 
+## Slice 6c — Full Browser UI E2E promotion — ✅ COMPLETE
+Promoted the v2 mutation + search journeys from real-host **API** level to full browser **DOM** automation
+(`tests-realstack/authenticated-ui-workflows.realstack.spec.ts` + `realstackHelpers.ts`): pending-edit,
+resubmit, safe-edit, amendment-submit, leader approve/reject, wrong-campus visibility + backend denial,
+withdraw, search isolation — each navigates a real route and clicks a real button/modal against the real
+running stack (no `page.request`/`page.evaluate(fetch)`/`route.fulfill`/DB-fake). Logic-neutral `data-testid`s
+added to the detail view, campus cards, amendment panel/modal, safe-edit modal, edit page, list search box.
+**Real-stack now 17/17** (8 kept API-level A–H + 9 new DOM). tsc 0 · Vitest 99 · build ✓ · Arch 14/14 ·
+auth-guard 4/4 · targeted V2 IT 44/45 · Unit 528/530. See H2_VERIFICATION_MATRIX.md for the per-journey table.
+
+**Dev auto-merge (`64c83a59`) overlaps found — none caused by this session** (frontend + UnitTests-harness
+dedup only): (1) fixed the merge's duplicated `VisitExpense*` DbSet decls in 4 unit-test harnesses (project
+would not compile); (2) 2 pre-existing photo-upload unit failures from the merge's `FileValidationPolicy.cs`
+change — out of scope, left for the photo owner; (3) the merge added guest-name search to the list keyword
+filter, which conflicts with the Slice 5B security test `Guest_member_names_are_not_searched_and_produce_no_row`
+— flagged for human reconciliation (matchedContexts stay PII-free either way), neither the test nor the Dev
+feature changed unilaterally.
+
+**Full IT (~400) not re-run this session:** `pems_test` absent + `pems_pr3_test` stale/protected (see recipe
+caveats); no backend production/IT code changed this session; v2 backend covered by real-stack 17/17 + V2 IT 44/45.
+
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)

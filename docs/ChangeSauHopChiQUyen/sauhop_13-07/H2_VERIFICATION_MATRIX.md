@@ -98,3 +98,75 @@ verified at the layers above (SQL constraints, backend authorization/concurrency
 Vitest component behaviour, and browser-DOM behaviour for the accordion/dialog). The remaining unique value
 of full real-stack E2E is cross-boundary wiring (real OTP round-trip, real 409 propagation, real auth
 scoping in the browser) — recommended as the first task of a dedicated E2E-infra slice.
+
+## Full-DOM promotion of the v2 mutation & search workflows (this session)
+
+The Slice 6 mutation/search journeys that previously ran at the **real-host API** level (E/F/G/H in
+`authenticated-workflows.realstack.spec.ts`) are now **promoted to full browser DOM automation** in a new
+spec `tests-realstack/authenticated-ui-workflows.realstack.spec.ts` (helpers in `realstackHelpers.ts`). Each
+one navigates a real route, fills real inputs and submits a real button/modal against the real running stack —
+no `page.request`, no `page.evaluate(fetch)`, no `route.fulfill`, no DB write to fake the result. Preconditions
+(create/approve/reject/submit-as-precondition) and post-action assertions use the authenticated API; the
+**action under test is always the DOM**. Stable `data-testid`s were added (logic-neutral) to the detail view,
+campus cards, amendment panel/modal, safe-edit modal, edit page and the list search box.
+
+| # | Workflow | DOM action under test | Key assertions | Result |
+|---|----------|-----------------------|----------------|--------|
+| §6 | Pending edit | edit HN delegation in the real edit form → submit | HN changed + rowVersion bumped; **HCM sibling delegation + rowVersion untouched (true no-op)**; back to PENDING | **PASS** |
+| §7 | Resubmit | edit a rejected request in the real resubmit form → submit | campus set fixed (same instance ids); status → PENDING; `resubmissionCount` +1 | **PASS** |
+| §8 | Safe edit | change a per-campus transport note in the real modal → save | applied **immediately** (no amendment); sibling + amendment untouched | **PASS** |
+| §9 | Amendment submit | add a guest in the real amendment modal → submit (reason required) | submit disabled with empty reason; **active snapshot unchanged**, amendment PENDING_APPROVAL; sibling untouched; no 2nd-pending affordance | **PASS** |
+| §10a | Leader approve | HN leader clicks *Duyệt & áp dụng* in the real panel | active↔proposed diff shown; on approve the proposal applies **target-only**; sibling untouched | **PASS** |
+| §10b | Leader reject | HN leader rejects in the real panel (reason required) | confirm disabled with empty reason; amendment REJECTED; **active snapshot unchanged**; sibling untouched | **PASS** |
+| §11 | Wrong-campus | HCM leader opens the same request in the real UI | HCM leader sees only their own campus card; **the HN card + its approve action never render**; the host also refuses the API approve (403), HN leader passes the gate | **PASS** |
+| §12 | Withdraw | requester clicks *Rút đề xuất* in the real panel | amendment WITHDRAWN; snapshot intact; the submit affordance returns (re-proposable) | **PASS** |
+| §13 | Search isolation | HN leader types in the real list search box | a hidden-campus (HCM-only) delegation keyword **never surfaces** the request; the HN keyword surfaces it with an HN-only match context and **no HCM name/keyword leaks**; the owner (all campuses) sees the HCM keyword | **PASS** |
+
+**Real-stack counts (this run, actual):**
+
+| Suite | Command | Result |
+|-------|---------|--------|
+| Real-host API journeys A–H (kept) | `test:e2e:realstack` | **8 passed** |
+| Full-DOM mutation/search journeys (new) | `test:e2e:realstack` | **9 passed** |
+| **Total real-stack specs** | `test:e2e:realstack` | **17 passed / 0 failed** |
+
+Not double-counted: the existing API-level journeys stay as defense-in-depth; the DOM journeys are additional.
+
+**Other gates (this run):** Frontend `tsc` 0 · Vitest **99** · `vite build` ✓ · Backend Architecture **14/14** ·
+E2E auth-guard **4/4** · targeted V2 IT (read + edit + resubmit + safe-edit + amendment + mixed-list, run against
+the sanctioned self-rolling-back `pems_pr3_test`) **44/45** · Backend Unit **528/530**.
+
+### Dev auto-merge overlaps found by the audit (NOT introduced by this session)
+
+The environment auto-merged `Dev` into the branch (`64c83a59`) mid-stream. The overlap audit (§2) surfaced
+three items, all **pre-existing on the merged branch, none caused by this session's changes** (which touch only
+frontend test-ids + real-stack specs + the UnitTests harness dedup below):
+
+1. **UnitTests harness compile break (fixed).** The merge left `VisitExpense*` DbSet declarations **duplicated**
+   inside four unit-test contexts (`DelegationsTestHarness`, `CampusUcTestHarness`, `Uc106TestHarness`,
+   `PartnersTestDbContext`), so `PEMS.UnitTests` would not compile at all. Repaired by removing the duplicated
+   block (the canonical copy from `8e9c9b0b` stays) — a merge-artifact cleanup. UnitTests now build and run.
+2. **Two pre-existing photo-upload unit failures (not fixed — out of scope).**
+   `UploadVisitInstancePhotosCommandHandlerTests.{SpoofedMime,OversizedFile}_FailsBeforeAnyDriveWork` now fail
+   (“no exception thrown”). Root cause: the merge changed shared `backend/.../Common/Files/FileValidationPolicy.cs`.
+   This is a VisitPhotos/file-validation regression unrelated to per-campus v2; left for the photo/merge owner.
+3. **Guest-search vs Slice 5B security test (conflict — flagged for reconciliation, not unilaterally resolved).**
+   The merge added `vr.GuestMembers.Any(name/jobTitle/organization contains keyword)` to the list keyword filter
+   (`ViewGuestDelegationListQueryHandler`), so the Slice 5B IT `V2MixedListSurfacesTests.
+   Guest_member_names_are_not_searched_and_produce_no_row` now fails (the guest keyword surfaces the row).
+   Security analysis: this does **not** break the two invariants Slice 5B protects — scope-before-keyword still
+   holds (a scoped leader only ever surfaces their own authorized campus row), and `matchedContexts` is still
+   built solely from request/campus fields (guest names are **never** among them → no PII and no hidden campus
+   in the rendered “Khớp tại” chip; a guest-only match yields an empty context list). What changed is only
+   whether a guest-name keyword *surfaces a row the actor is already authorized to see*. This is a genuine
+   product/security-posture decision between two teams and is **left for human reconciliation** (either retire/
+   update the 5B row-exclusion assertion to “searchable but PII-free in results”, or revert the Dev clause);
+   this session neither deleted the security test nor reverted the Dev feature. The new §13 DOM journey asserts
+   only the surviving invariants (delegation-name hidden-campus isolation + PII-free contexts), so it is
+   consistent with either resolution.
+
+**Full `PEMS.IntegrationTests` (≈400) not re-run this session:** it is not cleanly runnable here without
+out-of-scope / hygiene-violating setup — the factory tests need `pems_test` (absent) and 25 V2 IT files hardcode
+`pems_pr3_test`, which is stale vs the current merged master (71 vs 76 tables; missing the newer expense tables)
+and is a protected DB that must not be recreated. This session changed no backend production or IT-test code, and
+the v2 backend paths are exercised end-to-end by the real-stack 17/17 plus the targeted V2 IT 44/45 above.
