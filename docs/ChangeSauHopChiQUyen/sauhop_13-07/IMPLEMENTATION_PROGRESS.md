@@ -428,7 +428,30 @@ byte-identical when the flags are OFF.
     content; multi-same renders every campus; blank optional operational contact renders without crashing).
     Full Vitest **79**, tsc 0, build ✓.
 
-- **Slices 4–6** — ⬜ pending (safe-edit/amendment UX + allowedActions-driven UI; scoped search match contexts;
+- **S0 — restore UnitTests compile** — ✅ DONE (`7895be2d`). The Dev expense-stats merge (`34ab5ba4`) added
+  `VisitExpenseReports/Items/ReportEvents` to `IApplicationDbContext` but never updated the four EF InMemory test
+  doubles (`DelegationsTestDbContext`, `PartnersTestDbContext`, UC-106 `TestApplicationDbContext`, `CampusTestDbContext`),
+  so `PEMS.UnitTests` failed to compile. Implemented the three DbSet members in each. No production logic touched.
+  **PEMS.UnitTests 510/510.**
+
+- **Slice 4 — safe-edit + amendment UX + allowedActions-driven UI** — ✅ DONE (backend `603abd46` + this frontend commit).
+  - Backend (`603abd46`): the v2 read model emitted only `VIEW`, forcing the frontend to infer permissions. Now the
+    read service computes real actions mirroring the command-handler authorization (which still re-authorizes):
+    `viewer.allowedActions` = EDIT_PENDING_REQUEST / RESUBMIT_REJECTED_REQUEST / SUBMIT_SAFE_EDIT (registrant/ACTIVE
+    contact); per-instance `campusVisit.allowedActions` = SUBMIT_AMENDMENT (ASSIGNED/BEFORE_VISIT, ≥24h, no pending) /
+    WITHDRAW_AMENDMENT (requester + pending) / APPROVE_AMENDMENT + REJECT_AMENDMENT (current campus Staff Leader +
+    pending). HO / out-of-scope campuses get none. `VisitFormActions` constants; optional `IDateTimeService` (no
+    call-site churn). Integration tests **+6** (owner/leader/HO scope, one-pending, no cross-campus) → read tests 17/17.
+  - Frontend: `VisitRequestV2DetailView` now gates ALL mutation UI on `allowedActions` (typed `visitV2Actions`),
+    never relation/status. New `VisitAmendmentSubmitModal` (per-campus proposal, reason required, member lists carried
+    through, stable amendment error codes → steady messages) and `VisitSafeEditModal` (registrant/contact + per-instance
+    transportation/note/media, immediate apply, 409 → stable message + reload, account email immutable). i18n
+    `visitRequestV2:amend.*` / `safeEdit.*` (VI + EN). Vitest **+6** (allowedActions-driven visibility, HO read-only,
+    amendment reason-required + AMENDMENT_ALREADY_PENDING mapping, safe-edit 409 reload + applied count).
+  - Deferred within Slice 4: inline guest/support LIST editing inside the amendment proposal (scalar/schedule fields
+    are editable now; member lists are carried through unchanged).
+
+- **Slices 5–6** — ⬜ pending (scoped search matchedContexts + remaining shared-modal call sites version-aware;
   auth Journey B–H real-stack).
 - **Session gates (real, merged HEAD `2cd948f8`)** — full `PEMS.IntegrationTests` **385/385** on disposable
   `pems_it_regression` (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`; appsettings trap-restored

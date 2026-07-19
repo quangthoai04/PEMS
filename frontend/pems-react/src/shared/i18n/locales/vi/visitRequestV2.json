@@ -140,6 +140,29 @@
     "instanceStatus": "Trạng thái cơ sở",
     "none": "—"
   },
+  "amend": {
+    "open": "Đề xuất thay đổi",
+    "title": "Đề xuất thay đổi — {{campus}}",
+    "activeStaysNote": "Nội dung đang hiệu lực không thay đổi cho tới khi Staff Leader duyệt đề xuất.",
+    "reason": "Lý do đề xuất",
+    "submit": "Gửi đề xuất",
+    "errAlreadyPending": "Cơ sở này đã có một đề xuất đang chờ duyệt. Vui lòng chờ xử lý hoặc rút đề xuất hiện tại.",
+    "errWindowExpired": "Lịch thăm bắt đầu trong vòng 24 giờ nên không thể tự đề xuất thay đổi. Vui lòng liên hệ FPTU.",
+    "errNotEditable": "Cơ sở này hiện không thể đề xuất thay đổi.",
+    "errConflict": "Dữ liệu đã thay đổi từ lúc bạn mở. Vui lòng tải lại và thử lại.",
+    "errGeneric": "Không thể gửi đề xuất. Vui lòng thử lại."
+  },
+  "safeEdit": {
+    "open": "Sửa nhanh",
+    "title": "Sửa nhanh (áp dụng ngay)",
+    "applyNowNote": "Các chỉnh sửa hành chính/quyền riêng tư được áp dụng ngay, không cần duyệt.",
+    "emailImmutable": "Email tài khoản không thể đổi tại đây.",
+    "conflict": "Dữ liệu đã thay đổi từ lúc bạn mở. Vui lòng tải lại và thử lại.",
+    "reload": "Tải lại",
+    "appliedCount": "Đã áp dụng {{count}} thay đổi.",
+    "errGeneric": "Không thể lưu thay đổi. Vui lòng thử lại.",
+    "save": "Lưu thay đổi"
+  },
   "common": {
     "cancel": "Hủy"
   },

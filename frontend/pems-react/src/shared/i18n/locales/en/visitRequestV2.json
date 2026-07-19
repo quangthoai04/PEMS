@@ -140,6 +140,29 @@
     "instanceStatus": "Campus status",
     "none": "—"
   },
+  "amend": {
+    "open": "Propose change",
+    "title": "Propose a change — {{campus}}",
+    "activeStaysNote": "The active content stays unchanged until a Staff Leader approves the proposal.",
+    "reason": "Reason for the change",
+    "submit": "Submit proposal",
+    "errAlreadyPending": "This campus already has a pending proposal. Please wait for it or withdraw the current one.",
+    "errWindowExpired": "The visit starts within 24 hours, so self-service changes are closed. Please contact FPTU.",
+    "errNotEditable": "This campus cannot accept a change proposal right now.",
+    "errConflict": "The data changed since you opened this. Please reload and try again.",
+    "errGeneric": "Could not submit the proposal. Please try again."
+  },
+  "safeEdit": {
+    "open": "Quick edit",
+    "title": "Quick edit (applies immediately)",
+    "applyNowNote": "Administrative / privacy corrections apply immediately, no approval needed.",
+    "emailImmutable": "The account email cannot be changed here.",
+    "conflict": "The data changed since you opened this. Please reload and try again.",
+    "reload": "Reload",
+    "appliedCount": "Applied {{count}} change(s).",
+    "errGeneric": "Could not save the changes. Please try again.",
+    "save": "Save changes"
+  },
   "common": {
     "cancel": "Cancel"
   },
