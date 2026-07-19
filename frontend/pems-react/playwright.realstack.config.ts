@@ -21,7 +21,9 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: `http://localhost:${FRONTEND_PORT}`,
-    trace: 'retain-on-failure',
+    // Trace/HAR are OFF: authenticated specs inject the run secret as a request header and a trace would
+    // persist it to disk. Screenshots carry no request headers, so they stay on for failure triage.
+    trace: 'off',
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

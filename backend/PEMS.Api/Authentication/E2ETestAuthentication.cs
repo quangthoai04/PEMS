@@ -62,7 +62,8 @@ public sealed record E2ETestProfile(
     string? SubRole = null,
     ulong? PrimaryCampusId = null,
     ulong? DepartmentId = null,
-    string? Email = null);
+    string? Email = null,
+    ulong? SessionId = null);
 
 /// <summary>
 /// Loads the E2E profiles from the JSON file at <see cref="E2ETestAuthGate.ProfilesEnvVar"/> (written by the
@@ -160,6 +161,9 @@ public sealed class E2ETestAuthHandler : AuthenticationHandler<AuthenticationSch
         if (profile.PrimaryCampusId is { } campus) claims.Add(new(PemsClaimTypes.PrimaryCampusId, campus.ToString()));
         if (profile.DepartmentId is { } dept) claims.Add(new(PemsClaimTypes.DepartmentId, dept.ToString()));
         if (!string.IsNullOrWhiteSpace(profile.Email)) claims.Add(new(PemsClaimTypes.Email, profile.Email!));
+        // The SessionValidationMiddleware needs an active session bound to the user; the orchestration
+        // seeds one and puts its id here so the E2E actor is validated exactly like a logged-in user.
+        if (profile.SessionId is { } session) claims.Add(new(PemsClaimTypes.SessionId, session.ToString()));
 
         var identity = new ClaimsIdentity(claims, E2ETestAuthGate.SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), E2ETestAuthGate.SchemeName);
