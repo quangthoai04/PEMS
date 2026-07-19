@@ -8,7 +8,7 @@ import {
   Upload, Image as ImageIcon, Sparkles, User, Tag, 
   FileText, Link2, Globe, CheckCircle2, AlertCircle, 
   ArrowRight, FolderOpen, ExternalLink, RefreshCw, 
-  Search, Check, Trash2, Camera, Plus, Minimize2, ZoomIn, X
+  Search, Check, Trash2, Camera, Plus, Minimize2, ZoomIn, X, Star, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +16,9 @@ import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { VisitNewsSection } from './VisitNewsSection';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { GeneralExpensePanel } from './GeneralExpensePanel';
+import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
+import { useVisitFeedback } from '../../../features/feedbacks/hooks/useVisitFeedback';
+import { FeedbackGroupSection } from '../../../features/feedbacks/components/FeedbackGroupSection';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
@@ -51,6 +54,154 @@ const PRESET_PHOTOS = [
   }
 ];
 
+// Helper cho collapse header
+function CollapsibleSection({ 
+  number, 
+  title, 
+  subtitle, 
+  children, 
+  defaultExpanded = true,
+  rightElement
+}: { 
+  number: string | number; 
+  title: React.ReactNode; 
+  subtitle?: string; 
+  children: React.ReactNode; 
+  defaultExpanded?: boolean;
+  rightElement?: React.ReactNode;
+}) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div 
+        className="flex items-center justify-between px-5 py-3.5 bg-[#004c91] text-white cursor-pointer select-none transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3">
+          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black text-white shrink-0">
+            {number}
+          </span>
+          <div>
+            <h2 className="text-sm font-bold tracking-tight uppercase flex items-center gap-2">{title}</h2>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {rightElement}
+          <div className="p-1 hover:bg-white/10 rounded-md transition-colors text-white">
+            <svg className={`w-5 h-5 transform transition-transform ${!isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+      {isExpanded && (
+        <div className="bg-white">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VisitFeedbackInlineSection({ 
+  visitInstanceId, 
+  onOpenModal 
+}: { 
+  visitInstanceId: number; 
+  onOpenModal: () => void; 
+}) {
+  const { data, loading, loadError } = useVisitFeedback(visitInstanceId);
+  
+  if (loading) {
+    return (
+      <CollapsibleSection number="3" title="Đánh giá chuyến thăm" subtitle="Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.">
+        <div className="p-4 sm:p-5 flex justify-center text-gray-500 py-10">
+          <Loader2 className="w-5 h-5 animate-spin" />
+        </div>
+      </CollapsibleSection>
+    );
+  }
+  
+  if (loadError || !data) {
+    return (
+      <CollapsibleSection number="3" title="Đánh giá chuyến thăm" subtitle="Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.">
+        <div className="p-4 sm:p-5">
+          <div className="bg-slate-50 rounded-xl border border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-800">Hãy dành chút thời gian đánh giá chất lượng phục vụ của chuyến thăm</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenModal}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3.5 py-1.5 text-xs font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
+            >
+              <Star className="w-3.5 h-3.5" /> Đánh giá ngay
+            </button>
+          </div>
+        </div>
+      </CollapsibleSection>
+    );
+  }
+  
+  if (data.alreadySubmittedAllRequired) {
+    let runningIndex = 1;
+    return (
+      <CollapsibleSection number="3" title="Đánh giá chuyến thăm" subtitle="Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.">
+        <div className="p-4 sm:p-5 space-y-4 bg-slate-50 border-t border-gray-100">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+            <Check className="h-4 w-4 shrink-0" />
+            {data.actorType === 'VISITOR' ? 'Bạn đã đánh giá chuyến thăm này.' : 'Bạn đã đánh giá đầy đủ các mục của chuyến thăm này.'}
+          </div>
+          
+          <div className="space-y-2.5 pointer-events-none">
+            {data.groups.map((g) => {
+              const start = runningIndex;
+              runningIndex += g.targets.length;
+              return (
+                <FeedbackGroupSection
+                  key={g.groupCode}
+                  group={g}
+                  startIndex={start}
+                  drafts={{}}
+                  disabled={true}
+                  forceShowComment={data.actorType === 'VISITOR'}
+                  onRate={() => {}}
+                  onChangeComment={() => {}}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </CollapsibleSection>
+    );
+  }
+  
+  return (
+    <CollapsibleSection number="3" title="Đánh giá chuyến thăm" subtitle="Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.">
+      <div className="p-4 sm:p-5">
+        <div className="bg-slate-50 rounded-xl border border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-800">Hãy dành chút thời gian đánh giá chất lượng phục vụ của chuyến thăm</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenModal}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3.5 py-1.5 text-xs font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
+          >
+            <Star className="w-3.5 h-3.5" /> Đánh giá ngay
+          </button>
+        </div>
+      </div>
+    </CollapsibleSection>
+  );
+}
+
 interface VisitAfterTabProps {
   onTourCloseSuccess?: () => void;
   isReadOnly?: boolean;
@@ -63,6 +214,10 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   const { user } = useAuthContext();
   const roleCode = (user?.roleCode || '').toUpperCase();
   const isStudent = roleCode === 'STUDENT' || roleCode === 'VISITOR';
+
+  // Modal đánh giá chuyến thăm — chuyển từ tab Trong tiếp khách sang: chỉ đánh giá ở giai đoạn Sau tiếp khách.
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackRefreshKey, setFeedbackRefreshKey] = useState(0);
 
   // Part 1: Images state
   const [uploadedImages, setUploadedImages] = useState<Array<{
@@ -299,32 +454,35 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
       {/* Ký trả tài sản hậu cần — phần đầu tiên của tab Sau tiếp khách (real handover API). */}
       {visitInstanceId && !isStudent && (
-        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="RETURN" />
+        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="RETURN" sectionNumber="1" theme="blue" />
       )}
 
       {/* Chi phí chung (General Expense) */}
       {visitInstanceId && !isStudent && !isDept && (
-        <GeneralExpensePanel visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} />
+        <GeneralExpensePanel visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} sectionNumber="2" />
       )}
 
-      {/* SECTION 1: PHOTO ALBUM & FACE SCANNING */}
-      <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-        
-        {/* Title layer with traditional blue background */}
-        <div className="bg-[#004c91] p-6 sm:p-8 text-white flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black text-white">1</span>
-              <h2 className="text-xl font-bold text-white">Lưu trữ ảnh của đoàn khách</h2>
-            </div>
-            <p className="text-xs text-blue-100/80 mt-1 pl-11 font-medium">
-              Bắt buộc tải lên tối thiểu 1 ảnh thực tế diễn ra tiếp khách (với mọi đoàn không có media) để lưu trữ minh chứng.
-            </p>
-          </div>
-        </div>
+      {/* Đánh giá chuyến thăm — chuyển từ tab Trong tiếp khách sang đây: đánh giá được thực hiện
+          sau khi Host đã xác nhận kết thúc tiếp khách (instance ở AFTER_VISIT trở đi). */}
+      {visitInstanceId && !isStudent && !isDept && (
+        <VisitFeedbackInlineSection 
+          key={`feedback-${feedbackRefreshKey}`}
+          visitInstanceId={visitInstanceId} 
+          onOpenModal={() => setIsFeedbackModalOpen(true)} 
+        />
+      )}
 
-        {/* Content area */}
-        <div className="p-6 sm:p-8 space-y-8">
+      {/* Modal đánh giá — mở tại chỗ trong Visit Process */}
+      <VisitFeedbackModal
+        open={isFeedbackModalOpen}
+        visitInstanceId={visitInstanceId ?? null}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        onSubmitted={() => setFeedbackRefreshKey(prev => prev + 1)}
+      />
+
+      {/* SECTION 4: PHOTO ALBUM & FACE SCANNING */}
+      <CollapsibleSection number="4" title="Lưu trữ ảnh của đoàn khách" subtitle="Bắt buộc tải lên tối thiểu 1 ảnh thực tế diễn ra tiếp khách (với mọi đoàn không có media) để lưu trữ minh chứng.">
+        <div className="p-4 sm:p-6 md:p-8 space-y-8">
 
           {/* SUBSECTION 1: GOOGLE DRIVE */}
           <div className="space-y-4">
@@ -716,37 +874,22 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
               </div>
             )}
           </div>
-
-        </div>
-        
           </div>
-            </>
-          )}
-
-      </div>
-
+        </div>
+      </>
+    )}
     </div>
+  </CollapsibleSection>
 
-      {/* SECTION 2: NEWS — bản thật (backend, nhiều bài/instance) khi có visitInstanceId; nếu không, dùng mock cũ */}
+      {/* SECTION 5: NEWS */}
       {visitInstanceId ? (
-        <VisitNewsSection visitInstanceId={visitInstanceId} />
+        <VisitNewsSection visitInstanceId={visitInstanceId} sectionNumber="5" />
       ) : (
-      <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden">
-
-        {/* Title layout with traditional blue background */}
-        <div className="bg-[#004c91] p-6 sm:p-8 text-white flex justify-start items-center gap-3">
-          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black text-white">2</span>
-          <div>
-            <h2 className="text-xl font-bold text-white">{isDept ? 'Tin tức đoàn khách' : 'Tạo tin tức'}</h2>
-            <p className="text-xs text-blue-100/80 mt-1 font-medium">{isDept ? 'Bài viết truyền thông về hoạt động tiếp khách' : 'Tạo tin tức dựa trên biên bản cuộc họp'}</p>
-          </div>
-        </div>
-
-        {/* Content area */}
-        <div className="p-4 sm:p-6 md:p-8 text-center flex flex-col items-center justify-center space-y-4">
-          <p className="text-sm font-semibold text-gray-500 max-w-lg font-sans">
-            {isDept ? 'Xem chi tiết bài viết truyền thông đã được đăng lên hệ thống tin tức.' : 'Ấn nút bên dưới để chuyển sang tạo tin tức'}
-          </p>
+        <CollapsibleSection number="5" title={isDept ? 'Tin tức đoàn khách' : 'Tạo tin tức'} subtitle={isDept ? 'Bài viết truyền thông về hoạt động tiếp khách' : 'Tạo tin tức dựa trên biên bản cuộc họp'}>
+          <div className="p-4 sm:p-6 md:p-8 text-center flex flex-col items-center justify-center space-y-4">
+            <p className="text-sm font-semibold text-gray-500 max-w-lg font-sans">
+              {isDept ? 'Xem chi tiết bài viết truyền thông đã được đăng lên hệ thống tin tức.' : 'Ấn nút bên dưới để chuyển sang tạo tin tức'}
+            </p>
           {!isDept && (
             <div className="my-2 px-4 py-3 bg-[#e8f5e9]/70 border-l-4 border-[#00a651] rounded-r-xl max-w-xl text-left shadow-sm">
               <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
@@ -799,8 +942,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
             </button>
            )}
         </div>
-
-      </div>
+        </CollapsibleSection>
       )}
 
       {/* ACTION BLOCK: chỉ còn nút thông tin "Lưu ý". Việc đóng đoàn (AFTER_VISIT → CLOSED) được

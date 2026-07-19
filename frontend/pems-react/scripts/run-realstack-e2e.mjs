@@ -17,15 +17,18 @@
  * MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_PORT.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
-const HERE = resolve(new URL('.', import.meta.url).pathname);
+// fileURLToPath (NOT new URL(...).pathname) so a repo path with spaces/drive letter resolves correctly.
+const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..', '..');            // …/PEMS
 const API_PROJ = join(REPO, 'backend', 'PEMS.Api', 'PEMS.Api.csproj');
-const MASTER = join(REPO, 'docs', 'database', 'scripts', 'pems_full_v10_TTS_Gallery_FULL_UPDATED_NOTIFICATIONS_FIXED.sql');
+const MASTER = join(REPO, 'docs', 'database', 'scripts', 'PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql');
 
 const DB = process.env.PEMS_E2E_DB ?? 'pems_e2e_realstack';
 const API_PORT = process.env.PEMS_E2E_API_PORT ?? '5299';
@@ -44,6 +47,10 @@ if (['pems_db', 'pems_test', 'pems_pr3_test'].includes(DB)) {
 const workDir = mkdtempSync(join(tmpdir(), 'pems-e2e-'));
 const publishDir = join(workDir, 'api');
 const inbox = join(workDir, 'inbox.jsonl');
+// Fail-closed E2E test-auth: a fresh run-scoped secret (never on disk, never logged) + a server-side profile
+// file (opaque keys → seeded identities, NO secret) written under the temp workDir and deleted in cleanup.
+const authSecret = randomBytes(32).toString('hex');
+const profileFile = join(workDir, 'e2e-auth-profiles.json');
 const conn = `server=${MYSQL_HOST};port=${MYSQL_PORT};database=${DB};user=${MYSQL_USER};password=${MYSQL_PW};AllowUserVariables=True;GuidFormat=None`;
 let backend = null;
 
@@ -60,6 +67,51 @@ const importMaster = () => {
   if (r.status !== 0) throw new Error(`master import failed: ${r.stderr}`);
 };
 
+// Resolve the seeded identities (by stable email) and write the opaque-key → identity profile file. The
+// browser only ever sends a profile KEY + the run secret; role/campus come from HERE, never a header.
+const writeAuthProfiles = () => {
+  const q = spawnSync(MYSQL, [`-u${MYSQL_USER}`, `-p${MYSQL_PW}`, `-h${MYSQL_HOST}`, `-P${MYSQL_PORT}`,
+    '-N', '-B', '--default-character-set=utf8mb4', DB, '-e',
+    "SELECT u.user_id, u.email, r.role_code, COALESCE(u.sub_role,''), COALESCE(u.primary_campus_id,'') " +
+    "FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.email IN " +
+    "('ho@fpt.edu.vn','staff.leader.hn@fpt.edu.vn','staff.leader.hcm@fpt.edu.vn','visitor@example.com')"],
+    { encoding: 'utf8' });
+  if (q.status !== 0) throw new Error(`auth profile seed query failed: ${q.stderr}`);
+  const byEmail = {};
+  for (const line of q.stdout.trim().split('\n').filter(Boolean)) {
+    const [userId, email, roleCode, subRole, campus] = line.split('\t');
+    byEmail[email] = {
+      userId: Number(userId), email, roleCode,
+      subRole: subRole || null, primaryCampusId: campus ? Number(campus) : null,
+    };
+  }
+  const pick = (key, email) => {
+    const p = byEmail[email];
+    if (!p) throw new Error(`E2E seed user not found (fail-closed): ${email}`);
+    return { key, ...p };
+  };
+  const profiles = [
+    pick('ho_viewer', 'ho@fpt.edu.vn'),
+    pick('campus_leader_hn', 'staff.leader.hn@fpt.edu.vn'),
+    pick('campus_leader_hcm', 'staff.leader.hcm@fpt.edu.vn'),
+    pick('visitor_owner', 'visitor@example.com'),
+  ];
+  // Seed an ACTIVE session per profile so the real SessionValidationMiddleware accepts the E2E actor exactly
+  // like a logged-in user (no production middleware bypass). login_portal follows the account kind.
+  for (const p of profiles) {
+    const portal = p.roleCode === 'VISITOR' ? 'VISITOR' : 'INTERNAL';
+    const ins = mysql(
+      `INSERT INTO user_sessions (user_id, login_portal, expires_at, created_at) ` +
+      `VALUES (${p.userId}, '${portal}', DATE_ADD(NOW(), INTERVAL 1 DAY), NOW())`, DB);
+    if (ins.status !== 0) throw new Error(`session seed failed for ${p.email}: ${ins.stderr}`);
+    const s = spawnSync(MYSQL, [`-u${MYSQL_USER}`, `-p${MYSQL_PW}`, `-h${MYSQL_HOST}`, `-P${MYSQL_PORT}`,
+      '-N', '-B', DB, '-e', `SELECT session_id FROM user_sessions WHERE user_id = ${p.userId} ORDER BY session_id DESC LIMIT 1`],
+      { encoding: 'utf8' });
+    p.sessionId = Number(s.stdout.trim());
+  }
+  writeFileSync(profileFile, JSON.stringify(profiles));
+};
+
 const waitHealthy = async (url, timeoutMs) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -73,7 +125,11 @@ const waitHealthy = async (url, timeoutMs) => {
 };
 
 const run = (cmd, args, opts = {}) => new Promise((res, rej) => {
-  const p = spawn(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32', ...opts });
+  // On Windows we need shell:true to resolve npx/dotnet (.cmd), but then args with spaces (a repo path like
+  // "SUMMER 2026 Final") must be quoted or MSBuild/npx splits them into separate switches.
+  const useShell = process.platform === 'win32';
+  const finalArgs = useShell ? args.map(a => (/\s/.test(a) ? `"${a}"` : a)) : args;
+  const p = spawn(cmd, finalArgs, { stdio: 'inherit', shell: useShell, ...opts });
   p.on('exit', code => (code === 0 ? res() : rej(new Error(`${cmd} exited ${code}`))));
   p.on('error', rej);
 });
@@ -92,8 +148,14 @@ try {
   mysql(`DROP DATABASE IF EXISTS \`${DB}\`; CREATE DATABASE \`${DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   importMaster();
 
+  console.log('[e2e] write server-side auth profiles from actual seeded IDs');
+  writeAuthProfiles();
+
   console.log('[e2e] publish backend');
-  await run('dotnet', ['publish', API_PROJ, '-c', 'Debug', '-o', publishDir, '--nologo', '-v', 'q']);
+  // Build intermediates to a temp BaseOutputPath so a running dev server holding the repo bin/ lock never
+  // blocks the publish (lets the harness run alongside `dotnet run` on another port).
+  await run('dotnet', ['publish', API_PROJ, '-c', 'Debug', '-o', publishDir, '--nologo', '-v', 'q',
+    `-p:BaseOutputPath=${join(workDir, 'binout')}\\`]);
 
   console.log(`[e2e] start backend on :${API_PORT} (Testing, flags ON, sink)`);
   writeFileSync(inbox, '');
@@ -111,6 +173,10 @@ try {
       Smtp__Enabled: 'false',
       PEMS_E2E_TEST_SINK_ENABLED: 'true',
       PEMS_E2E_TEST_SINK_PATH: inbox,
+      // Fail-closed test-auth (four gates): Testing env + explicit flag + run secret + profile file.
+      PEMS_E2E_TEST_AUTH_ENABLED: 'true',
+      PEMS_E2E_TEST_AUTH_SECRET: authSecret,
+      PEMS_E2E_TEST_AUTH_PROFILES: profileFile,
     },
   });
 
@@ -118,13 +184,17 @@ try {
   if (!healthy) throw new Error('backend did not become healthy within 120s');
 
   console.log('[e2e] run real-stack Playwright specs');
-  await run('npx', ['playwright', 'test', '--config', 'playwright.realstack.config.ts'], {
+  // Optional PEMS_E2E_GREP narrows the run to matching titles (debugging a subset); default = full suite.
+  const grepArgs = process.env.PEMS_E2E_GREP ? ['--grep', process.env.PEMS_E2E_GREP] : [];
+  await run('npx', ['playwright', 'test', '--config', 'playwright.realstack.config.ts', ...grepArgs], {
     cwd: join(REPO, 'frontend', 'pems-react'),
     env: {
       ...process.env,
       PEMS_E2E_TEST_SINK_PATH: inbox,
       PEMS_E2E_API_BASE: `http://localhost:${API_PORT}/api`,
       PEMS_E2E_FRONTEND_PORT: FE_PORT,
+      // The specs inject the run secret + a profile key on backend requests (never persisted; never logged).
+      PEMS_E2E_AUTH_SECRET: authSecret,
     },
   });
   exitCode = 0;

@@ -23,6 +23,14 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public string RequestStatus { get; set; } = "";
     public string VisitScope { get; set; } = "";
 
+    // ── Form schema version (per-campus form v2) ──
+    // Exposed so a shared detail surface renders the v2 UI for a v2 request WITHOUT inferring it from
+    // the scope/campus count or waiting for a v1 endpoint to 409. 1 = legacy global, 2 = per-campus.
+    // (A v2 request whose campuses differ throws FORM_VERSION_UPGRADE_REQUIRED before this DTO builds,
+    // so a returned DTO is always either v1 or a uniform v2.)
+    public int FormSchemaVersion { get; set; } = 1;
+    public bool HasMixedCampusDetails { get; set; }
+
     // ── Visit info ──
     public string DelegationName { get; set; } = "";
     public string? VisitType { get; set; }

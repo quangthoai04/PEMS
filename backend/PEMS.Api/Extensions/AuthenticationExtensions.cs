@@ -1,25 +1,37 @@
 using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using PEMS.Api.Authentication;
 using PEMS.Application.Common.Security;
 
 namespace PEMS.Api.Extensions;
 
 public static class AuthenticationExtensions
 {
-    /// <summary>Configures JWT bearer authentication from the JwtSettings section.</summary>
-    public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
+    /// <summary>
+    /// Configures JWT bearer authentication from the JwtSettings section. When (and only when) the fail-closed
+    /// E2E gate is fully open (Testing env + explicit flag + secret + profile file — see
+    /// <see cref="E2ETestAuthGate.IsEnabledFor"/>), it ALSO registers the server-side-profile test scheme and
+    /// makes it the default authenticate/challenge scheme for the run. In Development/Production the gate is
+    /// closed, so JWT stays the only scheme and the test handler/profile store are never registered.
+    /// </summary>
+    public static IServiceCollection AddJwtAuthentication(
+        this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         var jwt = configuration.GetSection("JwtSettings");
         var secretKey = jwt["SecretKey"]
             ?? throw new InvalidOperationException("JwtSettings:SecretKey is not configured.");
 
-        services
+        var e2eEnabled = E2ETestAuthGate.IsEnabledFor(environment.EnvironmentName);
+        var defaultScheme = e2eEnabled ? E2ETestAuthGate.SchemeName : JwtBearerDefaults.AuthenticationScheme;
+
+        var authBuilder = services
             .AddAuthentication(options =>
             {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultAuthenticateScheme = defaultScheme;
+                options.DefaultChallengeScheme = defaultScheme;
             })
             .AddJwtBearer(options =>
             {
@@ -68,6 +80,13 @@ public static class AuthenticationExtensions
                     }
                 };
             });
+
+        // Fail-closed: the test scheme + its server-side profile store exist ONLY when the gate is open.
+        if (e2eEnabled)
+        {
+            services.AddSingleton<E2ETestProfileStore>();
+            authBuilder.AddScheme<AuthenticationSchemeOptions, E2ETestAuthHandler>(E2ETestAuthGate.SchemeName, _ => { });
+        }
 
         return services;
     }

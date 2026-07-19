@@ -159,6 +159,7 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
         var req = await SeedV1(db, new[] { Campus1 });
         var dto = await Run(db, Owner(), req.VisitRequestId);
 
+        Assert.Equal(1, dto.FormSchemaVersion); // exposed so a shared detail surface stays on v1 UI
         Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
         Assert.Equal("GLOBAL-PURPOSE", dto.Purpose);
         Assert.Equal("GLOBAL-CONTENT", dto.WorkingContent);
@@ -198,6 +199,8 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
         var (req, _) = await SeedV2(db, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, Owner(), req.VisitRequestId);
 
+        // A uniform v2 request LOOKS flat but must drive the v2 UI — the version says so, not the scope.
+        Assert.Equal(2, dto.FormSchemaVersion);
         Assert.Equal("V2-DELEG", dto.DelegationName);      // per-campus detail
         Assert.NotEqual("GLOBAL-DELEG", dto.DelegationName); // never the global field
         Assert.Equal("V2-PURPOSE", dto.Purpose);

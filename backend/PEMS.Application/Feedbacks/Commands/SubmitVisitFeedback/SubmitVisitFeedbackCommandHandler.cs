@@ -47,7 +47,7 @@ public sealed class SubmitVisitFeedbackCommandHandler
         var actorType = FeedbackEligibility.ActorTypeOf(userId, visitRequest, instance)
             ?? throw new ForbiddenException("Bạn không có quyền đánh giá chuyến thăm này.");
         if (!FeedbackEligibility.IsInstanceStatusEligible(instance.Status))
-            throw new BusinessRuleException("Chỉ đánh giá được khi chuyến thăm đang diễn ra hoặc đã hoàn tất.");
+            throw new BusinessRuleException("Chỉ đánh giá được sau khi Host xác nhận kết thúc tiếp khách.");
 
         // Actor may only submit feedback types of their role (chk_feedbacks_flow).
         foreach (var item in request.Items)

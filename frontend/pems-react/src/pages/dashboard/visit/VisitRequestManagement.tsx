@@ -21,7 +21,11 @@ import {
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
+import SearchMatchContexts from '../../../features/visit-request/components/SearchMatchContexts';
 import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
+import { usePerCampusV2Capability } from '../../../shared/features/perCampusV2Capability';
+import { resolveAuthenticatedCreateEntry } from '../../../shared/features/perCampusV2Entry';
+import { resolveVisitRowRoutes } from '../../../features/visit-request/utils/visitVersionRouting';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
 import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
@@ -205,6 +209,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Default create-entry cutover: route to the v2 create page when the capability is enabled,
+  // otherwise open the v1 authenticated create popup. Fail-safe to v1 while loading / on error.
+  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
+  const handleCreateVisitRequest = () => {
+    const entry = resolveAuthenticatedCreateEntry(v2Enabled);
+    if (entry.kind === 'v2-route') navTo(entry.to);
+    else setShowCreateModal(true);
+  };
+
   const filterConfig = getVisitRequestFilterConfig({
     roleCode,
     subRole,
@@ -327,7 +340,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Modals
   const [requestForm, setRequestForm] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
-  const openRequestForm = (row: Row) => setRequestForm({ open: true, row });
+  // Version-aware detail: a v2 request (mixed or not) opens the per-campus v2 detail route; the flat
+  // modal (which cannot represent mixed per-campus content) is used only for legacy v1 requests.
+  const openRequestForm = (row: Row) => {
+    const routes = resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion);
+    if (routes.detailRoute) { navTo(routes.detailRoute); return; }
+    setRequestForm({ open: true, row });
+  };
   // "Xem đơn đăng ký tham quan trước khi duyệt" — read-only review of a PENDING_APPROVAL row.
   const [review, setReview] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [reason, setReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
@@ -362,7 +381,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   // Feedback rule mới: map visitInstanceId → trạng thái đánh giá của user hiện tại.
-  // Backend trả các instance user là Visitor/Host và đang DURING_VISIT/AFTER_VISIT/CLOSED;
+  // Backend trả các instance user là Visitor/Host và đã kết thúc tiếp khách (AFTER_VISIT/CLOSED);
   // dùng để hiện nút "Đánh giá" hoặc badge "Đã đánh giá" ở cột hành động.
   const [feedbackByInstance, setFeedbackByInstance] = useState<Record<number, PendingFeedbackItem>>({});
   useEffect(() => {
@@ -1140,10 +1159,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'approve' }); }} />
         ) : can('EDIT_PENDING_REQUEST') ? (
           <ActionIconButton title="Sửa đơn đăng ký tham quan" tone="blue" icon={<PencilLine className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); navTo(`/dashboard/visit/edit/${row.visitRequestId}`); }} />
+            onClick={(e) => { e.stopPropagation(); navTo(resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion).edit); }} />
         ) : can('RESUBMIT_REJECTED_REQUEST') ? (
           <ActionIconButton title="Sửa & gửi lại đơn" tone="orange" icon={<RefreshCw className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); navTo(`/dashboard/visit/resubmit/${row.visitRequestId}`); }} />
+            onClick={(e) => { e.stopPropagation(); navTo(resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion).resubmit); }} />
         ) : can('ACCEPT_INVITATION') ? (
           <ActionIconButton title="Xác nhận tham gia" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); submitAcceptInvitation(row); }} />
@@ -1186,6 +1205,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // ── Multi-campus accordion (Phương án A): per-campus progress + actions ──
   const openCampusRequestForm = (row: Row, item?: CampusProgressItem) => {
+    // v2 (mixed or not): the flat modal cannot represent per-campus content — open the scoped v2 detail.
+    const routes = resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion);
+    if (routes.detailRoute) { navTo(routes.detailRoute); return; }
     const campusRow = {
       ...row,
       campus: item?.campusName || row.campus || '-',
@@ -1443,8 +1465,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <div className="flex shrink-0 flex-wrap items-center gap-3 w-full md:w-auto">
               {canCreateVisitRequest && (
                 <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-[#F37021]/50 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto"
+                  onClick={handleCreateVisitRequest}
+                  disabled={v2Status === 'loading'}
+                  aria-busy={v2Status === 'loading'}
+                  className="flex items-center justify-center gap-2 bg-[#F37021] hover:bg-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-[#F37021]/50 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors whitespace-nowrap w-full md:w-auto disabled:opacity-70 disabled:cursor-wait"
                 >
                   <Plus className="w-5 h-5" /> Tạo đoàn khách
                 </button>
@@ -1582,7 +1606,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Tìm kiếm</label>
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 shrink-0" />
-              <input type="text" placeholder="Tìm tên đoàn, host, đối tác..." value={draftFilters.keyword}
+              <input type="text" data-testid="visit-search-input" placeholder="Tìm tên đoàn, host, đối tác..." value={draftFilters.keyword}
                 onChange={(e) => {
                   const val = e.target.value;
                   setDraftFilters({ ...draftFilters, keyword: val });
@@ -1808,6 +1832,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                         </p>
                       )}
                       {renderBadges(row)}
+                      <SearchMatchContexts contexts={row.matchedContexts} />
                       {row.canExpandCampuses && (
                         <button
                           type="button"

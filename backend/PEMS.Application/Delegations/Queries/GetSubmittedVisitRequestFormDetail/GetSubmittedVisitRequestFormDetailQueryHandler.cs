@@ -372,6 +372,8 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             EmailVerifiedAt = visitRequest.EmailVerifiedAt,
             RequestStatus = status,
             VisitScope = visitRequest.VisitScope,
+            FormSchemaVersion = visitRequest.FormSchemaVersion,
+            HasMixedCampusDetails = visitRequest.HasMixedCampusDetails,
 
             DelegationName = delegationName,
             VisitType = visitType,

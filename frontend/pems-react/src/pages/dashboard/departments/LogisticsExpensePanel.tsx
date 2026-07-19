@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Save, Trash2, DollarSign, CheckCircle2, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import visitExpenseService, { VisitExpenseReport, SaveExpenseReportCommand, SaveExpenseItemDto } from '../../../services/visit-expense.service';
+import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 
 interface Props {
   logisticsItemId: number;
@@ -23,6 +24,7 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<SaveExpenseItemDto[]>([]);
   const [reportNote, setReportNote] = useState('');
+  const [confirmNoExpensePopup, setConfirmNoExpensePopup] = useState(false);
 
   const fetchReport = async () => {
     try {
@@ -107,8 +109,12 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
     void doSave(false, items);
   };
 
-  const handleNoExpense = () => {
-    if (!window.confirm('Xác nhận đơn yêu cầu này KHÔNG phát sinh chi phí? Đơn giá các dòng sẽ được đưa về 0.')) return;
+  const handleNoExpenseClick = () => {
+    setConfirmNoExpensePopup(true);
+  };
+
+  const confirmNoExpense = () => {
+    setConfirmNoExpensePopup(false);
     const zeroed = items
       .filter(i => i.itemOrigin === 'REQUEST_ITEM' || i.itemName.trim())
       .map(i => ({ ...i, unitPrice: 0 }));
@@ -246,7 +252,7 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
               placeholder="Ghi chú (không bắt buộc)..."
               className="flex-1 min-w-[140px] px-2.5 py-1.5 text-[11px] rounded-lg border border-slate-200 outline-none focus:border-[#004c91] transition-shadow placeholder-slate-400"
             />
-            <button type="button" onClick={handleNoExpense} disabled={saving}
+            <button type="button" onClick={handleNoExpenseClick} disabled={saving}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-bold rounded-lg border border-slate-300 transition-colors cursor-pointer outline-none disabled:opacity-50">
               <Ban className="w-3.5 h-3.5" /> Không có chi phí
             </button>
@@ -257,6 +263,16 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmNoExpensePopup}
+        onClose={() => setConfirmNoExpensePopup(false)}
+        onConfirm={confirmNoExpense}
+        title="Xác nhận Không có chi phí"
+        message="Xác nhận đơn yêu cầu này KHÔNG phát sinh chi phí? Đơn giá các dòng sẽ được đưa về 0."
+        variant="warning"
+        confirmText="Xác nhận"
+      />
     </div>
   );
 }

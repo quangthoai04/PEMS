@@ -187,6 +187,33 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    [Fact]
+    public async Task Resolved_campus_rowversion_is_the_instance_token_not_the_form_detail()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        // Simulate a campus-approve: the CAMPUS INSTANCE row_version is bumped, the form-detail's is not.
+        // The read model must surface the instance token — that is what pending-edit / safe-edit / amendment
+        // all check against — so a safe-edit/amendment on a freshly-loaded ASSIGNED detail never 409s. (Caught
+        // by the real-stack member-amendment journey: exposing the form-detail version here 409'd the submit.)
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instances[0].VisitInstanceId);
+        instance.RowVersion += 5;
+        await db.SaveChangesAsync();
+        var detail = await db.VisitInstanceFormDetails.AsNoTracking()
+            .SingleAsync(d => d.VisitInstanceId == instances[0].VisitInstanceId);
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var campus = Assert.Single(dto.CampusVisits);
+        Assert.Equal(instance.RowVersion, campus.RowVersion);   // the instance token the write paths check
+        Assert.NotEqual(detail.RowVersion, campus.RowVersion);  // the diverged form-detail version is NOT surfaced
+
+        await tx.RollbackAsync();
+    }
+
     // ── 2. Dual-read v1 ───────────────────────────────────────────────────────
 
     [Fact]
@@ -359,6 +386,137 @@ public sealed class PerCampusFormV2ReadTests
         await Assert.ThrowsAsync<ForbiddenException>(
             () => Resolver(db, Unrelated()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
         await tx.RollbackAsync();
+    }
+
+    // ── 5. allowedActions (mirror the command-handler authorization) ─────────
+
+    [Fact]
+    public async Task Owner_pending_request_offers_edit_and_safe_edit_not_amendment()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false); // instance WAITING_REQUEST_APPROVAL
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        Assert.Contains(VisitFormActions.EditPendingRequest, dto.Viewer.AllowedActions);
+        Assert.Contains(VisitFormActions.SubmitSafeEdit, dto.Viewer.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.ResubmitRejectedRequest, dto.Viewer.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.SubmitAmendment, dto.CampusVisits.Single().AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Owner_assigned_instance_offers_submit_amendment()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1); // ASSIGNED, +20d
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var campus = dto.CampusVisits.Single();
+        Assert.Contains(VisitFormActions.SubmitAmendment, campus.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.WithdrawAmendment, campus.AllowedActions); // no pending amendment
+        Assert.Contains(VisitFormActions.SubmitSafeEdit, dto.Viewer.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Pending_amendment_moves_owner_to_withdraw_and_leader_to_decide()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+        await SeedPendingAmendmentAsync(db, req.VisitRequestId, instances[0].VisitInstanceId);
+
+        var ownerCampus = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .CampusVisits.Single();
+        Assert.Contains(VisitFormActions.WithdrawAmendment, ownerCampus.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.SubmitAmendment, ownerCampus.AllowedActions);  // one pending only
+        Assert.DoesNotContain(VisitFormActions.ApproveAmendment, ownerCampus.AllowedActions); // owner never decides
+
+        var leaderCampus = (await Resolver(db, StaffLeader(SlCampus1, Campus1)).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .CampusVisits.Single();
+        Assert.Contains(VisitFormActions.ApproveAmendment, leaderCampus.AllowedActions);
+        Assert.Contains(VisitFormActions.RejectAmendment, leaderCampus.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.WithdrawAmendment, leaderCampus.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Leader_of_other_campus_cannot_decide_sibling_amendment()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true, host0: IcStaffC1);
+        await SeedPendingAmendmentAsync(db, req.VisitRequestId, instances[0].VisitInstanceId); // campus1
+
+        // Leader of campus2 sees ONLY campus2 (campus1 hidden) → can never approve campus1's amendment.
+        var dtoB = await Resolver(db, StaffLeader(SlCampus2, Campus2)).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var only = Assert.Single(dtoB.CampusVisits);
+        Assert.Equal((long)Campus2, only.CampusId);
+        Assert.DoesNotContain(VisitFormActions.ApproveAmendment, only.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Ho_gets_only_view_and_no_instance_actions()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+        await SeedPendingAmendmentAsync(db, req.VisitRequestId, instances[0].VisitInstanceId);
+
+        var dto = await Resolver(db, Ho()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.True(dto.Viewer.IsReadOnly);
+        Assert.Equal(new[] { VisitFormActions.View }, dto.Viewer.AllowedActions);
+        Assert.Empty(dto.CampusVisits.Single().AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Rejected_request_offers_resubmit_not_edit()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var entity = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == req.VisitRequestId);
+        entity.Status = "REJECTED";
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.Contains(VisitFormActions.ResubmitRejectedRequest, dto.Viewer.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.EditPendingRequest, dto.Viewer.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    private static async Task SeedPendingAmendmentAsync(ApplicationDbContext db, ulong requestId, ulong instanceId)
+    {
+        db.VisitInstanceAmendments.Add(new VisitInstanceAmendment
+        {
+            VisitRequestId = requestId,
+            VisitInstanceId = instanceId,
+            AmendmentNo = 1,
+            Status = AmendmentStatuses.PendingApproval,
+            BaseFormRevision = 1,
+            BaseApprovalRevision = 1,
+            RequestedBy = VisitorOwner,
+            RequestedAt = DateTime.Now,
+            ExpectedInstanceRowVersion = 0,
+            CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
     }
 
     // ── Seed helpers ──────────────────────────────────────────────────────────

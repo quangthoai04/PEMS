@@ -755,6 +755,16 @@ export interface VisitRequestManagementItem {
   campusStatus: VisitInstanceStatus | null;
   visitScope: VisitScope | null;
 
+  /**
+   * Form schema version from the database: 1 = legacy global form, 2 = per-campus (v2).
+   * Detail/edit/resubmit routing branches on THIS value so a v2 request always opens the v2 UI
+   * without waiting for a v1 endpoint to reply 409 FORM_VERSION_UPGRADE_REQUIRED. Optional so
+   * older cached list payloads (no field) fall back to v1.
+   */
+  formSchemaVersion?: number;
+  /** True when a v2 request stores different content per campus. */
+  hasMixedCampusDetails?: boolean;
+
   campusId: number | null;
   campusName: string | null;
   campusCount: number;
@@ -829,6 +839,26 @@ export interface VisitRequestManagementItem {
   campusProgressItems?: CampusProgressItem[];
 
   allowedActions: AllowedAction[];
+
+  /**
+   * Where the search keyword matched, scoped to the campuses this caller may see (a hidden campus never
+   * appears). Null/absent when there is no keyword. Stable field CODES only — the UI maps them to labels;
+   * no raw matched text or PII is ever sent.
+   */
+  matchedContexts?: SearchMatchContext[] | null;
+}
+
+/** Scope discriminator for a {@link SearchMatchContext}. */
+export type SearchMatchScope = 'REQUEST' | 'CAMPUS';
+
+/** One place a search keyword matched (request-wide, or a specific authorized campus). */
+export interface SearchMatchContext {
+  scope: SearchMatchScope;
+  visitInstanceId?: number | null;
+  campusId?: number | null;
+  campusName?: string | null;
+  /** Stable field codes (REQUEST_CODE, DELEGATION_NAME, CAMPUS, …) mapped to VI/EN labels client-side. */
+  matchedFields: string[];
 }
 
 // ── Submitted visit-request form snapshot ─────────────────────────────────────
@@ -910,6 +940,11 @@ export interface SubmittedVisitRequestFormDetail {
   emailVerifiedAt?: string | null;
   requestStatus: string;
   visitScope: string;
+  /** Per-campus form v2 discriminator from the DB (1 = legacy global, 2 = per-campus). A shared detail
+   * surface renders the v2 UI when this is >= 2 — never inferred from scope/campus count. Optional so
+   * older cached payloads fail safe to v1. */
+  formSchemaVersion?: number;
+  hasMixedCampusDetails?: boolean;
 
   delegationName: string;
   visitType?: string | null;

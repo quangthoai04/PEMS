@@ -348,6 +348,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CampusCancellationSource = x.c.CancellationSource,
                 CampusCancelledBy = x.c.CancelledBy,
                 x.vr.RequestCode,
+                x.vr.FormSchemaVersion,
+                x.vr.HasMixedCampusDetails,
                 DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.vr.DelegationName,
@@ -430,6 +432,29 @@ public sealed class ViewGuestDelegationListQueryHandler
             var cancelledById = r.CampusCancelledBy ?? r.RequestCancelledBy;
             string? cancelledByName = cancelledById.HasValue && userNames.TryGetValue(cancelledById.Value, out var cbn) ? cbn : null;
 
+            // ── Match contexts (instance-level): the authorized campus IS this single row instance, so a
+            // sibling campus can never appear. Fields mirror the instance-level keyword predicate exactly;
+            // the RAW partner name (not the RegistrantOrganization fallback) is tested for PARTNER. ──
+            bool isV2Row = r.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+            string? rawPartnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var rpn) ? rpn : null;
+            var reqMatchFields = new List<VisitSearchMatchContextBuilder.Field>
+            {
+                new(VisitSearchFieldCodes.RequestCode, r.RequestCode),
+                new(VisitSearchFieldCodes.RegistrantOrganization, r.RegistrantOrganization),
+                new(VisitSearchFieldCodes.Partner, rawPartnerName),
+                new(VisitSearchFieldCodes.PrimaryContact, visitorName),
+            };
+            if (!isV2Row) reqMatchFields.Add(new(VisitSearchFieldCodes.DelegationName, r.DelegationName));
+            var campusMatchFields = new List<VisitSearchMatchContextBuilder.Field>
+            {
+                new(VisitSearchFieldCodes.Campus, campusName),
+                new(VisitSearchFieldCodes.Host, hostName),
+            };
+            if (isV2Row) campusMatchFields.Add(new(VisitSearchFieldCodes.DelegationName, r.DelegationName));
+            var matchedContexts = VisitSearchMatchContextBuilder.Build(
+                request.Keyword, reqMatchFields,
+                new[] { new VisitSearchMatchContextBuilder.CampusScope(r.VisitInstanceId, r.CampusId, campusName, campusMatchFields) });
+
             return new VisitRequestManagementItemDto
             {
                 VisitRequestId = r.VisitRequestId,
@@ -437,9 +462,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestCode = r.RequestCode,
                 DelegationName = r.DelegationName,
                 PartnerName = partnerName,
+                MatchedContexts = matchedContexts,
                 RequestStatus = r.RequestStatus,
                 CampusStatus = r.CampusStatus,
                 VisitScope = r.VisitScope,
+                FormSchemaVersion = r.FormSchemaVersion,
+                HasMixedCampusDetails = r.HasMixedCampusDetails,
                 CampusId = r.CampusId,
                 CampusName = campusName,
                 CampusCount = campusCountByRequest.TryGetValue(r.VisitRequestId, out var cc2) ? cc2 : 1,
@@ -621,6 +649,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         var requests = await pageQuery
             .Include(vr => vr.Partner)
             .Include(vr => vr.CampusInstances)
+                .ThenInclude(c => c.FormDetail) // per-campus delegation names for v2 match contexts (all campuses authorized here)
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToListAsync(ct);
@@ -766,11 +795,36 @@ public sealed class ViewGuestDelegationListQueryHandler
                 ? instances.FirstOrDefault(i => i.CurrentHostUserId == userId)
                 : null;
 
+            // ── Match contexts (request-level): Visitor owner / HO / registrant see EVERY campus of their
+            // own request, so iterating all instances leaks nothing. Fields mirror the request-level keyword
+            // predicate exactly (delegation/code/reg-org/partner — NO campus/host/owner name). For v2 the
+            // delegation is per-campus (from FormDetail); for v1 it is the request-level global field. ──
+            bool isV2Req = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+            var reqMatchFields = new List<VisitSearchMatchContextBuilder.Field>
+            {
+                new(VisitSearchFieldCodes.RequestCode, vr.RequestCode),
+                new(VisitSearchFieldCodes.RegistrantOrganization, vr.RegistrantOrganization),
+                new(VisitSearchFieldCodes.Partner, vr.Partner?.Name),
+            };
+            if (!isV2Req) reqMatchFields.Add(new(VisitSearchFieldCodes.DelegationName, vr.DelegationName));
+            var campusMatchScopes = isV2Req
+                ? instances.Select(i => new VisitSearchMatchContextBuilder.CampusScope(
+                        i.VisitInstanceId, i.CampusId,
+                        campusNames.TryGetValue(i.CampusId, out var cnm3) ? cnm3 : null,
+                        new List<VisitSearchMatchContextBuilder.Field>
+                        {
+                            new(VisitSearchFieldCodes.DelegationName, i.FormDetail != null ? i.FormDetail.DelegationName : null),
+                        }))
+                    .ToList()
+                : new List<VisitSearchMatchContextBuilder.CampusScope>();
+            var matchedContexts = VisitSearchMatchContextBuilder.Build(request.Keyword, reqMatchFields, campusMatchScopes);
+
             return new VisitRequestManagementItemDto
             {
                 VisitRequestId = vr.VisitRequestId,
                 VisitInstanceId = single?.VisitInstanceId,
                 RequestCode = vr.RequestCode,
+                MatchedContexts = matchedContexts,
                 // A request-level row cannot represent a MIXED v2 request with one name — the projection
                 // (smallest campus) is never shown as business content; the row is explicitly labeled and
                 // the per-campus names live in the campus progress items/detail view (plan §8.3).
@@ -781,6 +835,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestStatus = vr.Status,
                 CampusStatus = single?.Status,
                 VisitScope = vr.VisitScope,
+                FormSchemaVersion = vr.FormSchemaVersion,
+                HasMixedCampusDetails = vr.HasMixedCampusDetails,
                 CampusId = single?.CampusId,
                 CampusName = campusName,
                 CampusCount = count,

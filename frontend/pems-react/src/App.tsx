@@ -59,7 +59,7 @@ import { VisitPhotoManagement } from './pages/dashboard/visit/VisitPhotoManageme
 import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTasksPage';
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
-import { CreateVisitRequest } from './pages/dashboard/visit/CreateVisitRequest';
+import { CreateVisitRequestEntry } from './pages/dashboard/visit/CreateVisitRequestEntry';
 import { EditVisitRequest } from './pages/dashboard/visit/EditVisitRequest';
 import { VisitFeedbackPage } from './pages/dashboard/visit/VisitFeedbackPage';
 import { FAQManagement } from './pages/dashboard/faq/FAQManagement';
@@ -83,6 +83,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { ProtectedRoute } from './shared/auth/ProtectedRoute';
 import { ErrorBoundary } from './components/layout/ErrorBoundary';
+import { PerCampusV2CapabilityProvider } from './shared/features/perCampusV2Capability';
 
 
 function ScrollToTop() {
@@ -124,6 +125,7 @@ export default function App() {
   const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
 
   return (
+    <PerCampusV2CapabilityProvider>
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
       <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
       <ScrollToTop />
@@ -192,7 +194,7 @@ export default function App() {
             <Route path="visit" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : isDeptLeader ? <DeptLeadVisitTasksPage /> : <VisitRequestManagement />} />
             <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
-            <Route path="visit/create" element={<CreateVisitRequest />} />
+            <Route path="visit/create" element={<CreateVisitRequestEntry />} />
             {/* Visitor sửa đơn pending / sửa & gửi lại đơn bị từ chối (owner-only, backend re-check) */}
             <Route path="visit/edit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/v2/:visitRequestId" element={<VisitRequestV2DetailPage />} />
@@ -229,5 +231,6 @@ export default function App() {
 
       {!isDashboardRoute && <Footer />}
     </div>
+    </PerCampusV2CapabilityProvider>
   );
 }

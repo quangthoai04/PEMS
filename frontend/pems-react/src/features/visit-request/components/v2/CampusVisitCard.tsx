@@ -165,7 +165,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   );
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div data-testid={`campus-edit-card-${campusCode || 'new'}`} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Header — always visible; collapsing hides ONLY the body below */}
       <div className="flex items-center gap-2 p-4">
         <button
@@ -266,7 +266,7 @@ export const CampusVisitCard: React.FC<Props> = ({
         {/* Content */}
         <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
           <FormField label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
-            <input {...register(`${base}.delegationName`)} className={inputCls(!!fieldError('delegationName'), false, false)} />
+            <input data-testid="campus-delegation-input" {...register(`${base}.delegationName`)} className={inputCls(!!fieldError('delegationName'), false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
             <select {...register(`${base}.visitType`)} className={inputCls(!!fieldError('visitType'), false, false)}>

@@ -16,6 +16,18 @@ public sealed class VisitRequestManagementItemDto
 
     public string? VisitScope { get; set; }
 
+    // ── Form version (per-campus v2 routing) ──
+    /// <summary>
+    /// Form schema version of the underlying request: 1 = legacy global form, 2 = per-campus (v2).
+    /// The frontend routes detail/edit/resubmit on THIS value (from the database) — never guessed from
+    /// the mixed flag or campus count — so a v2 request always opens the v2 UI without waiting for a
+    /// v1 endpoint to reply 409 FORM_VERSION_UPGRADE_REQUIRED.
+    /// </summary>
+    public byte FormSchemaVersion { get; set; } = 1;
+
+    /// <summary>True when a v2 request stores different content per campus (drives the "Khác nhau theo cơ sở" label).</summary>
+    public bool HasMixedCampusDetails { get; set; }
+
     public ulong? CampusId { get; set; }
     public string? CampusName { get; set; }
     /// <summary>Number of campus instances on the request (used for the "Liên cơ sở (N)" badge on request-level rows).</summary>
@@ -153,6 +165,54 @@ public sealed class VisitRequestManagementItemDto
     /// (Host is assigned ONCE — there is intentionally no TRANSFER_HOST / reassign action.)
     /// </summary>
     public List<string> AllowedActions { get; set; } = new();
+
+    /// <summary>
+    /// Where the search keyword matched, computed ONLY over the campuses this caller is authorized to see
+    /// (a hidden campus never produces a context and never affects the row's hit/count/order). Null/empty
+    /// when there is no keyword. Each context is either REQUEST-level (shared fields) or CAMPUS-level (one
+    /// authorized instance). Carries stable field CODES, never raw snippets or PII.
+    /// </summary>
+    public List<SearchMatchContextDto>? MatchedContexts { get; set; }
+}
+
+/// <summary>
+/// One place a search keyword matched. <see cref="Scope"/> is REQUEST (request-wide field such as the
+/// request code) or CAMPUS (a specific authorized instance). <see cref="MatchedFields"/> are stable codes
+/// from <see cref="VisitSearchFieldCodes"/> — the frontend maps them to VI/EN labels. No raw values.
+/// </summary>
+public sealed class SearchMatchContextDto
+{
+    /// <summary>REQUEST or CAMPUS (see <see cref="SearchMatchScopes"/>).</summary>
+    public string Scope { get; set; } = default!;
+    /// <summary>Set for CAMPUS scope only — the authorized instance the match belongs to.</summary>
+    public ulong? VisitInstanceId { get; set; }
+    public ulong? CampusId { get; set; }
+    public string? CampusName { get; set; }
+    /// <summary>Stable field codes (e.g. DELEGATION_NAME, CAMPUS). Never raw matched text.</summary>
+    public List<string> MatchedFields { get; set; } = new();
+}
+
+/// <summary>Scope discriminator for <see cref="SearchMatchContextDto"/>.</summary>
+public static class SearchMatchScopes
+{
+    public const string Request = "REQUEST";
+    public const string Campus = "CAMPUS";
+}
+
+/// <summary>
+/// Stable, PII-free field codes for search match contexts — the ALLOWLIST of what the list/search actually
+/// searches (NOT an aspirational set). Guest/support member names are deliberately absent: they are not
+/// searched by default and never produce a match context.
+/// </summary>
+public static class VisitSearchFieldCodes
+{
+    public const string RequestCode = "REQUEST_CODE";
+    public const string RegistrantOrganization = "REGISTRANT_ORGANIZATION";
+    public const string Partner = "PARTNER";
+    public const string PrimaryContact = "PRIMARY_CONTACT";
+    public const string DelegationName = "DELEGATION_NAME";
+    public const string Campus = "CAMPUS";
+    public const string Host = "HOST";
 }
 
 /// <summary>

@@ -128,11 +128,13 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByLabelText('Quản lý đầu mối liên hệ')).not.toBeInTheDocument();
   });
 
-  it('active amendment: Staff Leader sees the decision panel; read-only HO never gets approve buttons', async () => {
+  it('active amendment: the decision panel is gated by per-instance allowedActions, not relation', async () => {
+    // Staff Leader with APPROVE_AMENDMENT on this instance → decision panel.
     const withAmendment = formFixture({
       viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
       campusVisits: [campusFixture({
         activeAmendment: { amendmentId: 9, amendmentNo: 1, status: 'PENDING', requestedAt: '2026-07-21T08:00:00', changedFieldCount: 2 },
+        allowedActions: ['APPROVE_AMENDMENT', 'REJECT_AMENDMENT'],
       })],
     });
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(withAmendment);
@@ -149,13 +151,52 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.getByRole('button', { name: 'Duyệt & áp dụng' })).toBeInTheDocument();
     unmount();
 
+    // Read-only HO: no per-instance actions → no decision panel even though an amendment exists.
     vi.mocked(getVisitRequestFormV2).mockResolvedValue({
       ...withAmendment,
       viewer: { relation: 'HO', canViewAllCampuses: true, isReadOnly: true, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({
+        activeAmendment: { amendmentId: 9, amendmentNo: 1, status: 'PENDING', requestedAt: '2026-07-21T08:00:00', changedFieldCount: 2 },
+        allowedActions: [],
+      })],
     });
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Duyệt & áp dụng' })).not.toBeInTheDocument();
+  });
+
+  it('mutation UI is driven ONLY by allowedActions (never relation/status)', async () => {
+    // REGISTRANT on a PENDING request but backend granted NO edit action → no edit link.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      requestStatus: 'PENDING_APPROVAL',
+      viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+    }));
+    const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Sửa|edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Quick edit' })).not.toBeInTheDocument();
+    unmount();
+
+    // Same viewer, backend grants EDIT_PENDING_REQUEST + SUBMIT_SAFE_EDIT → both surface.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'EDIT_PENDING_REQUEST', 'SUBMIT_SAFE_EDIT'],
+      },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Quick edit' })).toBeInTheDocument();
+  });
+
+  it('per-instance SUBMIT_AMENDMENT surfaces a propose-change entry point', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW', 'SUBMIT_SAFE_EDIT'] },
+      campusVisits: [campusFixture({ allowedActions: ['SUBMIT_AMENDMENT'] })],
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Propose change' })).toBeInTheDocument();
   });
 
   it('history timeline renders the server-scoped MASKED entries as-is', async () => {

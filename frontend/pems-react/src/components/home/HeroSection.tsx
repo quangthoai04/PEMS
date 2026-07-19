@@ -11,11 +11,23 @@ import { CalendarDays, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { VisitingFormPopup } from '../modals/VisitingFormPopup';
 import { LazyGlobeShowcase } from './LazyGlobeShowcase';
 import { useTranslation } from 'react-i18next';
+import { usePerCampusV2Capability } from '../../shared/features/perCampusV2Capability';
+import { resolvePublicVisitEntry } from '../../shared/features/perCampusV2Entry';
 
 export function HeroSection() {
   const { t } = useTranslation(['home']);
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
   const navigate = useNavigate();
+
+  // Default entry point cutover: when the per-campus v2 capability is enabled the CTA routes
+  // to the v2 registration page; otherwise (OFF / still loading / errored) it opens the v1 popup.
+  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
+  const capabilityResolving = v2Status === 'loading';
+  const handlePrimaryCta = () => {
+    const entry = resolvePublicVisitEntry(v2Enabled);
+    if (entry.kind === 'v2-route') navigate(entry.to);
+    else setIsVisitorFormOpen(true);
+  };
 
   return (
     <>
@@ -51,8 +63,10 @@ export function HeroSection() {
 
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full sm:w-auto">
                 <button
-                  onClick={() => setIsVisitorFormOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 w-full sm:w-[300px] h-14 sm:h-16 px-4 bg-fpt-navy text-white font-bold rounded-xl shadow-[0_8px_25px_rgba(0,76,145,0.25)] hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,76,145,0.35)] transition-all duration-300 group text-base sm:text-lg"
+                  onClick={handlePrimaryCta}
+                  disabled={capabilityResolving}
+                  aria-busy={capabilityResolving}
+                  className="inline-flex items-center justify-center gap-2 sm:gap-2.5 w-full sm:w-[300px] h-14 sm:h-16 px-4 bg-fpt-navy text-white font-bold rounded-xl shadow-[0_8px_25px_rgba(0,76,145,0.25)] hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,76,145,0.35)] transition-all duration-300 group text-base sm:text-lg disabled:opacity-70 disabled:cursor-wait disabled:translate-y-0"
                 >
                   <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                   <span className="truncate">{t('home:hero.primaryCta')}</span>

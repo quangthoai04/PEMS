@@ -380,6 +380,198 @@ v2_requests = 0; both flags default OFF. Phase C = ✅ COMPLETE.
   transient flake — hardened `FileSinkEmailService.IsEnabledFor` to also require the sink path, then rerun
   clean 378/0), Vitest **56**, tsc/lint 0, build ✓; H-1 fresh+upgrade schema re-verified (op org/email nullable,
   fresh-vs-upgrade IDENTICAL). **Phase H DONE** (H-1/H-2/H-3/H-4); report stays IN PROGRESS (Phase I pending).
+## Frontend V2 Cutover & Workflow Completion (post-H-4) — 🚧 in progress
+Phase G shipped the v2 components/routes but the default runtime entry points still opened v1; this workstream
+closes those frontend gaps so a normal user reaches v2 when the backend capability is ON, while v1 stays
+byte-identical when the flags are OFF.
+
+- **Slice 1 — v2 capability + default entry-point cutover** — ✅ DONE.
+  - Backend: new PUBLIC read-only capability endpoint `GET /api/public/features/per-campus-form-v2` →
+    `{ readEnabled, writeEnabled, enabled }` with `enabled = readEnabled && writeEnabled`. Anonymous, no
+    mutation, exposes ONLY those three flags (no secret/other config). Both flags stay default OFF.
+  - Frontend: single shared capability source — `getPerCampusFormV2Capability` API + `PerCampusV2CapabilityProvider`
+    /`usePerCampusV2Capability` (session-cached one fetch, loading/error state, **fail-safe to v1** while loading,
+    on error, or outside the provider — the client never guesses the flag). Canonical routes + branching centralised
+    in `perCampusV2Entry`.
+  - Entry-point cutover (capability ENABLED → v2, else v1, no flicker; CTA disabled while resolving):
+    HeroSection CTA + FinalCtaSection CTA → `/visit-registration/v2`; VisitRequestManagement "Tạo đoàn khách" →
+    `/visit/create-v2`; the dead `/dashboard/visit/create` prototype replaced by `CreateVisitRequestEntry`
+    (version-aware redirect). v1 popup path unchanged when OFF. No v1 code deleted.
+  - Tests: backend capability `PublicFeaturesCapabilityApiTests` **6/6** (4 flag combos DB-free + anonymous
+    default-OFF HTTP shape + ON/ON via real DI). Frontend Vitest **+14** (entry decision, provider enabled/off/
+    fail-safe/session-cache/outside-provider, FinalCta cutover on/off/error/loading). Full Vitest **70**, tsc 0, build ✓.
+
+- **Slice 2 — version-aware detail/edit/resubmit routing** — ✅ DONE.
+  - Backend: `VisitRequestManagementItemDto` now exposes `formSchemaVersion` (+ `hasMixedCampusDetails`),
+    projected at both construction sites of `ViewGuestDelegationListQueryHandler` from the database — so the
+    frontend routes on the real version, never guessed from mixed/campus-count.
+  - Frontend: `visitVersionRouting` (`isPerCampusV2`, `resolveVisitRowRoutes`) drives VisitRequestManagement's
+    detail / edit / resubmit / per-campus-form actions — v2 (mixed OR non-mixed) → `/dashboard/visit/v2/:id`
+    (+ `/edit`, `/resubmit`); v1 → the legacy routes/flat modal. A v2 row no longer opens the flat modal or
+    waits for a v1 409. Missing version (older cached payload) falls back to v1. The existing code-matched
+    `FORM_VERSION_UPGRADE_REQUIRED` handling stays as defense-in-depth.
+  - Deferred within Slice 2: making the *other* shared-modal call sites (HoVisitProcessDetail,
+    VisitParticipantInvitationDetail) version-aware — those still rely on the backend 409 guard.
+  - Tests: backend `V2MixedListSurfacesTests.Management_list_exposes_form_schema_version…` (list DTO carries
+    v2 + mixed label). Frontend Vitest **+6** (`visitVersionRouting`). Full Vitest **76**, tsc 0, build ✓.
+
+- **Slice 3 — post-submit per-campus summary** — ✅ DONE (frontend-only; no backend change).
+  - After a successful authenticated create or public OTP verify, `VisitRequestV2Page` now renders
+    `VisitRequestV2SubmittedSummary`: request-level identity (request code, registrant, primary contact + claim
+    state, partner, aggregate status, campus count, mixed/uniform badge) plus ONE card per campus built from the
+    IMMUTABLE submitted snapshot (`values`) — schedule/duration/timezone, delegation name, visit type (+other),
+    purpose, working content, visitors, support team, operational contact, working language, transportation,
+    media consent/note, campus note, and per-campus instance status linked reliably by campus code → campusId →
+    `response.instances` (never positional). Never the first campus as representative; editing one campus cannot
+    change another's card (immutable snapshot). No new form model — reads the existing schema + create response.
+  - i18n: new `visitRequestV2:summary.*` block (VI + EN). Tests: Vitest **+3** (mixed keeps each campus its own
+    content; multi-same renders every campus; blank optional operational contact renders without crashing).
+    Full Vitest **79**, tsc 0, build ✓.
+
+- **S0 — restore UnitTests compile** — ✅ DONE (`7895be2d`). The Dev expense-stats merge (`34ab5ba4`) added
+  `VisitExpenseReports/Items/ReportEvents` to `IApplicationDbContext` but never updated the four EF InMemory test
+  doubles (`DelegationsTestDbContext`, `PartnersTestDbContext`, UC-106 `TestApplicationDbContext`, `CampusTestDbContext`),
+  so `PEMS.UnitTests` failed to compile. Implemented the three DbSet members in each. No production logic touched.
+  **PEMS.UnitTests 510/510.**
+
+- **Slice 4 — safe-edit + amendment UX + allowedActions-driven UI** — ✅ DONE (backend `603abd46` + this frontend commit).
+  - Backend (`603abd46`): the v2 read model emitted only `VIEW`, forcing the frontend to infer permissions. Now the
+    read service computes real actions mirroring the command-handler authorization (which still re-authorizes):
+    `viewer.allowedActions` = EDIT_PENDING_REQUEST / RESUBMIT_REJECTED_REQUEST / SUBMIT_SAFE_EDIT (registrant/ACTIVE
+    contact); per-instance `campusVisit.allowedActions` = SUBMIT_AMENDMENT (ASSIGNED/BEFORE_VISIT, ≥24h, no pending) /
+    WITHDRAW_AMENDMENT (requester + pending) / APPROVE_AMENDMENT + REJECT_AMENDMENT (current campus Staff Leader +
+    pending). HO / out-of-scope campuses get none. `VisitFormActions` constants; optional `IDateTimeService` (no
+    call-site churn). Integration tests **+6** (owner/leader/HO scope, one-pending, no cross-campus) → read tests 17/17.
+  - Frontend: `VisitRequestV2DetailView` now gates ALL mutation UI on `allowedActions` (typed `visitV2Actions`),
+    never relation/status. New `VisitAmendmentSubmitModal` (per-campus proposal, reason required, member lists carried
+    through, stable amendment error codes → steady messages) and `VisitSafeEditModal` (registrant/contact + per-instance
+    transportation/note/media, immediate apply, 409 → stable message + reload, account email immutable). i18n
+    `visitRequestV2:amend.*` / `safeEdit.*` (VI + EN). Vitest **+6** (allowedActions-driven visibility, HO read-only,
+    amendment reason-required + AMENDMENT_ALREADY_PENDING mapping, safe-edit 409 reload + applied count).
+  - Deferred within Slice 4: inline guest/support LIST editing inside the amendment proposal (scalar/schedule fields
+    are editable now; member lists are carried through unchanged).
+
+- **Slice 4.1 — v2 member-list amendments** — ✅ DONE (`32f9ba25`). Audit first: the backend already diffs
+  guest/support lists (`VisitAmendmentService.BuildChangeRows`) and, on approve, replaces this instance's
+  members copy-on-write (`VisitRequestV2EditOps.StageReplaceMembers`) with sibling isolation — the existing
+  `Approve_by_current_campus_leader…` IT already proved the non-shared replace. The gap was purely the
+  frontend: the amendment modal carried members through unchanged. Added a guest/support **editor** to
+  `VisitAmendmentSubmitModal` (deep-clone, stable client keys, add/edit/remove, active-vs-proposed diff summary,
+  at-least-one-visitor guard); the proposal is scoped to the selected instance. New IT
+  `Amendment_member_change_is_copy_on_write_and_untouched_until_approved` proves a LEGACY shared member (linked
+  to both campuses) survives on the sibling and that active members do not move before approval. Vitest **+4**,
+  amendment IT **5/5**.
+- **Slice 5A — version-aware shared detail modal** — ✅ DONE (`213a9b3c`). Audit map of the shared flat
+  `SubmittedVisitRequestDetailModal` — **6 components / 7 production invocation sites**: `VisitRequestManagement`
+  (2 invocations) already routes v2 to the v2 detail route and returns BEFORE opening the modal
+  (`resolveVisitRowRoutes`); the 5 read-only components (1 invocation each — `HoVisitProcessDetail`,
+  `VisitParticipantInvitationDetail`, `StaffCalendarTab`, `StaffLeaderTaskModal`, `StaffTasksTab`) opened the flat
+  modal with NO version check. Central fix: exposed `form_schema_version` on the flat
+  `SubmittedVisitRequestFormDetailDto` (backend projection) and branched the shared modal to
+  `VisitRequestV2DetailView` whenever the request is v2 — including a UNIFORM v2 request that looks flat. The
+  version drives the choice (caller prop → fetched field → v1 upgrade-required 409), never scope/campus-count/mixed
+  flag; missing version fails safe to v1. **Zero-unclassified sweep:** all 7 invocations now resolve v1↔v2 through
+  the central modal (no v2 request opens the flat v1 UI). Backend projection assertion added to
+  `SubmittedVisitRequestFormDetailV2Tests` (flat detail IT **12/12**); frontend branch tests **5/5**.
+- **Slice 5B — scope-safe search match contexts** — ✅ DONE (`3b9af03a`). Audit: `ViewGuestDelegationListQueryHandler`
+  has two paths — instance-level (Staff Leader/Staff/Dept/Student: one row per authorized instance) and request-level
+  (Visitor owner/HO/registrant: full campus visibility of own request). Both already do
+  scope→keyword→count→order→pagination in SQL. New `VisitSearchMatchContextBuilder` computes `matchedContexts`
+  **in memory AFTER pagination**, over each row's already-authorized campuses only — so a context can never change
+  hit/count/order and a hidden sibling campus never appears. Fields mirror each path's keyword predicate exactly
+  (instance-level also has campus/host/owner; request-level only delegation/code/reg-org/partner); stable CODES
+  (`VisitSearchFieldCodes`), never raw snippets/PII; guest/support names excluded. Request-level path gains
+  `+ ThenInclude(FormDetail)` for per-campus delegation (all campuses authorized there). FE `SearchMatchContexts`
+  renders "Khớp tại: [Campus | Thông tin chung] — [field]" (VI/EN, unknown-code fallback), wired into the
+  management list row. Security ITs (hidden-sibling no-leak + count parity, one row/multi-campus contexts,
+  request-level match, guest-name excluded) → `V2MixedListSurfacesTests` **6/6**; FE component tests **5/5**.
+- **Slice 5B.1 — matchedContexts consumer audit** — ✅ DONE (no code needed; recorded here). Repo-wide sweep of
+  `VisitRequestManagementItem` / `matchedContexts` / `SearchMatchContexts` consumers: **Category A** (visit-request
+  search on this DTO → must render) = ONLY `VisitRequestManagement.tsx`, already rendering `SearchMatchContexts`.
+  **Category B** (keyword search over OTHER entities — accounts, audit-log, security, sessions, campus, departments,
+  emails, FAQ, gallery, news) = N/A. **Category C** (own visit-request search, different DTO) = the "attending"
+  invitations tab (`GetVisitInvitations`, FE `getMyInvitations`) — already scope-before-keyword + per-instance mixed
+  match + no hidden-campus leak + no guest/support search (Phase F); an independent feature, matchedContexts not
+  extended there (out of Slice-5 scope). No searchable surface renders V1/global-projection contexts.
+- **Slice 6a — fail-closed E2E test-auth scheme** — ✅ DONE (`dc9ddb90`). New `E2ETestAuthentication.cs` (PEMS.Api):
+  `E2ETestAuthGate` (quadruple gate: env=Testing + `PEMS_E2E_TEST_AUTH_ENABLED=true` + non-blank
+  `PEMS_E2E_TEST_AUTH_SECRET` + `PEMS_E2E_TEST_AUTH_PROFILES` file; constant-time `SecretMatches`),
+  `E2ETestProfileStore` (loads seeded profiles from the file, fail-closed to empty on missing/parse-error),
+  `E2ETestAuthHandler` (browser sends only an opaque profile KEY + run secret; identity resolved SERVER-SIDE, never
+  from a role/campus header; re-checks the gate per request). `AuthenticationExtensions.AddJwtAuthentication(cfg, env)`
+  registers it + makes it the default scheme ONLY when the gate is open — Dev/Prod never register it (WAF's own Test
+  scheme is unaffected). Distinct from the header-trusting `TestAuthHandler` (never promoted). Guard tests
+  `E2ETestAuthGuardTests` **4/4**: four-part gate, constant-time compare, profile resolution (unknown/missing fail
+  closed, leader-HN never resolves to HCM), handler behaviour (valid profile+secret → server-side claims, ignores
+  spoof headers; wrong/missing secret + unknown profile fail; no header = anonymous; nothing authenticates outside
+  Testing).
+- **Slice 6b — authenticated real-stack foundation** — 🟨 PARTIAL/DONE-for-scope (`edd1a8b3`). Wired the Slice-6a
+  fail-closed scheme into the H-4 harness and drove it through a REAL browser (real Chromium → real Vite → real
+  published .NET API, Testing + both v2 flags ON + fail-closed E2E auth → disposable MySQL, no network mock).
+  Orchestration now: mints a run-scoped secret, resolves the disposable DB's ACTUAL seeded identities into a
+  server-side profile file (opaque key → identity, no secret), seeds an ACTIVE `user_sessions` row per profile, and
+  passes the four auth gates as process env; the specs inject only the profile key + secret on backend requests
+  (trace OFF so the secret is never persisted). `E2ETestProfile`/`E2ETestAuthHandler` gained a `SessionId` claim so
+  the REAL `SessionValidationMiddleware` accepts the E2E actor exactly like a logged-in user (NO middleware bypass).
+  Also fixed 4 pre-existing harness bugs that made the real-stack suite un-runnable here: stale v10→V11 master path,
+  `new URL().pathname` vs `fileURLToPath` on a spaced repo path, publish bin-lock beside a running dev server (temp
+  `BaseOutputPath`), unquoted shell args splitting a spaced path. **Journeys run real-stack 3/3 green:** A public v2
+  create with a real OTP from the sink (re-verified); B an authenticated HO reaches the protected visit dashboard
+  (the browser's own `/auth/me` is E2E-authenticated 200, `ProtectedRoute` does not bounce); C the running host
+  enforces the fail-closed gate (no/wrong secret + unknown profile → 401) and resolves identity server-side
+  (`ho_viewer`→HO, `campus_leader_hn`→STAFF, never HCM). **Remaining B–H workflow journeys** (authenticated create,
+  detail uniform/mixed, pending-edit, resubmit, safe-edit, member-amendment submit, leader approve/reject,
+  wrong-campus denial, withdraw, search no-leak, identity) build on this now-working foundation — NOT yet authored.
+- **Slice 6b — authenticated real-stack Journeys D–H** — ✅ DONE (`09cdfa58` journeys + `4893c98d` fix). Added the
+  workflow journeys on the working harness (preconditions via the REAL authenticated API; action under test via the
+  real UI for D, asserted at the real host otherwise): **D** an authenticated owner opens the per-campus v2 detail and
+  sees BOTH mixed-campus cards with their own content; **E** pending-edit changes only the target campus, the sibling
+  is a true no-op (versions unchanged); **F** a member amendment keeps the active snapshot until approval, then the
+  current campus leader's approve applies it target-only (sibling untouched); **G** a wrong-campus leader is refused
+  the amendment-approve endpoint (403) while the correct leader passes the campus gate; **H** search is scope-safe end
+  to end (a keyword only on a hidden sibling campus never surfaces the request for a campus-scoped actor; contexts stay
+  on authorized campuses). **Real-stack A–H 8/8 green** (`npm run test:e2e:realstack`).
+- **PRODUCTION BUG caught by Journey F + fixed** (`4893c98d`): the v2 read model returned the FORM-DETAIL row_version
+  as the per-campus `rowVersion`, but pending-edit/safe-edit/amendment all check the CAMPUS INSTANCE row_version
+  (`visit_request_campuses.row_version`). A campus-approve bumps the instance token without touching the form detail's,
+  so a safe-edit/amendment on a freshly-loaded ASSIGNED detail 409'd with a spurious concurrency conflict. Fixed to
+  emit the instance token; added an integration regression (`PerCampusFormV2ReadTests` → 18). No prior test caught it
+  because they read the instance version straight from the DB — only the real-stack read-model→submit path exposed it.
+- **Slice 6 — authenticated real-stack A–H — ✅ COMPLETE.**
+- **Session gates (real, after Slice 6b/D–H, HEAD `09cdfa58`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
+  full `PEMS.IntegrationTests` **400/400** on freshly-built disposable `pems_it_regression` (V11 master, 76 tables;
+  appsettings trap-restored byte-exact to pems_test) — the read-model fix broke no test · `PerCampusFormV2ReadTests`
+  **18/18** · E2E auth guard IT **4/4** · **real-stack Journeys A–H 8/8** · Vitest **99** · tsc 0 · build ✓. Disposables
+  (`pems_it_regression` + the orchestration's `pems_e2e_realstack`) dropped; `pems_pr3_test` 0 v2/leaked rows;
+  `pems_db`/`pems_test` never connected to; the run secret + profile file + OTP inbox never persisted (temp workDir
+  removed, secret only in process env, no secret in any log, Playwright trace OFF). Feature flags stay default OFF. No
+  manual push/merge/PR.
+- **Resume point** — **Phase I** (guarded contract-drop prep, disposable DBs only): readiness audit of the 10 legacy
+  global fields + read-only preflight/UP/verify/DOWN candidate scripts, drilled on `pems_i_fresh`/`pems_i_upgrade`/
+  `pems_i_refusal`/`pems_i_rollback` only. Expected honest conclusion: "guarded contract-drop prepared/tested on
+  disposable databases; execution NOT READY while V1 fallback + legacy runtime reads remain; no real database modified."
+
+## Slice 6c — Full Browser UI E2E promotion — ✅ COMPLETE
+Promoted the v2 mutation + search journeys from real-host **API** level to full browser **DOM** automation
+(`tests-realstack/authenticated-ui-workflows.realstack.spec.ts` + `realstackHelpers.ts`): pending-edit,
+resubmit, safe-edit, amendment-submit, leader approve/reject, wrong-campus visibility + backend denial,
+withdraw, search isolation — each navigates a real route and clicks a real button/modal against the real
+running stack (no `page.request`/`page.evaluate(fetch)`/`route.fulfill`/DB-fake). Logic-neutral `data-testid`s
+added to the detail view, campus cards, amendment panel/modal, safe-edit modal, edit page, list search box.
+**Real-stack now 17/17** (8 kept API-level A–H + 9 new DOM). tsc 0 · Vitest 99 · build ✓ · Arch 14/14 ·
+auth-guard 4/4 · targeted V2 IT 44/45 · Unit 528/530. See H2_VERIFICATION_MATRIX.md for the per-journey table.
+
+**Dev auto-merge (`64c83a59`) overlaps found — none caused by this session** (frontend + UnitTests-harness
+dedup only): (1) fixed the merge's duplicated `VisitExpense*` DbSet decls in 4 unit-test harnesses (project
+would not compile); (2) 2 pre-existing photo-upload unit failures from the merge's `FileValidationPolicy.cs`
+change — out of scope, left for the photo owner; (3) the merge added guest-name search to the list keyword
+filter, which conflicts with the Slice 5B security test `Guest_member_names_are_not_searched_and_produce_no_row`
+— flagged for human reconciliation (matchedContexts stay PII-free either way), neither the test nor the Dev
+feature changed unilaterally.
+
+**Full IT (~400) not re-run this session:** `pems_test` absent + `pems_pr3_test` stale/protected (see recipe
+caveats); no backend production/IT code changed this session; v2 backend covered by real-stack 17/17 + V2 IT 44/45.
+
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
 ## Verified test gates (updated each group)

@@ -14,6 +14,7 @@ using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
 using Xunit;
@@ -380,6 +381,103 @@ public sealed class VisitAmendmentV2Tests
                     .AnyAsync(x => x.VisitRequestId == requestId && x.Action == "VISIT_AMENDMENT_APPROVED"));
                 Assert.True(await db.AuditLogs.AsNoTracking()
                     .AnyAsync(x => x.VisitRequestId == requestId && x.Action == "VISIT_INSTANCE_FORM_REVISION_APPLIED"));
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Amendment_member_change_is_copy_on_write_and_untouched_until_approved()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, var instanceB) = await CreateApprovedAsync(Now.AddDays(20));
+
+            // A LEGACY-style shared guest member: ONE row linked from BOTH campuses (the case copy-on-write
+            // exists for). Amending campus A must keep this row alive for the sibling.
+            ulong sharedMemberId;
+            using (var db = NewContext())
+            {
+                var shared = new VisitGuestMember
+                {
+                    VisitRequestId = requestId, FullName = "Shared Guest", Organization = "SharedOrg",
+                    JobTitle = "Delegate", Nationality = "US", MemberType = "GUEST", DisplayOrder = 9,
+                    CreatedAt = Now, CreatedBy = Registrant,
+                };
+                db.VisitGuestMembers.Add(shared);
+                await db.SaveChangesAsync();
+                sharedMemberId = shared.GuestMemberId;
+                db.VisitInstanceGuestMembers.Add(new VisitInstanceGuestMember
+                {
+                    VisitRequestId = requestId, VisitInstanceId = instanceA,
+                    GuestMemberId = sharedMemberId, DisplayOrder = 5, CreatedAt = Now, CreatedBy = Registrant,
+                });
+                db.VisitInstanceGuestMembers.Add(new VisitInstanceGuestMember
+                {
+                    VisitRequestId = requestId, VisitInstanceId = instanceB,
+                    GuestMemberId = sharedMemberId, DisplayOrder = 5, CreatedAt = Now, CreatedBy = Registrant,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            // Propose dropping the shared member from A (keep only the campus-own "Guest A").
+            var proposal = await BaselineProposalAsync(instanceA, b =>
+                b.Visitors = b.Visitors.Where(v => v.FullName == "Guest A").ToList());
+            Assert.Single(proposal.Visitors); // sanity: shared member excluded from the proposal
+
+            ulong amendmentId; ulong leaderA; ulong campusA;
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                amendmentId = dto.AmendmentId;
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.Visitors
+                                                   && c.ChangeClass == AmendmentChangeClasses.ApprovalSensitive);
+                var row = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == instanceA)
+                    .Select(c => new { c.CoordinatorUserId, c.CampusId }).SingleAsync();
+                leaderA = row.CoordinatorUserId!.Value;
+                campusA = row.CampusId;
+            }
+
+            // BEFORE approve — the pending proposal must NOT touch the active member links on either campus.
+            using (var db = NewContext())
+            {
+                var linksA = await db.VisitInstanceGuestMembers.AsNoTracking()
+                    .Where(l => l.VisitInstanceId == instanceA).Select(l => l.GuestMemberId).ToListAsync();
+                Assert.Contains(sharedMemberId, linksA); // still linked from A
+                Assert.Equal(2, linksA.Count);           // Guest A + Shared, unchanged
+            }
+
+            using (var db = NewContext())
+            {
+                var res = await Decide(db, new FakeUser(leaderA, RoleCodes.Staff, UserSubRoles.Leader, campusA)).Handle(
+                    new ApproveVisitAmendmentCommand(instanceA, amendmentId, "OK"), CancellationToken.None);
+                Assert.Equal(AmendmentStatuses.Approved, res.Status);
+            }
+
+            using (var db = NewContext())
+            {
+                // Copy-on-write: A's link to the shared row is dropped, but the row LIVES because B still links it.
+                var sharedStillExists = await db.VisitGuestMembers.AsNoTracking()
+                    .AnyAsync(m => m.GuestMemberId == sharedMemberId);
+                Assert.True(sharedStillExists);
+
+                var linksA = await db.VisitInstanceGuestMembers.AsNoTracking()
+                    .Where(l => l.VisitInstanceId == instanceA).Select(l => l.GuestMemberId).ToListAsync();
+                Assert.DoesNotContain(sharedMemberId, linksA);
+
+                var linksB = await db.VisitInstanceGuestMembers.AsNoTracking()
+                    .Where(l => l.VisitInstanceId == instanceB).Select(l => l.GuestMemberId).ToListAsync();
+                Assert.Contains(sharedMemberId, linksB); // sibling keeps the shared member intact
+
+                // A's applied member list is exactly the proposed single visitor.
+                var membersA = await db.VisitGuestMembers.AsNoTracking()
+                    .Where(m => linksA.Contains(m.GuestMemberId)).ToListAsync();
+                Assert.Single(membersA);
+                Assert.Equal("Guest A", membersA[0].FullName);
             }
         }
         finally { await CleanupAsync(requestId); }

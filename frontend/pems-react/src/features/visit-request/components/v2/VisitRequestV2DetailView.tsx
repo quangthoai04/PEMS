@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getVisitRequestFormV2, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
+import { getVisitRequestFormV2, type ResolvedCampusVisit, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
 import ContactIdentityPanel from '../ContactIdentityPanel';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
+import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
+import VisitSafeEditModal from '../VisitSafeEditModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
+import { hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 
 interface Props {
@@ -26,6 +29,8 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const [data, setData] = useState<ResolvedVisitForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<'notfound' | 'forbidden' | 'generic' | null>(null);
+  const [safeEditOpen, setSafeEditOpen] = useState(false);
+  const [amendCampus, setAmendCampus] = useState<ResolvedCampusVisit | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,12 +67,14 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   }
 
   const { viewer } = data;
+  // Relation is used ONLY for the identity workflow (claim/transfer) — a separate backend-authorized flow.
   const isManager = (viewer.relation === 'REGISTRANT' || viewer.relation === 'VISITOR_OWNER') && !viewer.isReadOnly;
-  const canDecideAmendment = viewer.relation === 'STAFF_LEADER' && !viewer.isReadOnly;
   const showMixedLabel = data.hasMixedCampusDetails && data.campusVisits.length > 1;
-  // Owner-only lifecycle actions; the backend re-authorizes editor identity + lifecycle on submit.
-  const canEditPending = isManager && (data.requestStatus === 'PENDING_APPROVAL' || data.requestStatus === 'PENDING');
-  const canResubmit = isManager && data.requestStatus === 'REJECTED';
+  // Every mutation action is driven ONLY by backend allowedActions — never relation/status. The backend
+  // re-authorizes each command; HO/Host/out-of-scope viewers receive no actions and so see no buttons.
+  const canEditPending = hasAction(viewer.allowedActions, VisitV2Action.EditPendingRequest);
+  const canResubmit = hasAction(viewer.allowedActions, VisitV2Action.ResubmitRejectedRequest);
+  const canSafeEdit = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
 
   return (
     <div className="space-y-6">
@@ -87,14 +94,20 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             </span>
           )}
           {canEditPending && (
-            <Link to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
+            <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
               <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
             </Link>
           )}
           {canResubmit && (
-            <Link to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
+            <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
               <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
             </Link>
+          )}
+          {canSafeEdit && (
+            <button type="button" data-testid="safe-edit-open" onClick={() => setSafeEditOpen(true)}
+              className={`${canEditPending || canResubmit ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50`}>
+              <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:safeEdit.open')}
+            </button>
           )}
         </div>
         <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
@@ -135,21 +148,34 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
 
       {/* ── Per-campus cards: ONLY the campuses the backend returned for this caller ── */}
       <div className="space-y-4">
-        {data.campusVisits.map(cv => (
-          <CampusVisitDetailCard key={cv.visitInstanceId} campus={cv}>
-            {cv.activeAmendment && (canDecideAmendment || isManager) && (
-              <div className="mt-4">
-                <VisitAmendmentPanel
-                  visitRequestId={data.visitRequestId}
-                  visitInstanceId={cv.visitInstanceId}
-                  canDecide={canDecideAmendment}
-                  canWithdraw={isManager}
-                  onChanged={() => void load()}
-                />
-              </div>
-            )}
-          </CampusVisitDetailCard>
-        ))}
+        {data.campusVisits.map(cv => {
+          const canDecide = hasAction(cv.allowedActions, VisitV2Action.ApproveAmendment);
+          const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
+          const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
+          return (
+            <CampusVisitDetailCard key={cv.visitInstanceId} campus={cv}>
+              {cv.activeAmendment && (canDecide || canWithdraw) && (
+                <div className="mt-4">
+                  <VisitAmendmentPanel
+                    visitRequestId={data.visitRequestId}
+                    visitInstanceId={cv.visitInstanceId}
+                    canDecide={canDecide}
+                    canWithdraw={canWithdraw}
+                    onChanged={() => void load()}
+                  />
+                </div>
+              )}
+              {canSubmitAmendment && (
+                <div className="mt-4">
+                  <button type="button" data-testid={`amendment-open-${cv.visitInstanceId}`} onClick={() => setAmendCampus(cv)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
+                    <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:amend.open')}
+                  </button>
+                </div>
+              )}
+            </CampusVisitDetailCard>
+          );
+        })}
       </div>
 
       {/* ── Scoped, masked history ── */}
@@ -162,6 +188,22 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         </h3>
         <VisitHistoryTimeline visitRequestId={data.visitRequestId} />
       </section>
+
+      {safeEditOpen && (
+        <VisitSafeEditModal
+          form={data}
+          onClose={() => setSafeEditOpen(false)}
+          onSaved={() => { setSafeEditOpen(false); void load(); }}
+        />
+      )}
+      {amendCampus && (
+        <VisitAmendmentSubmitModal
+          visitRequestId={data.visitRequestId}
+          campus={amendCampus}
+          onClose={() => setAmendCampus(null)}
+          onSubmitted={() => { setAmendCampus(null); void load(); }}
+        />
+      )}
     </div>
   );
 }

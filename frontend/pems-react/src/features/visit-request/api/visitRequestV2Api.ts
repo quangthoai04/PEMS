@@ -166,6 +166,10 @@ export interface ResolvedCampusVisit {
     requestedAt: string;
     changedFieldCount: number;
   } | null;
+  /** Backend-derived mutation actions for THIS instance (SUBMIT_AMENDMENT / APPROVE_AMENDMENT /
+   * REJECT_AMENDMENT / WITHDRAW_AMENDMENT). The UI gates per-instance actions on this list.
+   * Optional so older cached payloads (no field) fail safe to "no actions". */
+  allowedActions?: string[];
 }
 
 export interface ResolvedVisitForm {
