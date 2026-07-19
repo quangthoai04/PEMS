@@ -28,6 +28,9 @@ public class VisitExpenseReport
     [Column("report_note")]
     public string? ReportNote { get; set; }
 
+    [Column("no_expense")]
+    public bool NoExpense { get; set; }
+
     [Column("currency_code")]
     public string CurrencyCode { get; set; } = "VND";
 

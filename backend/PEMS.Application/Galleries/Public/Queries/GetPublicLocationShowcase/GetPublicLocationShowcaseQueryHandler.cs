@@ -137,9 +137,8 @@ public sealed class GetPublicLocationShowcaseQueryHandler
                       .First());
 
         var ordered = items
-            .OrderBy(i => i.DisplayOrder)
-            .ThenByDescending(i => i.CreatedAt)
-            .ThenByDescending(i => i.GalleryItemId)
+            // Add-order: earliest-added item first, latest last (by auto-increment id).
+            .OrderBy(i => i.GalleryItemId)
             .Select(i => new PublicGalleryShowcaseItemDto
             {
                 GalleryItemId = i.GalleryItemId,

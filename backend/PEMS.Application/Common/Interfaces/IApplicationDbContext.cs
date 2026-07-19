@@ -77,8 +77,8 @@ public interface IApplicationDbContext
     DbSet<GalleryArea> GalleryAreas { get; }
     DbSet<GalleryLocation> GalleryLocations { get; }
     DbSet<GalleryItem> GalleryItems { get; }
+    DbSet<GalleryItemContent> GalleryItemContents { get; }
     DbSet<GalleryItemMedia> GalleryItemMedia { get; }
-    DbSet<GalleryItemTtsAudio> GalleryItemTtsAudios { get; }
     DbSet<PhotoFaceTag> PhotoFaceTags { get; }
     DbSet<EmailTemplate> EmailTemplates { get; }
     DbSet<SentEmail> SentEmails { get; }

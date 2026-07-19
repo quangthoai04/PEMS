@@ -26,7 +26,6 @@ internal static class GalleryDetailBuilder
             {
                 i.GalleryItemId,
                 i.Title,
-                i.Description,
                 i.ItemType,
                 i.Status,
                 i.MediaKind,
@@ -44,6 +43,49 @@ internal static class GalleryDetailBuilder
             })
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("GalleryItem", galleryItemId);
+
+        // Bilingual content (VI/EN descriptions + the two audio files). Projected with the audio file
+        // metadata so the dashboard can show filename/size and stream via the authenticated proxy.
+        var content = await db.GalleryItemContents.AsNoTracking()
+            .Where(c => c.GalleryItemId == galleryItemId)
+            .Select(c => new
+            {
+                c.DescriptionVi,
+                c.AudioViFileId,
+                AudioViName = c.AudioViFile.OriginalFilename,
+                AudioViMime = c.AudioViFile.MimeType,
+                AudioViSize = c.AudioViFile.FileSize,
+                c.DescriptionEn,
+                c.AudioEnFileId,
+                AudioEnName = c.AudioEnFile.OriginalFilename,
+                AudioEnMime = c.AudioEnFile.MimeType,
+                AudioEnSize = c.AudioEnFile.FileSize,
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var contentDto = content is null
+            ? new GalleryItemContentDto()
+            : new GalleryItemContentDto
+            {
+                DescriptionVi = content.DescriptionVi,
+                AudioVi = new GalleryAudioDto
+                {
+                    FileId = content.AudioViFileId,
+                    FileName = content.AudioViName,
+                    MimeType = content.AudioViMime,
+                    FileSize = content.AudioViSize,
+                    Url = GalleryFileUrls.Content(content.AudioViFileId),
+                },
+                DescriptionEn = content.DescriptionEn,
+                AudioEn = new GalleryAudioDto
+                {
+                    FileId = content.AudioEnFileId,
+                    FileName = content.AudioEnName,
+                    MimeType = content.AudioEnMime,
+                    FileSize = content.AudioEnSize,
+                    Url = GalleryFileUrls.Content(content.AudioEnFileId),
+                },
+            };
 
         // Project raw media + file metadata, then map in memory (source-specific URLs can't be built in SQL).
         var mediaRows = await db.GalleryItemMedia.AsNoTracking()
@@ -105,7 +147,7 @@ internal static class GalleryDetailBuilder
         {
             GalleryItemId = head.GalleryItemId,
             Title = head.Title,
-            Description = head.Description,
+            Content = contentDto,
             ItemType = head.ItemType,
             ItemTypeLabel = GalleryItemTypes.Label(head.ItemType),
             Status = head.Status,

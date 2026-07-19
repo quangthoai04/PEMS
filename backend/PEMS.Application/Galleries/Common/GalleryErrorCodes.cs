@@ -121,10 +121,43 @@ public static class GalleryErrorCodes
     /// <summary><c>itemType</c> is neither MEDIA nor VISIT_DELEGATION. → 422.</summary>
     public const string ItemTypeInvalid = "GALLERY_ITEM_TYPE_INVALID";
 
-    // ── EverAI TTS narration phase ──
+    // ── Bilingual content (VI/EN descriptions + manually uploaded audio) ──
 
-    /// <summary>The description exceeds the 1000-character narration cap. → 422.</summary>
+    /// <summary>A description field exceeds the 1000-character business cap. → 422.</summary>
     public const string DescriptionTooLong = "GALLERY_DESCRIPTION_TOO_LONG";
+
+    /// <summary>The Vietnamese description is missing/blank. → 422.</summary>
+    public const string DescriptionViRequired = "GALLERY_DESCRIPTION_VI_REQUIRED";
+
+    /// <summary>The Vietnamese audio recording is missing. → 422.</summary>
+    public const string AudioViRequired = "GALLERY_AUDIO_VI_REQUIRED";
+
+    /// <summary>The English description is missing/blank. → 422.</summary>
+    public const string DescriptionEnRequired = "GALLERY_DESCRIPTION_EN_REQUIRED";
+
+    /// <summary>The English audio recording is missing. → 422.</summary>
+    public const string AudioEnRequired = "GALLERY_AUDIO_EN_REQUIRED";
+
+    /// <summary>The Vietnamese audio file is not a supported MP3/WAV. → 422.</summary>
+    public const string AudioViInvalid = "GALLERY_AUDIO_VI_INVALID";
+
+    /// <summary>The English audio file is not a supported MP3/WAV. → 422.</summary>
+    public const string AudioEnInvalid = "GALLERY_AUDIO_EN_INVALID";
+
+    /// <summary>An audio file exceeds the 20 MB cap. → 422.</summary>
+    public const string AudioTooLarge = "GALLERY_AUDIO_TOO_LARGE";
+
+    /// <summary>The gallery item has no bilingual content row (transitional/invalid state). → 422/404.</summary>
+    public const string ContentMissing = "GALLERY_CONTENT_MISSING";
+
+    /// <summary>The requested audio file for the item/language does not exist. → 404.</summary>
+    public const string AudioFileMissing = "GALLERY_AUDIO_FILE_MISSING";
+
+    /// <summary>The requested audio language code is neither vi nor en. → 404/422.</summary>
+    public const string AudioLanguageInvalid = "GALLERY_AUDIO_LANGUAGE_INVALID";
+
+    /// <summary>The item/audio is not public-visible (hidden item / inactive location, area or campus). → 404.</summary>
+    public const string AudioNotPublicVisible = "GALLERY_AUDIO_NOT_PUBLIC_VISIBLE";
 
     // ── YouTube external video phase ──
 

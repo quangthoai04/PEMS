@@ -1,3 +1,9 @@
+> ⚠️ **OBSOLETE / KHÔNG CÒN HIỆU LỰC (2026-07-17).** Cơ chế EverAI TTS đã bị gỡ bỏ hoàn toàn và
+> thay bằng **audio song ngữ (VI/EN) do Staff Leader tự upload** — xem
+> `17_07_26_PROMPT_GALLERY_BILINGUAL_MANUAL_AUDIO_REMOVE_EVERAI_FULL_IMPLEMENTATION.md`. Tài liệu này
+> chỉ giữ lại làm lịch sử; KHÔNG dùng để triển khai nữa (không còn bảng `gallery_item_tts_audios`,
+> không còn cột `gallery_items.description`, không còn endpoint TTS).
+
 # PROMPT / ĐẶC TẢ CODE — Tích hợp EverAI TTS cho VisitFPTU Gallery Item
 
 > Tài liệu này dùng cho AI Agent đọc và code tích hợp **EverAI Text To Speech** vào module **VisitFPTU Gallery** của PEMS.

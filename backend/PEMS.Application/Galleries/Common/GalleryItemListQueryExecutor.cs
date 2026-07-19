@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
-using PEMS.Application.Galleries.Tts;
 using PEMS.Domain.Entities.Galleries;
 
 namespace PEMS.Application.Galleries.Common;
@@ -16,26 +16,18 @@ namespace PEMS.Application.Galleries.Common;
 /// and UC-GAL-02 (Search &amp; Filter).
 ///
 /// Enforces the Staff Leader campus scope (via location → area → campus), applies keyword
-/// (title / description / area name / location name), area / location / mediaKind / status filters,
-/// sorts (whitelist), pages, and projects to <see cref="GalleryItemListItemDto"/>. The primary-media
-/// thumbnail and creator name are resolved in a second pass (in-memory) to stay Pomelo-safe — no
-/// correlated subqueries in the projection. Read-only — always <c>AsNoTracking()</c>.
+/// (title / VI + EN description / area name / location name), area / location / mediaKind / status
+/// filters, sorts (whitelist), pages, and projects to <see cref="GalleryItemListItemDto"/>. The
+/// primary-media thumbnail and creator name are resolved in a second pass (in-memory) to stay
+/// Pomelo-safe — no correlated subqueries in the projection. Read-only — always <c>AsNoTracking()</c>.
 /// </summary>
 internal static class GalleryItemListQueryExecutor
 {
     private static readonly string[] AllowedSortColumns = { "createdat", "title", "status" };
 
-    private static readonly string[] AllowedAudioStatuses =
-    {
-        TtsManagementStatuses.Ready, TtsManagementStatuses.Processing, TtsManagementStatuses.Failed,
-        TtsManagementStatuses.Stale, TtsManagementStatuses.NotCreated, TtsManagementStatuses.Disabled,
-        TtsManagementStatuses.InvalidDescription,
-    };
-
     public static async Task<PaginatedResult<GalleryItemListItemDto>> ExecuteAsync(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
-        IGalleryItemTtsService tts,
         IGalleryItemListCriteria request,
         CancellationToken ct)
     {
@@ -49,21 +41,29 @@ internal static class GalleryItemListQueryExecutor
             : request.SortBy!.Trim().ToLowerInvariant();
         if (!AllowedSortColumns.Contains(sortBy))
             sortBy = "createdat";
-        // Default sort is created_at DESC (BR-GAL-SEARCH-04); only explicit "asc" flips it.
-        var ascending = string.Equals(request.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
+        // Default sort is add-order: created_at ASC (earliest-added item first, latest last); only an
+        // explicit "desc" flips it to newest-first.
+        var ascending = !string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
 
         // Campus scope: an item is in scope when its location's area belongs to the caller's campus.
         var query = db.GalleryItems.AsNoTracking()
             .Where(i => i.DeletedAt == null && i.Location.Area.CampusId == campusId);
 
-        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword!.Trim().ToLower();
+        // Whitespace-insensitive keyword match: collapse every run of whitespace in the keyword away
+        // and compare against the space-stripped columns, so "khu    A" still matches "Khu A". Searches
+        // title, VI/EN description, area name (khu vực) and location name (vị trí). REPLACE(x,' ','')
+        // is EF-translatable; these columns only ever hold regular spaces.
+        var keyword = string.IsNullOrWhiteSpace(request.Keyword)
+            ? null
+            : Regex.Replace(request.Keyword!, @"\s+", string.Empty).ToLower();
         if (keyword is { Length: > 0 })
         {
             query = query.Where(i =>
-                i.Title.ToLower().Contains(keyword) ||
-                i.Description.ToLower().Contains(keyword) ||
-                i.Location.Area.AreaName.ToLower().Contains(keyword) ||
-                i.Location.LocationName.ToLower().Contains(keyword));
+                i.Title.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Content.DescriptionVi.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Content.DescriptionEn.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Location.Area.AreaName.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Location.LocationName.ToLower().Replace(" ", string.Empty).Contains(keyword));
         }
 
         if (request.AreaId is { } areaId && areaId > 0)
@@ -102,7 +102,10 @@ internal static class GalleryItemListQueryExecutor
             ("createdat", true) => query.OrderBy(i => i.CreatedAt),
             _ => query.OrderByDescending(i => i.CreatedAt),
         };
-        var sortedQuery = ordered.ThenByDescending(i => i.GalleryItemId);
+        // Tiebreaker follows the sort direction so same-timestamp rows keep add-order (asc) or reverse (desc).
+        var sortedQuery = ascending
+            ? ordered.ThenBy(i => i.GalleryItemId)
+            : ordered.ThenByDescending(i => i.GalleryItemId);
 
         var projected = sortedQuery.Select(i => new GalleryRow
         {
@@ -112,7 +115,8 @@ internal static class GalleryItemListQueryExecutor
             LocationId = i.LocationId,
             LocationName = i.Location.LocationName,
             Title = i.Title,
-            Description = i.Description,
+            // Vietnamese description as the list preview (null-safe for any transitional contentless row).
+            Description = i.Content != null ? i.Content.DescriptionVi : string.Empty,
             ItemType = i.ItemType,
             MediaKind = i.MediaKind,
             Status = i.Status,
@@ -120,36 +124,8 @@ internal static class GalleryItemListQueryExecutor
             CreatedBy = i.CreatedBy,
         });
 
-        // Audio (narration) status is a computed value (per-item hash + TTS-row state machine), so it
-        // can't be expressed in SQL. When no audio filter is active we keep the efficient SQL paging and
-        // only compute the status for the returned page. When an audio filter IS active we must compute
-        // over the whole filtered set first, then page the matches in memory — the SQL sort is preserved.
-        var audioFilter = string.IsNullOrWhiteSpace(request.AudioStatus)
-            ? null
-            : request.AudioStatus!.Trim().ToUpperInvariant();
-        if (audioFilter is not null && !AllowedAudioStatuses.Contains(audioFilter))
-            audioFilter = null;
-
-        List<GalleryRow> rows;
-        int totalItems;
-        IReadOnlyDictionary<long, GalleryItemTtsManagementStatus> statusByItem;
-
-        if (audioFilter is null)
-        {
-            totalItems = await query.CountAsync(ct);
-            rows = await projected.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-            statusByItem = await tts.GetManagementStatusesAsync(Descriptors(rows), ct);
-        }
-        else
-        {
-            var allRows = await projected.ToListAsync(ct);
-            statusByItem = await tts.GetManagementStatusesAsync(Descriptors(allRows), ct);
-            var matched = allRows
-                .Where(r => statusByItem.TryGetValue((long)r.GalleryItemId, out var s) && s.Status == audioFilter)
-                .ToList();
-            totalItems = matched.Count;
-            rows = matched.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        }
+        var totalItems = await query.CountAsync(ct);
+        var rows = await projected.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
 
         var itemIds = rows.Select(r => r.GalleryItemId).ToList();
 
@@ -202,17 +178,10 @@ internal static class GalleryItemListQueryExecutor
             PrimaryMedia = primaryByItem.TryGetValue(r.GalleryItemId, out var pm)
                 ? MapPrimaryMedia(pm)
                 : null,
-            AudioStatus = statusByItem.TryGetValue((long)r.GalleryItemId, out var st)
-                ? st.Status
-                : TtsManagementStatuses.NotCreated,
         }).ToList();
 
         return PaginatedResult<GalleryItemListItemDto>.Create(items, page, pageSize, totalItems);
     }
-
-    /// <summary>Projects the page/candidate rows into the batch narration-status lookup input.</summary>
-    private static IReadOnlyCollection<GalleryTtsItemDescriptor> Descriptors(IEnumerable<GalleryRow> rows)
-        => rows.Select(r => new GalleryTtsItemDescriptor((long)r.GalleryItemId, r.Description)).ToList();
 
     /// <summary>Maps a primary-media row, resolving UPLOADED_FILE vs YOUTUBE render fields.</summary>
     private static GalleryPrimaryMediaDto MapPrimaryMedia(MediaRow pm)

@@ -7,25 +7,23 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Galleries.Common;
-using PEMS.Application.Galleries.Tts;
 using PEMS.Domain.Entities.Galleries;
 using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Application.Galleries.Commands.AddGalleryItem;
 
 /// <summary>
-/// UC-GAL-04 handler. Validates role/scope, the target location (must be ACTIVE and in the caller's
-/// campus), and the files; uploads each file to Google Drive via the shared <see cref="IFileUploadService"/>
-/// (MEDIA → <see cref="FilePurpose.GalleryItemImage"/>/<see cref="FilePurpose.GalleryItemVideo"/>,
-/// VISIT_DELEGATION → <see cref="FilePurpose.GalleryDelegationImage"/>/<see cref="FilePurpose.GalleryDelegationVideo"/>);
-/// creates the <c>gallery_items</c> row plus one <c>gallery_item_media</c> row per file (first = primary),
-/// derives <c>media_kind</c> from the files, and writes an audit log.
+/// UC-GAL-04 handler. Validates role/scope, the four mandatory bilingual fields (descriptionVi +
+/// audioVi + descriptionEn + audioEn), the target location and the gallery media; uploads the two audio
+/// recordings and every gallery image to Google Drive via the shared <see cref="IFileUploadService"/>
+/// (audio → <see cref="FilePurpose.GalleryAudio"/>); creates the <c>gallery_items</c> row, its 1:1
+/// <c>gallery_item_contents</c> row and one <c>gallery_item_media</c> row per media; and writes an audit
+/// log. On any DB failure the already-uploaded Drive objects are cleaned up (compensation).
 /// </summary>
 public sealed class AddGalleryItemCommandHandler
     : IRequestHandler<AddGalleryItemCommand, GalleryItemDetailDto>
@@ -34,8 +32,8 @@ public sealed class AddGalleryItemCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IFileUploadService _fileUpload;
     private readonly IGalleryExternalMediaService _externalMedia;
+    private readonly IGoogleDriveStorageService _drive;
     private readonly IDateTimeService _clock;
-    private readonly IGalleryItemTtsService _tts;
     private readonly ILogger<AddGalleryItemCommandHandler> _logger;
 
     public AddGalleryItemCommandHandler(
@@ -43,16 +41,16 @@ public sealed class AddGalleryItemCommandHandler
         ICurrentUserService currentUser,
         IFileUploadService fileUpload,
         IGalleryExternalMediaService externalMedia,
+        IGoogleDriveStorageService drive,
         IDateTimeService clock,
-        IGalleryItemTtsService tts,
         ILogger<AddGalleryItemCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _fileUpload = fileUpload;
         _externalMedia = externalMedia;
+        _drive = drive;
         _clock = clock;
-        _tts = tts;
         _logger = logger;
     }
 
@@ -72,9 +70,16 @@ public sealed class AddGalleryItemCommandHandler
                 "Chỉ được tối đa 20 media (tệp + video YouTube).", GalleryErrorCodes.TooManyFiles);
 
         // Validate every YouTube URL up front (pure parse) so a bad URL rejects the whole request BEFORE any
-        // file is uploaded or any files row is written — no orphaned Drive object / files row (AC-YT-03).
+        // file is uploaded or any files row is written — no orphaned Drive object / files row.
         foreach (var url in youtubeUrls)
             YouTubeUrlParser.Parse(url);
+
+        // Bilingual content — all four fields are mandatory. Descriptions + audio presence are validated
+        // BEFORE any upload so a rejected request never orphans a Drive object.
+        var descriptionVi = GalleryContentRules.NormalizeDescription(request.DescriptionVi, vietnamese: true);
+        var descriptionEn = GalleryContentRules.NormalizeDescription(request.DescriptionEn, vietnamese: false);
+        var audioVi = GalleryContentRules.RequireAudio(request.AudioVi, vietnamese: true);
+        var audioEn = GalleryContentRules.RequireAudio(request.AudioEn, vietnamese: false);
 
         var status = NormalizeStatus(request.Status);
         var itemType = GalleryItemTypes.Normalize(request.ItemType);
@@ -83,117 +88,149 @@ public sealed class AddGalleryItemCommandHandler
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
 
-        // A location may hold 0, 1 or many gallery items — no per-location uniqueness check.
-
         var title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
-        var description = request.Description?.Trim() ?? string.Empty;
 
-        // Narration cap (EverAI TTS): checked BEFORE any upload so a rejected request never orphans
-        // a Drive object. 422 per the TTS spec.
-        if (description.Length > 1000)
-            throw new BusinessRuleException(
-                "Mô tả không được vượt quá 1000 ký tự.", GalleryErrorCodes.DescriptionTooLong);
-
-        // Build the media list in a stable order — uploads first, then YouTube — so display order and the
-        // primaryMediaKey (upload:{i} / youtube:{i}) line up with what the client sent.
+        // Track every Drive-backed / metadata files row created in this request so we can compensate
+        // (delete Drive object + files row) if a later DB step fails.
+        var uploadedFileIds = new List<ulong>();
         var media = new List<MediaToCreate>(files.Count + youtubeUrls.Count);
 
-        // Upload every file first (each commits its own files row + Drive object); classify image vs video.
-        foreach (var file in files)
-        {
-            var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
-            await using var stream = new MemoryStream(file.Content, writable: false);
-            var uploaded = await _fileUpload.UploadBusinessFileAsync(
-                stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);
-            media.Add(new MediaToCreate((ulong)uploaded.FileId, mediaType, file.Caption, file.AltText));
-        }
-
-        // Register each YouTube URL as a metadata-only files row (no Drive upload, no download). YouTube
-        // media is always VIDEO for media_kind purposes.
-        foreach (var url in youtubeUrls)
-        {
-            var registered = await _externalMedia.RegisterYouTubeAsync(url, (long)actorId, cancellationToken);
-            media.Add(new MediaToCreate((ulong)registered.FileId, GalleryMediaClassifier.Video, null, null));
-        }
-
-        var primaryIndex = ResolvePrimaryIndex(request.PrimaryMediaKey, files.Count, youtubeUrls.Count);
-        var mediaKind = GalleryMediaClassifier.ResolveMediaKind(media.Select(m => m.MediaType));
-        var now = _clock.VietnamNow;
-
-        var item = new GalleryItem
-        {
-            LocationId = (ulong)request.LocationId,
-            Title = title,
-            Description = description,
-            ItemType = itemType,
-            MediaKind = mediaKind,
-            Status = status,
-            DisplayOrder = 0,
-            CreatedAt = now,
-            CreatedBy = actorId,
-        };
-
-        uint order = 1;
-        for (var i = 0; i < media.Count; i++)
-        {
-            var m = media[i];
-            item.Media.Add(new GalleryItemMedia
-            {
-                FileId = m.FileId,
-                MediaType = m.MediaType,
-                Caption = m.Caption,
-                AltText = m.AltText,
-                IsPrimary = i == primaryIndex,
-                DisplayOrder = order,
-                Status = "ACTIVE",
-                CreatedAt = now,
-                CreatedBy = actorId,
-            });
-            order++;
-        }
-
-        _db.GalleryItems.Add(item);
-        await _db.SaveChangesAsync(cancellationToken);
-
-        _db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = actorId,
-            CampusId = campusId,
-            Action = "CREATE_GALLERY_ITEM",
-            EntityType = "GalleryItem",
-            EntityId = item.GalleryItemId,
-            Changes = new List<AuditLogChange>
-            {
-                new AuditLogChange
-                {
-                    FieldName = "GalleryItem",
-                    NewValueText = JsonSerializer.Serialize(new
-                    {
-                        title, locationId = request.LocationId, itemType, status, mediaKind,
-                        mediaCount = media.Count, uploadCount = files.Count, youtubeCount = youtubeUrls.Count,
-                    }),
-                },
-            },
-            CreatedAt = now,
-        });
-        await _db.SaveChangesAsync(cancellationToken);
-
-        // Fire-and-forget narration job (AUTO_GENERATE). The item is already saved — a TTS problem
-        // (disabled config, EverAI down, running-job race) must never fail the create itself.
         try
         {
-            await _tts.EnsureAudioAsync(
-                (long)item.GalleryItemId, TtsTriggerSources.AutoGenerate, (long)actorId,
-                requirePublicVisible: false, bypassFailedCooldown: false, cancellationToken);
+            // Upload the two audio recordings first (each is a GALLERY_AUDIO Drive file).
+            var audioViFileId = await UploadAudioAsync(audioVi, vietnamese: true, actorId, cancellationToken);
+            uploadedFileIds.Add(audioViFileId);
+            var audioEnFileId = await UploadAudioAsync(audioEn, vietnamese: false, actorId, cancellationToken);
+            uploadedFileIds.Add(audioEnFileId);
+
+            // Upload every gallery image; classify image vs video (videos are rejected by the classifier).
+            foreach (var file in files)
+            {
+                var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
+                await using var stream = new MemoryStream(file.Content, writable: false);
+                var uploaded = await _fileUpload.UploadBusinessFileAsync(
+                    stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);
+                uploadedFileIds.Add((ulong)uploaded.FileId);
+                media.Add(new MediaToCreate((ulong)uploaded.FileId, mediaType, file.Caption, file.AltText));
+            }
+
+            // Register each YouTube URL as a metadata-only files row (no Drive upload). YouTube media is VIDEO.
+            foreach (var url in youtubeUrls)
+            {
+                var registered = await _externalMedia.RegisterYouTubeAsync(url, (long)actorId, cancellationToken);
+                uploadedFileIds.Add((ulong)registered.FileId);
+                media.Add(new MediaToCreate((ulong)registered.FileId, GalleryMediaClassifier.Video, null, null));
+            }
+
+            var primaryIndex = ResolvePrimaryIndex(request.PrimaryMediaKey, files.Count, youtubeUrls.Count);
+            var mediaKind = GalleryMediaClassifier.ResolveMediaKind(media.Select(m => m.MediaType));
+            var now = _clock.VietnamNow;
+
+            var item = new GalleryItem
+            {
+                LocationId = (ulong)request.LocationId,
+                Title = title,
+                ItemType = itemType,
+                MediaKind = mediaKind,
+                Status = status,
+                DisplayOrder = 0,
+                CreatedAt = now,
+                CreatedBy = actorId,
+                Content = new GalleryItemContent
+                {
+                    DescriptionVi = descriptionVi,
+                    AudioViFileId = audioViFileId,
+                    DescriptionEn = descriptionEn,
+                    AudioEnFileId = audioEnFileId,
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                },
+            };
+
+            uint order = 1;
+            for (var i = 0; i < media.Count; i++)
+            {
+                var m = media[i];
+                item.Media.Add(new GalleryItemMedia
+                {
+                    FileId = m.FileId,
+                    MediaType = m.MediaType,
+                    Caption = m.Caption,
+                    AltText = m.AltText,
+                    IsPrimary = i == primaryIndex,
+                    DisplayOrder = order,
+                    Status = "ACTIVE",
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                });
+                order++;
+            }
+
+            _db.GalleryItems.Add(item);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                CampusId = campusId,
+                Action = "CREATE_GALLERY_ITEM",
+                EntityType = "GalleryItem",
+                EntityId = item.GalleryItemId,
+                Changes = new List<AuditLogChange>
+                {
+                    new AuditLogChange
+                    {
+                        FieldName = "GalleryItem",
+                        NewValueText = JsonSerializer.Serialize(new
+                        {
+                            galleryItemId = item.GalleryItemId,
+                            title, locationId = request.LocationId, itemType, status, mediaKind,
+                            hasVietnameseContent = true, hasEnglishContent = true,
+                            audioViFileId, audioEnFileId,
+                            mediaCount = media.Count, uploadCount = files.Count, youtubeCount = youtubeUrls.Count,
+                        }),
+                    },
+                },
+                CreatedAt = now,
+            });
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return await GalleryDetailBuilder.BuildAsync(
+                _db, item.GalleryItemId, cancellationToken, "Đã tạo Gallery Item với đầy đủ nội dung song ngữ.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "TTS auto-generate failed after creating gallery item {GalleryItemId}.",
-                item.GalleryItemId);
+            // Compensation: remove every Drive object + files row created before the failure.
+            await GalleryFileCleanup.RemoveUploadedFilesAsync(_db, _drive, _logger, uploadedFileIds, cancellationToken);
+            throw;
         }
+    }
 
-        return await GalleryDetailBuilder.BuildAsync(
-            _db, item.GalleryItemId, cancellationToken, "Đã thêm gallery item mới.");
+    /// <summary>Uploads one bilingual audio recording, mapping upload-policy rejections to a language-specific code.</summary>
+    private async Task<ulong> UploadAudioAsync(
+        GalleryUploadFileCommandDto audio, bool vietnamese, ulong actorId, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = new MemoryStream(audio.Content, writable: false);
+            var uploaded = await _fileUpload.UploadBusinessFileAsync(
+                stream, audio.FileName, audio.ContentType ?? string.Empty, audio.FileSize,
+                FilePurpose.GalleryAudio, (long)actorId, ct);
+            return (ulong)uploaded.FileId;
+        }
+        catch (BusinessRuleException ex) when (ex.ErrorCode == "FILE_TOO_LARGE")
+        {
+            throw new BusinessRuleException(
+                "Bản ghi âm vượt quá dung lượng cho phép (tối đa 20 MB).", GalleryErrorCodes.AudioTooLarge);
+        }
+        catch (BusinessRuleException ex) when (ex.ErrorCode is "FILE_INVALID_EXTENSION" or "FILE_INVALID_TYPE"
+                                                   or "FILE_MAGIC_BYTES_MISMATCH" or "FILE_EMPTY")
+        {
+            throw new BusinessRuleException(
+                vietnamese ? "Bản ghi âm tiếng Việt không đúng định dạng (chỉ MP3/WAV)."
+                           : "Bản ghi âm tiếng Anh không đúng định dạng (chỉ MP3/WAV).",
+                vietnamese ? GalleryErrorCodes.AudioViInvalid : GalleryErrorCodes.AudioEnInvalid);
+        }
     }
 
     private static string NormalizeStatus(string? status)

@@ -106,17 +106,6 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.News.Services.INewsTranslationService,
             PEMS.Infrastructure.Translation.GoogleNewsTranslationService>();
 
-        // EverAI TTS (gallery narration audio): options + typed HTTP client + background job worker.
-        // The ensure/job service itself lives in Application DI.
-        services.Configure<PEMS.Application.Common.Options.EverAiTtsOptions>(
-            configuration.GetSection(PEMS.Application.Common.Options.EverAiTtsOptions.SectionName));
-        services.AddHttpClient<PEMS.Application.Galleries.Tts.IEverAiTtsClient,
-            PEMS.Infrastructure.ExternalServices.Tts.EverAiTtsClient>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(100);
-        });
-        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.GalleryTtsBackgroundService>();
-
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 

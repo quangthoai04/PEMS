@@ -34,13 +34,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
-import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
   const navigate = useNavigate();
-  // Modal đánh giá chuyến thăm — mở tại chỗ, không chuyển route.
-  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   // Image Upload and Card Scanning States
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedCardImage, setUploadedCardImage] = useState<string | null>(null);
@@ -318,35 +315,17 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
       {/* Ký mượn tài sản hậu cần — phần đầu tiên của tab Đang tiếp khách (real handover API). */}
       {visitInstanceId && (
-        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="BORROW" />
+        <LogisticsHandoverSection 
+          visitInstanceId={visitInstanceId} 
+          canManage={!isReadOnly && !isDept} 
+          handoverPhase="BORROW" 
+          sectionNumber="1" 
+          theme="blue" 
+        />
       )}
 
-      {/* Đánh giá chuyến thăm — flow feedback mới (dữ liệu thật, trang riêng thay bảng mock cũ) */}
-      {visitInstanceId && !isDept && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-800">Đánh giá chuyến thăm</p>
-              <p className="text-xs text-gray-500 truncate">Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsFeedbackModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3.5 py-1.5 text-xs font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
-          >
-            <Star className="w-3.5 h-3.5" /> Đánh giá ngay
-          </button>
-        </div>
-      )}
-
-      {/* Modal đánh giá — mở tại chỗ trong Visit Process */}
-      <VisitFeedbackModal
-        open={isFeedbackModalOpen}
-        visitInstanceId={visitInstanceId ?? null}
-        onClose={() => setIsFeedbackModalOpen(false)}
-      />
+      {/* Đánh giá chuyến thăm đã chuyển sang tab Sau tiếp khách (VisitAfterTab) —
+          chỉ đánh giá sau khi Host xác nhận kết thúc tiếp khách. */}
 
       {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
       {visitInstanceId ? (
@@ -357,8 +336,8 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
           onClick={() => setIsSection2Expanded(!isSection2Expanded)}
         >
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-             <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">2</span>
+          <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
+             <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">2</span>
              Biên bản cuộc họp
           </h2>
           <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
@@ -562,11 +541,10 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           onClick={() => setIsSection4Expanded(!isSection4Expanded)}
          >
           <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-bold">3</span>
+            <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
+               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">3</span>
                Tài liệu
             </h2>
-            <p className="text-sm text-blue-200 mt-1 italic ml-10">Lưu trữ tài liệu của đối tác</p>
           </div>
           <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
             {isSection4Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -708,11 +686,10 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           onClick={() => setIsSection3Expanded(!isSection3Expanded)}
          >
           <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">4</span>
+            <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
+               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">4</span>
                Thông tin khác
             </h2>
-            <p className="text-sm text-blue-200 mt-1 italic ml-10">Mục này không bắt buộc điền</p>
           </div>
           <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
             {isSection3Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}

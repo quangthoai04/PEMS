@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -46,11 +47,14 @@ public sealed class ViewGalleryLocationListQueryHandler
         var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword!.Trim();
         if (keyword is { Length: > 0 })
         {
-            var lower = keyword.ToLower();
+            // Whitespace-insensitive match: collapse every run of whitespace in the keyword away and
+            // compare against the space-stripped columns, so "khu    A" still matches "Khu A". The
+            // ToKey path additionally handles diacritics (e.g. "co so" → "cơ sở").
+            var lower = Regex.Replace(keyword, @"\s+", string.Empty).ToLower();
             var key = GalleryKeyNormalizer.ToKey(keyword);
             query = query.Where(l =>
-                l.LocationName.ToLower().Contains(lower) ||
-                l.Area.AreaName.ToLower().Contains(lower) ||
+                l.LocationName.ToLower().Replace(" ", string.Empty).Contains(lower) ||
+                l.Area.AreaName.ToLower().Replace(" ", string.Empty).Contains(lower) ||
                 (key != "" && (l.LocationKey.Contains(key) || l.Area.AreaKey.Contains(key))));
         }
 
@@ -64,12 +68,15 @@ public sealed class ViewGalleryLocationListQueryHandler
                 query = query.Where(l => l.Status == st);
         }
 
-        // Only "createdAt" is a sortable column on this screen (UC §29.1); default DESC.
-        var ascending = string.Equals(request.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
-        IOrderedQueryable<GalleryLocation> ordered = ascending
-            ? query.OrderBy(l => l.CreatedAt)
-            : query.OrderByDescending(l => l.CreatedAt);
-        var sortedQuery = ordered.ThenByDescending(l => l.LocationId);
+        // Only "createdAt" is a sortable column on this screen (UC §29.1). Default is add-order
+        // (ascending: earliest-added location first, latest last); only an explicit "desc" flips it.
+        var descending = string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        IOrderedQueryable<GalleryLocation> ordered = descending
+            ? query.OrderByDescending(l => l.CreatedAt)
+            : query.OrderBy(l => l.CreatedAt);
+        var sortedQuery = descending
+            ? ordered.ThenByDescending(l => l.LocationId)
+            : ordered.ThenBy(l => l.LocationId);
 
         var totalItems = await query.CountAsync(cancellationToken);
 

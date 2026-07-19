@@ -1,26 +1,30 @@
+/**
+ * LogisticsExpensePanel — Ghi chú chi phí (phía Phòng ban) dạng compact.
+ *
+ * Hiện bên dưới biên bản bàn giao & nghiệm thu SAU KHI ký nghiệm thu xong.
+ * - Không chọn phân loại: mọi dòng của phòng ban khi đồng bộ sang Host đều là "Hạng mục yêu cầu".
+ * - Nút "Không có chi phí": xác nhận đơn không phát sinh chi phí (giá về 0, lưu noExpense).
+ * - Nằm trong vùng in của biên bản → Tải PDF biên bản sẽ kèm bảng chi phí (nút bấm bị ẩn khi in).
+ * - Fetch lỗi (không thuộc phòng ban / chưa đủ điều kiện) → ẩn im lặng, không toast.
+ */
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Save, Edit2, Trash2, DollarSign, AlertTriangle } from 'lucide-react';
+import { Loader2, Plus, Save, Trash2, DollarSign, CheckCircle2, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import visitExpenseService, { VisitExpenseReport, SaveExpenseReportCommand, SaveExpenseItemDto } from '../../../services/visit-expense.service';
+import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 
 interface Props {
   logisticsItemId: number;
+  readOnly?: boolean;
 }
 
-const ORIGIN_LABELS: Record<string, string> = {
-  REQUEST_ITEM: 'Hạng mục yêu cầu',
-  MANUAL: 'Nhập tay',
-  ADDITIONAL: 'Phát sinh',
-  DAMAGE_LOSS: 'Đền bù hư hỏng/mất mát',
-  OTHER: 'Khác',
-};
-
-export function LogisticsExpensePanel({ logisticsItemId }: Props) {
+export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Props) {
   const [report, setReport] = useState<VisitExpenseReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<SaveExpenseItemDto[]>([]);
   const [reportNote, setReportNote] = useState('');
+  const [confirmNoExpensePopup, setConfirmNoExpensePopup] = useState(false);
 
   const fetchReport = async () => {
     try {
@@ -39,8 +43,9 @@ export function LogisticsExpensePanel({ logisticsItemId }: Props) {
         itemNote: it.itemNote,
         displayOrder: it.displayOrder,
       })));
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Lỗi khi tải thông tin chi phí.');
+    } catch {
+      // Người xem không thuộc phòng ban / chưa đủ điều kiện tạo báo cáo → ẩn panel.
+      setReport(null);
     } finally {
       setLoading(false);
     }
@@ -51,48 +56,43 @@ export function LogisticsExpensePanel({ logisticsItemId }: Props) {
     // eslint-disable-next-line
   }, [logisticsItemId]);
 
+  if (loading) {
+    return (
+      <div className="mt-4 flex items-center gap-2 text-xs text-slate-400 print:hidden">
+        <Loader2 className="w-4 h-4 animate-spin" /> Đang tải ghi chú chi phí...
+      </div>
+    );
+  }
+
+  if (!report) return null;
+
+  const locked = readOnly || report.status === 'FINALIZED' || report.status === 'CANCELLED';
+  const total = items.reduce((sum, it) => sum + (it.quantity || 0) * (it.unitPrice || 0), 0);
+
   const handleAddItem = () => {
-    setItems([
-      ...items,
-      {
-        itemOrigin: 'ADDITIONAL',
-        itemName: '',
-        quantity: 1,
-        unitName: '',
-        unitPrice: 0,
-        displayOrder: items.length + 1,
-      }
-    ]);
+    setItems([...items, { itemOrigin: 'MANUAL', itemName: '', quantity: 1, unitName: '', unitPrice: 0, displayOrder: items.length + 1 }]);
   };
 
   const handleUpdateItem = (index: number, field: keyof SaveExpenseItemDto, value: any) => {
-    const newItems = [...items];
-    (newItems[index] as any)[field] = value;
-    setItems(newItems);
+    const next = [...items];
+    (next[index] as any)[field] = value;
+    setItems(next);
   };
 
-  const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
-  };
+  const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
-  const handleSave = async () => {
+  const doSave = async (noExpense: boolean, itemsToSave: SaveExpenseItemDto[]) => {
     if (!report) return;
-    
-    // validate
-    if (items.some(i => !i.itemName.trim())) {
-      toast.error('Vui lòng nhập tên cho tất cả các hạng mục chi phí.');
-      return;
-    }
-
     try {
       setSaving(true);
       const cmd: SaveExpenseReportCommand = {
         rowVersion: report.rowVersion,
         reportNote,
-        items: items.map((it, idx) => ({ ...it, displayOrder: idx + 1 })),
+        noExpense,
+        items: itemsToSave.map((it, idx) => ({ ...it, displayOrder: idx + 1 })),
       };
       await visitExpenseService.saveExpenseReport(report.expenseReportId, cmd);
-      toast.success('Đã lưu thông tin chi phí thành công.');
+      toast.success(noExpense ? 'Đã xác nhận không có chi phí.' : 'Đã lưu chi phí và đồng bộ sang Host.');
       await fetchReport();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Lỗi khi lưu chi phí.');
@@ -101,185 +101,178 @@ export function LogisticsExpensePanel({ logisticsItemId }: Props) {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="p-8 flex justify-center items-center text-slate-500">
-        <Loader2 className="w-6 h-6 animate-spin mr-2 text-[#004c91]" />
-        Đang tải bảng chi phí...
-      </div>
-    );
-  }
+  const handleSave = () => {
+    if (items.some(i => !i.itemName.trim())) {
+      toast.error('Vui lòng nhập tên cho tất cả các hạng mục chi phí.');
+      return;
+    }
+    void doSave(false, items);
+  };
 
-  if (!report) {
-    return null;
-  }
+  const handleNoExpenseClick = () => {
+    setConfirmNoExpensePopup(true);
+  };
 
-  const isReadOnly = report.status === 'FINALIZED' || report.status === 'CANCELLED';
-
-  const totalCalculated = items.reduce((sum, it) => sum + (it.quantity * it.unitPrice), 0);
+  const confirmNoExpense = () => {
+    setConfirmNoExpensePopup(false);
+    const zeroed = items
+      .filter(i => i.itemOrigin === 'REQUEST_ITEM' || i.itemName.trim())
+      .map(i => ({ ...i, unitPrice: 0 }));
+    setItems(zeroed);
+    void doSave(true, zeroed);
+  };
 
   return (
-    <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-gray-100 flex flex-col hover:shadow-[0_12px_40px_-4px_rgba(0,76,145,0.08)] transition-shadow duration-500 overflow-hidden animate-in slide-in-from-right-8 fade-in relative duration-500 font-sans mt-8">
-      <div className="flex items-center justify-between bg-blue-50/50 px-8 py-5 border-b border-blue-100">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-white text-[#004c91] rounded-2xl shadow-sm border border-blue-200 shrink-0">
-            <DollarSign className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl font-black text-[#004c91] tracking-tight uppercase">Ghi chú chi phí</h2>
-            <p className="text-xs font-bold text-slate-500 mt-0.5">Bảng kê khai chi phí phục vụ hạng mục hậu cần</p>
-          </div>
+    <div className="mt-6 border border-slate-200 rounded-xl overflow-hidden bg-white">
+      {/* Header nhỏ gọn */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <div className="p-1 bg-blue-100 rounded-md text-[#004c91]"><DollarSign className="w-3.5 h-3.5" /></div>
+          <span className="text-[12px] font-black text-[#004c91] uppercase tracking-wide">Ghi chú chi phí</span>
         </div>
-        <div>
-          {isReadOnly && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Đã chốt (Không thể sửa)
+        <div className="flex items-center gap-2 print:hidden">
+          {report.noExpense ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <CheckCircle2 className="w-3 h-3" /> Không có chi phí
+            </span>
+          ) : report.status === 'SAVED' ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <CheckCircle2 className="w-3 h-3" /> Đã lưu & đồng bộ Host
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+              Chưa kê khai
             </span>
           )}
         </div>
       </div>
 
-      <div className="p-8">
-        <div className="overflow-x-auto rounded-xl border border-slate-200 mb-6">
-          <table className="w-full text-left border-collapse whitespace-nowrap">
+      <div className="p-3">
+        {/* Bảng compact — không có cột Phân loại (mặc định Hạng mục yêu cầu khi sang Host) */}
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Phân loại</th>
-                <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase min-w-[200px]">Tên hạng mục</th>
-                <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right w-24">Số lượng</th>
-                <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase w-32">Đơn vị</th>
-                <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right w-40">Đơn giá (₫)</th>
-                <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right w-40">Thành tiền</th>
-                {!isReadOnly && <th className="px-4 py-3 w-12"></th>}
+                <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase min-w-[150px]">Tên hạng mục</th>
+                <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase text-right w-16">SL</th>
+                <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-24">Đơn vị</th>
+                <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase text-right w-28">Đơn giá (₫)</th>
+                <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase text-right w-28">Thành tiền</th>
+                {!locked && <th className="px-1 py-1.5 w-8 print:hidden"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={isReadOnly ? 6 : 7} className="px-4 py-8 text-center text-sm text-slate-400 italic">
-                    Chưa có hạng mục chi phí nào.
-                  </td>
+                  <td colSpan={locked ? 5 : 6} className="px-3 py-4 text-center text-[11px] text-slate-400 italic">Chưa có hạng mục chi phí nào.</td>
                 </tr>
-              ) : (
-                items.map((it, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-2">
-                      <select
-                        value={it.itemOrigin}
-                        onChange={(e) => handleUpdateItem(idx, 'itemOrigin', e.target.value)}
-                        disabled={isReadOnly || it.itemOrigin === 'REQUEST_ITEM'}
-                        className="w-full bg-transparent border-none text-sm font-medium text-slate-700 outline-none focus:ring-0 disabled:opacity-70 disabled:bg-transparent"
-                      >
-                        {Object.entries(ORIGIN_LABELS).map(([k, v]) => (
-                          <option key={k} value={k}>{v}</option>
-                        ))}
-                      </select>
+              ) : items.map((it, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50">
+                  <td className="px-2.5 py-1">
+                    <input
+                      type="text"
+                      value={it.itemName}
+                      onChange={(e) => handleUpdateItem(idx, 'itemName', e.target.value)}
+                      disabled={locked || it.itemOrigin === 'REQUEST_ITEM'}
+                      placeholder="Nhập tên..."
+                      className="w-full bg-transparent border-none text-xs font-semibold text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                    />
+                  </td>
+                  <td className="px-2.5 py-1">
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={it.quantity}
+                      onChange={(e) => handleUpdateItem(idx, 'quantity', Number(e.target.value) || 0)}
+                      disabled={locked}
+                      className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                    />
+                  </td>
+                  <td className="px-2.5 py-1">
+                    <input
+                      type="text"
+                      value={it.unitName || ''}
+                      onChange={(e) => handleUpdateItem(idx, 'unitName', e.target.value)}
+                      disabled={locked}
+                      placeholder="Cái, Chuyến..."
+                      className="w-full bg-transparent border-none text-xs text-slate-600 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                    />
+                  </td>
+                  <td className="px-2.5 py-1">
+                    <input
+                      type="number" min="0"
+                      value={it.unitPrice}
+                      onChange={(e) => handleUpdateItem(idx, 'unitPrice', Number(e.target.value) || 0)}
+                      disabled={locked}
+                      className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                    />
+                  </td>
+                  <td className="px-2.5 py-1 text-right font-black text-[#004c91]">
+                    {((it.quantity || 0) * (it.unitPrice || 0)).toLocaleString('vi-VN')} ₫
+                  </td>
+                  {!locked && (
+                    <td className="px-1 py-1 text-center print:hidden">
+                      {it.itemOrigin !== 'REQUEST_ITEM' && (
+                        <button type="button" onClick={() => handleRemoveItem(idx)} title="Xóa"
+                          className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors outline-none cursor-pointer">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        value={it.itemName}
-                        onChange={(e) => handleUpdateItem(idx, 'itemName', e.target.value)}
-                        disabled={isReadOnly || it.itemOrigin === 'REQUEST_ITEM'}
-                        placeholder="Nhập tên..."
-                        className="w-full bg-transparent border-none text-sm font-semibold text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={it.quantity}
-                        onChange={(e) => handleUpdateItem(idx, 'quantity', Number(e.target.value) || 0)}
-                        disabled={isReadOnly}
-                        className="w-full bg-transparent border-none text-sm font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        value={it.unitName || ''}
-                        onChange={(e) => handleUpdateItem(idx, 'unitName', e.target.value)}
-                        disabled={isReadOnly}
-                        placeholder="VD: Cái, Chuyến..."
-                        className="w-full bg-transparent border-none text-sm text-slate-600 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={it.unitPrice}
-                        onChange={(e) => handleUpdateItem(idx, 'unitPrice', Number(e.target.value) || 0)}
-                        disabled={isReadOnly}
-                        className="w-full bg-transparent border-none text-sm font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-right font-black text-[#004c91]">
-                      {((it.quantity || 0) * (it.unitPrice || 0)).toLocaleString('vi-VN')} ₫
-                    </td>
-                    {!isReadOnly && (
-                      <td className="px-4 py-2 text-center">
-                        {it.itemOrigin !== 'REQUEST_ITEM' && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(idx)}
-                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors outline-none cursor-pointer"
-                            title="Xóa"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))
-              )}
+                  )}
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr className="bg-[#004c91]/5 border-t border-[#004c91]/10">
-                <td colSpan={5} className="px-4 py-3 text-right text-sm font-black text-[#004c91] uppercase">Tổng chi phí dự kiến</td>
-                <td className="px-4 py-3 text-right text-base font-black text-[#f37021]">
-                  {totalCalculated.toLocaleString('vi-VN')} ₫
+                <td colSpan={4} className="px-2.5 py-1.5 text-right text-[10px] font-black text-[#004c91] uppercase">Tổng chi phí</td>
+                <td className="px-2.5 py-1.5 text-right text-xs font-black text-[#f37021]">
+                  {report.noExpense ? 'Không có chi phí' : `${total.toLocaleString('vi-VN')} ₫`}
                 </td>
-                {!isReadOnly && <td></td>}
+                {!locked && <td className="print:hidden"></td>}
               </tr>
             </tfoot>
           </table>
         </div>
 
-        {!isReadOnly && (
-          <div className="flex justify-between items-start gap-6">
-            <button
-              type="button"
-              onClick={handleAddItem}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors cursor-pointer outline-none shrink-0"
-            >
-              <Plus className="w-4 h-4" /> Thêm hạng mục
+        {/* Ghi chú in được (chỉ hiện khi có nội dung lúc in) */}
+        {locked && reportNote && (
+          <p className="mt-2 text-[11px] text-slate-500 italic">Ghi chú: {reportNote}</p>
+        )}
+
+        {!locked && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 print:hidden">
+            <button type="button" onClick={handleAddItem}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer outline-none">
+              <Plus className="w-3.5 h-3.5" /> Thêm hạng mục
             </button>
-            <div className="flex-1 flex flex-col items-end gap-3">
-              <textarea
-                value={reportNote}
-                onChange={(e) => setReportNote(e.target.value)}
-                placeholder="Ghi chú tổng thể cho báo cáo chi phí này (không bắt buộc)..."
-                rows={2}
-                className="w-full max-w-lg px-4 py-3 text-sm rounded-xl border border-slate-200 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-blue-100 transition-shadow resize-none placeholder-slate-400"
-              />
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#004c91] hover:bg-[#003b73] text-white text-sm font-black rounded-xl transition-all shadow-md shadow-[#004c91]/20 cursor-pointer outline-none disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Lưu bảng chi phí
-              </button>
-            </div>
+            <input
+              type="text"
+              value={reportNote}
+              onChange={(e) => setReportNote(e.target.value)}
+              placeholder="Ghi chú (không bắt buộc)..."
+              className="flex-1 min-w-[140px] px-2.5 py-1.5 text-[11px] rounded-lg border border-slate-200 outline-none focus:border-[#004c91] transition-shadow placeholder-slate-400"
+            />
+            <button type="button" onClick={handleNoExpenseClick} disabled={saving}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-bold rounded-lg border border-slate-300 transition-colors cursor-pointer outline-none disabled:opacity-50">
+              <Ban className="w-3.5 h-3.5" /> Không có chi phí
+            </button>
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#004c91] hover:bg-[#003b73] text-white text-[11px] font-black rounded-lg transition-all shadow-sm cursor-pointer outline-none disabled:opacity-50">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Lưu chi phí
+            </button>
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmNoExpensePopup}
+        onClose={() => setConfirmNoExpensePopup(false)}
+        onConfirm={confirmNoExpense}
+        title="Xác nhận Không có chi phí"
+        message="Xác nhận đơn yêu cầu này KHÔNG phát sinh chi phí? Đơn giá các dòng sẽ được đưa về 0."
+        variant="warning"
+        confirmText="Xác nhận"
+      />
     </div>
   );
 }

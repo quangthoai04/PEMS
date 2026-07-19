@@ -95,7 +95,10 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<GalleryLocation>();
         modelBuilder.Ignore<GalleryItem>();
         modelBuilder.Ignore<GalleryItemMedia>();
-        modelBuilder.Ignore<GalleryItemTtsAudio>();
+        modelBuilder.Ignore<GalleryItemContent>();
+        modelBuilder.Ignore<VisitExpenseReport>();
+        modelBuilder.Ignore<VisitExpenseItem>();
+        modelBuilder.Ignore<VisitExpenseReportEvent>();
         modelBuilder.Ignore<PhotoFaceTag>();
         modelBuilder.Ignore<EmailTemplate>();
         modelBuilder.Ignore<SentEmail>();
@@ -189,7 +192,10 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
-    DbSet<GalleryItemTtsAudio> IApplicationDbContext.GalleryItemTtsAudios => Set<GalleryItemTtsAudio>();
+    DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
+    DbSet<VisitExpenseReport> IApplicationDbContext.VisitExpenseReports => Set<VisitExpenseReport>();
+    DbSet<VisitExpenseItem> IApplicationDbContext.VisitExpenseItems => Set<VisitExpenseItem>();
+    DbSet<VisitExpenseReportEvent> IApplicationDbContext.VisitExpenseReportEvents => Set<VisitExpenseReportEvent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<EmailTemplate> IApplicationDbContext.EmailTemplates => Set<EmailTemplate>();
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();

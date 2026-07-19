@@ -11,7 +11,10 @@ public sealed class GalleryItemDetailDto
 {
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
-    public string Description { get; init; } = string.Empty;
+
+    /// <summary>Bilingual descriptions + audio recordings (VI/EN). Always present for a valid item.</summary>
+    public GalleryItemContentDto Content { get; init; } = new();
+
     public string ItemType { get; init; } = string.Empty;
     public string ItemTypeLabel { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
@@ -29,6 +32,26 @@ public sealed class GalleryItemDetailDto
     public IReadOnlyList<GalleryMediaDto> Media { get; init; } = Array.Empty<GalleryMediaDto>();
 
     public string? Message { get; init; }
+}
+
+/// <summary>The item's bilingual content for the management detail/edit screens.</summary>
+public sealed class GalleryItemContentDto
+{
+    public string DescriptionVi { get; init; } = string.Empty;
+    public GalleryAudioDto? AudioVi { get; init; }
+    public string DescriptionEn { get; init; } = string.Empty;
+    public GalleryAudioDto? AudioEn { get; init; }
+}
+
+/// <summary>One audio recording's file metadata + authenticated proxy URL (management screens).</summary>
+public sealed class GalleryAudioDto
+{
+    public ulong FileId { get; init; }
+    public string FileName { get; init; } = string.Empty;
+    public string? MimeType { get; init; }
+    public long? FileSize { get; init; }
+    /// <summary>Authenticated content proxy URL (<c>/api/files/{id}/content</c>) — dashboard has a token.</summary>
+    public string Url { get; init; } = string.Empty;
 }
 
 public sealed class GalleryAreaRefDto

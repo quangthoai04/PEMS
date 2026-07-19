@@ -797,15 +797,17 @@ export function TaskDetail() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Ghi chú chi phí — hiện sau khi ký nghiệm thu đủ 2 bên; nằm trong vùng in
+                      nên Tải PDF biên bản sẽ kèm luôn bảng chi phí. */}
+                  {isTaskComplete && (
+                    <LogisticsExpensePanel logisticsItemId={detailData.logisticsItemId} />
+                  )}
                 </div>
               </div>
             </div>
           );
         })()}
-
-        {isTaskComplete && (
-          <LogisticsExpensePanel logisticsItemId={detailData.logisticsItemId} />
-        )}
       </div>
 
       {/* FOOTER ACTION */}

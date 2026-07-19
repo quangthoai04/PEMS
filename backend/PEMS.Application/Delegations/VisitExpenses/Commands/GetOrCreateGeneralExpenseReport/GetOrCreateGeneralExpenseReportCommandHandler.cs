@@ -121,6 +121,7 @@ public class GetOrCreateGeneralExpenseReportCommandHandler : IRequestHandler<Get
             DepartmentId = entity.DepartmentId,
             Status = entity.Status,
             ReportNote = entity.ReportNote,
+            NoExpense = entity.NoExpense,
             CurrencyCode = entity.CurrencyCode,
             RowVersion = entity.RowVersion,
             CreatedAt = entity.CreatedAt,

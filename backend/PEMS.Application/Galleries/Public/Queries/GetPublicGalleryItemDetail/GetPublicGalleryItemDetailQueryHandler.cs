@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Galleries.Common;
 using PEMS.Application.Galleries.Public.Common;
 
 namespace PEMS.Application.Galleries.Public.Queries.GetPublicGalleryItemDetail;
@@ -47,7 +48,10 @@ public sealed class GetPublicGalleryItemDetailQueryHandler
                 LocationName = i.Location.LocationName,
                 i.GalleryItemId,
                 i.Title,
-                i.Description,
+                DescriptionVi = i.Content != null ? i.Content.DescriptionVi : string.Empty,
+                DescriptionEn = i.Content != null ? i.Content.DescriptionEn : string.Empty,
+                AudioViFileId = i.Content != null ? (ulong?)i.Content.AudioViFileId : null,
+                AudioEnFileId = i.Content != null ? (ulong?)i.Content.AudioEnFileId : null,
                 i.MediaKind,
                 i.Status,
             })
@@ -99,7 +103,23 @@ public sealed class GetPublicGalleryItemDetailQueryHandler
             {
                 GalleryItemId = head.GalleryItemId,
                 Title = head.Title,
-                Description = head.Description,
+                Content = new PublicGalleryItemContentDto
+                {
+                    Vi = new PublicGalleryLanguageContentDto
+                    {
+                        Description = head.DescriptionVi,
+                        AudioUrl = head.AudioViFileId is { } vi
+                            ? PublicGalleryFileUrls.Audio(head.GalleryItemId, GalleryLanguages.Vietnamese, vi)
+                            : null,
+                    },
+                    En = new PublicGalleryLanguageContentDto
+                    {
+                        Description = head.DescriptionEn,
+                        AudioUrl = head.AudioEnFileId is { } en
+                            ? PublicGalleryFileUrls.Audio(head.GalleryItemId, GalleryLanguages.English, en)
+                            : null,
+                    },
+                },
                 MediaKind = head.MediaKind,
                 Status = head.Status,
             },

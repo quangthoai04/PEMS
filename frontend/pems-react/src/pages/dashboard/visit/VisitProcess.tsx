@@ -691,7 +691,7 @@ export function VisitProcess() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24">
+    <div className="p-4 sm:p-6 md:p-8 w-full pb-24">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
         <span className="mx-2">/</span>
@@ -780,12 +780,11 @@ export function VisitProcess() {
           {/* Phần 1: Thông tin chung */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">
             <div 
-              className="px-8 py-6 flex items-center justify-between cursor-pointer transition-colors bg-[#f37021]"
+              className="px-6 py-4 flex items-center justify-between cursor-pointer transition-colors bg-[#f37021]"
               onClick={() => setIsInfoExpanded(!isInfoExpanded)}
             >
               <div>
-                <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">1. Thông tin chung</h2>
-                <p className="text-sm font-medium text-orange-100 mt-1 pl-4">Thông tin đoàn khách, thành phần tham dự và setup</p>
+                <h2 className="text-lg font-bold text-white border-l-4 border-white pl-3">1. Thông tin chung</h2>
               </div>
               <div className="flex items-center gap-3">
                 {canEditBefore && !isInfoEditable && !isClosed && !isDept && (
@@ -815,23 +814,23 @@ export function VisitProcess() {
                   exit={{ height: 0, opacity: 0 }}
                   className="border-t border-gray-100 overflow-hidden"
                 >
-                  <div className={`p-8 space-y-8 ${!isInfoEditable ? 'bg-slate-50/50 opacity-90' : 'bg-white'}`}>
+                  <div className={`p-6 space-y-4 ${!isInfoEditable ? 'bg-slate-50/50 opacity-90' : 'bg-white'}`}>
                     {/* Section 1: Thông tin người đăng ký */}
-                    <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden">
+                    <div className="bg-white border border-[#004c91]/20 rounded-xl overflow-hidden shadow-sm">
                       <div 
-                        className="bg-[#004c91] px-6 py-4 flex items-center justify-between cursor-pointer"
+                        className="bg-[#004c91] px-4 py-2.5 flex items-center justify-between cursor-pointer"
                         onClick={() => setIsInfoSection1Expanded(!isInfoSection1Expanded)}
                       >
-                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">1</span>
+                        <h2 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-tight">
+                          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#f37021] text-white font-bold text-xs">1</span>
                           Thông tin người tạo
                         </h2>
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                             <Lock className="w-3 h-3" /> Chỉ đọc
                           </span>
-                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
-                            {isInfoSection1Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                          <div className="w-6 h-6 flex items-center justify-center text-white/80 hover:text-white transition-colors">
+                            {isInfoSection1Expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </div>
                         </div>
                       </div>
@@ -851,21 +850,21 @@ export function VisitProcess() {
                     </div>
 
                     {/* Section 2: Thông tin đoàn khách */}
-                    <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden">
+                    <div className="bg-white border border-[#004c91]/20 rounded-xl overflow-hidden shadow-sm">
                       <div 
-                        className="bg-[#004c91] px-6 py-4 flex items-center justify-between cursor-pointer"
+                        className="bg-[#004c91] px-4 py-2.5 flex items-center justify-between cursor-pointer"
                         onClick={() => setIsInfoSection2Expanded(!isInfoSection2Expanded)}
                       >
-                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">2</span>
+                        <h2 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-tight">
+                          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#f37021] text-white font-bold text-xs">2</span>
                           Thông tin đoàn khách
                         </h2>
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                             <Lock className="w-3 h-3" /> Chỉ đọc
                           </span>
-                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
-                            {isInfoSection2Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                          <div className="w-6 h-6 flex items-center justify-center text-white/80 hover:text-white transition-colors">
+                            {isInfoSection2Expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </div>
                         </div>
                       </div>
@@ -883,17 +882,17 @@ export function VisitProcess() {
                     </div>
 
                     {/* Section 3: Setup */}
-                    <div className="bg-white rounded-2xl border border-[#004c91]/20 shadow-sm overflow-hidden mb-8">
+                    <div className="bg-white border border-[#004c91]/20 rounded-xl overflow-hidden shadow-sm mb-4">
                       <div 
-                        className="bg-[#004c91] px-6 py-4 flex items-center justify-between cursor-pointer"
+                        className="bg-[#004c91] px-4 py-2.5 flex items-center justify-between cursor-pointer"
                         onClick={() => setIsInfoSection3Expanded(!isInfoSection3Expanded)}
                       >
-                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#f37021] text-white font-black text-sm">3</span>
+                        <h2 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-tight">
+                          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#f37021] text-white font-bold text-xs">3</span>
                           Thiết lập & Điều phối sự kiện (Set up)
                         </h2>
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
-                          {isInfoSection3Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        <div className="w-6 h-6 flex items-center justify-center text-white/80 hover:text-white transition-colors">
+                          {isInfoSection3Expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </div>
                       </div>
                       <AnimatePresence>
@@ -1228,12 +1227,11 @@ export function VisitProcess() {
           {/* Phần 2: Chuẩn bị chi tiết */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">
             <div 
-              className="px-8 py-6 flex items-center justify-between cursor-pointer transition-colors bg-[#004c91]"
+              className="px-6 py-4 flex items-center justify-between cursor-pointer transition-colors bg-[#004c91]"
               onClick={() => setIsSetupExpanded(!isSetupExpanded)}
             >
               <div>
-                <h2 className="text-xl font-bold text-white border-l-4 border-[#f37021] pl-3">2. Chuẩn bị chi tiết</h2>
-                <p className="text-sm font-medium text-blue-100 mt-1 pl-4">Gửi yêu cầu hậu cần &amp; điều phối nhân sự cho chuyến tiếp khách</p>
+                <h2 className="text-lg font-bold text-white border-l-4 border-[#f37021] pl-3">2. Chuẩn bị chi tiết</h2>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white">

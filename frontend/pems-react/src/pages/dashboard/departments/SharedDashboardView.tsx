@@ -42,6 +42,7 @@ import { NotificationDetailModal } from '../../../features/notifications/compone
 import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { matchCalendarChangeNotifs } from '../../../features/notifications/utils/calendarChangeNotifs';
 import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
@@ -4044,6 +4045,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       <span className="w-2 h-2 rounded-full bg-amber-500" />
                       <span className="font-semibold text-amber-950">Tiến trình an toàn: Vui lòng ký đầy đủ 2 ô "Bàn giao" đợt 1 bên trên để tự động mở khóa hồ sơ "Nghiệm thu bồi hoàn" đợt 2 sau khi hoàn tất hành trình di chuyển đoàn Safuri.</span>
                     </div>
+                  )}
+
+                  {/* Ghi chú chi phí — hiện sau khi ký nghiệm thu đủ 2 bên; nằm trong vùng in
+                      của biên bản nên Tải PDF sẽ kèm bảng chi phí. */}
+                  {safuriBG1Signed && safuriBG2Signed && safuriNT1Signed && safuriNT2Signed && activePopoverEvent.rawId && (
+                    <LogisticsExpensePanel logisticsItemId={activePopoverEvent.rawId} />
                   )}
                 </div>
                 </>

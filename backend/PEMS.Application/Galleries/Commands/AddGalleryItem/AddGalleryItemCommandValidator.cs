@@ -3,9 +3,10 @@ using FluentValidation;
 namespace PEMS.Application.Galleries.Commands.AddGalleryItem;
 
 /// <summary>
-/// Input validation for UC-GAL-04. Title and description are required (DB has
-/// <c>gallery_items.description TEXT NOT NULL</c> — the UI label must read "Mô tả *"); at least one
-/// media file is required and at most five. Location/status/file-content rules are enforced in the handler.
+/// Input validation for UC-GAL-04. Only the always-400 basics live here (title required + max length,
+/// a location chosen, a content type chosen, media count). The four bilingual fields (descriptionVi +
+/// audioVi + descriptionEn + audioEn) are validated in the handler so a missing one maps to 422 with a
+/// field-specific error code (not the FluentValidation 400).
 /// </summary>
 public sealed class AddGalleryItemCommandValidator : AbstractValidator<AddGalleryItemCommand>
 {
@@ -14,9 +15,6 @@ public sealed class AddGalleryItemCommandValidator : AbstractValidator<AddGaller
         RuleFor(x => x.Title)
             .NotEmpty().WithMessage("Vui lòng nhập tiêu đề.")
             .MaximumLength(255).WithMessage("Tiêu đề tối đa 255 ký tự.");
-
-        RuleFor(x => x.Description)
-            .NotEmpty().WithMessage("Vui lòng nhập mô tả.");
 
         RuleFor(x => x.LocationId)
             .GreaterThan(0).WithMessage("Vui lòng chọn vị trí.");

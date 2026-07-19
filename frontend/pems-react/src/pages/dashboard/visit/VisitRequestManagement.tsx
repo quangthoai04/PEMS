@@ -381,7 +381,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   // Feedback rule mới: map visitInstanceId → trạng thái đánh giá của user hiện tại.
-  // Backend trả các instance user là Visitor/Host và đang DURING_VISIT/AFTER_VISIT/CLOSED;
+  // Backend trả các instance user là Visitor/Host và đã kết thúc tiếp khách (AFTER_VISIT/CLOSED);
   // dùng để hiện nút "Đánh giá" hoặc badge "Đã đánh giá" ở cột hành động.
   const [feedbackByInstance, setFeedbackByInstance] = useState<Record<number, PendingFeedbackItem>>({});
   useEffect(() => {

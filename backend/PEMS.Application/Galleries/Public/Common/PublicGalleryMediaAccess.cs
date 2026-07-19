@@ -7,10 +7,11 @@ namespace PEMS.Application.Galleries.Public.Common;
 
 /// <summary>
 /// Shared authorization for the anonymous, gallery-scoped public file proxy (BR-PGAL-13/14). A file id
-/// is only serveable when it backs public-visible content: a public gallery media (main or thumbnail),
-/// an ACTIVE area/location cover (image OR MP4 video — both live in <c>cover_file_id</c>), or a READY
-/// TTS narration of a public item. Everything else is rejected so the anonymous route can never fetch
-/// avatars, documents, hidden media, or an arbitrary Drive file.
+/// is only serveable when it backs public-visible content: a public gallery media (main or thumbnail) or
+/// an ACTIVE area/location cover (image OR MP4 video — both live in <c>cover_file_id</c>). Everything
+/// else is rejected so the anonymous route can never fetch avatars, documents, hidden media, or an
+/// arbitrary Drive file. Bilingual narration audio is served by its own item+language-scoped endpoint
+/// (<c>gallery-items/{id}/audio/{lang}</c>), never through this generic fileId proxy.
 /// </summary>
 internal static class PublicGalleryMediaAccess
 {
@@ -43,18 +44,6 @@ internal static class PublicGalleryMediaAccess
                 l.Status == "ACTIVE" &&
                 l.Area.Status == "ACTIVE" &&
                 l.Area.Campus.Status == "ACTIVE",
-                ct);
-
-        // READY TTS narration audio of a public-visible item.
-        if (!ok)
-            ok = await db.GalleryItemTtsAudios.AsNoTracking().AnyAsync(t =>
-                t.AudioFileId == fileId &&
-                t.Status == "READY" &&
-                t.GalleryItem.Status == "PUBLISHED" &&
-                t.GalleryItem.DeletedAt == null &&
-                t.GalleryItem.Location.Status == "ACTIVE" &&
-                t.GalleryItem.Location.Area.Status == "ACTIVE" &&
-                t.GalleryItem.Location.Area.Campus.Status == "ACTIVE",
                 ct);
 
         return ok;

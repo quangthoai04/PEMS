@@ -66,6 +66,7 @@ public class SaveExpenseReportCommandHandler : IRequestHandler<SaveExpenseReport
 
         // Update fields
         report.ReportNote = request.ReportNote;
+        report.NoExpense = request.NoExpense;
         report.Status = "SAVED";
         report.SavedAt = DateTime.UtcNow;
         report.SavedBy = currentUserId;
@@ -137,6 +138,7 @@ public class SaveExpenseReportCommandHandler : IRequestHandler<SaveExpenseReport
         {
             ExpenseReportId = report.ExpenseReportId,
             EventType = "SAVED",
+            EventNote = request.NoExpense ? "NO_EXPENSE" : null,
             PerformedBy = currentUserId,
             PerformedAt = DateTime.UtcNow
         });
@@ -167,6 +169,7 @@ public class SaveExpenseReportCommandHandler : IRequestHandler<SaveExpenseReport
             DepartmentId = entity.DepartmentId,
             Status = entity.Status,
             ReportNote = entity.ReportNote,
+            NoExpense = entity.NoExpense,
             CurrencyCode = entity.CurrencyCode,
             RowVersion = entity.RowVersion,
             CreatedAt = entity.CreatedAt,

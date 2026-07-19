@@ -8,7 +8,7 @@
  * Ảnh hiển thị qua proxy /api/files/{fileId}/content (JWT header — cần fetch blob).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, Image as ImageIcon, Loader2, Trash2, UploadCloud, X } from 'lucide-react';
+import { ExternalLink, Image as ImageIcon, Video, Loader2, Trash2, UploadCloud, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { visitPhotosApi } from '../api/visitPhotosApi';
 import type { VisitInstancePhotoItem, VisitInstancePhotos } from '../types/visitPhotos.types';
@@ -18,19 +18,28 @@ import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
 
-function PhotoTile({ photo, canManage, onRemove }: {
+function PhotoTile({ photo, canManage, onRemove, onPreview }: {
   photo: VisitInstancePhotoItem;
   canManage: boolean;
   onRemove: (photo: VisitInstancePhotoItem) => void;
+  onPreview: (photo: VisitInstancePhotoItem, imgUrl: string | null) => void;
 }) {
   const imgUrl = useAuthenticatedImage(`/api${photo.url.replace(/^\/api/, '')}`);
+  const isVideo = photo.fileName.toLowerCase().endsWith('.mp4') || photo.fileName.toLowerCase().endsWith('.webm');
   return (
-    <div className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-50">
+    <div 
+      className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-50 cursor-pointer"
+      onClick={() => onPreview(photo, imgUrl)}
+    >
       {imgUrl ? (
-        <img src={imgUrl} alt={photo.fileName} className="w-full h-full object-cover" />
+        isVideo ? (
+          <video src={imgUrl} className="w-full h-full object-cover" />
+        ) : (
+          <img src={imgUrl} alt={photo.fileName} className="w-full h-full object-cover" />
+        )
       ) : (
         <div className="w-full h-full flex items-center justify-center text-slate-300">
-          <ImageIcon className="w-8 h-8" />
+          {isVideo ? <Video className="w-8 h-8" /> : <ImageIcon className="w-8 h-8" />}
         </div>
       )}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -42,7 +51,7 @@ function PhotoTile({ photo, canManage, onRemove }: {
       {canManage && photo.canRemove && (
         <button
           type="button"
-          onClick={() => onRemove(photo)}
+          onClick={(e) => { e.stopPropagation(); onRemove(photo); }}
           title="Xóa ảnh"
           className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-all"
         >
@@ -59,9 +68,17 @@ interface Props {
   mode?: 'view' | 'edit';
   /** Gọi khi backend trả 403/404 — Student không thuộc scope; nơi nhúng tự ẩn khối. */
   onForbidden?: () => void;
+  columns?: 4 | 6;
+  maxInitialItems?: number;
 }
 
-export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }: Props) {
+export function VisitPhotoPanel({ 
+  visitInstanceId, 
+  mode = 'edit', 
+  onForbidden,
+  columns = 4,
+  maxInitialItems = 24
+}: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showAll, setShowAll] = useState(false);
   const [data, setData] = useState<VisitInstancePhotos | null>(null);
@@ -70,6 +87,7 @@ export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }:
   const [removeTarget, setRemoveTarget] = useState<VisitInstancePhotoItem | null>(null);
   const [removeReason, setRemoveReason] = useState('');
   const [removing, setRemoving] = useState(false);
+  const [previewData, setPreviewData] = useState<{ photo: VisitInstancePhotoItem, url: string | null } | null>(null);
 
   // Giữ callback qua ref để một inline arrow từ cha không làm `load` đổi identity mỗi render
   // (tránh useEffect refetch vô hạn).
@@ -110,13 +128,13 @@ export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }:
     }
 
     setUploading(true);
-    const toastId = toast.loading('Đang tải ảnh lên...');
+    const toastId = toast.loading('Đang tải lên...');
     try {
       await visitPhotosApi.upload(visitInstanceId, files);
-      toast.success('Đã tải ảnh đoàn khách lên.', { id: toastId });
+      toast.success('Đã tải ảnh/video đoàn khách lên.', { id: toastId });
       await load();
     } catch (e: any) {
-      toast.error(errMsg(e, 'Không thể tải ảnh lên. Vui lòng thử lại.'), { id: toastId });
+      toast.error(errMsg(e, 'Không thể tải lên. Vui lòng thử lại.'), { id: toastId });
     } finally {
       setUploading(false);
     }
@@ -170,24 +188,25 @@ export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }:
         <p className="text-sm font-semibold text-slate-400">Chưa có ảnh đoàn khách nào được tải lên.</p>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            {(showAll ? data.photos : data.photos.slice(0, 24)).map((p) => (
+          <div className={columns === 6 ? "grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" : "grid grid-cols-2 sm:grid-cols-4 gap-3"}>
+            {(showAll ? data.photos : data.photos.slice(0, maxInitialItems)).map((p) => (
               <PhotoTile key={p.visitPhotoId} photo={p} canManage={canManage}
-                onRemove={(photo) => { setRemoveTarget(photo); setRemoveReason(''); }} />
+                onRemove={(photo) => { setRemoveTarget(photo); setRemoveReason(''); }}
+                onPreview={(photo, url) => setPreviewData({ photo, url })} />
             ))}
           </div>
-          {!showAll && data.photos.length > 24 && (
+          {!showAll && data.photos.length > maxInitialItems && (
             <div className="flex justify-center pt-2">
               <button
                 type="button"
                 onClick={() => setShowAll(true)}
                 className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors"
               >
-                Hiển thị thêm ({data.photos.length - 24} ảnh)
+                Hiển thị thêm ({data.photos.length - maxInitialItems} ảnh)
               </button>
             </div>
           )}
-          {showAll && data.photos.length > 24 && (
+          {showAll && data.photos.length > maxInitialItems && (
             <div className="flex justify-center pt-2">
               <button
                 type="button"
@@ -206,7 +225,7 @@ export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }:
           <input
             type="file"
             multiple
-            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,image/jpeg,image/png,image/webp,video/mp4,video/webm"
             className="hidden"
             ref={fileInputRef}
             onChange={handleUpload}
@@ -218,10 +237,10 @@ export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }:
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
           >
             <UploadCloud className="w-4 h-4" />
-            {uploading ? 'Đang tải lên...' : 'Upload ảnh'}
+            {uploading ? 'Đang tải lên...' : 'Upload ảnh/video'}
           </button>
           <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-            JPG/JPEG/PNG/WEBP, tối đa 5MB/ảnh, 10 ảnh mỗi lần.
+            JPG/JPEG/PNG/WEBP/MP4/WEBM, tối đa 100MB/file, 10 file mỗi lần.
           </p>
         </div>
       )}
@@ -256,6 +275,44 @@ export function VisitPhotoPanel({ visitInstanceId, mode = 'edit', onForbidden }:
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Popup xem ảnh phóng to */}
+      {previewData && (
+        <div 
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[130] p-4 sm:p-8"
+          onClick={() => setPreviewData(null)}
+        >
+          <button 
+            className="absolute top-4 right-4 p-2 text-white/70 hover:text-white bg-black/50 rounded-full transition-colors z-[140]"
+            onClick={(e) => { e.stopPropagation(); setPreviewData(null); }}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          {previewData.url ? (
+            previewData.photo.fileName.toLowerCase().endsWith('.mp4') || previewData.photo.fileName.toLowerCase().endsWith('.webm') ? (
+              <video 
+                src={previewData.url} 
+                controls
+                autoPlay
+                className="max-w-full max-h-full rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <img 
+                src={previewData.url} 
+                alt={previewData.photo.fileName} 
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )
+          ) : (
+            <div className="flex flex-col items-center text-white/70" onClick={(e) => e.stopPropagation()}>
+              <ImageIcon className="w-16 h-16 mb-4 opacity-50" />
+              <p>Không thể tải file</p>
+            </div>
+          )}
         </div>
       )}
     </div>
