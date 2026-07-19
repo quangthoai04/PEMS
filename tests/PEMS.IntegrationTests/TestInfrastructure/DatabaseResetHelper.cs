@@ -39,6 +39,7 @@ public static class DatabaseResetHelper
     public const string UpdateDepartmentNamePrefix = "[IT-UC102-UPDATE-DEPARTMENT] ";
     public const string SearchFilterDepartmentNamePrefix = "[IT-UC103-SEARCH-FILTER-DEPARTMENT] ";
     public const string ViewDepartmentListNamePrefix = "[IT-UC104-VIEW-DEPARTMENT-LIST] ";
+    public const string ViewDepartmentDetailsNamePrefix = "[IT-UC105-VIEW-DEPARTMENT-DETAILS] ";
 
     private const string TestUserEmailDomain = "@it-uc63.pems.local";
     private const string InactiveCampusTestCode = "IT-UC101-INACTIVE";

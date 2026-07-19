@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -48,15 +49,21 @@ internal static class GalleryItemListQueryExecutor
         var query = db.GalleryItems.AsNoTracking()
             .Where(i => i.DeletedAt == null && i.Location.Area.CampusId == campusId);
 
-        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword!.Trim().ToLower();
+        // Whitespace-insensitive keyword match: collapse every run of whitespace in the keyword away
+        // and compare against the space-stripped columns, so "khu    A" still matches "Khu A". Searches
+        // title, VI/EN description, area name (khu vực) and location name (vị trí). REPLACE(x,' ','')
+        // is EF-translatable; these columns only ever hold regular spaces.
+        var keyword = string.IsNullOrWhiteSpace(request.Keyword)
+            ? null
+            : Regex.Replace(request.Keyword!, @"\s+", string.Empty).ToLower();
         if (keyword is { Length: > 0 })
         {
             query = query.Where(i =>
-                i.Title.ToLower().Contains(keyword) ||
-                i.Content.DescriptionVi.ToLower().Contains(keyword) ||
-                i.Content.DescriptionEn.ToLower().Contains(keyword) ||
-                i.Location.Area.AreaName.ToLower().Contains(keyword) ||
-                i.Location.LocationName.ToLower().Contains(keyword));
+                i.Title.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Content.DescriptionVi.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Content.DescriptionEn.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Location.Area.AreaName.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                i.Location.LocationName.ToLower().Replace(" ", string.Empty).Contains(keyword));
         }
 
         if (request.AreaId is { } areaId && areaId > 0)
