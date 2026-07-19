@@ -54,6 +54,9 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceAmendment>();
         modelBuilder.Ignore<VisitInstanceAmendmentChange>();
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
+        modelBuilder.Ignore<VisitExpenseReport>();
+        modelBuilder.Ignore<VisitExpenseItem>();
+        modelBuilder.Ignore<VisitExpenseReportEvent>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
 
         // Campus navigates to User (IcHeadUser, Users) and Department, and User in turn pulls in
@@ -119,6 +122,9 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
     DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
+    DbSet<VisitExpenseReport> IApplicationDbContext.VisitExpenseReports => Set<VisitExpenseReport>();
+    DbSet<VisitExpenseItem> IApplicationDbContext.VisitExpenseItems => Set<VisitExpenseItem>();
+    DbSet<VisitExpenseReportEvent> IApplicationDbContext.VisitExpenseReportEvents => Set<VisitExpenseReportEvent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<EmailTemplate> IApplicationDbContext.EmailTemplates => Set<EmailTemplate>();
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();

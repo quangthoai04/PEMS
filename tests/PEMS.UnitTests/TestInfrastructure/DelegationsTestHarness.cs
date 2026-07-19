@@ -106,6 +106,9 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<GalleryItem>();
         modelBuilder.Ignore<GalleryItemMedia>();
         modelBuilder.Ignore<GalleryItemContent>();
+        modelBuilder.Ignore<VisitExpenseReport>();
+        modelBuilder.Ignore<VisitExpenseItem>();
+        modelBuilder.Ignore<VisitExpenseReportEvent>();
         modelBuilder.Ignore<PhotoFaceTag>();
         modelBuilder.Ignore<EmailDraft>();
         modelBuilder.Ignore<EmailDraftRecipient>();
@@ -199,6 +202,9 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
     DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
+    DbSet<VisitExpenseReport> IApplicationDbContext.VisitExpenseReports => Set<VisitExpenseReport>();
+    DbSet<VisitExpenseItem> IApplicationDbContext.VisitExpenseItems => Set<VisitExpenseItem>();
+    DbSet<VisitExpenseReportEvent> IApplicationDbContext.VisitExpenseReportEvents => Set<VisitExpenseReportEvent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
     DbSet<EmailDraft> IApplicationDbContext.EmailDrafts => Set<EmailDraft>();
