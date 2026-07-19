@@ -54,12 +54,16 @@ closed the first three cutover slices (each committed + gated independently; aut
 | 4.1 | **v2 member-list amendments** — close the Slice-4 gap. Backend already diffs + copy-on-write-replaces members on approve; the gap was the FE editor. Added a guest/support editor to `VisitAmendmentSubmitModal` (deep-clone, stable keys, add/edit/remove, active-vs-proposed diff, ≥1-visitor guard), scoped to the selected instance. New IT proves a LEGACY shared member (both campuses) survives on the sibling + active members don't move before approval | `32f9ba25` | amendment IT **5/5** · Vitest **+4** |
 | 5A | **version-aware shared detail modal**. Exposed `form_schema_version` on the flat `SubmittedVisitRequestFormDetailDto`; branched `SubmittedVisitRequestDetailModal` to `VisitRequestV2DetailView` for any v2 request (incl. uniform-looking v2) driven by version (prop → fetched field → v1 409), never scope/mixed flag; missing → v1. Fixes the 5 read-only invocations (HO, participant, 3 staff tabs) centrally | `213a9b3c` | flat-detail IT **12/12** · Vitest **+5** |
 | 5B | **scope-safe search match contexts**. `VisitSearchMatchContextBuilder` computes `matchedContexts` in memory AFTER SQL scope→keyword→count→order→pagination, over each row's already-authorized campuses only — cannot change hit/count/order, no hidden-sibling leak; stable field CODES (no PII), guest/support excluded. FE `SearchMatchContexts` renders "Khớp tại: [Campus | Thông tin chung] — [field]" (VI/EN) wired into the management row | `3b9af03a` | security IT **6/6** (`V2MixedListSurfacesTests`) · Vitest **+5** |
+| 5B.1 | **matchedContexts consumer audit** (no code). Only `VisitRequestManagement` is a Category-A visit-request search surface (already renders); the "attending" invitations tab is Category-C (own `GetVisitInvitations`, already scope-safe from Phase F, not extended); every other keyword search is over a different entity (Category B). No searchable surface renders V1/global contexts | — | rg audit |
+| 6a | **fail-closed E2E test-auth scheme** (PEMS.Api). Quadruple-gated (Testing env + `PEMS_E2E_TEST_AUTH_ENABLED` + run secret + profile file); browser sends only an opaque profile key + secret, identity resolved SERVER-SIDE from a seeded profile file (never a role/campus header); constant-time secret compare; registered as default scheme only when the gate is open (Dev/Prod never). Distinct from the header-trusting `TestAuthHandler` (not promoted) | `dc9ddb90` | guard IT **4/4** (`E2ETestAuthGuardTests`) |
 
-**Session gates (real, HEAD `3b9af03a`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
-`PEMS.IntegrationTests` **395/395** on freshly-built disposable `pems_it_regression` (V11 master
+**Session gates (real, HEAD `dc9ddb90`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
+`PEMS.IntegrationTests` **399/399** on freshly-built disposable `pems_it_regression` (V11 master
 `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored **byte-exact** to
-pems_test) · Vitest **99** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
-rows (LS/amendment/v2 all 0); `pems_db`/`pems_test` never connected to. Both v2 flags stay default OFF.
+pems_test) — the production auth change broke no WAF-based test · E2E auth guard IT **4/4** · Vitest **99** · tsc 0 ·
+build ✓ (frontend untouched in 6a). Disposable dropped after the run; `pems_pr3_test` verified 0 v2/leaked rows;
+`pems_db`/`pems_test` never connected to. Both v2 flags stay default OFF. Environment AUTO-PUSHED prior commits
+(remote = HEAD; treated as immutable); no manual push/merge/PR.
 
 **Slice 5A audit map (zero-unclassified):** `SubmittedVisitRequestDetailModal` = **6 components / 7 production invocation
 sites**. `VisitRequestManagement` (2 invocations) already routes v2 to the v2 detail route BEFORE opening the modal; the
@@ -74,8 +78,19 @@ exists only on a hidden sibling campus neither surfaces the request nor changes 
 authorized campuses returns ONE row with a context per campus, a request-level match is not attributed to a campus, and
 a guest member name produces no row.
 
-**Deferred:** Slice 6 — authenticated Journey B–H real-stack (needs `TestAuthHandler` wired fail-closed into the
-published host + guard tests + orchestration extension). Phase I — guarded contract-drop prep on disposable DBs only.
+**Slice 6a auth-scheme proof:** the E2E scheme is the authenticated sibling of `FileSinkEmailService` — fail-closed and
+guard-tested, NOT the header-trusting `TestAuthHandler`. `E2ETestAuthGate.IsEnabledFor` is true only under Testing +
+`PEMS_E2E_TEST_AUTH_ENABLED=true` + a non-blank run secret + a profile file; `AddJwtAuthentication` registers the scheme
++ profile store and makes it default ONLY then, so Development/Production never register it. The handler trusts only an
+opaque profile key + the run secret (constant-time compared) and resolves user/role/campus/department/email SERVER-SIDE
+from the seeded profile file — a spoofed `X-Test-RoleCode`/campus header is ignored (guard test asserts the resolved
+claims stay the profile's, e.g. STAFF/campus 1, never ADMIN/999), an unknown profile or wrong/missing secret fails, and
+nothing authenticates outside Testing.
+
+**Deferred:** Slice 6b — real-stack authenticated Journeys B–H (extend the H-4 orchestration to seed accounts/relations,
+write the profile file + run secret, drive the real browser through the now-committed fail-closed scheme). Phase I —
+guarded contract-drop prep on disposable DBs only (gated on 6b; NOT READY while V1 fallback + legacy runtime reads are
+retained by design with flags OFF).
 
 ## 2. Safety invariants (all holding)
 

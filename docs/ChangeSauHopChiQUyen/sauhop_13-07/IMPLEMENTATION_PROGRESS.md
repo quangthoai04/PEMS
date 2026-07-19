@@ -485,17 +485,39 @@ byte-identical when the flags are OFF.
   renders "Khớp tại: [Campus | Thông tin chung] — [field]" (VI/EN, unknown-code fallback), wired into the
   management list row. Security ITs (hidden-sibling no-leak + count parity, one row/multi-campus contexts,
   request-level match, guest-name excluded) → `V2MixedListSurfacesTests` **6/6**; FE component tests **5/5**.
-- **Slice 6 (auth Journey B–H real-stack) / Phase I** — ⬜ deferred (see resume point).
-- **Session gates (real, after Slice 5B, HEAD `3b9af03a`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
-  full `PEMS.IntegrationTests` **395/395** on freshly-built disposable `pems_it_regression`
+- **Slice 5B.1 — matchedContexts consumer audit** — ✅ DONE (no code needed; recorded here). Repo-wide sweep of
+  `VisitRequestManagementItem` / `matchedContexts` / `SearchMatchContexts` consumers: **Category A** (visit-request
+  search on this DTO → must render) = ONLY `VisitRequestManagement.tsx`, already rendering `SearchMatchContexts`.
+  **Category B** (keyword search over OTHER entities — accounts, audit-log, security, sessions, campus, departments,
+  emails, FAQ, gallery, news) = N/A. **Category C** (own visit-request search, different DTO) = the "attending"
+  invitations tab (`GetVisitInvitations`, FE `getMyInvitations`) — already scope-before-keyword + per-instance mixed
+  match + no hidden-campus leak + no guest/support search (Phase F); an independent feature, matchedContexts not
+  extended there (out of Slice-5 scope). No searchable surface renders V1/global-projection contexts.
+- **Slice 6a — fail-closed E2E test-auth scheme** — ✅ DONE (`dc9ddb90`). New `E2ETestAuthentication.cs` (PEMS.Api):
+  `E2ETestAuthGate` (quadruple gate: env=Testing + `PEMS_E2E_TEST_AUTH_ENABLED=true` + non-blank
+  `PEMS_E2E_TEST_AUTH_SECRET` + `PEMS_E2E_TEST_AUTH_PROFILES` file; constant-time `SecretMatches`),
+  `E2ETestProfileStore` (loads seeded profiles from the file, fail-closed to empty on missing/parse-error),
+  `E2ETestAuthHandler` (browser sends only an opaque profile KEY + run secret; identity resolved SERVER-SIDE, never
+  from a role/campus header; re-checks the gate per request). `AuthenticationExtensions.AddJwtAuthentication(cfg, env)`
+  registers it + makes it the default scheme ONLY when the gate is open — Dev/Prod never register it (WAF's own Test
+  scheme is unaffected). Distinct from the header-trusting `TestAuthHandler` (never promoted). Guard tests
+  `E2ETestAuthGuardTests` **4/4**: four-part gate, constant-time compare, profile resolution (unknown/missing fail
+  closed, leader-HN never resolves to HCM), handler behaviour (valid profile+secret → server-side claims, ignores
+  spoof headers; wrong/missing secret + unknown profile fail; no header = anonymous; nothing authenticates outside
+  Testing).
+- **Slice 6b (real-stack Journeys B–H) / Phase I** — ⬜ deferred (see resume point).
+- **Session gates (real, after Slice 6a, HEAD `dc9ddb90`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
+  full `PEMS.IntegrationTests` **399/399** on freshly-built disposable `pems_it_regression`
   (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored byte-exact to
-  pems_test) · Vitest **99** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
-  test rows (LS/amendment/v2 all 0); `pems_db`/`pems_test` never connected to. Feature flags stay default OFF. No
-  manual push/merge/PR this session.
-- **Resume point** — Slice 6: wire `tests/PEMS.IntegrationTests/TestInfrastructure/TestAuthHandler.cs` into the
-  published host (env=Testing + `PEMS_E2E_TEST_AUTH_ENABLED` + run-scoped secret, fail-closed; server-side seeded
-  profiles) + guard tests → real-stack authenticated Journeys B–H (extend the H-4 orchestration). Then Phase I
-  (guarded contract-drop prep on disposable DBs only).
+  pems_test) — the production auth change broke no WAF-based test · E2E auth guard IT **4/4** · Vitest **99** · tsc 0 ·
+  build ✓ (frontend untouched this slice). Disposable dropped after the run; `pems_pr3_test` verified 0 v2/leaked
+  rows; `pems_db`/`pems_test` never connected to. Feature flags stay default OFF. Environment AUTO-PUSHED my prior
+  commits (remote Cảnh-Iter1 = HEAD; treated as immutable); I ran no push/merge/PR.
+- **Resume point** — Slice 6b: extend the H-4 orchestration (`frontend/pems-react/scripts/run-realstack-e2e.mjs`) to
+  seed accounts/roles/campuses/relations, write the `PEMS_E2E_TEST_AUTH_PROFILES` file with the seeded user IDs,
+  generate a run-scoped `PEMS_E2E_TEST_AUTH_SECRET`, and drive real-browser authenticated Journeys B–H through the
+  now-committed fail-closed scheme (Slice 6a). Then Phase I (guarded contract-drop prep on disposable DBs only —
+  expect the honest conclusion "prepared/tested, not executed; NOT READY while V1 fallback remains").
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
