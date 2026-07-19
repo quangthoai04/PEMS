@@ -22,6 +22,7 @@ import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 interface Props {
   visitInstanceId: number;
   isReadOnly?: boolean;
+  sectionNumber?: string | number;
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -37,8 +38,9 @@ const HOST_ORIGIN_OPTIONS = ['ADDITIONAL', 'DAMAGE_LOSS', 'OTHER'] as const;
 
 const EXPENSE_ELIGIBLE_STATUSES = new Set(['ACCEPTED', 'IN_PROGRESS', 'DONE']);
 
-export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false }: Props) {
+export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, sectionNumber }: Props) {
   const [report, setReport] = useState<VisitExpenseReport | null>(null);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [summary, setSummary] = useState<VisitInstanceExpenseSummary | null>(null);
   const [logisticsItems, setLogisticsItems] = useState<VisitInstanceLogisticsItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -189,26 +191,42 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false }: Pro
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden font-sans">
-      {/* Header gọn */}
-      <div className="flex items-center justify-between bg-[#004c91] px-5 py-3.5">
+      <div 
+        className="flex items-center justify-between bg-[#004c91] px-5 py-3.5 cursor-pointer select-none transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
         <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-white/10 text-white rounded-lg border border-white/20 shrink-0">
-            <DollarSign className="w-4 h-4" />
-          </div>
+          {sectionNumber && (
+            <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black text-white shrink-0">
+              {sectionNumber}
+            </span>
+          )}
+          {!sectionNumber && (
+            <div className="p-1.5 bg-white/10 text-white rounded-lg border border-white/20 shrink-0">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          )}
           <div>
             <h2 className="text-sm font-black text-white tracking-tight uppercase">Chi phí đoàn</h2>
-            <p className="text-[10px] font-semibold text-blue-100">Chi phí phòng ban (đồng bộ từ đơn yêu cầu) + chi phí chung do Host kê khai</p>
           </div>
         </div>
-        {readonly && (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-white/20 text-white border border-white/30">
-            <AlertTriangle className="w-3 h-3" /> Chỉ xem
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {readonly && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-white/20 text-white border border-white/30">
+              <AlertTriangle className="w-3 h-3" /> Chỉ xem
+            </span>
+          )}
+          <div className="p-1 hover:bg-white/10 rounded-md transition-colors text-white">
+            <svg className={`w-5 h-5 transform transition-transform ${!isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* ── 1. Chi phí phòng ban (Hạng mục yêu cầu) ── */}
+      {isExpanded && (
+        <div className="p-4 space-y-4">
+          {/* ── 1. Chi phí phòng ban (Hạng mục yêu cầu) ── */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
@@ -408,7 +426,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false }: Pro
             </button>
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* ── Vùng in "Xuất thống kê" — portal ra document.body: vùng in nằm trong layout cuộn/
           overflow-hidden của trang tiến trình sẽ bị cắt mất khi in (ra trang trắng), nên phải

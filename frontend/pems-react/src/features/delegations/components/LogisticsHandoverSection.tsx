@@ -36,6 +36,8 @@ interface Props {
   /** 'BORROW' in During tab; 'RETURN' in After tab. */
   handoverPhase: 'BORROW' | 'RETURN';
   pushToast?: ToastFn;
+  sectionNumber?: string | number;
+  theme?: 'default' | 'blue';
 }
 
 const CONDITION_OPTIONS: { value: LogisticsItemCondition; label: string }[] = [
@@ -127,7 +129,7 @@ function HandoverStatusBadge({ borrow, ret, phase }: {
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
-export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverPhase, pushToast }: Props) {
+export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverPhase, pushToast, theme, sectionNumber }: Props) {
   const [items, setItems] = useState<VisitInstanceLogisticsItem[]>([]);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -136,6 +138,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
   const [condition, setCondition] = useState<LogisticsItemCondition>('GOOD');
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const load = useCallback(async () => {
     if (!visitInstanceId) { setLoadedOnce(true); return; }
@@ -208,22 +211,48 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
     ? 'Ký nhận tài sản hậu cần'
     : 'Ký trả tài sản hậu cần';
   const sectionIcon = handoverPhase === 'BORROW'
-    ? <PackageCheck className="w-5 h-5 text-[#f37021]" />
-    : <Undo2 className="w-5 h-5 text-[#f37021]" />;
+    ? <PackageCheck className={`w-5 h-5 ${theme === 'blue' ? 'text-[#004c91]' : 'text-[#f37021]'}`} />
+    : <Undo2 className={`w-5 h-5 ${theme === 'blue' ? 'text-[#004c91]' : 'text-[#f37021]'}`} />;
+
+  const isBlue = theme === 'blue';
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
       {/* Section header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
-        <h3 className="text-[14px] font-bold text-slate-800 flex items-center gap-2">
-          <div className="p-1 bg-orange-100 rounded-md">{sectionIcon}</div>
-          {sectionTitle}
-        </h3>
-        {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+      <div 
+        className={`flex items-center justify-between px-5 py-3.5 cursor-pointer select-none transition-colors ${
+          isBlue ? 'bg-[#004c91] text-white' : 'bg-white border-b border-gray-100 text-slate-800'
+        }`}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3">
+          {sectionNumber && (
+            <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black text-white shrink-0">
+              {sectionNumber}
+            </span>
+          )}
+          <h3 className={`text-sm font-bold flex items-center gap-2 ${isBlue ? 'text-white tracking-tight uppercase' : ''}`}>
+            {!sectionNumber && (
+              <div className={`p-1.5 rounded-md ${isBlue ? 'bg-white/10' : 'bg-orange-100'}`}>
+                {sectionIcon}
+              </div>
+            )}
+            {sectionTitle}
+          </h3>
+        </div>
+        <div className="flex items-center gap-3">
+          {loading && <Loader2 className={`w-4 h-4 animate-spin ${isBlue ? 'text-blue-200' : 'text-gray-400'}`} />}
+          <div className={`p-1 rounded-md transition-colors ${isBlue ? 'hover:bg-white/10 text-white' : 'hover:bg-gray-100 text-gray-500'}`}>
+            <svg className={`w-5 h-5 transform transition-transform ${!isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
       </div>
 
       {/* Body */}
-      <div className="p-4">
+      {isExpanded && (
+        <div className="p-4">
         {!loadedOnce ? (
           <div className="flex items-center gap-2 py-3 text-sm text-gray-500">
             <Loader2 className="w-4 h-4 animate-spin" /> Đang tải...
@@ -325,6 +354,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
           </div>
         )}
       </div>
+      )}
 
       {/* Modal biên bản ký mượn/trả */}
       {signTarget && createPortal(
