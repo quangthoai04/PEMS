@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -46,11 +47,14 @@ public sealed class ViewGalleryLocationListQueryHandler
         var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword!.Trim();
         if (keyword is { Length: > 0 })
         {
-            var lower = keyword.ToLower();
+            // Whitespace-insensitive match: collapse every run of whitespace in the keyword away and
+            // compare against the space-stripped columns, so "khu    A" still matches "Khu A". The
+            // ToKey path additionally handles diacritics (e.g. "co so" → "cơ sở").
+            var lower = Regex.Replace(keyword, @"\s+", string.Empty).ToLower();
             var key = GalleryKeyNormalizer.ToKey(keyword);
             query = query.Where(l =>
-                l.LocationName.ToLower().Contains(lower) ||
-                l.Area.AreaName.ToLower().Contains(lower) ||
+                l.LocationName.ToLower().Replace(" ", string.Empty).Contains(lower) ||
+                l.Area.AreaName.ToLower().Replace(" ", string.Empty).Contains(lower) ||
                 (key != "" && (l.LocationKey.Contains(key) || l.Area.AreaKey.Contains(key))));
         }
 

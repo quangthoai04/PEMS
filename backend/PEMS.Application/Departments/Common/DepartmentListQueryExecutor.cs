@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -42,12 +43,19 @@ internal static class DepartmentListQueryExecutor
 
         var query = db.Departments.AsNoTracking().Where(d => d.CampusId == campusId);
 
-        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword!.Trim().ToLower();
+        // Whitespace-insensitive keyword match: collapse every run of whitespace in the keyword
+        // away and compare against the space-stripped columns, so "cơ      sở" still matches
+        // "Cơ sở ...". Names/head names only ever contain regular spaces, so REPLACE(x,' ','')
+        // (EF-translatable) is enough on the column side.
+        var keyword = string.IsNullOrWhiteSpace(request.Keyword)
+            ? null
+            : Regex.Replace(request.Keyword!, @"\s+", string.Empty).ToLower();
         if (keyword is { Length: > 0 })
         {
             query = query.Where(d =>
-                d.Name.ToLower().Contains(keyword) ||
-                (d.HeadUser != null && d.HeadUser.FullName.ToLower().Contains(keyword)));
+                d.Name.ToLower().Replace(" ", string.Empty).Contains(keyword) ||
+                (d.HeadUser != null &&
+                 d.HeadUser.FullName.ToLower().Replace(" ", string.Empty).Contains(keyword)));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Status))
