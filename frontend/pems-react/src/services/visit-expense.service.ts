@@ -22,10 +22,14 @@ export interface VisitExpenseReport {
   departmentId: number | null;
   status: 'DRAFT' | 'SAVED' | 'FINALIZED' | 'CANCELLED';
   reportNote: string | null;
+  noExpense: boolean;
   currencyCode: string;
   rowVersion: number;
   createdAt: string;
   totalAmount: number;
+  // Chỉ có trong summary (host view)
+  departmentName?: string | null;
+  logisticsItemTitle?: string | null;
   items: VisitExpenseItem[];
 }
 
@@ -51,7 +55,14 @@ export interface SaveExpenseItemDto {
 export interface SaveExpenseReportCommand {
   reportNote?: string | null;
   rowVersion: number;
+  /** true = xác nhận "Không có chi phí" cho báo cáo này */
+  noExpense?: boolean;
   items: SaveExpenseItemDto[];
+}
+
+export interface RemindExpenseReportsResult {
+  remindedCount: number;
+  recipients: string[];
 }
 
 const visitExpenseService = {
@@ -72,6 +83,11 @@ const visitExpenseService = {
 
   getExpenseSummary: async (visitInstanceId: number): Promise<VisitInstanceExpenseSummary> => {
     const res = await apiClient.get<VisitInstanceExpenseSummary>(`/VisitExpenses/summary/${visitInstanceId}`);
+    return res.data;
+  },
+
+  remindExpenseReports: async (visitInstanceId: number): Promise<RemindExpenseReportsResult> => {
+    const res = await apiClient.post<RemindExpenseReportsResult>(`/VisitExpenses/remind/${visitInstanceId}`);
     return res.data;
   }
 };

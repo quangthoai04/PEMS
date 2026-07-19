@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.VisitExpenses.Commands.GetOrCreateGeneralExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Commands.GetOrCreateLogisticsExpenseReport;
+using PEMS.Application.Delegations.VisitExpenses.Commands.RemindExpenseReports;
 using PEMS.Application.Delegations.VisitExpenses.Commands.SaveExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Queries.GetVisitInstanceExpenseSummary;
 using System.Threading;
@@ -41,6 +42,13 @@ namespace PEMS.Api.Controllers
         {
             command.ExpenseReportId = expenseReportId;
             var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("remind/{visitInstanceId}")]
+        public async Task<IActionResult> RemindExpenseReports(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new RemindExpenseReportsCommand { VisitInstanceId = visitInstanceId }, cancellationToken);
             return Ok(result);
         }
 

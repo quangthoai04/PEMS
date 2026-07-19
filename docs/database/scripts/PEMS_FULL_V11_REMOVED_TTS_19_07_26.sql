@@ -1842,6 +1842,7 @@ CREATE TABLE visit_expense_reports (
   department_id BIGINT UNSIGNED NULL,
   status ENUM('DRAFT','SAVED','FINALIZED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
   report_note TEXT NULL,
+  no_expense TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = phòng ban/host xác nhận không phát sinh chi phí cho báo cáo này',
   currency_code CHAR(3) NOT NULL DEFAULT 'VND',
   saved_at DATETIME NULL,
   saved_by BIGINT UNSIGNED NULL,

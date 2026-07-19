@@ -27,6 +27,8 @@ public static class NotificationTypes
     public const string LogisticsDueSoon = "LOGISTICS_DUE_SOON";
     public const string LogisticsOverdue = "LOGISTICS_OVERDUE";
 
+    public const string ExpenseReportReminder = "EXPENSE_REPORT_REMINDER";
+
     public const string AgendaRequired = "AGENDA_REQUIRED";
     public const string AgendaUpdated = "AGENDA_UPDATED";
     public const string VisitReminder = "VISIT_REMINDER";

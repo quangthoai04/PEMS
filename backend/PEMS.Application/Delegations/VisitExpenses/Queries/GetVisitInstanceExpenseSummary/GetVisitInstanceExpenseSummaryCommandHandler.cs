@@ -29,8 +29,21 @@ public class GetVisitInstanceExpenseSummaryCommandHandler : IRequestHandler<GetV
 
         var reports = await _context.VisitExpenseReports
             .Include(r => r.Items)
+            .Include(r => r.LogisticsItem)
             .Where(r => r.VisitInstanceId == request.VisitInstanceId && r.Status != "CANCELLED")
             .ToListAsync(cancellationToken);
+
+        // Department names for the Host summary view (LOGISTICS reports only).
+        var departmentIds = reports
+            .Where(r => r.DepartmentId.HasValue)
+            .Select(r => r.DepartmentId!.Value)
+            .Distinct()
+            .ToList();
+        var departmentNames = departmentIds.Count == 0
+            ? new System.Collections.Generic.Dictionary<ulong, string>()
+            : await _context.Departments
+                .Where(d => departmentIds.Contains(d.DepartmentId))
+                .ToDictionaryAsync(d => d.DepartmentId, d => d.Name, cancellationToken);
 
         var dto = new VisitInstanceExpenseSummaryDto
         {
@@ -41,14 +54,14 @@ public class GetVisitInstanceExpenseSummaryCommandHandler : IRequestHandler<GetV
         var generalReport = reports.FirstOrDefault(r => r.ReportScope == "GENERAL");
         if (generalReport != null)
         {
-            dto.GeneralReport = MapToDto(generalReport);
+            dto.GeneralReport = MapToDto(generalReport, departmentNames);
             dto.TotalAmount += dto.GeneralReport.TotalAmount;
         }
 
         var logisticsReports = reports.Where(r => r.ReportScope == "LOGISTICS").ToList();
         foreach (var lr in logisticsReports)
         {
-            var lrDto = MapToDto(lr);
+            var lrDto = MapToDto(lr, departmentNames);
             dto.LogisticsReports.Add(lrDto);
             dto.TotalAmount += lrDto.TotalAmount;
         }
@@ -56,7 +69,7 @@ public class GetVisitInstanceExpenseSummaryCommandHandler : IRequestHandler<GetV
         return dto;
     }
 
-    private VisitExpenseReportDto MapToDto(VisitExpenseReport entity)
+    private VisitExpenseReportDto MapToDto(VisitExpenseReport entity, System.Collections.Generic.Dictionary<ulong, string> departmentNames)
     {
         return new VisitExpenseReportDto
         {
@@ -67,9 +80,12 @@ public class GetVisitInstanceExpenseSummaryCommandHandler : IRequestHandler<GetV
             DepartmentId = entity.DepartmentId,
             Status = entity.Status,
             ReportNote = entity.ReportNote,
+            NoExpense = entity.NoExpense,
             CurrencyCode = entity.CurrencyCode,
             RowVersion = entity.RowVersion,
             CreatedAt = entity.CreatedAt,
+            DepartmentName = entity.DepartmentId.HasValue && departmentNames.TryGetValue(entity.DepartmentId.Value, out var name) ? name : null,
+            LogisticsItemTitle = entity.LogisticsItem?.Title,
             TotalAmount = entity.Items.Sum(i => i.Quantity * i.UnitPrice),
             Items = entity.Items.OrderBy(i => i.DisplayOrder).Select(i => new VisitExpenseItemDto
             {

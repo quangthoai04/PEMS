@@ -9,7 +9,10 @@ public class SaveExpenseReportCommand : IRequest<VisitExpenseReportDto>
     public ulong ExpenseReportId { get; set; }
     public string? ReportNote { get; set; }
     public int RowVersion { get; set; }
-    
+
+    /// <summary>True = người kê khai xác nhận "Không có chi phí" cho báo cáo này.</summary>
+    public bool NoExpense { get; set; }
+
     public List<SaveExpenseItemDto> Items { get; set; } = new();
 }
 

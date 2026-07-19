@@ -12,7 +12,12 @@ public class VisitExpenseReportDto
     public ulong? DepartmentId { get; set; }
     public string Status { get; set; } = null!;
     public string? ReportNote { get; set; }
+    public bool NoExpense { get; set; }
     public string CurrencyCode { get; set; } = null!;
+
+    // Display context for the Host summary view (filled by the summary query).
+    public string? DepartmentName { get; set; }
+    public string? LogisticsItemTitle { get; set; }
     public int RowVersion { get; set; }
     public DateTime CreatedAt { get; set; }
     

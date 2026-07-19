@@ -873,6 +873,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                         <li>Còn đầu mục công việc chưa tích xác nhận trong biên bản cuộc họp</li>
                         <li>Chưa upload ảnh của đoàn khách</li>
                         <li>Tin tức chưa được duyệt (nếu có)</li>
+                        <li>Kiểm tra lại chi phí của đoàn — các đơn yêu cầu phải được phòng ban nhập chi phí hoặc xác nhận "Không có chi phí"</li>
                       </ul>
                     </div>
                   </div>
