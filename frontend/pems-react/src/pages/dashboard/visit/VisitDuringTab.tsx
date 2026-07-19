@@ -34,13 +34,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
-import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
   const navigate = useNavigate();
-  // Modal đánh giá chuyến thăm — mở tại chỗ, không chuyển route.
-  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   // Image Upload and Card Scanning States
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedCardImage, setUploadedCardImage] = useState<string | null>(null);
@@ -321,32 +318,8 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
         <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="BORROW" />
       )}
 
-      {/* Đánh giá chuyến thăm — flow feedback mới (dữ liệu thật, trang riêng thay bảng mock cũ) */}
-      {visitInstanceId && !isDept && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-800">Đánh giá chuyến thăm</p>
-              <p className="text-xs text-gray-500 truncate">Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsFeedbackModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3.5 py-1.5 text-xs font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
-          >
-            <Star className="w-3.5 h-3.5" /> Đánh giá ngay
-          </button>
-        </div>
-      )}
-
-      {/* Modal đánh giá — mở tại chỗ trong Visit Process */}
-      <VisitFeedbackModal
-        open={isFeedbackModalOpen}
-        visitInstanceId={visitInstanceId ?? null}
-        onClose={() => setIsFeedbackModalOpen(false)}
-      />
+      {/* Đánh giá chuyến thăm đã chuyển sang tab Sau tiếp khách (VisitAfterTab) —
+          chỉ đánh giá sau khi Host xác nhận kết thúc tiếp khách. */}
 
       {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
       {visitInstanceId ? (

@@ -8,7 +8,7 @@ import {
   Upload, Image as ImageIcon, Sparkles, User, Tag, 
   FileText, Link2, Globe, CheckCircle2, AlertCircle, 
   ArrowRight, FolderOpen, ExternalLink, RefreshCw, 
-  Search, Check, Trash2, Camera, Plus, Minimize2, ZoomIn, X
+  Search, Check, Trash2, Camera, Plus, Minimize2, ZoomIn, X, Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { VisitNewsSection } from './VisitNewsSection';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { GeneralExpensePanel } from './GeneralExpensePanel';
+import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
@@ -63,6 +64,9 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   const { user } = useAuthContext();
   const roleCode = (user?.roleCode || '').toUpperCase();
   const isStudent = roleCode === 'STUDENT' || roleCode === 'VISITOR';
+
+  // Modal đánh giá chuyến thăm — chuyển từ tab Trong tiếp khách sang: chỉ đánh giá ở giai đoạn Sau tiếp khách.
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
 
   // Part 1: Images state
   const [uploadedImages, setUploadedImages] = useState<Array<{
@@ -306,6 +310,34 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
       {visitInstanceId && !isStudent && !isDept && (
         <GeneralExpensePanel visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} />
       )}
+
+      {/* Đánh giá chuyến thăm — chuyển từ tab Trong tiếp khách sang đây: đánh giá được thực hiện
+          sau khi Host đã xác nhận kết thúc tiếp khách (instance ở AFTER_VISIT trở đi). */}
+      {visitInstanceId && !isStudent && !isDept && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-800">Đánh giá chuyến thăm</p>
+              <p className="text-xs text-gray-500 truncate">Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsFeedbackModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] bg-white px-3.5 py-1.5 text-xs font-bold text-[#004c91] hover:bg-[#f0f7ff] outline-none"
+          >
+            <Star className="w-3.5 h-3.5" /> Đánh giá ngay
+          </button>
+        </div>
+      )}
+
+      {/* Modal đánh giá — mở tại chỗ trong Visit Process */}
+      <VisitFeedbackModal
+        open={isFeedbackModalOpen}
+        visitInstanceId={visitInstanceId ?? null}
+        onClose={() => setIsFeedbackModalOpen(false)}
+      />
 
       {/* SECTION 1: PHOTO ALBUM & FACE SCANNING */}
       <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col">

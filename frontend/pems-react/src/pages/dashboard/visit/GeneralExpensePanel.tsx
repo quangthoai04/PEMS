@@ -9,6 +9,7 @@
  * - Nút "Xuất thống kê": in bảng thống kê chi phí toàn đoàn (PDF qua hộp thoại in).
  */
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Plus, Save, Trash2, DollarSign, AlertTriangle, Bell, Printer, CheckCircle2, Clock, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import visitExpenseService, {
@@ -407,17 +408,18 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false }: Pro
         )}
       </div>
 
-      {/* ── Vùng in "Xuất thống kê" — chỉ mount khi đang in ── */}
-      {printing && (
+      {/* ── Vùng in "Xuất thống kê" — portal ra document.body: vùng in nằm trong layout cuộn/
+          overflow-hidden của trang tiến trình sẽ bị cắt mất khi in (ra trang trắng), nên phải
+          thoát khỏi cây layout và ẩn mọi phần tử khác bằng display:none lúc in ── */}
+      {printing && createPortal(
         <>
           <style type="text/css" media="print">
             {`
-              body * { visibility: hidden; }
-              #expense-statement-print, #expense-statement-print * { visibility: visible; }
-              #expense-statement-print { position: absolute; left: 0; top: 0; width: 100%; display: block !important; margin: 0; padding: 24px; }
+              body > *:not(#expense-statement-print) { display: none !important; }
+              #expense-statement-print { display: block !important; margin: 0; padding: 24px; }
             `}
           </style>
-          <div id="expense-statement-print" className="hidden print:block bg-white text-slate-900">
+          <div id="expense-statement-print" className="hidden bg-white text-slate-900">
             <div className="text-center mb-6">
               <h4 className="text-xl font-bold uppercase tracking-wide">BẢNG THỐNG KÊ CHI PHÍ TIẾP ĐÓN ĐOÀN</h4>
               <p className="text-xs text-slate-500 mt-1">Mã tiến trình: vr-{visitInstanceId} • Xuất ngày {new Date().toLocaleDateString('vi-VN')}</p>
@@ -521,7 +523,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false }: Pro
             </table>
             {reportNote && <p className="mt-4 text-[12px] italic">Ghi chú: {reportNote}</p>}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
