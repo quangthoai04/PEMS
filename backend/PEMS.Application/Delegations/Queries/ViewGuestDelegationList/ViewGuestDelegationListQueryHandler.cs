@@ -220,11 +220,6 @@ public sealed class ViewGuestDelegationListQueryHandler
                 (x.vr.RegistrantFullName != null && x.vr.RegistrantFullName.ToLower().Contains(keyword)) ||
                 (x.vr.RegistrantNationality != null && x.vr.RegistrantNationality.ToLower().Contains(keyword)) ||
                 (x.vr.RegistrantJobTitle != null && x.vr.RegistrantJobTitle.ToLower().Contains(keyword)) ||
-                x.vr.GuestMembers.Any(gm => 
-                    (gm.FullName != null && gm.FullName.ToLower().Contains(keyword)) ||
-                    (gm.JobTitle != null && gm.JobTitle.ToLower().Contains(keyword)) ||
-                    (gm.Organization != null && gm.Organization.ToLower().Contains(keyword))
-                ) ||
                 _context.Partners.Any(p => p.PartnerId == x.vr.PartnerId && p.Name != null && p.Name.ToLower().Contains(keyword)) ||
                 _context.Campuses.Any(cc => cc.CampusId == x.c.CampusId && cc.Name.ToLower().Contains(keyword)) ||
                 _context.Users.Any(u => u.UserId == x.c.CurrentHostUserId && u.FullName.ToLower().Contains(keyword)) ||
@@ -552,11 +547,6 @@ public sealed class ViewGuestDelegationListQueryHandler
                 (vr.RegistrantFullName != null && vr.RegistrantFullName.ToLower().Contains(kw)) ||
                 (vr.RegistrantNationality != null && vr.RegistrantNationality.ToLower().Contains(kw)) ||
                 (vr.RegistrantJobTitle != null && vr.RegistrantJobTitle.ToLower().Contains(kw)) ||
-                vr.GuestMembers.Any(gm => 
-                    (gm.FullName != null && gm.FullName.ToLower().Contains(kw)) ||
-                    (gm.JobTitle != null && gm.JobTitle.ToLower().Contains(kw)) ||
-                    (gm.Organization != null && gm.Organization.ToLower().Contains(kw))
-                ) ||
                 (vr.Partner != null && vr.Partner.Name != null && vr.Partner.Name.ToLower().Contains(kw)));
         }
 
