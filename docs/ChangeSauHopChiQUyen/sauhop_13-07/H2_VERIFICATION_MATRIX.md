@@ -65,12 +65,16 @@ production bug** (blank operational-contact org/email → 500), which was fixed 
 run secret + server-side profile file), constant-time secret, identity resolved server-side from seeded profiles,
 NOT the header-trusting `TestAuthHandler` — is wired into the real host by the orchestration (`edd1a8b3`), which mints
 a run secret, writes the profile file from the disposable DB's seeded IDs, and seeds an active session per profile
-(so the real `SessionValidationMiddleware` accepts the actor). Real-stack journeys now run **A/B/C 3/3 green**:
-A public v2 create (real OTP), B an authenticated HO reaching the protected visit dashboard, C the fail-closed gate +
-server-side identity resolution enforced at the running host. The remaining authenticated WORKFLOW journeys
-(create/detail/edit/resubmit/safe-edit/member-amendment/leader-approve-reject/wrong-campus-denial/withdraw/search) are
-the next increment on this now-working foundation; they remain covered meanwhile at the Integration
-(authorization/concurrency/hidden-search) and Vitest (component) layers per the matrix above.
+(so the real `SessionValidationMiddleware` accepts the actor). Real-stack journeys now run **A–H 8/8 green** (`npm run test:e2e:realstack`): A public v2 create (real OTP); B an
+authenticated HO reaching the protected visit dashboard; C the fail-closed gate + server-side identity resolution at
+the running host; D an authenticated owner opening the per-campus v2 detail (both mixed-campus cards, own content) via
+the real UI; E pending-edit target-only + sibling no-op; F a member-amendment lifecycle (submit keeps the active
+snapshot → current campus leader's approve applies it target-only, sibling untouched); G a wrong-campus leader refused
+the amendment-approve endpoint (403); H search scope-safe end to end (a hidden-campus keyword never leaks; contexts stay
+authorized). **Journey F caught a real production defect** — the v2 read model surfaced the form-detail row_version
+instead of the campus-instance row_version, so a safe-edit/amendment on a freshly-loaded ASSIGNED detail 409'd; fixed in
+`4893c98d` with an integration regression. This is exactly the cross-boundary value of full real-stack E2E (real
+read-model → real submit) that the layer tests could not reach.
 
 ## Original infrastructure notes (pre-H-4)
 

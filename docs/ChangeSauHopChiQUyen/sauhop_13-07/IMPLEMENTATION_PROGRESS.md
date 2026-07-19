@@ -522,21 +522,34 @@ byte-identical when the flags are OFF.
   (`ho_viewer`→HO, `campus_leader_hn`→STAFF, never HCM). **Remaining B–H workflow journeys** (authenticated create,
   detail uniform/mixed, pending-edit, resubmit, safe-edit, member-amendment submit, leader approve/reject,
   wrong-campus denial, withdraw, search no-leak, identity) build on this now-working foundation — NOT yet authored.
-- **Phase I** — ⬜ deferred (gated on the full B–H set; NOT READY while V1 fallback remains).
-- **Session gates (real, after Slice 6b, HEAD `edd1a8b3`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
-  full `PEMS.IntegrationTests` **399/399** on freshly-built disposable `pems_it_regression`
-  (V11 master, 76 tables; appsettings trap-restored byte-exact to pems_test) — the `SessionId` production change broke
-  no WAF-based test · E2E auth guard IT **4/4** · **real-stack Journeys A/B/C 3/3** (`npm run test:e2e:realstack`) ·
-  Vitest **99** · tsc 0 · build ✓. Disposables (`pems_it_regression` + the orchestration's `pems_e2e_realstack`)
-  dropped; `pems_pr3_test` 0 v2/leaked rows; `pems_db`/`pems_test` never connected to; profile file + inbox + secret
-  never persisted (temp workDir removed; secret only in process env; no secret in any log). Feature flags stay
-  default OFF. At preflight the environment had AUTO-PUSHED prior commits (remote = HEAD; immutable); I ran no
-  push/merge/PR.
-- **Resume point** — Slice 6b continuation: author the remaining authenticated WORKFLOW journeys on the working
-  harness (create/detail/pending-edit/resubmit/safe-edit/member-amendment/leader-approve-reject/wrong-campus-denial/
-  withdraw/search-no-leak/identity per H2), each seeding its own precondition + asserting UI+HTTP+DB+sibling
-  isolation. Then Phase I (guarded contract-drop prep on disposable DBs only — expect "prepared/tested, not executed;
-  NOT READY while V1 fallback remains").
+- **Slice 6b — authenticated real-stack Journeys D–H** — ✅ DONE (`09cdfa58` journeys + `4893c98d` fix). Added the
+  workflow journeys on the working harness (preconditions via the REAL authenticated API; action under test via the
+  real UI for D, asserted at the real host otherwise): **D** an authenticated owner opens the per-campus v2 detail and
+  sees BOTH mixed-campus cards with their own content; **E** pending-edit changes only the target campus, the sibling
+  is a true no-op (versions unchanged); **F** a member amendment keeps the active snapshot until approval, then the
+  current campus leader's approve applies it target-only (sibling untouched); **G** a wrong-campus leader is refused
+  the amendment-approve endpoint (403) while the correct leader passes the campus gate; **H** search is scope-safe end
+  to end (a keyword only on a hidden sibling campus never surfaces the request for a campus-scoped actor; contexts stay
+  on authorized campuses). **Real-stack A–H 8/8 green** (`npm run test:e2e:realstack`).
+- **PRODUCTION BUG caught by Journey F + fixed** (`4893c98d`): the v2 read model returned the FORM-DETAIL row_version
+  as the per-campus `rowVersion`, but pending-edit/safe-edit/amendment all check the CAMPUS INSTANCE row_version
+  (`visit_request_campuses.row_version`). A campus-approve bumps the instance token without touching the form detail's,
+  so a safe-edit/amendment on a freshly-loaded ASSIGNED detail 409'd with a spurious concurrency conflict. Fixed to
+  emit the instance token; added an integration regression (`PerCampusFormV2ReadTests` → 18). No prior test caught it
+  because they read the instance version straight from the DB — only the real-stack read-model→submit path exposed it.
+- **Slice 6 — authenticated real-stack A–H — ✅ COMPLETE.**
+- **Session gates (real, after Slice 6b/D–H, HEAD `09cdfa58`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
+  full `PEMS.IntegrationTests` **400/400** on freshly-built disposable `pems_it_regression` (V11 master, 76 tables;
+  appsettings trap-restored byte-exact to pems_test) — the read-model fix broke no test · `PerCampusFormV2ReadTests`
+  **18/18** · E2E auth guard IT **4/4** · **real-stack Journeys A–H 8/8** · Vitest **99** · tsc 0 · build ✓. Disposables
+  (`pems_it_regression` + the orchestration's `pems_e2e_realstack`) dropped; `pems_pr3_test` 0 v2/leaked rows;
+  `pems_db`/`pems_test` never connected to; the run secret + profile file + OTP inbox never persisted (temp workDir
+  removed, secret only in process env, no secret in any log, Playwright trace OFF). Feature flags stay default OFF. No
+  manual push/merge/PR.
+- **Resume point** — **Phase I** (guarded contract-drop prep, disposable DBs only): readiness audit of the 10 legacy
+  global fields + read-only preflight/UP/verify/DOWN candidate scripts, drilled on `pems_i_fresh`/`pems_i_upgrade`/
+  `pems_i_refusal`/`pems_i_rollback` only. Expected honest conclusion: "guarded contract-drop prepared/tested on
+  disposable databases; execution NOT READY while V1 fallback + legacy runtime reads remain; no real database modified."
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 
