@@ -451,14 +451,38 @@ byte-identical when the flags are OFF.
   - Deferred within Slice 4: inline guest/support LIST editing inside the amendment proposal (scalar/schedule fields
     are editable now; member lists are carried through unchanged).
 
-- **Slices 5–6** — ⬜ pending (scoped search matchedContexts + remaining shared-modal call sites version-aware;
-  auth Journey B–H real-stack).
-- **Session gates (real, after Slice 4, HEAD `e30ad6a2`)** — `PEMS.UnitTests` **510/510** (restored in S0) ·
-  Architecture **14/14** · full `PEMS.IntegrationTests` **391/391** on disposable `pems_it_regression`
-  (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`; appsettings trap-restored to pems_test) ·
-  read-model auth IT 17/17 · capability IT 6/6 · Vitest **85** · tsc 0 · build ✓. The previously-inherited
-  `PEMS.UnitTests` compile break (Dev feature `34ab5ba4` added `VisitExpense*` to `IApplicationDbContext` without
-  updating the test doubles) is **fixed in S0** (`7895be2d`). No manual push/merge/PR was run this session.
+- **Slice 4.1 — v2 member-list amendments** — ✅ DONE (`32f9ba25`). Audit first: the backend already diffs
+  guest/support lists (`VisitAmendmentService.BuildChangeRows`) and, on approve, replaces this instance's
+  members copy-on-write (`VisitRequestV2EditOps.StageReplaceMembers`) with sibling isolation — the existing
+  `Approve_by_current_campus_leader…` IT already proved the non-shared replace. The gap was purely the
+  frontend: the amendment modal carried members through unchanged. Added a guest/support **editor** to
+  `VisitAmendmentSubmitModal` (deep-clone, stable client keys, add/edit/remove, active-vs-proposed diff summary,
+  at-least-one-visitor guard); the proposal is scoped to the selected instance. New IT
+  `Amendment_member_change_is_copy_on_write_and_untouched_until_approved` proves a LEGACY shared member (linked
+  to both campuses) survives on the sibling and that active members do not move before approval. Vitest **+4**,
+  amendment IT **5/5**.
+- **Slice 5A — version-aware shared detail modal** — ✅ DONE (`213a9b3c`). Audit map of the shared flat
+  `SubmittedVisitRequestDetailModal` call sites (6): `VisitRequestManagement` (×2) already routes v2 to the v2
+  detail route and returns BEFORE opening the modal (`resolveVisitRowRoutes`); the 5 read-only sites
+  (`HoVisitProcessDetail`, `VisitParticipantInvitationDetail`, `StaffCalendarTab`, `StaffLeaderTaskModal`,
+  `StaffTasksTab`) opened the flat modal with NO version check. Central fix: exposed `form_schema_version` on the
+  flat `SubmittedVisitRequestFormDetailDto` (backend projection) and branched the shared modal to
+  `VisitRequestV2DetailView` whenever the request is v2 — including a UNIFORM v2 request that looks flat. The
+  version drives the choice (caller prop → fetched field → v1 upgrade-required 409), never scope/campus-count/mixed
+  flag; missing version fails safe to v1. **Zero-unclassified sweep:** every call site now resolves v1↔v2 through
+  the central modal (no v2 request opens the flat v1 UI). Backend projection assertion added to
+  `SubmittedVisitRequestFormDetailV2Tests` (flat detail IT **12/12**); frontend branch tests **5/5**.
+- **Slices 5B (search matchedContexts) / 6 (auth Journey B–H real-stack) / Phase I** — ⬜ deferred (see resume point).
+- **Session gates (real, after Slice 5A, HEAD `213a9b3c`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
+  full `PEMS.IntegrationTests` **392/392** on freshly-built disposable `pems_it_regression`
+  (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored byte-exact to
+  pems_test) · Vitest **94** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
+  test rows/amendments; `pems_db`/`pems_test` never connected to. Feature flags stay default OFF. No manual
+  push/merge/PR this session.
+- **Resume point** — Slice 5B: add `matchedContexts` to `ViewGuestDelegationListQueryHandler` (984-line, two paths)
+  — scope-before-keyword, per-authorized-campus field codes, zero hidden-campus leak on hit/count/order,
+  guest/support names not searched by default; FE "Khớp tại: [Campus] — [field]"; backend security ITs. Then
+  Slice 6 (TestAuthHandler → real-stack B–H) and Phase I (guarded contract-drop on disposable only).
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

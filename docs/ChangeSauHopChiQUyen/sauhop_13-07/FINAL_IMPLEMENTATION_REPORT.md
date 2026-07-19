@@ -51,18 +51,25 @@ closed the first three cutover slices (each committed + gated independently; aut
 | 3 | full per-campus post-submit summary from the immutable submitted snapshot (`VisitRequestV2SubmittedSummary`, one card per campus, never the first as representative) | `2cd948f8` | Vitest +3 |
 | S0 | restore `PEMS.UnitTests` compile — implement the 3 `VisitExpense*` DbSet members in the 4 EF InMemory test doubles the Dev expense-stats merge left unimplemented (no production/test-behaviour change) | `7895be2d` | Unit **510/510** |
 | 4 | **allowedActions-driven UI + safe-edit/amendment workflows**. Backend: read model computes real actions (request `EDIT_PENDING`/`RESUBMIT`/`SUBMIT_SAFE_EDIT`; per-instance `SUBMIT`/`WITHDRAW`/`APPROVE`/`REJECT_AMENDMENT`) mirroring handler auth. FE: `VisitRequestV2DetailView` gates all mutation UI on `allowedActions` (never relation/status) + new `VisitAmendmentSubmitModal` + `VisitSafeEditModal` | `603abd46` + `e30ad6a2` | read-model auth IT **+6** (17/17) · Vitest **+6** |
+| 4.1 | **v2 member-list amendments** — close the Slice-4 gap. Backend already diffs + copy-on-write-replaces members on approve; the gap was the FE editor. Added a guest/support editor to `VisitAmendmentSubmitModal` (deep-clone, stable keys, add/edit/remove, active-vs-proposed diff, ≥1-visitor guard), scoped to the selected instance. New IT proves a LEGACY shared member (both campuses) survives on the sibling + active members don't move before approval | `32f9ba25` | amendment IT **5/5** · Vitest **+4** |
+| 5A | **version-aware shared detail modal**. Exposed `form_schema_version` on the flat `SubmittedVisitRequestFormDetailDto`; branched `SubmittedVisitRequestDetailModal` to `VisitRequestV2DetailView` for any v2 request (incl. uniform-looking v2) driven by version (prop → fetched field → v1 409), never scope/mixed flag; missing → v1. Fixes the 5 read-only call sites (HO, participant, 3 staff tabs) centrally | `213a9b3c` | flat-detail IT **12/12** · Vitest **+5** |
 
-**Session gates (real, merged HEAD `e30ad6a2`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
-`PEMS.IntegrationTests` **391/391** on disposable `pems_it_regression` (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`;
-appsettings trap-restored to pems_test) · Vitest **85** · tsc 0 · build ✓. The inherited `PEMS.UnitTests` compile
-break (Dev feature `34ab5ba4` added `VisitExpense*` to `IApplicationDbContext` without updating the test doubles)
-was **fixed in S0** (`7895be2d`) — it is now green.
+**Session gates (real, HEAD `213a9b3c`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
+`PEMS.IntegrationTests` **392/392** on freshly-built disposable `pems_it_regression` (V11 master
+`PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored **byte-exact** to
+pems_test) · Vitest **94** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
+rows/amendments; `pems_db`/`pems_test` never connected to. Both v2 flags stay default OFF.
 
-**Deferred (Slices 5–6):** scoped search `matchedContexts` (backend DTO + scoped projection + security tests + FE
-render) and making the other shared-modal call sites (HoVisitProcessDetail, VisitParticipantInvitationDetail)
-version-aware; authenticated Journey B–H real-stack (needs `TestAuthHandler` wired into the published host).
-Within Slice 4, inline guest/support LIST editing inside an amendment proposal is deferred (scalar/schedule fields
-are editable; member lists are carried through unchanged).
+**Slice 5A audit map (zero-unclassified):** the 6 `SubmittedVisitRequestDetailModal` call sites — `VisitRequestManagement`
+(×2) already route v2 to the v2 detail route BEFORE opening the modal; the 5 read-only sites (`HoVisitProcessDetail`,
+`VisitParticipantInvitationDetail`, `StaffCalendarTab`, `StaffLeaderTaskModal`, `StaffTasksTab`) now branch to the v2
+UI centrally through the version-aware modal. No v2 request opens the flat v1 UI on any surface.
+
+**Deferred:** Slice 5B — scoped search `matchedContexts` on `ViewGuestDelegationListQueryHandler` (984-line, two paths):
+scope-before-keyword, per-authorized-campus field codes, zero hidden-campus leak on hit/count/order, guest/support
+excluded by default; FE "Khớp tại: [Campus] — [field]"; backend security ITs. Slice 6 — authenticated Journey B–H
+real-stack (needs `TestAuthHandler` wired fail-closed into the published host). Phase I — guarded contract-drop prep on
+disposable DBs only. (Slice 4's member-list gap is now closed by Slice 4.1.)
 
 ## 2. Safety invariants (all holding)
 
