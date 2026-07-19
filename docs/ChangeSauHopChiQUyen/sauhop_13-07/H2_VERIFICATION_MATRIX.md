@@ -60,10 +60,17 @@ publishes + starts the backend with env overrides, points Vite at it, runs
 `tests-realstack/public-create-v2.realstack.spec.ts`, and tears everything down. This journey **caught a real
 production bug** (blank operational-contact org/email → 500), which was fixed with a regression test.
 
-Still a documented follow-on: journeys **B–H are auth-gated** and need the `TestAuthHandler` header scheme
-wired into the real host (it currently lives only in `WebApplicationFactory`). Those journeys remain covered
-at the Integration (authorization/concurrency/hidden-search) and Vitest (component) layers per the matrix
-above; promoting them to real-stack is the next H-4 increment.
+**UPDATE (Slice 6a/6b):** the auth-gated journeys are no longer blocked. A NEW fail-closed E2E auth scheme
+(`backend/PEMS.Api/Authentication/E2ETestAuthentication.cs`, `dc9ddb90`) — quadruple-gated (Testing + explicit flag +
+run secret + server-side profile file), constant-time secret, identity resolved server-side from seeded profiles,
+NOT the header-trusting `TestAuthHandler` — is wired into the real host by the orchestration (`edd1a8b3`), which mints
+a run secret, writes the profile file from the disposable DB's seeded IDs, and seeds an active session per profile
+(so the real `SessionValidationMiddleware` accepts the actor). Real-stack journeys now run **A/B/C 3/3 green**:
+A public v2 create (real OTP), B an authenticated HO reaching the protected visit dashboard, C the fail-closed gate +
+server-side identity resolution enforced at the running host. The remaining authenticated WORKFLOW journeys
+(create/detail/edit/resubmit/safe-edit/member-amendment/leader-approve-reject/wrong-campus-denial/withdraw/search) are
+the next increment on this now-working foundation; they remain covered meanwhile at the Integration
+(authorization/concurrency/hidden-search) and Vitest (component) layers per the matrix above.
 
 ## Original infrastructure notes (pre-H-4)
 

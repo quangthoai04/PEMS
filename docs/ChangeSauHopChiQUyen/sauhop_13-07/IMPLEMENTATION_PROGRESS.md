@@ -505,19 +505,38 @@ byte-identical when the flags are OFF.
   closed, leader-HN never resolves to HCM), handler behaviour (valid profile+secret → server-side claims, ignores
   spoof headers; wrong/missing secret + unknown profile fail; no header = anonymous; nothing authenticates outside
   Testing).
-- **Slice 6b (real-stack Journeys B–H) / Phase I** — ⬜ deferred (see resume point).
-- **Session gates (real, after Slice 6a, HEAD `dc9ddb90`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
+- **Slice 6b — authenticated real-stack foundation** — 🟨 PARTIAL/DONE-for-scope (`edd1a8b3`). Wired the Slice-6a
+  fail-closed scheme into the H-4 harness and drove it through a REAL browser (real Chromium → real Vite → real
+  published .NET API, Testing + both v2 flags ON + fail-closed E2E auth → disposable MySQL, no network mock).
+  Orchestration now: mints a run-scoped secret, resolves the disposable DB's ACTUAL seeded identities into a
+  server-side profile file (opaque key → identity, no secret), seeds an ACTIVE `user_sessions` row per profile, and
+  passes the four auth gates as process env; the specs inject only the profile key + secret on backend requests
+  (trace OFF so the secret is never persisted). `E2ETestProfile`/`E2ETestAuthHandler` gained a `SessionId` claim so
+  the REAL `SessionValidationMiddleware` accepts the E2E actor exactly like a logged-in user (NO middleware bypass).
+  Also fixed 4 pre-existing harness bugs that made the real-stack suite un-runnable here: stale v10→V11 master path,
+  `new URL().pathname` vs `fileURLToPath` on a spaced repo path, publish bin-lock beside a running dev server (temp
+  `BaseOutputPath`), unquoted shell args splitting a spaced path. **Journeys run real-stack 3/3 green:** A public v2
+  create with a real OTP from the sink (re-verified); B an authenticated HO reaches the protected visit dashboard
+  (the browser's own `/auth/me` is E2E-authenticated 200, `ProtectedRoute` does not bounce); C the running host
+  enforces the fail-closed gate (no/wrong secret + unknown profile → 401) and resolves identity server-side
+  (`ho_viewer`→HO, `campus_leader_hn`→STAFF, never HCM). **Remaining B–H workflow journeys** (authenticated create,
+  detail uniform/mixed, pending-edit, resubmit, safe-edit, member-amendment submit, leader approve/reject,
+  wrong-campus denial, withdraw, search no-leak, identity) build on this now-working foundation — NOT yet authored.
+- **Phase I** — ⬜ deferred (gated on the full B–H set; NOT READY while V1 fallback remains).
+- **Session gates (real, after Slice 6b, HEAD `edd1a8b3`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
   full `PEMS.IntegrationTests` **399/399** on freshly-built disposable `pems_it_regression`
-  (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored byte-exact to
-  pems_test) — the production auth change broke no WAF-based test · E2E auth guard IT **4/4** · Vitest **99** · tsc 0 ·
-  build ✓ (frontend untouched this slice). Disposable dropped after the run; `pems_pr3_test` verified 0 v2/leaked
-  rows; `pems_db`/`pems_test` never connected to. Feature flags stay default OFF. Environment AUTO-PUSHED my prior
-  commits (remote Cảnh-Iter1 = HEAD; treated as immutable); I ran no push/merge/PR.
-- **Resume point** — Slice 6b: extend the H-4 orchestration (`frontend/pems-react/scripts/run-realstack-e2e.mjs`) to
-  seed accounts/roles/campuses/relations, write the `PEMS_E2E_TEST_AUTH_PROFILES` file with the seeded user IDs,
-  generate a run-scoped `PEMS_E2E_TEST_AUTH_SECRET`, and drive real-browser authenticated Journeys B–H through the
-  now-committed fail-closed scheme (Slice 6a). Then Phase I (guarded contract-drop prep on disposable DBs only —
-  expect the honest conclusion "prepared/tested, not executed; NOT READY while V1 fallback remains").
+  (V11 master, 76 tables; appsettings trap-restored byte-exact to pems_test) — the `SessionId` production change broke
+  no WAF-based test · E2E auth guard IT **4/4** · **real-stack Journeys A/B/C 3/3** (`npm run test:e2e:realstack`) ·
+  Vitest **99** · tsc 0 · build ✓. Disposables (`pems_it_regression` + the orchestration's `pems_e2e_realstack`)
+  dropped; `pems_pr3_test` 0 v2/leaked rows; `pems_db`/`pems_test` never connected to; profile file + inbox + secret
+  never persisted (temp workDir removed; secret only in process env; no secret in any log). Feature flags stay
+  default OFF. At preflight the environment had AUTO-PUSHED prior commits (remote = HEAD; immutable); I ran no
+  push/merge/PR.
+- **Resume point** — Slice 6b continuation: author the remaining authenticated WORKFLOW journeys on the working
+  harness (create/detail/pending-edit/resubmit/safe-edit/member-amendment/leader-approve-reject/wrong-campus-denial/
+  withdraw/search-no-leak/identity per H2), each seeding its own precondition + asserting UI+HTTP+DB+sibling
+  isolation. Then Phase I (guarded contract-drop prep on disposable DBs only — expect "prepared/tested, not executed;
+  NOT READY while V1 fallback remains").
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

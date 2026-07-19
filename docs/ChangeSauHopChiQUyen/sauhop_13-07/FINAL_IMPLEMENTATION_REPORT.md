@@ -56,14 +56,16 @@ closed the first three cutover slices (each committed + gated independently; aut
 | 5B | **scope-safe search match contexts**. `VisitSearchMatchContextBuilder` computes `matchedContexts` in memory AFTER SQL scope→keyword→count→order→pagination, over each row's already-authorized campuses only — cannot change hit/count/order, no hidden-sibling leak; stable field CODES (no PII), guest/support excluded. FE `SearchMatchContexts` renders "Khớp tại: [Campus | Thông tin chung] — [field]" (VI/EN) wired into the management row | `3b9af03a` | security IT **6/6** (`V2MixedListSurfacesTests`) · Vitest **+5** |
 | 5B.1 | **matchedContexts consumer audit** (no code). Only `VisitRequestManagement` is a Category-A visit-request search surface (already renders); the "attending" invitations tab is Category-C (own `GetVisitInvitations`, already scope-safe from Phase F, not extended); every other keyword search is over a different entity (Category B). No searchable surface renders V1/global contexts | — | rg audit |
 | 6a | **fail-closed E2E test-auth scheme** (PEMS.Api). Quadruple-gated (Testing env + `PEMS_E2E_TEST_AUTH_ENABLED` + run secret + profile file); browser sends only an opaque profile key + secret, identity resolved SERVER-SIDE from a seeded profile file (never a role/campus header); constant-time secret compare; registered as default scheme only when the gate is open (Dev/Prod never). Distinct from the header-trusting `TestAuthHandler` (not promoted) | `dc9ddb90` | guard IT **4/4** (`E2ETestAuthGuardTests`) |
+| 6b | **authenticated real-stack foundation**. Wired 6a into the H-4 harness + drove it through a real browser (real Chromium → Vite → published .NET API → disposable MySQL). Orchestration mints a run secret, resolves seeded identities → server-side profile file, seeds an active session per profile; `SessionId` claim added so the real `SessionValidationMiddleware` accepts the E2E actor (no bypass). Fixed 4 harness bugs (v11 master, spaced-path resolution, publish bin-lock, shell quoting). **Journeys A/B/C run real-stack 3/3.** Remaining B–H workflow journeys not yet authored | `edd1a8b3` | real-stack **3/3** (`test:e2e:realstack`) |
 
-**Session gates (real, HEAD `dc9ddb90`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
-`PEMS.IntegrationTests` **399/399** on freshly-built disposable `pems_it_regression` (V11 master
-`PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored **byte-exact** to
-pems_test) — the production auth change broke no WAF-based test · E2E auth guard IT **4/4** · Vitest **99** · tsc 0 ·
-build ✓ (frontend untouched in 6a). Disposable dropped after the run; `pems_pr3_test` verified 0 v2/leaked rows;
-`pems_db`/`pems_test` never connected to. Both v2 flags stay default OFF. Environment AUTO-PUSHED prior commits
-(remote = HEAD; treated as immutable); no manual push/merge/PR.
+**Session gates (real, HEAD `edd1a8b3`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
+`PEMS.IntegrationTests` **399/399** on freshly-built disposable `pems_it_regression` (V11 master, 76 tables;
+appsettings trap-restored **byte-exact** to pems_test) — the `SessionId` production change broke no WAF-based test ·
+E2E auth guard IT **4/4** · **real-stack Journeys A/B/C 3/3** · Vitest **99** · tsc 0 · build ✓. Disposables
+(`pems_it_regression` + the orchestration's `pems_e2e_realstack`) dropped; `pems_pr3_test` 0 v2/leaked rows;
+`pems_db`/`pems_test` never connected to; the run secret + profile file + OTP inbox were never persisted (temp workDir
+removed, secret only in process env, no secret in any log, Playwright trace OFF). Both v2 flags stay default OFF.
+Environment AUTO-PUSHED prior commits (remote = HEAD; immutable); no manual push/merge/PR.
 
 **Slice 5A audit map (zero-unclassified):** `SubmittedVisitRequestDetailModal` = **6 components / 7 production invocation
 sites**. `VisitRequestManagement` (2 invocations) already routes v2 to the v2 detail route BEFORE opening the modal; the
@@ -87,10 +89,18 @@ from the seeded profile file — a spoofed `X-Test-RoleCode`/campus header is ig
 claims stay the profile's, e.g. STAFF/campus 1, never ADMIN/999), an unknown profile or wrong/missing secret fails, and
 nothing authenticates outside Testing.
 
-**Deferred:** Slice 6b — real-stack authenticated Journeys B–H (extend the H-4 orchestration to seed accounts/relations,
-write the profile file + run secret, drive the real browser through the now-committed fail-closed scheme). Phase I —
-guarded contract-drop prep on disposable DBs only (gated on 6b; NOT READY while V1 fallback + legacy runtime reads are
-retained by design with flags OFF).
+**Slice 6b real-stack proof:** `npm run test:e2e:realstack` boots the full stack against a disposable DB with the
+fail-closed E2E auth active and runs 3 journeys through a real browser: **A** public v2 create (real OTP from the
+Testing sink), **B** an authenticated HO reaching the protected visit dashboard (the browser's own `/auth/me` is
+E2E-authenticated 200; `ProtectedRoute` does not bounce to login), **C** the running host enforcing the fail-closed
+gate (no/wrong secret + unknown profile → 401) and resolving identity server-side (`ho_viewer`→HO,
+`campus_leader_hn`→STAFF, never HCM). The E2E actor uses a real seeded session (no production middleware bypass); the
+run secret is never persisted (trace off, no log).
+
+**Deferred:** Slice 6b continuation — the remaining authenticated WORKFLOW journeys (create, detail uniform/mixed,
+pending-edit, resubmit, safe-edit, member-amendment submit, leader approve/reject, wrong-campus denial, withdraw,
+search no-leak, identity) on the now-working harness. Phase I — guarded contract-drop prep on disposable DBs only
+(gated on the full B–H set; NOT READY while V1 fallback + legacy runtime reads are retained by design with flags OFF).
 
 ## 2. Safety invariants (all holding)
 
