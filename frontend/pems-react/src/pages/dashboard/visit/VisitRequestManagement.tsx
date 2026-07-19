@@ -21,6 +21,7 @@ import {
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
+import SearchMatchContexts from '../../../features/visit-request/components/SearchMatchContexts';
 import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
 import { usePerCampusV2Capability } from '../../../shared/features/perCampusV2Capability';
 import { resolveAuthenticatedCreateEntry } from '../../../shared/features/perCampusV2Entry';
@@ -1831,6 +1832,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                         </p>
                       )}
                       {renderBadges(row)}
+                      <SearchMatchContexts contexts={row.matchedContexts} />
                       {row.canExpandCampuses && (
                         <button
                           type="button"

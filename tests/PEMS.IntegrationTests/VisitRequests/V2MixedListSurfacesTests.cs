@@ -306,4 +306,147 @@ public sealed class V2MixedListSurfacesTests
         }
         finally { await CleanupAsync(requestId); }
     }
+
+    // ── Slice 5B: scope-safe search match contexts ────────────────────────────────
+
+    [Fact]
+    public async Task Search_match_contexts_scope_to_authorized_campuses_and_do_not_leak_a_hidden_sibling()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var alpha = $"AlphaKW{tag}";
+            var beta = $"BetaKW{tag}";
+            var start = Now.AddDays(20);
+            (requestId, _, _) = await CreateMixedApprovedAsync($"Đoàn {alpha}", $"Đoàn {beta}", start);
+
+            ulong hnCampus, hcmCampus, hnLeader;
+            using (var db = NewContext())
+            {
+                var rows = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitRequestId == requestId).OrderBy(c => c.CampusId)
+                    .Select(c => new { c.CampusId, c.CoordinatorUserId }).ToListAsync();
+                hnCampus = rows[0].CampusId; hcmCampus = rows[1].CampusId;
+                hnLeader = rows[0].CoordinatorUserId!.Value;
+            }
+
+            // Owner sees ALL campuses → a campus-specific keyword yields ONLY that campus's context.
+            using (var db = NewContext())
+            {
+                var handler = new ViewGuestDelegationListQueryHandler(db, new FakeUser(Registrant), new FixedClock());
+                var res = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = beta },
+                    CancellationToken.None);
+                var row = res.Items.Single(i => i.VisitRequestId == requestId);
+                var campusCtx = Assert.Single(row.MatchedContexts!.Where(c => c.Scope == SearchMatchScopes.Campus));
+                Assert.Equal(hcmCampus, campusCtx.CampusId);
+                Assert.Contains(VisitSearchFieldCodes.DelegationName, campusCtx.MatchedFields);
+                Assert.DoesNotContain(row.MatchedContexts!, c => c.CampusId == hnCampus); // non-matching campus not attributed
+            }
+
+            // The HN Staff Leader is scoped to campus HN. HCM's keyword (a hidden sibling) must NOT surface the
+            // request and must not differ in count from a keyword that exists nowhere.
+            using (var db = NewContext())
+            {
+                var handler = new ViewGuestDelegationListQueryHandler(
+                    db, new FakeUser(hnLeader, RoleCodes.Staff, UserSubRoles.Leader, hnCampus), new FixedClock());
+                var hidden = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = beta },
+                    CancellationToken.None);
+                Assert.DoesNotContain(hidden.Items, i => i.VisitRequestId == requestId);
+                var nowhere = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = $"zz_{tag}_nowhere" },
+                    CancellationToken.None);
+                Assert.DoesNotContain(nowhere.Items, i => i.VisitRequestId == requestId);
+                Assert.Equal(nowhere.TotalItems, hidden.TotalItems); // hidden-campus match never inflates the count
+
+                // The HN leader's OWN keyword surfaces the row with ONLY the HN campus context.
+                var own = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = alpha },
+                    CancellationToken.None);
+                var row = own.Items.Single(i => i.VisitRequestId == requestId);
+                var campusCtx = Assert.Single(row.MatchedContexts!.Where(c => c.Scope == SearchMatchScopes.Campus));
+                Assert.Equal(hnCampus, campusCtx.CampusId);
+                Assert.DoesNotContain(row.MatchedContexts!, c => c.CampusId == hcmCampus); // sibling never leaks
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Search_returns_one_row_with_a_context_per_matching_authorized_campus()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var shared = $"SharedKW{tag}";
+            var start = Now.AddDays(20);
+            (requestId, _, _) = await CreateMixedApprovedAsync($"Đoàn {shared} HN", $"Đoàn {shared} HCM", start);
+
+            ulong hnCampus, hcmCampus;
+            string requestCode;
+            using (var db = NewContext())
+            {
+                var rows = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitRequestId == requestId).OrderBy(c => c.CampusId)
+                    .Select(c => c.CampusId).ToListAsync();
+                hnCampus = rows[0]; hcmCampus = rows[1];
+                requestCode = await db.VisitRequests.AsNoTracking()
+                    .Where(v => v.VisitRequestId == requestId).Select(v => v.RequestCode!).SingleAsync();
+            }
+
+            using (var db = NewContext())
+            {
+                var handler = new ViewGuestDelegationListQueryHandler(db, new FakeUser(Registrant), new FixedClock());
+
+                // A token shared by both campuses → ONE parent row carrying TWO authorized campus contexts.
+                var shared2 = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = shared },
+                    CancellationToken.None);
+                var row = Assert.Single(shared2.Items.Where(i => i.VisitRequestId == requestId)); // never duplicated per campus
+                var campusCtxs = row.MatchedContexts!.Where(c => c.Scope == SearchMatchScopes.Campus).ToList();
+                Assert.Equal(2, campusCtxs.Count);
+                Assert.Contains(campusCtxs, c => c.CampusId == hnCampus);
+                Assert.Contains(campusCtxs, c => c.CampusId == hcmCampus);
+
+                // A request-level field (the code) → a REQUEST context, never attributed to a campus.
+                var byCode = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = requestCode },
+                    CancellationToken.None);
+                var codeRow = byCode.Items.Single(i => i.VisitRequestId == requestId);
+                var reqCtx = Assert.Single(codeRow.MatchedContexts!.Where(c => c.Scope == SearchMatchScopes.Request));
+                Assert.Contains(VisitSearchFieldCodes.RequestCode, reqCtx.MatchedFields);
+                Assert.DoesNotContain(codeRow.MatchedContexts!, c => c.Scope == SearchMatchScopes.Campus);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Guest_member_names_are_not_searched_and_produce_no_row()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var start = Now.AddDays(20);
+            // Campus() seeds a guest member "Guest A"; the delegation names deliberately omit "Guest".
+            (requestId, _, _) = await CreateMixedApprovedAsync($"Đoàn HN {tag}", $"Đoàn HCM {tag}", start);
+
+            using (var db = NewContext())
+            {
+                var handler = new ViewGuestDelegationListQueryHandler(db, new FakeUser(Registrant), new FixedClock());
+                var res = await handler.Handle(
+                    new ViewGuestDelegationListQuery { Tab = "responsible", Page = 1, PageSize = 200, Keyword = "Guest A" },
+                    CancellationToken.None);
+                Assert.DoesNotContain(res.Items, i => i.VisitRequestId == requestId); // guest names are not a searchable field
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
 }

@@ -165,6 +165,54 @@ public sealed class VisitRequestManagementItemDto
     /// (Host is assigned ONCE — there is intentionally no TRANSFER_HOST / reassign action.)
     /// </summary>
     public List<string> AllowedActions { get; set; } = new();
+
+    /// <summary>
+    /// Where the search keyword matched, computed ONLY over the campuses this caller is authorized to see
+    /// (a hidden campus never produces a context and never affects the row's hit/count/order). Null/empty
+    /// when there is no keyword. Each context is either REQUEST-level (shared fields) or CAMPUS-level (one
+    /// authorized instance). Carries stable field CODES, never raw snippets or PII.
+    /// </summary>
+    public List<SearchMatchContextDto>? MatchedContexts { get; set; }
+}
+
+/// <summary>
+/// One place a search keyword matched. <see cref="Scope"/> is REQUEST (request-wide field such as the
+/// request code) or CAMPUS (a specific authorized instance). <see cref="MatchedFields"/> are stable codes
+/// from <see cref="VisitSearchFieldCodes"/> — the frontend maps them to VI/EN labels. No raw values.
+/// </summary>
+public sealed class SearchMatchContextDto
+{
+    /// <summary>REQUEST or CAMPUS (see <see cref="SearchMatchScopes"/>).</summary>
+    public string Scope { get; set; } = default!;
+    /// <summary>Set for CAMPUS scope only — the authorized instance the match belongs to.</summary>
+    public ulong? VisitInstanceId { get; set; }
+    public ulong? CampusId { get; set; }
+    public string? CampusName { get; set; }
+    /// <summary>Stable field codes (e.g. DELEGATION_NAME, CAMPUS). Never raw matched text.</summary>
+    public List<string> MatchedFields { get; set; } = new();
+}
+
+/// <summary>Scope discriminator for <see cref="SearchMatchContextDto"/>.</summary>
+public static class SearchMatchScopes
+{
+    public const string Request = "REQUEST";
+    public const string Campus = "CAMPUS";
+}
+
+/// <summary>
+/// Stable, PII-free field codes for search match contexts — the ALLOWLIST of what the list/search actually
+/// searches (NOT an aspirational set). Guest/support member names are deliberately absent: they are not
+/// searched by default and never produce a match context.
+/// </summary>
+public static class VisitSearchFieldCodes
+{
+    public const string RequestCode = "REQUEST_CODE";
+    public const string RegistrantOrganization = "REGISTRANT_ORGANIZATION";
+    public const string Partner = "PARTNER";
+    public const string PrimaryContact = "PRIMARY_CONTACT";
+    public const string DelegationName = "DELEGATION_NAME";
+    public const string Campus = "CAMPUS";
+    public const string Host = "HOST";
 }
 
 /// <summary>

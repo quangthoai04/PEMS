@@ -176,6 +176,19 @@
   "common": {
     "cancel": "Cancel"
   },
+  "search": {
+    "matchedAt": "Matched in",
+    "requestScope": "General info",
+    "fields": {
+      "REQUEST_CODE": "Request code",
+      "REGISTRANT_ORGANIZATION": "Registrant organization",
+      "PARTNER": "Partner",
+      "PRIMARY_CONTACT": "Primary contact",
+      "DELEGATION_NAME": "Delegation name",
+      "CAMPUS": "Campus",
+      "HOST": "Host"
+    }
+  },
   "detail": {
     "cardAria": "Campus detail {{campus}}",
     "amendmentBadge": "Amendment #{{no}} pending",

@@ -176,6 +176,19 @@
   "common": {
     "cancel": "Hủy"
   },
+  "search": {
+    "matchedAt": "Khớp tại",
+    "requestScope": "Thông tin chung",
+    "fields": {
+      "REQUEST_CODE": "Mã yêu cầu",
+      "REGISTRANT_ORGANIZATION": "Đơn vị người đăng ký",
+      "PARTNER": "Đối tác",
+      "PRIMARY_CONTACT": "Đầu mối liên hệ",
+      "DELEGATION_NAME": "Tên đoàn",
+      "CAMPUS": "Cơ sở",
+      "HOST": "Người phụ trách"
+    }
+  },
   "detail": {
     "cardAria": "Chi tiết cơ sở {{campus}}",
     "amendmentBadge": "Đề xuất #{{no}} chờ duyệt",

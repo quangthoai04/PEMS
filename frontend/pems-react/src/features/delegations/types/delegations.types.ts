@@ -839,6 +839,26 @@ export interface VisitRequestManagementItem {
   campusProgressItems?: CampusProgressItem[];
 
   allowedActions: AllowedAction[];
+
+  /**
+   * Where the search keyword matched, scoped to the campuses this caller may see (a hidden campus never
+   * appears). Null/absent when there is no keyword. Stable field CODES only — the UI maps them to labels;
+   * no raw matched text or PII is ever sent.
+   */
+  matchedContexts?: SearchMatchContext[] | null;
+}
+
+/** Scope discriminator for a {@link SearchMatchContext}. */
+export type SearchMatchScope = 'REQUEST' | 'CAMPUS';
+
+/** One place a search keyword matched (request-wide, or a specific authorized campus). */
+export interface SearchMatchContext {
+  scope: SearchMatchScope;
+  visitInstanceId?: number | null;
+  campusId?: number | null;
+  campusName?: string | null;
+  /** Stable field codes (REQUEST_CODE, DELEGATION_NAME, CAMPUS, …) mapped to VI/EN labels client-side. */
+  matchedFields: string[];
 }
 
 // ── Submitted visit-request form snapshot ─────────────────────────────────────
