@@ -150,7 +150,17 @@
     "errWindowExpired": "Lịch thăm bắt đầu trong vòng 24 giờ nên không thể tự đề xuất thay đổi. Vui lòng liên hệ FPTU.",
     "errNotEditable": "Cơ sở này hiện không thể đề xuất thay đổi.",
     "errConflict": "Dữ liệu đã thay đổi từ lúc bạn mở. Vui lòng tải lại và thử lại.",
-    "errGeneric": "Không thể gửi đề xuất. Vui lòng thử lại."
+    "errGeneric": "Không thể gửi đề xuất. Vui lòng thử lại.",
+    "members": {
+      "visitors": "Danh sách khách",
+      "support": "Nhân sự hỗ trợ đi cùng",
+      "addVisitor": "Thêm khách",
+      "addSupport": "Thêm nhân sự hỗ trợ",
+      "remove": "Xóa dòng",
+      "needOne": "Cần ít nhất một khách trong đoàn.",
+      "changeSummary": "Thay đổi nhân sự: +{{added}} thêm · −{{removed}} bớt · {{modified}} chỉnh sửa",
+      "noChange": "Chưa thay đổi nhân sự so với nội dung đang hiệu lực."
+    }
   },
   "safeEdit": {
     "open": "Sửa nhanh",

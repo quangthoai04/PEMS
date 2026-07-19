@@ -58,6 +58,57 @@ describe('VisitAmendmentSubmitModal', () => {
   });
 });
 
+describe('VisitAmendmentSubmitModal — member list', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const openWithReason = (campus = campusFixture()) => {
+    vi.mocked(submitAmendment).mockResolvedValue({} as never);
+    render(<VisitAmendmentSubmitModal visitRequestId={1} campus={campus} onClose={() => {}} onSubmitted={() => {}} />);
+    fireEvent.change(screen.getByRole('textbox', { name: /Reason/i }), { target: { value: 'Đổi đoàn' } });
+  };
+
+  it('adds a guest to the proposal and submits the enlarged member list', async () => {
+    openWithReason();
+    fireEvent.click(screen.getByRole('button', { name: 'Add guest' }));
+    const nameInputs = screen.getAllByLabelText(/Guest list.*Full name/);
+    expect(nameInputs).toHaveLength(2);
+    fireEvent.change(nameInputs[1], { target: { value: 'Khách Hai' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
+
+    await waitFor(() => expect(submitAmendment).toHaveBeenCalledTimes(1));
+    const [, , payload] = vi.mocked(submitAmendment).mock.calls[0];
+    expect(payload.visitors.map(v => v.fullName)).toEqual(['Khách Một', 'Khách Hai']);
+  });
+
+  it('deep-clones members so editing the modal never mutates the source campus', async () => {
+    const campus = campusFixture();
+    const original = campus.visitors[0].fullName;
+    openWithReason(campus);
+    fireEvent.change(screen.getByLabelText(/Guest list.*Full name/), { target: { value: 'Đã sửa' } });
+    // No reference is shared between the passed-in campus and the editor's own state.
+    expect(campus.visitors[0].fullName).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
+
+    await waitFor(() => expect(submitAmendment).toHaveBeenCalledTimes(1));
+    const [, , payload] = vi.mocked(submitAmendment).mock.calls[0];
+    expect(payload.visitors[0].fullName).toBe('Đã sửa');
+  });
+
+  it('summarizes member additions vs the active content', () => {
+    openWithReason();
+    fireEvent.click(screen.getByRole('button', { name: 'Add guest' }));
+    expect(screen.getByRole('status')).toHaveTextContent(/1 added/);
+  });
+
+  it('requires at least one visitor before submitting', () => {
+    vi.mocked(submitAmendment).mockResolvedValue({} as never);
+    render(<VisitAmendmentSubmitModal visitRequestId={1} campus={campusFixture({ visitors: [] })} onClose={() => {}} onSubmitted={() => {}} />);
+    fireEvent.change(screen.getByRole('textbox', { name: /Reason/i }), { target: { value: 'x' } });
+    expect(screen.getByRole('button', { name: 'Submit proposal' })).toBeDisabled();
+    expect(screen.getByText('At least one guest is required.')).toBeInTheDocument();
+  });
+});
+
 describe('VisitSafeEditModal', () => {
   beforeEach(() => vi.clearAllMocks());
 
