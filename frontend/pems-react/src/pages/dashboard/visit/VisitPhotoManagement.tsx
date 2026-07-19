@@ -169,13 +169,6 @@ export function VisitPhotoManagement() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => setModal({ item, mode: 'view' })}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-[#004c91] bg-blue-50 hover:bg-blue-100 inline-flex items-center gap-1.5 transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> Xem chi tiết
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => setModal({ item, mode: 'edit' })}
                           className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#f37021] hover:bg-[#e0611d] inline-flex items-center gap-1.5 transition-colors"
                         >
@@ -220,7 +213,7 @@ export function VisitPhotoManagement() {
       {/* Modal Xem chi tiết / Chỉnh sửa — dùng chung VisitPhotoPanel với trang Đóng góp kết quả */}
       {modal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[110] px-4 py-8">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-full flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-full flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-base font-black text-[#004c91]">

@@ -119,6 +119,8 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
             <VisitPhotoPanel
               visitInstanceId={visitInstanceId}
               mode="edit"
+              columns={6}
+              maxInitialItems={18}
               onForbidden={() => setShowStudentPhotos(false)}
             />
           </div>

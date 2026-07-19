@@ -42,8 +42,13 @@ export function getFileValidationRule(purpose: FilePurpose): FileValidationRule 
       return { maxSizeBytes: 2 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'GALLERY_IMAGE':
     case 'NEWS_IMAGE':
-    case 'VISIT_REQUEST_PHOTO':
       return { maxSizeBytes: 5 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
+    case 'VISIT_REQUEST_PHOTO':
+      return { 
+        maxSizeBytes: 100 * MB, 
+        allowedMimeTypes: [...IMAGE_MIMES, 'video/mp4', 'video/webm'], 
+        allowedExtensions: [...IMAGE_EXTS, '.mp4', '.webm'] 
+      };
     case 'GALLERY_VIDEO':
       return {
         maxSizeBytes: 100 * MB,

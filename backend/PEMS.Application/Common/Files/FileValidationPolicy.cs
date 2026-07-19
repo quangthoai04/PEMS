@@ -50,13 +50,26 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
 
         FilePurpose.GalleryImage or FilePurpose.NewsImage
             or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
-            or FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage
-            or FilePurpose.VisitRequestPhoto => new FileValidationRule
+            or FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage => new FileValidationRule
         {
             MaxSizeBytes = 5 * Mb,
             AllowedMimeTypes = ImageMimes,
             AllowedExtensions = ImageExts,
             RequireImageMagicBytes = true,
+        },
+
+        FilePurpose.VisitRequestPhoto => new FileValidationRule
+        {
+            MaxSizeBytes = 100 * Mb,
+            AllowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"
+            },
+            AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm"
+            },
+            RequireImageMagicBytes = false,
         },
 
         FilePurpose.GalleryVideo or FilePurpose.GalleryItemVideo
