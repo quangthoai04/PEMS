@@ -45,6 +45,10 @@ public sealed class AssignmentsProgressItemDto
     public string DelegationName { get; set; } = "";
     public string RequestCode { get; set; } = "";
     public string? OrganizationName { get; set; }
+    public string? RegistrantFullName { get; set; }
+    public string? RegistrantNationality { get; set; }
+    public string? RegistrantJobTitle { get; set; }
+    public string? GuestSearchText { get; set; }
     public string Title { get; set; } = "";
     public string? Description { get; set; }
     public ulong? CurrentResponsibleUserId { get; set; }
@@ -222,6 +226,9 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 DelegationName = row.EffectiveDelegationName ?? "",
                 RequestCode = row.vr.RequestCode ?? "",
                 OrganizationName = row.vr.RegistrantOrganization,
+                RegistrantFullName = row.vr.RegistrantFullName,
+                RegistrantNationality = row.vr.RegistrantNationality,
+                RegistrantJobTitle = row.vr.RegistrantJobTitle,
                 Title = row.li.Title,
                 Description = row.li.Description,
                 CurrentResponsibleUserId = responsibleUserId,
@@ -325,6 +332,9 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 DelegationName = row.EffectiveDelegationName ?? "",
                 RequestCode = row.vr.RequestCode ?? "",
                 OrganizationName = row.vr.RegistrantOrganization,
+                RegistrantFullName = row.vr.RegistrantFullName,
+                RegistrantNationality = row.vr.RegistrantNationality,
+                RegistrantJobTitle = row.vr.RegistrantJobTitle,
                 Title = "Thư mời tham gia đón tiếp",
                 Description = row.p.Note ?? row.EffectiveWorkingContent,
                 CurrentResponsibleUserId = activeStaff?.p.UserId ?? row.p.UserId,
@@ -356,6 +366,22 @@ public sealed class GetAssignmentsProgressListQueryHandler
             });
         }
 
+        var allRequestIds = items.Select(x => x.VisitRequestId).Distinct().ToList();
+        var guestsList = await _db.VisitGuestMembers
+            .AsNoTracking()
+            .Where(gm => allRequestIds.Contains(gm.VisitRequestId))
+            .Select(gm => new { gm.VisitRequestId, gm.FullName, gm.JobTitle, gm.Organization })
+            .ToListAsync(cancellationToken);
+        var guestsLookup = guestsList
+            .GroupBy(g => g.VisitRequestId)
+            .ToDictionary(g => g.Key, g => string.Join(" | ", g.Select(x => $"{x.FullName} {x.JobTitle} {x.Organization}")));
+
+        foreach(var item in items)
+        {
+            if (guestsLookup.TryGetValue(item.VisitRequestId, out var gText))
+                item.GuestSearchText = gText;
+        }
+
         var query = items.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -365,6 +391,10 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 Contains(x.DelegationName, keyword) ||
                 Contains(x.RequestCode, keyword) ||
                 Contains(x.OrganizationName, keyword) ||
+                Contains(x.RegistrantFullName, keyword) ||
+                Contains(x.RegistrantNationality, keyword) ||
+                Contains(x.RegistrantJobTitle, keyword) ||
+                Contains(x.GuestSearchText, keyword) ||
                 Contains(x.Title, keyword) ||
                 Contains(x.Description, keyword));
         }
