@@ -17,6 +17,7 @@ import visitExpenseService, {
 } from '../../../services/visit-expense.service';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitInstanceLogisticsItem } from '../../../features/delegations/types/delegations.types';
+import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 
 interface Props {
   visitInstanceId: number;
@@ -90,6 +91,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false }: Pro
     const t = setTimeout(() => {
       window.print();
       setPrinting(false);
+      toast.success('Đã xuất thống kê thành công!');
     }, 80);
     return () => clearTimeout(t);
   }, [printing]);

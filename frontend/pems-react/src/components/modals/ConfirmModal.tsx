@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Loader2, AlertTriangle, Info } from 'lucide-react';
+import { X, Loader2, AlertTriangle, Info, CheckCircle2 } from 'lucide-react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -9,8 +9,9 @@ interface ConfirmModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
-  variant?: 'danger' | 'warning' | 'default';
+  variant?: 'danger' | 'warning' | 'default' | 'success';
   isLoading?: boolean;
+  hideCancel?: boolean;
 }
 
 export function ConfirmModal({
@@ -22,7 +23,8 @@ export function ConfirmModal({
   confirmText = 'Xác nhận',
   cancelText = 'Hủy',
   variant = 'default',
-  isLoading = false
+  isLoading = false,
+  hideCancel = false
 }: ConfirmModalProps) {
   if (!isOpen) return null;
 
@@ -39,6 +41,12 @@ export function ConfirmModal({
           icon: <AlertTriangle className="w-6 h-6 text-yellow-600" />,
           bgIcon: 'bg-yellow-100',
           btnConfirm: 'bg-yellow-600 hover:bg-yellow-700 text-white',
+        };
+      case 'success':
+        return {
+          icon: <CheckCircle2 className="w-6 h-6 text-green-600" />,
+          bgIcon: 'bg-green-100',
+          btnConfirm: 'bg-green-600 hover:bg-green-700 text-white',
         };
       default:
         return {
@@ -76,14 +84,16 @@ export function ConfirmModal({
           </div>
         </div>
         <div className="bg-gray-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-100">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isLoading}
-            className="px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            {cancelText}
-          </button>
+          {!hideCancel && (
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isLoading}
+              className="px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              {cancelText}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}
