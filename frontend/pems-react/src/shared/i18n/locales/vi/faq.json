@@ -1,4 +1,13 @@
 {
+  "typeLabels": {
+    "ACCOUNT_ACCESS": "Tài khoản và truy cập",
+    "VISIT_REQUEST": "Đăng ký tham quan",
+    "DELEGATION_MANAGEMENT": "Quản lý đoàn tiếp khách",
+    "LOGISTICS_RESOURCE": "Hậu cần và tài nguyên",
+    "DOCUMENT_MEDIA": "Tài liệu và truyền thông",
+    "NOTIFICATION_EMAIL": "Thông báo và email",
+    "OTHER": "Khác"
+  },
   "descriptions": {
     "ACCOUNT_ACCESS": "Đăng nhập, quên mật khẩu, quyền truy cập hệ thống.",
     "VISIT_REQUEST": "Quy trình đăng ký, chỉnh sửa, hủy chuyến tham quan.",

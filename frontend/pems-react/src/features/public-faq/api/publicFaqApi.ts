@@ -13,8 +13,10 @@ export const publicFaqApi = {
     return data;
   },
 
-  async getFaqTypeCounts(): Promise<PublicFaqTypeCount[]> {
-    const { data } = await httpClient.get<PublicFaqTypeCount[]>(API_ENDPOINTS.publicFaqs.typeCounts);
+  async getFaqTypeCounts(languageCode?: string): Promise<PublicFaqTypeCount[]> {
+    const { data } = await httpClient.get<PublicFaqTypeCount[]>(API_ENDPOINTS.publicFaqs.typeCounts, {
+      params: languageCode ? { languageCode } : undefined,
+    });
     return data;
   },
 };

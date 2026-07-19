@@ -47,6 +47,34 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
 
 // We will move TYPE_DESCRIPTIONS inside the component or use translation directly.
 
+/** Hook that returns a per-language label map for the 7 FAQ types. Falls back to the raw type key. */
+function useFaqTypeLabels(): Record<string, string> {
+  const { t } = useTranslation('faq');
+  return {
+    ACCOUNT_ACCESS: t('faq:typeLabels.ACCOUNT_ACCESS'),
+    VISIT_REQUEST: t('faq:typeLabels.VISIT_REQUEST'),
+    DELEGATION_MANAGEMENT: t('faq:typeLabels.DELEGATION_MANAGEMENT'),
+    LOGISTICS_RESOURCE: t('faq:typeLabels.LOGISTICS_RESOURCE'),
+    DOCUMENT_MEDIA: t('faq:typeLabels.DOCUMENT_MEDIA'),
+    NOTIFICATION_EMAIL: t('faq:typeLabels.NOTIFICATION_EMAIL'),
+    OTHER: t('faq:typeLabels.OTHER'),
+  };
+}
+
+/** Hook that returns a per-language description map for the 7 FAQ types. */
+function useFaqTypeDescriptions(): Record<string, string> {
+  const { t } = useTranslation('faq');
+  return {
+    ACCOUNT_ACCESS: t('faq:descriptions.ACCOUNT_ACCESS'),
+    VISIT_REQUEST: t('faq:descriptions.VISIT_REQUEST'),
+    DELEGATION_MANAGEMENT: t('faq:descriptions.DELEGATION_MANAGEMENT'),
+    LOGISTICS_RESOURCE: t('faq:descriptions.LOGISTICS_RESOURCE'),
+    DOCUMENT_MEDIA: t('faq:descriptions.DOCUMENT_MEDIA'),
+    NOTIFICATION_EMAIL: t('faq:descriptions.NOTIFICATION_EMAIL'),
+    OTHER: t('faq:descriptions.OTHER'),
+  };
+}
+
 function TopicCardSkeleton() {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-5 animate-pulse">
@@ -60,7 +88,8 @@ function TopicCardSkeleton() {
 function TopicCard({
   type, active, onClick, delay,
 }: { type: PublicFaqTypeCount; active: boolean; onClick: () => void; delay: number; key?: React.Key }) {
-  const { t } = useTranslation(['faq']);
+  const typeLabels = useFaqTypeLabels();
+  const typeDescriptions = useFaqTypeDescriptions();
   const Icon = TYPE_ICONS[type.value] ?? HelpCircle;
   return (
     <motion.button
@@ -76,17 +105,18 @@ function TopicCard({
         <Icon className="w-5 h-5" />
       </div>
       <div className="flex items-center justify-between gap-2 mb-1.5">
-        <h3 className="text-sm font-bold text-slate-900 leading-snug">{type.label}</h3>
+        <h3 className="text-sm font-bold text-slate-900 leading-snug">{typeLabels[type.value] ?? type.label}</h3>
         <span className="shrink-0 text-xs font-bold text-[#f37021]">{type.count}</span>
       </div>
       <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-        {t(`faq:descriptions.${type.value}`, '')}
+        {typeDescriptions[type.value] ?? ''}
       </p>
     </motion.button>
   );
 }
 
 function FaqAccordionItem({ faq, isOpen, onToggle }: { faq: PublicFaqItem; isOpen: boolean; onToggle: () => void; key?: React.Key }) {
+  const typeLabels = useFaqTypeLabels();
   return (
     <motion.div
       layout
@@ -101,7 +131,7 @@ function FaqAccordionItem({ faq, isOpen, onToggle }: { faq: PublicFaqItem; isOpe
       >
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
           <span className="inline-block w-fit px-2.5 py-1 bg-[#004c91]/8 text-[#004c91] text-[11px] font-bold rounded-lg whitespace-nowrap">
-            {faq.faqTypeLabel}
+            {typeLabels[faq.faqType] ?? faq.faqTypeLabel}
           </span>
           <h3 className={`text-[15px] sm:text-base font-bold leading-snug ${isOpen ? 'text-[#f37021]' : 'text-slate-900'}`}>
             {faq.question}
@@ -136,7 +166,10 @@ function FaqAccordionItem({ faq, isOpen, onToggle }: { faq: PublicFaqItem; isOpe
 }
 
 export function FAQPage() {
-  const { t } = useTranslation(['faq']);
+  const { t, i18n } = useTranslation(['faq']);
+  // Public FAQ labels are localised server-side; refetch on language switch (same pattern as NewsPage).
+  const lang = i18n.language;
+  const typeLabels = useFaqTypeLabels();
   const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -158,13 +191,13 @@ export function FAQPage() {
   const [suggested, setSuggested] = useState<PublicFaqItem[]>([]);
   const [suggestedLoading, setSuggestedLoading] = useState(true);
 
-  // Topic type counts — loaded once.
+  // Topic type counts — reload when language changes.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setTypeCountsLoading(true);
       try {
-        const counts = await publicFaqApi.getFaqTypeCounts();
+        const counts = await publicFaqApi.getFaqTypeCounts(lang);
         if (!cancelled) setTypeCounts(counts);
       } catch {
         if (!cancelled) setTypeCounts([]);
@@ -173,15 +206,15 @@ export function FAQPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [reloadToken]);
+  }, [reloadToken, lang]);
 
-  // Suggested questions — first page, no filter, server default order (display_order ASC, created_at DESC).
+  // Suggested questions — reload when language changes.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setSuggestedLoading(true);
       try {
-        const res = await publicFaqApi.getPublicFaqs({ page: 1, pageSize: SUGGESTED_SIZE });
+        const res = await publicFaqApi.getPublicFaqs({ page: 1, pageSize: SUGGESTED_SIZE, languageCode: lang });
         if (!cancelled) setSuggested(res.items ?? []);
       } catch {
         if (!cancelled) setSuggested([]);
@@ -190,7 +223,7 @@ export function FAQPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [reloadToken]);
+  }, [reloadToken, lang]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -211,6 +244,7 @@ export function FAQPage() {
           pageSize: PAGE_SIZE,
           keyword: debouncedKeyword || undefined,
           faqType: selectedType === ALL_TYPE ? undefined : selectedType,
+          languageCode: lang,
         });
         if (cancelled) return;
         setFaqs(res.items ?? []);
@@ -228,7 +262,7 @@ export function FAQPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedKeyword, selectedType, currentPage, reloadToken]);
+  }, [debouncedKeyword, selectedType, currentPage, reloadToken, lang]);
 
   const handleTypeSelect = (type: string) => {
     setSelectedType(type);
@@ -346,7 +380,7 @@ export function FAQPage() {
                   className="text-left bg-white rounded-xl border border-slate-200 p-4 hover:border-[#004c91]/40 hover:shadow-sm transition-all"
                 >
                   <span className="inline-block mb-2 px-2 py-0.5 bg-[#004c91]/8 text-[#004c91] text-[10px] font-bold rounded-md uppercase">
-                    {faq.faqTypeLabel}
+                    {typeLabels[faq.faqType] ?? faq.faqTypeLabel}
                   </span>
                   <p className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">{faq.question}</p>
                 </button>
@@ -378,7 +412,7 @@ export function FAQPage() {
                       selectedType === type.value ? 'bg-[#004c91] text-white' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    {type.label} ({type.count})
+                    {typeLabels[type.value] ?? type.label} ({type.count})
                   </button>
                 ))}
               </nav>
@@ -403,7 +437,7 @@ export function FAQPage() {
                   selectedType === type.value ? 'bg-[#004c91] text-white border-[#004c91]' : 'bg-white text-slate-600 border-slate-200'
                 }`}
               >
-                {type.label} ({type.count})
+                {typeLabels[type.value] ?? type.label} ({type.count})
               </button>
             ))}
           </div>

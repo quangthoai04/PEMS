@@ -34,6 +34,7 @@ export interface PublicFaqListParams {
   faqType?: string;
   page?: number;
   pageSize?: number;
+  languageCode?: string;
 }
 
 /** One faq_type with its PUBLISHED question count (GET /public/faqs/type-counts). Always all 7 types. */
