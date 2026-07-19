@@ -29,7 +29,7 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         public FakeCurrentUserService Actor { get; } = new()
         {
             UserId = ActorId,
-            Email = "ho.actor@test.local",
+            Email = "ho.actor@fpt.edu.vn",
             RoleId = HoRoleId,
             RoleCode = RoleCodes.Ho,
             SubRole = null,
@@ -63,7 +63,7 @@ public class UpdateBasicAccountInfoCommandHandlerTests
             Uc106TestData.CreateRole(Uc106TestData.StaffRoleId, RoleCodes.Staff),
             Uc106TestData.CreateRole(Uc106TestData.StudentRoleId, RoleCodes.Student));
         // The HO caller themselves (self-guard tests).
-        h.Db.Users.Add(Ho(ActorId, "ho.actor@test.local"));
+        h.Db.Users.Add(Ho(ActorId, "ho.actor@fpt.edu.vn"));
         h.Db.SaveChanges();
         return h;
     }
@@ -101,25 +101,25 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     public async Task HoEditsAnotherHo_ChangesEmail_RepointsProvider_RevokesSessions()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(Ho(810, "old.ho@test.local"));
-        h.Db.UserAuthProviders.Add(Google(810, "old.ho@test.local"));
+        h.Db.Users.Add(Ho(810, "old.ho@fpt.edu.vn"));
+        h.Db.UserAuthProviders.Add(Google(810, "old.ho@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         var res = await h.Run(new UpdateBasicAccountInfoCommand
         {
             UserId = 810,
             FullName = "  Head Office Mới  ",
-            Email = "  NEW.HO@Test.Local ",
+            Email = "  NEW.HO@FPT.EDU.VN ",
         });
 
         Assert.True(res.EmailChanged);
         var user = await h.Db.Users.SingleAsync(u => u.UserId == 810);
         Assert.Equal("Head Office Mới", user.FullName);          // trimmed, casing preserved
-        Assert.Equal("new.ho@test.local", user.Email);          // normalized lowercase
+        Assert.Equal("new.ho@fpt.edu.vn", user.Email);          // normalized lowercase
         Assert.Null(user.EmailVerifiedAt);                       // re-verify on next login
 
         var provider = await h.Db.UserAuthProviders.SingleAsync(p => p.UserId == 810);
-        Assert.Equal("new.ho@test.local", provider.ProviderEmail);
+        Assert.Equal("new.ho@fpt.edu.vn", provider.ProviderEmail);
         Assert.Null(provider.ProviderSubject);                   // SSO re-links next login
 
         Assert.Contains(h.Sessions.RevokeAllCalls,
@@ -130,14 +130,14 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     public async Task HoEditsStaffLeader_FullNameOnly_NoSessionRevoke()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(StaffLeader(820, "leader@test.local"));
+        h.Db.Users.Add(StaffLeader(820, "leader@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         var res = await h.Run(new UpdateBasicAccountInfoCommand
         {
             UserId = 820,
             FullName = "Trưởng phòng IC Mới",
-            Email = "leader@test.local",   // unchanged
+            Email = "leader@fpt.edu.vn",   // unchanged
         });
 
         Assert.False(res.EmailChanged);
@@ -145,21 +145,21 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         Assert.Empty(h.Sessions.RevokeAllCalls);
         var user = await h.Db.Users.SingleAsync(u => u.UserId == 820);
         Assert.Equal("Trưởng phòng IC Mới", user.FullName);
-        Assert.Equal("leader@test.local", user.Email);
+        Assert.Equal("leader@fpt.edu.vn", user.Email);
     }
 
     [Fact]
     public async Task SameEmailDifferentCasing_IsNotAnEmailChange()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(StaffLeader(820, "leader@test.local"));
+        h.Db.Users.Add(StaffLeader(820, "leader@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         var res = await h.Run(new UpdateBasicAccountInfoCommand
         {
             UserId = 820,
-            FullName = "User 820",
-            Email = "LEADER@Test.Local",
+            FullName = "Trần Thị Tám Hai",
+            Email = "LEADER@FPT.EDU.VN",
         });
 
         Assert.False(res.EmailChanged);
@@ -170,19 +170,19 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     public async Task EmailChange_WritesAuditWithRelinkFlag()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(Ho(810, "old.ho@test.local"));
+        h.Db.Users.Add(Ho(810, "old.ho@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         await h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 810, FullName = "User 810", Email = "brand.new@test.local",
+            UserId = 810, FullName = "Nguyễn Văn Tám Mười", Email = "brand.new@fpt.edu.vn",
         });
 
         var audit = await h.Db.AuditLogs.SingleAsync(a => a.EntityId == 810);
         Assert.Equal("UPDATE_ACCOUNT_BASIC_INFO", audit.Action);
         Assert.Equal(ActorId, audit.ActorUserId);
         var change = Assert.Single(audit.Changes);
-        Assert.Contains("brand.new@test.local", change.NewValueText);
+        Assert.Contains("brand.new@fpt.edu.vn", change.NewValueText);
         Assert.Contains("authenticationRelinkRequired", change.NewValueText);
     }
 
@@ -194,7 +194,7 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         var h = CreateHarness();
         await Assert.ThrowsAsync<ForbiddenException>(() => h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = ActorId, FullName = "Tôi", Email = "me.new@test.local",
+            UserId = ActorId, FullName = "Tôi", Email = "me.new@fpt.edu.vn",
         }));
     }
 
@@ -202,12 +202,12 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     public async Task HoCannotEditLockedTarget()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(Ho(810, "locked.ho@test.local", status: UserStatuses.Locked));
+        h.Db.Users.Add(Ho(810, "locked.ho@fpt.edu.vn", status: UserStatuses.Locked));
         h.Db.SaveChanges();
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 810, FullName = "X", Email = "locked.ho@test.local",
+            UserId = 810, FullName = "X", Email = "locked.ho@fpt.edu.vn",
         }));
     }
 
@@ -216,13 +216,13 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     {
         var h = CreateHarness();
         var student = Uc106TestData.CreateUser(830, Uc106TestData.StudentRoleId, null, null, Campus);
-        student.Email = "student@test.local";
+        student.Email = "student@fpt.edu.vn";
         h.Db.Users.Add(student);
         h.Db.SaveChanges();
 
         await Assert.ThrowsAsync<ForbiddenException>(() => h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 830, FullName = "SV", Email = "student@test.local",
+            UserId = 830, FullName = "SV", Email = "student@fpt.edu.vn",
         }));
     }
 
@@ -230,13 +230,13 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     public async Task DuplicateEmail_Throws409Conflict()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(Ho(810, "target.ho@test.local"));
-        h.Db.Users.Add(StaffLeader(820, "taken@test.local"));
+        h.Db.Users.Add(Ho(810, "target.ho@fpt.edu.vn"));
+        h.Db.Users.Add(StaffLeader(820, "taken@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 810, FullName = "User 810", Email = "taken@test.local",
+            UserId = 810, FullName = "Nguyễn Văn Tám Mười", Email = "taken@fpt.edu.vn",
         }));
         Assert.Equal("EMAIL_ALREADY_EXISTS", ex.ErrorCode);
     }
@@ -247,12 +247,12 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         var h = CreateHarness();
         h.Actor.RoleCode = RoleCodes.Staff;
         h.Actor.SubRole = UserSubRoles.Leader;
-        h.Db.Users.Add(StaffLeader(820, "leader@test.local"));
+        h.Db.Users.Add(StaffLeader(820, "leader@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         await Assert.ThrowsAsync<ForbiddenException>(() => h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 820, FullName = "X", Email = "leader@test.local",
+            UserId = 820, FullName = "X", Email = "leader@fpt.edu.vn",
         }));
     }
 
@@ -260,12 +260,70 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     public async Task BlankFullName_IsRejected()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(Ho(810, "target.ho@test.local"));
+        h.Db.Users.Add(Ho(810, "target.ho@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         await Assert.ThrowsAsync<ValidationException>(() => h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 810, FullName = "   ", Email = "target.ho@test.local",
+            UserId = 810, FullName = "   ", Email = "target.ho@fpt.edu.vn",
         }));
+    }
+
+    // ── Shared identity rules (IDENTITY_VALIDATION spec §6.2 / §10.2, AC-04/AC-10) ──
+    // Reached through the handler directly, i.e. exactly like a client bypassing the modal.
+
+    [Theory]
+    [InlineData("Nguyễn Văn Tám Mười", "target@yahoo.com")]              // domain not allowed
+    [InlineData("Nguyễn Văn Tám Mười", "target@student.fpt.edu.vn")]     // subdomain, not exact
+    [InlineData("Nguyễn Văn Tám Mười", "target+test@gmail.com")]         // plus addressing
+    [InlineData("Nguyễn Văn Tám Mười", "abc..def@gmail.com")]            // malformed local-part
+    [InlineData("Nguyễn Văn 123", "target.ho@fpt.edu.vn")]               // digits in the name
+    [InlineData("A", "target.ho@fpt.edu.vn")]                            // name too short
+    public async Task InvalidIdentity_IsRejected_AndNothingIsChanged(string fullName, string email)
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(810, "target.ho@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        await Assert.ThrowsAsync<ValidationException>(() => h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 810, FullName = fullName, Email = email,
+        }));
+
+        var user = await h.Db.Users.SingleAsync(u => u.UserId == 810);
+        Assert.Equal("target.ho@fpt.edu.vn", user.Email);
+        Assert.Empty(h.Sessions.RevokeAllCalls);
+    }
+
+    /// <summary>Re-saving the target's own email must not trip the uniqueness check (§5.6).</summary>
+    [Fact]
+    public async Task OwnEmail_IsExcludedFromTheUniquenessCheck()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(810, "target.ho@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 810, FullName = "Tên Mới Hợp Lệ", Email = "target.ho@fpt.edu.vn",
+        });
+
+        Assert.False(res.EmailChanged);
+        Assert.Equal("Tên Mới Hợp Lệ", (await h.Db.Users.SingleAsync(u => u.UserId == 810)).FullName);
+    }
+
+    [Fact]
+    public async Task DuplicateEmail_IsDetectedCaseInsensitively()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(810, "target.ho@fpt.edu.vn"));
+        h.Db.Users.Add(StaffLeader(820, "taken@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 810, FullName = "Nguyễn Văn Tám Mười", Email = "  TAKEN@FPT.EDU.VN  ",
+        }));
+        Assert.Equal("EMAIL_ALREADY_EXISTS", ex.ErrorCode);
     }
 }

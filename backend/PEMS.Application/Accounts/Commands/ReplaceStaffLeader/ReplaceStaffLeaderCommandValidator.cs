@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Application.Accounts.Common;
 
 namespace PEMS.Application.Accounts.Commands.ReplaceStaffLeader;
 
@@ -9,10 +10,8 @@ public sealed class ReplaceStaffLeaderCommandValidator : AbstractValidator<Repla
         RuleFor(x => x.CampusId)
             .GreaterThan(0ul).WithMessage("Vui lòng chọn cơ sở.");
 
-        // BR-RSL-22: reason is mandatory.
-        RuleFor(x => x.Reason)
-            .NotEmpty().WithMessage("Vui lòng nhập lý do thay thế.")
-            .MaximumLength(500);
+        // BR-RSL-22: reason is mandatory, 10–500 chars and must carry actual content.
+        RuleFor(x => x.Reason).ApplyReplacementReasonRules();
 
         RuleFor(x => x.Mode)
             .Must(m => m == ReplaceStaffLeaderModes.ExistingUser || m == ReplaceStaffLeaderModes.CreateNewUser)
@@ -29,14 +28,10 @@ public sealed class ReplaceStaffLeaderCommandValidator : AbstractValidator<Repla
         // Mode CREATE_NEW_USER → name + valid email required; gender (if sent) must be a valid enum.
         When(x => x.Mode == ReplaceStaffLeaderModes.CreateNewUser, () =>
         {
-            RuleFor(x => x.FullName)
-                .NotEmpty().WithMessage("Vui lòng nhập họ và tên.")
-                .MaximumLength(150);
+            // Same identity rule set as CreateAccount / UpdateBasicAccountInfo.
+            RuleFor(x => x.FullName).ApplyAccountFullNameRules();
 
-            RuleFor(x => x.Email)
-                .NotEmpty().WithMessage("Vui lòng nhập email.")
-                .EmailAddress().WithMessage("Vui lòng nhập email hợp lệ.")
-                .MaximumLength(150);
+            RuleFor(x => x.Email).ApplyAccountEmailRules();
 
             RuleFor(x => x.Gender)
                 .IsInEnum().WithMessage("Giới tính không hợp lệ.");

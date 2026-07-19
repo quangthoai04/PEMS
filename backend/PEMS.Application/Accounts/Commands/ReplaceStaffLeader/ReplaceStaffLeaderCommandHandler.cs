@@ -50,7 +50,23 @@ public sealed class ReplaceStaffLeaderCommandHandler
 
         var actorId = _currentUser.UserId;
         var mode = (request.Mode ?? string.Empty).Trim().ToUpperInvariant();
-        var reason = request.Reason.Trim();
+        var reason = AccountIdentityRules.NormalizeReason(request.Reason);
+        if (AccountIdentityRules.ValidateReplacementReason(reason) is { } reasonError)
+            throw new ValidationException(reasonError);
+
+        // Identity of a brand-new leader is normalized + re-validated before any write, so a direct
+        // API call can never insert a name/email the modal would have rejected.
+        var newUserFullName = string.Empty;
+        var newUserEmail = string.Empty;
+        if (mode == ReplaceStaffLeaderModes.CreateNewUser)
+        {
+            newUserFullName = AccountIdentityRules.NormalizeFullName(request.FullName);
+            newUserEmail = AccountIdentityRules.NormalizeEmail(request.Email);
+            if (AccountIdentityRules.ValidateFullName(newUserFullName) is { } nameError)
+                throw new ValidationException(nameError);
+            if (AccountIdentityRules.ValidateEmail(newUserEmail) is { } emailError)
+                throw new ValidationException(emailError);
+        }
 
         // ── Validate campus / IC department / current-leader consistency (read-only). The full
         //    case matrix lives in StaffLeaderAvailability; EnsureReplaceable throws 404/422/409 for
@@ -131,9 +147,10 @@ public sealed class ReplaceStaffLeaderCommandHandler
             }
             else // CREATE_NEW_USER
             {
-                var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
+                var email = newUserEmail;
                 if (await _db.Users.AsNoTracking().AnyAsync(u => u.Email == email, cancellationToken))
-                    throw new ConflictException("Email này đã tồn tại trong hệ thống.", AccountErrorCodes.EmailAlreadyExists);
+                    throw new ConflictException(
+                        AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
 
                 var staffRole = await _db.Roles.FirstOrDefaultAsync(
                     r => r.RoleCode == RoleCodes.Staff && r.Status == EntityStatuses.Active, cancellationToken)
@@ -141,7 +158,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
 
                 newLeader = new User
                 {
-                    FullName = (request.FullName ?? string.Empty).Trim(),
+                    FullName = newUserFullName,
                     Email = email,
                     Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone!.Trim(),
                     Gender = request.Gender,
