@@ -221,7 +221,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 };
                 formRevision = d.FormRevision;
                 approvalRevision = d.ApprovalRevision;
-                rowVersion = d.RowVersion;
+                // The per-campus rowVersion the client echoes back as expectedInstanceRowVersion / expectedRowVersion
+                // is the CAMPUS INSTANCE token — that is exactly what pending-edit, safe-edit and amendment all
+                // check against (visit_request_campuses.row_version, bumped by campus-approve). The form-detail's
+                // own row_version diverges after an approve, so exposing it here would 409 a fresh safe-edit/amendment.
+                rowVersion = c.RowVersion;
 
                 var linked = membersByInstance.TryGetValue(c.VisitInstanceId, out var ms)
                     ? ms : new List<(VisitGuestMember Member, uint LinkOrder)>();

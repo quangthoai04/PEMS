@@ -187,6 +187,33 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    [Fact]
+    public async Task Resolved_campus_rowversion_is_the_instance_token_not_the_form_detail()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        // Simulate a campus-approve: the CAMPUS INSTANCE row_version is bumped, the form-detail's is not.
+        // The read model must surface the instance token — that is what pending-edit / safe-edit / amendment
+        // all check against — so a safe-edit/amendment on a freshly-loaded ASSIGNED detail never 409s. (Caught
+        // by the real-stack member-amendment journey: exposing the form-detail version here 409'd the submit.)
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instances[0].VisitInstanceId);
+        instance.RowVersion += 5;
+        await db.SaveChangesAsync();
+        var detail = await db.VisitInstanceFormDetails.AsNoTracking()
+            .SingleAsync(d => d.VisitInstanceId == instances[0].VisitInstanceId);
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var campus = Assert.Single(dto.CampusVisits);
+        Assert.Equal(instance.RowVersion, campus.RowVersion);   // the instance token the write paths check
+        Assert.NotEqual(detail.RowVersion, campus.RowVersion);  // the diverged form-detail version is NOT surfaced
+
+        await tx.RollbackAsync();
+    }
+
     // ── 2. Dual-read v1 ───────────────────────────────────────────────────────
 
     [Fact]
