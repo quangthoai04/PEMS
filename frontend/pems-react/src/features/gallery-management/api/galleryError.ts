@@ -45,10 +45,16 @@ export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
   GALLERY_LOCATION_COVER_INVALID: 'Ảnh đại diện vị trí không đúng định dạng.',
   GALLERY_ITEM_TYPE_REQUIRED: 'Vui lòng chọn loại nội dung.',
   GALLERY_ITEM_TYPE_INVALID: 'Vui lòng chọn Media hoặc Đoàn khách.',
-  // EverAI TTS narration.
+  // Bilingual content (VI/EN descriptions + manually uploaded audio).
   GALLERY_DESCRIPTION_TOO_LONG: 'Mô tả không được vượt quá 1000 ký tự.',
-  TTS_DISABLED: 'Tính năng giọng đọc chưa được bật hoặc chưa cấu hình đầy đủ.',
-  TTS_INVALID_DESCRIPTION: 'Mô tả phải khác rỗng và không vượt quá 1000 ký tự để tạo giọng đọc.',
+  GALLERY_DESCRIPTION_VI_REQUIRED: 'Vui lòng nhập mô tả tiếng Việt.',
+  GALLERY_AUDIO_VI_REQUIRED: 'Vui lòng chọn bản ghi âm tiếng Việt.',
+  GALLERY_DESCRIPTION_EN_REQUIRED: 'Vui lòng nhập mô tả tiếng Anh.',
+  GALLERY_AUDIO_EN_REQUIRED: 'Vui lòng chọn bản ghi âm tiếng Anh.',
+  GALLERY_AUDIO_VI_INVALID: 'Bản ghi âm tiếng Việt không đúng định dạng (chỉ MP3/WAV).',
+  GALLERY_AUDIO_EN_INVALID: 'Bản ghi âm tiếng Anh không đúng định dạng (chỉ MP3/WAV).',
+  GALLERY_AUDIO_TOO_LARGE: 'Bản ghi âm vượt quá dung lượng cho phép (tối đa 20 MB).',
+  GALLERY_CONTENT_MISSING: 'Gallery item chưa có nội dung song ngữ hợp lệ.',
   // Shared file-upload foundation codes.
   FILE_EMPTY: 'Tệp rỗng hoặc không hợp lệ.',
   FILE_TOO_LARGE: 'Tệp vượt quá kích thước cho phép.',

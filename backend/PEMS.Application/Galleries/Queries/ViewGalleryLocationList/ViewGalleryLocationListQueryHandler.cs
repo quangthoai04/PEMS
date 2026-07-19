@@ -64,12 +64,15 @@ public sealed class ViewGalleryLocationListQueryHandler
                 query = query.Where(l => l.Status == st);
         }
 
-        // Only "createdAt" is a sortable column on this screen (UC §29.1); default DESC.
-        var ascending = string.Equals(request.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
-        IOrderedQueryable<GalleryLocation> ordered = ascending
-            ? query.OrderBy(l => l.CreatedAt)
-            : query.OrderByDescending(l => l.CreatedAt);
-        var sortedQuery = ordered.ThenByDescending(l => l.LocationId);
+        // Only "createdAt" is a sortable column on this screen (UC §29.1). Default is add-order
+        // (ascending: earliest-added location first, latest last); only an explicit "desc" flips it.
+        var descending = string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        IOrderedQueryable<GalleryLocation> ordered = descending
+            ? query.OrderByDescending(l => l.CreatedAt)
+            : query.OrderBy(l => l.CreatedAt);
+        var sortedQuery = descending
+            ? ordered.ThenByDescending(l => l.LocationId)
+            : ordered.ThenBy(l => l.LocationId);
 
         var totalItems = await query.CountAsync(cancellationToken);
 

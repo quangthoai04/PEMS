@@ -16,9 +16,6 @@ public class GalleryItem
     [Column("title")]
     public string Title { get; set; } = null!;
 
-    [Column("description")]
-    public string Description { get; set; } = null!;
-
     /// <summary>MEDIA (ảnh/video giới thiệu vị trí) hoặc VISIT_DELEGATION (ảnh/video đoàn khách).</summary>
     [Column("item_type")]
     public string ItemType { get; set; } = "MEDIA";
@@ -52,4 +49,7 @@ public class GalleryItem
 
     public virtual GalleryLocation Location { get; set; } = null!;
     public virtual ICollection<GalleryItemMedia> Media { get; set; } = new List<GalleryItemMedia>();
+
+    /// <summary>The item's mandatory bilingual content (VI/EN descriptions + audio). 1:1.</summary>
+    public virtual GalleryItemContent Content { get; set; } = null!;
 }

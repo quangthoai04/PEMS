@@ -51,7 +51,8 @@ export function LocationManagementStaffLeader() {
   const [keyword, setKeyword] = useState('');
   const [areaId, setAreaId] = useState<number | ''>('');
   const [status, setStatus] = useState<GalleryLocationStatus | ''>('');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  // Default add-order: earliest-added location first, latest last (asc). Users can toggle to newest-first.
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 

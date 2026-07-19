@@ -29,6 +29,7 @@ import {
   ImageOff,
   Volume2,
   VolumeX,
+  Languages,
   Play,
   Users,
 } from "lucide-react";
@@ -573,106 +574,69 @@ function GalleryItemDetailModal({
   const [zoomOpen, setZoomOpen] = useState(false);
   const itemId = detail?.galleryItem.galleryItemId;
 
-  // ── EverAI TTS narration (speaker icon) ──
-  // Click → POST ensure. READY plays the stored audio (PEMS proxy URL); PROCESSING polls the GET
-  // endpoint every 2.5s until READY; failures show a light inline note. Switching item/location or
-  // closing the modal stops the audio and cancels any pending poll.
-  const [narration, setNarration] = useState<{ state: "idle" | "loading" | "playing" | "error"; note?: string }>({ state: "idle" });
+  // ── Bilingual content + audio (speaker icon) ──
+  // The item carries a Vietnamese + English description and a ready-to-play audio recording for each.
+  // Default is Vietnamese. Switching language stops any playing audio and swaps description + audio URL;
+  // the speaker icon plays the current language's recording directly (no ensure/poll). Switching item or
+  // closing the modal stops the audio.
+  type GalleryLanguage = "vi" | "en";
+  const [selectedLanguage, setSelectedLanguage] = useState<GalleryLanguage>("vi");
+  const [audioState, setAudioState] = useState<"idle" | "loading" | "playing" | "error">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const pollTimerRef = useRef<number | null>(null);
-  const narrationReqRef = useRef(0); // bumping this invalidates every in-flight ensure/poll/play
-  const NARRATION_POLL_MS = 2500;
-  const NARRATION_POLL_MAX = 48; // ~2 minutes of polling before giving up
 
-  const stopNarration = useCallback(() => {
-    narrationReqRef.current += 1;
-    if (pollTimerRef.current != null) {
-      window.clearTimeout(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
+  const activeContent =
+    selectedLanguage === "vi" ? detail?.galleryItem.content?.vi : detail?.galleryItem.content?.en;
+
+  const stopAudio = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
+      audioRef.current.load();
       audioRef.current = null;
     }
-    setNarration({ state: "idle" });
+    setAudioState("idle");
   }, []);
 
-  const failNarration = useCallback((req: number, note?: string) => {
-    if (req !== narrationReqRef.current) return;
-    setNarration({ state: "error", note: note || t('visitFptu:gallery.errors.narrationFailed') });
-  }, [t]);
-
-  const playNarration = useCallback(
-    (req: number, url: string) => {
-      if (req !== narrationReqRef.current) return;
-      const audio = new Audio(mediaSrc(url));
-      audioRef.current = audio;
-      audio.onended = () => {
-        if (req === narrationReqRef.current) setNarration({ state: "idle" });
-      };
-      audio.onerror = () => failNarration(req);
-      audio
-        .play()
-        .then(() => {
-          if (req === narrationReqRef.current) setNarration({ state: "playing" });
-          else audio.pause();
-        })
-        .catch(() => failNarration(req));
-    },
-    [failNarration],
-  );
-
-  const pollNarration = useCallback(
-    (req: number, attempt: number) => {
-      if (req !== narrationReqRef.current || itemId == null) return;
-      if (attempt >= NARRATION_POLL_MAX) {
-        failNarration(req, t('visitFptu:gallery.errors.narrationGenWait'));
-        return;
-      }
-      pollTimerRef.current = window.setTimeout(async () => {
-        try {
-          const status = await publicVisitFptuApi.getTtsAudioStatus(itemId);
-          if (req !== narrationReqRef.current) return;
-          if (status.status === "READY" && status.audioUrl) playNarration(req, status.audioUrl);
-          else if (status.status === "PROCESSING" || status.status === "NOT_CREATED") pollNarration(req, attempt + 1);
-          else failNarration(req, status.message || undefined);
-        } catch {
-          failNarration(req);
-        }
-      }, NARRATION_POLL_MS);
-    },
-    [itemId, failNarration, playNarration],
-  );
-
   const toggleNarration = async () => {
-    if (itemId == null) return;
-    if (narration.state === "playing" || narration.state === "loading") {
-      stopNarration();
+    if (audioState === "playing" || audioState === "loading") {
+      stopAudio();
       return;
     }
-    const req = ++narrationReqRef.current;
-    setNarration({ state: "loading" });
+    const url = activeContent?.audioUrl;
+    if (!url) {
+      setAudioState("error");
+      return;
+    }
+    setAudioState("loading");
+    const audio = new Audio(mediaSrc(url));
+    audioRef.current = audio;
+    audio.onended = () => setAudioState("idle");
+    audio.onerror = () => setAudioState("error");
     try {
-      const ensured = await publicVisitFptuApi.ensureTtsAudio(itemId);
-      if (req !== narrationReqRef.current) return;
-      if (ensured.status === "READY" && ensured.audioUrl) playNarration(req, ensured.audioUrl);
-      else if (ensured.status === "PROCESSING") pollNarration(req, 0);
-      else failNarration(req, ensured.message || undefined);
+      await audio.play();
+      setAudioState("playing");
     } catch {
-      failNarration(req);
+      setAudioState("error");
     }
   };
 
-  // Reset carousel + stop any narration whenever the shown item changes.
+  // Switch language: stop the current audio and swap content — never autoplay the new language.
+  const changeLanguage = (lng: GalleryLanguage) => {
+    if (lng === selectedLanguage) return;
+    stopAudio();
+    setSelectedLanguage(lng);
+  };
+
+  // Reset carousel + language + stop audio whenever the shown item changes.
   useEffect(() => {
     setIdx(0);
     setFailed(false);
     setZoomOpen(false);
-    stopNarration();
-  }, [itemId, stopNarration]);
-  // Stop narration when the modal unmounts.
-  useEffect(() => () => stopNarration(), [stopNarration]);
+    stopAudio();
+    setSelectedLanguage("vi");
+  }, [itemId, stopAudio]);
+  // Stop audio when the modal unmounts.
+  useEffect(() => () => stopAudio(), [stopAudio]);
 
   const media = detail?.media ?? [];
   const cur = media[idx] ?? null;
@@ -771,53 +735,65 @@ function GalleryItemDetailModal({
           </div>
 
           <div className="bg-white/80 dark:bg-white/10 backdrop-blur-3xl border border-white/40 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] grow flex flex-col overflow-hidden relative min-h-0">
-            {/* Description — the ONLY scrolling element (flex-col grow so it's height-bounded); the narration
-                button floats top-right and the footer below stays fixed. */}
-            <div className="grow min-h-0 overflow-y-auto pr-2 mb-4 prose prose-base text-black dark:text-white font-light leading-relaxed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-black/5 dark:[&::-webkit-scrollbar-track]:bg-white/10 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-fpt-orange/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-fpt-orange/80 [scrollbar-width:thin] [scrollbar-color:rgba(243,112,33,0.55)_transparent]">
-              {detail && !notFound && !isLoading && detail.galleryItem.description?.trim() && (
-                <div className="float-right ml-4 mb-2 flex flex-col items-end gap-1.5 max-w-[180px]">
-                  <button
-                    onClick={toggleNarration}
-                    title={
-                      narration.state === "playing"
-                        ? t('visitFptu:gallery.actions.stopNarration')
-                        : narration.state === "loading"
-                          ? t('visitFptu:gallery.labels.generatingNarration')
-                          : t('visitFptu:gallery.actions.listenNarration')
-                    }
-                    className={`flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] ${
-                      narration.state === "playing"
-                        ? "bg-fpt-orange text-white animate-pulse"
-                        : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
-                    }`}
-                  >
-                    {narration.state === "loading" ? (
-                      <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
-                    ) : narration.state === "playing" ? (
-                      <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />
-                    ) : (
-                      <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
-                    )}
-                  </button>
-                  {narration.state === "loading" && (
-                    <span className="text-[11px] leading-snug text-right text-gray-500 dark:text-gray-300">
-                      {t('visitFptu:gallery.labels.generatingNarration')}
-                    </span>
-                  )}
-                  {narration.state === "error" && narration.note && (
-                    <span className="text-[11px] leading-snug text-right text-red-500 dark:text-red-400">
-                      {narration.note}
-                    </span>
-                  )}
+            {/* Language toggle + speaker — both languages are always available (both are mandatory). */}
+            {detail && !notFound && !isLoading && (
+              <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <div className="inline-flex items-center rounded-full bg-black/5 dark:bg-white/10 p-1 gap-1" title={t('visitFptu:gallery.actions.switchLanguage')}>
+                  {(["vi", "en"] as GalleryLanguage[]).map((lng) => {
+                    const active = selectedLanguage === lng;
+                    return (
+                      <button
+                        key={lng}
+                        onClick={() => changeLanguage(lng)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                          active ? "bg-fpt-orange text-white shadow" : "text-gray-600 dark:text-gray-300 hover:text-fpt-orange"
+                        }`}
+                      >
+                        <Languages className="w-3.5 h-3.5" />
+                        {lng === "vi" ? t('visitFptu:gallery.labels.vietnamese') : t('visitFptu:gallery.labels.english')}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+                <button
+                  onClick={toggleNarration}
+                  disabled={!activeContent?.audioUrl}
+                  title={
+                    audioState === "playing"
+                      ? t('visitFptu:gallery.actions.stopNarration')
+                      : t('visitFptu:gallery.actions.listenNarration')
+                  }
+                  className={`flex items-center justify-center w-11 h-11 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] disabled:opacity-40 disabled:cursor-not-allowed ${
+                    audioState === "playing"
+                      ? "bg-fpt-orange text-white animate-pulse"
+                      : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
+                  }`}
+                >
+                  {audioState === "loading" ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : audioState === "playing" ? (
+                    <VolumeX className="w-5 h-5" />
+                  ) : (
+                    <Volume2 className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            )}
+            {audioState === "error" && (
+              <span className="text-[11px] leading-snug text-red-500 dark:text-red-400 mb-2 shrink-0">
+                {t('visitFptu:gallery.errors.narrationFailed')}
+              </span>
+            )}
+
+            {/* Description — the ONLY scrolling element (flex-col grow so it's height-bounded). */}
+            <div className="grow min-h-0 overflow-y-auto pr-2 mb-4 prose prose-base text-black dark:text-white font-light leading-relaxed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-black/5 dark:[&::-webkit-scrollbar-track]:bg-white/10 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-fpt-orange/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-fpt-orange/80 [scrollbar-width:thin] [scrollbar-color:rgba(243,112,33,0.55)_transparent]">
               {isLoading ? (
                 <p className="text-gray-600 dark:text-gray-300">{t('visitFptu:gallery.labels.loadingDescription')}</p>
               ) : notFound ? (
                 <p className="text-red-600 dark:text-red-400 font-medium">{t('visitFptu:gallery.errors.contentHidden')}</p>
               ) : (
                 <p className="text-black dark:text-gray-100 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
-                  {detail?.galleryItem.description}
+                  {activeContent?.description}
                 </p>
               )}
             </div>
@@ -1712,7 +1688,7 @@ export function CampusDetailVisitPage() {
 
   const toggleNarration = useCallback(() => {
     const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
-    const text = detail?.galleryItem.description?.trim();
+    const text = detail?.galleryItem.content?.vi?.description?.trim();
     if (!synth || !text) return;
     if (isSpeaking) {
       stopNarration();

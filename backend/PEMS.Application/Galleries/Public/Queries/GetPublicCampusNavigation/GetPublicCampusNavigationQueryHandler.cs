@@ -113,8 +113,8 @@ public sealed class GetPublicCampusNavigationQueryHandler
 
         var areas = rows
             .GroupBy(r => new { r.AreaId, r.AreaName, r.AreaDisplayOrder, r.AreaCoverFileId })
-            .OrderBy(g => g.Key.AreaDisplayOrder)
-            .ThenBy(g => g.Key.AreaName)
+            // Add-order: earliest-created area first, latest last (by auto-increment id).
+            .OrderBy(g => g.Key.AreaId)
             .Select(g => new PublicGalleryAreaDto
             {
                 AreaId = g.Key.AreaId,
@@ -124,18 +124,15 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 AreaCoverUrl = PublicGalleryFileUrls.ContentOrNull(g.Key.AreaCoverFileId),
                 AreaCoverMediaType = GalleryCoverMediaType.ResolveFor(g.Key.AreaCoverFileId, coverMediaByFileId),
                 // A location may hold many visible items — collapse to one nav node per location,
-                // represented by its lead item (lowest item display order, then newest), and carry the
-                // total count so the UI can hint at a slider. The full list loads on location click.
+                // represented by its lead item (the earliest-added item), and carry the total count so the
+                // UI can hint at a slider. Locations themselves are in add-order. Full list loads on click.
                 Locations = g
                     .GroupBy(r => new { r.LocationId, r.LocationName, r.LocationDisplayOrder, r.LocationCoverFileId })
-                    .OrderBy(lg => lg.Key.LocationDisplayOrder)
-                    .ThenBy(lg => lg.Key.LocationName)
+                    .OrderBy(lg => lg.Key.LocationId)
                     .Select(lg =>
                     {
                         var lead = lg
-                            .OrderBy(r => r.ItemDisplayOrder)
-                            .ThenByDescending(r => r.CreatedAt)
-                            .ThenByDescending(r => r.GalleryItemId)
+                            .OrderBy(r => r.GalleryItemId)
                             .First();
                         return new PublicGalleryLocationDto
                         {

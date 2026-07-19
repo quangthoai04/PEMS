@@ -5,9 +5,11 @@ using PEMS.Application.Galleries.Common;
 namespace PEMS.Application.Galleries.Commands.UpdateGalleryItem;
 
 /// <summary>
-/// UC-GAL-07 Edit Gallery Item (Staff Leader). Updates metadata and reconciles media: media ids in
-/// <see cref="KeepMediaIds"/> are kept, the rest are soft-deleted, <see cref="NewFiles"/> are uploaded and
-/// appended, and <see cref="YoutubeUrls"/> are registered + appended as external VIDEO media. Status
+/// UC-GAL-07 Edit Gallery Item (Staff Leader). Updates metadata + bilingual content and reconciles media:
+/// media ids in <see cref="KeepMediaIds"/> are kept, the rest are soft-deleted, <see cref="NewFiles"/> are
+/// uploaded + appended, and <see cref="YoutubeUrls"/> are registered + appended as external VIDEO media.
+/// Both descriptions are always required. Each audio is kept unless a replacement is supplied
+/// (<see cref="NewAudioVi"/> / <see cref="NewAudioEn"/>) — audio can never be removed. Status
 /// (PUBLISHED/HIDDEN) is never changed here. Campus / location / media rules are enforced server-side.
 /// </summary>
 /// <param name="YoutubeUrls">New YouTube video URLs to add as external VIDEO media (0..N).</param>
@@ -20,7 +22,10 @@ namespace PEMS.Application.Galleries.Commands.UpdateGalleryItem;
 public sealed record UpdateGalleryItemCommand(
     long GalleryItemId,
     string Title,
-    string Description,
+    string DescriptionVi,
+    string DescriptionEn,
+    GalleryUploadFileCommandDto? NewAudioVi,
+    GalleryUploadFileCommandDto? NewAudioEn,
     long LocationId,
     string? ItemType,
     IReadOnlyList<long> KeepMediaIds,

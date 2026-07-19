@@ -84,11 +84,6 @@ export const API_ENDPOINTS = {
     locationCreate: '/galleries/creategallerylocation',
     locationUpdate: '/galleries/updategallerylocation',
     locationChangeStatus: '/galleries/changegallerylocationstatus',
-    // EverAI TTS — audio status badge + "Tạo lại audio" (MANUAL_REGENERATE, bypasses failed cooldown).
-    ttsStatus: (galleryItemId: string | number) =>
-      `/gallery-management/items/${galleryItemId}/tts-audio`,
-    ttsRegenerate: (galleryItemId: string | number) =>
-      `/gallery-management/items/${galleryItemId}/tts-audio/regenerate`,
   },
   files: {
     download: (id: string | number) => `/files/${id}/download`,
@@ -176,11 +171,9 @@ export const API_ENDPOINTS = {
       `/public/visit-fptu/gallery-items/${galleryItemId}`,
     // Anonymous, gallery-scoped media proxy. URLs are returned absolute (e.g. "/api/public/visit-fptu/media/123/content").
     mediaContent: (fileId: string | number) => `/public/visit-fptu/media/${fileId}/content`,
-    // EverAI TTS narration behind the speaker icon: POST ensure lazily creates it, GET polls it.
-    ttsEnsure: (galleryItemId: string | number) =>
-      `/public/gallery-items/${galleryItemId}/tts-audio/ensure`,
-    ttsStatus: (galleryItemId: string | number) =>
-      `/public/gallery-items/${galleryItemId}/tts-audio`,
+    // Bilingual narration audio behind the speaker icon — item + language (vi/en) scoped, no fileId.
+    galleryItemAudio: (galleryItemId: string | number, languageCode: string) =>
+      `/public/visit-fptu/gallery-items/${galleryItemId}/audio/${languageCode}`,
   },
   delegations: {
     list: '/delegations',

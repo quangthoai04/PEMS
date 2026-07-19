@@ -13,17 +13,18 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Galleries.Common;
-using PEMS.Application.Galleries.Tts;
 using PEMS.Domain.Entities.Galleries;
 using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Application.Galleries.Commands.UpdateGalleryItem;
 
 /// <summary>
-/// UC-GAL-07 handler. Enforces role/scope, validates the (possibly new) location, reconciles media
-/// (keep / soft-delete old, upload + append new), guarantees the item keeps ≥1 active media and exactly
-/// one primary, recomputes <c>media_kind</c>, updates metadata (never the PUBLISHED/HIDDEN status), and
-/// writes an audit log. New files go through the shared Google Drive upload foundation.
+/// UC-GAL-07 handler. Enforces role/scope, validates the (possibly new) location, keeps both mandatory
+/// descriptions, reconciles media (keep / soft-delete old, upload + append new), keeps or replaces each
+/// audio recording independently (never removes one), guarantees ≥1 active media + exactly one primary,
+/// recomputes <c>media_kind</c>, updates metadata (never the PUBLISHED/HIDDEN status) and writes an audit
+/// log. New audio/files go through the shared Google Drive upload foundation. A newly uploaded audio is
+/// only swapped in after commit; the replaced old audio is cleaned up post-commit (best-effort).
 /// </summary>
 public sealed class UpdateGalleryItemCommandHandler
     : IRequestHandler<UpdateGalleryItemCommand, GalleryItemDetailDto>
@@ -32,8 +33,8 @@ public sealed class UpdateGalleryItemCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IFileUploadService _fileUpload;
     private readonly IGalleryExternalMediaService _externalMedia;
+    private readonly IGoogleDriveStorageService _drive;
     private readonly IDateTimeService _clock;
-    private readonly IGalleryItemTtsService _tts;
     private readonly ILogger<UpdateGalleryItemCommandHandler> _logger;
 
     public UpdateGalleryItemCommandHandler(
@@ -41,16 +42,16 @@ public sealed class UpdateGalleryItemCommandHandler
         ICurrentUserService currentUser,
         IFileUploadService fileUpload,
         IGalleryExternalMediaService externalMedia,
+        IGoogleDriveStorageService drive,
         IDateTimeService clock,
-        IGalleryItemTtsService tts,
         ILogger<UpdateGalleryItemCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _fileUpload = fileUpload;
         _externalMedia = externalMedia;
+        _drive = drive;
         _clock = clock;
-        _tts = tts;
         _logger = logger;
     }
 
@@ -64,6 +65,7 @@ public sealed class UpdateGalleryItemCommandHandler
         var item = await _db.GalleryItems
             .Include(i => i.Location).ThenInclude(l => l.Area)
             .Include(i => i.Media)
+            .Include(i => i.Content)
             .FirstOrDefaultAsync(i => i.GalleryItemId == itemId && i.DeletedAt == null, cancellationToken)
             ?? throw new NotFoundException("GalleryItem", itemId);
 
@@ -74,21 +76,29 @@ public sealed class UpdateGalleryItemCommandHandler
 
         var itemType = GalleryItemTypes.Normalize(request.ItemType);
 
-        // Narration cap (EverAI TTS): checked BEFORE any upload so a rejected request never orphans
-        // a Drive object. 422 per the TTS spec.
-        var description = request.Description?.Trim() ?? string.Empty;
-        if (description.Length > 1000)
-            throw new BusinessRuleException(
-                "Mô tả không được vượt quá 1000 ký tự.", GalleryErrorCodes.DescriptionTooLong);
+        // Both descriptions are always required (validated before any upload → no orphans).
+        var descriptionVi = GalleryContentRules.NormalizeDescription(request.DescriptionVi, vietnamese: true);
+        var descriptionEn = GalleryContentRules.NormalizeDescription(request.DescriptionEn, vietnamese: false);
 
-        // New location must be ACTIVE and in the caller's campus (BR-GAL-EDIT-02/03; throws 404/403/422).
-        // A location may hold many items, so moving an item into an already-used location is allowed.
+        // Audio: keep the current file unless a replacement is supplied. A supplied replacement must be a
+        // valid non-empty upload. A legacy item with no content row must supply BOTH audio files.
+        var hasNewAudioVi = request.NewAudioVi is { Content.Length: > 0, FileSize: > 0 };
+        var hasNewAudioEn = request.NewAudioEn is { Content.Length: > 0, FileSize: > 0 };
+        if (item.Content is null)
+        {
+            if (!hasNewAudioVi)
+                throw new BusinessRuleException(
+                    "Vui lòng chọn bản ghi âm tiếng Việt.", GalleryErrorCodes.AudioViRequired);
+            if (!hasNewAudioEn)
+                throw new BusinessRuleException(
+                    "Vui lòng chọn bản ghi âm tiếng Anh.", GalleryErrorCodes.AudioEnRequired);
+        }
+
+        // New location must be ACTIVE and in the caller's campus (throws 404/403/422).
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
 
         var youtubeUrls = request.YoutubeUrls ?? Array.Empty<string>();
-        // Validate every new YouTube URL up front (pure parse) so a bad URL rejects the edit BEFORE any
-        // upload / files row / soft-delete — no orphans, no half-applied edit (AC-YT-03).
         foreach (var url in youtubeUrls)
             YouTubeUrlParser.Parse(url);
 
@@ -98,148 +108,229 @@ public sealed class UpdateGalleryItemCommandHandler
         var liveMedia = item.Media.Where(m => m.DeletedAt == null).ToList();
         var kept = liveMedia.Where(m => keepSet.Contains(m.MediaId)).ToList();
 
-        // Soft-delete media the user dropped (file stays on Drive — BR-GAL-DISABLE rules apply).
-        foreach (var m in liveMedia.Where(m => !keepSet.Contains(m.MediaId)))
-        {
-            m.Status = "HIDDEN";
-            m.DeletedAt = now;
-            m.DeletedBy = actorId;
-            m.IsPrimary = false;
-            m.UpdatedAt = now;
-            m.UpdatedBy = actorId;
-        }
-
-        // Upload + append new files, then register + append new YouTube media. Total media
-        // (kept + new files + new YouTube) is capped at 20 — checked BEFORE any upload so a rejected
-        // request never orphans a Drive object / files row.
         var newFiles = request.NewFiles ?? Array.Empty<GalleryUploadFileCommandDto>();
         if (kept.Count + newFiles.Count + youtubeUrls.Count > 20)
             throw new BusinessRuleException(
                 "Gallery item chỉ được có tối đa 20 media.", GalleryErrorCodes.TooManyFiles);
 
-        var appendedUploads = new List<GalleryItemMedia>();
-        foreach (var file in newFiles)
+        // Every Drive object / files row created in this request — cleaned up if the DB write fails.
+        var uploadedFileIds = new List<ulong>();
+        // Old audio files replaced by a new upload — cleaned up AFTER a successful commit (never before).
+        var replacedAudioFileIds = new List<ulong>();
+
+        try
         {
-            var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
-            await using var stream = new MemoryStream(file.Content, writable: false);
-            var uploaded = await _fileUpload.UploadBusinessFileAsync(
-                stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);
-
-            var media = new GalleryItemMedia
+            // Soft-delete media the user dropped (file stays on Drive).
+            foreach (var m in liveMedia.Where(m => !keepSet.Contains(m.MediaId)))
             {
-                GalleryItemId = item.GalleryItemId,
-                FileId = (ulong)uploaded.FileId,
-                MediaType = mediaType,
-                Caption = file.Caption,
-                AltText = file.AltText,
-                IsPrimary = false,
-                Status = "ACTIVE",
-                CreatedAt = now,
-                CreatedBy = actorId,
-            };
-            item.Media.Add(media);
-            appendedUploads.Add(media);
-        }
-
-        var appendedYoutube = new List<GalleryItemMedia>();
-        foreach (var url in youtubeUrls)
-        {
-            var registered = await _externalMedia.RegisterYouTubeAsync(url, (long)actorId, cancellationToken);
-            var media = new GalleryItemMedia
-            {
-                GalleryItemId = item.GalleryItemId,
-                FileId = (ulong)registered.FileId,
-                MediaType = GalleryMediaClassifier.Video,
-                IsPrimary = false,
-                Status = "ACTIVE",
-                CreatedAt = now,
-                CreatedBy = actorId,
-            };
-            item.Media.Add(media);
-            appendedYoutube.Add(media);
-        }
-
-        // Final active media set: kept first (by original order), then new uploads, then new YouTube —
-        // this order matches the upload:{i} / youtube:{i} primaryMediaKey indices.
-        var keptOrdered = kept.OrderBy(m => m.DisplayOrder).ThenBy(m => m.MediaId).ToList();
-        var finalActive = keptOrdered
-            .Concat(appendedUploads)
-            .Concat(appendedYoutube)
-            .ToList();
-
-        if (finalActive.Count == 0)
-            throw new BusinessRuleException(
-                "Gallery item phải có ít nhất một file media.", GalleryErrorCodes.MediaRequired);
-
-        // Resolve the single primary (BR-GAL-EDIT-07). primaryMediaKey supports existing/upload/youtube;
-        // it falls back to the legacy primaryMediaId (a kept media) and finally to the first active media.
-        var primary = ResolvePrimary(
-            request.PrimaryMediaKey, request.PrimaryMediaId, keptOrdered, appendedUploads, appendedYoutube)
-            ?? finalActive[0];
-
-        uint order = 1;
-        foreach (var m in finalActive)
-        {
-            m.IsPrimary = ReferenceEquals(m, primary);
-            m.DisplayOrder = order++;
-            if (kept.Contains(m))
-            {
+                m.Status = "HIDDEN";
+                m.DeletedAt = now;
+                m.DeletedBy = actorId;
+                m.IsPrimary = false;
                 m.UpdatedAt = now;
                 m.UpdatedBy = actorId;
             }
-        }
 
-        var mediaKind = GalleryMediaClassifier.ResolveMediaKind(finalActive.Select(m => m.MediaType));
-
-        item.Title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
-        item.Description = description;
-        item.LocationId = (ulong)request.LocationId;
-        item.ItemType = itemType;
-        item.MediaKind = mediaKind;
-        item.UpdatedAt = now;
-        item.UpdatedBy = actorId;
-
-        _db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = actorId,
-            CampusId = campusId,
-            Action = "UPDATE_GALLERY_ITEM",
-            EntityType = "GalleryItem",
-            EntityId = item.GalleryItemId,
-            Changes = new List<AuditLogChange>
+            var appendedUploads = new List<GalleryItemMedia>();
+            foreach (var file in newFiles)
             {
-                new AuditLogChange
+                var (mediaType, purpose) = GalleryMediaClassifier.Classify(file.FileName, file.ContentType, itemType);
+                await using var stream = new MemoryStream(file.Content, writable: false);
+                var uploaded = await _fileUpload.UploadBusinessFileAsync(
+                    stream, file.FileName, file.ContentType ?? string.Empty, file.FileSize, purpose, (long)actorId, cancellationToken);
+                uploadedFileIds.Add((ulong)uploaded.FileId);
+
+                var media = new GalleryItemMedia
                 {
-                    FieldName = "GalleryItem",
-                    NewValueText = JsonSerializer.Serialize(new
+                    GalleryItemId = item.GalleryItemId,
+                    FileId = (ulong)uploaded.FileId,
+                    MediaType = mediaType,
+                    Caption = file.Caption,
+                    AltText = file.AltText,
+                    IsPrimary = false,
+                    Status = "ACTIVE",
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                };
+                item.Media.Add(media);
+                appendedUploads.Add(media);
+            }
+
+            var appendedYoutube = new List<GalleryItemMedia>();
+            foreach (var url in youtubeUrls)
+            {
+                var registered = await _externalMedia.RegisterYouTubeAsync(url, (long)actorId, cancellationToken);
+                uploadedFileIds.Add((ulong)registered.FileId);
+                var media = new GalleryItemMedia
+                {
+                    GalleryItemId = item.GalleryItemId,
+                    FileId = (ulong)registered.FileId,
+                    MediaType = GalleryMediaClassifier.Video,
+                    IsPrimary = false,
+                    Status = "ACTIVE",
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                };
+                item.Media.Add(media);
+                appendedYoutube.Add(media);
+            }
+
+            var keptOrdered = kept.OrderBy(m => m.DisplayOrder).ThenBy(m => m.MediaId).ToList();
+            var finalActive = keptOrdered
+                .Concat(appendedUploads)
+                .Concat(appendedYoutube)
+                .ToList();
+
+            if (finalActive.Count == 0)
+                throw new BusinessRuleException(
+                    "Gallery item phải có ít nhất một file media.", GalleryErrorCodes.MediaRequired);
+
+            var primary = ResolvePrimary(
+                request.PrimaryMediaKey, request.PrimaryMediaId, keptOrdered, appendedUploads, appendedYoutube)
+                ?? finalActive[0];
+
+            uint order = 1;
+            foreach (var m in finalActive)
+            {
+                m.IsPrimary = ReferenceEquals(m, primary);
+                m.DisplayOrder = order++;
+                if (kept.Contains(m))
+                {
+                    m.UpdatedAt = now;
+                    m.UpdatedBy = actorId;
+                }
+            }
+
+            var mediaKind = GalleryMediaClassifier.ResolveMediaKind(finalActive.Select(m => m.MediaType));
+
+            // Upload replacement audio (if any) and resolve the final audio file ids.
+            ulong audioViFileId;
+            if (hasNewAudioVi)
+            {
+                audioViFileId = await UploadAudioAsync(request.NewAudioVi!, vietnamese: true, actorId, cancellationToken);
+                uploadedFileIds.Add(audioViFileId);
+                if (item.Content is not null) replacedAudioFileIds.Add(item.Content.AudioViFileId);
+            }
+            else
+            {
+                audioViFileId = item.Content!.AudioViFileId;
+            }
+
+            ulong audioEnFileId;
+            if (hasNewAudioEn)
+            {
+                audioEnFileId = await UploadAudioAsync(request.NewAudioEn!, vietnamese: false, actorId, cancellationToken);
+                uploadedFileIds.Add(audioEnFileId);
+                if (item.Content is not null) replacedAudioFileIds.Add(item.Content.AudioEnFileId);
+            }
+            else
+            {
+                audioEnFileId = item.Content!.AudioEnFileId;
+            }
+
+            var descriptionViChanged = item.Content?.DescriptionVi != descriptionVi;
+            var descriptionEnChanged = item.Content?.DescriptionEn != descriptionEn;
+            var oldAudioViFileId = item.Content?.AudioViFileId;
+            var oldAudioEnFileId = item.Content?.AudioEnFileId;
+
+            if (item.Content is null)
+            {
+                item.Content = new GalleryItemContent
+                {
+                    GalleryItemId = item.GalleryItemId,
+                    DescriptionVi = descriptionVi,
+                    AudioViFileId = audioViFileId,
+                    DescriptionEn = descriptionEn,
+                    AudioEnFileId = audioEnFileId,
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                };
+                _db.GalleryItemContents.Add(item.Content);
+            }
+            else
+            {
+                item.Content.DescriptionVi = descriptionVi;
+                item.Content.AudioViFileId = audioViFileId;
+                item.Content.DescriptionEn = descriptionEn;
+                item.Content.AudioEnFileId = audioEnFileId;
+                item.Content.UpdatedAt = now;
+                item.Content.UpdatedBy = actorId;
+            }
+
+            item.Title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
+            item.LocationId = (ulong)request.LocationId;
+            item.ItemType = itemType;
+            item.MediaKind = mediaKind;
+            item.UpdatedAt = now;
+            item.UpdatedBy = actorId;
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                CampusId = campusId,
+                Action = "UPDATE_GALLERY_ITEM",
+                EntityType = "GalleryItem",
+                EntityId = item.GalleryItemId,
+                Changes = new List<AuditLogChange>
+                {
+                    new AuditLogChange
                     {
-                        title = item.Title, locationId = request.LocationId, itemType, mediaKind,
-                        keptMedia = kept.Count, addedFiles = appendedUploads.Count, addedYoutube = appendedYoutube.Count,
-                    }),
+                        FieldName = "GalleryItem",
+                        NewValueText = JsonSerializer.Serialize(new
+                        {
+                            title = item.Title, locationId = request.LocationId, itemType, mediaKind,
+                            descriptionViChanged, descriptionEnChanged,
+                            oldAudioViFileId, newAudioViFileId = audioViFileId,
+                            oldAudioEnFileId, newAudioEnFileId = audioEnFileId,
+                            keptMedia = kept.Count, addedFiles = appendedUploads.Count, addedYoutube = appendedYoutube.Count,
+                        }),
+                    },
                 },
-            },
-            CreatedAt = now,
-        });
+                CreatedAt = now,
+            });
 
-        await _db.SaveChangesAsync(cancellationToken);
-
-        // Fire-and-forget narration job (AUTO_GENERATE): an edited description changes the TTS hash,
-        // so this queues a fresh generation unless a matching READY/running one already exists. A TTS
-        // problem must never fail the edit itself.
-        try
-        {
-            await _tts.EnsureAudioAsync(
-                (long)item.GalleryItemId, TtsTriggerSources.AutoGenerate, (long)actorId,
-                requirePublicVisible: false, bypassFailedCooldown: false, cancellationToken);
+            await _db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "TTS auto-generate failed after updating gallery item {GalleryItemId}.",
-                item.GalleryItemId);
+            // Compensation: remove every Drive object + files row created before the failure. The old
+            // audio files are untouched (their FKs were never swapped because the commit failed).
+            await GalleryFileCleanup.RemoveUploadedFilesAsync(_db, _drive, _logger, uploadedFileIds, cancellationToken);
+            throw;
         }
 
+        // Post-commit: drop the audio files that were replaced by a new upload (best-effort).
+        await GalleryFileCleanup.RemoveUploadedFilesAsync(_db, _drive, _logger, replacedAudioFileIds, cancellationToken);
+
         return await GalleryDetailBuilder.BuildAsync(
-            _db, item.GalleryItemId, cancellationToken, "Đã cập nhật gallery item.");
+            _db, item.GalleryItemId, cancellationToken, "Đã cập nhật Gallery Item.");
+    }
+
+    /// <summary>Uploads one bilingual audio recording, mapping upload-policy rejections to a language-specific code.</summary>
+    private async Task<ulong> UploadAudioAsync(
+        GalleryUploadFileCommandDto audio, bool vietnamese, ulong actorId, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = new MemoryStream(audio.Content, writable: false);
+            var uploaded = await _fileUpload.UploadBusinessFileAsync(
+                stream, audio.FileName, audio.ContentType ?? string.Empty, audio.FileSize,
+                FilePurpose.GalleryAudio, (long)actorId, ct);
+            return (ulong)uploaded.FileId;
+        }
+        catch (BusinessRuleException ex) when (ex.ErrorCode == "FILE_TOO_LARGE")
+        {
+            throw new BusinessRuleException(
+                "Bản ghi âm vượt quá dung lượng cho phép (tối đa 20 MB).", GalleryErrorCodes.AudioTooLarge);
+        }
+        catch (BusinessRuleException ex) when (ex.ErrorCode is "FILE_INVALID_EXTENSION" or "FILE_INVALID_TYPE"
+                                                   or "FILE_MAGIC_BYTES_MISMATCH" or "FILE_EMPTY")
+        {
+            throw new BusinessRuleException(
+                vietnamese ? "Bản ghi âm tiếng Việt không đúng định dạng (chỉ MP3/WAV)."
+                           : "Bản ghi âm tiếng Anh không đúng định dạng (chỉ MP3/WAV).",
+                vietnamese ? GalleryErrorCodes.AudioViInvalid : GalleryErrorCodes.AudioEnInvalid);
+        }
     }
 
     /// <summary>

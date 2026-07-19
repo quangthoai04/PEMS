@@ -102,7 +102,7 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<GalleryLocation>();
         modelBuilder.Ignore<GalleryItem>();
         modelBuilder.Ignore<GalleryItemMedia>();
-        modelBuilder.Ignore<GalleryItemTtsAudio>();
+        modelBuilder.Ignore<GalleryItemContent>();
         modelBuilder.Ignore<PhotoFaceTag>();
         modelBuilder.Ignore<EmailDraft>();
         modelBuilder.Ignore<EmailDraftRecipient>();
@@ -190,7 +190,7 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
-    DbSet<GalleryItemTtsAudio> IApplicationDbContext.GalleryItemTtsAudios => Set<GalleryItemTtsAudio>();
+    DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
     DbSet<EmailDraft> IApplicationDbContext.EmailDrafts => Set<EmailDraft>();

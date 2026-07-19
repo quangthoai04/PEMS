@@ -95,8 +95,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<GalleryArea> GalleryAreas { get; set; }
     public DbSet<GalleryLocation> GalleryLocations { get; set; }
     public DbSet<GalleryItem> GalleryItems { get; set; }
+    public DbSet<GalleryItemContent> GalleryItemContents { get; set; }
     public DbSet<GalleryItemMedia> GalleryItemMedia { get; set; }
-    public DbSet<GalleryItemTtsAudio> GalleryItemTtsAudios { get; set; }
     public DbSet<PhotoFaceTag> PhotoFaceTags { get; set; }
 
     // ── Email + Notification ──────────────────────────────────────────────
@@ -639,6 +639,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(i => i.DeletedBy).OnDelete(DeleteBehavior.SetNull);
 
+        // GalleryItemContent → GalleryItem (1:1, shared PK), AudioViFile, AudioEnFile, CreatedBy, UpdatedBy.
+        // Both audio FKs are RESTRICT (a referenced audio file can't be deleted while linked).
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne(c => c.GalleryItem).WithOne(i => i.Content)
+            .HasForeignKey<GalleryItemContent>(c => c.GalleryItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne(c => c.AudioViFile).WithMany()
+            .HasForeignKey(c => c.AudioViFileId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne(c => c.AudioEnFile).WithMany()
+            .HasForeignKey(c => c.AudioEnFileId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(c => c.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(c => c.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+
         // GalleryItemMedia → GalleryItem, File, ThumbnailFile, CreatedBy, UpdatedBy, DeletedBy
         modelBuilder.Entity<GalleryItemMedia>()
             .HasOne(m => m.GalleryItem).WithMany(i => i.Media)
@@ -658,25 +677,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<GalleryItemMedia>()
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.DeletedBy).OnDelete(DeleteBehavior.SetNull);
-
-        // GalleryItemTtsAudio → GalleryItem, CreatedBy, UpdatedBy. audio_file_id stays a scalar (like
-        // the gallery cover_file_id columns) — the DB owns that FK. The DB's generated running_key
-        // column is not mapped at all, so EF never tries to write it.
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .HasOne(t => t.GalleryItem).WithMany()
-            .HasForeignKey(t => t.GalleryItemId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(t => t.CreatedBy).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(t => t.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .Property(t => t.SpeedRate).HasPrecision(3, 1);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .Property(t => t.PitchRate).HasPrecision(3, 1);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .Property(t => t.Progress).HasPrecision(5, 2);
 
         // PhotoFaceTag → File, TaggedUser, VisitRequest, GuestMember, PartnerContact, CreatedBy, RemovedBy
         modelBuilder.Entity<PhotoFaceTag>()

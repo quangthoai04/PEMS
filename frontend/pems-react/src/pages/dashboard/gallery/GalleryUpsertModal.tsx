@@ -1,9 +1,11 @@
-/** Create (UC-GAL-04) / Edit (UC-GAL-07) modal for a gallery item. Media can be uploaded files (images /
- * videos) and/or external YouTube videos added by URL (no download to PEMS). */
+/** Create (UC-GAL-04) / Edit (UC-GAL-07) modal for a gallery item. Media can be uploaded images and/or
+ * external YouTube videos added by URL. Every item requires bilingual content: a Vietnamese + English
+ * description and a Staff-Leader-uploaded audio recording for each language (managed in the language
+ * tabs). Audio can never be removed — only kept or replaced. */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { X, Upload, Trash2, Star, Loader2, CheckCircle2, AlertCircle, ImageOff, Youtube, Plus, Play } from 'lucide-react';
+import { X, Upload, Trash2, Star, Loader2, CheckCircle2, AlertCircle, ImageOff, Youtube, Plus, Play, Music, RefreshCw } from 'lucide-react';
 import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
 import { validateFile } from '../../../shared/utils/fileValidation';
 import { parseYouTubeVideoId, youtubeWatchUrl, youtubeEmbedUrl, youtubeThumbnailUrl } from '../../../shared/utils/youtube';
@@ -11,16 +13,18 @@ import { galleryManagementApi } from '../../../features/gallery-management/api/g
 import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
 import type {
   GalleryAreaOption,
+  GalleryAudioInfo,
   GalleryItemDetail,
   GalleryItemType,
 } from '../../../features/gallery-management/types/galleryManagement.types';
 
 type Mode = 'create' | 'edit';
+type Lang = 'vi' | 'en';
 // Machine uploads accept images only — videos are added via a YouTube link, never uploaded as files.
 const MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp';
+const AUDIO_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav';
 const MAX_FILES = 20;
-// Narration cap: gallery_items.description feeds the EverAI TTS voice-over, hard-limited to 1000 chars.
-const MAX_DESCRIPTION_LENGTH = 1000;
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 
 /** Which media is primary — stable across list reorders (existing = mediaId; new = a stable local id). */
 type PrimarySel =
@@ -163,6 +167,107 @@ function YoutubeCard({
   );
 }
 
+/** Plays an existing (already-uploaded) audio recording through the authenticated proxy. */
+function ExistingAudioPlayer({ url }: { url: string }) {
+  const { url: blobUrl, status } = useAuthenticatedMedia(url);
+  if (status === 'error') {
+    return <p className="text-[11px] text-amber-600 font-medium">Không tải được bản ghi âm hiện tại.</p>;
+  }
+  if (!blobUrl) {
+    return <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />;
+  }
+  return <audio controls src={blobUrl} className="w-full h-9" />;
+}
+
+function formatBytes(bytes?: number | null): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * One language's audio picker. On create there is only the new-file flow. On edit an existing recording
+ * is played inline and kept unless a replacement file is picked ("Thay file"). There is never a remove
+ * button — a valid item always has both audio recordings.
+ */
+function AudioPicker({
+  labelUpload,
+  labelReplace,
+  labelKeep,
+  existingAudio,
+  newFile,
+  onPick,
+  onClearNew,
+}: {
+  labelUpload: string;
+  labelReplace: string;
+  labelKeep: string;
+  existingAudio?: GalleryAudioInfo | null;
+  newFile: File | null;
+  onPick: (file: File | null) => void;
+  onClearNew: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Object URL for the newly picked file (revoked on change/unmount).
+  const previewUrl = useMemo(() => (newFile ? URL.createObjectURL(newFile) : null), [newFile]);
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  const handlePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    onPick(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div className="space-y-2">
+      {newFile ? (
+        <div className="rounded-xl border border-[#f37021]/40 bg-orange-50/40 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-[#004c91] truncate">
+              <Music className="w-4 h-4 shrink-0" /> <span className="truncate">{newFile.name}</span>
+            </span>
+            <span className="text-[11px] text-slate-400 font-medium shrink-0">{formatBytes(newFile.size)}</span>
+          </div>
+          {previewUrl && <audio controls src={previewUrl} className="w-full h-9" />}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => inputRef.current?.click()} className="inline-flex items-center gap-1 text-[11px] font-bold text-[#004c91] hover:underline">
+              <RefreshCw className="w-3 h-3" /> {labelReplace}
+            </button>
+            <button type="button" onClick={onClearNew} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-red-500">
+              <Trash2 className="w-3 h-3" /> Hủy chọn
+            </button>
+          </div>
+        </div>
+      ) : existingAudio ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-slate-600 truncate">
+              <Music className="w-4 h-4 shrink-0" /> <span className="truncate">{existingAudio.fileName}</span>
+            </span>
+            <span className="text-[11px] text-slate-400 font-medium shrink-0">{formatBytes(existingAudio.fileSize)}</span>
+          </div>
+          <ExistingAudioPlayer url={existingAudio.url} />
+          <button type="button" onClick={() => inputRef.current?.click()} className="inline-flex items-center gap-1 text-[11px] font-bold text-[#004c91] hover:underline">
+            <RefreshCw className="w-3 h-3" /> {labelReplace}
+          </button>
+          <p className="text-[10px] text-slate-400">{labelKeep}</p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#004c91]/30 bg-white hover:bg-blue-50/50 hover:border-[#004c91]/50 p-5 transition-colors"
+        >
+          <Music className="w-6 h-6 text-[#004c91]" />
+          <span className="text-xs font-bold text-gray-700">{labelUpload}</span>
+          <span className="text-[11px] text-slate-400">MP3/WAV · tối đa 20MB</span>
+        </button>
+      )}
+      <input ref={inputRef} type="file" accept={AUDIO_ACCEPT} className="hidden" onChange={handlePick} />
+    </div>
+  );
+}
+
 export function GalleryUpsertModal({
   mode,
   areas,
@@ -183,9 +288,11 @@ export function GalleryUpsertModal({
   const activeAreas = useMemo(() => areas.filter((a) => a.status === 'ACTIVE' || a.areaId === existing?.area.areaId), [areas, existing]);
 
   const [title, setTitle] = useState(existing?.title ?? '');
-  const [description, setDescription] = useState(
-    (existing?.description ?? '').slice(0, MAX_DESCRIPTION_LENGTH),
-  );
+  const [activeLang, setActiveLang] = useState<Lang>('vi');
+  const [descriptionVi, setDescriptionVi] = useState(existing?.content?.descriptionVi ?? '');
+  const [descriptionEn, setDescriptionEn] = useState(existing?.content?.descriptionEn ?? '');
+  const [audioVi, setAudioVi] = useState<File | null>(null);
+  const [audioEn, setAudioEn] = useState<File | null>(null);
   const [itemType, setItemType] = useState<GalleryItemType>(existing?.itemType ?? 'MEDIA');
   const [areaId, setAreaId] = useState<number | ''>(existing?.area.areaId ?? '');
   const [locationId, setLocationId] = useState<number | ''>(existing?.location.locationId ?? '');
@@ -210,6 +317,12 @@ export function GalleryUpsertModal({
   });
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  /** Shows an error both inline (in the modal) and as a toast so it's clearly noticed. */
+  const flagError = (message: string) => {
+    setFormError(message);
+    onError(message);
+  };
 
   const locations = useMemo(() => {
     const area = activeAreas.find((a) => a.areaId === areaId);
@@ -238,19 +351,19 @@ export function GalleryUpsertModal({
       // Machine uploads accept images only. A video picked here is rejected with a clear message that
       // points the user to the YouTube field (videos are added by link, never uploaded as a file).
       if (isVideoFile(file)) {
-        setFormError(`${file.name}: Chỉ chấp nhận ảnh khi tải từ máy. Vui lòng thêm video qua liên kết YouTube.`);
+        flagError(`${file.name}: Chỉ chấp nhận ảnh khi tải từ máy. Vui lòng thêm video qua liên kết YouTube.`);
         continue;
       }
       const asImage = validateFile(file, 'GALLERY_IMAGE');
       if (!asImage.ok) {
-        setFormError(`${file.name}: ${asImage.message}`);
+        flagError(`${file.name}: ${asImage.message}`);
         continue;
       }
       accepted.push({ id: nextLocalId(), file });
     }
     const room = MAX_FILES - totalAfter;
     if (accepted.length > room) {
-      setFormError(`Gallery item chỉ được có tối đa ${MAX_FILES} media.`);
+      flagError(`Gallery item chỉ được có tối đa ${MAX_FILES} media.`);
     }
     setNewFiles((prev) => [...prev, ...accepted].slice(0, prev.length + Math.max(0, room)));
     e.target.value = '';
@@ -303,10 +416,32 @@ export function GalleryUpsertModal({
     return idx >= 0 ? `youtube:${idx}` : undefined;
   };
 
+  const existingAudioVi = existing?.content?.audioVi ?? null;
+  const existingAudioEn = existing?.content?.audioEn ?? null;
+
+  /** Validates a picked audio file (size + type) before accepting it. */
+  const pickAudio = (setter: (f: File | null) => void, langLabel: string) => (file: File | null) => {
+    if (!file) { setter(null); return; }
+    const okType = /\.(mp3|wav)$/i.test(file.name) || /^audio\//i.test(file.type);
+    if (!okType) {
+      flagError(`Bản ghi âm ${langLabel} không đúng định dạng (chỉ MP3/WAV).`);
+      return;
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      flagError(`Bản ghi âm ${langLabel} vượt quá dung lượng cho phép (tối đa 20 MB).`);
+      return;
+    }
+    setFormError(null);
+    setter(file);
+  };
+
   const validate = (): string | null => {
     if (!title.trim()) return 'Vui lòng nhập tiêu đề.';
-    if (!description.trim()) return 'Vui lòng nhập mô tả.';
-    if (description.length > MAX_DESCRIPTION_LENGTH) return `Mô tả không được vượt quá ${MAX_DESCRIPTION_LENGTH} ký tự.`;
+    if (!descriptionVi.trim()) return 'Vui lòng nhập mô tả tiếng Việt.';
+    if (!descriptionEn.trim()) return 'Vui lòng nhập mô tả tiếng Anh.';
+    // Audio: create requires both files; edit requires each to be kept (existing) or replaced (new).
+    if (!audioVi && !(mode === 'edit' && existingAudioVi)) return 'Vui lòng chọn bản ghi âm tiếng Việt.';
+    if (!audioEn && !(mode === 'edit' && existingAudioEn)) return 'Vui lòng chọn bản ghi âm tiếng Anh.';
     if (areaId === '') return 'Vui lòng chọn khu vực.';
     if (locationId === '') return 'Vui lòng chọn vị trí.';
     if (mode === 'create' && newFiles.length + youtubeEntries.length === 0)
@@ -319,7 +454,7 @@ export function GalleryUpsertModal({
     e.preventDefault();
     const err = validate();
     if (err) {
-      setFormError(err);
+      flagError(err);
       return;
     }
     setFormError(null);
@@ -328,7 +463,10 @@ export function GalleryUpsertModal({
       if (mode === 'create') {
         await galleryManagementApi.createGalleryItem({
           title: title.trim(),
-          description: description.trim(),
+          descriptionVi: descriptionVi.trim(),
+          descriptionEn: descriptionEn.trim(),
+          audioVi: audioVi!,
+          audioEn: audioEn!,
           locationId: Number(locationId),
           itemType,
           status: 'PUBLISHED',
@@ -341,7 +479,10 @@ export function GalleryUpsertModal({
         const updated = await galleryManagementApi.updateGalleryItem({
           galleryItemId: existing.galleryItemId,
           title: title.trim(),
-          description: description.trim(),
+          descriptionVi: descriptionVi.trim(),
+          descriptionEn: descriptionEn.trim(),
+          newAudioVi: audioVi,
+          newAudioEn: audioEn,
           locationId: Number(locationId),
           itemType,
           keepMediaIds: keptMedia.filter((m) => m.kept).map((m) => m.mediaId),
@@ -556,26 +697,82 @@ export function GalleryUpsertModal({
 
             </div>
 
-            <div className="space-y-1.5 flex-1">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Mô tả <span className="text-red-500">*</span></label>
-              {/* Bigger narration textarea: typing stops at 1000 (maxLength) and an over-long paste is
-                  auto-trimmed to 1000 (slice). The counter turns red + shows a warning at the limit. */}
-              <textarea
-                rows={6}
-                value={description}
-                maxLength={MAX_DESCRIPTION_LENGTH}
-                onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))}
-                className="min-h-[160px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-y"
-                placeholder="Nhập mô tả về tài nguyên (được dùng làm giọng đọc thuyết minh)..."
-              />
-              <div className="flex items-center justify-between text-xs">
-                <span className={description.length >= MAX_DESCRIPTION_LENGTH ? 'text-red-600 font-bold' : 'text-slate-400 font-medium'}>
-                  {description.length}/{MAX_DESCRIPTION_LENGTH} ký tự
-                </span>
-                {description.length >= MAX_DESCRIPTION_LENGTH && (
-                  <span className="text-red-600 font-medium">Bạn đã đạt giới hạn tối đa {MAX_DESCRIPTION_LENGTH} ký tự.</span>
-                )}
+            {/* Bilingual content — language tabs. Both VI and EN (description + audio) are mandatory. */}
+            <div className="space-y-3 flex-1">
+              <div className="flex items-center gap-2">
+                {(['vi', 'en'] as Lang[]).map((lng) => {
+                  const active = activeLang === lng;
+                  const label = lng === 'vi' ? 'Tiếng Việt' : 'English';
+                  return (
+                    <button
+                      key={lng}
+                      type="button"
+                      onClick={() => setActiveLang(lng)}
+                      className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${active ? 'bg-[#004c91] text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
+
+              {activeLang === 'vi' ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Mô tả tiếng Việt <span className="text-red-500">*</span></label>
+                    <textarea
+                      rows={5}
+                      value={descriptionVi}
+                      onChange={(e) => setDescriptionVi(e.target.value)}
+                      className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-y"
+                      placeholder="Nhập mô tả tiếng Việt..."
+                    />
+                    <span className="text-xs text-slate-400 font-medium">
+                      {descriptionVi.length} ký tự
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Bản ghi âm tiếng Việt <span className="text-red-500">*</span></label>
+                    <AudioPicker
+                      labelUpload="Chọn bản ghi âm tiếng Việt (MP3/WAV)"
+                      labelReplace="Thay file"
+                      labelKeep="Giữ nguyên bản ghi âm hiện tại nếu không chọn file mới."
+                      existingAudio={existingAudioVi}
+                      newFile={audioVi}
+                      onPick={pickAudio(setAudioVi, 'tiếng Việt')}
+                      onClearNew={() => setAudioVi(null)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">English description <span className="text-red-500">*</span></label>
+                    <textarea
+                      rows={5}
+                      value={descriptionEn}
+                      onChange={(e) => setDescriptionEn(e.target.value)}
+                      className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-y"
+                      placeholder="Enter the English description..."
+                    />
+                    <span className="text-xs text-slate-400 font-medium">
+                      {descriptionEn.length} characters
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">English audio <span className="text-red-500">*</span></label>
+                    <AudioPicker
+                      labelUpload="Select the English audio (MP3/WAV)"
+                      labelReplace="Replace file"
+                      labelKeep="The current recording is kept unless a new file is chosen."
+                      existingAudio={existingAudioEn}
+                      newFile={audioEn}
+                      onPick={pickAudio(setAudioEn, 'tiếng Anh')}
+                      onClearNew={() => setAudioEn(null)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 mt-auto">

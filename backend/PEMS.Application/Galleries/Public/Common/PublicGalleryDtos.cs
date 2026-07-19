@@ -142,9 +142,25 @@ public sealed class PublicGalleryItemSummaryDto
 {
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
-    public string Description { get; init; } = string.Empty;
+    /// <summary>Bilingual descriptions + audio URLs (VI default). The public page toggles between the two.</summary>
+    public PublicGalleryItemContentDto Content { get; init; } = new();
     public string MediaKind { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+}
+
+/// <summary>Both language variants of a public gallery item's content (description + audio URL).</summary>
+public sealed class PublicGalleryItemContentDto
+{
+    public PublicGalleryLanguageContentDto Vi { get; init; } = new();
+    public PublicGalleryLanguageContentDto En { get; init; } = new();
+}
+
+/// <summary>One language's public content: the description and the anonymous, scoped audio URL.</summary>
+public sealed class PublicGalleryLanguageContentDto
+{
+    public string Description { get; init; } = string.Empty;
+    /// <summary>Anonymous item+language-scoped audio URL (null only for a transitional contentless item).</summary>
+    public string? AudioUrl { get; init; }
 }
 
 public sealed class PublicGalleryMediaDto

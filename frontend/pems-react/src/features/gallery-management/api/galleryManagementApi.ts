@@ -7,8 +7,6 @@ import type {
   CreateGalleryLocationInput,
   GalleryFilterOptions,
   GalleryItemDetail,
-  GalleryItemTtsRegenerateResult,
-  GalleryItemTtsStatus,
   GalleryListItem,
   GalleryListQueryParams,
   GalleryLocationDetail,
@@ -62,11 +60,14 @@ export const galleryManagementApi = {
     return data;
   },
 
-  /** UC-GAL-04 — create a gallery item with one or more media files (multipart). */
+  /** UC-GAL-04 — create a gallery item with bilingual content + audio + media (multipart). */
   async createGalleryItem(input: CreateGalleryItemInput): Promise<GalleryItemDetail> {
     const form = new FormData();
     form.append('title', input.title);
-    form.append('description', input.description);
+    form.append('descriptionVi', input.descriptionVi);
+    form.append('descriptionEn', input.descriptionEn);
+    form.append('audioVi', input.audioVi);
+    form.append('audioEn', input.audioEn);
     form.append('locationId', String(input.locationId));
     form.append('itemType', input.itemType);
     form.append('status', input.status);
@@ -80,12 +81,15 @@ export const galleryManagementApi = {
     return data;
   },
 
-  /** UC-GAL-07 — edit metadata and reconcile media (multipart). */
+  /** UC-GAL-07 — edit metadata + bilingual content and reconcile media (multipart). */
   async updateGalleryItem(input: UpdateGalleryItemInput): Promise<GalleryItemDetail> {
     const form = new FormData();
     form.append('galleryItemId', String(input.galleryItemId));
     form.append('title', input.title);
-    form.append('description', input.description);
+    form.append('descriptionVi', input.descriptionVi);
+    form.append('descriptionEn', input.descriptionEn);
+    if (input.newAudioVi) form.append('newAudioVi', input.newAudioVi);
+    if (input.newAudioEn) form.append('newAudioEn', input.newAudioEn);
     form.append('locationId', String(input.locationId));
     form.append('itemType', input.itemType);
     input.keepMediaIds.forEach((id) => form.append('keepMediaIds', String(id)));
@@ -103,20 +107,6 @@ export const galleryManagementApi = {
   /** UC-GAL-05 / UC-GAL-06 — enable/disable (toggle status only). */
   async changeStatus(input: ChangeGalleryStatusInput): Promise<{ galleryItemId: number; status: string; message: string }> {
     const { data } = await httpClient.post(API_ENDPOINTS.gallery.changeStatus, input);
-    return data;
-  },
-
-  /** Narration status of an item (badge + whether "Tạo lại audio" is allowed). */
-  async getTtsAudioStatus(galleryItemId: number): Promise<GalleryItemTtsStatus> {
-    const { data } = await httpClient.get<GalleryItemTtsStatus>(API_ENDPOINTS.gallery.ttsStatus(galleryItemId));
-    return data;
-  },
-
-  /** "Tạo lại audio" — force a fresh EverAI narration; UP_TO_DATE when the description is unchanged. */
-  async regenerateTtsAudio(galleryItemId: number): Promise<GalleryItemTtsRegenerateResult> {
-    const { data } = await httpClient.post<GalleryItemTtsRegenerateResult>(
-      API_ENDPOINTS.gallery.ttsRegenerate(galleryItemId),
-    );
     return data;
   },
 

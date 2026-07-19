@@ -64,10 +64,23 @@ export interface PublicGalleryMedia {
   displayOrder: number;
 }
 
+/** One language variant of a public gallery item's content. */
+export interface PublicGalleryLanguageContent {
+  description: string;
+  /** Anonymous, item+language-scoped audio URL (READY to play directly — no ensure/poll). */
+  audioUrl?: string | null;
+}
+
+/** Both language variants (VI default). The public page toggles between them. */
+export interface PublicGalleryItemContent {
+  vi: PublicGalleryLanguageContent;
+  en: PublicGalleryLanguageContent;
+}
+
 export interface PublicGalleryItemSummary {
   galleryItemId: number;
   title: string;
-  description: string;
+  content: PublicGalleryItemContent;
   mediaKind: string;
   status: string;
 }
@@ -117,22 +130,4 @@ export interface PublicGalleryItemDetail {
   location: { locationId: number; locationName: string };
   galleryItem: PublicGalleryItemSummary;
   media: PublicGalleryMedia[];
-}
-
-// ── EverAI TTS narration (speaker icon) ──
-export type PublicTtsAudioStatus =
-  | 'READY'
-  | 'PROCESSING'
-  | 'NOT_CREATED'
-  | 'TEMPORARILY_UNAVAILABLE'
-  | 'DISABLED'
-  | 'INVALID_DESCRIPTION';
-
-/** Response of the ensure/poll TTS endpoints. audioUrl (READY only) is a PEMS-served proxy URL. */
-export interface PublicTtsAudio {
-  status: PublicTtsAudioStatus;
-  audioUrl?: string | null;
-  message?: string | null;
-  voiceCode?: string | null;
-  audioType?: string | null;
 }

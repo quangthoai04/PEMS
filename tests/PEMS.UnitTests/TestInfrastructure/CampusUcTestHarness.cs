@@ -90,7 +90,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<GalleryLocation>();
         modelBuilder.Ignore<GalleryItem>();
         modelBuilder.Ignore<GalleryItemMedia>();
-        modelBuilder.Ignore<GalleryItemTtsAudio>();
+        modelBuilder.Ignore<GalleryItemContent>();
         modelBuilder.Ignore<PhotoFaceTag>();
         modelBuilder.Ignore<EmailTemplate>();
         modelBuilder.Ignore<SentEmail>();
@@ -170,7 +170,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
-    DbSet<GalleryItemTtsAudio> IApplicationDbContext.GalleryItemTtsAudios => Set<GalleryItemTtsAudio>();
+    DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<EmailTemplate> IApplicationDbContext.EmailTemplates => Set<EmailTemplate>();
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();

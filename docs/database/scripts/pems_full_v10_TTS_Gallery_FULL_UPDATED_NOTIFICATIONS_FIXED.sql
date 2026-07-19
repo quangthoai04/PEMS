@@ -263,6 +263,7 @@ DROP TABLE IF EXISTS sent_emails;
 DROP TABLE IF EXISTS email_templates;
 DROP TABLE IF EXISTS photo_face_tags;
 DROP TABLE IF EXISTS gallery_item_tts_audios;
+DROP TABLE IF EXISTS gallery_item_contents;
 DROP TABLE IF EXISTS gallery_item_media;
 DROP TABLE IF EXISTS gallery_items;
 DROP TABLE IF EXISTS gallery_locations;
@@ -2327,7 +2328,8 @@ CREATE TABLE gallery_items (
   location_id BIGINT UNSIGNED NOT NULL,
 
   title VARCHAR(255) NOT NULL,
-  description TEXT NOT NULL,
+  -- Bilingual descriptions live in gallery_item_contents (1:1); the legacy single `description`
+  -- column was removed when the manual bilingual audio mechanism replaced EverAI TTS.
   item_type ENUM('MEDIA','VISIT_DELEGATION') NOT NULL DEFAULT 'MEDIA'
     COMMENT 'MEDIA=ảnh/video giới thiệu vị trí; VISIT_DELEGATION=ảnh/video đoàn khách',
 
@@ -2348,7 +2350,7 @@ CREATE TABLE gallery_items (
   KEY idx_gallery_items_item_type (item_type, status, deleted_at),
   KEY idx_gallery_items_media_kind (media_kind),
   KEY idx_gallery_items_created_at (created_at),
-  FULLTEXT KEY ft_gallery_items_search (title, description),
+  FULLTEXT KEY ft_gallery_items_search (title),
 
   CONSTRAINT fk_gallery_items_location
     FOREIGN KEY (location_id) REFERENCES gallery_locations(location_id)
@@ -2418,138 +2420,51 @@ CREATE TABLE gallery_item_media (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Ảnh/video thuộc gallery item, liên kết file metadata dùng chung';
 
--- Lịch sử EverAI TTS narration audio cho gallery item (public icon loa).
--- running_key (STORED generated, UNIQUE) chỉ non-NULL khi job đang chạy →
--- chặn 2 job đồng thời cùng item+hash+config; READY/FAILED/CANCELLED không bị chặn.
-CREATE TABLE gallery_item_tts_audios (
-    tts_audio_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    gallery_item_id BIGINT UNSIGNED NOT NULL,
+-- Nội dung mô tả + bản ghi âm song ngữ (VI/EN) của gallery item — thay thế cơ chế
+-- EverAI TTS. Quan hệ 1:1 với gallery_items (PK = gallery_item_id); cả hai ngôn ngữ bắt buộc.
+CREATE TABLE gallery_item_contents (
+    gallery_item_id  BIGINT UNSIGNED NOT NULL,
 
-    source_text_hash CHAR(64) NOT NULL
-        COMMENT 'SHA-256 (lowercase hex) của description đã normalize + voice/audio setting',
-    source_text TEXT NOT NULL
-        COMMENT 'Snapshot mô tả tại thời điểm yêu cầu tạo audio',
+    description_vi   TEXT NOT NULL
+        COMMENT 'Mô tả tiếng Việt, bắt buộc',
+    audio_vi_file_id BIGINT UNSIGNED NOT NULL
+        COMMENT 'files.file_id của bản ghi âm tiếng Việt, bắt buộc',
 
-    voice_code VARCHAR(100) NOT NULL,
-    audio_type ENUM('mp3','wav') NOT NULL DEFAULT 'mp3',
-    bitrate INT NULL,
-    speed_rate DECIMAL(3,1) NOT NULL DEFAULT 1.0,
-    pitch_rate DECIMAL(3,1) NOT NULL DEFAULT 1.0,
-    volume INT NOT NULL DEFAULT 100,
+    description_en   TEXT NOT NULL
+        COMMENT 'Mô tả tiếng Anh, bắt buộc',
+    audio_en_file_id BIGINT UNSIGNED NOT NULL
+        COMMENT 'files.file_id của bản ghi âm tiếng Anh, bắt buộc',
 
-    status ENUM(
-        'PENDING',
-        'SUBMITTED',
-        'PROCESSING',
-        'READY',
-        'FAILED',
-        'CANCELLED'
-    ) NOT NULL DEFAULT 'PENDING',
-
-    everai_request_id VARCHAR(100) NULL,
-    everai_audio_link TEXT NULL
-        COMMENT 'Link audio tạm của EverAI — chỉ dùng nội bộ để download một lần, không phát public',
-
-    audio_file_id BIGINT UNSIGNED NULL
-        COMMENT 'files.file_id của audio đã upload Google Drive (folder gallery-audio)',
-
-    trigger_source ENUM(
-        'AUTO_GENERATE',
-        'LAZY_GENERATE',
-        'MANUAL_REGENERATE'
-    ) NOT NULL,
-
-    characters INT NULL,
-    progress DECIMAL(5,2) NULL,
-
-    error_code VARCHAR(100) NULL,
-    error_message TEXT NULL,
-
-    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    submitted_at DATETIME NULL,
-    processing_at DATETIME NULL,
-    ready_at DATETIME NULL,
-    failed_at DATETIME NULL,
-
-    created_by BIGINT UNSIGNED NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by BIGINT UNSIGNED NULL,
+    updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
     updated_by BIGINT UNSIGNED NULL,
-    updated_at DATETIME NULL,
 
-    running_key VARCHAR(500)
-        GENERATED ALWAYS AS (
-            CASE
-                WHEN status IN ('PENDING','SUBMITTED','PROCESSING') THEN
-                    CONCAT(
-                        gallery_item_id, ':',
-                        source_text_hash, ':',
-                        voice_code, ':',
-                        audio_type, ':',
-                        IFNULL(bitrate, 0), ':',
-                        speed_rate, ':',
-                        pitch_rate, ':',
-                        volume
-                    )
-                ELSE NULL
-            END
-        ) STORED,
+    PRIMARY KEY (gallery_item_id),
+    KEY idx_gallery_item_contents_audio_vi (audio_vi_file_id),
+    KEY idx_gallery_item_contents_audio_en (audio_en_file_id),
+    FULLTEXT KEY ft_gallery_item_contents_descriptions (description_vi, description_en),
 
-    PRIMARY KEY (tts_audio_id),
+    CONSTRAINT chk_gallery_item_description_vi_not_blank CHECK (CHAR_LENGTH(TRIM(description_vi)) > 0),
+    CONSTRAINT chk_gallery_item_description_en_not_blank CHECK (CHAR_LENGTH(TRIM(description_en)) > 0),
 
-    UNIQUE KEY uq_gallery_tts_running_key (running_key),
-
-    KEY idx_gallery_tts_item_status (
-        gallery_item_id,
-        status,
-        created_at
-    ),
-
-    KEY idx_gallery_tts_request (
-        everai_request_id
-    ),
-
-    KEY idx_gallery_tts_hash_lookup (
-        gallery_item_id,
-        source_text_hash,
-        voice_code,
-        audio_type,
-        bitrate,
-        speed_rate,
-        pitch_rate,
-        volume,
-        status
-    ),
-
-    KEY idx_gallery_tts_audio_file (audio_file_id),
-
-    -- ON UPDATE RESTRICT (not CASCADE): gallery_item_id is a base column of the STORED generated
-    -- running_key, and MySQL rejects cascading FK actions on generated-column base columns (1215).
-    -- The PK is AUTO_INCREMENT and never updated, so RESTRICT is equivalent in practice.
-    CONSTRAINT fk_gallery_tts_item
-        FOREIGN KEY (gallery_item_id)
-        REFERENCES gallery_items(gallery_item_id)
-        ON UPDATE RESTRICT
-        ON DELETE RESTRICT,
-
-    CONSTRAINT fk_gallery_tts_audio_file
-        FOREIGN KEY (audio_file_id)
-        REFERENCES files(file_id)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
-
-    CONSTRAINT fk_gallery_tts_created_by
-        FOREIGN KEY (created_by)
-        REFERENCES users(user_id)
-        ON UPDATE CASCADE
-        ON DELETE SET NULL,
-
-    CONSTRAINT fk_gallery_tts_updated_by
-        FOREIGN KEY (updated_by)
-        REFERENCES users(user_id)
-        ON UPDATE CASCADE
-        ON DELETE SET NULL
+    CONSTRAINT fk_gallery_item_contents_item
+        FOREIGN KEY (gallery_item_id) REFERENCES gallery_items(gallery_item_id)
+        ON UPDATE RESTRICT ON DELETE CASCADE,
+    CONSTRAINT fk_gallery_item_contents_audio_vi
+        FOREIGN KEY (audio_vi_file_id) REFERENCES files(file_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_gallery_item_contents_audio_en
+        FOREIGN KEY (audio_en_file_id) REFERENCES files(file_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_gallery_item_contents_created_by
+        FOREIGN KEY (created_by) REFERENCES users(user_id)
+        ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_gallery_item_contents_updated_by
+        FOREIGN KEY (updated_by) REFERENCES users(user_id)
+        ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Lịch sử request/kết quả EverAI TTS cho từng gallery item';
+COMMENT='Nội dung mô tả và bản ghi âm song ngữ của Gallery Item (1:1)';
 
 CREATE TABLE photo_face_tags (
   face_tag_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -6822,117 +6737,12 @@ INSERT INTO gallery_locations (location_id, area_id, location_name, location_key
   (35, 11, 'Coverage Location 17029', 'coverage-location-17029', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
   (36, 11, 'Coverage Location 17030', 'coverage-location-17030', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL);
 
-INSERT INTO gallery_items (gallery_item_id, location_id, title, description, media_kind, status, display_order, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (1, 1, 'HN Alpha Lobby', 'Không gian đầu tiên khách nhìn thấy khi vào campus Hà Nội.', 'IMAGE', 'PUBLISHED', 0, '2026-04-01 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (2, 2, 'HN Innovation Lab', 'Khu lab dành cho demo học thuật và exchange chuyên môn.', 'IMAGE', 'PUBLISHED', 0, '2026-04-01 09:30:00', 4, NULL, NULL, NULL, NULL),
-  (3, 3, 'HCM Green Walkway', 'Điểm tour phù hợp cho chủ đề campus xanh và student life.', 'MIXED', 'PUBLISHED', 0, '2026-04-02 09:00:00', 10, NULL, NULL, NULL, NULL),
-  (4, 4, 'DN Riverside Lab', 'Gallery nội bộ cho đoàn công nghệ tại campus Đà Nẵng.', 'IMAGE', 'HIDDEN', 0, '2026-04-03 09:00:00', 12, NULL, NULL, NULL, NULL),
-  (5, 5, 'CT Mekong Workshop', 'Không gian thảo luận nhóm tại Cần Thơ.', 'IMAGE', 'PUBLISHED', 0, '2026-04-04 09:00:00', 14, NULL, NULL, NULL, NULL),
-  (6, 6, 'QN Coastal Innovation Space', 'Điểm nhấn campus Quy Nhơn cho các đoàn du lịch - khách sạn.', 'MIXED', 'PUBLISHED', 0, '2026-04-05 09:00:00', 16, NULL, NULL, NULL, NULL),
-  (17001, 7, 'Gallery PRIVATE PUBLISHED campus 1', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17002, 8, 'Gallery PRIVATE HIDDEN campus 1', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17003, 9, 'Gallery INTERNAL PUBLISHED campus 1', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17004, 10, 'Gallery INTERNAL HIDDEN campus 1', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17005, 11, 'Gallery PUBLIC PUBLISHED campus 1', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17006, 12, 'Gallery PUBLIC HIDDEN campus 1', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17007, 13, 'Gallery PRIVATE PUBLISHED campus 2', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17008, 14, 'Gallery PRIVATE HIDDEN campus 2', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17009, 15, 'Gallery INTERNAL PUBLISHED campus 2', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17010, 16, 'Gallery INTERNAL HIDDEN campus 2', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17011, 17, 'Gallery PUBLIC PUBLISHED campus 2', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17012, 18, 'Gallery PUBLIC HIDDEN campus 2', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17013, 19, 'Gallery PRIVATE PUBLISHED campus 3', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17014, 20, 'Gallery PRIVATE HIDDEN campus 3', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17015, 21, 'Gallery INTERNAL PUBLISHED campus 3', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17016, 22, 'Gallery INTERNAL HIDDEN campus 3', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17017, 23, 'Gallery PUBLIC PUBLISHED campus 3', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17018, 24, 'Gallery PUBLIC HIDDEN campus 3', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17019, 25, 'Gallery PRIVATE PUBLISHED campus 4', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17020, 26, 'Gallery PRIVATE HIDDEN campus 4', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17021, 27, 'Gallery INTERNAL PUBLISHED campus 4', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17022, 28, 'Gallery INTERNAL HIDDEN campus 4', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17023, 29, 'Gallery PUBLIC PUBLISHED campus 4', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17024, 30, 'Gallery PUBLIC HIDDEN campus 4', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17025, 31, 'Gallery PRIVATE PUBLISHED campus 5', 'Gallery coverage với visibility=PRIVATE, status=PUBLISHED.', 'MIXED', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17026, 32, 'Gallery PRIVATE HIDDEN campus 5', 'Gallery coverage với visibility=PRIVATE, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17027, 33, 'Gallery INTERNAL PUBLISHED campus 5', 'Gallery coverage với visibility=INTERNAL, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17028, 34, 'Gallery INTERNAL HIDDEN campus 5', 'Gallery coverage với visibility=INTERNAL, status=HIDDEN.', 'MIXED', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17029, 35, 'Gallery PUBLIC PUBLISHED campus 5', 'Gallery coverage với visibility=PUBLIC, status=PUBLISHED.', 'IMAGE', 'PUBLISHED', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL),
-  (17030, 36, 'Gallery PUBLIC HIDDEN campus 5', 'Gallery coverage với visibility=PUBLIC, status=HIDDEN.', 'IMAGE', 'HIDDEN', 0, '2026-08-18 08:00:00', 4, NULL, NULL, NULL, NULL);
-
-INSERT INTO gallery_item_media (media_id, gallery_item_id, file_id, media_type, thumbnail_file_id, caption, alt_text, is_primary, display_order, taken_at, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (1, 1, 301, 'IMAGE', NULL, 'Gallery 1 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (2, 1, 302, 'IMAGE', NULL, 'Gallery 1 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (3, 2, 303, 'IMAGE', NULL, 'Gallery 2 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (4, 2, 304, 'IMAGE', NULL, 'Gallery 2 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (5, 3, 305, 'IMAGE', NULL, 'Gallery 3 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (6, 3, 306, 'VIDEO', NULL, 'Gallery 3 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (7, 4, 307, 'IMAGE', NULL, 'Gallery 4 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (8, 4, 308, 'IMAGE', NULL, 'Gallery 4 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (9, 5, 309, 'IMAGE', NULL, 'Gallery 5 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (10, 5, 310, 'IMAGE', NULL, 'Gallery 5 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (11, 6, 311, 'IMAGE', NULL, 'Gallery 6 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (12, 6, 312, 'VIDEO', NULL, 'Gallery 6 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (13, 17001, 313, 'IMAGE', NULL, 'Gallery 17001 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (14, 17001, 314, 'VIDEO', NULL, 'Gallery 17001 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (15, 17002, 315, 'IMAGE', NULL, 'Gallery 17002 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (16, 17002, 316, 'IMAGE', NULL, 'Gallery 17002 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (17, 17003, 317, 'IMAGE', NULL, 'Gallery 17003 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (18, 17003, 318, 'IMAGE', NULL, 'Gallery 17003 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (19, 17004, 319, 'IMAGE', NULL, 'Gallery 17004 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (20, 17004, 320, 'VIDEO', NULL, 'Gallery 17004 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (21, 17005, 321, 'IMAGE', NULL, 'Gallery 17005 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (22, 17005, 322, 'IMAGE', NULL, 'Gallery 17005 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (23, 17006, 323, 'IMAGE', NULL, 'Gallery 17006 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (24, 17006, 324, 'IMAGE', NULL, 'Gallery 17006 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (25, 17007, 325, 'IMAGE', NULL, 'Gallery 17007 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (26, 17007, 326, 'VIDEO', NULL, 'Gallery 17007 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (27, 17008, 327, 'IMAGE', NULL, 'Gallery 17008 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (28, 17008, 328, 'IMAGE', NULL, 'Gallery 17008 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (29, 17009, 329, 'IMAGE', NULL, 'Gallery 17009 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (30, 17009, 330, 'IMAGE', NULL, 'Gallery 17009 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (31, 17010, 331, 'IMAGE', NULL, 'Gallery 17010 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (32, 17010, 332, 'VIDEO', NULL, 'Gallery 17010 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (33, 17011, 333, 'IMAGE', NULL, 'Gallery 17011 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (34, 17011, 334, 'IMAGE', NULL, 'Gallery 17011 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (35, 17012, 335, 'IMAGE', NULL, 'Gallery 17012 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (36, 17012, 336, 'IMAGE', NULL, 'Gallery 17012 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (37, 17013, 337, 'IMAGE', NULL, 'Gallery 17013 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (38, 17013, 338, 'VIDEO', NULL, 'Gallery 17013 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (39, 17014, 339, 'IMAGE', NULL, 'Gallery 17014 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (40, 17014, 340, 'IMAGE', NULL, 'Gallery 17014 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (41, 17015, 341, 'IMAGE', NULL, 'Gallery 17015 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (42, 17015, 342, 'IMAGE', NULL, 'Gallery 17015 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (43, 17016, 343, 'IMAGE', NULL, 'Gallery 17016 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (44, 17016, 344, 'VIDEO', NULL, 'Gallery 17016 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (45, 17017, 345, 'IMAGE', NULL, 'Gallery 17017 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (46, 17017, 346, 'IMAGE', NULL, 'Gallery 17017 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (47, 17018, 347, 'IMAGE', NULL, 'Gallery 17018 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (48, 17018, 348, 'IMAGE', NULL, 'Gallery 17018 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (49, 17019, 349, 'IMAGE', NULL, 'Gallery 17019 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (50, 17019, 350, 'VIDEO', NULL, 'Gallery 17019 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (51, 17020, 351, 'IMAGE', NULL, 'Gallery 17020 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (52, 17020, 352, 'IMAGE', NULL, 'Gallery 17020 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (53, 17021, 353, 'IMAGE', NULL, 'Gallery 17021 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (54, 17021, 354, 'IMAGE', NULL, 'Gallery 17021 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (55, 17022, 355, 'IMAGE', NULL, 'Gallery 17022 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (56, 17022, 356, 'VIDEO', NULL, 'Gallery 17022 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (57, 17023, 357, 'IMAGE', NULL, 'Gallery 17023 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (58, 17023, 358, 'IMAGE', NULL, 'Gallery 17023 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (59, 17024, 359, 'IMAGE', NULL, 'Gallery 17024 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (60, 17024, 360, 'IMAGE', NULL, 'Gallery 17024 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (61, 17025, 361, 'IMAGE', NULL, 'Gallery 17025 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (62, 17025, 362, 'VIDEO', NULL, 'Gallery 17025 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (63, 17026, 363, 'IMAGE', NULL, 'Gallery 17026 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (64, 17026, 364, 'IMAGE', NULL, 'Gallery 17026 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (65, 17027, 365, 'IMAGE', NULL, 'Gallery 17027 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (66, 17027, 366, 'IMAGE', NULL, 'Gallery 17027 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (67, 17028, 367, 'IMAGE', NULL, 'Gallery 17028 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (68, 17028, 368, 'VIDEO', NULL, 'Gallery 17028 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (69, 17029, 369, 'IMAGE', NULL, 'Gallery 17029 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (70, 17029, 370, 'IMAGE', NULL, 'Gallery 17029 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (71, 17030, 371, 'IMAGE', NULL, 'Gallery 17030 media 1: caption riêng cho kiểm thử gallery.', NULL, 1, 1, '2026-08-18 09:00:00', 'ACTIVE', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL),
-  (72, 17030, 372, 'IMAGE', NULL, 'Gallery 17030 media 2: caption riêng cho kiểm thử gallery.', NULL, 0, 2, '2026-08-18 09:00:00', 'HIDDEN', '2026-08-18 09:00:00', 4, NULL, NULL, NULL, NULL);
+-- ==========================================================================
+-- Gallery item + media seed REMOVED (bilingual audio migration).
+-- Old seed items had a single `description` and no VI/EN audio, so they are no
+-- longer valid. Staff Leaders create gallery items via the UI with real audio.
+-- (Areas/locations + their covers above are kept.)
+-- ==========================================================================
 
 -- Photo face tags are kept as a shared photo-tag module, now linked directly to files.
 INSERT INTO photo_face_tags (face_tag_id, file_id, tagged_user_id, guest_member_id, partner_contact_id, display_name, person_name_key, bounding_box_x, bounding_box_y, bounding_box_width, bounding_box_height, tag_status, created_at, created_by, removed_at, removed_by) VALUES
@@ -9137,22 +8947,9 @@ JOIN gallery_areas ga ON ga.area_id = gl.area_id
 SET gl.location_name = CONCAT(ga.area_name, ' - điểm ', LPAD(gl.display_order,2,'0'))
 WHERE gl.location_id BETWEEN 1 AND 36;
 
-UPDATE gallery_items gi
-JOIN gallery_locations gl ON gl.location_id = gi.location_id
-JOIN gallery_areas ga ON ga.area_id = gl.area_id
-SET gi.title = CASE gi.media_kind
-    WHEN 'IMAGE' THEN CONCAT('Ảnh đại diện ', ga.area_name)
-    WHEN 'VIDEO' THEN CONCAT('Video walkthrough ', gl.location_name)
-    WHEN 'MIXED' THEN CONCAT('Bộ media tham quan ', gl.location_name)
-    ELSE CONCAT('Media ', gl.location_name) END,
-  gi.description = CONCAT('Nội dung gallery cho ', gl.location_name, '. Dữ liệu seed mô tả đúng khu vực/vị trí để test filter area, location, item detail và public display, không dùng text lặp vô nghĩa.')
-WHERE gi.gallery_item_id BETWEEN 1 AND 17030;
-
-UPDATE gallery_item_media gim
-JOIN gallery_items gi ON gi.gallery_item_id = gim.gallery_item_id
-SET gim.caption = CONCAT('Góc nhìn ', CASE gim.display_order WHEN 1 THEN 'toàn cảnh' WHEN 2 THEN 'chi tiết hoạt động' WHEN 3 THEN 'khách tương tác' ELSE 'điểm nhấn không gian' END, ' - ', LEFT(gi.title, 120)),
-    gim.alt_text = CONCAT('Hình minh họa ', LEFT(gi.title, 120), ' dùng cho gallery PEMS')
-WHERE gim.media_id BETWEEN 1 AND 72;
+-- Gallery item + media seed-enrichment UPDATEs removed together with the gallery item seed
+-- (bilingual audio migration): the legacy `description` column no longer exists and there are no
+-- seed gallery items to enrich — Staff Leaders create items via the UI with real VI/EN audio.
 
 -- ---------------------------------------------------------------------
 -- 11) Notifications and calendar: messages linked to actual workflow.

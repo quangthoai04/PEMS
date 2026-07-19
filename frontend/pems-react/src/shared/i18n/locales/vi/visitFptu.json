@@ -34,14 +34,14 @@
       "zoomIn": "Phóng to",
       "share": "Chia sẻ",
       "copyLink": "Sao chép liên kết",
-      "listenNarration": "Nghe thuyết minh",
-      "stopNarration": "Dừng thuyết minh"
+      "listenNarration": "Phát bản ghi âm",
+      "stopNarration": "Dừng bản ghi âm",
+      "switchLanguage": "Chuyển ngôn ngữ"
     },
     "labels": {
       "delegationsVisited": "Đoàn khách đã tới thăm",
       "loading": "Đang tải…",
       "loadingDescription": "Đang tải mô tả…",
-      "generatingNarration": "Giọng đọc đang được tạo…",
       "itemsCount": "{{count}} nội dung",
       "imagesCount": "{{count}} hình ảnh",
       "videosCount": "{{count}} video",
@@ -65,11 +65,12 @@
       "prevLocation": "Vị trí trước",
       "nextLocation": "Vị trí tiếp theo",
       "backToPrev": "Trở Về",
-      "visitingImages": "Hình ảnh tham quan"
+      "visitingImages": "Hình ảnh tham quan",
+      "vietnamese": "Tiếng Việt",
+      "english": "English"
     },
     "errors": {
-      "narrationGenWait": "Giọng đọc đang được tạo, vui lòng thử lại sau ít phút.",
-      "narrationFailed": "Chưa thể phát giọng đọc. Vui lòng thử lại sau.",
+      "narrationFailed": "Không thể phát bản ghi âm.",
       "contentHidden": "Nội dung này hiện không còn được hiển thị.",
       "noMedia": "Không có media.",
       "mediaLoadFailed": "Không thể tải media.",
