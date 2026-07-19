@@ -5,6 +5,10 @@
 
 import React, { useEffect } from 'react';
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
+import VisitContactInvitationPage from './pages/identity/VisitContactInvitationPage';
+import VisitRequestV2Page from './pages/visit/VisitRequestV2Page';
+import VisitRequestV2DetailPage from './pages/dashboard/visit/VisitRequestV2DetailPage';
+import EditVisitRequestV2Page from './pages/dashboard/visit/EditVisitRequestV2Page';
 import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -51,6 +55,7 @@ import { AccountManagement } from './pages/dashboard/accounts/AccountManagement'
 import { VisitFPTUPage } from './pages/VisitFPTUPage';
 import { CampusDetailVisitPage } from './pages/CampusDetailVisitPage';
 import { VisitRequestManagement } from './pages/dashboard/visit/VisitRequestManagement';
+import { VisitPhotoManagement } from './pages/dashboard/visit/VisitPhotoManagement';
 import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTasksPage';
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
@@ -149,6 +154,15 @@ export default function App() {
           {/* Notification Center — yêu cầu đăng nhập, KHÔNG lồng trong /dashboard để giữ Header/Footer public */}
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
 
+          {/* Per-campus v2 identity invitations: anonymous MASKED landing; accept/decline require the
+              matching Google login (the page itself guides the user — no ProtectedRoute redirect). */}
+          <Route path="/visit-contact-claim/:token" element={<VisitContactInvitationPage kind="claim" />} />
+          <Route path="/visit-contact-transfer/:token" element={<VisitContactInvitationPage kind="transfer" />} />
+
+          {/* Per-campus form v2 (feature-flagged server-side; the v1 registration flow is untouched) */}
+          <Route path="/visit-registration/v2" element={<VisitRequestV2Page mode="public" />} />
+          <Route path="/visit/create-v2" element={<ProtectedRoute><VisitRequestV2Page mode="authenticated" /></ProtectedRoute>} />
+
           {/* Dashboard Routes (require authentication) */}
           <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>
             <Route index element={['VISITOR', 'STUDENT'].includes(user?.role?.toUpperCase()) ? <Navigate to="/dashboard/visit" replace /> : <DashboardHome />} />
@@ -181,8 +195,13 @@ export default function App() {
             <Route path="visit/create" element={<CreateVisitRequest />} />
             {/* Visitor sửa đơn pending / sửa & gửi lại đơn bị từ chối (owner-only, backend re-check) */}
             <Route path="visit/edit/:visitRequestId" element={<EditVisitRequest />} />
+            <Route path="visit/v2/:visitRequestId" element={<VisitRequestV2DetailPage />} />
+            <Route path="visit/v2/:visitRequestId/edit" element={<EditVisitRequestV2Page mode="edit" />} />
+            <Route path="visit/v2/:visitRequestId/resubmit" element={<EditVisitRequestV2Page mode="resubmit" />} />
             <Route path="visit/resubmit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
+            {/* Student: quản lý ảnh đoàn khách (visit_photos) — backend enforce scope, FE chỉ ẩn menu */}
+            <Route path="visit-photos" element={<VisitPhotoManagement />} />
             <Route path="visit/process/:id" element={<VisitProcess />} />
             <Route path="visit/feedback/:visitInstanceId" element={<VisitFeedbackPage />} />
             <Route path="visit/process-summary/:visitInstanceId" element={<VisitProcessSummaryPage />} />

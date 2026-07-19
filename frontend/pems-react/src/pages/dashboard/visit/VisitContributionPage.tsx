@@ -105,7 +105,7 @@ export function VisitContributionPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ContributionPage | null>(null);
 
-  useEffect(() => {
+  const loadData = React.useCallback(() => {
     let active = true;
     if (!visitInstanceId || Number.isNaN(Number(visitInstanceId))) {
       setLoading(false);
@@ -128,6 +128,11 @@ export function VisitContributionPage() {
     return () => { active = false; };
   }, [visitInstanceId]);
 
+  useEffect(() => {
+    const cleanup = loadData();
+    return cleanup;
+  }, [loadData]);
+
   const Breadcrumb = (
     <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
       <span>Dashboard</span>
@@ -142,7 +147,7 @@ export function VisitContributionPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[1100px] mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 w-full mx-auto">
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center min-h-[320px] gap-3 text-slate-400">
           <Loader2 className="w-8 h-8 animate-spin text-[#004c91]" />
@@ -154,7 +159,7 @@ export function VisitContributionPage() {
 
   if (denied) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[1100px] mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 w-full mx-auto">
         {Breadcrumb}
         <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
@@ -175,7 +180,7 @@ export function VisitContributionPage() {
 
   if (error || !data) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[1100px] mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 w-full mx-auto">
         {Breadcrumb}
         <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-sm flex flex-col items-center justify-center min-h-[300px]">
           <AlertCircle className="w-12 h-12 text-orange-400 mb-4" />
@@ -196,7 +201,7 @@ export function VisitContributionPage() {
   const scopedLogistics: ContributionLogisticsItem[] = summary.logistics || [];
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[1100px] mx-auto pb-16 animate-in fade-in duration-300">
+    <div className="p-4 sm:p-6 md:p-8 w-full mx-auto pb-16 animate-in fade-in duration-300">
       {Breadcrumb}
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
@@ -355,7 +360,7 @@ export function VisitContributionPage() {
                 data={workspace.minutes}
                 canView={perm.canViewMinutes}
                 instanceStatus={summary.instanceStatus}
-                onChanged={() => navigate(0)}
+                onChanged={loadData}
               />
             )}
             {perm.canViewMedia && workspace.media && (
@@ -364,7 +369,7 @@ export function VisitContributionPage() {
                 data={workspace.media}
                 canView={perm.canViewMedia}
                 instanceStatus={summary.instanceStatus}
-                onChanged={() => navigate(0)}
+                onChanged={loadData}
               />
             )}
             {perm.canViewNews && workspace.news && (
@@ -373,7 +378,7 @@ export function VisitContributionPage() {
                 data={workspace.news}
                 canView={perm.canViewNews}
                 instanceStatus={summary.instanceStatus}
-                onChanged={() => navigate(0)}
+                onChanged={loadData}
               />
             )}
           </div>

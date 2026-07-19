@@ -50,7 +50,8 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
 
         FilePurpose.GalleryImage or FilePurpose.NewsImage
             or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
-            or FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage => new FileValidationRule
+            or FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage
+            or FilePurpose.VisitRequestPhoto => new FileValidationRule
         {
             MaxSizeBytes = 5 * Mb,
             AllowedMimeTypes = ImageMimes,

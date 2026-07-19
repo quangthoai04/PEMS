@@ -4,6 +4,23 @@
 -- =====================================================================
 
 -- =====================================================================
+-- ADDITIVE UPDATE 2026-07-18 — VISIT EXPENSE STATISTICS
+-- Only new expense objects are added. Every supplied base object is preserved.
+-- =====================================================================
+
+-- =====================================================================
+-- ADDITIVE UPDATE 2026-07-18 — STUDENT VISIT/DELEGATION PHOTO STORAGE
+--   + Keeps every existing schema object and seed from the supplied base.
+--   + Adds visit_photo_folders: one private Google Drive child folder per
+--     visit request/delegation, beneath configured VisitRequestPhotoFolderId.
+--   + Adds visit_photos: image metadata linkage to files + exact campus instance.
+--   + Independent from Gallery; no gallery table, publication or public visibility.
+--   + Defense-in-depth triggers require an ACTIVE role STUDENT with an ACCEPTED
+--     STUDENT participation row in the exact visit instance.
+--   + Required application file purpose: VISIT_REQUEST_PHOTO.
+-- =====================================================================
+
+-- =====================================================================
 -- SEED RULE FIX APPLIED
 -- ASSIGNED in visit_participants is kept only for:
 --   1) IC_HOST assigned as main host; or
@@ -249,6 +266,10 @@ DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bi;
 DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bu;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bi;
 DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bu;
+DROP TRIGGER IF EXISTS trg_visit_photos_validate_bi;
+DROP TRIGGER IF EXISTS trg_visit_photos_validate_bu;
+DROP TRIGGER IF EXISTS trg_expense_reports_scope_bi;
+DROP TRIGGER IF EXISTS trg_expense_reports_scope_bu;
 
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS agenda_template_defaults;
@@ -279,10 +300,16 @@ DROP TABLE IF EXISTS minute_action_items;
 DROP TABLE IF EXISTS feedback_rating_items;
 DROP TABLE IF EXISTS feedbacks;
 DROP TABLE IF EXISTS minutes;
+DROP TABLE IF EXISTS visit_expense_report_events;
+DROP TABLE IF EXISTS visit_expense_items;
+DROP TABLE IF EXISTS visit_expense_reports;
 DROP TABLE IF EXISTS visit_logistics_items;
 DROP TABLE IF EXISTS visit_agendas;
+DROP TABLE IF EXISTS visit_photos;
+DROP TABLE IF EXISTS visit_photo_folders;
 DROP TABLE IF EXISTS visit_participants;
 DROP TABLE IF EXISTS visit_guest_members;
+DROP TABLE IF EXISTS visit_request_pending_forms;
 DROP TABLE IF EXISTS visit_request_campuses;
 DROP TABLE IF EXISTS visit_requests;
 DROP TABLE IF EXISTS documents;
@@ -1111,6 +1138,101 @@ CREATE TABLE visit_participants (
 COMMENT='Người nội bộ tham gia visit instance. Chỉ gồm IC_HOST, IC_SUPPORT, DEPT_SUPPORT, STUDENT. Host chính lưu bằng is_host.';
 
 -- =====================================================================
+-- STUDENT VISIT PHOTO STORAGE (GOOGLE DRIVE, INDEPENDENT FROM GALLERY)
+-- =====================================================================
+-- Binary images are stored on Google Drive. The files table stores the
+-- provider metadata. These two tables only model the business ownership:
+-- one Drive child folder per visit request/delegation, and photo rows per
+-- campus instance. Nothing here creates or publishes Gallery content.
+
+CREATE TABLE visit_photo_folders (
+  visit_photo_folder_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+
+  storage_provider ENUM('GOOGLE_DRIVE') NOT NULL DEFAULT 'GOOGLE_DRIVE',
+  external_folder_id VARCHAR(255) NOT NULL
+    COMMENT 'Google Drive folder id below configured VisitRequestPhotoFolderId root',
+  folder_name VARCHAR(255) NOT NULL
+    COMMENT 'Stable application-generated name, recommended: VR-{visit_request_id or request_code}',
+  web_view_url VARCHAR(700) NULL,
+
+  status ENUM('ACTIVE','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (visit_photo_folder_id),
+  UNIQUE KEY uq_visit_photo_folders_request (visit_request_id),
+  UNIQUE KEY uq_visit_photo_folders_external (external_folder_id),
+  UNIQUE KEY uq_visit_photo_folders_folder_request (visit_photo_folder_id, visit_request_id),
+  KEY idx_visit_photo_folders_status (status, created_at),
+  KEY idx_visit_photo_folders_created_by (created_by, created_at),
+
+  CONSTRAINT fk_visit_photo_folders_request
+    FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photo_folders_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_visit_photo_folders_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CHECK (TRIM(external_folder_id) <> ''),
+  CHECK (TRIM(folder_name) <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='One private Google Drive child folder per visit request/delegation; root folder id is application configuration, not Gallery data.';
+
+CREATE TABLE visit_photos (
+  visit_photo_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  visit_photo_folder_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
+
+  caption VARCHAR(500) NULL,
+  taken_at DATETIME NULL,
+
+  status ENUM('ACTIVE','REMOVED') NOT NULL DEFAULT 'ACTIVE',
+  uploaded_by BIGINT UNSIGNED NOT NULL
+    COMMENT 'Student user who uploaded the image; validated against ACCEPTED STUDENT participation by trigger and backend',
+  uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  removed_at DATETIME NULL,
+  removed_by BIGINT UNSIGNED NULL,
+  removal_reason VARCHAR(500) NULL,
+
+  PRIMARY KEY (visit_photo_id),
+  UNIQUE KEY uq_visit_photos_file (file_id),
+  KEY idx_visit_photos_request_time (visit_request_id, uploaded_at),
+  KEY idx_visit_photos_instance_time (visit_instance_id, uploaded_at),
+  KEY idx_visit_photos_folder_time (visit_photo_folder_id, uploaded_at),
+  KEY idx_visit_photos_uploader_time (uploaded_by, uploaded_at),
+  KEY idx_visit_photos_status_time (status, uploaded_at),
+
+  CONSTRAINT fk_visit_photos_request_instance
+    FOREIGN KEY (visit_request_id, visit_instance_id)
+    REFERENCES visit_request_campuses(visit_request_id, visit_instance_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_folder_request
+    FOREIGN KEY (visit_photo_folder_id, visit_request_id)
+    REFERENCES visit_photo_folders(visit_photo_folder_id, visit_request_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_file
+    FOREIGN KEY (file_id) REFERENCES files(file_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_uploaded_by
+    FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_photos_removed_by
+    FOREIGN KEY (removed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+
+  CHECK (caption IS NULL OR TRIM(caption) <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Private visit/delegation photos uploaded by an ACCEPTED Student participant. Binary is on Drive and metadata is in files; independent from Gallery.';
+
+-- =====================================================================
 -- PER-CAMPUS FORM v2 + IDENTITY EDIT + AMENDMENT MODULE
 -- (docs/ChangeSauHopChiQUyen/sauhop_13-07/PEMS_MULTI_CAMPUS_PER_CAMPUS_FORM_AND_IDENTITY_EDIT_PLAN.md)
 -- Additive tables. Standalone patch/backfill/verify/rollback live in
@@ -1127,9 +1249,11 @@ CREATE TABLE visit_instance_form_details (
   purpose TEXT NOT NULL COMMENT 'Mục đích tại campus này',
   working_content TEXT NULL COMMENT 'Nội dung làm việc tại campus này',
   operational_contact_full_name VARCHAR(150) NOT NULL COMMENT 'Đầu mối làm việc tại cơ sở (snapshot vận hành, KHÔNG cấp quyền đăng nhập)',
-  operational_contact_organization VARCHAR(255) NOT NULL,
+  operational_contact_organization VARCHAR(255) NULL
+    COMMENT 'Optional; blank normalized to NULL by the create/edit service (ck rejects empty string)',
   operational_contact_phone VARCHAR(50) NOT NULL,
-  operational_contact_email VARCHAR(150) NOT NULL,
+  operational_contact_email VARCHAR(150) NULL
+    COMMENT 'Optional; blank normalized to NULL by the create/edit service (ck rejects empty string)',
   working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN',
   transportation_note TEXT NULL,
   media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
@@ -1154,9 +1278,11 @@ CREATE TABLE visit_instance_form_details (
   CONSTRAINT ck_vifd_delegation_name CHECK (TRIM(delegation_name) <> ''),
   CONSTRAINT ck_vifd_purpose CHECK (TRIM(purpose) <> ''),
   CONSTRAINT ck_vifd_op_contact_name CHECK (TRIM(operational_contact_full_name) <> ''),
-  CONSTRAINT ck_vifd_op_contact_org CHECK (TRIM(operational_contact_organization) <> ''),
+  CONSTRAINT ck_vifd_op_contact_org CHECK (
+    operational_contact_organization IS NULL OR TRIM(operational_contact_organization) <> ''),
   CONSTRAINT ck_vifd_op_contact_phone CHECK (TRIM(operational_contact_phone) <> ''),
-  CONSTRAINT ck_vifd_op_contact_email CHECK (TRIM(operational_contact_email) <> ''),
+  CONSTRAINT ck_vifd_op_contact_email CHECK (
+    operational_contact_email IS NULL OR TRIM(operational_contact_email) <> ''),
   CONSTRAINT fk_vifd_instance
     FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses (visit_instance_id)
     ON UPDATE CASCADE ON DELETE CASCADE
@@ -1364,6 +1490,27 @@ CREATE TABLE visit_request_revision_history (
     FOREIGN KEY (applied_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Lịch sử snapshot cấp request (display fields). Quan hệ email/account lấy identity-change events làm lịch sử chính.';
+
+-- Public per-campus form v2 pending submission store (Phase G-4A).
+-- Binds the full canonical v2 snapshot and fingerprint to the submit intent at
+-- initiate, so verify creates the request from exactly the OTP-verified data.
+-- Standalone by design: it belongs to a pre-create submission intent, not yet
+-- to a persisted visit_request.
+CREATE TABLE visit_request_pending_forms (
+  pending_form_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  submission_id VARCHAR(36) NOT NULL,
+  registrant_email VARCHAR(255) NOT NULL,
+  form_schema_version SMALLINT NOT NULL DEFAULT 2,
+  fingerprint_v2 CHAR(64) NOT NULL,
+  snapshot_json LONGTEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  expires_at DATETIME NOT NULL,
+  consumed_at DATETIME NULL,
+  PRIMARY KEY (pending_form_id),
+  UNIQUE KEY uq_pending_forms_submission (submission_id),
+  KEY idx_pending_forms_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Bind snapshot v2 vào submit intent lúc initiate; verify tạo request từ snapshot đã bind. Consumed at verify.';
 
 -- =====================================================================
 -- AGENDA TEMPLATE MODULE (4 tables: agenda_templates, agenda_template_items,
@@ -1680,6 +1827,132 @@ CREATE TABLE visit_logistics_item_handovers (
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Bảng lưu ký nhận/ký trả đồ mượn cho logistics item';
+
+-- =====================================================================
+-- VISIT EXPENSE STATISTICS (ADDITIVE)
+-- GENERAL: Host/Staff/Staff Leader records costs in AFTER_VISIT.
+-- LOGISTICS: Department records costs after logistics handover/signing.
+-- =====================================================================
+
+CREATE TABLE visit_expense_reports (
+  expense_report_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  report_scope ENUM('GENERAL','LOGISTICS') NOT NULL,
+  logistics_item_id BIGINT UNSIGNED NULL,
+  department_id BIGINT UNSIGNED NULL,
+  status ENUM('DRAFT','SAVED','FINALIZED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
+  report_note TEXT NULL,
+  currency_code CHAR(3) NOT NULL DEFAULT 'VND',
+  saved_at DATETIME NULL,
+  saved_by BIGINT UNSIGNED NULL,
+  finalized_at DATETIME NULL,
+  finalized_by BIGINT UNSIGNED NULL,
+  cancelled_at DATETIME NULL,
+  cancelled_by BIGINT UNSIGNED NULL,
+  cancellation_reason TEXT NULL,
+  row_version INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  general_instance_guard BIGINT UNSIGNED NULL
+    COMMENT 'Trigger-maintained uniqueness guard: visit_instance_id for GENERAL, otherwise NULL',
+  logistics_item_guard BIGINT UNSIGNED NULL
+    COMMENT 'Trigger-maintained uniqueness guard: logistics_item_id for LOGISTICS, otherwise NULL',
+
+  PRIMARY KEY (expense_report_id),
+  UNIQUE KEY uq_expense_general_instance (general_instance_guard),
+  UNIQUE KEY uq_expense_logistics_item (logistics_item_guard),
+  KEY idx_expense_reports_instance_scope_status (visit_instance_id, report_scope, status),
+  KEY idx_expense_reports_department_status (department_id, status),
+  KEY idx_expense_reports_logistics_item (logistics_item_id),
+  KEY idx_expense_reports_saved_time (saved_at),
+
+  CONSTRAINT ck_expense_report_currency CHECK (currency_code = 'VND'),
+
+  CONSTRAINT fk_expense_reports_instance
+    FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT fk_expense_reports_logistics
+    FOREIGN KEY (logistics_item_id) REFERENCES visit_logistics_items(logistics_item_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT fk_expense_reports_department
+    FOREIGN KEY (department_id) REFERENCES departments(department_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_expense_reports_saved_by
+    FOREIGN KEY (saved_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_finalized_by
+    FOREIGN KEY (finalized_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_cancelled_by
+    FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_reports_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Bảng đầu chi phí theo campus instance; GENERAL do Host nhập, LOGISTICS do Department nhập theo đơn hậu cần.';
+
+CREATE TABLE visit_expense_items (
+  expense_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  expense_report_id BIGINT UNSIGNED NOT NULL,
+  item_origin ENUM('REQUEST_ITEM','MANUAL','ADDITIONAL','DAMAGE_LOSS','OTHER') NOT NULL DEFAULT 'MANUAL',
+  item_name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  quantity DECIMAL(12,2) NOT NULL DEFAULT 1,
+  unit_name VARCHAR(50) NULL,
+  unit_price DECIMAL(18,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(18,2) GENERATED ALWAYS AS (ROUND(quantity * unit_price, 2)) STORED,
+  item_note TEXT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  row_version INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (expense_item_id),
+  KEY idx_expense_items_report_order (expense_report_id, display_order, expense_item_id),
+  KEY idx_expense_items_origin (item_origin),
+  CONSTRAINT ck_expense_item_name CHECK (CHAR_LENGTH(TRIM(item_name)) > 0),
+  CONSTRAINT ck_expense_item_quantity CHECK (quantity > 0),
+  CONSTRAINT ck_expense_item_unit_price CHECK (unit_price >= 0),
+  CONSTRAINT fk_expense_items_report
+    FOREIGN KEY (expense_report_id) REFERENCES visit_expense_reports(expense_report_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_expense_items_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_expense_items_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Chi tiết các khoản chi; thành tiền được tính tự động bằng số lượng nhân đơn giá.';
+
+CREATE TABLE visit_expense_report_events (
+  expense_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  expense_report_id BIGINT UNSIGNED NOT NULL,
+  event_type ENUM('CREATED','SAVED','UPDATED','FINALIZED','REOPENED','CANCELLED','EXPORTED') NOT NULL,
+  event_note TEXT NULL,
+  snapshot_json JSON NULL,
+  performed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  performed_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (expense_event_id),
+  KEY idx_expense_events_report_time (expense_report_id, performed_at),
+  KEY idx_expense_events_actor_time (performed_by, performed_at),
+  CONSTRAINT fk_expense_events_report
+    FOREIGN KEY (expense_report_id) REFERENCES visit_expense_reports(expense_report_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_expense_events_actor
+    FOREIGN KEY (performed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Lịch sử lưu/chốt/mở lại/xuất thống kê chi phí.';
 
 
 -- =====================================================================
@@ -2732,7 +3005,8 @@ CREATE TABLE email_action_tokens (
     'LOGISTICS_NEGOTIATION',
     'LOGISTICS_PROPOSAL_RESPONSE',
     'LOGISTICS_HANDOVER_SIGNATURE',
-    'VISIT_CONTACT_CLAIM'
+    'VISIT_CONTACT_CLAIM',
+    'VISIT_CONTACT_TRANSFER'
   ) NOT NULL,
 
   target_type ENUM(
@@ -3735,6 +4009,164 @@ BEGIN
   IF NEW.target_user_id IS NOT NULL AND NEW.submitted_by_user_id = NEW.target_user_id THEN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'Feedback submitter and target user cannot be the same';
+  END IF;
+END$$
+
+-- Visit photo upload must be an image stored on Google Drive with the dedicated
+-- purpose, and the uploader must be an ACTIVE Student who ACCEPTED participation
+-- in the exact campus instance. Application authorization must perform the same
+-- checks before calling IFileUploadService; these triggers are defense-in-depth.
+CREATE TRIGGER trg_visit_photos_validate_bi
+BEFORE INSERT ON visit_photos
+FOR EACH ROW
+BEGIN
+  DECLARE v_valid_participant INT DEFAULT 0;
+  DECLARE v_valid_file INT DEFAULT 0;
+
+  SELECT COUNT(*) INTO v_valid_participant
+  FROM visit_participants vp
+  JOIN users u ON u.user_id = vp.user_id
+  JOIN roles r ON r.role_id = u.role_id
+  WHERE vp.visit_instance_id = NEW.visit_instance_id
+    AND vp.user_id = NEW.uploaded_by
+    AND vp.participant_role = 'STUDENT'
+    AND vp.status = 'ACCEPTED'
+    AND r.role_code = 'STUDENT'
+    AND u.status = 'ACTIVE';
+
+  IF v_valid_participant = 0 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE Student with ACCEPTED participation in this visit instance';
+  END IF;
+
+  SELECT COUNT(*) INTO v_valid_file
+  FROM files f
+  WHERE f.file_id = NEW.file_id
+    AND f.storage_provider = 'GOOGLE_DRIVE'
+    AND f.file_purpose = 'VISIT_REQUEST_PHOTO'
+    AND f.mime_type LIKE 'image/%';
+
+  IF v_valid_file = 0 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo file must be a Google Drive image with VISIT_REQUEST_PHOTO purpose';
+  END IF;
+
+  IF NOT (
+    (NEW.status = 'ACTIVE'
+      AND NEW.removed_at IS NULL
+      AND NEW.removed_by IS NULL
+      AND NEW.removal_reason IS NULL)
+    OR
+    (NEW.status = 'REMOVED'
+      AND NEW.removed_at IS NOT NULL
+      AND NEW.removed_by IS NOT NULL
+      AND NEW.removal_reason IS NOT NULL
+      AND TRIM(NEW.removal_reason) <> '')
+  ) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo removal metadata is inconsistent with status';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_visit_photos_validate_bu
+BEFORE UPDATE ON visit_photos
+FOR EACH ROW
+BEGIN
+  IF NEW.visit_request_id <> OLD.visit_request_id
+     OR NEW.visit_instance_id <> OLD.visit_instance_id
+     OR NEW.visit_photo_folder_id <> OLD.visit_photo_folder_id
+     OR NEW.file_id <> OLD.file_id
+     OR NEW.uploaded_by <> OLD.uploaded_by
+     OR NEW.uploaded_at <> OLD.uploaded_at THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo ownership, file and original upload metadata are immutable';
+  END IF;
+
+  IF NOT (
+    (NEW.status = 'ACTIVE'
+      AND NEW.removed_at IS NULL
+      AND NEW.removed_by IS NULL
+      AND NEW.removal_reason IS NULL)
+    OR
+    (NEW.status = 'REMOVED'
+      AND NEW.removed_at IS NOT NULL
+      AND NEW.removed_by IS NOT NULL
+      AND NEW.removal_reason IS NOT NULL
+      AND TRIM(NEW.removal_reason) <> '')
+  ) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Visit photo removal metadata is inconsistent with status';
+  END IF;
+END$$
+
+-- MySQL 8 rejects CHECK constraints that use logistics_item_id/department_id
+-- because those columns also participate in foreign-key referential actions
+-- (Error 3823). Enforce the same scope rule, plus ownership consistency, here.
+CREATE TRIGGER trg_expense_reports_scope_bi
+BEFORE INSERT ON visit_expense_reports
+FOR EACH ROW
+BEGIN
+  DECLARE v_valid_logistics_owner INT DEFAULT 0;
+
+  IF NEW.report_scope = 'GENERAL' THEN
+    IF NEW.logistics_item_id IS NOT NULL OR NEW.department_id IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'GENERAL expense report must not have logistics_item_id or department_id';
+    END IF;
+    SET NEW.general_instance_guard = NEW.visit_instance_id;
+    SET NEW.logistics_item_guard = NULL;
+  ELSEIF NEW.report_scope = 'LOGISTICS' THEN
+    IF NEW.logistics_item_id IS NULL OR NEW.department_id IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report requires logistics_item_id and department_id';
+    END IF;
+    SET NEW.general_instance_guard = NULL;
+    SET NEW.logistics_item_guard = NEW.logistics_item_id;
+
+    SELECT COUNT(*) INTO v_valid_logistics_owner
+    FROM visit_logistics_items vli
+    WHERE vli.logistics_item_id = NEW.logistics_item_id
+      AND vli.visit_instance_id = NEW.visit_instance_id
+      AND vli.requested_to_department_id = NEW.department_id;
+
+    IF v_valid_logistics_owner = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report must match the logistics item visit instance and requested department';
+    END IF;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_expense_reports_scope_bu
+BEFORE UPDATE ON visit_expense_reports
+FOR EACH ROW
+BEGIN
+  DECLARE v_valid_logistics_owner INT DEFAULT 0;
+
+  IF NEW.report_scope = 'GENERAL' THEN
+    IF NEW.logistics_item_id IS NOT NULL OR NEW.department_id IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'GENERAL expense report must not have logistics_item_id or department_id';
+    END IF;
+    SET NEW.general_instance_guard = NEW.visit_instance_id;
+    SET NEW.logistics_item_guard = NULL;
+  ELSEIF NEW.report_scope = 'LOGISTICS' THEN
+    IF NEW.logistics_item_id IS NULL OR NEW.department_id IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report requires logistics_item_id and department_id';
+    END IF;
+    SET NEW.general_instance_guard = NULL;
+    SET NEW.logistics_item_guard = NEW.logistics_item_id;
+
+    SELECT COUNT(*) INTO v_valid_logistics_owner
+    FROM visit_logistics_items vli
+    WHERE vli.logistics_item_id = NEW.logistics_item_id
+      AND vli.visit_instance_id = NEW.visit_instance_id
+      AND vli.requested_to_department_id = NEW.department_id;
+
+    IF v_valid_logistics_owner = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LOGISTICS expense report must match the logistics item visit instance and requested department';
+    END IF;
   END IF;
 END$$
 

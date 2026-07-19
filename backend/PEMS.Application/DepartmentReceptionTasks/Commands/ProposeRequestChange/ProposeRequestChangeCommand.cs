@@ -121,11 +121,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             var host = await _context.Users.FirstOrDefaultAsync(u => u.UserId == l.RequestedBy.Value, cancellationToken);
             if (host == null || string.IsNullOrWhiteSpace(host.Email)) return;
 
-            var delegationName = await (
-                from c in _context.VisitRequestCampuses
-                join v in _context.VisitRequests on c.VisitRequestId equals v.VisitRequestId
-                where c.VisitInstanceId == l.VisitInstanceId
-                select v.DelegationName).FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+            // Mixed per-campus v2: the email uses THIS instance's detail name.
+            var delegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_context, new[] { l.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(l.VisitInstanceId) ?? "FPT University";
 
             ulong sentEmailId, sentEmailRecipientId;
             string finalSubject, finalBody;

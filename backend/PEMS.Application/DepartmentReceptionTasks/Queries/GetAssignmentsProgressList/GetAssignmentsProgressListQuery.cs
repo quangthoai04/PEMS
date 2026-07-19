@@ -150,7 +150,13 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LatestStatus = latestAttempt == null ? null : latestAttempt.Status,
                 LatestNote = latestAttempt == null ? null : latestAttempt.ResponseNote,
                 BorrowSigned = borrowSigned,
-                ReturnSigned = returnSigned
+                ReturnSigned = returnSigned,
+                // Mixed per-campus v2 rows show THIS instance's detail (no global fallback);
+                // v1/non-mixed keep the projection (byte-identical there).
+                EffectiveDelegationName =
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                        ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
+                        : vr.DelegationName,
             })
             .ToListAsync(cancellationToken);
 
@@ -213,7 +219,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LogisticsItemId = row.li.LogisticsItemId,
                 VisitInstanceId = row.inst.VisitInstanceId,
                 VisitRequestId = row.vr.VisitRequestId,
-                DelegationName = row.vr.DelegationName ?? "",
+                DelegationName = row.EffectiveDelegationName ?? "",
                 RequestCode = row.vr.RequestCode ?? "",
                 OrganizationName = row.vr.RegistrantOrganization,
                 Title = row.li.Title,
@@ -264,7 +270,18 @@ public sealed class GetAssignmentsProgressListQueryHandler
                   && p.ParticipantRole == ParticipantRoles.DeptSupport
                   && p.Status != ParticipantStatuses.Removed
                   && (!isDepartmentStaff || (p.UserId == currentUserId && p.AssignedBy != null))
-            select new { p, u, inst, vr })
+            select new
+            {
+                p, u, inst, vr,
+                EffectiveDelegationName =
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                        ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
+                        : vr.DelegationName,
+                EffectiveWorkingContent =
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                        ? (inst.FormDetail != null ? inst.FormDetail.WorkingContent : null)
+                        : vr.WorkingContent,
+            })
             .ToListAsync(cancellationToken);
 
         var invitationGroups = invitationRows
@@ -305,11 +322,11 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 ParticipantId = row.p.ParticipantId,
                 VisitInstanceId = row.inst.VisitInstanceId,
                 VisitRequestId = row.vr.VisitRequestId,
-                DelegationName = row.vr.DelegationName ?? "",
+                DelegationName = row.EffectiveDelegationName ?? "",
                 RequestCode = row.vr.RequestCode ?? "",
                 OrganizationName = row.vr.RegistrantOrganization,
                 Title = "Thư mời tham gia đón tiếp",
-                Description = row.p.Note ?? row.vr.WorkingContent,
+                Description = row.p.Note ?? row.EffectiveWorkingContent,
                 CurrentResponsibleUserId = activeStaff?.p.UserId ?? row.p.UserId,
                 CurrentResponsibleName = activeStaff?.u.FullName ?? row.u.FullName,
                 CurrentResponsibleRole = ToDepartmentRoleLabel((activeStaff?.u ?? row.u).SubRole, activeStaff?.p.UserId ?? row.p.UserId, leaderUserId),

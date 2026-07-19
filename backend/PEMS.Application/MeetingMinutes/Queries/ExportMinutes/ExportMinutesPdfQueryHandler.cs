@@ -52,7 +52,12 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
             throw new ForbiddenException("Không có quyền tải PDF của campus này");
         }
 
-        var delegationName = vrc?.VisitRequest?.DelegationName ?? "N/A";
+        // Per-campus v2: this export is INSTANCE-scoped → a MIXED request uses THIS instance's detail.
+        var delegationName = (vrc is null
+            ? null
+            : (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_db, new[] { vrc.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(vrc.VisitInstanceId)) ?? "N/A";
 
         var pdfData = Document.Create(container =>
         {

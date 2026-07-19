@@ -351,6 +351,65 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"Campus #{campusId}";
 
+        // ═══ Phần 4: Thống kê chi phí ═══════════════════════════════════════
+        var expenseReports = await (
+                from r in _db.VisitExpenseReports.AsNoTracking()
+                join ci in instances on r.VisitInstanceId equals ci.VisitInstanceId
+                where r.Status != "CANCELLED"
+                join item in _db.VisitExpenseItems.AsNoTracking() on r.ExpenseReportId equals item.ExpenseReportId
+                group new { r, item } by new { r.VisitInstanceId, r.ReportScope, r.Status } into g
+                select new
+                {
+                    VisitInstanceId = g.Key.VisitInstanceId,
+                    ReportScope = g.Key.ReportScope,
+                    Status = g.Key.Status,
+                    Total = g.Sum(x => x.item.Quantity * x.item.UnitPrice)
+                }
+            ).ToListAsync(cancellationToken);
+
+        var expenseInstanceIds = expenseReports.Select(e => e.VisitInstanceId).Distinct().ToList();
+        
+        var expenseInstances = await instances
+            .Where(ci => expenseInstanceIds.Contains(ci.VisitInstanceId))
+            .Select(ci => new { ci.VisitInstanceId, GroupCode = ci.VisitRequest.RequestCode, ci.VisitRequest.DelegationName, ci.PlannedStartAt })
+            .ToListAsync(cancellationToken);
+
+        var expenseRows = new List<StaffLeaderV2ExpenseRow>();
+        foreach (var exInst in expenseInstances)
+        {
+            var instReports = expenseReports.Where(r => r.VisitInstanceId == exInst.VisitInstanceId).ToList();
+            var generalAmount = instReports.Where(r => r.ReportScope == "GENERAL").Sum(r => r.Total);
+            var logisticsAmount = instReports.Where(r => r.ReportScope == "LOGISTICS").Sum(r => r.Total);
+            var totalAmount = generalAmount + logisticsAmount;
+
+            var statusStr = "CHƯA GHI NHẬN";
+            if (instReports.Any(r => r.Status == "FINALIZED")) statusStr = "ĐÃ CHỐT";
+            else if (instReports.Any(r => r.Status == "SAVED")) statusStr = "ĐÃ LƯU";
+            else if (instReports.Any(r => r.Status == "DRAFT")) statusStr = "BẢN NHÁP";
+
+            expenseRows.Add(new StaffLeaderV2ExpenseRow
+            {
+                VisitInstanceId = exInst.VisitInstanceId,
+                GroupCode = exInst.GroupCode,
+                DelegationName = exInst.DelegationName,
+                VisitDate = exInst.PlannedStartAt,
+                GeneralExpense = generalAmount,
+                LogisticsExpense = logisticsAmount,
+                TotalExpense = totalAmount,
+                Status = statusStr
+            });
+        }
+        
+        expenseRows = expenseRows.OrderByDescending(r => r.VisitDate).ToList();
+
+        var expensesSection = new StaffLeaderV2Expenses
+        {
+            TotalAmount = expenseRows.Sum(r => r.TotalExpense),
+            TotalGeneral = expenseRows.Sum(r => r.GeneralExpense),
+            TotalLogistics = expenseRows.Sum(r => r.LogisticsExpense),
+            Rows = expenseRows
+        };
+
         return new StaffLeaderReportV2Dto
         {
             GeneratedAt = nowVn,
@@ -361,6 +420,7 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             Visits = visits,
             Personnel = personnel,
             Departments = deptSection,
+            Expenses = expensesSection
         };
     }
 }

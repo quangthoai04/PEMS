@@ -98,7 +98,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                          && (!isDepartmentStaff || p.AssignedBy != null)
                                          && c.PlannedStartAt >= startDate
                                          && c.PlannedStartAt < endDate
-                                   select new { p, u, r, c, vr };
+                                   // EffectiveDelegationName: a MIXED per-campus v2 request shows THIS
+                                   // instance's detail (no global fallback); v1/non-mixed keep the projection.
+                                   select new
+                                   {
+                                       p, u, r, c, vr,
+                                       EffectiveDelegationName =
+                                           vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
+                                           && vr.HasMixedCampusDetails
+                                               ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
+                                               : vr.DelegationName,
+                                   };
             var invitationsList = await invitationsQuery.ToListAsync(cancellationToken);
             var senderIds = invitationsList.Where(x => x.p.InvitedBy != null).Select(x => x.p.InvitedBy).Distinct().ToList();
             var senders = await _context.Users.Where(u => senderIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName);
@@ -140,8 +150,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                 {
                     Id = item.p.ParticipantId,
                     ItemType = "INVITATION",
-                    Title = "Thư mời: " + item.vr.DelegationName,
-                    FullTitle = "Thư mời: " + item.vr.DelegationName,
+                    Title = "Thư mời: " + item.EffectiveDelegationName,
+                    FullTitle = "Thư mời: " + item.EffectiveDelegationName,
                     Date = camp.PlannedStartAt.ToString("yyyy-MM-dd"),
                     StartAt = camp.PlannedStartAt.ToString("o"),
                     EndAt = camp.PlannedEndAt.ToString("o"),
@@ -149,7 +159,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     VisitInstanceId = camp.VisitInstanceId, // This is visit_instance_id ! SQL says vrc.visit_instance_id
                     VisitRequestId = camp.VisitRequestId,
                     ParticipantId = item.p.ParticipantId,
-                    DelegationName = item.vr.DelegationName,
+                    DelegationName = item.EffectiveDelegationName,
                     RelatedUserId = item.p.UserId,
                     SenderName = senderName,
                     CancelReason = camp.CancellationReason ?? item.vr.CancellationReason
@@ -180,7 +190,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                        && (!isDepartmentStaff || l.AssignedToUserId == userId)
                                        && startAt >= startDate
                                        && startAt < endDate
-                                 select new { l, c, vr, startAt, latestAttemptStatus, borrowSigned, returnSigned };
+                                 select new
+                                 {
+                                     l, c, vr, startAt, latestAttemptStatus, borrowSigned, returnSigned,
+                                     EffectiveDelegationName =
+                                         vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
+                                         && vr.HasMixedCampusDetails
+                                             ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
+                                             : vr.DelegationName,
+                                 };
             
             var logisticsList = await logisticsQuery.ToListAsync(cancellationToken);
             var reqIds = logisticsList.Where(x => x.l.RequestedBy != null).Select(x => x.l.RequestedBy).Distinct().ToList();
@@ -206,7 +224,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     VisitInstanceId = item.c.VisitInstanceId,
                     VisitRequestId = item.c.VisitRequestId,
                     LogisticsItemId = l.LogisticsItemId,
-                    DelegationName = item.vr.DelegationName ?? "N/A",
+                    DelegationName = item.EffectiveDelegationName ?? "N/A",
                     RelatedUserId = l.AssignedToUserId ?? l.ReceivedBy ?? l.UpdatedBy,
                     SenderName = senderName,
                     CancelReason = item.c.CancellationReason ?? item.vr.CancellationReason

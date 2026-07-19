@@ -11,6 +11,9 @@ public sealed class ResolvedVisitFormDto
 {
     public long VisitRequestId { get; init; }
     public string RequestCode { get; init; } = "";
+    /// <summary>Request-level optimistic-concurrency token — the edit/resubmit v2 payload echoes it back as
+    /// <c>ExpectedRequestRowVersion</c> so a stale editor gets a stable 409 instead of clobbering a concurrent change.</summary>
+    public int RowVersion { get; init; }
     public byte FormSchemaVersion { get; init; }
     public bool HasMixedCampusDetails { get; init; }
     public string VisitScope { get; init; } = "";

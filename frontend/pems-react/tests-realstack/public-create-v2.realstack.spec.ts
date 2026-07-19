@@ -1,0 +1,93 @@
+/**
+ * REAL-STACK E2E — public per-campus v2 create (journey A).
+ *
+ * real Chromium → real React (Vite) → real .NET API (Testing, flags ON) → real disposable MySQL.
+ * NO network mocking: the OTP is read from the Testing-only FileSink inbox (PEMS_E2E_TEST_SINK_PATH),
+ * exactly as the backend wrote it — proving initiate-v2 → OTP delivery → verify-v2 → real persistence and
+ * that the UI summary renders the backend-created request. Also proves the snapshot binding: an OTP verified
+ * for this submission creates the request the backend bound at initiate.
+ */
+import { test, expect, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+const SINK = process.env.PEMS_E2E_TEST_SINK_PATH;
+
+/** Latest OTP code the backend wrote to the sink for `email` (polled, since the write is async post-initiate). */
+async function readOtpFromSink(email: string): Promise<string> {
+  if (!SINK) throw new Error('PEMS_E2E_TEST_SINK_PATH is not set — the real-stack harness must provide it.');
+  const target = email.trim().toLowerCase();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    let lines: string[] = [];
+    try {
+      lines = readFileSync(SINK, 'utf8').split('\n').filter(Boolean);
+    } catch { /* file may not exist yet */ }
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const rec = JSON.parse(lines[i]) as { to?: string; kind?: string; code?: string };
+        if (rec.kind === 'VISIT_REQUEST_OTP' && rec.to === target && rec.code) return rec.code;
+      } catch { /* skip malformed */ }
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+  throw new Error(`No VISIT_REQUEST_OTP captured for ${email} in the sink within timeout.`);
+}
+
+async function fillCampus0(page: Page, delegation: string) {
+  // Campus + schedule: 10 days out, exactly 30 minutes (valid under v2).
+  const start = new Date();
+  start.setDate(start.getDate() + 10);
+  start.setHours(9, 0, 0, 0);
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  await page.locator('select[name="campusVisits.0.campus"]').selectOption('HN');
+  await page.locator('input[name="campusVisits.0.startDatetime"]').fill(fmt(start));
+  await page.locator('input[name="campusVisits.0.endDatetime"]').fill(fmt(end));
+  await page.locator('input[name="campusVisits.0.delegationName"]').fill(delegation);
+  await page.locator('textarea[name="campusVisits.0.purpose"]').fill('Trao đổi hợp tác thật');
+  await page.locator('input[name="campusVisits.0.visitors.0.fullName"]').fill('Khách Thật');
+  await page.locator('input[name="campusVisits.0.visitors.0.jobTitle"]').fill('Giảng viên');
+  await page.locator('input[name="campusVisits.0.visitors.0.organization"]').fill('ĐH Đối Tác');
+  await page.locator('input[name="campusVisits.0.visitors.0.nationality"]').fill('Việt Nam');
+  await page.locator('input[name="campusVisits.0.operationalContact.fullName"]').fill('Đầu Mối CS');
+  await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
+}
+
+test.describe('Real-stack: public per-campus v2 create', () => {
+  test('fills the real form, receives a real OTP from the sink, and creates a real request', async ({ page }) => {
+    const email = `e2e_${Date.now()}@example.com`;
+
+    await page.addInitScript(() => window.localStorage.setItem('pems.language', 'vi'));
+    await page.goto('/visit-registration/v2');
+    await expect(page.getByRole('heading', { name: /theo từng cơ sở/i })).toBeVisible();
+
+    // Registrant.
+    await page.locator('input[name="registerInfo.fullName"]').fill('Người Thật E2E');
+    await page.locator('input[name="registerInfo.organization"]').fill('Công ty E2E');
+    await page.locator('input[name="registerInfo.jobTitle"]').fill('Trưởng phòng');
+    await page.locator('input[name="registerInfo.nationality"]').fill('Việt Nam');
+    await page.locator('input[name="registerInfo.phone"]').fill('+84912345678');
+    await page.locator('input[name="registerInfo.email"]').fill(email);
+
+    // Primary contact = registrant (one click), so the request stays ACTIVE (no INITIAL_CLAIM).
+    await page.getByRole('button', { name: /Dùng thông tin người đăng ký/ }).click();
+
+    await fillCampus0(page, 'Đoàn Real Stack');
+
+    // Submit → real POST /v2/visit-requests/initiate → OTP modal.
+    await page.getByRole('button', { name: /Gửi yêu cầu & nhận mã OTP/ }).click();
+    await expect(page.getByText(/Xác thực OTP|OTP/i).first()).toBeVisible({ timeout: 20_000 });
+
+    // Read the OTP the REAL backend wrote to the Testing sink, then verify → real create.
+    const otp = await readOtpFromSink(email);
+    expect(otp).toMatch(/^\d{6}$/);
+    await page.getByPlaceholder('______').fill(otp);
+    await page.getByRole('button', { name: 'Xác nhận' }).click();
+
+    // The success summary renders the backend-created request code (only produced on a real DB insert).
+    await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Mã yêu cầu:\s*VR/)).toBeVisible();
+    await expect(page.getByText(/Số cơ sở đăng ký:\s*1/)).toBeVisible();
+  });
+});

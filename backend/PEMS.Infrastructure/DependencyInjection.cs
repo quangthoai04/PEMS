@@ -81,6 +81,10 @@ public static class DependencyInjection
         services.AddScoped<IVisitContactClaimService, VisitContactClaimService>();
         services.AddScoped<IVisitContactClaimMaintenanceService, VisitContactClaimMaintenanceService>();
 
+        // Per-campus v2 safe edit + amendments (plan §16.6, Phase E).
+        services.AddScoped<IVisitSafeEditService, VisitSafeEditService>();
+        services.AddScoped<IVisitAmendmentService, VisitAmendmentService>();
+
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IOcrService, OcrService>();
@@ -111,6 +115,9 @@ public static class DependencyInjection
 
         // Background job — identity-claim expiry (72h) + retention redaction (90d), plan §16.8.
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitContactClaimMaintenanceHostedService>();
+
+        // Background job — pending-amendment expiry (window passed / instance started), plan §16.6.
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitAmendmentExpiryHostedService>();
 
         return services;
     }

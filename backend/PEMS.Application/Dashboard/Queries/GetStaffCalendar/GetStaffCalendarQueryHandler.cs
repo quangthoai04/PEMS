@@ -108,7 +108,12 @@ public sealed class GetStaffCalendarQueryHandler
                 x.vr.VisitRequestId,
                 x.c.VisitInstanceId,
                 x.vr.RequestCode,
-                x.vr.DelegationName,
+                // Per-campus v2: a MIXED request's row shows THIS instance's delegation name (its detail);
+                // v1 and non-mixed v2 keep the global projection (byte-identical there). A mixed v2 row
+                // never falls back to the global value.
+                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
+                    : x.vr.DelegationName,
                 x.vr.RegistrantFullName,
                 x.vr.RegistrantOrganization,
                 x.c.CampusId,

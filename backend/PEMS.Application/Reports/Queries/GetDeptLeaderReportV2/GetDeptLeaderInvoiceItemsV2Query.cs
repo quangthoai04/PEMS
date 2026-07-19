@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Shared;
@@ -88,7 +89,11 @@ public sealed class GetDeptLeaderInvoiceItemsV2QueryHandler
                     li.Quantity,
                     li.Status,
                     ci.VisitRequest.RequestCode,
-                    ci.VisitRequest.DelegationName,
+                    // Instance row: mixed v2 shows THIS instance's detail name.
+                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                     && ci.VisitRequest.HasMixedCampusDetails
+                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                        : ci.VisitRequest.DelegationName,
                     StartAt = startAt,
                     EndAt = li.UsageEndAt ?? ci.PlannedEndAt,
                     HostId = ci.CurrentHostUserId,

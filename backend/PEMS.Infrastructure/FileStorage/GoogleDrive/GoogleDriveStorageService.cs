@@ -327,6 +327,103 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         }
     }
 
+    public async Task<GoogleDriveFolderResult> EnsureChildFolderAsync(
+        string folderName, string parentFolderId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(folderName))
+            throw new BusinessRuleException("Tên thư mục Google Drive không được để trống.", "GOOGLE_DRIVE_FOLDER_NAME_EMPTY");
+        if (string.IsNullOrWhiteSpace(parentFolderId))
+            throw new BusinessRuleException(
+                "Google Drive chưa được cấu hình thư mục cha.", "GOOGLE_DRIVE_FOLDER_NOT_CONFIGURED");
+
+        var accessToken = await GetAccessTokenAsync(cancellationToken);
+        var client = _httpClientFactory.CreateClient();
+
+        // 1) Reuse an existing (non-trashed) child folder with the same name — keeps the call
+        //    idempotent so concurrent first-uploads cannot fan out into duplicate folders.
+        var escapedName = folderName.Replace("\\", "\\\\").Replace("'", "\\'");
+        var query = Uri.EscapeDataString(
+            $"name = '{escapedName}' and '{parentFolderId}' in parents " +
+            "and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+        var searchUrl = $"{FilesEndpoint}?q={query}&fields=files(id,webViewLink)&pageSize=1";
+
+        using (var searchRequest = new HttpRequestMessage(HttpMethod.Get, searchUrl))
+        {
+            searchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var searchResponse = await client.SendAsync(searchRequest, cancellationToken);
+            var searchBody = await searchResponse.Content.ReadAsStringAsync(cancellationToken);
+            if (!searchResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError("Google Drive folder search returned {Status}: {Body}",
+                    (int)searchResponse.StatusCode, searchBody);
+                throw new BusinessRuleException(
+                    "Không thể truy vấn thư mục trên Google Drive.", "GOOGLE_DRIVE_FOLDER_LOOKUP_FAILED");
+            }
+
+            using var searchDoc = JsonDocument.Parse(searchBody);
+            if (searchDoc.RootElement.TryGetProperty("files", out var filesEl)
+                && filesEl.ValueKind == JsonValueKind.Array
+                && filesEl.GetArrayLength() > 0)
+            {
+                var existing = filesEl[0];
+                var existingId = existing.TryGetProperty("id", out var exId) ? exId.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(existingId))
+                {
+                    return new GoogleDriveFolderResult
+                    {
+                        ExternalFolderId = existingId!,
+                        WebViewUrl = existing.TryGetProperty("webViewLink", out var exWv) ? exWv.GetString() : null,
+                    };
+                }
+            }
+        }
+
+        // 2) Not found — create it.
+        var metadata = JsonSerializer.Serialize(new
+        {
+            name = folderName,
+            mimeType = "application/vnd.google-apps.folder",
+            parents = new[] { parentFolderId },
+        });
+
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post, $"{FilesEndpoint}?fields=id,webViewLink")
+        {
+            Content = new StringContent(metadata, Encoding.UTF8, "application/json"),
+        };
+        createRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var createResponse = await client.SendAsync(createRequest, cancellationToken);
+        var createBody = await createResponse.Content.ReadAsStringAsync(cancellationToken);
+        if (!createResponse.IsSuccessStatusCode)
+        {
+            _logger.LogError("Google Drive folder create returned {Status}: {Body}",
+                (int)createResponse.StatusCode, createBody);
+            if (createResponse.StatusCode == System.Net.HttpStatusCode.NotFound || createBody.Contains("notFound"))
+                throw new BusinessRuleException(
+                    "Thư mục Google Drive không tồn tại hoặc không có quyền truy cập.",
+                    "GOOGLE_DRIVE_FOLDER_NOT_FOUND_OR_NO_PERMISSION");
+            throw new BusinessRuleException(
+                "Không thể tạo thư mục trên Google Drive.", "GOOGLE_DRIVE_FOLDER_CREATE_FAILED");
+        }
+
+        using var createDoc = JsonDocument.Parse(createBody);
+        var createdRoot = createDoc.RootElement;
+        var createdId = createdRoot.TryGetProperty("id", out var idElement) ? idElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(createdId))
+        {
+            _logger.LogError("Google Drive folder create succeeded but returned no id: {Body}", createBody);
+            throw new BusinessRuleException(
+                "Google Drive không trả về ID thư mục.", "GOOGLE_DRIVE_FOLDER_CREATE_FAILED");
+        }
+
+        return new GoogleDriveFolderResult
+        {
+            ExternalFolderId = createdId!,
+            WebViewUrl = createdRoot.TryGetProperty("webViewLink", out var wvEl) ? wvEl.GetString() : null,
+        };
+    }
+
     /// <summary>
     /// A read stream that also owns the HTTP response/request it was read from, disposing them when the
     /// stream is disposed. This lets us return a live streamed body (no memory buffering) while keeping

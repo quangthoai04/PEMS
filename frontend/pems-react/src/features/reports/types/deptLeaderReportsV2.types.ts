@@ -46,6 +46,20 @@ export interface DeptLeaderV2Personnel {
   rows: DeptLeaderV2PersonnelRow[];
 }
 
+export interface DeptLeaderV2ExpenseRow {
+  logisticsItemId: number;
+  groupCode: string;
+  itemName: string;
+  visitDate: string | null;
+  totalExpense: number;
+  status: string;
+}
+
+export interface DeptLeaderV2Expenses {
+  totalAmount: number;
+  rows: DeptLeaderV2ExpenseRow[];
+}
+
 export interface DeptLeaderReportV2 {
   generatedAt: string;
   departmentName: string;
@@ -54,6 +68,7 @@ export interface DeptLeaderReportV2 {
   toDate: string;
   tasks: DeptLeaderV2Tasks;
   personnel: DeptLeaderV2Personnel;
+  expenses: DeptLeaderV2Expenses;
 }
 
 /** 1 chữ ký trong biên bản bàn giao (panel hóa đơn). */

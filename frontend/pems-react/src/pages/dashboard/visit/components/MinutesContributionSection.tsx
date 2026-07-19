@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+/**
+ * MinutesContributionSection — phần "Biên bản" trong trang Đóng góp kết quả.
+ *
+ * Nút "Tạo biên bản"/"Sửa biên bản" mở modal NGAY TRÊN TRANG, bên trong render lại đúng
+ * MinutesCard của luồng Quản lý tiếp khách (tên/trạng thái biên bản, điểm danh người tham gia,
+ * nội dung, đầu mục công việc, cơ chế lock) — cùng component/API nên dữ liệu hai nơi luôn đồng bộ,
+ * không có form biên bản thứ hai. Quyền do backend quyết (canCreate/canEdit + participant scope);
+ * frontend chỉ ẩn nút, không thay thế authorization backend.
+ */
+import { useState } from 'react';
 import { MinutesContributionStatus } from '../../../../features/delegations/types/delegations.types';
-import { FileText, Lock, Edit3, Save, X } from 'lucide-react';
-import { delegationsApi } from '../../../../features/delegations/api/delegationsApi';
-import { toast } from 'react-hot-toast';
+import { FileText, Lock, Edit3, X } from 'lucide-react';
+import { MinutesCard } from '../MinutesCard';
 
 interface Props {
   visitInstanceId: string;
@@ -12,68 +20,15 @@ interface Props {
   onChanged: () => void;
 }
 
-export function MinutesContributionSection({ visitInstanceId, data, canView, instanceStatus, onChanged }: Props) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [content, setContent] = useState(data.content || '');
-  const [loading, setLoading] = useState(false);
-  const [lockToken, setLockToken] = useState<string | null>(null);
-  const [minutesId, setMinutesId] = useState<number | null>(null);
-  const [rowVersion, setRowVersion] = useState<number>(0);
+export function MinutesContributionSection({ visitInstanceId, data, canView, onChanged }: Props) {
+  const [modalOpen, setModalOpen] = useState(false);
 
   if (!canView) return null;
 
-  const handleEdit = async () => {
-    try {
-      setLoading(true);
-      const res = await delegationsApi.minutes.createOrLock(visitInstanceId, 'Biên bản chuyến thăm');
-      setMinutesId(res.minutesId);
-      setLockToken(res.editLockToken || null);
-      setRowVersion(res.rowVersion);
-      setContent(res.content || '');
-      setIsEditing(true);
-    } catch (e: any) {
-      if (e.response?.status === 403) toast.error('Bạn không có quyền chỉnh sửa biên bản.');
-      else if (e.response?.status === 409) toast.error('Biên bản đang được người khác chỉnh sửa.');
-      else toast.error('Lỗi khi mở biên bản.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCancel = async () => {
-    setIsEditing(false);
-    if (minutesId && lockToken) {
-      try {
-        await delegationsApi.minutes.releaseLock(minutesId, lockToken);
-      } catch (e) {
-        // ignore
-      }
-    }
+  const closeModal = () => {
+    setModalOpen(false);
+    // Đồng bộ lại trạng thái tóm tắt của trang Đóng góp sau khi tạo/sửa trong modal.
     onChanged();
-  };
-
-  const handleSave = async () => {
-    if (!minutesId || !lockToken) return;
-    try {
-      setLoading(true);
-      await delegationsApi.minutes.save(minutesId, {
-        title: 'Biên bản chuyến thăm',
-        content,
-        editLockToken: lockToken,
-        rowVersion,
-        participants: [],
-        actionItems: []
-      });
-      toast.success('Lưu biên bản thành công.');
-      setIsEditing(false);
-      onChanged();
-    } catch (e: any) {
-      if (e.response?.status === 403) toast.error('Bạn không có quyền lưu biên bản.');
-      else if (e.response?.status === 409) toast.error('Xung đột phiên bản. Vui lòng tải lại.');
-      else toast.error('Lỗi khi lưu biên bản.');
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -94,65 +49,60 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, ins
           </span>
         )}
       </div>
+
       <div className="space-y-4">
-        {isEditing ? (
-          <div className="space-y-3">
-            <textarea
-              className="w-full min-h-[200px] border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              placeholder="Nhập nội dung biên bản..."
-              disabled={loading}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleSave}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white hover:bg-[#003b70] rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                Lưu biên bản
-              </button>
-              <button
-                onClick={handleCancel}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
-              >
-                <X className="w-4 h-4" />
-                Hủy bỏ
-              </button>
-            </div>
+        {data.content ? (
+          <div className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 max-h-[180px] overflow-y-auto whitespace-pre-wrap text-sm text-slate-700">
+            {data.content}
           </div>
         ) : (
-          <>
-            {data.content ? (
-              <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: data.content }} />
-            ) : (
-              <p className="text-sm font-semibold text-slate-400">Nội dung biên bản trống.</p>
-            )}
+          <p className="text-sm font-semibold text-slate-400">Nội dung biên bản trống.</p>
+        )}
 
-            {data.lockedByName && (
-              <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700">
-                <Lock className="w-4 h-4 shrink-0" />
-                Đang được chỉnh sửa bởi {data.lockedByName}
-              </div>
-            )}
+        {data.lockedByName && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700">
+            <Lock className="w-4 h-4 shrink-0" />
+            Đang được chỉnh sửa bởi {data.lockedByName}
+          </div>
+        )}
 
-            {data.canCurrentUserEdit && data.status !== 'COMPLETED' && (
-              <div className="pt-2 flex flex-wrap gap-3">
-                <button
-                  onClick={handleEdit}
-                  disabled={loading || !!data.lockedByName}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
-                >
-                  <Edit3 className="w-4 h-4" />
-                  {data.hasMinutes ? 'Chỉnh sửa biên bản' : 'Tạo biên bản'}
-                </button>
-              </div>
-            )}
-          </>
+        {data.canCurrentUserEdit && (
+          <div className="pt-2 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors"
+            >
+              <Edit3 className="w-4 h-4" />
+              {data.hasMinutes ? 'Sửa biên bản' : 'Tạo biên bản'}
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Modal biên bản — render lại MinutesCard đầy đủ chức năng ngay trên trang */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[110] px-2 sm:px-6 py-6">
+          <div className="w-full max-w-5xl max-h-full flex flex-col">
+            <div className="flex justify-end mb-2">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/95 text-slate-600 hover:text-slate-900 text-sm font-bold shadow-sm transition-colors"
+                aria-label="Đóng biên bản"
+              >
+                <X className="w-4 h-4" /> Đóng
+              </button>
+            </div>
+            <div className="overflow-y-auto rounded-2xl">
+              <MinutesCard
+                visitInstanceId={Number(visitInstanceId)}
+                isReadOnly={!data.canCurrentUserEdit}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

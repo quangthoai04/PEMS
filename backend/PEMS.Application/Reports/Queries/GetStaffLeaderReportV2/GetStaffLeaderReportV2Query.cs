@@ -29,6 +29,7 @@ public sealed class StaffLeaderReportV2Dto
     public StaffLeaderV2Visits Visits { get; set; } = new();
     public StaffLeaderV2Personnel Personnel { get; set; } = new();
     public StaffLeaderV2Departments Departments { get; set; } = new();
+    public StaffLeaderV2Expenses Expenses { get; set; } = new();
 }
 
 // ── Phần 1: đoàn tiếp khách ─────────────────────────────────────────────────
@@ -103,6 +104,27 @@ public sealed class StaffLeaderV2DepartmentRow
     public int Rejected { get; set; }
     public double? FeedbackAverage { get; set; }
     public int FeedbackCount { get; set; }
+}
+
+// ── Phần 4: Thống kê chi phí ────────────────────────────────────────────────
+public sealed class StaffLeaderV2Expenses
+{
+    public decimal TotalAmount { get; set; }
+    public decimal TotalGeneral { get; set; }
+    public decimal TotalLogistics { get; set; }
+    public List<StaffLeaderV2ExpenseRow> Rows { get; set; } = new();
+}
+
+public sealed class StaffLeaderV2ExpenseRow
+{
+    public ulong VisitInstanceId { get; set; }
+    public string GroupCode { get; set; } = string.Empty;
+    public string DelegationName { get; set; } = string.Empty;
+    public DateTime? VisitDate { get; set; }
+    public decimal GeneralExpense { get; set; }
+    public decimal LogisticsExpense { get; set; }
+    public decimal TotalExpense { get; set; }
+    public string Status { get; set; } = string.Empty;
 }
 
 /// <summary>Guard + khoảng thời gian dùng chung cho các endpoint report v2 của Staff Leader.</summary>

@@ -63,6 +63,15 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
     public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
     public DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; set; }
+    
+    // ── Expense Statistics (v11) ─────────────────────────────────────────
+    public DbSet<VisitExpenseReport> VisitExpenseReports { get; set; }
+    public DbSet<VisitExpenseItem> VisitExpenseItems { get; set; }
+    public DbSet<VisitExpenseReportEvent> VisitExpenseReportEvents { get; set; }
+
+    // ── Student visit photo storage (Google Drive, independent from Gallery) ──
+    public DbSet<VisitPhotoFolder> VisitPhotoFolders { get; set; }
+    public DbSet<VisitPhoto> VisitPhotos { get; set; }
 
     // ── Per-campus form v2 (PR-2 migration percampus_v2_migration) ────────────
     public DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails { get; set; }
@@ -73,6 +82,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitInstanceAmendmentChange> VisitInstanceAmendmentChanges { get; set; }
     public DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; set; }
     public DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; set; }
+    public DbSet<VisitRequestPendingForm> VisitRequestPendingForms { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -382,6 +392,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .HasDatabaseName("idx_identity_change_request_relation_status");
         });
 
+        // visit_request_pending_forms: standalone pending v2 snapshot store (no FK — it is
+        // bound to a submission intent, not to a created request; consumed at verify).
+        modelBuilder.Entity<VisitRequestPendingForm>(b =>
+        {
+            b.HasIndex(p => p.SubmissionId).IsUnique().HasDatabaseName("uq_pending_forms_submission");
+            b.HasIndex(p => p.ExpiresAt).HasDatabaseName("idx_pending_forms_expires");
+        });
+
         // visit_request_identity_change_events → identity change (CASCADE) + actor.
         modelBuilder.Entity<VisitRequestIdentityChangeEvent>(b =>
         {
@@ -433,6 +451,51 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .HasForeignKey(h => h.AppliedBy).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(h => new { h.VisitRequestId, h.RequestRevision })
                 .IsUnique().HasDatabaseName("uq_vrrh_request_revision");
+        });
+
+        // ── Student visit photo storage (PEMS_FULL_V10_WITH_STUDENT_VISIT_PHOTO_STORAGE) ──
+        // visit_photo_folders: exactly ONE folder per visit request (uq_visit_photo_folders_request);
+        // the composite alternate key mirrors uq_visit_photo_folders_folder_request for the
+        // photo → folder composite FK below.
+        modelBuilder.Entity<VisitPhotoFolder>(b =>
+        {
+            b.HasOne(f => f.VisitRequest).WithMany()
+                .HasForeignKey(f => f.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(f => f.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(f => f.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(f => f.VisitRequestId)
+                .IsUnique().HasDatabaseName("uq_visit_photo_folders_request");
+            b.HasIndex(f => f.ExternalFolderId)
+                .IsUnique().HasDatabaseName("uq_visit_photo_folders_external");
+            b.HasAlternateKey(f => new { f.VisitPhotoFolderId, f.VisitRequestId });
+        });
+
+        // visit_photos: composite FKs bind the photo to the exact campus instance of its request
+        // (fk_visit_photos_request_instance) and to the request's one folder
+        // (fk_visit_photos_folder_request). files link is 1:1 (uq_visit_photos_file).
+        modelBuilder.Entity<VisitPhoto>(b =>
+        {
+            b.HasOne(p => p.VisitInstance).WithMany()
+                .HasForeignKey(p => new { p.VisitRequestId, p.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(p => p.Folder).WithMany(f => f.Photos)
+                .HasForeignKey(p => new { p.VisitPhotoFolderId, p.VisitRequestId })
+                .HasPrincipalKey(f => new { f.VisitPhotoFolderId, f.VisitRequestId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(p => p.File).WithMany()
+                .HasForeignKey(p => p.FileId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(p => p.UploadedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(p => p.RemovedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(p => p.FileId).IsUnique().HasDatabaseName("uq_visit_photos_file");
+            b.HasIndex(p => new { p.VisitInstanceId, p.UploadedAt })
+                .HasDatabaseName("idx_visit_photos_instance_time");
+            b.HasIndex(p => new { p.Status, p.UploadedAt })
+                .HasDatabaseName("idx_visit_photos_status_time");
         });
 
         // VisitParticipant → VisitRequestCampus, User, InvitedBy, AssignedBy
@@ -533,6 +596,59 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .IsUnique().HasDatabaseName("uq_visit_reminder_channel_target");
             b.HasIndex(r => new { r.Status, r.ScheduledAt })
                 .HasDatabaseName("idx_visit_reminder_schedule");
+        });
+
+        // ── Visit Expense Statistics (v11) ────────────────────────────────
+        modelBuilder.Entity<VisitExpenseReport>(b =>
+        {
+            b.HasOne(r => r.VisitInstance).WithMany()
+                .HasForeignKey(r => r.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.LogisticsItem).WithMany()
+                .HasForeignKey(r => r.LogisticsItemId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Department>().WithMany()
+                .HasForeignKey(r => r.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.SavedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.FinalizedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CancelledBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(r => new { r.VisitInstanceId, r.ReportScope, r.Status })
+                .HasDatabaseName("idx_expense_reports_instance_scope_status");
+            b.HasIndex(r => new { r.DepartmentId, r.Status })
+                .HasDatabaseName("idx_expense_reports_department_status");
+            b.HasIndex(r => r.LogisticsItemId)
+                .HasDatabaseName("idx_expense_reports_logistics_item");
+        });
+
+        modelBuilder.Entity<VisitExpenseItem>(b =>
+        {
+            b.HasOne(i => i.ExpenseReport).WithMany(r => r.Items)
+                .HasForeignKey(i => i.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(i => i.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(i => i.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(i => new { i.ExpenseReportId, i.DisplayOrder, i.ExpenseItemId })
+                .HasDatabaseName("idx_expense_items_report_order");
+            b.HasIndex(i => i.ItemOrigin)
+                .HasDatabaseName("idx_expense_items_origin");
+        });
+
+        modelBuilder.Entity<VisitExpenseReportEvent>(b =>
+        {
+            b.HasOne(e => e.ExpenseReport).WithMany(r => r.Events)
+                .HasForeignKey(e => e.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(e => e.PerformedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(e => new { e.ExpenseReportId, e.PerformedAt })
+                .HasDatabaseName("idx_expense_events_report_time");
+            b.HasIndex(e => new { e.PerformedBy, e.PerformedAt })
+                .HasDatabaseName("idx_expense_events_actor_time");
         });
 
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy

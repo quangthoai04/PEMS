@@ -12,7 +12,8 @@ export type FilePurpose =
   | 'NEWS_ATTACHMENT'
   | 'DOCUMENT'
   | 'MINUTES_ATTACHMENT'
-  | 'VISIT_REQUEST_ATTACHMENT';
+  | 'VISIT_REQUEST_ATTACHMENT'
+  | 'VISIT_REQUEST_PHOTO';
 
 export interface FileValidationRule {
   maxSizeBytes: number;
@@ -41,6 +42,7 @@ export function getFileValidationRule(purpose: FilePurpose): FileValidationRule 
       return { maxSizeBytes: 2 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'GALLERY_IMAGE':
     case 'NEWS_IMAGE':
+    case 'VISIT_REQUEST_PHOTO':
       return { maxSizeBytes: 5 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'GALLERY_VIDEO':
       return {

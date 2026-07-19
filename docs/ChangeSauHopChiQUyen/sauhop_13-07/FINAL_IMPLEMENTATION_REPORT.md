@@ -43,8 +43,10 @@ Missing v2 detail → `409 VISIT_FORM_DETAIL_MISSING`, no global fallback.
 
 - `PerCampusFormV2` read flag **OFF** (no appsettings override; default `false`). Write flag **not created** yet.
 - **No v2 data**: `visit_requests.form_schema_version >= 2` count = 0 in pems_db, pems_pr3_test, pems_it_regression.
-- **Real DBs untouched**: pems_db / pems_test never mutated; all integration runs on disposable
-  `pems_it_regression` recreated from the PR-2 master each run.
+- **Protected DBs**: `pems_db` and `pems_test` are **never mutated**. `pems_pr3_test` is the sanctioned
+  direct-handler test DB — it carries the **additive schema patches 06/07/08 by design** (so it is NOT
+  "unmutated"; only its v2/pending DATA rows stay 0). Full integration/E2E runs use disposable
+  `pems_it_regression`; Phase H drills use disposable `pems_h_fresh` / `pems_h_upgrade` / `pems_h_rollback`.
 - **appsettings.Testing.json** = `pems_test` (restored; the file is gitignored — verified by grep, not git diff).
 - **Plan doc** `PEMS_MULTI_CAMPUS_PER_CAMPUS_FORM_AND_IDENTITY_EDIT_PLAN.md` remains **untracked** (not committed).
 
@@ -135,69 +137,183 @@ territory). Cancel-3A: the REGISTRANT may cancel a PENDING request while access 
 the same 24h/reason rules, audited `VISIT_REQUEST_CANCELLED_BY_REGISTRANT_PENDING_CONTACT`, pending claims
 CANCELLED + tokens burned in-txn; exception disappears once ACTIVE.
 **D-3 job**: `VisitContactClaimMaintenanceService.RunOnceAsync` — idempotent FOR-UPDATE-batched EXPIRE
-(PENDING past 72h → EXPIRED + retention + event + tokens dead; request NOT cancelled) and REDACT (terminal past
-90d → full email/snapshot/reason nulled + token recipient masked; masked email/kind/status/actors/timestamps
-kept; `IDENTITY_CHANGE_REDACTED` event+audit); hosted `VisitContactClaimMaintenanceHostedService` (600s/200,
-flag-independent). **Deferred to a later phase (documented)**: TRANSFER workflow (24h owner handoff) and
-OTP_FALLBACK confirmation (non-Google not enabled by Product).
-Tests: `VisitContactClaimWorkflowTests` **7/7**; v2 group **46/46**.
+(PENDING past its per-row deadline → EXPIRED + retention + event + tokens dead; request NOT cancelled) and
+REDACT (terminal past 90d → full email/snapshot/reason nulled + token recipient masked; masked
+email/kind/status/actors/timestamps kept; `IDENTITY_CHANGE_REDACTED` event+audit); hosted
+`VisitContactClaimMaintenanceHostedService` (600s/200, flag-independent).
+**D-4 primary-contact TRANSFER 24h (handoff §6)**: the registrant or the CURRENT ACTIVE contact proposes
+handing the role to a new email (`POST /api/v2/visit-requests/{id}/contact-transfer` + GET state/resend/
+cancel); the old owner keeps every right until the invited person — logged in with the exactly-matching
+Google account — explicitly accepts (`/api/v2/visit-contact-transfers/{token}/accept`); the swap of
+`visitor_user_id` + the contact snapshot happens in the same transaction as PENDING→APPLIED on the
+FOR-UPDATE-locked change row; access stays ACTIVE throughout; campus decisions/status/host/schedule are never
+touched and the old ACCOUNT is never locked/deleted. 24h expiry (resend restarts 24h + re-stamps
+`expected_request_row_version` so legit edits between invitations never brick the accept), one PENDING change
+per request via the DB guard (`IDENTITY_CHANGE_ALREADY_PENDING`), masked anonymous landing
+(`/api/public/visit-contact-transfers/{token}`, enumeration-safe), invited-side decline + owner-side cancel
+keep the old owner, kind-aware expiry event `PRIMARY_CONTACT_TRANSFER_EXPIRED`, and a pending transfer does
+NOT open cancel-3A (contact is still ACTIVE). New SQL: `07_up_transfer_tokens.sql` (+master) appends the
+`VISIT_CONTACT_TRANSFER` token context (additive+idempotent; applied to pems_pr3_test only).
+**Deferred (documented)**: OTP_FALLBACK confirmation (non-Google not enabled by Product) — TRANSFER does not
+depend on it (Google SSO exact-email, same as the claim).
+Tests: `VisitContactClaimWorkflowTests` **7/7** + `VisitContactTransferWorkflowTests` **6/6**.
 
-### Phase E — safe edit + post-approval amendment (plan §16.6)
-Safe/correction fields apply immediately (+revision, audit, notify); privacy-urgent media→DECLINED applies even
-<24h HIGH/URGENT; approval-sensitive fields → per-campus amendment PENDING_APPROVAL (one pending per instance);
-approved snapshot stays active until Staff-Leader approves; approve = atomic patch + bump form_revision &
-approval_revision + immutable revision snapshot + field-level old/new; reject/withdraw leaves snapshot; no
-reset of sibling campuses; lock self-service from DURING_VISIT.
+### Phase E — safe edit + post-approval amendment (plan §16.6) — ✅ DONE (this session)
+`VisitFieldClassifier` = THE single backend classification table (SAFE / PRIVACY_URGENT [media→DECLINED only] /
+APPROVAL_SENSITIVE / STRUCTURAL; unknown paths fail closed — the primary-contact email is deliberately
+unclassified: identity workflow only). Safe edit `PATCH /api/v2/visit-requests/{id}/safe-details`
+(`VisitSafeEditService`): server-side diff of the safe subset, FOR-UPDATE + request/instance row-version 409s,
+24h cutoff with the media-WITHDRAWAL exemption (applies even <24h, URGENT notification incl. Host), target-only
+apply + form_revision bump + SAFE_EDIT revision snapshots + canonical (mixed/fingerprint/projection) recompute +
+field-level audit `VISIT_SAFE_FIELDS_UPDATED`. Amendments (`VisitAmendmentService`): submit stores an IMMUTABLE
+per-field proposal for ONE decided (ASSIGNED/BEFORE_VISIT) instance ≥24h before start — one PENDING per
+instance (DB guard), base form/approval-revision conflicts are stable 409s, NOTHING active mutates; approve is
+restricted to the CURRENT campus Staff Leader and applies target-only on the locked amendment (scalars +
+schedule + member copy-on-write) with form+approval revision bumps, post-apply revision snapshot, canonical
+recompute and audits (`VISIT_AMENDMENT_APPROVED` + `VISIT_INSTANCE_FORM_REVISION_APPLIED`) — sibling campuses
+and approval statuses never reset; reject (reason required)/withdraw/expire leave the active snapshot;
+`VisitAmendmentExpiryHostedService` sweeps overdue/started pending amendments idempotently. Scoped
+metadata-only history timeline at `GET /api/v2/visit-requests/{id}/history` (masked identity events for
+managers/HO only; leaders/hosts see only their scope; proposals never presented as active).
+Tests: `VisitSafeEditV2Tests` 4/4 + `VisitAmendmentV2Tests` 4/4; v2 group **60/60**.
 
-### Phase F — list/search/dashboard/calendar/report/export/email (audit map §5/§6, plan §16.9)
-Migrate every Class-C surface in `PR3_PRE_PR4_AUDIT_MAP.md`: dashboards, calendars, invitation lists, search
-(parent + campuses actor may see; scope-before-search; request once with match context; no hidden-campus leak),
-reports/invoice/export/print (instance output = target instance; request aggregate = per-campus SECTIONS, no
-smallest-campus projection), email preview/templates. Then a repository-wide 10-field audit producing a
-**zero-unclassified-reference** report.
+### Phase F — list/search/dashboard/calendar/report/export/email (audit map §5/§6, plan §16.9) — ✅ DONE (this session)
+~35 Class-C surfaces migrated with one uniform rule (audit map §10 lists them all): instance rows read
+`mixed-v2 ? instance.FormDetail.<field> : vr.<field>` (single FormDetail-nav JOIN, no N+1, NO global
+fallback for mixed), request rows that cannot show per-campus content are labeled "Khác nhau theo cơ sở",
+v1/non-mixed keep the byte-identical projection. Covers dashboards (HO/DeptLeader), calendars (staff/dept),
+invitation + assignment lists, guest delegation list (staff + visitor paths), feedback surfaces (search/
+summary/targets/pending/submit snapshots), minutes search + PDF/Excel exports, eligible-news, all report
+overviews + invoice/V2 item queries + send-email commands (visit_type filters mixed-aware; the Staff-Leader
+report resolves mixed via THEIR campus's detail), conflict/busy labels, related-visitor + document detail,
+and instance-scoped notification/email texts. Keyword search is scope-before-keyword and matches per-
+instance details for mixed v2 — a hidden sibling campus's content can no longer produce a hit for an
+instance-scoped actor. Repository-wide 10-field sweep → **ZERO unclassified production references**
+(classification table in audit map §10). Tests: `V2MixedListSurfacesTests` 2/2 (helper matrix + Staff
+calendar end-to-end per-campus names).
 
-### Phase G — frontend (plan §7/§8/§9)
-Common registrant + request-level primary contact + campus cards/tabs, each with independent schedule/form/
-guest/support/operational-contact/additional-requirements; "copy from campus" = UI-only; add/remove campus;
-per-campus validation (≥30 min); submit `campusVisits[]`; detail view per campus with own status/host/revision;
-edit-pending/resubmit; initial-claim/transfer contact UI; safe-edit/amendment + approve/reject UI; audit/
-revision display by permission; legacy 409 routed to a v2 experience (no raw technical error). Gate: `npm run
-build` AND `npm run lint` both 0 errors.
+### Phase G — frontend (plan §7/§8/§9) — ✅ DONE (G-1/2/3 + exit gates G-4A/G-4B)
+> Phase G core (G-1/G-2/G-3) + exit gates **G-4A ✅** (public v2 OTP initiate + snapshot binding — §6) and
+> **G-4B ✅** (dedicated pending-edit/resubmit v2 screen) are DONE. Phase H verification may now begin.
+>
+> **G-4B ✅** per-campus v2 pending-edit / rejected-resubmit screen (`EditVisitRequestV2Page`, routes
+> `/dashboard/visit/v2/:id/edit|resubmit`) reusing the SAME `VisitRequestV2Schema` + `CampusVisitCard` + utils
+> (no third form model). New pure util `resolvedFormToV2Schema` hydrates from the scoped read model carrying
+> stable `visitInstanceId` + per-instance/request `rowVersion` for optimistic concurrency; submit builds
+> `buildV2EditPayload` → `updatePendingVisitRequestV2` / `resubmitVisitRequestV2`; a 409 shows a stable
+> conflict message + reload; resubmit keeps the campus set fixed (no add/remove), pending-edit may add/remove;
+> account-binding emails are read-only; the backend re-authorizes editor/lifecycle. **Backend read-model gap
+> closed (proven necessary)**: `ResolvedVisitFormDto.RowVersion` added + populated (the edit payload's
+> `ExpectedRequestRowVersion` had no source). Detail view wires Edit/Resubmit actions by manager + status.
+> Gates: backend build 0-err · v2 read IT 23/23 · FE tsc 0 / lint 0 / unit **56/56** (10 new) / build ✓.
+>
+> **G-4A ✅** `POST /api/v2/visit-requests/initiate`: entity `VisitRequestPendingForm` + additive migration
+> `08_up_pending_v2_forms.sql` (+ rollback line); `InitiateVisitRequestV2Command`/Validator (reuses the
+> create-v2 structural validator — v2 rules, not v1)/Handler (fail-fast emails → OTP mint → bind canonical
+> snapshot + fingerprint); verify-v2 now builds FROM THE BOUND SNAPSHOT (never the verify-time form), with
+> stable conflicts on fingerprint mismatch / missing binding; frontend switched to initiate-v2 (v1 projection
+> removed). Gates: build 0-err · Unit 482/482 · Arch 14/14 · full IT 372/372 (fresh `pems_it_regression`) ·
+> targeted v2 IT 7/7 · FE tsc 0 / unit 46/46 / build ✓. Migration additive+idempotent, applied to
+> pems_pr3_test + pems_it_regression only; pems_db/pems_test untouched; flags OFF.
 
-### Phase H — final verification + E2E + rollout readiness
-SQL fresh import + verify + upgrade/backfill/idempotency/rollback on disposable MySQL; dotnet build; full
-Unit/Arch/Integration on fresh disposable DB; frontend typecheck/lint/unit/build; backend+frontend E2E (single/
-multi-same/multi-mixed; per-role permissions; missing detail; 29m59s fail / 30m pass; B claim/transfer/expiry;
-cancel-3A; safe-edit/amendment; search no-leak; export/email per-campus; concurrency/idempotency); N+1 &
-query-count bounds; assert no raw token/OTP/PII in logs/audit. Read & write flags separate, both default OFF;
-prove flag-on flow by test; never auto-enable.
+**G-1 ✅** typed v2 API client + invitation landing (`/visit-contact-claim|transfer/:token`, masked, explicit
+accept, wrong-account hint) + `ContactIdentityPanel` + `VisitAmendmentPanel` + `VisitHistoryTimeline`; routes
+wired and the two internal planning docs untracked in the forward-fix commit `0cec2972` (the G-1 commit had
+already been pushed, so history was NOT rewritten).
+**G-2 ✅** per-campus form v2: `visitRequestV2.schema.ts` (campusVisits[] full snapshots, stable clientKeys,
+30-MIN minimum in ms math — 29m59s fails/30m passes, 10/200 caps, per-index duplicate-campus), pure utils
+(deep `cloneCampusVisitContent` preserving target identity/schedule, confirmed apply-to-all + overwrite list,
+`buildV2CreatePayload`/`buildV2EditPayload` matching the REAL backend DTOs, `migrateV1DraftToV2`,
+FluentValidation-path→RHF-path mapper, per-campus Excel apply), draft storage v3 (own key; global draft
+migrated in-memory once, never shadows a newer v3), `useVisitRequestFormV2` (public v1-initiate→OTP→
+`POST /v2/visit-requests/verify` with the correct NESTED `{form,otpCode,sessionToken}` body; authenticated
+direct create; server errors land on the exact campus card), `CampusVisitCard` (CSS-hide accordion — never
+unregisters; error badge; ≤5MB per-campus Excel), `VisitRequestFormV2` + `VisitRequestV2Page` on NEW routes
+`/visit-registration/v2` + `/visit/create-v2` (v1 flow untouched; flags OFF ⇒ backend 404 surfaced honestly,
+no silent v1 fallback), i18n namespace `visitRequestV2` (vi+en). **Vitest+RTL introduced**: `npm run
+test:unit` → 33/33. Fixed two G-1 client/contract bugs (flattened verify body; V2EditPayload missing
+registrant/primaryContact/partnerId).
+**G-3 ✅** per-campus read/detail/workflow UX: `getVisitRequestFormV2` client on the central dual-read model;
+`CampusVisitDetailCard` (ONE read-only component reused everywhere — status/schedule/content/people tables
+with aria-expanded, operational contact, host/decision/revision, amendment badge); `VisitRequestV2DetailView`
+(request-level once + "Khác nhau theo cơ sở"/"Varies by campus" only when >1 VISIBLE campuses, G-1 panels
+wired: identity for the manager, amendment decide for STAFF_LEADER / withdraw for the manager, masked
+history; the scoped payload is rendered verbatim — hidden campuses never appear and read-only HO gets no
+action buttons); route `/dashboard/visit/v2/:id`; legacy `FORM_VERSION_UPGRADE_REQUIRED` (code-matched, never
+message text) now routes EditVisitRequest load+submit to the v2 screen instead of a raw 409; i18n
+detail/status keys vi+en. Gates: `npm run lint` 0, `npm run test:unit` **46/46**, `npm run build` green.
+**Deferred within G (documented, not flag-OFF-blocking)**: a dedicated v2 EDIT/RESUBMIT form page (its API
+client + payload builder + tests shipped in G-2; the create form component is reusable) and the public OTP
+initiate v2 endpoint (backend gap below).
+
+### Phase H — final verification + E2E + rollout readiness — ✅ DONE (H-1/H-2/H-3/H-4)
+- **H-1 SQL drill** (`percampus_v2_migration/H1_MIGRATION_DRILL_REPORT.md`): fixed a real **fresh-vs-upgrade
+  drift** (`visit_request_pending_forms` was missing from the fresh master → added + README). Drills on
+  disposable DBs (`pems_h_fresh`/`pems_h_upgrade`/`pems_h_rollback`): fresh import (9 v2 tables), upgrade from
+  the pre-v2 baseline `ed693f6d` with `04_verify` V01–V15 = 0 (762/762 links, 204/204 details), idempotent
+  re-run identical, schema diff fresh-vs-upgrade **IDENTICAL** (71=71), constraint boundaries (29m59s/end=start
+  → 3819, 30m OK, dup submission → 1062), rollback **refusal guard + clean DOWN** both correct, EXPLAIN index
+  usage confirmed. `pems_db`/`pems_test` never mutated.
+- **H-2 regression + E2E** (`H2_VERIFICATION_MATRIX.md`): full regression green — Unit **482**, Arch **14**,
+  full IT (below), Vitest **56**, tsc/lint 0, build ✓; `test:e2e` script + new per-campus v2 browser spec →
+  Playwright **78 passed** (mocked-network component/contract; real-stack E2E harness documented as a
+  follow-on, not claimed). `npm ci` blocked by a Windows `lightningcss` native-file lock (env defect;
+  reproducible install = `npm install --legacy-peer-deps`).
+- **H-3 observability + rollout** (`H3_ROLLOUT_OBSERVABILITY.md`): no metrics framework in the project (none
+  added); observability = structured logs + `audit_logs`. Closed a gap — the middleware now logs
+  `ConflictException`/`BusinessRuleException` by **stable code only** (no PII), making the v2 failure codes
+  observable; regression `ExceptionHandlingObservabilityTests` 2/2. Rollout/canary/exit-criteria documented
+  with exact flag names/defaults from source; production rollback = **flags OFF**, never DOWN.
 
 ### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled)
 Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
 schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
 
-## 5. Test counts (latest, verified — end of Phase D)
-- UnitTests **474/474** (the historical "435" baseline was a stale incremental build; 0 failures throughout).
+### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled)
+Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
+schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
+
+## 5. Test counts (latest, verified — end of Phase F backend, G-2 frontend)
+- UnitTests **482/482** (474 + 8 new `InitiateVisitRequestV2CommandValidator` tests; 0 failures throughout).
 - ArchitectureTests **14/14**.
-- IntegrationTests **352/352** on a fresh disposable `pems_it_regression` recreated from the (Phase-D-updated)
-  PR-2 master (Phase-A read V2 classes + the full v2 write group: create service 11 + create command 3 +
-  public OTP verify 3 + pending-edit service 14 + pending-edit command 1 + resubmit service 6 + resubmit
-  command 1 + contact-claim workflow 7 = 46 v2 tests).
-  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_db/pems_pr3_test/pems_it_regression
-  v2_requests = 0, identity_changes = 0, claim tokens = 0; no live appsettings carries a PerCampusFormV2
+- IntegrationTests **378/378** (H-4 added 1 op-contact regression + 3 FileSink guard tests to the prior 374;
+  a first full run had 1 transient flake, hardened + rerun clean 378/0) on a fresh disposable
+  `pems_it_regression` recreated from the **fixed** master (v10, which now integrates pending_forms + the
+  op-contact nullability — H-1/H-4), run via the repo-root junction so the
+  WebApplicationFactory API tests resolve their content root (368 prior + **4 new G-4A**
+  `PublicInitiateVisitRequestV2Tests`: initiate-flag-off binds nothing, initiate→verify builds from the
+  bound snapshot, tampered-verify rejected creating nothing, verify-without-initiate rejected).
+  appsettings.Testing.json restored to `pems_test` (grep-verified); pems_pr3_test/pems_it_regression
+  v2_requests = 0, pending_forms = 0, identity_changes = 0; **pems_db and pems_test do NOT have the
+  `visit_request_pending_forms` table** (never mutated); no live appsettings carries a PerCampusFormV2
   section (both flags default OFF).
+- Frontend (end of G-4B): `npm run test:unit` (Vitest+RTL) **56/56** (10 new: 4 `resolvedFormToV2Schema`
+  hydration + 6 `EditVisitRequestV2Page`); `npm run lint` (tsc) 0 errors; `vite build` green.
+- G-4B backend read-model change verified: v2 read IntegrationTests (PerCampusFormV2Read + RequestDetailV2 +
+  EditableVisitRequestDetailV2) **23/23** with `ResolvedVisitFormDto.RowVersion` added.
 
 ## 6. Known limitations / notes
 - A **Dev merge** (`ae060dcf`) landed mid-session; the branch was later reorganized into clean functional
   commits (B-1 `1d056fd7`, B-2 `a5cb3977`). The merged tree is green, so Phase-A/B behavior is intact.
-- Phases B (create-v2 + B-2.5 close-out), C (pending-edit + resubmit) and D (INITIAL_CLAIM + cancel-3A +
-  expiry/redaction job) are **done**. Everything downstream (TRANSFER workflow, amendments/safe-edit,
-  list/search/report/export/email migration, frontend, E2E, contract cleanup) is **not yet implemented**;
-  §4 is the ready-to-execute spec, Phase E next.
-- Phase D scope note: the TRANSFER (owner→owner, 24h) state machine and the OTP_FALLBACK confirmation method
-  are deliberately deferred (plan treats them as separable; Product has not enabled non-Google confirmation).
-  The `06_up_identity_claim_tokens.sql` additive ENUM patch was applied to **pems_pr3_test** (the dedicated
-  direct-handler test DB) so claim tokens can be minted there; pems_db/pems_test remain untouched.
+- Phases B, C, D (incl. **D-4 TRANSFER 24h**), E (safe-edit + amendments + history), F (Class-C surface
+  migration + zero-unclassified report) and G (frontend G-1/G-2/G-3, with the two documented in-phase
+  deferrals: v2 edit-form page + v2 public initiate endpoint) are **done**; next: H (E2E/rollout
+  verification), then I (guarded contract-drop prep, disposable DB only).
+- **Public v2 OTP initiate gap — ✅ CLOSED by G-4A.** `POST /api/v2/visit-requests/initiate` now validates the
+  FULL v2 form (the same `VisitRequestFormDataV2Validator` as create-v2 — 30-minute minimum, zero support
+  members allowed — never the v1 3-hour / mandatory-support rules), mints the OTP via the existing primitive,
+  and BINDS the canonical v2 snapshot to the submit intent in `visit_request_pending_forms`. Verify now builds
+  the request from the BOUND snapshot (not the verify-time form): a client cannot change campus/member/contact/
+  time/content between initiate and verify (fingerprint-mismatch → stable `PER_CAMPUS_V2_SUBMISSION_FORM_MISMATCH`;
+  missing/expired/consumed binding → `PER_CAMPUS_V2_PENDING_NOT_FOUND`). The frontend public flow calls
+  initiate-v2 directly (the v1 projection is gone; no silent fallback). Both flags remain default OFF.
+- The G-1 commit `f9aa43f0` had been pushed to origin before its scope could be amended, so the correction
+  landed as the FORWARD commit `0cec2972` (App.tsx invitation routes + untracking the two internal planning
+  documents; the files remain in the worktree, local-only). History was not rewritten.
+- Phase D scope note: only the OTP_FALLBACK confirmation method remains deliberately deferred (Product has
+  not enabled non-Google confirmation; TRANSFER does not depend on it). The `06_up_identity_claim_tokens.sql`
+  and `07_up_transfer_tokens.sql` additive ENUM patches were applied to **pems_pr3_test** (the dedicated
+  direct-handler test DB) so claim/transfer tokens can be minted there; pems_db/pems_test remain untouched.
 - v2 create/edit notifications are post-commit **best-effort** (no outbox in the project): a rollback never
   notifies and an idempotent replay never re-notifies, but a crash between commit and dispatch can drop a
   notification — documented, not exactly-once.

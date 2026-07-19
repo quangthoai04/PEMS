@@ -35,6 +35,11 @@ public enum FilePurpose
     Document,
     MinutesAttachment,
     VisitRequestAttachment,
+    /// <summary>
+    /// Private delegation photo uploaded by an ACCEPTED Student participant (visit_photos). Stored on
+    /// Drive under <c>VisitRequestPhotoFolderId / VR-{visit_request_id} / {campus_code}</c>.
+    /// </summary>
+    VisitRequestPhoto,
     PartnerDocument,
     LogisticsAttachment,
     BusinessCard,
@@ -65,6 +70,7 @@ public static class FilePurposeDbValues
     public const string Document = "DOCUMENT";
     public const string MinutesAttachment = "MINUTES_ATTACHMENT";
     public const string VisitRequestAttachment = "VISIT_REQUEST_ATTACHMENT";
+    public const string VisitRequestPhoto = "VISIT_REQUEST_PHOTO";
     public const string PartnerDocument = "PARTNER_DOCUMENT";
     public const string LogisticsAttachment = "LOGISTICS_ATTACHMENT";
     public const string BusinessCard = "BUSINESS_CARD";
@@ -93,6 +99,7 @@ public static class FilePurposeExtensions
         FilePurpose.Document => FilePurposeDbValues.Document,
         FilePurpose.MinutesAttachment => FilePurposeDbValues.MinutesAttachment,
         FilePurpose.VisitRequestAttachment => FilePurposeDbValues.VisitRequestAttachment,
+        FilePurpose.VisitRequestPhoto => FilePurposeDbValues.VisitRequestPhoto,
         FilePurpose.PartnerDocument => FilePurposeDbValues.PartnerDocument,
         FilePurpose.LogisticsAttachment => FilePurposeDbValues.LogisticsAttachment,
         FilePurpose.BusinessCard => FilePurposeDbValues.BusinessCard,
@@ -117,6 +124,7 @@ public static class FilePurposeExtensions
         FilePurpose.Document => "documents",
         FilePurpose.MinutesAttachment => "minutes",
         FilePurpose.VisitRequestAttachment => "visit-requests",
+        FilePurpose.VisitRequestPhoto => "visit-photos",
         FilePurpose.PartnerDocument => "partners",
         FilePurpose.LogisticsAttachment => "logistics",
         FilePurpose.BusinessCard => "business-cards",

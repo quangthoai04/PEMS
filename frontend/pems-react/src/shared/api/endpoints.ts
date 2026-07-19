@@ -274,6 +274,13 @@ export const API_ENDPOINTS = {
     newParticipantCandidates: (minutesId: string | number) => `/meetingminutes/${minutesId}/new-participant-candidates`,
     userSearch: (visitInstanceId: string | number) => `/meetingminutes/visit-instances/${visitInstanceId}/user-search`,
   },
+  // Student visit photos (ảnh đoàn khách) — visit_photos/visit_photo_folders, độc lập Gallery.
+  visitPhotos: {
+    myFolders: '/visit-photos/folders',
+    byInstance: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}`,
+    upload: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/upload`,
+    remove: (visitPhotoId: string | number) => `/visit-photos/${visitPhotoId}/remove`,
+  },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {
     byInstance: (visitInstanceId: string | number) => `/news/visit-instances/${visitInstanceId}`,

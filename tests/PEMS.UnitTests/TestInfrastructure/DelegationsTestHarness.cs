@@ -32,7 +32,7 @@ namespace PEMS.UnitTests.TestInfrastructure;
 /// interface member EF never discovers, and reachable-but-unused aggregates are Ignored so model
 /// finalization succeeds. InMemory has no real transactions (warning suppressed).
 /// </summary>
-public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
+public class DelegationsTestDbContext : DbContext, IApplicationDbContext
 {
     public static DelegationsTestDbContext Create() =>
         new(new DbContextOptionsBuilder<DelegationsTestDbContext>()
@@ -51,6 +51,10 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitRequestCampus> VisitRequestCampuses => Set<VisitRequestCampus>();
     public DbSet<VisitParticipant> VisitParticipants => Set<VisitParticipant>();
     public DbSet<VisitLogisticsItem> VisitLogisticsItems => Set<VisitLogisticsItem>();
+    // Student visit photo storage slice (upload/list/remove handlers + folder service).
+    public DbSet<VisitPhotoFolder> VisitPhotoFolders => Set<VisitPhotoFolder>();
+    public DbSet<VisitPhoto> VisitPhotos => Set<VisitPhoto>();
+    public DbSet<UploadedFile> Files => Set<UploadedFile>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<SentEmail> SentEmails => Set<SentEmail>();
@@ -87,7 +91,6 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<OtpToken>();
         modelBuilder.Ignore<LoginLog>();
         modelBuilder.Ignore<SecurityEvent>();
-        modelBuilder.Ignore<UploadedFile>();
         modelBuilder.Ignore<Document>();
         modelBuilder.Ignore<Minute>();
         modelBuilder.Ignore<MinuteActionItem>();
@@ -150,6 +153,11 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
             .HasOne(t => t.SentEmailRecipient).WithMany().HasForeignKey(t => t.SentEmailRecipientId);
         modelBuilder.Entity<AuditLog>()
             .HasOne(a => a.ActorUser).WithMany().HasForeignKey(a => a.ActorUserId);
+
+        // NOTE: the DB unique keys of the visit-photo slice (one folder per request, one photo per
+        // files row) are NOT modeled here — the InMemory provider only enforces primary/alternate
+        // KEYS, not unique indexes. Tests that need the duplicate-key failure path simulate the
+        // DbUpdateException deterministically via a SaveChanges-failing subclass.
     }
 
     // ── Aggregates this slice never touches (NOT discovered by EF) ────────────
@@ -162,7 +170,6 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<PartnerContact> IApplicationDbContext.PartnerContacts => Set<PartnerContact>();
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
-    DbSet<UploadedFile> IApplicationDbContext.Files => Set<UploadedFile>();
     DbSet<Document> IApplicationDbContext.Documents => Set<Document>();
     DbSet<VisitGuestMember> IApplicationDbContext.VisitGuestMembers => Set<VisitGuestMember>();
     DbSet<VisitInstanceFormDetail> IApplicationDbContext.VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
@@ -173,6 +180,7 @@ public sealed class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitInstanceAmendmentChange> IApplicationDbContext.VisitInstanceAmendmentChanges => Set<VisitInstanceAmendmentChange>();
     DbSet<VisitInstanceFormRevisionHistory> IApplicationDbContext.VisitInstanceFormRevisionHistories => Set<VisitInstanceFormRevisionHistory>();
     DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
+    DbSet<VisitRequestPendingForm> IApplicationDbContext.VisitRequestPendingForms => Set<VisitRequestPendingForm>();
     DbSet<VisitAgenda> IApplicationDbContext.VisitAgendas => Set<VisitAgenda>();
     DbSet<VisitLogisticsItemHandover> IApplicationDbContext.VisitLogisticsItemHandovers => Set<VisitLogisticsItemHandover>();
     DbSet<VisitLogisticsAssignmentAttempt> IApplicationDbContext.VisitLogisticsAssignmentAttempts => Set<VisitLogisticsAssignmentAttempt>();

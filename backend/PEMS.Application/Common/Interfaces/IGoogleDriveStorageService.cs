@@ -41,4 +41,12 @@ public interface IGoogleDriveStorageService
 
     /// <summary>Best-effort delete of a Drive file (used to roll back an orphaned upload).</summary>
     Task DeleteAsync(string externalFileId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the id (and web view link) of the child folder named <paramref name="folderName"/>
+    /// under <paramref name="parentFolderId"/>, creating it when missing. Idempotent: an existing
+    /// (non-trashed) folder with the same name is reused, never duplicated.
+    /// </summary>
+    Task<GoogleDriveFolderResult> EnsureChildFolderAsync(
+        string folderName, string parentFolderId, CancellationToken cancellationToken = default);
 }

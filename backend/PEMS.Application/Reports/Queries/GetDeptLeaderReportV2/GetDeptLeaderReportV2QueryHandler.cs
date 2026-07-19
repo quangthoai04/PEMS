@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Shared;
@@ -57,7 +58,11 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                     ci.PlannedStartAt,
                     ci.PlannedEndAt,
                     ci.VisitRequest.RequestCode,
-                    ci.VisitRequest.DelegationName,
+                    // Instance row: mixed v2 shows THIS instance's detail name.
+                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                     && ci.VisitRequest.HasMixedCampusDetails
+                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                        : ci.VisitRequest.DelegationName,
                 })
             .ToListAsync(cancellationToken);
 
@@ -78,7 +83,11 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                     PlannedStartAt = startAt,
                     PlannedEndAt = endAt,
                     ci.VisitRequest.RequestCode,
-                    ci.VisitRequest.DelegationName,
+                    // Instance row: mixed v2 shows THIS instance's detail name.
+                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                     && ci.VisitRequest.HasMixedCampusDetails
+                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
+                        : ci.VisitRequest.DelegationName,
                 })
             .ToListAsync(cancellationToken);
 
@@ -230,6 +239,42 @@ public sealed class GetDeptLeaderReportV2QueryHandler
             .Select(d => d.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"Phòng ban #{deptId}";
 
+        // ═══ Phần 4: Thống kê chi phí ═══════════════════════════════════════
+        var expenseReports = await (
+                from r in _db.VisitExpenseReports.AsNoTracking()
+                where r.ReportScope == "LOGISTICS" && r.DepartmentId == deptId && r.Status != "CANCELLED"
+                join ci in _db.VisitRequestCampuses.AsNoTracking() on r.VisitInstanceId equals ci.VisitInstanceId
+                where ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive
+                join item in _db.VisitExpenseItems.AsNoTracking() on r.ExpenseReportId equals item.ExpenseReportId
+                join li in _db.VisitLogisticsItems.AsNoTracking() on r.LogisticsItemId equals (ulong?)li.LogisticsItemId
+                group new { r, item, ci, li } by new { r.LogisticsItemId, GroupCode = ci.VisitRequest.RequestCode, li.Title, ci.PlannedStartAt, r.Status } into g
+                select new
+                {
+                    LogisticsItemId = g.Key.LogisticsItemId!.Value,
+                    GroupCode = g.Key.GroupCode,
+                    ItemName = g.Key.Title,
+                    VisitDate = g.Key.PlannedStartAt,
+                    Status = g.Key.Status,
+                    Total = g.Sum(x => x.item.Quantity * x.item.UnitPrice)
+                }
+            ).ToListAsync(cancellationToken);
+
+        var expenseRows = expenseReports.Select(e => new DeptLeaderV2ExpenseRow
+        {
+            LogisticsItemId = e.LogisticsItemId,
+            GroupCode = e.GroupCode,
+            ItemName = e.ItemName,
+            VisitDate = e.VisitDate,
+            TotalExpense = e.Total,
+            Status = e.Status == "FINALIZED" ? "ĐÃ CHỐT" : e.Status == "SAVED" ? "ĐÃ LƯU" : "BẢN NHÁP"
+        }).OrderByDescending(r => r.VisitDate).ToList();
+
+        var expensesSection = new DeptLeaderV2Expenses
+        {
+            TotalAmount = expenseRows.Sum(r => r.TotalExpense),
+            Rows = expenseRows
+        };
+
         return new DeptLeaderReportV2Dto
         {
             GeneratedAt = nowVn,
@@ -239,6 +284,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
             ToDate = toVnExclusive.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Tasks = tasks,
             Personnel = personnel,
+            Expenses = expensesSection
         };
     }
 }
