@@ -462,27 +462,40 @@ byte-identical when the flags are OFF.
   to both campuses) survives on the sibling and that active members do not move before approval. Vitest **+4**,
   amendment IT **5/5**.
 - **Slice 5A — version-aware shared detail modal** — ✅ DONE (`213a9b3c`). Audit map of the shared flat
-  `SubmittedVisitRequestDetailModal` call sites (6): `VisitRequestManagement` (×2) already routes v2 to the v2
-  detail route and returns BEFORE opening the modal (`resolveVisitRowRoutes`); the 5 read-only sites
-  (`HoVisitProcessDetail`, `VisitParticipantInvitationDetail`, `StaffCalendarTab`, `StaffLeaderTaskModal`,
-  `StaffTasksTab`) opened the flat modal with NO version check. Central fix: exposed `form_schema_version` on the
-  flat `SubmittedVisitRequestFormDetailDto` (backend projection) and branched the shared modal to
+  `SubmittedVisitRequestDetailModal` — **6 components / 7 production invocation sites**: `VisitRequestManagement`
+  (2 invocations) already routes v2 to the v2 detail route and returns BEFORE opening the modal
+  (`resolveVisitRowRoutes`); the 5 read-only components (1 invocation each — `HoVisitProcessDetail`,
+  `VisitParticipantInvitationDetail`, `StaffCalendarTab`, `StaffLeaderTaskModal`, `StaffTasksTab`) opened the flat
+  modal with NO version check. Central fix: exposed `form_schema_version` on the flat
+  `SubmittedVisitRequestFormDetailDto` (backend projection) and branched the shared modal to
   `VisitRequestV2DetailView` whenever the request is v2 — including a UNIFORM v2 request that looks flat. The
   version drives the choice (caller prop → fetched field → v1 upgrade-required 409), never scope/campus-count/mixed
-  flag; missing version fails safe to v1. **Zero-unclassified sweep:** every call site now resolves v1↔v2 through
+  flag; missing version fails safe to v1. **Zero-unclassified sweep:** all 7 invocations now resolve v1↔v2 through
   the central modal (no v2 request opens the flat v1 UI). Backend projection assertion added to
   `SubmittedVisitRequestFormDetailV2Tests` (flat detail IT **12/12**); frontend branch tests **5/5**.
-- **Slices 5B (search matchedContexts) / 6 (auth Journey B–H real-stack) / Phase I** — ⬜ deferred (see resume point).
-- **Session gates (real, after Slice 5A, HEAD `213a9b3c`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
-  full `PEMS.IntegrationTests` **392/392** on freshly-built disposable `pems_it_regression`
+- **Slice 5B — scope-safe search match contexts** — ✅ DONE (`3b9af03a`). Audit: `ViewGuestDelegationListQueryHandler`
+  has two paths — instance-level (Staff Leader/Staff/Dept/Student: one row per authorized instance) and request-level
+  (Visitor owner/HO/registrant: full campus visibility of own request). Both already do
+  scope→keyword→count→order→pagination in SQL. New `VisitSearchMatchContextBuilder` computes `matchedContexts`
+  **in memory AFTER pagination**, over each row's already-authorized campuses only — so a context can never change
+  hit/count/order and a hidden sibling campus never appears. Fields mirror each path's keyword predicate exactly
+  (instance-level also has campus/host/owner; request-level only delegation/code/reg-org/partner); stable CODES
+  (`VisitSearchFieldCodes`), never raw snippets/PII; guest/support names excluded. Request-level path gains
+  `+ ThenInclude(FormDetail)` for per-campus delegation (all campuses authorized there). FE `SearchMatchContexts`
+  renders "Khớp tại: [Campus | Thông tin chung] — [field]" (VI/EN, unknown-code fallback), wired into the
+  management list row. Security ITs (hidden-sibling no-leak + count parity, one row/multi-campus contexts,
+  request-level match, guest-name excluded) → `V2MixedListSurfacesTests` **6/6**; FE component tests **5/5**.
+- **Slice 6 (auth Journey B–H real-stack) / Phase I** — ⬜ deferred (see resume point).
+- **Session gates (real, after Slice 5B, HEAD `3b9af03a`)** — `PEMS.UnitTests` **510/510** · Architecture **14/14** ·
+  full `PEMS.IntegrationTests` **395/395** on freshly-built disposable `pems_it_regression`
   (V11 master `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored byte-exact to
-  pems_test) · Vitest **94** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
-  test rows/amendments; `pems_db`/`pems_test` never connected to. Feature flags stay default OFF. No manual
-  push/merge/PR this session.
-- **Resume point** — Slice 5B: add `matchedContexts` to `ViewGuestDelegationListQueryHandler` (984-line, two paths)
-  — scope-before-keyword, per-authorized-campus field codes, zero hidden-campus leak on hit/count/order,
-  guest/support names not searched by default; FE "Khớp tại: [Campus] — [field]"; backend security ITs. Then
-  Slice 6 (TestAuthHandler → real-stack B–H) and Phase I (guarded contract-drop on disposable only).
+  pems_test) · Vitest **99** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
+  test rows (LS/amendment/v2 all 0); `pems_db`/`pems_test` never connected to. Feature flags stay default OFF. No
+  manual push/merge/PR this session.
+- **Resume point** — Slice 6: wire `tests/PEMS.IntegrationTests/TestInfrastructure/TestAuthHandler.cs` into the
+  published host (env=Testing + `PEMS_E2E_TEST_AUTH_ENABLED` + run-scoped secret, fail-closed; server-side seeded
+  profiles) + guard tests → real-stack authenticated Journeys B–H (extend the H-4 orchestration). Then Phase I
+  (guarded contract-drop prep on disposable DBs only).
 
 ## Phase I — contract cleanup prep (guarded, never run on real DB) — ⬜ pending
 

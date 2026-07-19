@@ -52,24 +52,30 @@ closed the first three cutover slices (each committed + gated independently; aut
 | S0 | restore `PEMS.UnitTests` compile — implement the 3 `VisitExpense*` DbSet members in the 4 EF InMemory test doubles the Dev expense-stats merge left unimplemented (no production/test-behaviour change) | `7895be2d` | Unit **510/510** |
 | 4 | **allowedActions-driven UI + safe-edit/amendment workflows**. Backend: read model computes real actions (request `EDIT_PENDING`/`RESUBMIT`/`SUBMIT_SAFE_EDIT`; per-instance `SUBMIT`/`WITHDRAW`/`APPROVE`/`REJECT_AMENDMENT`) mirroring handler auth. FE: `VisitRequestV2DetailView` gates all mutation UI on `allowedActions` (never relation/status) + new `VisitAmendmentSubmitModal` + `VisitSafeEditModal` | `603abd46` + `e30ad6a2` | read-model auth IT **+6** (17/17) · Vitest **+6** |
 | 4.1 | **v2 member-list amendments** — close the Slice-4 gap. Backend already diffs + copy-on-write-replaces members on approve; the gap was the FE editor. Added a guest/support editor to `VisitAmendmentSubmitModal` (deep-clone, stable keys, add/edit/remove, active-vs-proposed diff, ≥1-visitor guard), scoped to the selected instance. New IT proves a LEGACY shared member (both campuses) survives on the sibling + active members don't move before approval | `32f9ba25` | amendment IT **5/5** · Vitest **+4** |
-| 5A | **version-aware shared detail modal**. Exposed `form_schema_version` on the flat `SubmittedVisitRequestFormDetailDto`; branched `SubmittedVisitRequestDetailModal` to `VisitRequestV2DetailView` for any v2 request (incl. uniform-looking v2) driven by version (prop → fetched field → v1 409), never scope/mixed flag; missing → v1. Fixes the 5 read-only call sites (HO, participant, 3 staff tabs) centrally | `213a9b3c` | flat-detail IT **12/12** · Vitest **+5** |
+| 5A | **version-aware shared detail modal**. Exposed `form_schema_version` on the flat `SubmittedVisitRequestFormDetailDto`; branched `SubmittedVisitRequestDetailModal` to `VisitRequestV2DetailView` for any v2 request (incl. uniform-looking v2) driven by version (prop → fetched field → v1 409), never scope/mixed flag; missing → v1. Fixes the 5 read-only invocations (HO, participant, 3 staff tabs) centrally | `213a9b3c` | flat-detail IT **12/12** · Vitest **+5** |
+| 5B | **scope-safe search match contexts**. `VisitSearchMatchContextBuilder` computes `matchedContexts` in memory AFTER SQL scope→keyword→count→order→pagination, over each row's already-authorized campuses only — cannot change hit/count/order, no hidden-sibling leak; stable field CODES (no PII), guest/support excluded. FE `SearchMatchContexts` renders "Khớp tại: [Campus | Thông tin chung] — [field]" (VI/EN) wired into the management row | `3b9af03a` | security IT **6/6** (`V2MixedListSurfacesTests`) · Vitest **+5** |
 
-**Session gates (real, HEAD `213a9b3c`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
-`PEMS.IntegrationTests` **392/392** on freshly-built disposable `pems_it_regression` (V11 master
+**Session gates (real, HEAD `3b9af03a`):** `PEMS.UnitTests` **510/510** · Architecture **14/14** · full
+`PEMS.IntegrationTests` **395/395** on freshly-built disposable `pems_it_regression` (V11 master
 `PEMS_FULL_V11_EXPENSE_COMPATIBILITY_FIXED_V3.sql`, 76 tables; appsettings trap-restored **byte-exact** to
-pems_test) · Vitest **94** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
-rows/amendments; `pems_db`/`pems_test` never connected to. Both v2 flags stay default OFF.
+pems_test) · Vitest **99** · tsc 0 · build ✓. Disposable dropped after the run; `pems_pr3_test` verified 0 leaked
+rows (LS/amendment/v2 all 0); `pems_db`/`pems_test` never connected to. Both v2 flags stay default OFF.
 
-**Slice 5A audit map (zero-unclassified):** the 6 `SubmittedVisitRequestDetailModal` call sites — `VisitRequestManagement`
-(×2) already route v2 to the v2 detail route BEFORE opening the modal; the 5 read-only sites (`HoVisitProcessDetail`,
-`VisitParticipantInvitationDetail`, `StaffCalendarTab`, `StaffLeaderTaskModal`, `StaffTasksTab`) now branch to the v2
-UI centrally through the version-aware modal. No v2 request opens the flat v1 UI on any surface.
+**Slice 5A audit map (zero-unclassified):** `SubmittedVisitRequestDetailModal` = **6 components / 7 production invocation
+sites**. `VisitRequestManagement` (2 invocations) already routes v2 to the v2 detail route BEFORE opening the modal; the
+5 read-only components (1 invocation each — `HoVisitProcessDetail`, `VisitParticipantInvitationDetail`,
+`StaffCalendarTab`, `StaffLeaderTaskModal`, `StaffTasksTab`) now branch to the v2 UI centrally through the version-aware
+modal. No v2 request opens the flat v1 UI on any of the 7 invocations.
 
-**Deferred:** Slice 5B — scoped search `matchedContexts` on `ViewGuestDelegationListQueryHandler` (984-line, two paths):
-scope-before-keyword, per-authorized-campus field codes, zero hidden-campus leak on hit/count/order, guest/support
-excluded by default; FE "Khớp tại: [Campus] — [field]"; backend security ITs. Slice 6 — authenticated Journey B–H
-real-stack (needs `TestAuthHandler` wired fail-closed into the published host). Phase I — guarded contract-drop prep on
-disposable DBs only. (Slice 4's member-list gap is now closed by Slice 4.1.)
+**Slice 5B no-leak evidence:** `ViewGuestDelegationListQueryHandler`'s two paths already scope→keyword→count→order→page
+in SQL; match contexts are a post-page, in-memory enrichment over each row's authorized campuses (instance-level = the
+single row instance; request-level = all of the owner/HO/registrant's own campuses). Security ITs prove a keyword that
+exists only on a hidden sibling campus neither surfaces the request nor changes the count, a request matching multiple
+authorized campuses returns ONE row with a context per campus, a request-level match is not attributed to a campus, and
+a guest member name produces no row.
+
+**Deferred:** Slice 6 — authenticated Journey B–H real-stack (needs `TestAuthHandler` wired fail-closed into the
+published host + guard tests + orchestration extension). Phase I — guarded contract-drop prep on disposable DBs only.
 
 ## 2. Safety invariants (all holding)
 
