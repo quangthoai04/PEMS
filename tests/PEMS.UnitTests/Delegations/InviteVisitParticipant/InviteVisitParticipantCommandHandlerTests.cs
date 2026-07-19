@@ -28,9 +28,12 @@ public class InviteVisitParticipantCommandHandlerTests
 
         var user = new FakeDelegationsCurrentUser();
         var mocks = new DelegationsHandlerMocks();
+        // v1 test data (FormSchemaVersion = Legacy) never enters the v2 branch, so the form-read resolver
+        // is never invoked — a bare mock is sufficient.
+        var formRead = new Mock<PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService>();
         var handler = new InviteVisitParticipantCommandHandler(
             db, user, mocks.Clock, mocks.Email.Object, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object);
+            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object);
         return (db, handler, user, mocks);
     }
 

@@ -87,7 +87,11 @@ public static class ScheduleConflictResolver
                 c.VisitInstanceId,
                 c.PlannedStartAt,
                 c.PlannedEndAt,
-                DelegationName = c.VisitRequest.DelegationName,
+                // Conflict label: mixed v2 shows the BUSY instance's own detail name.
+                DelegationName = c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                 && c.VisitRequest.HasMixedCampusDetails
+                    ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
+                    : c.VisitRequest.DelegationName,
             })
             .ToListAsync(cancellationToken);
 
@@ -111,7 +115,11 @@ public static class ScheduleConflictResolver
                 c.VisitInstanceId,
                 c.PlannedStartAt,
                 c.PlannedEndAt,
-                DelegationName = c.VisitRequest.DelegationName,
+                // Conflict label: mixed v2 shows the BUSY instance's own detail name.
+                DelegationName = c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                 && c.VisitRequest.HasMixedCampusDetails
+                    ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
+                    : c.VisitRequest.DelegationName,
             }).ToListAsync(cancellationToken);
 
         // Merge host + participant instance busyness, deduped per (user, instance).

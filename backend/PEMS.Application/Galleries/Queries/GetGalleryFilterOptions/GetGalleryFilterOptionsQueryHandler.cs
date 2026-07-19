@@ -11,7 +11,7 @@ namespace PEMS.Application.Galleries.Queries.GetGalleryFilterOptions;
 
 /// <summary>
 /// Loads all areas + locations of the caller's campus (both ACTIVE and INACTIVE, so filters stay
-/// complete) ordered by display order. The upload modal restricts itself to ACTIVE ones client-side;
+/// complete) ordered by add-order (earliest created first). The upload modal restricts itself to ACTIVE ones client-side;
 /// the Add/Edit handlers re-validate on the server (<see cref="GalleryLocationGuard"/>).
 /// </summary>
 public sealed class GetGalleryFilterOptionsQueryHandler
@@ -31,9 +31,10 @@ public sealed class GetGalleryFilterOptionsQueryHandler
     {
         var campusId = StaffLeaderGalleryScope.EnsureStaffLeaderCampus(_currentUser);
 
+        // Ordered by add-order (earliest created first, latest last) via the auto-increment id.
         var areas = await _db.GalleryAreas.AsNoTracking()
             .Where(a => a.CampusId == campusId)
-            .OrderBy(a => a.DisplayOrder).ThenBy(a => a.AreaName)
+            .OrderBy(a => a.AreaId)
             .Select(a => new { a.AreaId, a.AreaName, a.Status, a.CoverFileId })
             .ToListAsync(cancellationToken);
 
@@ -52,7 +53,7 @@ public sealed class GetGalleryFilterOptionsQueryHandler
             ? new List<LocationRow>()
             : await _db.GalleryLocations.AsNoTracking()
                 .Where(l => areaIds.Contains(l.AreaId))
-                .OrderBy(l => l.DisplayOrder).ThenBy(l => l.LocationName)
+                .OrderBy(l => l.LocationId)
                 .Select(l => new LocationRow
                 {
                     AreaId = l.AreaId,

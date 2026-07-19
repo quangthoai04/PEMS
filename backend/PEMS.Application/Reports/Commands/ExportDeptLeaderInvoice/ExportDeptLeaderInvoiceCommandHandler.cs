@@ -8,8 +8,10 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
+using PEMS.Domain.Constants;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -33,11 +35,14 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
 
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IVisitFormReadService _formReadService;
 
-    public ExportDeptLeaderInvoiceCommandHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public ExportDeptLeaderInvoiceCommandHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, IVisitFormReadService formReadService)
     {
         _db = db;
         _currentUser = currentUser;
+        _formReadService = formReadService;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -57,8 +62,10 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
             .Select(ci => new
             {
                 ci.VisitInstanceId,
+                ci.VisitRequestId,
                 ci.VisitRequest.RequestCode,
                 ci.VisitRequest.DelegationName,
+                ci.VisitRequest.FormSchemaVersion,
                 ci.PlannedStartAt,
                 ci.PlannedEndAt,
                 ci.CurrentHostUserId,
@@ -66,6 +73,19 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
             .FirstOrDefaultAsync(cancellationToken);
         if (visit == null)
             throw new NotFoundException("Không tìm thấy chuyến thăm trong phạm vi phòng ban của bạn.");
+
+        // This invoice is for ONE campus instance → v2 (incl. mixed) stamps THIS instance's per-campus
+        // delegation name into the PDF (never the global field, never a sibling); v1 keeps the global value,
+        // byte-identical. No global fallback for v2 (missing detail → the standard 409).
+        var delegationName = visit.DelegationName;
+        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        {
+            var visitEntity = await _db.VisitRequests.AsNoTracking()
+                .FirstAsync(v => v.VisitRequestId == visit.VisitRequestId, cancellationToken);
+            var formContent = await _formReadService.ResolveCampusFormContentAsync(
+                visitEntity, new[] { visit.VisitInstanceId }, cancellationToken);
+            delegationName = formContent[visit.VisitInstanceId].DelegationName;
+        }
 
         // Re-read the requested items from the DB — quantity always comes from the host request.
         var requestedIds = request.Items.Select(i => i.LogisticsItemId).Distinct().ToList();
@@ -123,7 +143,7 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
             GeneratedByName = generatedByName ?? "—",
             DepartmentName = deptInfo?.Name ?? $"Phòng ban #{deptId}",
             CampusName = deptInfo?.CampusName ?? "—",
-            DelegationName = visit.DelegationName,
+            DelegationName = delegationName,
             RequestCode = visit.RequestCode,
             VisitDate = $"{visit.PlannedStartAt:dd/MM/yyyy} – {visit.PlannedEndAt:dd/MM/yyyy}",
             HostName = hostName ?? "—",

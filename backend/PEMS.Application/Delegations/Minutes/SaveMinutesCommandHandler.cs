@@ -95,7 +95,10 @@ public sealed class SaveMinutesCommandHandler
         await tx.CommitAsync(cancellationToken);
 
         var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
-        string delegationName = instance.VisitRequest?.DelegationName ?? "Đoàn khách";
+        // Mixed per-campus v2: notification text uses THIS instance's detail name.
+        string delegationName = (await Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(instance.VisitInstanceId) ?? "Đoàn khách";
         string title = request.Title.Trim();
         var minutesActionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 

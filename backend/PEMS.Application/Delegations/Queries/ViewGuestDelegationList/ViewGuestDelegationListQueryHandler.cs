@@ -207,11 +207,24 @@ public sealed class ViewGuestDelegationListQueryHandler
         // â”€â”€ Common filters â”€â”€
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
+            // Scope-before-keyword: q is already reduced to the staff actor's own campus/instances above.
+            // Mixed per-campus v2 rows match on THIS instance's detail name — never the global projection,
+            // never a hidden sibling campus's content.
             var keyword = request.Keyword.ToLower();
             q = q.Where(x =>
-                (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword)) ||
+                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails)
+                    ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
+                    : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)) ||
                 (x.vr.RegistrantOrganization != null && x.vr.RegistrantOrganization.ToLower().Contains(keyword)) ||
+                (x.vr.RegistrantFullName != null && x.vr.RegistrantFullName.ToLower().Contains(keyword)) ||
+                (x.vr.RegistrantNationality != null && x.vr.RegistrantNationality.ToLower().Contains(keyword)) ||
+                (x.vr.RegistrantJobTitle != null && x.vr.RegistrantJobTitle.ToLower().Contains(keyword)) ||
+                x.vr.GuestMembers.Any(gm => 
+                    (gm.FullName != null && gm.FullName.ToLower().Contains(keyword)) ||
+                    (gm.JobTitle != null && gm.JobTitle.ToLower().Contains(keyword)) ||
+                    (gm.Organization != null && gm.Organization.ToLower().Contains(keyword))
+                ) ||
                 _context.Partners.Any(p => p.PartnerId == x.vr.PartnerId && p.Name != null && p.Name.ToLower().Contains(keyword)) ||
                 _context.Campuses.Any(cc => cc.CampusId == x.c.CampusId && cc.Name.ToLower().Contains(keyword)) ||
                 _context.Users.Any(u => u.UserId == x.c.CurrentHostUserId && u.FullName.ToLower().Contains(keyword)) ||
@@ -335,7 +348,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CampusCancellationSource = x.c.CancellationSource,
                 CampusCancelledBy = x.c.CancelledBy,
                 x.vr.RequestCode,
-                x.vr.DelegationName,
+                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
+                    : x.vr.DelegationName,
                 x.vr.PartnerId,
                 x.vr.RegistrantOrganization,
                 RequestStatus = x.vr.Status,
@@ -495,11 +510,25 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
+            // Visitor tabs: the actor is the registrant/contact, so EVERY campus of their own request is
+            // in scope — a mixed v2 request matches when ANY of its per-campus details matches (the
+            // global projection is never business content for mixed requests).
             var kw = request.Keyword.ToLower();
             q = q.Where(vr =>
-                (vr.DelegationName != null && vr.DelegationName.ToLower().Contains(kw)) ||
+                ((vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails)
+                    ? vr.CampusInstances.Any(ci => ci.FormDetail != null
+                        && ci.FormDetail.DelegationName.ToLower().Contains(kw))
+                    : (vr.DelegationName != null && vr.DelegationName.ToLower().Contains(kw))) ||
                 (vr.RequestCode != null && vr.RequestCode.ToLower().Contains(kw)) ||
                 (vr.RegistrantOrganization != null && vr.RegistrantOrganization.ToLower().Contains(kw)) ||
+                (vr.RegistrantFullName != null && vr.RegistrantFullName.ToLower().Contains(kw)) ||
+                (vr.RegistrantNationality != null && vr.RegistrantNationality.ToLower().Contains(kw)) ||
+                (vr.RegistrantJobTitle != null && vr.RegistrantJobTitle.ToLower().Contains(kw)) ||
+                vr.GuestMembers.Any(gm => 
+                    (gm.FullName != null && gm.FullName.ToLower().Contains(kw)) ||
+                    (gm.JobTitle != null && gm.JobTitle.ToLower().Contains(kw)) ||
+                    (gm.Organization != null && gm.Organization.ToLower().Contains(kw))
+                ) ||
                 (vr.Partner != null && vr.Partner.Name != null && vr.Partner.Name.ToLower().Contains(kw)));
         }
 
@@ -645,17 +674,20 @@ public sealed class ViewGuestDelegationListQueryHandler
                 && count > 0
                 && instances.All(i => i.Status == VisitInstanceStatus.Rejected);
 
-            // Cancel-eligibility (UC-136): APPROVED/PARTIALLY_APPROVED request + an instance still
-            // in a cancellable status and not yet started. Computed here (we have all instances)
-            // so the frontend never has to infer it from a multi-campus summary row.
+            // Cancel-eligibility (UC-136): REQUEST level.
+            // Rule 1: Visitor can cancel the whole request only if ALL active campuses are cancellable
+            // (i.e. status is Waiting/Assigned/BeforeVisit AND >= 24h).
+            var activeInstances = instances.Where(i => i.Status != VisitInstanceStatus.Cancelled && i.Status != VisitInstanceStatus.Rejected).ToList();
+            bool hasStartedCampus = activeInstances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
+            
             bool hasCancellableInstance = !registeredView
-                && (vr.Status == VisitRequestStatuses.Approved
-                    || vr.Status == VisitRequestStatuses.PartiallyApproved)
-                && instances.Any(i =>
-                    (i.Status == VisitInstanceStatus.Assigned
+                && activeInstances.Any()
+                && !hasStartedCampus
+                && activeInstances.All(i =>
+                    (i.Status == VisitInstanceStatus.WaitingRequestApproval
+                        || i.Status == VisitInstanceStatus.Assigned
                         || i.Status == VisitInstanceStatus.BeforeVisit)
-                    && i.PlannedStartAt > nowForCancel);
-            bool hasStartedCampus = instances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
+                    && i.PlannedStartAt >= vnNow.AddHours(24));
 
             string? campusName = single != null && campusNames.TryGetValue(single.CampusId, out var cnm) ? cnm
                 : count > 1 ? $"{count} cơ sở"
@@ -689,16 +721,17 @@ public sealed class ViewGuestDelegationListQueryHandler
             // instance, with backend-computed action booleans. Only the Visitor owner may cancel,
             // and only when the request is APPROVED and the instance is still cancellable. ──
             bool isVisitor = roleCode == RoleCodes.Visitor;
-            bool isVisitorOwner = !registeredView && isVisitor && vr.VisitorUserId == userId;
+            bool isVisitorOwner = !registeredView && isVisitor && (vr.VisitorUserId == userId || (vr.VisitorUserId == null && vr.CreatedBy == userId));
             var campusProgressItems = instances
                 .OrderBy(i => i.PlannedStartAt)
                 .Select(i =>
                 {
                     bool instanceCancellable = (vr.Status == VisitRequestStatuses.Approved
                             || vr.Status == VisitRequestStatuses.PartiallyApproved)
-                        && (i.Status == VisitInstanceStatus.Assigned
+                        && (i.Status == VisitInstanceStatus.WaitingRequestApproval
+                            || i.Status == VisitInstanceStatus.Assigned
                             || i.Status == VisitInstanceStatus.BeforeVisit)
-                        && i.PlannedStartAt > nowForCancel;
+                        && i.PlannedStartAt >= vnNow.AddHours(24);
                     return new CampusProgressItemDto
                     {
                         VisitInstanceId = i.VisitInstanceId,
@@ -738,7 +771,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                 VisitRequestId = vr.VisitRequestId,
                 VisitInstanceId = single?.VisitInstanceId,
                 RequestCode = vr.RequestCode,
-                DelegationName = vr.DelegationName,
+                // A request-level row cannot represent a MIXED v2 request with one name — the projection
+                // (smallest campus) is never shown as business content; the row is explicitly labeled and
+                // the per-campus names live in the campus progress items/detail view (plan §8.3).
+                DelegationName = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : vr.DelegationName,
                 PartnerName = vr.Partner != null ? vr.Partner.Name : vr.RegistrantOrganization,
                 RequestStatus = vr.Status,
                 CampusStatus = single?.Status,
@@ -826,6 +864,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool sameCampus = item.CampusId.HasValue && primaryCampusId.HasValue && item.CampusId == primaryCampusId;
         bool requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
+        bool isVisitorOwner = isVisitor && (item.VisitorUserId == userId || (item.VisitorUserId == null && item.CreatedByUserId == userId));
 
         // HO never approves/rejects anymore (campus-independent approval) — monitor/read-only.
 
@@ -841,7 +880,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         // Visitor — edit a still-fully-pending request / resubmit a fully-rejected one.
         // Eligibility (status + 24h window) is precomputed per row in QueryRequestLevelAsync;
         // the commands re-validate everything server-side.
-        if (isVisitor && item.VisitorUserId == userId)
+        if (isVisitorOwner)
         {
             if (item.CanEditPending)
                 actions.Add("EDIT_PENDING_REQUEST");
@@ -850,24 +889,20 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         // Visitor — self-cancel own request (UC-136).
-        if (isVisitor && item.VisitorUserId == userId)
+        if (isVisitorOwner)
         {
             if (item.RequestStatus == VisitRequestStatuses.PendingApproval)
             {
-                // PENDING_APPROVAL: can cancel whole request
-                actions.Add("CANCEL_BY_VISITOR");
+                if (item.HasCancellableInstance)
+                {
+                    actions.Add("CANCEL_BY_VISITOR");
+                }
             }
             else if (item.RequestStatus == VisitRequestStatuses.Approved
                      || item.RequestStatus == VisitRequestStatuses.PartiallyApproved)
             {
-                if (isSingle && item.HasCancellableInstance)
+                if (item.HasCancellableInstance)
                 {
-                    // SINGLE_CAMPUS: cancel if campus hasn't started
-                    actions.Add("CANCEL_BY_VISITOR");
-                }
-                else if (isMulti && !item.HasStartedCampus && item.HasCancellableInstance)
-                {
-                    // MULTI_CAMPUS: cancel WHOLE request only if NO campus has started
                     actions.Add("CANCEL_BY_VISITOR");
                 }
             }

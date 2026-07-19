@@ -156,7 +156,10 @@ public sealed class SaveVisitAgendaCommandHandler
         await tx.CommitAsync(cancellationToken);
 
         var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
-        string delegationName = instance.VisitRequest?.DelegationName ?? "Đoàn khách";
+        // Mixed per-campus v2: notification text uses THIS instance's detail name.
+        string delegationName = (await Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(instance.VisitInstanceId) ?? "Đoàn khách";
         var agendaActionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 
         // Notify Accepted participants

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Galleries.Public.Queries.GetPublicCampuses;
 using PEMS.Application.Galleries.Public.Queries.GetPublicCampusNavigation;
+using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryItemAudio;
 using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryItemDetail;
 using PEMS.Application.Galleries.Public.Queries.GetPublicGalleryMediaStream;
 using PEMS.Application.Galleries.Public.Queries.GetPublicLocationGalleryItem;
@@ -60,6 +61,48 @@ namespace PEMS.Api.Controllers
         [HttpGet("gallery-items/{galleryItemId:long}")]
         public async Task<IActionResult> GetGalleryItemDetail(long galleryItemId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new GetPublicGalleryItemDetailQuery(galleryItemId), cancellationToken));
+
+        // Bilingual narration audio behind the public speaker icon. The file is resolved from the item id
+        // + language (vi/en) server-side — never a client fileId — and only served when the item is
+        // public-visible. Streams the bytes (range-aware) exactly like the media proxy.
+        [HttpGet("gallery-items/{galleryItemId:long}/audio/{languageCode}")]
+        public async Task<IActionResult> GetGalleryItemAudio(
+            long galleryItemId, string languageCode, CancellationToken cancellationToken)
+        {
+            long? rangeFrom = null, rangeTo = null;
+            var typedRange = Request.GetTypedHeaders().Range;
+            if (typedRange is { Ranges.Count: 1 })
+            {
+                var r = typedRange.Ranges.First();
+                rangeFrom = r.From;
+                rangeTo = r.To;
+            }
+
+            var result = await _mediator.Send(
+                new GetPublicGalleryItemAudioQuery(galleryItemId, languageCode, rangeFrom, rangeTo), cancellationToken);
+
+            await using (result)
+            {
+                Response.Headers.CacheControl = "public, max-age=3600";
+                if (result.SupportsRange)
+                    Response.Headers.AcceptRanges = "bytes";
+                Response.ContentType = result.ContentType;
+
+                if (result.IsPartial)
+                {
+                    Response.StatusCode = StatusCodes.Status206PartialContent;
+                    if (result.TotalLength is { } total)
+                        Response.Headers.ContentRange = $"bytes {result.RangeStart}-{result.RangeEnd}/{total}";
+                }
+
+                if (result.ContentLength is { } len)
+                    Response.ContentLength = len;
+
+                await result.Stream.CopyToAsync(Response.Body, cancellationToken);
+            }
+
+            return new EmptyResult();
+        }
 
         // Gallery-scoped public file proxy (images / audio / area cover video). Streams the bytes and
         // honours an HTTP Range request (206 Partial Content) so an area cover MP4 can seek without the

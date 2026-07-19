@@ -87,6 +87,13 @@ public sealed class EmailService : IEmailService
         var fromName  = smtp["FromName"] ?? "PEMS";
         message.From = new MailAddress(fromEmail, fromName);
 
+        var replyToEmail = smtp["ReplyToEmail"];
+        var replyToName = smtp["ReplyToName"] ?? "PEMS";
+        if (!string.IsNullOrWhiteSpace(replyToEmail))
+        {
+            message.ReplyToList.Add(new MailAddress(replyToEmail, replyToName));
+        }
+
         var to = message.To.Count > 0 ? message.To[0].Address : "(none)";
 
         if (!enabled)

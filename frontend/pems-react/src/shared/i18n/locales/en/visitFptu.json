@@ -34,14 +34,14 @@
       "zoomIn": "Zoom in",
       "share": "Share",
       "copyLink": "Copy link",
-      "listenNarration": "Listen to narration",
-      "stopNarration": "Stop narration"
+      "listenNarration": "Play recording",
+      "stopNarration": "Stop recording",
+      "switchLanguage": "Switch language"
     },
     "labels": {
       "delegationsVisited": "Delegations visited",
       "loading": "Loading...",
       "loadingDescription": "Loading description...",
-      "generatingNarration": "Generating narration...",
       "itemsCount": "{{count}} items",
       "imagesCount": "{{count}} images",
       "videosCount": "{{count}} videos",
@@ -65,11 +65,12 @@
       "prevLocation": "Previous Location",
       "nextLocation": "Next Location",
       "backToPrev": "Go Back",
-      "visitingImages": "Visiting Images"
+      "visitingImages": "Visiting Images",
+      "vietnamese": "Tiếng Việt",
+      "english": "English"
     },
     "errors": {
-      "narrationGenWait": "Narration is being generated, please try again in a few minutes.",
-      "narrationFailed": "Cannot play narration. Please try again later.",
+      "narrationFailed": "Unable to play the recording.",
       "contentHidden": "This content is no longer displayed.",
       "noMedia": "No media.",
       "mediaLoadFailed": "Cannot load media.",

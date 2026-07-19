@@ -121,4 +121,10 @@ public class VisitRequestCampus
     public virtual ICollection<VisitAgenda> Agendas { get; set; } = new List<VisitAgenda>();
     public virtual ICollection<VisitParticipant> Participants { get; set; } = new List<VisitParticipant>();
     public virtual ICollection<VisitLogisticsItem> LogisticsItems { get; set; } = new List<VisitLogisticsItem>();
+
+    // Per-campus form v2: one-to-one form detail, per-campus guest links, amendments and history.
+    public virtual VisitInstanceFormDetail? FormDetail { get; set; }
+    public virtual ICollection<VisitInstanceGuestMember> GuestMemberLinks { get; set; } = new List<VisitInstanceGuestMember>();
+    public virtual ICollection<VisitInstanceAmendment> Amendments { get; set; } = new List<VisitInstanceAmendment>();
+    public virtual ICollection<VisitInstanceFormRevisionHistory> FormRevisionHistory { get; set; } = new List<VisitInstanceFormRevisionHistory>();
 }

@@ -261,7 +261,7 @@ public sealed class CompleteVisitStageCommandHandler
                 notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: instance.CurrentHostUserId.Value,
                     Title: "Mời bạn đánh giá thành phần tham gia",
-                    Message: $"Đoàn {instance.VisitRequest?.DelegationName} đã kết thúc. Hãy đánh giá host/thành phần đã hỗ trợ bạn.",
+                    Message: $"Đoàn {(instance.VisitRequest is { } cvr ? Services.VisitFormRead.VisitInstanceEffectiveName.Of(cvr, instance.FormDetail) : null)} đã kết thúc. Hãy đánh giá host/thành phần đã hỗ trợ bạn.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
                     RelatedId: instance.VisitInstanceId,

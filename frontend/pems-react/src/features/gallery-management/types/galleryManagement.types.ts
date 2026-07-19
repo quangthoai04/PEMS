@@ -52,8 +52,6 @@ export interface GalleryListItem {
   createdAt: string;
   createdByName?: string | null;
   primaryMedia?: GalleryPrimaryMedia | null;
-  /** EverAI narration status for the item's current description (drives the AUDIO column). */
-  audioStatus: GalleryItemTtsManagementStatus;
 }
 
 export interface GalleryMedia {
@@ -73,10 +71,28 @@ export interface GalleryMedia {
   displayOrder: number;
 }
 
+/** One audio recording's metadata + authenticated proxy URL (management detail/edit screens). */
+export interface GalleryAudioInfo {
+  fileId: number;
+  fileName: string;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  /** Authenticated content proxy URL (`/api/files/{id}/content`). */
+  url: string;
+}
+
+/** The item's bilingual content (VI/EN descriptions + audio). */
+export interface GalleryItemContent {
+  descriptionVi: string;
+  audioVi?: GalleryAudioInfo | null;
+  descriptionEn: string;
+  audioEn?: GalleryAudioInfo | null;
+}
+
 export interface GalleryItemDetail {
   galleryItemId: number;
   title: string;
-  description: string;
+  content: GalleryItemContent;
   itemType: GalleryItemType;
   itemTypeLabel: string;
   status: GalleryStatus;
@@ -122,14 +138,17 @@ export interface GalleryListQueryParams {
   mediaKind?: GalleryMediaKind | '';
   itemType?: GalleryItemType | '';
   status?: GalleryStatus | '';
-  audioStatus?: GalleryItemTtsManagementStatus | '';
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
 }
 
 export interface CreateGalleryItemInput {
   title: string;
-  description: string;
+  /** All four bilingual fields are mandatory. */
+  descriptionVi: string;
+  audioVi: File;
+  descriptionEn: string;
+  audioEn: File;
   locationId: number;
   itemType: GalleryItemType;
   status: GalleryStatus;
@@ -143,7 +162,11 @@ export interface CreateGalleryItemInput {
 export interface UpdateGalleryItemInput {
   galleryItemId: number;
   title: string;
-  description: string;
+  descriptionVi: string;
+  descriptionEn: string;
+  /** Replacement audio; omit to keep the current recording. Audio can never be removed. */
+  newAudioVi?: File | null;
+  newAudioEn?: File | null;
   locationId: number;
   itemType: GalleryItemType;
   keepMediaIds: number[];
@@ -158,33 +181,6 @@ export interface UpdateGalleryItemInput {
 export interface ChangeGalleryStatusInput {
   galleryItemId: number;
   status: GalleryStatus;
-}
-
-// ── EverAI TTS narration (Staff Leader dashboard) ──
-
-export type GalleryItemTtsManagementStatus =
-  | 'READY'
-  | 'PROCESSING'
-  | 'FAILED'
-  | 'STALE'
-  | 'NOT_CREATED'
-  | 'DISABLED'
-  | 'INVALID_DESCRIPTION';
-
-/** Management status of an item's narration; drives the badge + enables the "Tạo lại audio" button. */
-export interface GalleryItemTtsStatus {
-  status: GalleryItemTtsManagementStatus;
-  canRegenerate: boolean;
-  audioUrl?: string | null;
-  voiceCode?: string | null;
-  audioType?: string | null;
-  errorMessage?: string | null;
-}
-
-/** Result of the "Tạo lại audio" action. UP_TO_DATE = current description already has matching audio. */
-export interface GalleryItemTtsRegenerateResult {
-  status: 'PROCESSING' | 'UP_TO_DATE' | string;
-  message?: string | null;
 }
 
 // ── Quản lý khu vực (area/location management, UC-LOC-01..09) ──

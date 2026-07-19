@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { FileText, Download, X, Loader2, PenLine, Plus } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import toast from 'react-hot-toast';
 
 function fmtDateTime(value?: string | null): string {
@@ -426,6 +427,12 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                   </div>
                 </div>
               </div>
+
+              {/* Ghi chú chi phí — hiện khi biên bản đã ký nghiệm thu đủ 2 bên; nằm trong vùng in
+                  nên Tải PDF biên bản sẽ kèm bảng chi phí. Người xem không thuộc phòng ban → panel tự ẩn. */}
+              {isBorrowDone && nt1 && nt2 && detailData.LogisticsItemId && (
+                <LogisticsExpensePanel logisticsItemId={detailData.LogisticsItemId} readOnly={readOnly} />
+              )}
             </div>
           </div>
         </div>

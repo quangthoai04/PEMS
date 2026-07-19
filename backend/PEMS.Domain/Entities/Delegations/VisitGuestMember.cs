@@ -45,4 +45,7 @@ public class VisitGuestMember
     public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequest VisitRequest { get; set; } = null!;
+
+    // Per-campus form v2: the campus instances this member is linked to (copy-on-write on edit).
+    public virtual ICollection<VisitInstanceGuestMember> InstanceLinks { get; set; } = new List<VisitInstanceGuestMember>();
 }

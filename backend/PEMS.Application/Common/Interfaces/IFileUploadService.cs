@@ -18,4 +18,19 @@ public interface IFileUploadService
         FilePurpose purpose,
         long uploadedBy,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Same pipeline, but uploads into an explicit Drive folder instead of the purpose's root
+    /// (e.g. visit photos land in <c>VR-{visit_request_id}/{campus_code}</c> below the configured
+    /// root). Validation, checksum, object key, <c>files</c> row and rollback are identical.
+    /// </summary>
+    Task<UploadedFileDto> UploadBusinessFileAsync(
+        Stream stream,
+        string originalFileName,
+        string contentType,
+        long fileSize,
+        FilePurpose purpose,
+        long uploadedBy,
+        string targetFolderId,
+        CancellationToken cancellationToken);
 }

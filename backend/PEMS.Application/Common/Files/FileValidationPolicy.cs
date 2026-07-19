@@ -58,6 +58,20 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = true,
         },
 
+        FilePurpose.VisitRequestPhoto => new FileValidationRule
+        {
+            MaxSizeBytes = 100 * Mb,
+            AllowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"
+            },
+            AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm"
+            },
+            RequireImageMagicBytes = false,
+        },
+
         FilePurpose.GalleryVideo or FilePurpose.GalleryItemVideo
             or FilePurpose.GalleryDelegationVideo => new FileValidationRule
         {

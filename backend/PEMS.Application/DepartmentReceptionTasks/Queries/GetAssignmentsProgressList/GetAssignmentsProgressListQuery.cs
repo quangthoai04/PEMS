@@ -45,6 +45,10 @@ public sealed class AssignmentsProgressItemDto
     public string DelegationName { get; set; } = "";
     public string RequestCode { get; set; } = "";
     public string? OrganizationName { get; set; }
+    public string? RegistrantFullName { get; set; }
+    public string? RegistrantNationality { get; set; }
+    public string? RegistrantJobTitle { get; set; }
+    public string? GuestSearchText { get; set; }
     public string Title { get; set; } = "";
     public string? Description { get; set; }
     public ulong? CurrentResponsibleUserId { get; set; }
@@ -150,7 +154,13 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LatestStatus = latestAttempt == null ? null : latestAttempt.Status,
                 LatestNote = latestAttempt == null ? null : latestAttempt.ResponseNote,
                 BorrowSigned = borrowSigned,
-                ReturnSigned = returnSigned
+                ReturnSigned = returnSigned,
+                // Mixed per-campus v2 rows show THIS instance's detail (no global fallback);
+                // v1/non-mixed keep the projection (byte-identical there).
+                EffectiveDelegationName =
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                        ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
+                        : vr.DelegationName,
             })
             .ToListAsync(cancellationToken);
 
@@ -213,9 +223,12 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LogisticsItemId = row.li.LogisticsItemId,
                 VisitInstanceId = row.inst.VisitInstanceId,
                 VisitRequestId = row.vr.VisitRequestId,
-                DelegationName = row.vr.DelegationName ?? "",
+                DelegationName = row.EffectiveDelegationName ?? "",
                 RequestCode = row.vr.RequestCode ?? "",
                 OrganizationName = row.vr.RegistrantOrganization,
+                RegistrantFullName = row.vr.RegistrantFullName,
+                RegistrantNationality = row.vr.RegistrantNationality,
+                RegistrantJobTitle = row.vr.RegistrantJobTitle,
                 Title = row.li.Title,
                 Description = row.li.Description,
                 CurrentResponsibleUserId = responsibleUserId,
@@ -264,7 +277,18 @@ public sealed class GetAssignmentsProgressListQueryHandler
                   && p.ParticipantRole == ParticipantRoles.DeptSupport
                   && p.Status != ParticipantStatuses.Removed
                   && (!isDepartmentStaff || (p.UserId == currentUserId && p.AssignedBy != null))
-            select new { p, u, inst, vr })
+            select new
+            {
+                p, u, inst, vr,
+                EffectiveDelegationName =
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                        ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
+                        : vr.DelegationName,
+                EffectiveWorkingContent =
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                        ? (inst.FormDetail != null ? inst.FormDetail.WorkingContent : null)
+                        : vr.WorkingContent,
+            })
             .ToListAsync(cancellationToken);
 
         var invitationGroups = invitationRows
@@ -305,11 +329,14 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 ParticipantId = row.p.ParticipantId,
                 VisitInstanceId = row.inst.VisitInstanceId,
                 VisitRequestId = row.vr.VisitRequestId,
-                DelegationName = row.vr.DelegationName ?? "",
+                DelegationName = row.EffectiveDelegationName ?? "",
                 RequestCode = row.vr.RequestCode ?? "",
                 OrganizationName = row.vr.RegistrantOrganization,
+                RegistrantFullName = row.vr.RegistrantFullName,
+                RegistrantNationality = row.vr.RegistrantNationality,
+                RegistrantJobTitle = row.vr.RegistrantJobTitle,
                 Title = "Thư mời tham gia đón tiếp",
-                Description = row.p.Note ?? row.vr.WorkingContent,
+                Description = row.p.Note ?? row.EffectiveWorkingContent,
                 CurrentResponsibleUserId = activeStaff?.p.UserId ?? row.p.UserId,
                 CurrentResponsibleName = activeStaff?.u.FullName ?? row.u.FullName,
                 CurrentResponsibleRole = ToDepartmentRoleLabel((activeStaff?.u ?? row.u).SubRole, activeStaff?.p.UserId ?? row.p.UserId, leaderUserId),
@@ -339,6 +366,22 @@ public sealed class GetAssignmentsProgressListQueryHandler
             });
         }
 
+        var allRequestIds = items.Select(x => x.VisitRequestId).Distinct().ToList();
+        var guestsList = await _db.VisitGuestMembers
+            .AsNoTracking()
+            .Where(gm => allRequestIds.Contains(gm.VisitRequestId))
+            .Select(gm => new { gm.VisitRequestId, gm.FullName, gm.JobTitle, gm.Organization })
+            .ToListAsync(cancellationToken);
+        var guestsLookup = guestsList
+            .GroupBy(g => g.VisitRequestId)
+            .ToDictionary(g => g.Key, g => string.Join(" | ", g.Select(x => $"{x.FullName} {x.JobTitle} {x.Organization}")));
+
+        foreach(var item in items)
+        {
+            if (guestsLookup.TryGetValue(item.VisitRequestId, out var gText))
+                item.GuestSearchText = gText;
+        }
+
         var query = items.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -348,6 +391,10 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 Contains(x.DelegationName, keyword) ||
                 Contains(x.RequestCode, keyword) ||
                 Contains(x.OrganizationName, keyword) ||
+                Contains(x.RegistrantFullName, keyword) ||
+                Contains(x.RegistrantNationality, keyword) ||
+                Contains(x.RegistrantJobTitle, keyword) ||
+                Contains(x.GuestSearchText, keyword) ||
                 Contains(x.Title, keyword) ||
                 Contains(x.Description, keyword));
         }

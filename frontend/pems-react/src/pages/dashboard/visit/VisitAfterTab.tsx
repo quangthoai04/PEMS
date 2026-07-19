@@ -15,6 +15,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { VisitNewsSection } from './VisitNewsSection';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
+import { GeneralExpensePanel } from './GeneralExpensePanel';
+import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 // Default Delegation Members for tag dropdown and display
 const DEFAULT_GUESTS = [
@@ -93,10 +96,11 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   const [selectedImageId, setSelectedImageId] = useState<string>('img-1');
   const [driveConfig, setDriveConfig] = useState({
     isConnected: true,
-    folderName: 'IC_Visits_Archive_2026/Tokyo_Delegation',
-    folderUrl: 'https://drive.google.com/drive/folders/1nme7TcwWStEizpT1RUplWjCBOqWki7aG?usp=sharing',
+    folderName: `vr-${visitInstanceId || '3063'}`,
+    folderUrl: '',
     syncStatus: 'synced', // 'synced' | 'syncing' | 'error'
-    lastSynced: 'Vừa xong'
+    lastSynced: '-',
+    uploaderName: '-'
   });
   const [isDriveConfirmed, setIsDriveConfirmed] = useState(isReadOnly);
 
@@ -148,51 +152,83 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
     setNewsContentEn(enGenerated);
   };
 
-  // Run initial news generation
+  // Run initial news generation and fetch real photo/drive metadata
   useEffect(() => {
     if (!newsContentVi) {
       handleAutoGenerateNews();
     }
   }, []);
 
-  // Handle custom upload simulation
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const imageUrl = URL.createObjectURL(file);
-      const newImgId = 'upload-' + Date.now();
+  const loadDriveMetadata = async () => {
+    if (!visitInstanceId) return;
+    try {
+      const data = await visitPhotosApi.byInstance(visitInstanceId);
       
-      const newImage = {
-        id: newImgId,
-        url: imageUrl,
-        name: file.name,
-        faces: [
-          { id: 'fu-1', x: 25, y: 30, width: 12, height: 15, taggedUser: null },
-          { id: 'fu-2', x: 55, y: 28, width: 12, height: 15, taggedUser: null },
-          { id: 'fu-3', x: 40, y: 45, width: 12, height: 15, taggedUser: null }
-        ],
-        isScanned: false,
-        isScanning: false
-      };
+      let latestPhoto = null;
+      if (data.photos && data.photos.length > 0) {
+        latestPhoto = data.photos.reduce((latest, current) => {
+          return new Date(current.uploadedAt) > new Date(latest.uploadedAt) ? current : latest;
+        }, data.photos[0]);
+        
+        // Populate actual photos for preview (no face tracking from backend yet)
+        const realImages = data.photos.map(p => ({
+          id: p.visitPhotoId.toString(),
+          url: `/api${p.url.replace(/^\/api/, '')}`, // Will require auth to view, but img tag might need useAuthenticatedImage if strictly secured, 
+          // However, for the scope of replacing mock data, we provide the proxy URL.
+          name: p.fileName,
+          faces: [],
+          isScanned: false,
+          isScanning: false
+        }));
+        setUploadedImages(realImages);
+        setSelectedImageId(realImages[0].id);
+      }
 
-      setUploadedImages(prev => [...prev, newImage]);
-      setSelectedImageId(newImgId);
+      setDriveConfig(prev => ({
+        ...prev,
+        folderName: data.folderName || `vr-${visitInstanceId}`,
+        folderUrl: data.folderWebViewUrl || prev.folderUrl,
+        uploaderName: latestPhoto?.uploadedByName || '-',
+        lastSynced: latestPhoto?.uploadedAt ? formatVietnamDateTime(latestPhoto.uploadedAt) : '-'
+      }));
+    } catch (e) {
+      console.error("Failed to fetch visit photos metadata", e);
+    }
+  };
+
+  useEffect(() => {
+    loadDriveMetadata();
+  }, [visitInstanceId]);
+
+  // Handle real file upload to backend
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && visitInstanceId) {
+      const fileList = Array.from(e.target.files);
       
-      // Auto-trigger sync logging
       setDriveConfig(prev => ({
         ...prev,
         syncStatus: 'syncing',
         lastSynced: 'Đang đồng bộ tập tin...'
       }));
       
-      setTimeout(() => {
+      try {
+        await visitPhotosApi.upload(visitInstanceId, fileList);
+        // Refresh data from backend to show the new photos and metadata
+        await loadDriveMetadata();
+        
         setDriveConfig(prev => ({
           ...prev,
-          syncStatus: 'synced',
-          lastSynced: 'Đã đồng bộ lên Drive vừa xong'
+          syncStatus: 'synced'
         }));
-      }, 1500);
+      } catch (err) {
+        console.error("Upload error", err);
+        setDriveConfig(prev => ({
+          ...prev,
+          syncStatus: 'error',
+          lastSynced: 'Đồng bộ lỗi'
+        }));
+      }
     }
   };
 
@@ -266,6 +302,11 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
         <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="RETURN" />
       )}
 
+      {/* Chi phí chung (General Expense) */}
+      {visitInstanceId && !isStudent && !isDept && (
+        <GeneralExpensePanel visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} />
+      )}
+
       {/* SECTION 1: PHOTO ALBUM & FACE SCANNING */}
       <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col">
         
@@ -319,14 +360,20 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                       Mở link Drive <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                     <span className="text-gray-300 text-xs">|</span>
-                    <span className="text-gray-500 text-xs flex items-center gap-1 font-semibold">
-                      Đồng bộ: 
-                      {driveConfig.syncStatus === 'syncing' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#004c91]" />
-                      ) : (
-                        <span className="text-emerald-600 font-bold">{driveConfig.lastSynced}</span>
-                      )}
-                    </span>
+                    <div className="text-gray-500 text-xs flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 font-semibold">
+                      <span className="flex items-center gap-1">
+                        Người upload: <span className="text-[#004c91]">{driveConfig.uploaderName}</span>
+                      </span>
+                      <span className="hidden sm:inline text-gray-300">|</span>
+                      <span className="flex items-center gap-1">
+                        Thời gian: 
+                        {driveConfig.syncStatus === 'syncing' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#004c91]" />
+                        ) : (
+                          <span className="text-emerald-600 font-bold">{driveConfig.lastSynced}</span>
+                        )}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -826,6 +873,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                         <li>Còn đầu mục công việc chưa tích xác nhận trong biên bản cuộc họp</li>
                         <li>Chưa upload ảnh của đoàn khách</li>
                         <li>Tin tức chưa được duyệt (nếu có)</li>
+                        <li>Kiểm tra lại chi phí của đoàn — các đơn yêu cầu phải được phòng ban nhập chi phí hoặc xác nhận "Không có chi phí"</li>
                       </ul>
                     </div>
                   </div>

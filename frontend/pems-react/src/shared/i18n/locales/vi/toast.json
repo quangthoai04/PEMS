@@ -1,4 +1,8 @@
 {
+  "auth": {
+    "loginSuccess": "Đăng nhập thành công. Chào mừng bạn quay trở lại.",
+    "logoutSuccess": "Đăng xuất thành công."
+  },
   "common": {
     "saveSuccess": "Lưu thành công.",
     "saveFailed": "Không thể lưu dữ liệu. Vui lòng thử lại.",

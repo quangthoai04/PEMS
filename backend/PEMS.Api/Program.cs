@@ -15,10 +15,34 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// TESTING-ONLY real-stack E2E email/OTP sink. DOUBLE-GATED: only when the environment is Testing AND
+// PEMS_E2E_TEST_SINK_ENABLED=true. This override (last registration wins) redirects mail to a file inbox so
+// a browser E2E can read the OTP / invitation link without any public endpoint. NEVER registered in
+// Development/Staging/Production; fail-closed if PEMS_E2E_TEST_SINK_PATH is missing (throws on construction).
+if (PEMS.Infrastructure.Email.FileSinkEmailService.IsEnabledFor(builder.Environment.EnvironmentName))
+{
+    builder.Services.AddScoped<PEMS.Application.Common.Interfaces.IEmailService,
+        PEMS.Infrastructure.Email.FileSinkEmailService>();
+}
+
 // ── Auth policy options (SSO-first / dual-portal). Bound once and shared. ─────
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>()
     ?? new AuthOptions();
 builder.Services.AddSingleton(authOptions);
+
+// ── Per-campus visit form v2 feature flag (default OFF). ──────────────────────
+var perCampusFormV2Options = builder.Configuration
+    .GetSection(PEMS.Application.Common.Options.PerCampusFormV2Options.SectionName)
+    .Get<PEMS.Application.Common.Options.PerCampusFormV2Options>()
+    ?? new PEMS.Application.Common.Options.PerCampusFormV2Options();
+builder.Services.AddSingleton(perCampusFormV2Options);
+
+// ── Per-campus visit form v2 WRITE feature flag (separate from read; default OFF). ──
+var perCampusFormV2WriteOptions = builder.Configuration
+    .GetSection(PEMS.Application.Common.Options.PerCampusFormV2WriteOptions.SectionName)
+    .Get<PEMS.Application.Common.Options.PerCampusFormV2WriteOptions>()
+    ?? new PEMS.Application.Common.Options.PerCampusFormV2WriteOptions();
+builder.Services.AddSingleton(perCampusFormV2WriteOptions);
 
 // ── Database (MySQL, database-first — schema is owned by manual SQL, not EF) ──
 // Every pooled connection is pinned to time_zone '+07:00' so CURRENT_TIMESTAMP defaults

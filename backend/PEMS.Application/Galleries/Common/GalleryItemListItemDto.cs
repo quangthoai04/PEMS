@@ -11,6 +11,7 @@ public sealed class GalleryItemListItemDto
     public ulong LocationId { get; init; }
     public string LocationName { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
+    /// <summary>Short preview text — the Vietnamese description (the item's default language).</summary>
     public string Description { get; init; } = string.Empty;
     public string ItemType { get; init; } = string.Empty;
     public string ItemTypeLabel { get; init; } = string.Empty;
@@ -19,14 +20,6 @@ public sealed class GalleryItemListItemDto
     public DateTime CreatedAt { get; init; }
     public string? CreatedByName { get; init; }
     public GalleryPrimaryMediaDto? PrimaryMedia { get; init; }
-
-    /// <summary>
-    /// EverAI narration status for the item's CURRENT description — one of
-    /// <see cref="PEMS.Application.Galleries.Tts.TtsManagementStatuses"/>
-    /// (READY / PROCESSING / FAILED / STALE / NOT_CREATED / DISABLED / INVALID_DESCRIPTION). Drives the
-    /// list "AUDIO" column and the audio-status filter.
-    /// </summary>
-    public string AudioStatus { get; init; } = PEMS.Application.Galleries.Tts.TtsManagementStatuses.NotCreated;
 }
 
 /// <summary>Lightweight primary-media projection shown as the thumbnail in the list.</summary>

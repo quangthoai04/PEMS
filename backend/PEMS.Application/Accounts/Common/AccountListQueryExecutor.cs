@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -130,17 +131,22 @@ internal static class AccountListQueryExecutor
 
         if (hasKeyword)
         {
-            var kw = keyword!.ToLower();
+            // Whitespace-insensitive keyword match: collapse every run of whitespace in the keyword
+            // away and compare against the space-stripped columns, so "cơ      sở" still matches
+            // "Cơ sở ...". REPLACE(x,' ','') is EF-translatable; text columns only ever hold
+            // regular spaces so stripping ' ' on the column side is enough.
+            var kw = Regex.Replace(keyword!, @"\s+", string.Empty).ToLower();
             query = query.Where(u =>
-                u.Email.ToLower().Contains(kw) ||
-                u.FullName.ToLower().Contains(kw) ||
-                u.Role.RoleCode.ToLower().Contains(kw) ||
-                u.Role.Name.ToLower().Contains(kw) ||
+                u.Email.ToLower().Replace(" ", string.Empty).Contains(kw) ||
+                u.FullName.ToLower().Replace(" ", string.Empty).Contains(kw) ||
+                u.Role.RoleCode.ToLower().Replace(" ", string.Empty).Contains(kw) ||
+                u.Role.Name.ToLower().Replace(" ", string.Empty).Contains(kw) ||
                 (u.PrimaryCampus != null &&
-                    (u.PrimaryCampus.Name.ToLower().Contains(kw) || u.PrimaryCampus.CampusCode.ToLower().Contains(kw))) ||
-                (u.Department != null && u.Department.Name.ToLower().Contains(kw)) ||
-                (u.Phone != null && u.Phone.Contains(kw)) ||
-                (u.StudentCode != null && u.StudentCode.ToLower().Contains(kw)));
+                    (u.PrimaryCampus.Name.ToLower().Replace(" ", string.Empty).Contains(kw) ||
+                     u.PrimaryCampus.CampusCode.ToLower().Replace(" ", string.Empty).Contains(kw))) ||
+                (u.Department != null && u.Department.Name.ToLower().Replace(" ", string.Empty).Contains(kw)) ||
+                (u.Phone != null && u.Phone.Replace(" ", string.Empty).Contains(kw)) ||
+                (u.StudentCode != null && u.StudentCode.ToLower().Replace(" ", string.Empty).Contains(kw)));
         }
 
         // Ã¢â€â‚¬Ã¢â€â‚¬ Whitelisted filters Ã¢â€â‚¬Ã¢â€â‚¬

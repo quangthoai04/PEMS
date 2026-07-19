@@ -25,6 +25,7 @@ import {
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import toast from 'react-hot-toast';
 import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
+import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 
 function fmtDateTime(value?: string | null): string {
   if (!value) return '—';
@@ -796,12 +797,17 @@ export function TaskDetail() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Ghi chú chi phí — hiện sau khi ký nghiệm thu đủ 2 bên; nằm trong vùng in
+                      nên Tải PDF biên bản sẽ kèm luôn bảng chi phí. */}
+                  {isTaskComplete && (
+                    <LogisticsExpensePanel logisticsItemId={detailData.logisticsItemId} />
+                  )}
                 </div>
               </div>
             </div>
           );
         })()}
-
       </div>
 
       {/* FOOTER ACTION */}

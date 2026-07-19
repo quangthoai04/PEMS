@@ -72,8 +72,18 @@ public static class DependencyInjection
 
         // Visit request flow services (UC-17)
         services.AddScoped<IVisitRequestService, VisitRequestService>();
+        services.AddScoped<IVisitRequestV2CreateService, VisitRequestV2CreateService>();
+        services.AddScoped<IVisitRequestV2EditService, VisitRequestV2EditService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();
         services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
+
+        // Per-campus v2 identity claim (plan §16.4/§16.8): invitation token+email + expiry/redaction.
+        services.AddScoped<IVisitContactClaimService, VisitContactClaimService>();
+        services.AddScoped<IVisitContactClaimMaintenanceService, VisitContactClaimMaintenanceService>();
+
+        // Per-campus v2 safe edit + amendments (plan §16.6, Phase E).
+        services.AddScoped<IVisitSafeEditService, VisitSafeEditService>();
+        services.AddScoped<IVisitAmendmentService, VisitAmendmentService>();
 
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
@@ -96,23 +106,18 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.News.Services.INewsTranslationService,
             PEMS.Infrastructure.Translation.GoogleNewsTranslationService>();
 
-        // EverAI TTS (gallery narration audio): options + typed HTTP client + background job worker.
-        // The ensure/job service itself lives in Application DI.
-        services.Configure<PEMS.Application.Common.Options.EverAiTtsOptions>(
-            configuration.GetSection(PEMS.Application.Common.Options.EverAiTtsOptions.SectionName));
-        services.AddHttpClient<PEMS.Application.Galleries.Tts.IEverAiTtsClient,
-            PEMS.Infrastructure.ExternalServices.Tts.EverAiTtsClient>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(100);
-        });
-        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.GalleryTtsBackgroundService>();
-
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 
         // Background job — HO visibility alert for multi-campus requests with an unprocessed
         // campus close to its planned start (spec §5 HO rule).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.HoUnprocessedCampusAlertHostedService>();
+
+        // Background job — identity-claim expiry (72h) + retention redaction (90d), plan §16.8.
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitContactClaimMaintenanceHostedService>();
+
+        // Background job — pending-amendment expiry (window passed / instance started), plan §16.6.
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitAmendmentExpiryHostedService>();
 
         return services;
     }

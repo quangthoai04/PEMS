@@ -45,6 +45,26 @@ public interface IApplicationDbContext
     DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; }
     DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; }
     DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; }
+
+    // ── Expense Statistics (v11) ─────────────────────────────────────────
+    DbSet<VisitExpenseReport> VisitExpenseReports { get; }
+    DbSet<VisitExpenseItem> VisitExpenseItems { get; }
+    DbSet<VisitExpenseReportEvent> VisitExpenseReportEvents { get; }
+
+    // ── Student visit photo storage (Google Drive, independent from Gallery) ──
+    DbSet<VisitPhotoFolder> VisitPhotoFolders { get; }
+    DbSet<VisitPhoto> VisitPhotos { get; }
+
+    // ── Per-campus form v2 (percampus_v2_migration) ──────────────────────────
+    DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails { get; }
+    DbSet<VisitInstanceGuestMember> VisitInstanceGuestMembers { get; }
+    DbSet<VisitRequestIdentityChange> VisitRequestIdentityChanges { get; }
+    DbSet<VisitRequestIdentityChangeEvent> VisitRequestIdentityChangeEvents { get; }
+    DbSet<VisitInstanceAmendment> VisitInstanceAmendments { get; }
+    DbSet<VisitInstanceAmendmentChange> VisitInstanceAmendmentChanges { get; }
+    DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; }
+    DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; }
+    DbSet<VisitRequestPendingForm> VisitRequestPendingForms { get; }
     DbSet<Minute> Minutes { get; }
     DbSet<MinuteActionItem> MinuteActionItems { get; }
     DbSet<MinuteParticipant> MinuteParticipants { get; }
@@ -57,8 +77,8 @@ public interface IApplicationDbContext
     DbSet<GalleryArea> GalleryAreas { get; }
     DbSet<GalleryLocation> GalleryLocations { get; }
     DbSet<GalleryItem> GalleryItems { get; }
+    DbSet<GalleryItemContent> GalleryItemContents { get; }
     DbSet<GalleryItemMedia> GalleryItemMedia { get; }
-    DbSet<GalleryItemTtsAudio> GalleryItemTtsAudios { get; }
     DbSet<PhotoFaceTag> PhotoFaceTags { get; }
     DbSet<EmailTemplate> EmailTemplates { get; }
     DbSet<SentEmail> SentEmails { get; }

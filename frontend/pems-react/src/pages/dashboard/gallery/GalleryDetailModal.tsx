@@ -1,22 +1,22 @@
-/** Read-only detail modal for a gallery item (UC-GAL-03) + EverAI TTS status & "Tạo lại audio". */
+/** Read-only detail modal for a gallery item (UC-GAL-03). Shows the bilingual content (VI/EN
+ * descriptions + audio) in language tabs; switching tabs pauses the audio of the other language. */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
-  X, ChevronRight, Image as ImageIcon, ImageOff, Film, Loader2, AlertTriangle,
-  Volume2, CheckCircle2, XCircle, RefreshCw, Clock,
+  X, ChevronRight, Image as ImageIcon, ImageOff, Film, Loader2, AlertTriangle, Music,
 } from 'lucide-react';
 import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
 import { youtubeEmbedUrl, youtubeThumbnailUrl } from '../../../shared/utils/youtube';
-import { galleryManagementApi } from '../../../features/gallery-management/api/galleryManagementApi';
-import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
 import type {
+  GalleryAudioInfo,
   GalleryItemDetail,
-  GalleryItemTtsStatus,
   GalleryMedia,
   GalleryMediaKind,
 } from '../../../features/gallery-management/types/galleryManagement.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
+
+type Lang = 'vi' | 'en';
 
 const MEDIA_KIND_LABEL: Record<GalleryMediaKind, string> = {
   IMAGE: 'Hình ảnh',
@@ -24,48 +24,26 @@ const MEDIA_KIND_LABEL: Record<GalleryMediaKind, string> = {
   MIXED: 'Hỗn hợp',
 };
 
-/** Badge presentation for each narration status (also decides the small leading icon). */
-const TTS_STATUS_META: Record<GalleryItemTtsStatus['status'], { label: string; className: string; icon: React.ReactNode }> = {
-  READY: {
-    label: 'Giọng đọc: Sẵn sàng',
-    className: 'bg-green-100 text-green-700 border-green-200',
-    icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-  },
-  PROCESSING: {
-    label: 'Giọng đọc: Đang tạo…',
-    className: 'bg-blue-100 text-[#004c91] border-blue-200',
-    icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-  },
-  FAILED: {
-    label: 'Giọng đọc: Lỗi',
-    className: 'bg-red-100 text-red-700 border-red-200',
-    icon: <XCircle className="w-3.5 h-3.5" />,
-  },
-  STALE: {
-    label: 'Giọng đọc: Cần tạo lại',
-    className: 'bg-amber-100 text-amber-700 border-amber-200',
-    icon: <RefreshCw className="w-3.5 h-3.5" />,
-  },
-  NOT_CREATED: {
-    label: 'Giọng đọc: Chưa tạo',
-    className: 'bg-slate-100 text-slate-600 border-slate-200',
-    icon: <Clock className="w-3.5 h-3.5" />,
-  },
-  DISABLED: {
-    label: 'Giọng đọc: Đang tắt',
-    className: 'bg-slate-100 text-slate-500 border-slate-200',
-    icon: <Volume2 className="w-3.5 h-3.5" />,
-  },
-  INVALID_DESCRIPTION: {
-    label: 'Giọng đọc: Mô tả không hợp lệ',
-    className: 'bg-slate-100 text-slate-500 border-slate-200',
-    icon: <AlertTriangle className="w-3.5 h-3.5" />,
-  },
-};
-
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
   return formatVietnamDate(iso, { fallback: iso });
+}
+
+/** Plays an audio recording through the authenticated proxy; ref lets the parent pause it on tab switch. */
+function AudioBlock({ audio, audioRef }: { audio: GalleryAudioInfo; audioRef: React.RefObject<HTMLAudioElement> }) {
+  const { url, status } = useAuthenticatedMedia(audio.url);
+  if (status === 'error') {
+    return <p className="text-xs text-amber-600 font-medium">Không tải được bản ghi âm.</p>;
+  }
+  if (!url) {
+    return <div className="flex items-center gap-2 text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải...</div>;
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Music className="w-4 h-4 text-[#004c91] shrink-0" />
+      <audio ref={audioRef} controls src={url} className="w-full h-9" />
+    </div>
+  );
 }
 
 /** Main preview for one media — YouTube renders an embedded iframe, uploaded files stream via the proxy. */
@@ -175,76 +153,28 @@ export function GalleryDetailModal({
   onEdit: () => void;
 }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
-
-  // ── EverAI TTS narration status + "Tạo lại audio" ──
-  const [ttsStatus, setTtsStatus] = useState<GalleryItemTtsStatus | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenNote, setRegenNote] = useState<{ type: 'info' | 'error'; text: string } | null>(null);
+  const [lang, setLang] = useState<Lang>('vi');
+  const viAudioRef = useRef<HTMLAudioElement>(null);
+  const enAudioRef = useRef<HTMLAudioElement>(null);
   const itemId = detail?.galleryItemId;
 
-  // Reset + fetch the narration status whenever the shown item changes.
+  // Reset carousel + language whenever the shown item changes.
   useEffect(() => {
     setSelectedIdx(0);
-    setRegenNote(null);
-    setTtsStatus(null);
-    if (itemId == null) return;
-    let active = true;
-    galleryManagementApi
-      .getTtsAudioStatus(itemId)
-      .then((s) => { if (active) setTtsStatus(s); })
-      .catch(() => { if (active) setTtsStatus(null); });
-    return () => { active = false; };
+    setLang('vi');
   }, [itemId]);
 
-  // While a job is PROCESSING, re-poll every 3s so the badge updates to READY/FAILED on its own.
+  // Switching language pauses the other language's audio so two clips never overlap.
   useEffect(() => {
-    if (itemId == null || ttsStatus?.status !== 'PROCESSING') return;
-    const timer = window.setTimeout(async () => {
-      try {
-        const s = await galleryManagementApi.getTtsAudioStatus(itemId);
-        setTtsStatus(s);
-      } catch { /* transient — the next tick retries */ }
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, [itemId, ttsStatus]);
-
-  const handleRegenerate = async () => {
-    if (itemId == null || regenerating) return;
-    setRegenerating(true);
-    setRegenNote(null);
-    try {
-      const result = await galleryManagementApi.regenerateTtsAudio(itemId);
-      setRegenNote({
-        type: 'info',
-        text: result.message || (result.status === 'UP_TO_DATE'
-          ? 'Giọng đọc đã là bản mới nhất, không cần tạo lại.'
-          : 'Giọng đọc đang được tạo lại.'),
-      });
-      // Refresh the badge (a queued job flips it to PROCESSING → the poll effect takes over).
-      try {
-        const s = await galleryManagementApi.getTtsAudioStatus(itemId);
-        setTtsStatus(s);
-      } catch { /* keep the last known status */ }
-    } catch (err) {
-      setRegenNote({ type: 'error', text: getGalleryErrorMessage(err) });
-    } finally {
-      setRegenerating(false);
-    }
-  };
+    if (lang === 'vi') enAudioRef.current?.pause();
+    else viAudioRef.current?.pause();
+  }, [lang]);
 
   const media = detail?.media ?? [];
   const selected = media[selectedIdx] ?? media[0];
-
-  const statusMeta = ttsStatus ? TTS_STATUS_META[ttsStatus.status] : null;
-  // Allow regenerate when the backend says so (unknown status → allow; backend re-checks anyway).
-  const canRegen = ttsStatus?.canRegenerate ?? true;
-  const regenDisabled = regenerating || !canRegen;
-  const regenHint =
-    ttsStatus?.status === 'READY' ? 'Giọng đọc đã là bản mới nhất cho mô tả hiện tại.'
-      : ttsStatus?.status === 'PROCESSING' ? 'Giọng đọc đang được tạo, vui lòng chờ.'
-        : ttsStatus?.status === 'DISABLED' ? 'Tính năng giọng đọc đang tắt.'
-          : ttsStatus?.status === 'INVALID_DESCRIPTION' ? 'Mô tả không hợp lệ để tạo giọng đọc.'
-            : undefined;
+  const content = detail?.content;
+  const activeDescription = lang === 'vi' ? content?.descriptionVi : content?.descriptionEn;
+  const activeAudio = lang === 'vi' ? content?.audioVi : content?.audioEn;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black/60 backdrop-blur-sm p-4 font-sans">
@@ -306,8 +236,7 @@ export function GalleryDetailModal({
               )}
             </div>
 
-            {/* Right column: header (fixed) → description (scrolls) → footer (fixed) so a long
-                description never stretches the modal beyond max-h-[90vh]. */}
+            {/* Right column: header (fixed) → bilingual content (scrolls) → footer (fixed). */}
             <div className="w-full md:w-1/2 flex flex-col min-h-0">
               <div className="p-8 pb-4 shrink-0">
                 <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -328,12 +257,6 @@ export function GalleryDetailModal({
                   >
                     {detail.itemTypeLabel || (detail.itemType === 'VISIT_DELEGATION' ? 'Đoàn khách' : 'Media')}
                   </span>
-                  {statusMeta && (
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusMeta.className}`}>
-                      {statusMeta.icon}
-                      {statusMeta.label}
-                    </span>
-                  )}
                 </div>
 
                 <h3 className="text-2xl font-black text-gray-900 mb-2 leading-tight">{detail.title}</h3>
@@ -344,16 +267,28 @@ export function GalleryDetailModal({
                 </div>
               </div>
 
-              {/* Scrollable description */}
-              <div className="px-8 flex-1 overflow-y-auto min-h-0">
+              {/* Scrollable bilingual content */}
+              <div className="px-8 flex-1 overflow-y-auto min-h-0 space-y-4">
+                <div className="flex items-center gap-2">
+                  {(['vi', 'en'] as Lang[]).map((lng) => {
+                    const active = lang === lng;
+                    return (
+                      <button
+                        key={lng}
+                        onClick={() => setLang(lng)}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#004c91] text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                      >
+                        {lng === 'vi' ? 'Tiếng Việt' : 'English'}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {activeAudio && <AudioBlock audio={activeAudio} audioRef={lang === 'vi' ? viAudioRef : enAudioRef} />}
+
                 <p className="text-sm text-slate-500 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                  {detail.description || 'Chưa có mô tả'}
+                  {activeDescription || 'Chưa có mô tả'}
                 </p>
-                {ttsStatus?.status === 'FAILED' && ttsStatus.errorMessage && (
-                  <p className="mt-3 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                    Lỗi tạo giọng đọc: {ttsStatus.errorMessage}
-                  </p>
-                )}
               </div>
 
               {/* Fixed footer: meta + actions */}
@@ -369,23 +304,12 @@ export function GalleryDetailModal({
                   </div>
                 </div>
 
-                {regenNote && (
-                  <p className={`text-xs font-semibold mb-2 ${regenNote.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>
-                    {regenNote.text}
-                  </p>
-                )}
-
                 <div className="flex gap-3">
                   <button
-                    onClick={handleRegenerate}
-                    disabled={regenDisabled}
-                    title={regenDisabled ? regenHint : 'Tạo lại giọng đọc cho mô tả hiện tại'}
-                    className="flex-1 bg-white text-[#004c91] border border-[#004c91]/40 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={onClose}
+                    className="flex-1 bg-white text-slate-600 border border-slate-200 py-2.5 rounded-xl font-bold flex items-center justify-center hover:bg-slate-50 transition-colors"
                   >
-                    {regenerating
-                      ? <Loader2 className="w-4 h-4 animate-spin" />
-                      : <Volume2 className="w-4 h-4" />}
-                    Tạo lại audio
+                    Đóng
                   </button>
                   <button
                     onClick={onEdit}

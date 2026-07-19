@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Domain.Constants;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 
@@ -75,15 +76,20 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
 
                     if (visitRequest == null)
                     {
-                        visitInstance = await _context.VisitRequestCampuses.Include(i => i.VisitRequest).AsNoTracking().FirstOrDefaultAsync(i => i.VisitInstanceId == document.OwnerId, cancellationToken);
+                        visitInstance = await _context.VisitRequestCampuses.Include(i => i.VisitRequest).Include(i => i.FormDetail).AsNoTracking().FirstOrDefaultAsync(i => i.VisitInstanceId == document.OwnerId, cancellationToken);
                         if (visitInstance != null) visitRequest = visitInstance.VisitRequest;
                     }
 
                     if (visitRequest != null)
                     {
-                        ownerContext = new 
+                        ownerContext = new
                         {
-                            VisitTitle = visitRequest.DelegationName,
+                            // Mixed v2 titles from the owning instance's detail; a request-level document
+                            // on a mixed request gets the explicit label (plan §8.3).
+                            VisitTitle = visitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                         && visitRequest.HasMixedCampusDetails
+                                ? (visitInstance?.FormDetail?.DelegationName ?? "Khác nhau theo cơ sở")
+                                : visitRequest.DelegationName,
                             VisitRequestId = visitRequest.VisitRequestId,
                             ExpectedStartDate = visitInstance?.PlannedStartAt,
                             ExpectedEndDate = visitInstance?.PlannedEndAt,
@@ -126,13 +132,17 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
                     var minute = await _context.Minutes.AsNoTracking().FirstOrDefaultAsync(m => m.MinutesId == document.OwnerId, cancellationToken);
                     if (minute != null)
                     {
-                        var mInst = await _context.VisitRequestCampuses.Include(i => i.VisitRequest).AsNoTracking().FirstOrDefaultAsync(i => i.VisitInstanceId == minute.VisitInstanceId, cancellationToken);
-                        ownerContext = new 
+                        var mInst = await _context.VisitRequestCampuses.Include(i => i.VisitRequest).Include(i => i.FormDetail).AsNoTracking().FirstOrDefaultAsync(i => i.VisitInstanceId == minute.VisitInstanceId, cancellationToken);
+                        ownerContext = new
                         {
                             MinuteId = minute.MinutesId,
                             MinuteTitle = minute.Title,
                             Status = minute.Status,
-                            VisitTitle = mInst?.VisitRequest?.DelegationName,
+                            VisitTitle = mInst?.VisitRequest is { } mvr
+                                         && mvr.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                         && mvr.HasMixedCampusDetails
+                                ? mInst.FormDetail?.DelegationName
+                                : mInst?.VisitRequest?.DelegationName,
                             VisitRequestId = mInst?.VisitRequestId
                         };
                     }

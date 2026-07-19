@@ -28,13 +28,6 @@ public interface IGalleryItemListCriteria
     /// <summary>PUBLISHED / HIDDEN / empty (all).</summary>
     string? Status { get; }
 
-    /// <summary>
-    /// Narration status filter — one of TtsManagementStatuses (READY / PROCESSING / FAILED / STALE /
-    /// NOT_CREATED / DISABLED / INVALID_DESCRIPTION) / empty (all). Computed server-side, so filtering by
-    /// it pages the computed set in memory (see the executor).
-    /// </summary>
-    string? AudioStatus { get; }
-
     /// <summary>createdAt (default) | title | status.</summary>
     string? SortBy { get; }
 

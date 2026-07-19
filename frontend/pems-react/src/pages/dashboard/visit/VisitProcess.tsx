@@ -691,7 +691,7 @@ export function VisitProcess() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24">
+    <div className="p-4 sm:p-6 md:p-8 w-full pb-24">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
         <span className="mx-2">/</span>

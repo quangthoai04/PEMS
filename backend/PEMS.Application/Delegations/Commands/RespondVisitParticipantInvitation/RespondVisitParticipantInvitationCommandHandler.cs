@@ -107,7 +107,10 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         {
             var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             string participantName = user?.FullName ?? "Người được mời";
-            string delegationName = participant.VisitInstance.VisitRequest?.DelegationName ?? "Đoàn khách";
+            // Mixed per-campus v2: notification text uses THIS instance's detail name.
+            string delegationName = (await Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_db, new[] { participant.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(participant.VisitInstanceId) ?? "Đoàn khách";
             string responseText = request.Accept ? "chấp nhận" : "từ chối";
             
             await _notificationService.CreateAsync(

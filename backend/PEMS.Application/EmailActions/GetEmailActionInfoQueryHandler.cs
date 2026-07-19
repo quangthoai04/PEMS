@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Shared;
@@ -15,13 +16,29 @@ public sealed class GetEmailActionInfoQueryHandler
     private readonly IApplicationDbContext _db;
     private readonly IDateTimeService _clock;
     private readonly IEmailActionTokenService _tokens;
+    private readonly IVisitFormReadService _formReadService;
 
     public GetEmailActionInfoQueryHandler(
-        IApplicationDbContext db, IDateTimeService clock, IEmailActionTokenService tokens)
+        IApplicationDbContext db, IDateTimeService clock, IEmailActionTokenService tokens,
+        IVisitFormReadService formReadService)
     {
         _db = db;
         _clock = clock;
         _tokens = tokens;
+        _formReadService = formReadService;
+    }
+
+    // The landing page is bound to ONE campus instance (token → participant/logistics item → instance), so v2
+    // (incl. mixed) shows THIS instance's per-campus delegation name — never the global field, never a sibling.
+    // v1 keeps the global value. No global fallback for v2 (missing detail surfaces as the standard 409).
+    private async Task<string?> ResolveDelegationNameAsync(VisitRequestCampus instance, CancellationToken ct)
+    {
+        var visit = instance.VisitRequest;
+        if (visit is null) return null;
+        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus) return visit.DelegationName;
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, ct);
+        return content[instance.VisitInstanceId].DelegationName;
     }
 
     public async Task<EmailActionInfoResult> Handle(
@@ -39,6 +56,13 @@ public sealed class GetEmailActionInfoQueryHandler
             return invalid;
 
         var result = new EmailActionInfoResult { Action = token.IntendedAction, Context = token.ActionContext };
+
+        // v2 identity claim/transfer links are NEVER served by the anonymous email-action flow
+        // (plan §4.4): those pages require a logged-in session whose email matches the invitation —
+        // the dedicated /api/public/visit-contact-{claims|transfers}/{token} + /api/v2 flows.
+        if (token.ActionContext == EmailActionContexts.VisitContactClaim
+            || token.ActionContext == EmailActionContexts.VisitContactTransfer)
+            return invalid;
 
         if (token.ActionContext == EmailActionContexts.ParticipationResponse
             && token.TargetType == EmailActionTargetTypes.VisitParticipant)
@@ -75,7 +99,7 @@ public sealed class GetEmailActionInfoQueryHandler
 
         if (instance != null)
         {
-            result.DelegationName = instance.VisitRequest?.DelegationName;
+            result.DelegationName = await ResolveDelegationNameAsync(instance, cancellationToken);
             result.PlannedTimeText = EmailActionDisplay.FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt);
             result.CampusName = await _db.Campuses
                 .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
@@ -139,7 +163,7 @@ public sealed class GetEmailActionInfoQueryHandler
             .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
         if (instance != null)
         {
-            result.DelegationName = instance.VisitRequest?.DelegationName;
+            result.DelegationName = await ResolveDelegationNameAsync(instance, cancellationToken);
             result.PlannedTimeText = EmailActionDisplay.FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt);
             result.CampusName = await _db.Campuses
                 .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
@@ -199,7 +223,7 @@ public sealed class GetEmailActionInfoQueryHandler
             .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
         if (instance != null)
         {
-            result.DelegationName = instance.VisitRequest?.DelegationName;
+            result.DelegationName = await ResolveDelegationNameAsync(instance, cancellationToken);
             result.PlannedTimeText = EmailActionDisplay.FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt);
             result.CampusName = await _db.Campuses
                 .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)

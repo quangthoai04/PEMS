@@ -63,6 +63,26 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitLogisticsItemHandover> VisitLogisticsItemHandovers { get; set; }
     public DbSet<VisitLogisticsAssignmentAttempt> VisitLogisticsAssignmentAttempts { get; set; }
     public DbSet<VisitInstanceReminderSetting> VisitInstanceReminderSettings { get; set; }
+    
+    // ── Expense Statistics (v11) ─────────────────────────────────────────
+    public DbSet<VisitExpenseReport> VisitExpenseReports { get; set; }
+    public DbSet<VisitExpenseItem> VisitExpenseItems { get; set; }
+    public DbSet<VisitExpenseReportEvent> VisitExpenseReportEvents { get; set; }
+
+    // ── Student visit photo storage (Google Drive, independent from Gallery) ──
+    public DbSet<VisitPhotoFolder> VisitPhotoFolders { get; set; }
+    public DbSet<VisitPhoto> VisitPhotos { get; set; }
+
+    // ── Per-campus form v2 (PR-2 migration percampus_v2_migration) ────────────
+    public DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails { get; set; }
+    public DbSet<VisitInstanceGuestMember> VisitInstanceGuestMembers { get; set; }
+    public DbSet<VisitRequestIdentityChange> VisitRequestIdentityChanges { get; set; }
+    public DbSet<VisitRequestIdentityChangeEvent> VisitRequestIdentityChangeEvents { get; set; }
+    public DbSet<VisitInstanceAmendment> VisitInstanceAmendments { get; set; }
+    public DbSet<VisitInstanceAmendmentChange> VisitInstanceAmendmentChanges { get; set; }
+    public DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; set; }
+    public DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; set; }
+    public DbSet<VisitRequestPendingForm> VisitRequestPendingForms { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }
@@ -85,8 +105,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<GalleryArea> GalleryAreas { get; set; }
     public DbSet<GalleryLocation> GalleryLocations { get; set; }
     public DbSet<GalleryItem> GalleryItems { get; set; }
+    public DbSet<GalleryItemContent> GalleryItemContents { get; set; }
     public DbSet<GalleryItemMedia> GalleryItemMedia { get; set; }
-    public DbSet<GalleryItemTtsAudio> GalleryItemTtsAudios { get; set; }
     public DbSet<PhotoFaceTag> PhotoFaceTags { get; set; }
 
     // ── Email + Notification ──────────────────────────────────────────────
@@ -319,6 +339,165 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(g => g.VisitRequest).WithMany(v => v.GuestMembers)
             .HasForeignKey(g => g.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
 
+        // ── Per-campus form v2 (percampus_v2_migration) ───────────────────────
+        // These configurations MIRROR the already-validated PR-2 SQL. The project uses raw SQL as the
+        // schema source (no EF migrations run against the DB), so the alternate keys / composite FKs
+        // below are model metadata that map onto the existing uq_vrc_request_instance /
+        // uq_vgm_request_member unique keys. The DB-owned VIRTUAL guard columns (pending_guard,
+        // amendment_pending_guard) are deliberately NOT mapped, so EF never writes them.
+
+        // Alternate keys used by the composite FKs of the per-campus link/amendment/history tables.
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasAlternateKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId });
+        modelBuilder.Entity<VisitGuestMember>()
+            .HasAlternateKey(g => new { g.VisitRequestId, g.GuestMemberId });
+
+        // visit_instance_form_details: one-to-one with the campus instance (shared PK), CASCADE.
+        modelBuilder.Entity<VisitInstanceFormDetail>(b =>
+        {
+            b.HasKey(d => d.VisitInstanceId);
+            b.HasOne(d => d.VisitInstance).WithOne(vc => vc.FormDetail)
+                .HasForeignKey<VisitInstanceFormDetail>(d => d.VisitInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // visit_instance_guest_members: composite PK; composite FKs bind member+instance to the same
+        // request (both CASCADE). Removing a campus instance cascades only its link rows.
+        modelBuilder.Entity<VisitInstanceGuestMember>(b =>
+        {
+            b.HasKey(l => new { l.VisitInstanceId, l.GuestMemberId });
+            b.HasOne(l => l.VisitInstance).WithMany(vc => vc.GuestMemberLinks)
+                .HasForeignKey(l => new { l.VisitRequestId, l.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(l => l.GuestMember).WithMany(g => g.InstanceLinks)
+                .HasForeignKey(l => new { l.VisitRequestId, l.GuestMemberId })
+                .HasPrincipalKey(g => new { g.VisitRequestId, g.GuestMemberId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(l => l.VisitRequestId).HasDatabaseName("idx_vigm_request");
+        });
+
+        // visit_request_identity_changes → request (CASCADE) + old/new/requested_by users.
+        modelBuilder.Entity<VisitRequestIdentityChange>(b =>
+        {
+            b.HasOne<VisitRequest>().WithMany(v => v.IdentityChanges)
+                .HasForeignKey(c => c.VisitRequestId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(c => c.OldUserId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(c => c.NewUserId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(c => c.RequestedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(c => new { c.VisitRequestId, c.TargetRelation, c.Status })
+                .HasDatabaseName("idx_identity_change_request_relation_status");
+        });
+
+        // visit_request_pending_forms: standalone pending v2 snapshot store (no FK — it is
+        // bound to a submission intent, not to a created request; consumed at verify).
+        modelBuilder.Entity<VisitRequestPendingForm>(b =>
+        {
+            b.HasIndex(p => p.SubmissionId).IsUnique().HasDatabaseName("uq_pending_forms_submission");
+            b.HasIndex(p => p.ExpiresAt).HasDatabaseName("idx_pending_forms_expires");
+        });
+
+        // visit_request_identity_change_events → identity change (CASCADE) + actor.
+        modelBuilder.Entity<VisitRequestIdentityChangeEvent>(b =>
+        {
+            b.HasOne(e => e.IdentityChange).WithMany(c => c.Events)
+                .HasForeignKey(e => e.IdentityChangeId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(e => e.ActorUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // visit_instance_amendments: composite FK to the instance (CASCADE) + requested_by/decided_by.
+        modelBuilder.Entity<VisitInstanceAmendment>(b =>
+        {
+            b.HasOne(a => a.VisitInstance).WithMany(vc => vc.Amendments)
+                .HasForeignKey(a => new { a.VisitRequestId, a.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(a => a.RequestedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(a => a.DecidedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(a => new { a.VisitInstanceId, a.Status, a.RequestedAt })
+                .HasDatabaseName("idx_amendment_instance_status_time");
+        });
+
+        // visit_instance_amendment_changes → amendment (CASCADE).
+        modelBuilder.Entity<VisitInstanceAmendmentChange>()
+            .HasOne(ac => ac.Amendment).WithMany(a => a.Changes)
+            .HasForeignKey(ac => ac.AmendmentId).OnDelete(DeleteBehavior.Cascade);
+
+        // visit_instance_form_revision_history: composite FK to the instance (CASCADE) + applied_by.
+        modelBuilder.Entity<VisitInstanceFormRevisionHistory>(b =>
+        {
+            b.HasOne(h => h.VisitInstance).WithMany(vc => vc.FormRevisionHistory)
+                .HasForeignKey(h => new { h.VisitRequestId, h.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(h => h.AppliedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(h => new { h.VisitInstanceId, h.FormRevision })
+                .IsUnique().HasDatabaseName("uq_vifrh_instance_form_revision");
+        });
+
+        // visit_request_revision_history → request (CASCADE) + applied_by.
+        modelBuilder.Entity<VisitRequestRevisionHistory>(b =>
+        {
+            b.HasOne(h => h.VisitRequest).WithMany(v => v.RevisionHistory)
+                .HasForeignKey(h => h.VisitRequestId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(h => h.AppliedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(h => new { h.VisitRequestId, h.RequestRevision })
+                .IsUnique().HasDatabaseName("uq_vrrh_request_revision");
+        });
+
+        // ── Student visit photo storage (PEMS_FULL_V10_WITH_STUDENT_VISIT_PHOTO_STORAGE) ──
+        // visit_photo_folders: exactly ONE folder per visit request (uq_visit_photo_folders_request);
+        // the composite alternate key mirrors uq_visit_photo_folders_folder_request for the
+        // photo → folder composite FK below.
+        modelBuilder.Entity<VisitPhotoFolder>(b =>
+        {
+            b.HasOne(f => f.VisitRequest).WithMany()
+                .HasForeignKey(f => f.VisitRequestId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(f => f.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(f => f.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(f => f.VisitRequestId)
+                .IsUnique().HasDatabaseName("uq_visit_photo_folders_request");
+            b.HasIndex(f => f.ExternalFolderId)
+                .IsUnique().HasDatabaseName("uq_visit_photo_folders_external");
+            b.HasAlternateKey(f => new { f.VisitPhotoFolderId, f.VisitRequestId });
+        });
+
+        // visit_photos: composite FKs bind the photo to the exact campus instance of its request
+        // (fk_visit_photos_request_instance) and to the request's one folder
+        // (fk_visit_photos_folder_request). files link is 1:1 (uq_visit_photos_file).
+        modelBuilder.Entity<VisitPhoto>(b =>
+        {
+            b.HasOne(p => p.VisitInstance).WithMany()
+                .HasForeignKey(p => new { p.VisitRequestId, p.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(p => p.Folder).WithMany(f => f.Photos)
+                .HasForeignKey(p => new { p.VisitPhotoFolderId, p.VisitRequestId })
+                .HasPrincipalKey(f => new { f.VisitPhotoFolderId, f.VisitRequestId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(p => p.File).WithMany()
+                .HasForeignKey(p => p.FileId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(p => p.UploadedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(p => p.RemovedBy).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(p => p.FileId).IsUnique().HasDatabaseName("uq_visit_photos_file");
+            b.HasIndex(p => new { p.VisitInstanceId, p.UploadedAt })
+                .HasDatabaseName("idx_visit_photos_instance_time");
+            b.HasIndex(p => new { p.Status, p.UploadedAt })
+                .HasDatabaseName("idx_visit_photos_status_time");
+        });
+
         // VisitParticipant → VisitRequestCampus, User, InvitedBy, AssignedBy
         modelBuilder.Entity<VisitParticipant>()
             .HasOne(vp => vp.VisitInstance).WithMany(vc => vc.Participants)
@@ -417,6 +596,59 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .IsUnique().HasDatabaseName("uq_visit_reminder_channel_target");
             b.HasIndex(r => new { r.Status, r.ScheduledAt })
                 .HasDatabaseName("idx_visit_reminder_schedule");
+        });
+
+        // ── Visit Expense Statistics (v11) ────────────────────────────────
+        modelBuilder.Entity<VisitExpenseReport>(b =>
+        {
+            b.HasOne(r => r.VisitInstance).WithMany()
+                .HasForeignKey(r => r.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.LogisticsItem).WithMany()
+                .HasForeignKey(r => r.LogisticsItemId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Department>().WithMany()
+                .HasForeignKey(r => r.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.SavedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.FinalizedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CancelledBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(r => r.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(r => new { r.VisitInstanceId, r.ReportScope, r.Status })
+                .HasDatabaseName("idx_expense_reports_instance_scope_status");
+            b.HasIndex(r => new { r.DepartmentId, r.Status })
+                .HasDatabaseName("idx_expense_reports_department_status");
+            b.HasIndex(r => r.LogisticsItemId)
+                .HasDatabaseName("idx_expense_reports_logistics_item");
+        });
+
+        modelBuilder.Entity<VisitExpenseItem>(b =>
+        {
+            b.HasOne(i => i.ExpenseReport).WithMany(r => r.Items)
+                .HasForeignKey(i => i.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(i => i.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(i => i.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(i => new { i.ExpenseReportId, i.DisplayOrder, i.ExpenseItemId })
+                .HasDatabaseName("idx_expense_items_report_order");
+            b.HasIndex(i => i.ItemOrigin)
+                .HasDatabaseName("idx_expense_items_origin");
+        });
+
+        modelBuilder.Entity<VisitExpenseReportEvent>(b =>
+        {
+            b.HasOne(e => e.ExpenseReport).WithMany(r => r.Events)
+                .HasForeignKey(e => e.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany()
+                .HasForeignKey(e => e.PerformedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(e => new { e.ExpenseReportId, e.PerformedAt })
+                .HasDatabaseName("idx_expense_events_report_time");
+            b.HasIndex(e => new { e.PerformedBy, e.PerformedAt })
+                .HasDatabaseName("idx_expense_events_actor_time");
         });
 
         // Minute → VisitRequestCampus, CreatedBy, EditLockedBy
@@ -523,6 +755,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne<User>().WithMany()
             .HasForeignKey(i => i.DeletedBy).OnDelete(DeleteBehavior.SetNull);
 
+        // GalleryItemContent → GalleryItem (1:1, shared PK), AudioViFile, AudioEnFile, CreatedBy, UpdatedBy.
+        // Both audio FKs are RESTRICT (a referenced audio file can't be deleted while linked).
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne(c => c.GalleryItem).WithOne(i => i.Content)
+            .HasForeignKey<GalleryItemContent>(c => c.GalleryItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne(c => c.AudioViFile).WithMany()
+            .HasForeignKey(c => c.AudioViFileId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne(c => c.AudioEnFile).WithMany()
+            .HasForeignKey(c => c.AudioEnFileId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(c => c.CreatedBy).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<GalleryItemContent>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(c => c.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
+
         // GalleryItemMedia → GalleryItem, File, ThumbnailFile, CreatedBy, UpdatedBy, DeletedBy
         modelBuilder.Entity<GalleryItemMedia>()
             .HasOne(m => m.GalleryItem).WithMany(i => i.Media)
@@ -542,25 +793,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<GalleryItemMedia>()
             .HasOne<User>().WithMany()
             .HasForeignKey(m => m.DeletedBy).OnDelete(DeleteBehavior.SetNull);
-
-        // GalleryItemTtsAudio → GalleryItem, CreatedBy, UpdatedBy. audio_file_id stays a scalar (like
-        // the gallery cover_file_id columns) — the DB owns that FK. The DB's generated running_key
-        // column is not mapped at all, so EF never tries to write it.
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .HasOne(t => t.GalleryItem).WithMany()
-            .HasForeignKey(t => t.GalleryItemId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(t => t.CreatedBy).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(t => t.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .Property(t => t.SpeedRate).HasPrecision(3, 1);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .Property(t => t.PitchRate).HasPrecision(3, 1);
-        modelBuilder.Entity<GalleryItemTtsAudio>()
-            .Property(t => t.Progress).HasPrecision(5, 2);
 
         // PhotoFaceTag → File, TaggedUser, VisitRequest, GuestMember, PartnerContact, CreatedBy, RemovedBy
         modelBuilder.Entity<PhotoFaceTag>()

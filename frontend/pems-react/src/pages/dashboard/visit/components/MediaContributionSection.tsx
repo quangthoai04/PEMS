@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { MediaContributionStatus } from '../../../../features/delegations/types/delegations.types';
-import { Image as ImageIcon, UploadCloud } from 'lucide-react';
+import { Camera, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import httpClient from '../../../../shared/api/httpClient';
 import { toast } from 'react-hot-toast';
+import { VisitPhotoPanel } from '../../../../features/delegations/components/VisitPhotoPanel';
 
 interface Props {
   visitInstanceId: string;
@@ -15,6 +16,9 @@ interface Props {
 export function MediaContributionSection({ visitInstanceId, data, canView, instanceStatus, onChanged }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  // Khối "Ảnh đoàn khách" chỉ dành cho Student ACCEPTED của instance — backend trả 403 cho người
+  // khác; khi đó ẩn khối con này (phần media cũ giữ nguyên).
+  const [showStudentPhotos, setShowStudentPhotos] = useState(true);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -86,13 +90,13 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
 
         {data.canCurrentUserUpload && (
           <div className="pt-2 relative">
-            <input 
-              type="file" 
-              multiple 
-              className="hidden" 
-              ref={fileInputRef} 
-              onChange={handleUpload} 
-              accept="image/*,video/*" 
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleUpload}
+              accept="image/*,video/*"
             />
             <button
               disabled={loading}
@@ -102,6 +106,23 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
               <UploadCloud className="w-4 h-4" />
               {loading ? 'Đang tải lên...' : 'Tải lên Ảnh / Video'}
             </button>
+          </div>
+        )}
+
+        {/* Ảnh đoàn khách (Student) — lưu Drive VR-{request}/{campus}, bảng visit_photos */}
+        {showStudentPhotos && (
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <div className="flex items-center gap-2 mb-3">
+              <Camera className="w-4 h-4 text-[#f37021]" />
+              <h3 className="text-sm font-black text-[#004c91]">Ảnh đoàn khách</h3>
+            </div>
+            <VisitPhotoPanel
+              visitInstanceId={visitInstanceId}
+              mode="edit"
+              columns={6}
+              maxInitialItems={18}
+              onForbidden={() => setShowStudentPhotos(false)}
+            />
           </div>
         )}
       </div>

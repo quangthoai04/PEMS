@@ -39,9 +39,8 @@ public sealed class GetPublicLocationGalleryItemsQueryHandler
                 i.Location.Area.Status == "ACTIVE" &&
                 i.Location.Area.Campus.Status == "ACTIVE" &&
                 i.Media.Any(m => m.Status == "ACTIVE" && m.DeletedAt == null))
-            .OrderBy(i => i.DisplayOrder)
-            .ThenByDescending(i => i.CreatedAt)
-            .ThenByDescending(i => i.GalleryItemId)
+            // Add-order: earliest-added item first, latest last (by auto-increment id).
+            .OrderBy(i => i.GalleryItemId)
             .Select(i => new
             {
                 CampusId = i.Location.Area.CampusId,
@@ -54,7 +53,8 @@ public sealed class GetPublicLocationGalleryItemsQueryHandler
                 LocationName = i.Location.LocationName,
                 i.GalleryItemId,
                 i.Title,
-                i.Description,
+                // Public grid preview is the Vietnamese description (public default language).
+                Description = i.Content != null ? i.Content.DescriptionVi : string.Empty,
                 i.MediaKind,
             })
             .ToListAsync(cancellationToken);

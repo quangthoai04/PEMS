@@ -135,7 +135,11 @@ public sealed class GetHostCandidatesQueryHandler
                 c.VisitInstanceId,
                 c.PlannedStartAt,
                 c.PlannedEndAt,
-                DelegationName = c.VisitRequest.DelegationName,
+                // Conflict label: mixed v2 shows the BUSY instance's own detail name.
+                DelegationName = c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                 && c.VisitRequest.HasMixedCampusDetails
+                    ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
+                    : c.VisitRequest.DelegationName,
             })
             .ToListAsync(cancellationToken);
 

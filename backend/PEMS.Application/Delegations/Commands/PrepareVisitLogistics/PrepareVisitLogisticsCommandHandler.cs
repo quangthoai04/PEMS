@@ -128,7 +128,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
             : OutboundEmailAttachments.From(request.EmailOverride);
         await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
-        var delegationName = instance.VisitRequest?.DelegationName ?? "FPT University";
+        // Mixed per-campus v2: the logistics email uses THIS instance's detail name.
+        var delegationName = (await Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(instance.VisitInstanceId) ?? "FPT University";
         var campusName = await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";

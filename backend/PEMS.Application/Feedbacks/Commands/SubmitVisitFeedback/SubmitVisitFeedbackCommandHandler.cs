@@ -76,6 +76,12 @@ public sealed class SubmitVisitFeedbackCommandHandler
 
         var lookups = await LoadTargetLookupsAsync(request.Items, instance.VisitInstanceId, visitRequest.VisitRequestId, cancellationToken);
 
+        // Mixed per-campus v2: the feedback is INSTANCE-scoped → THIS instance's detail name for
+        // target snapshots and notifications (v1/non-mixed keep the global projection).
+        var effectiveDelegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(instance.VisitInstanceId) ?? visitRequest.DelegationName;
+
         var now = _clock.VietnamNow;
         var toAdd = new List<Feedback>();
         foreach (var item in request.Items)
@@ -85,7 +91,7 @@ public sealed class SubmitVisitFeedbackCommandHandler
                     item.TargetLogisticsItemId, item.TargetHandoverId, item.TargetDepartmentId)))
                 throw new ConflictException("Bạn đã đánh giá mục này rồi.");
 
-            var (targetName, targetRole, targetContext) = ResolveTarget(item, visitRequest, lookups);
+            var (targetName, targetRole, targetContext) = ResolveTarget(item, visitRequest, effectiveDelegationName, lookups);
 
             toAdd.Add(new Feedback
             {
@@ -134,7 +140,7 @@ public sealed class SubmitVisitFeedbackCommandHandler
                 feedbackNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: recipientId,
                     Title: "Visitor đã gửi đánh giá",
-                    Message: $"Visitor đã gửi đánh giá cho chuyến thăm {visitRequest.RequestCode} ({visitRequest.DelegationName}).",
+                    Message: $"Visitor đã gửi đánh giá cho chuyến thăm {visitRequest.RequestCode} ({effectiveDelegationName}).",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
                     RelatedId: instance.VisitInstanceId,
@@ -157,7 +163,7 @@ public sealed class SubmitVisitFeedbackCommandHandler
                 feedbackNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: f.TargetUserId!.Value,
                     Title: "Host đã đánh giá bạn",
-                    Message: $"Host đã gửi đánh giá về bạn trong chuyến thăm {visitRequest.RequestCode} ({visitRequest.DelegationName}).",
+                    Message: $"Host đã gửi đánh giá về bạn trong chuyến thăm {visitRequest.RequestCode} ({effectiveDelegationName}).",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
                     RelatedId: instance.VisitInstanceId,
@@ -276,13 +282,14 @@ public sealed class SubmitVisitFeedbackCommandHandler
     private (string Name, string? Role, string Context) ResolveTarget(
         SubmitVisitFeedbackItem item,
         Domain.Entities.Delegations.VisitRequest visitRequest,
+        string effectiveDelegationName,
         TargetLookups lookups)
     {
         switch (item.TargetType)
         {
             case FeedbackTargetTypes.VisitRequest:
             case FeedbackTargetTypes.VisitInstance:
-                return (visitRequest.DelegationName, "Đoàn tiếp đón", "Đánh giá chung chuyến thăm");
+                return (effectiveDelegationName, "Đoàn tiếp đón", "Đánh giá chung chuyến thăm");
 
             case FeedbackTargetTypes.VisitParticipant:
                 if (!lookups.Participants.TryGetValue(item.TargetParticipantId!.Value, out var p))

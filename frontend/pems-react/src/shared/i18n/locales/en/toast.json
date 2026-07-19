@@ -1,4 +1,8 @@
 {
+  "auth": {
+    "loginSuccess": "Login successful. Welcome back!",
+    "logoutSuccess": "Logged out successfully."
+  },
   "common": {
     "saveSuccess": "Saved successfully.",
     "saveFailed": "Unable to save. Please try again.",

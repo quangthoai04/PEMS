@@ -1091,10 +1091,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const isCancelledRow = activeTab !== 'attending'
       && (row.isCancelled === true || row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED');
 
-    const isMultiCampusParentRow = row.visitScope === 'MULTI_CAMPUS' && row.canExpandCampuses === true && !row.visitInstanceId;
-    const shouldHideParentCancel = isVisitor && isMultiCampusParentRow && row.hasStartedCampus === true;
-    const canRenderCancelAction = (can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST')) && !shouldHideParentCancel;
-
+    const canRenderCancelAction = can('CANCEL_BY_VISITOR') || can('CANCEL_BY_HOST');
     // Feedback rule mới: nút "Đánh giá" khi instance đang tiếp khách / đã hoàn tất và user
     // đủ điều kiện (Visitor của đơn hoặc Host phụ trách); đã gửi rồi → badge check "Đã đánh giá".
     const fb = row.visitInstanceId ? feedbackByInstance[row.visitInstanceId] : undefined;

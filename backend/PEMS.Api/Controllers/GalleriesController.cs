@@ -64,18 +64,26 @@ namespace PEMS.Api.Controllers
         [RequestFormLimits(MultipartBodyLengthLimit = GalleryUploadByteLimit)]
         public async Task<IActionResult> AddGalleryItem(
             [FromForm] string title,
-            [FromForm] string description,
+            [FromForm] string descriptionVi,
+            [FromForm] string descriptionEn,
             [FromForm] long locationId,
             [FromForm] string? itemType,
             [FromForm] string? status,
             [FromForm] List<string>? youtubeUrls,
             [FromForm] string? primaryMediaKey,
+            IFormFile? audioVi,
+            IFormFile? audioEn,
             List<IFormFile>? files,
             CancellationToken cancellationToken)
         {
             var buffered = await BufferFilesAsync(files, cancellationToken);
             var command = new AddGalleryItemCommand(
-                title, description, locationId, itemType, status, buffered,
+                title,
+                descriptionVi,
+                await BufferOneAsync(audioVi, cancellationToken),
+                descriptionEn,
+                await BufferOneAsync(audioEn, cancellationToken),
+                locationId, itemType, status, buffered,
                 youtubeUrls ?? new List<string>(), primaryMediaKey);
             return Ok(await _mediator.Send(command, cancellationToken));
         }
@@ -88,13 +96,16 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> UpdateGalleryItem(
             [FromForm] long galleryItemId,
             [FromForm] string title,
-            [FromForm] string description,
+            [FromForm] string descriptionVi,
+            [FromForm] string descriptionEn,
             [FromForm] long locationId,
             [FromForm] string? itemType,
             [FromForm] List<long>? keepMediaIds,
             [FromForm] long? primaryMediaId,
             [FromForm] List<string>? youtubeUrls,
             [FromForm] string? primaryMediaKey,
+            IFormFile? newAudioVi,
+            IFormFile? newAudioEn,
             List<IFormFile>? newFiles,
             CancellationToken cancellationToken)
         {
@@ -102,7 +113,10 @@ namespace PEMS.Api.Controllers
             var command = new UpdateGalleryItemCommand(
                 galleryItemId,
                 title,
-                description,
+                descriptionVi,
+                descriptionEn,
+                await BufferOneAsync(newAudioVi, cancellationToken),
+                await BufferOneAsync(newAudioEn, cancellationToken),
                 locationId,
                 itemType,
                 keepMediaIds ?? new List<long>(),
