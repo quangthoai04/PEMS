@@ -315,7 +315,13 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
       {/* Ký mượn tài sản hậu cần — phần đầu tiên của tab Đang tiếp khách (real handover API). */}
       {visitInstanceId && (
-        <LogisticsHandoverSection visitInstanceId={visitInstanceId} canManage={!isReadOnly && !isDept} handoverPhase="BORROW" />
+        <LogisticsHandoverSection 
+          visitInstanceId={visitInstanceId} 
+          canManage={!isReadOnly && !isDept} 
+          handoverPhase="BORROW" 
+          sectionNumber="1" 
+          theme="blue" 
+        />
       )}
 
       {/* Đánh giá chuyến thăm đã chuyển sang tab Sau tiếp khách (VisitAfterTab) —
@@ -330,8 +336,8 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
           onClick={() => setIsSection2Expanded(!isSection2Expanded)}
         >
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-             <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">2</span>
+          <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
+             <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">2</span>
              Biên bản cuộc họp
           </h2>
           <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
@@ -535,11 +541,10 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           onClick={() => setIsSection4Expanded(!isSection4Expanded)}
          >
           <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-bold">3</span>
+            <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
+               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">3</span>
                Tài liệu
             </h2>
-            <p className="text-sm text-blue-200 mt-1 italic ml-10">Lưu trữ tài liệu của đối tác</p>
           </div>
           <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
             {isSection4Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -681,11 +686,10 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           onClick={() => setIsSection3Expanded(!isSection3Expanded)}
          >
           <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm">4</span>
+            <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
+               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">4</span>
                Thông tin khác
             </h2>
-            <p className="text-sm text-blue-200 mt-1 italic ml-10">Mục này không bắt buộc điền</p>
           </div>
           <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
             {isSection3Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}

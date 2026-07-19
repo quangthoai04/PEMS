@@ -207,7 +207,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
             </div>
           )}
           <div>
-            <h2 className="text-sm font-black text-white tracking-tight uppercase">Chi phí đoàn</h2>
+            <h2 className="text-sm font-bold text-white tracking-tight uppercase">Chi phí đoàn</h2>
           </div>
         </div>
         <div className="flex items-center gap-3">

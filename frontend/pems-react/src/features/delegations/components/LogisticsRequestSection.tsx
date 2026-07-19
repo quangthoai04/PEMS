@@ -361,7 +361,7 @@ export function LogisticsRequestSection({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-0">
       {/* Mục 1: Welcome LED — 3 lựa chọn (none / hệ thống / trao đổi ngoài), state suy ra từ item đã lưu */}
       <MucCard title="Mục 1: Welcome LED" icon={<MonitorPlay className="w-5 h-5 text-[#f37021]" />}
         open={openSection[1]} onToggle={() => toggleSection(1)}>
@@ -526,25 +526,24 @@ function LoadingRow() {
   return <div className="flex items-center gap-2 py-3 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải...</div>;
 }
 
-/** Collapsible "Mục" card — original orange-accented header + animated body. */
 function MucCard({ title, icon, open, onToggle, children }: {
   title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
-      <div className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-orange-50/50 transition-colors bg-white" onClick={onToggle}>
-        <h3 className="text-xl font-bold text-orange-900 flex items-center gap-2">
-          <div className="p-1.5 bg-orange-100 rounded-lg">{icon}</div>
+    <div className="bg-white border-b border-gray-100 last:border-b-0 overflow-hidden">
+      <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between cursor-pointer group" onClick={onToggle}>
+        <h3 className="text-sm font-bold text-[#004c91] flex items-center gap-2 uppercase tracking-tight">
+          {icon}
           {title}
         </h3>
-        <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
-          {open ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        <div className="w-6 h-6 flex items-center justify-center text-gray-400 group-hover:text-gray-600 transition-colors">
+          {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </div>
       </div>
       <AnimatePresence>
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-            <div className="p-6 pt-2 border-t border-gray-100 bg-white">{children}</div>
+            <div className="p-4 bg-white">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1133,11 +1132,11 @@ function CategoryCard({
           ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
           ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
         ] as const).map(([val, lbl]) => (
-          <label key={val} className="flex items-center gap-3 cursor-pointer">
+          <label key={val} className="flex items-center gap-2.5 cursor-pointer">
             <input type="radio" name={`choice-${cardKey}`} checked={choice === val} disabled={!shared.canManage}
               onChange={() => setChoice(val)}
-              className="w-5 h-5 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-            <span className="text-[15px] font-bold text-gray-700">{lbl}</span>
+              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
+            <span className="text-sm font-semibold text-gray-700">{lbl}</span>
           </label>
         ))}
       </div>
