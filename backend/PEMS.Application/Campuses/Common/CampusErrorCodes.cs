@@ -28,6 +28,14 @@ public static class CampusErrorCodes
     /// </summary>
     public const string CampusHasActiveVisits = "CAMPUS_HAS_ACTIVE_VISITS";
 
+    /// <summary>
+    /// City is outside the supported province whitelist (spec §6). Format/charset violations of the
+    /// other master fields surface as ordinary 400 validation errors keyed by field name, so they
+    /// need no separate code — this one is thrown by the update handler, which must tolerate an
+    /// unchanged legacy city and therefore checks outside FluentValidation. (422)
+    /// </summary>
+    public const string CampusCityInvalid = "CAMPUS_CITY_INVALID";
+
     // ── Duplicate master data (UC-81 create / UC-85 update). Only city may duplicate. (409) ──
     public const string CampusCodeAlreadyExists = "CAMPUS_CODE_ALREADY_EXISTS";
     public const string CampusNameAlreadyExists = "CAMPUS_NAME_ALREADY_EXISTS";

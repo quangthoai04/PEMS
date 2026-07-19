@@ -57,43 +57,68 @@ public sealed class UpdateCampusCommandHandler : IRequestHandler<UpdateCampusCom
         var phone = CampusNormalization.PhoneDisplay(request.Phone);
         var email = CampusNormalization.Email(request.Email);
 
-        // ── Duplicate check excluding the current campus (BR-85-05, §10) ──
-        await CampusDuplicateGuard.EnsureUniqueAsync(
-            _db, code, name, address, phone, email, excludeCampusId: campus.CampusId, cancellationToken);
+        // ── City whitelist with legacy tolerance (spec §6.3) ──
+        // The validator only checks presence for update: a campus stored before the whitelist existed
+        // must stay editable. So an unsupported city is accepted only when it is exactly what is
+        // already stored — the moment the HO changes it, the new value must be on the whitelist.
+        var storedCity = CampusNormalization.City(campus.City);
+        if (!CampusMasterRules.IsAllowedCity(city)
+            && !string.Equals(city, storedCity, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BusinessRuleException(
+                CampusMasterRules.CityNotAllowedMessage, CampusErrorCodes.CampusCityInvalid);
+        }
 
         var before = new { campus.CampusCode, campus.Name, campus.City, campus.Address, campus.Phone, campus.Email };
         var actorId = _currentUser.UserId;
         var now = _clock.VietnamNow;
 
-        campus.CampusCode = code;
-        campus.Name = name;
-        campus.City = city;
-        campus.Address = address;
-        campus.Phone = phone;
-        campus.Email = email;
-        campus.UpdatedAt = now;
-        campus.UpdatedBy = actorId;
-
-        _db.AuditLogs.Add(new AuditLog
+        // Duplicate check and write share one transaction so a concurrent create/update cannot slip
+        // a clashing row in between the two (spec §10.3). Only master data is touched — status,
+        // ic_head_user_id, created_* and the IC department are never assigned here (BR-85-02..04).
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        try
         {
-            ActorUserId = actorId,
-            CampusId = campus.CampusId,
-            Action = "UPDATE_CAMPUS",
-            EntityType = "Campus",
-            EntityId = campus.CampusId,
-            Changes = new List<AuditLogChange>
-            {
-                new AuditLogChange
-                {
-                    FieldName = "Campus",
-                    OldValueText = JsonSerializer.Serialize(before),
-                    NewValueText = JsonSerializer.Serialize(new { code, name, city, address, phone, email })
-                }
-            },
-            CreatedAt = now,
-        });
+            // ── Duplicate check excluding the current campus (BR-85-05, §10) ──
+            await CampusDuplicateGuard.EnsureUniqueAsync(
+                _db, code, name, address, phone, email, excludeCampusId: campus.CampusId, cancellationToken);
 
-        await _db.SaveChangesAsync(cancellationToken);
+            campus.CampusCode = code;
+            campus.Name = name;
+            campus.City = city;
+            campus.Address = address;
+            campus.Phone = phone;
+            campus.Email = email;
+            campus.UpdatedAt = now;
+            campus.UpdatedBy = actorId;
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                CampusId = campus.CampusId,
+                Action = "UPDATE_CAMPUS",
+                EntityType = "Campus",
+                EntityId = campus.CampusId,
+                Changes = new List<AuditLogChange>
+                {
+                    new AuditLogChange
+                    {
+                        FieldName = "Campus",
+                        OldValueText = JsonSerializer.Serialize(before),
+                        NewValueText = JsonSerializer.Serialize(new { code, name, city, address, phone, email })
+                    }
+                },
+                CreatedAt = now,
+            });
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         return new UpdateCampusResponse
         {

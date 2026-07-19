@@ -58,10 +58,6 @@ public sealed class AddNewCampusCommandHandler : IRequestHandler<AddNewCampusCom
         var phone = CampusNormalization.PhoneDisplay(request.Phone);
         var email = CampusNormalization.Email(request.Email);
 
-        // ── Duplicate check — only city may duplicate (BR-81-05) ──
-        await CampusDuplicateGuard.EnsureUniqueAsync(
-            _db, code, name, address, phone, email, excludeCampusId: null, cancellationToken);
-
         var actorId = _currentUser.UserId;
         var now = _clock.VietnamNow;
 
@@ -84,6 +80,12 @@ public sealed class AddNewCampusCommandHandler : IRequestHandler<AddNewCampusCom
         Department icDepartment;
         try
         {
+            // Duplicate check INSIDE the transaction — only city may duplicate (BR-81-05). Running it
+            // here rather than before BeginTransaction narrows the window in which two concurrent
+            // creates both pass the check and both insert (spec §10.3).
+            await CampusDuplicateGuard.EnsureUniqueAsync(
+                _db, code, name, address, phone, email, excludeCampusId: null, cancellationToken);
+
             _db.Campuses.Add(campus);
             await _db.SaveChangesAsync(cancellationToken); // populates campus.CampusId
 

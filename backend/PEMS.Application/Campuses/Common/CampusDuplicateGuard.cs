@@ -39,22 +39,23 @@ internal static class CampusDuplicateGuard
         foreach (var c in others)
         {
             if (CampusNormalization.Code(c.CampusCode) == normalizedCode)
-                throw new ConflictException("Mã campus đã tồn tại.", CampusErrorCodes.CampusCodeAlreadyExists);
+                throw new ConflictException(CampusMasterRules.CodeAlreadyExistsMessage, CampusErrorCodes.CampusCodeAlreadyExists);
 
             if (CampusNormalization.Text(c.Name).ToLowerInvariant() == nameKey)
-                throw new ConflictException("Tên campus đã tồn tại.", CampusErrorCodes.CampusNameAlreadyExists);
+                throw new ConflictException(CampusMasterRules.NameAlreadyExistsMessage, CampusErrorCodes.CampusNameAlreadyExists);
 
             if (!string.IsNullOrWhiteSpace(c.Address)
                 && CampusNormalization.Text(c.Address).ToLowerInvariant() == addressKey)
-                throw new ConflictException("Địa chỉ này đã được sử dụng cho campus khác.", CampusErrorCodes.CampusAddressAlreadyExists);
+                throw new ConflictException(CampusMasterRules.AddressAlreadyExistsMessage, CampusErrorCodes.CampusAddressAlreadyExists);
 
+            // Canonical key, not the display string: "+84 24 7300 5588" clashes with "024 7300 5588".
             if (!string.IsNullOrWhiteSpace(c.Phone)
                 && CampusNormalization.PhoneKey(c.Phone) == phoneKey)
-                throw new ConflictException("Số điện thoại này đã được sử dụng cho campus khác.", CampusErrorCodes.CampusPhoneAlreadyExists);
+                throw new ConflictException(CampusMasterRules.PhoneAlreadyExistsMessage, CampusErrorCodes.CampusPhoneAlreadyExists);
 
             if (!string.IsNullOrWhiteSpace(c.Email)
                 && CampusNormalization.Email(c.Email) == normalizedEmail)
-                throw new ConflictException("Email này đã được sử dụng cho campus khác.", CampusErrorCodes.CampusEmailAlreadyExists);
+                throw new ConflictException(CampusMasterRules.EmailAlreadyExistsMessage, CampusErrorCodes.CampusEmailAlreadyExists);
         }
     }
 }
