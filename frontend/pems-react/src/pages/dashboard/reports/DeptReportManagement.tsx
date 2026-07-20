@@ -1,16 +1,17 @@
 /**
  * Trang DeptReportManagement — Báo cáo phòng ban của Department Leader tại /dashboard/reports.
- * Bố cục 3 phần như Staff Leader: (1) Báo cáo nhiệm vụ (thư mời + đơn yêu cầu),
- * (2) Nhân sự phòng ban, (3) Xuất hóa đơn (đơn đã hoàn thành, đã ký nghiệm thu) gửi
- * cho Staff Leader campus. Bộ lọc duy nhất là khoảng thời gian, dùng chung cho cả 3
- * phần. Dữ liệu từ GET /reports/dept-leader-report-v2.
+ * Bố cục 3 phần: (1) Báo cáo nhiệm vụ (thư mời + đơn yêu cầu), (2) Nhân sự phòng ban,
+ * (3) Thống kê chi phí — đơn đã hoàn thành (đã ký nghiệm thu) kèm số tiền phòng ban đã
+ * kê khai, tổng tiền + xuất thống kê PDF. Bộ lọc duy nhất là khoảng thời gian, dùng
+ * chung cho cả 3 phần. Dữ liệu từ GET /reports/dept-leader-report-v2.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  AlertTriangle, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, Download,
-  FileText, Loader2, RefreshCw, Send, Star, Users, X, XCircle, DollarSign,
+  AlertTriangle, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  ChevronUp, Download, FileText, Loader2, RefreshCw, Send, Star, TrendingDown, TrendingUp,
+  Users, X, XCircle, DollarSign,
 } from 'lucide-react';
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -47,6 +48,79 @@ const tdClass = 'px-3 py-2.5 text-sm text-slate-600';
 const vnMoney = (v: number) => `${v.toLocaleString('vi-VN')} ₫`;
 const fmtDate = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
 const fmtDateTime = (iso: string) => (iso ? `${iso.slice(11, 16)} ${fmtDate(iso)}` : '—');
+
+/** Số dòng mỗi trang của bảng nhân sự. */
+const PAGE_SIZE = 10;
+
+type RankSort = 'DEFAULT' | 'BEST' | 'WORST';
+
+/** Điểm xếp hạng tốt/kém: chuẩn hóa (hoàn thành, giờ làm, feedback) về 0..1 rồi cộng lại. */
+const rankScore = (completed: number, maxCompleted: number, hours: number, maxHours: number, feedback: number | null) =>
+  (maxCompleted > 0 ? completed / maxCompleted : 0)
+  + (maxHours > 0 ? hours / maxHours : 0)
+  + ((feedback ?? 0) / 5);
+
+/** Cặp nút "Tốt nhất / Kém nhất" — bấm lại nút đang chọn để bỏ xếp hạng. */
+function RankSortButtons({ sort, onChange }: { sort: RankSort; onChange: (s: RankSort) => void }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(sort === 'BEST' ? 'DEFAULT' : 'BEST')}
+        title="Xếp hạng theo hoàn thành + giờ làm việc + feedback, tốt nhất lên đầu"
+        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+          sort === 'BEST' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+        }`}
+      >
+        <TrendingUp className="w-3.5 h-3.5" /> Tốt nhất
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(sort === 'WORST' ? 'DEFAULT' : 'WORST')}
+        title="Xếp hạng theo hoàn thành + giờ làm việc + feedback, kém nhất lên đầu"
+        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+          sort === 'WORST' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+        }`}
+      >
+        <TrendingDown className="w-3.5 h-3.5" /> Kém nhất
+      </button>
+    </div>
+  );
+}
+
+/** Thanh phân trang client-side gắn dưới bảng. */
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-t border-slate-200">
+      <span className="text-[11px] font-medium text-slate-400">
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total} dòng
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onChange(page - 1)}
+          disabled={page <= 1}
+          title="Trang trước"
+          className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-xs font-bold text-slate-600 px-2 whitespace-nowrap">{page}/{totalPages}</span>
+        <button
+          type="button"
+          onClick={() => onChange(page + 1)}
+          disabled={page >= totalPages}
+          title="Trang sau"
+          className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function StatTile({ label, value, sub, tone = 'blue', icon }: {
   label: string; value: React.ReactNode; sub?: string; tone?: 'blue' | 'green' | 'red' | 'amber' | 'violet' | 'slate'; icon?: React.ReactNode;
@@ -158,6 +232,22 @@ export function DeptReportManagement() {
   // ── Phần 2: bảng nhân sự ──
   const [personnelNotes, setPersonnelNotes] = useState<Record<number, string>>({});
   const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+  const [personnelSort, setPersonnelSort] = useState<RankSort>('DEFAULT');
+  const [personnelPage, setPersonnelPage] = useState(1);
+
+  const rankedPersonnelRows = useMemo(() => {
+    const rows = data?.personnel.rows ?? [];
+    if (personnelSort === 'DEFAULT') return rows;
+    const maxTasks = Math.max(0, ...rows.map((r) => r.taskCount));
+    const maxHours = Math.max(0, ...rows.map((r) => r.totalHours));
+    const score = (r: DeptLeaderV2PersonnelRow) => rankScore(r.taskCount, maxTasks, r.totalHours, maxHours, r.feedbackAverage);
+    const sorted = [...rows].sort((a, b) => score(b) - score(a));
+    return personnelSort === 'BEST' ? sorted : sorted.reverse();
+  }, [data, personnelSort]);
+  const pagedPersonnelRows = rankedPersonnelRows.slice((personnelPage - 1) * PAGE_SIZE, personnelPage * PAGE_SIZE);
+
+  // Dữ liệu kỳ mới → quay về trang 1.
+  useEffect(() => { setPersonnelPage(1); }, [data]);
 
   const sendPersonnelReport = async (row: DeptLeaderV2PersonnelRow) => {
     setSendingUserId(row.userId);
@@ -168,7 +258,7 @@ export function DeptReportManagement() {
         toDate: data?.toDate,
         note: personnelNotes[row.userId]?.trim() || undefined,
       });
-      toast.success(res.message || 'Đã gửi báo cáo.');
+      toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
     } finally {
@@ -209,11 +299,15 @@ export function DeptReportManagement() {
 
 
 
-  // "Xuất hóa đơn (PDF)" mở hộp thoại IN qua 1 cửa sổ mới chỉ chứa HTML hóa đơn —
+  // Tổng số tiền phòng ban đã kê khai của các đơn trong danh sách (đơn "Không có
+  // chi phí" có totalExpense = 0 nên cộng thẳng).
+  const invoiceTotal = invoiceItems.reduce((s, it) => s + it.totalExpense, 0);
+
+  // "Xuất thống kê PDF" mở hộp thoại IN qua 1 cửa sổ mới chỉ chứa HTML thống kê —
   // không phụ thuộc CSS/layout của trang dashboard nên không bị in trắng.
   const exportInvoicePdf = () => {
     if (invoiceItems.length === 0) {
-      toast.error('Chưa có đơn nào để xuất hóa đơn.');
+      toast.error('Chưa có đơn nào để xuất thống kê.');
       return;
     }
     const esc = (s: string | null | undefined) =>
@@ -225,9 +319,10 @@ export function DeptReportManagement() {
         <td>${esc(it.delegationName)}</td>
         <td style="text-align:center">${fmtDate(it.usageStartAt)}</td>
         <td style="text-align:center">${it.quantity}</td>
+        <td style="text-align:right">${it.noExpense ? '<i style="color:#64748b">Không có chi phí</i>' : it.totalExpense.toLocaleString('vi-VN')}</td>
       </tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8" />
-      <title>Hóa đơn hậu cần — ${esc(data?.departmentName)}</title>
+      <title>Thống kê chi phí hậu cần — ${esc(data?.departmentName)}</title>
       <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 28px; }
         .top { display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 22px; font-size: 12px; }
@@ -236,7 +331,7 @@ export function DeptReportManagement() {
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { border: 1px solid #475569; padding: 6px 8px; }
         th { background: #f1f5f9; }
-        .total td { font-weight: 700; }
+        .total td { font-weight: 700; background: #fff7ed; }
         .sign { display: flex; justify-content: space-between; margin-top: 44px; text-align: center; font-size: 14px; }
         .sign div { width: 48%; }
         .sign .hint { font-size: 11px; color: #64748b; }
@@ -251,13 +346,16 @@ export function DeptReportManagement() {
           <div style="font-weight:800;font-size:11px;color:#f37021">Độc lập - Tự do - Hạnh phúc</div>
         </div>
       </div>
-      <h2>HÓA ĐƠN HẬU CẦN TIẾP KHÁCH (ĐÃ HOÀN THÀNH)</h2>
-      <p class="sub">Phòng ban: <b>${esc(data?.departmentName)}</b> · Kỳ: <b>${fmtDate(invoiceRange.fromDate)} – ${fmtDate(invoiceRange.toDate)}</b></p>
+      <h2>THỐNG KÊ CHI PHÍ HẬU CẦN TIẾP KHÁCH</h2>
+      <p class="sub">Phòng ban: <b>${esc(data?.departmentName)}</b> · Kỳ: <b>${fmtDate(invoiceRange.fromDate)} – ${fmtDate(invoiceRange.toDate)}</b> · ${invoiceItems.length} đơn đã hoàn thành</p>
       <table>
-        <thead><tr><th>STT</th><th>Hạng mục</th><th>Đoàn khách</th><th>Ngày</th><th>SL</th></tr></thead>
+        <thead><tr><th>STT</th><th>Hạng mục</th><th>Đoàn khách</th><th>Ngày</th><th>SL</th><th style="width:120px">Số tiền (₫)</th></tr></thead>
         <tbody>
           ${rowsHtml}
         </tbody>
+        <tfoot>
+          <tr class="total"><td colspan="5" style="text-align:right;text-transform:uppercase">Tổng số tiền</td><td style="text-align:right">${invoiceTotal.toLocaleString('vi-VN')}</td></tr>
+        </tfoot>
       </table>
       <div class="sign">
         <div><b>ĐẠI DIỆN PHÒNG BAN</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
@@ -273,7 +371,7 @@ export function DeptReportManagement() {
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 350);
-    toast.success('Đã mở bản in hóa đơn — chọn "Save as PDF" để lưu.');
+    toast.success('Đã mở bản in thống kê — chọn "Save as PDF" để lưu.');
   };
 
   // Biên bản đã ký giữa 2 bên — TaskHandoverModal (chỉ xem) nhận DTO PascalCase.
@@ -297,7 +395,6 @@ export function DeptReportManagement() {
 
   const t = data?.tasks;
   const p = data?.personnel;
-  const e = data?.expenses;
 
   return (
     <div className="w-full space-y-8 pb-16 animate-in fade-in duration-300">
@@ -489,7 +586,13 @@ export function DeptReportManagement() {
               />
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            {/* Xếp hạng nhân sự (hoàn thành + giờ làm + feedback) */}
+            <div className="flex items-center justify-end">
+              <RankSortButtons sort={personnelSort} onChange={(s) => { setPersonnelSort(s); setPersonnelPage(1); }} />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50">
                   <tr>
@@ -507,11 +610,11 @@ export function DeptReportManagement() {
                   {p!.rows.length === 0 && (
                     <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Không có nhân sự nào.</td></tr>
                   )}
-                  {p!.rows.map((row, idx) => {
+                  {pagedPersonnelRows.map((row, idx) => {
                     const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
                     return (
                       <tr key={row.userId} className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
-                        <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{(personnelPage - 1) * PAGE_SIZE + idx + 1}</td>
                         <td className={`${tdClass} font-semibold text-slate-800`}>
                           <span className="flex items-center gap-1.5">
                             {row.fullName}
@@ -559,14 +662,16 @@ export function DeptReportManagement() {
                   })}
                 </tbody>
               </table>
+              </div>
+              <Pagination page={personnelPage} total={rankedPersonnelRows.length} onChange={setPersonnelPage} />
             </div>
           </Section>
 
-          {/* ═══ 3 · Danh sách biên bản nghiệm thu ═══ */}
+          {/* ═══ 3 · Thống kê chi phí ═══ */}
           <Section
             index={3}
-            title="Biên bản nghiệm thu"
-            subtitle="Danh sách đơn yêu cầu hậu cần đã hoàn thành (đã ký nghiệm thu) trong khoảng ngày."
+            title="Thống kê chi phí"
+            subtitle="Đơn hậu cần đã hoàn thành (đã ký nghiệm thu) kèm số tiền phòng ban đã kê khai trong khoảng ngày."
             open={openSections.invoice}
             onToggle={() => toggleSection('invoice')}
           >
@@ -594,7 +699,7 @@ export function DeptReportManagement() {
               <div className="rounded-2xl border-2 border-orange-200 bg-orange-50/40 overflow-hidden">
                 <div className="px-5 py-3.5 bg-[#f37021] text-white flex items-center justify-between gap-3">
                   <h3 className="text-sm font-black flex items-center gap-2">
-                    <FileText className="w-4 h-4" /> Biên bản nghiệm thu — {data.departmentName}
+                    <DollarSign className="w-4 h-4" /> Thống kê chi phí — {data.departmentName}
                   </h3>
                   <button
                     type="button"
@@ -638,7 +743,8 @@ export function DeptReportManagement() {
                               <th className={thClass}>Đoàn khách</th>
                               <th className={thClass}>Ngày</th>
                               <th className={thClass}>SL</th>
-                              <th className={thClass}>Biên bản</th>
+                              <th className={thClass}>Số tiền</th>
+                              <th className={thClass}>Xem chi tiết</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -652,6 +758,11 @@ export function DeptReportManagement() {
                                 <td className={tdClass}>{it.delegationName}</td>
                                 <td className={`${tdClass} whitespace-nowrap`}>{fmtDateTime(it.usageStartAt)}</td>
                                 <td className={`${tdClass} whitespace-nowrap`}>{it.quantity}</td>
+                                <td className={`${tdClass} whitespace-nowrap`}>
+                                  {it.noExpense
+                                    ? <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">Không có chi phí</span>
+                                    : <span className="font-bold text-emerald-700">{vnMoney(it.totalExpense)}</span>}
+                                </td>
                                 <td className={`${tdClass} whitespace-nowrap`}>
                                   <button
                                     type="button"
@@ -667,13 +778,17 @@ export function DeptReportManagement() {
                         </table>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-end gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-black text-slate-700 uppercase">
+                          Tổng số tiền:{' '}
+                          <span className="text-base text-[#c2410c]">{vnMoney(invoiceTotal)}</span>
+                        </p>
                         <button
                           type="button"
                           onClick={exportInvoicePdf}
                           className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 text-slate-700 text-xs font-black rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
                         >
-                          <Download className="w-4 h-4" /> Tải về / In danh sách
+                          <Download className="w-4 h-4" /> Xuất thống kê PDF
                         </button>
                       </div>
                     </>
@@ -683,55 +798,6 @@ export function DeptReportManagement() {
             )}
           </Section>
 
-          {/* ═══ 4 · Thống kê chi phí ═══ */}
-          <Section
-            index={4}
-            title="Thống kê chi phí"
-            subtitle="Tổng hợp chi phí các hạng mục hậu cần phòng ban phụ trách."
-            open={openSections.personnel}
-            onToggle={() => {}}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-              <StatTile label="Tổng chi phí" value={e ? vnMoney(e.totalAmount) : '—'} tone="blue" icon={<DollarSign className="w-4 h-4 opacity-60" />} />
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className={thClass}>STT</th>
-                    <th className={thClass}>Hạng mục hậu cần</th>
-                    <th className={thClass}>Đoàn khách</th>
-                    <th className={thClass}>Ngày đến</th>
-                    <th className={thClass}>Tổng chi phí</th>
-                    <th className={thClass}>Trạng thái chốt</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(!e || e.rows.length === 0) && (
-                    <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">Không có hạng mục nào trong kỳ có dữ liệu chi phí.</td></tr>
-                  )}
-                  {e?.rows.map((row, idx) => (
-                    <tr key={row.logisticsItemId} className={idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
-                      <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
-                      <td className={`${tdClass} font-semibold text-slate-800`}>{row.itemName}</td>
-                      <td className={`${tdClass} font-semibold text-slate-800`}>{row.groupCode}</td>
-                      <td className={`${tdClass} whitespace-nowrap`}>{fmtDate(row.visitDate ?? '')}</td>
-                      <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-bold`}>{vnMoney(row.totalExpense)}</td>
-                      <td className={`${tdClass} whitespace-nowrap`}>
-                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
-                          row.status === 'ĐÃ CHỐT' ? 'bg-emerald-100 text-emerald-700' :
-                          row.status === 'ĐÃ LƯU' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
         </>
       )}
 
@@ -744,6 +810,7 @@ export function DeptReportManagement() {
           onClose={() => setViewItem(null)}
         />
       )}
+
     </div>
   );
 }
