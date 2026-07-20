@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Trang PartnersPage (Public)
  * FPTU Partnership Directory — dữ liệu thật từ GET /api/public/partners (chỉ đối tác
  * APPROVED + PUBLIC), không dùng mock data, không dùng globe/map.
@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import 'flag-icons/css/flag-icons.min.css';
-import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
+import { VisitEntrySurfaces } from '../shared/features/VisitEntrySurfaces';
 import { useVisitEntryCta } from '../shared/features/useVisitEntryCta';
 import { publicPartnersApi } from '../features/public-partners/api/publicPartnersApi';
 import { usePublicPartnerImage } from '../features/public-partners/hooks/usePublicPartnerImage';
@@ -642,7 +642,7 @@ export function PartnersPage() {
           </div>
         </div>
       </div>
-      <VisitingFormPopup isOpen={visitCta.popupOpen} onClose={visitCta.closePopup} />
+      <VisitEntrySurfaces cta={visitCta} />
     </>
   );
 }

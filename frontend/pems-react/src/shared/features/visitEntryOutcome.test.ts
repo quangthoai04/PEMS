@@ -5,8 +5,8 @@ import { resolveVisitEntryOutcome } from './useVisitEntryCta';
 // DISTINCT outcomes. The bug being locked down is a fetch failure (or an in-flight check) silently
 // downgrading users to the legacy v1 form — that must never happen; only a real backend OFF opens v1.
 describe('resolveVisitEntryOutcome', () => {
-  it('ready + enabled → v2 route (regardless of any transient history)', () => {
-    expect(resolveVisitEntryOutcome('ready', true)).toBe('v2-route');
+  it('ready + enabled → the v2 modal (opened over the current page, never a navigation)', () => {
+    expect(resolveVisitEntryOutcome('ready', true)).toBe('v2-modal');
   });
 
   it('ready + disabled → v1 popup (the ONLY path that opens v1)', () => {

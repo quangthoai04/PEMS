@@ -23,6 +23,7 @@ import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import SearchMatchContexts from '../../../features/visit-request/components/SearchMatchContexts';
 import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
+import { VisitRequestV2Modal } from '../../../features/visit-request/components/v2/VisitRequestV2Modal';
 import { usePerCampusV2Capability } from '../../../shared/features/perCampusV2Capability';
 import { V2_AUTHENTICATED_CREATE_PATH } from '../../../shared/features/perCampusV2Entry';
 import {
@@ -214,6 +215,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showV2Modal, setShowV2Modal] = useState(false);
 
   // Default create-entry cutover: route to the v2 create page when the capability is enabled,
   // otherwise open the v1 authenticated create popup. Fail-safe to v1 while loading / on error.
@@ -223,9 +225,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (outcome === 'error') { notifyCapabilityError(retryCapability); return; }
     if (outcome === 'loading') { notifyCapabilityLoading(); return; }
     dismissCapabilityToasts();
-    // v2 enabled → the real v2 create page; a real backend OFF → the legacy v1 popup. A capability
-    // fetch failure never silently downgrades to v1 (handled above).
-    if (outcome === 'v2-route') navTo(V2_AUTHENTICATED_CREATE_PATH);
+    // v2 enabled → the v2 form in a modal over this screen (no navigation, so the list stays put);
+    // a real backend OFF → the legacy v1 popup. A capability fetch failure never silently
+    // downgrades to v1 (handled above).
+    if (outcome === 'v2-modal') setShowV2Modal(true);
     else setShowCreateModal(true);
   };
 
@@ -1954,14 +1957,28 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       {/* Tạo đoàn khách (shared form core, authenticated mode — không OTP). Đóng modal
           sau khi gửi thành công thì reload danh sách để thấy đơn mới ngay. */}
       {canCreateVisitRequest && (
-        <VisitingFormPopup
-          isOpen={showCreateModal}
-          mode="authenticated"
-          onClose={() => {
-            setShowCreateModal(false);
-            loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
-          }}
-        />
+        <>
+          <VisitRequestV2Modal
+            isOpen={showV2Modal}
+            mode="authenticated"
+            draftNamespace={user?.userId ? `u${user.userId}` : undefined}
+            onClose={() => {
+              setShowV2Modal(false);
+              loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+            }}
+            onSuccess={() => {
+              loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+            }}
+          />
+          <VisitingFormPopup
+            isOpen={showCreateModal}
+            mode="authenticated"
+            onClose={() => {
+              setShowCreateModal(false);
+              loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+            }}
+          />
+        </>
       )}
 
       {/* Xem form yêu cầu (readonly view of original request form) */}

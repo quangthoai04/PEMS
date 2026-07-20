@@ -1,11 +1,6 @@
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { usePerCampusV2Capability } from './perCampusV2Capability';
-import {
-  V2_PUBLIC_REGISTRATION_PATH,
-  V2_AUTHENTICATED_CREATE_PATH,
-} from './perCampusV2Entry';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // The single "Đăng ký tham quan" / "Tạo đơn" click behaviour, shared by every entry
@@ -15,11 +10,15 @@ import {
 // unconditionally, so users landed on the OLD form even when per-campus v2 was ON.
 //
 // The decision has FOUR outcomes, never conflated:
-//   • ready + enabled  → route to the v2 form (public or authenticated);
+//   • ready + enabled  → open the v2 form IN A MODAL over the current page;
 //   • ready + disabled → open the v1 popup (a real backend "v2 is OFF");
 //   • error            → surface an error with a Retry — NEVER a silent v1 fallback,
 //                        so a CORS/timeout/network blip cannot quietly downgrade users;
 //   • loading          → ask the user to wait while the capability resolves.
+//
+// v2 opens as a modal rather than a navigation so the CTA behaves like v1 did: the user keeps
+// their place on the page. The v2 ROUTES still exist for deep links and refresh, and render the
+// same shared form component — the modal is a shell, not a second implementation.
 // ──────────────────────────────────────────────────────────────────────────────
 
 const ERROR_TOAST_ID = 'v2-capability-error';
@@ -28,7 +27,7 @@ const LOADING_TOAST_ID = 'v2-capability-loading';
 import type { CapabilityStatus } from './perCampusV2Capability';
 
 /** The four mutually-exclusive outcomes of a visit-registration CTA click. */
-export type VisitEntryOutcome = 'v2-route' | 'v1-popup' | 'error' | 'loading';
+export type VisitEntryOutcome = 'v2-modal' | 'v1-popup' | 'error' | 'loading';
 
 /**
  * Pure decision shared by every entry point. `error` and `loading` are deliberately NOT collapsed
@@ -38,7 +37,7 @@ export type VisitEntryOutcome = 'v2-route' | 'v1-popup' | 'error' | 'loading';
 export function resolveVisitEntryOutcome(status: CapabilityStatus, enabled: boolean): VisitEntryOutcome {
   if (status === 'error') return 'error';
   if (status === 'loading') return 'loading';
-  return enabled ? 'v2-route' : 'v1-popup';
+  return enabled ? 'v2-modal' : 'v1-popup';
 }
 
 /** Shows the capability-error toast with a Retry that re-fetches. Reused by all entry points. */
@@ -75,32 +74,41 @@ export interface VisitEntryCta {
   /** v1 popup visibility (only ever opened for a real backend OFF). */
   popupOpen: boolean;
   closePopup: () => void;
+  /** v2 modal visibility — the CTA outcome when the capability is ON. */
+  v2ModalOpen: boolean;
+  closeV2Modal: () => void;
+  /** Which shell the v2 modal should render (public OTP flow vs authenticated direct create). */
+  v2Mode: 'public' | 'authenticated';
   /** Exposed for callers that want to disable the button while the capability loads. */
   isResolving: boolean;
 }
 
 export function useVisitEntryCta(mode: 'public' | 'authenticated'): VisitEntryCta {
-  const navigate = useNavigate();
   const { status, enabled, retry } = usePerCampusV2Capability();
   const [popupOpen, setPopupOpen] = useState(false);
+  const [v2ModalOpen, setV2ModalOpen] = useState(false);
 
   const trigger = useCallback(() => {
     const outcome = resolveVisitEntryOutcome(status, enabled);
     if (outcome === 'error') { notifyCapabilityError(retry); return; }
     if (outcome === 'loading') { notifyCapabilityLoading(); return; }
     dismissCapabilityToasts();
-    if (outcome === 'v2-route') {
-      navigate(mode === 'public' ? V2_PUBLIC_REGISTRATION_PATH : V2_AUTHENTICATED_CREATE_PATH);
+    if (outcome === 'v2-modal') {
+      // Open over the current page — no navigation, matching the v1 CTA experience.
+      setV2ModalOpen(true);
     } else {
       // A real backend "v2 is OFF" — the only path that opens the legacy v1 popup.
       setPopupOpen(true);
     }
-  }, [status, enabled, mode, navigate, retry]);
+  }, [status, enabled, retry]);
 
   return {
     trigger,
     popupOpen,
     closePopup: () => setPopupOpen(false),
+    v2ModalOpen,
+    closeV2Modal: () => setV2ModalOpen(false),
+    v2Mode: mode,
     isResolving: status === 'loading',
   };
 }

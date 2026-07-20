@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Trang FAQPage (Public) — Help Center
  * Trung tâm trợ giúp công khai của trường — dữ liệu thật từ GET /api/public/faqs và
  * GET /api/public/faqs/type-counts. Chỉ hiển thị FAQ status=PUBLISHED, không dùng mock data.
@@ -26,7 +26,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { publicFaqApi } from '../features/public-faq/api/publicFaqApi';
-import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
+import { VisitEntrySurfaces } from '../shared/features/VisitEntrySurfaces';
 import { useVisitEntryCta } from '../shared/features/useVisitEntryCta';
 import type { PublicFaqItem, PublicFaqTypeCount } from '../features/public-faq/types/publicFaq.types';
 import { useTranslation } from 'react-i18next';
@@ -560,7 +560,7 @@ export function FAQPage() {
         </div>
       </div>
 
-      <VisitingFormPopup isOpen={visitCta.popupOpen} onClose={visitCta.closePopup} />
+      <VisitEntrySurfaces cta={visitCta} />
     </div>
   );
 }

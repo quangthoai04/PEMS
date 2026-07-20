@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Component FinalCtaSection
  * CTA cuối trang trước Footer — Đăng ký tham quan / Liên hệ Phòng HTQT.
  */
 
 import { CalendarDays, Mail } from 'lucide-react';
-import { VisitingFormPopup } from '../modals/VisitingFormPopup';
+import { VisitEntrySurfaces } from '../../shared/features/VisitEntrySurfaces';
 import { useTranslation } from 'react-i18next';
 import { useVisitEntryCta } from '../../shared/features/useVisitEntryCta';
 
@@ -49,7 +49,7 @@ export function FinalCtaSection() {
         </div>
       </section>
 
-      <VisitingFormPopup isOpen={visitCta.popupOpen} onClose={visitCta.closePopup} />
+      <VisitEntrySurfaces cta={visitCta} />
     </>
   );
 }

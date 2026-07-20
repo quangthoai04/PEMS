@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Component HeroSection
  * Hero chữ ký của Homepage — bố cục split-screen (chữ lớn bên trái, quả cầu 3D bên phải),
  * cùng ngôn ngữ thị giác với trang Đối tác để tạo bản sắc riêng cho cả hệ thống.
@@ -7,7 +7,7 @@
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarDays, ArrowRight, ArrowUpRight } from 'lucide-react';
-import { VisitingFormPopup } from '../modals/VisitingFormPopup';
+import { VisitEntrySurfaces } from '../../shared/features/VisitEntrySurfaces';
 import { LazyGlobeShowcase } from './LazyGlobeShowcase';
 import { useTranslation } from 'react-i18next';
 import { useVisitEntryCta } from '../../shared/features/useVisitEntryCta';
@@ -89,7 +89,7 @@ export function HeroSection() {
         </div>
       </section>
 
-      <VisitingFormPopup isOpen={visitCta.popupOpen} onClose={visitCta.closePopup} />
+      <VisitEntrySurfaces cta={visitCta} />
     </>
   );
 }

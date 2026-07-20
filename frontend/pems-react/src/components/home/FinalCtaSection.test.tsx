@@ -4,10 +4,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
 
-// Stub the heavy v1 form popup so this test stays light and only asserts open/closed.
+// Stub both heavy form shells so this test stays light and only asserts which one opens.
 vi.mock('../modals/VisitingFormPopup', () => ({
   VisitingFormPopup: ({ isOpen }: { isOpen: boolean }) =>
     isOpen ? <div data-testid="v1-popup" /> : null,
+}));
+vi.mock('../../features/visit-request/components/v2/VisitRequestV2Modal', () => ({
+  VisitRequestV2Modal: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="v2-modal" /> : null,
 }));
 
 // react-hot-toast: capture the error/loading calls the entry CTA makes.
@@ -35,13 +39,15 @@ describe('FinalCtaSection v2 cutover', () => {
     retryMock.mockClear();
   });
 
-  it('routes to the v2 registration page when the capability is enabled', () => {
+  it('opens the v2 form in a modal — and does NOT navigate away — when the capability is enabled', () => {
     capabilityMock.mockReturnValue({ status: 'ready', enabled: true, readEnabled: true, writeEnabled: true, retry: retryMock });
     render(<FinalCtaSection />);
 
     fireEvent.click(screen.getByRole('button'));
 
-    expect(navigateMock).toHaveBeenCalledWith('/visit-registration/v2');
+    expect(screen.getByTestId('v2-modal')).toBeInTheDocument();
+    // The CTA must keep the user on the page they were reading.
+    expect(navigateMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId('v1-popup')).toBeNull();
   });
 
