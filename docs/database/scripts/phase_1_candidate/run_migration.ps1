@@ -112,8 +112,9 @@ function Invoke-SqlFile {
 
 # Runs the read-only gate and returns $true ONLY on an explicit PASS verdict + exit code 0.
 function Test-Preflight {
-    Write-Section ('Preflight gate (read-only) on ' + $DbName)
-    $prelude = @()
+    param([ValidateSet('UP','DOWN')][string]$Mode = 'UP')
+    Write-Section ('Preflight gate (' + $Mode + ', read-only) on ' + $DbName)
+    $prelude = @("SET @PHASE1_PREFLIGHT_MODE = '$Mode';")
     if ($OverrideBlockers) { $prelude += 'SET @OVERRIDE_RUNTIME_BLOCKERS = 1;' }
     $r = Invoke-SqlFile -File '01_preflight.sql' -Prelude $prelude
     Write-Host $r.Output.TrimEnd()
@@ -190,6 +191,15 @@ if ($Action -eq 'Up') {
 }
 
 if ($Action -eq 'Down') {
+    # DOWN is destructive too (ADD COLUMN + UPDATE auto-commit). Prove the post-UP state and full
+    # restorability BEFORE the first ALTER, otherwise a failed backfill leaves a mutated schema.
+    if (-not (Test-Preflight -Mode 'DOWN')) {
+        Write-Host ''
+        Write-Host 'REFUSED: DOWN preflight did not pass - the restore payload was NOT executed (zero mutation).'
+        exit 1
+    }
+    Write-Host 'DOWN preflight gate: PASS - proceeding to the guarded restore payload.'
+
     Write-Section ('Guarded DOWN / restore on ' + $DbName)
     $r = Invoke-SqlFile -File '04_down_restore.sql' -Prelude @('SET @ENABLE_PHASE_1_RESTORE = 1;')
     Write-Host $r.Output.TrimEnd()
