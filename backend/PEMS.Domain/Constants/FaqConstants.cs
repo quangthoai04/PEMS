@@ -41,6 +41,24 @@ public static class FaqConstants
         _ => "Khác"
     };
 
+    public static string ToEnglishTypeLabel(string faqType) => faqType switch
+    {
+        Type.AccountAccess => "Account & Access",
+        Type.VisitRequest => "Visit Registration",
+        Type.DelegationManagement => "Delegation Management",
+        Type.LogisticsResource => "Logistics & Resources",
+        Type.DocumentMedia => "Documents & Media",
+        Type.NotificationEmail => "Notifications & Email",
+        _ => "Other"
+    };
+
+    /// <summary>Returns the localised label for <paramref name="faqType"/> in the requested language.
+    /// Defaults to Vietnamese for any unrecognised <paramref name="languageCode"/>.</summary>
+    public static string ToTypeLabel(string faqType, string? languageCode) =>
+        string.Equals(languageCode, "en", StringComparison.OrdinalIgnoreCase)
+            ? ToEnglishTypeLabel(faqType)
+            : ToVietnameseTypeLabel(faqType);
+
     public static string ToVietnameseStatusLabel(string status) => status switch
     {
         Status.Published => "Hiển thị",

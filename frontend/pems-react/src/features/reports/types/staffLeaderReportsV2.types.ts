@@ -99,6 +99,44 @@ export interface StaffLeaderReportV2 {
   expenses: StaffLeaderV2Expenses;
 }
 
+/** 1 hạng mục chi phí trong panel "Thống kê chi phí" (phần 4). */
+export interface StaffLeaderExpenseVisitItem {
+  itemOrigin: string;
+  itemName: string;
+  quantity: number;
+  unitName: string | null;
+  unitPrice: number;
+  totalAmount: number;
+}
+
+/** 1 bảng kê chi phí (GENERAL của Host hoặc LOGISTICS của 1 đơn phòng ban). */
+export interface StaffLeaderExpenseVisitReport {
+  reportScope: 'GENERAL' | 'LOGISTICS' | string;
+  departmentName: string | null;
+  logisticsItemTitle: string | null;
+  noExpense: boolean;
+  reportNote: string | null;
+  status: string;
+  totalAmount: number;
+  items: StaffLeaderExpenseVisitItem[];
+}
+
+/** 1 đoàn có dữ liệu chi phí trong khoảng ngày (panel phần 4). */
+export interface StaffLeaderExpenseVisit {
+  visitInstanceId: number;
+  requestCode: string;
+  delegationName: string;
+  visitDate: string;
+  totalExpense: number;
+  status: string;
+  reports: StaffLeaderExpenseVisitReport[];
+}
+
+export interface StaffLeaderExpenseVisits {
+  totalAmount: number;
+  rows: StaffLeaderExpenseVisit[];
+}
+
 /** 1 chữ ký trong biên bản bàn giao (panel hóa đơn). */
 export interface StaffLeaderInvoiceSignature {
   name: string | null;

@@ -9,6 +9,7 @@ using PEMS.Application.Reports.Queries.GetStaffLeaderReportOverview;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReport;
 using PEMS.Application.Reports.Commands.SendStaffLeaderPersonnelReport;
+using PEMS.Application.Reports.Commands.SendStaffLeaderDepartmentReport;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetHoReportV2;
 using PEMS.Application.Reports.Commands.SendHoCampusReport;
@@ -131,6 +132,26 @@ namespace PEMS.Api.Controllers
             [FromBody] SendStaffLeaderPersonnelReportCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi email báo cáo phối hợp tiếp khách cho trưởng 1 phòng ban (Staff Leader).</summary>
+        [HttpPost("staff-leader-report-v2/send-department-report")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> SendStaffLeaderDepartmentReport(
+            [FromBody] SendStaffLeaderDepartmentReportCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>Thống kê chi phí các đoàn trong khoảng ngày — panel phần 4 trang báo cáo (Staff Leader).</summary>
+        [HttpGet("staff-leader-report-v2/expense-visits")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> GetStaffLeaderExpenseVisits(
+            [FromQuery] GetStaffLeaderExpenseVisitsQuery query, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 

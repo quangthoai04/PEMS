@@ -92,6 +92,10 @@ export interface DeptLeaderInvoiceItemV2 {
   assigneeName: string | null;
   borrowNote: string | null;
   returnNote: string | null;
+  /** Tổng chi phí phòng ban đã kê khai cho đơn này (0 nếu chưa kê hoặc không có chi phí). */
+  totalExpense: number;
+  /** Phòng ban đã xác nhận "Không có chi phí" cho đơn này. */
+  noExpense: boolean;
   borrowProviderSignature: DeptLeaderInvoiceSignatureV2 | null;
   borrowBorrowerSignature: DeptLeaderInvoiceSignatureV2 | null;
   returnProviderSignature: DeptLeaderInvoiceSignatureV2 | null;

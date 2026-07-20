@@ -67,7 +67,7 @@ public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, Paginate
             {
                 FaqId = x.FaqId,
                 FaqType = x.FaqType,
-                FaqTypeLabel = FaqConstants.ToVietnameseTypeLabel(x.FaqType),
+                FaqTypeLabel = FaqConstants.ToTypeLabel(x.FaqType, request.LanguageCode),
                 Question = x.Question,
                 Answer = x.Answer,
                 DisplayOrder = x.DisplayOrder,

@@ -34,7 +34,7 @@ public sealed class GetFaqTypeCountsQueryHandler
             .Select(type => new PublicFaqTypeCountDto
             {
                 Value = type,
-                Label = FaqConstants.ToVietnameseTypeLabel(type),
+                Label = FaqConstants.ToTypeLabel(type, request.LanguageCode),
                 Count = countsByType.GetValueOrDefault(type, 0),
             })
             .OrderByDescending(t => t.Count)
