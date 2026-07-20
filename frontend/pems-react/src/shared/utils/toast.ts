@@ -132,17 +132,17 @@ export function getApiErrorMessage(error: unknown, fallback?: string): string {
 
 /** Toast thành công (id tuỳ chọn để dedupe/cập nhật). */
 export function showSuccessToast(message: string, id?: string): string {
-  return toast.success(message, id ? { id } : undefined);
+  return toast.success(message, id ? { id, duration: 3000 } : { duration: 3000 });
 }
 
 /** Toast lỗi từ một error bất kỳ (đã trích + mask message). */
 export function showErrorToast(error: unknown, fallback?: string, id?: string): string {
-  return toast.error(getApiErrorMessage(error, fallback), id ? { id } : undefined);
+  return toast.error(getApiErrorMessage(error, fallback), id ? { id, duration: 3000 } : { duration: 3000 });
 }
 
 /** Toast lỗi với message đã dựng sẵn (không đi qua getApiErrorMessage). */
 export function showMessageErrorToast(message: string, id?: string): string {
-  return toast.error(maskSecrets(message), id ? { id } : undefined);
+  return toast.error(maskSecrets(message), id ? { id, duration: 3000 } : { duration: 3000 });
 }
 
 /** Toast loading — trả về id để update/dismiss sau khi request kết thúc. */
@@ -152,17 +152,17 @@ export function showLoadingToast(message: string, id?: string): string {
 
 /** Update toast (loading) thành success theo id. */
 export function updateToastSuccess(id: string, message: string): void {
-  toast.success(message, { id });
+  toast.success(message, { id, duration: 3000 });
 }
 
 /** Update toast (loading) thành error theo id, trích message từ error. */
 export function updateToastError(id: string, error: unknown, fallback?: string): void {
-  toast.error(getApiErrorMessage(error, fallback), { id });
+  toast.error(getApiErrorMessage(error, fallback), { id, duration: 3000 });
 }
 
 /** Update toast (loading) thành error với message dựng sẵn theo id. */
 export function updateToastMessageError(id: string, message: string): void {
-  toast.error(maskSecrets(message), { id });
+  toast.error(maskSecrets(message), { id, duration: 3000 });
 }
 
 /** Dismiss một toast theo id (hoặc tất cả nếu bỏ trống). */
