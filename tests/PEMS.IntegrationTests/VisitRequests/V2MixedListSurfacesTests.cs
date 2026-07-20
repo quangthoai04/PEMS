@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Dashboard.Queries.GetStaffCalendar;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
@@ -101,7 +102,8 @@ public sealed class V2MixedListSurfacesTests
             var handler = new CreateVisitRequestV2CommandHandler(
                 db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
                 new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
-                NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn);
+                NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
+                    new VisitRequestAggregateStatusService(db));
             var form = new VisitRequestFormDataV2(
                 "LS" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
@@ -187,7 +189,8 @@ public sealed class V2MixedListSurfacesTests
                 var handler = new CreateVisitRequestV2CommandHandler(
                     db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
                     new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
-                    NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn);
+                    NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
+                    new VisitRequestAggregateStatusService(db));
                 var form = new VisitRequestFormDataV2(
                     "LS" + Guid.NewGuid().ToString("N"),
                     new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),

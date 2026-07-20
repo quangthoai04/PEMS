@@ -9,8 +9,11 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Notifications.Common;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 
@@ -24,6 +27,7 @@ public sealed class CreateVisitRequestV2CommandHandler
     private readonly INotificationService _notificationService;
     private readonly IVisitContactClaimService _contactClaimService;
     private readonly ILogger<CreateVisitRequestV2CommandHandler> _logger;
+    private readonly IVisitRequestAggregateStatusService _aggregateStatus;
     private readonly PerCampusFormV2Options _readFlag;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
 
@@ -33,7 +37,8 @@ public sealed class CreateVisitRequestV2CommandHandler
         INotificationService notificationService,
         IVisitContactClaimService contactClaimService,
         ILogger<CreateVisitRequestV2CommandHandler> logger,
-        PerCampusFormV2Options readFlag, PerCampusFormV2WriteOptions writeFlag)
+        PerCampusFormV2Options readFlag, PerCampusFormV2WriteOptions writeFlag,
+        IVisitRequestAggregateStatusService aggregateStatus)
     {
         _db = db;
         _currentUser = currentUser;
@@ -42,6 +47,7 @@ public sealed class CreateVisitRequestV2CommandHandler
         _notificationService = notificationService;
         _contactClaimService = contactClaimService;
         _logger = logger;
+        _aggregateStatus = aggregateStatus;
         _readFlag = readFlag;
         _writeFlag = writeFlag;
     }
@@ -63,9 +69,100 @@ public sealed class CreateVisitRequestV2CommandHandler
             throw new ForbiddenException();
         var registrantUserId = _currentUser.UserId.Value;
 
+        var actor = await _db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.UserId == registrantUserId, cancellationToken)
+            ?? throw new ForbiddenException();
+
+        if (!string.Equals(actor.Status, UserStatuses.Active, StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("Tài khoản của bạn hiện không hoạt động.");
+
+        var isVisitor      = actor.Role.RoleCode == RoleCodes.Visitor;
+        var isRegularStaff = actor.Role.RoleCode == RoleCodes.Staff && actor.SubRole == UserSubRoles.Staff;
+        var isStaffLeader  = actor.Role.RoleCode == RoleCodes.Staff && actor.SubRole == UserSubRoles.Leader;
+
+        if (!isVisitor && !isRegularStaff && !isStaffLeader)
+            throw new ForbiddenException("Vai trò của bạn không được tạo đoàn khách.");
+
+        var isInternal = isRegularStaff || isStaffLeader;
+        var createdSource = isInternal ? "STAFF_CREATED" : "VISITOR_SUBMITTED";
+
         var form = request.Form;
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
+
+        // ── Per-campus processing (authenticated create only; default = route to the campus Staff Leader).
+        //    Authorization is the SAME role × mode × campus matrix as the v1 authenticated create, kept in
+        //    one pure, unit-tested place (V2CampusProcessingRules) so the two flows can never drift. Every
+        //    decision/host/audit column below is derived server-side — the client only states an intent. ──
+        var selectedCodes = form.CampusVisits
+            .Select(s => s.CampusId?.Trim().ToUpperInvariant() ?? string.Empty)
+            .Where(c => c.Length > 0)
+            .ToHashSet();
+
+        string? actorCampusCode = null;
+        if (isInternal && actor.PrimaryCampusId.HasValue)
+        {
+            actorCampusCode = await _db.Campuses
+                .Where(c => c.CampusId == actor.PrimaryCampusId.Value)
+                .Select(c => c.CampusCode)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        string? actorDepartmentType = null;
+        if (isInternal && actor.DepartmentId.HasValue)
+        {
+            actorDepartmentType = await _db.Departments
+                .Where(d => d.DepartmentId == actor.DepartmentId.Value)
+                .Select(d => d.DepartmentType)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var processingActor = new V2ProcessingActor(
+            IsVisitor: isVisitor,
+            IsRegularStaff: isRegularStaff,
+            IsStaffLeader: isStaffLeader,
+            OwnCampusCode: actorCampusCode,
+            OwnDepartmentIsIc: actorDepartmentType == "IC",
+            ActorUserId: registrantUserId);
+
+        var planList = V2CampusProcessingRules.BuildPlans(form);
+        V2CampusProcessingRules.ValidateShape(processingActor, planList);
+
+        var plans = planList.ToDictionary(p => p.CampusCode, StringComparer.OrdinalIgnoreCase);
+        var hasDirectMode = planList.Count > 0;
+
+        // ASSIGN_HOST candidate: re-queried and re-authorized from the DB — the client dropdown is never
+        // trusted (a disabled / other-campus / non-IC / Leader pick is rejected here, not in the UI).
+        foreach (var plan in planList)
+        {
+            if (plan.Mode != CampusSubmissionModes.AssignHost) continue;
+
+            var candidateId = plan.HostUserId!.Value;
+            if (candidateId == registrantUserId)
+                continue; // Leader picked themself — equivalent to SELF_HOST, already validated above.
+
+            var candidate = await _db.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.UserId == candidateId, cancellationToken)
+                ?? throw new NotFoundException("User", candidateId);
+
+            var candidateDeptType = await _db.Departments
+                .Where(d => d.DepartmentId == candidate.DepartmentId)
+                .Select(d => d.DepartmentType)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var candidateOk = candidate.Role.RoleCode == RoleCodes.Staff
+                && candidate.SubRole == UserSubRoles.Staff
+                && candidate.PrimaryCampusId == actor.PrimaryCampusId
+                && candidate.Status == UserStatuses.Active
+                && candidateDeptType == "IC";
+
+            if (!candidateOk)
+                throw new BusinessRuleException(
+                    "Host được chọn phải là IC Staff đang hoạt động thuộc đúng cơ sở của bạn.",
+                    VisitRequestErrorCodes.InvalidHostCandidate);
+        }
 
         // ── Idempotency (sequential): a retry with the same submissionId returns the same request. ──
         var existing = await FindBySubmissionAsync(form.SubmissionId, cancellationToken);
@@ -74,12 +171,84 @@ public sealed class CreateVisitRequestV2CommandHandler
 
         var now = _clock.VietnamNow;
         VisitRequest created;
+        ulong? notifyAssignedHostId = null;
+
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
             try
             {
                 created = await _createService.CreateV2Async(
-                    form, registrantUserId, "VISITOR_SUBMITTED", now, cancellationToken);
+                    form, registrantUserId, createdSource, now, cancellationToken);
+
+                var campusCodesById = await _db.Campuses
+                    .Where(c => selectedCodes.Contains(c.CampusCode))
+                    .Select(c => new { c.CampusId, c.CampusCode })
+                    .ToDictionaryAsync(c => c.CampusId, c => c.CampusCode, cancellationToken);
+
+                foreach (var instance in created.CampusInstances)
+                {
+                    var code = campusCodesById.TryGetValue(instance.CampusId, out var cc) ? cc : null;
+                    if (code is null || !plans.TryGetValue(code, out var plan))
+                        continue; // No direct plan → stays WAITING_REQUEST_APPROVAL, routed to that campus's Leader.
+
+                    var decision = V2CampusProcessingRules.Derive(processingActor, plan);
+
+                    // Non-blocking hosting-overlap warning — same policy as the v1 create: the user must
+                    // acknowledge it for THIS campus before the direct assignment is written.
+                    var conflict = await _db.VisitRequestCampuses.AnyAsync(c =>
+                        c.CurrentHostUserId == decision.HostUserId
+                        && (c.Status == VisitInstanceStatus.Assigned
+                            || c.Status == VisitInstanceStatus.BeforeVisit
+                            || c.Status == VisitInstanceStatus.DuringVisit)
+                        && c.PlannedStartAt < instance.PlannedEndAt
+                        && c.PlannedEndAt > instance.PlannedStartAt,
+                        cancellationToken);
+                    if (conflict && !plan.ConfirmedHostConflict)
+                        throw new ConflictException(
+                            "Host được chọn đã phụ trách một đoàn khác trùng khung giờ. Vui lòng xác nhận trước khi tiếp tục.",
+                            "HOST_SCHEDULE_CONFLICT_CONFIRMATION_REQUIRED");
+
+                    instance.Status            = VisitInstanceStatus.Assigned;
+                    instance.DecidedBy         = registrantUserId;
+                    instance.DecidedAt         = now;
+                    instance.DecisionActorRole = decision.DecisionActorRole;
+                    instance.DecisionSource    = decision.DecisionSource;
+                    instance.CurrentHostUserId = decision.HostUserId;
+                    instance.HostAssignedBy    = registrantUserId;
+                    instance.HostAssignedAt    = now;
+
+                    if (decision.IsLeaderAssignOther)
+                        notifyAssignedHostId = decision.HostUserId;
+
+                    // Official IC_HOST participant row — same semantics as the approve flow.
+                    instance.Participants.Add(new VisitParticipant
+                    {
+                        UserId          = decision.HostUserId,
+                        ParticipantRole = ParticipantRoles.IcHost,
+                        IsHost          = true,
+                        Status          = ParticipantStatuses.Assigned,
+                        AssignedBy      = registrantUserId,
+                        AssignedAt      = now,
+                        CreatedAt       = now,
+                        CreatedBy       = registrantUserId,
+                    });
+                }
+
+                // Aggregate status — single source that mirrors the SQL aggregate trigger.
+                _aggregateStatus.Apply(created);
+
+                _db.AuditLogs.Add(new PEMS.Domain.Entities.Users.AuditLog
+                {
+                    ActorUserId = registrantUserId,
+                    Action = hasDirectMode
+                        ? "CREATE_VISIT_REQUEST_AUTHENTICATED_WITH_DIRECT_PROCESSING"
+                        : "CREATE_VISIT_REQUEST_AUTHENTICATED",
+                    EntityType = "VisitRequest",
+                    EntityId = created.VisitRequestId,
+                    CreatedAt = now
+                });
+
+                await _db.SaveChangesAsync(cancellationToken);
                 await tx.CommitAsync(cancellationToken);
             }
             catch (DbUpdateException)
@@ -102,6 +271,29 @@ public sealed class CreateVisitRequestV2CommandHandler
             _db, _notificationService, _logger, created, cancellationToken);
         await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
             _db, _contactClaimService, _logger, created, cancellationToken);
+
+        if (notifyAssignedHostId is { } assignedHostId)
+        {
+            var assignedInstance = created.CampusInstances.First(c => c.CurrentHostUserId == assignedHostId);
+            await _notificationService.CreateManyAsync(new[]
+            {
+                new CreateNotificationRequest(
+                    RecipientUserId: assignedHostId,
+                    Title: "Bạn được gán phụ trách đoàn khách",
+                    Message: $"Bạn được phân công làm host chính cho đoàn {created.DelegationName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                    RelatedId: assignedInstance.VisitInstanceId,
+                    ActorUserId: registrantUserId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    IsActionRequired: true,
+                    VisitRequestId: created.VisitRequestId,
+                    VisitInstanceId: assignedInstance.VisitInstanceId,
+                    CampusId: assignedInstance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: $"/dashboard/visit/process/{assignedInstance.VisitInstanceId}")
+            }, cancellationToken);
+        }
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false);
     }

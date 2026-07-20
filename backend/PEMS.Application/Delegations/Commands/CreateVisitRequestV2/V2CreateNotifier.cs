@@ -8,6 +8,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 
@@ -31,8 +32,11 @@ internal static class V2CreateNotifier
     {
         try
         {
+            // ONLY campuses still awaiting a decision get the actionable "please review" notification.
+            // A campus the authenticated creator already processed directly (self-host / leader-assign) is
+            // not pending for anyone, so raising an action there would be a fake task.
             var leaderIds = created.CampusInstances
-                .Where(c => c.CoordinatorUserId.HasValue)
+                .Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval && c.CoordinatorUserId.HasValue)
                 .Select(c => c.CoordinatorUserId!.Value)
                 .Distinct()
                 .ToList();

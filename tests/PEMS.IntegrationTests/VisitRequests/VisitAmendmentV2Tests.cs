@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -111,7 +111,8 @@ public sealed class VisitAmendmentV2Tests
             var handler = new CreateVisitRequestV2CommandHandler(
                 db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
                 new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
-                NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn);
+                NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
+                    new VisitRequestAggregateStatusService(db));
             var form = new VisitRequestFormDataV2(
                 "AM" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
@@ -576,7 +577,8 @@ public sealed class VisitAmendmentV2Tests
                 var handler = new CreateVisitRequestV2CommandHandler(
                     db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
                     new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
-                    NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn);
+                    NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
+                    new VisitRequestAggregateStatusService(db));
                 var form = new VisitRequestFormDataV2(
                     "AM" + Guid.NewGuid().ToString("N"),
                     new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
