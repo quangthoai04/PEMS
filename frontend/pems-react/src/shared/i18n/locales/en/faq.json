@@ -1,4 +1,13 @@
 {
+  "typeLabels": {
+    "ACCOUNT_ACCESS": "Account & Access",
+    "VISIT_REQUEST": "Visit Registration",
+    "DELEGATION_MANAGEMENT": "Delegation Management",
+    "LOGISTICS_RESOURCE": "Logistics & Resources",
+    "DOCUMENT_MEDIA": "Documents & Media",
+    "NOTIFICATION_EMAIL": "Notifications & Email",
+    "OTHER": "Other"
+  },
   "descriptions": {
     "ACCOUNT_ACCESS": "Login, forgot password, system access rights.",
     "VISIT_REQUEST": "Process to register, edit, and cancel visits.",

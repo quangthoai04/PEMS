@@ -61,10 +61,15 @@ namespace PEMS.Api.Controllers
         /// <summary>Every faq_type with its PUBLISHED question count — for the FAQ page's topic cards.</summary>
         [HttpGet("faqs/type-counts")]
         [AllowAnonymous]
-        public async Task<IActionResult> GetFaqTypeCounts(CancellationToken cancellationToken)
+        public async Task<IActionResult> GetFaqTypeCounts(
+            [FromQuery] string? languageCode,
+            CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new PEMS.Application.PublicContent.Queries.GetFaqTypeCounts.GetFaqTypeCountsQuery(),
+                new PEMS.Application.PublicContent.Queries.GetFaqTypeCounts.GetFaqTypeCountsQuery
+                {
+                    LanguageCode = languageCode,
+                },
                 cancellationToken);
             return Ok(result);
         }

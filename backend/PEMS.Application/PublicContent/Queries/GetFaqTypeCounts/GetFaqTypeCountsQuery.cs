@@ -10,6 +10,7 @@ namespace PEMS.Application.PublicContent.Queries.GetFaqTypeCounts;
 /// </summary>
 public sealed class GetFaqTypeCountsQuery : IRequest<List<PublicFaqTypeCountDto>>
 {
+    public string? LanguageCode { get; init; }
 }
 
 public sealed class PublicFaqTypeCountDto
