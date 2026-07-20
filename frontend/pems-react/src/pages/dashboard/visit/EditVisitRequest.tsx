@@ -44,12 +44,9 @@ const toLocalInputValue = (value: string | null | undefined): string =>
   value ? value.slice(0, 16) : '';
 
 function mapDetailToFormValues(detail: EditableVisitRequestDetail): VisitRequestSchema {
-  // Chỉ giữ link partner khi đối tác CÒN hợp lệ (ACTIVE + APPROVED). Nếu partner cũ đã bị
-  // vô hiệu/từ chối/xóa → KHÔNG block form: hạ về tổ chức nhập tay, partnerId = null.
-  const canUseExistingPartner =
-    detail.partnerId != null &&
-    detail.partnerIsActive === true &&
-    detail.partnerProfileStatus === 'APPROVED';
+  // Cập nhật: KHÔNG ĐƯỢC PHÉP drop partnerId của đơn đã nộp (ràng buộc IMMUTABLE_REGISTRANT_INFO của backend).
+  // Dù đối tác đã bị vô hiệu hoặc từ chối, khi sửa/gửi lại đơn vẫn phải echo chính xác partnerId cũ.
+  const canUseExistingPartner = detail.partnerId != null;
   const organizationText =
     detail.partnerName || detail.registrantOrganization || '';
 
