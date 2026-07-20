@@ -21,7 +21,9 @@
     "fullName": "Họ và tên",
     "jobTitle": "Chức vụ",
     "organization": "Đơn vị công tác",
-    "nationality": "Quốc tịch"
+    "nationality": "Quốc tịch",
+    "stt": "STT",
+    "actions": "Thao tác"
   },
   "card": {
     "cardN": "Cơ sở {{n}}",
@@ -90,6 +92,15 @@
   "submit": {
     "public": "Gửi yêu cầu & nhận mã OTP",
     "authenticated": "Gửi yêu cầu"
+  },
+  "modal": {
+    "title": "Đăng ký tham quan trường",
+    "close": "Đóng",
+    "discardTitle": "Bỏ nội dung đã nhập?",
+    "discardBody": "Bạn đã nhập dữ liệu trong biểu mẫu. Đóng bây giờ sẽ đóng cửa sổ này.",
+    "keepEditing": "Tiếp tục nhập",
+    "discardConfirm": "Đóng",
+    "done": "Hoàn tất"
   },
   "success": {
     "title": "Đã gửi yêu cầu tham quan",

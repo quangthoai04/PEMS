@@ -18,7 +18,12 @@ const parseVietnamWallClock = (value: string): Date => parseApiDate(value) ?? ne
 
 /** Mirrors CampusVisitFormDtoValidator.MinDurationMinutes — enforced in MINUTES, not hours. */
 export const V2_MIN_DURATION_MINUTES = 30;
-/** Mirrors VisitRequestFormDataV2Validator.MaxCampuses. */
+/**
+ * Absolute ceiling mirroring VisitRequestFormDataV2Validator.MaxCampuses — a backstop, NOT the
+ * number shown to the user. The real limit is however many campuses are open for registration,
+ * which the backend reports at run time; pass it as `maxCampuses` so adding or retiring a campus
+ * changes the form without a code change.
+ */
 export const V2_MAX_CAMPUSES = 10;
 /** Mirrors CampusVisitFormDtoValidator.MaxMembers (per campus, visitors and support separately). */
 export const V2_MAX_MEMBERS_PER_CAMPUS = 200;
@@ -160,6 +165,8 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
 export const buildVisitRequestV2Schema = (
   minAdvanceHours: number = V2_MIN_ADVANCE_HOURS_CREATE,
   t: ValidationTranslator = defaultT,
+  /** Campuses currently open for registration; falls back to the hard ceiling before they load. */
+  maxCampuses: number = V2_MAX_CAMPUSES,
 ) => z
   .object({
     registerInfo: z.object({
@@ -181,7 +188,10 @@ export const buildVisitRequestV2Schema = (
     campusVisits: z
       .array(buildCampusVisitSchema(minAdvanceHours, t))
       .min(1, t('campusRequired'))
-      .max(V2_MAX_CAMPUSES, t('maxCampuses', { max: V2_MAX_CAMPUSES })),
+      .max(
+        Math.min(maxCampuses, V2_MAX_CAMPUSES),
+        t('maxCampuses', { max: Math.min(maxCampuses, V2_MAX_CAMPUSES) }),
+      ),
   })
   .superRefine((data, ctx) => {
     if (data.partnerSelectionMode === 'EXISTING_PARTNER' && (data.partnerId === null || data.partnerId === undefined)) {

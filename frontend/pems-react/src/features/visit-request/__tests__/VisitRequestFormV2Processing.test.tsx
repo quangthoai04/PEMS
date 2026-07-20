@@ -50,10 +50,17 @@ const STAFF_HN = { userId: 5, roleCode: 'STAFF', subRole: 'STAFF', campusCode: '
 const LEADER_HN = { userId: 6, roleCode: 'STAFF', subRole: 'LEADER', campusCode: 'HN' };
 const VISITOR = { userId: 9, roleCode: 'VISITOR', subRole: null, campusCode: null };
 
-/** Picks a campus in the first (only) card, which is what reveals its processing panel. */
+/**
+ * Picks a campus in the first (only) card, which is what reveals its processing panel. Targets the
+ * native campus <select> by its option set — the form also renders react-select comboboxes for
+ * organization/nationality, so "the first combobox" is not a stable handle.
+ */
 function selectFirstCampus(code: string) {
-  const selects = screen.getAllByRole('combobox');
-  fireEvent.change(selects[0], { target: { value: code } });
+  const campusSelect = screen.getAllByRole('combobox').find(el =>
+    el.tagName === 'SELECT'
+    && Array.from((el as HTMLSelectElement).options).some(o => o.value === code));
+  if (!campusSelect) throw new Error(`No campus <select> offering "${code}"`);
+  fireEvent.change(campusSelect, { target: { value: code } });
 }
 
 describe('VisitRequestFormV2 — per-campus processing wiring', () => {

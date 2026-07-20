@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Controller } from 'react-hook-form';
 import { AlertCircle, Loader2, Plus, Send } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -12,6 +14,8 @@ import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import { campusVisitHasUserContent } from '../../utils/visitRequestV2Form';
 import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
+import { CountrySelect } from '../shared/CountrySelect';
+import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
 import { OtpVerificationModal } from '../OtpVerificationModal';
 import type { CreatorRole } from '../sections/CampusProcessingSection';
@@ -22,6 +26,13 @@ interface Props {
   mode: UseVisitRequestFormV2Options['mode'];
   draftNamespace?: string;
   onSuccess: (result: V2CreateResponse, values: VisitRequestV2Schema) => void;
+  /**
+   * Optional sticky-footer node (supplied by the modal shell) to portal the submit actions into.
+   * Omitted on the standalone route, where the actions simply end the page.
+   */
+  footerSlot?: HTMLElement | null;
+  /** Lets a host warn before discarding typed data (modal close / Esc). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 /**
@@ -30,7 +41,9 @@ interface Props {
  * confirmed one-time deep clone, and the submit payload is the REAL v2 contract (the backend
  * derives scope/mixed state; nothing here is a mock and there is no silent v1 fallback).
  */
-export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSuccess }) => {
+export const VisitRequestFormV2: React.FC<Props> = ({
+  mode, draftNamespace, onSuccess, footerSlot, onDirtyChange,
+}) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'validation']);
   const { campuses, loading: campusesLoading } = useRegistrationCampuses();
   const [showErrors, setShowErrors] = useState(false);
@@ -58,6 +71,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
   const vm = useVisitRequestFormV2(onSuccess, () => setShowErrors(true), {
     mode,
     draftNamespace,
+    // The ceiling is "one card per campus open for registration", read from the backend — not a
+    // constant. Retiring or adding a campus changes the form with no code change.
+    maxCampuses: campuses.length || undefined,
     getCampusProcessing: () => {
       if (!isAuthenticated) return [];
       const selected = new Set(
@@ -126,6 +142,22 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
   const regErr = errors.registerInfo;
   const cpErr = errors.contactPoint;
 
+  // One card per campus open for registration — the ceiling and the "already taken" set both come
+  // from live data, so a campus added or retired in the backend is reflected without a code change.
+  const watchedCampusVisits = form.watch('campusVisits');
+  const campusLimit = campuses.length > 0
+    ? Math.min(campuses.length, V2_MAX_CAMPUSES)
+    : V2_MAX_CAMPUSES;
+  const takenCampusCodes = (watchedCampusVisits ?? [])
+    .map(cv => (cv.campus || '').toUpperCase())
+    .filter(Boolean);
+
+  const isDirty = form.formState.isDirty;
+  useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
+
+  const submitBar = (node: React.ReactNode) =>
+    footerSlot ? createPortal(node, footerSlot) : node;
+
   const syncContactFromRegistrant = () => {
     const reg = form.getValues('registerInfo');
     form.setValue(
@@ -149,14 +181,44 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
           <FormField label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
             <input {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
           </FormField>
+          {/* Free-solo partner/organization search: picking a known partner links partnerId,
+              typing anything else keeps the text as a manually entered organization. */}
           <FormField label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
-            <input {...register('registerInfo.organization')} className={inputCls(!!regErr?.organization, false, false)} />
+            <Controller
+              name="registerInfo.organization"
+              control={form.control}
+              render={({ field }) => (
+                <PartnerOrgCombobox
+                  organization={field.value ?? ''}
+                  partnerId={form.watch('partnerId') ?? null}
+                  hasError={!!regErr?.organization}
+                  onBlur={field.onBlur}
+                  onChange={next => {
+                    field.onChange(next.organization);
+                    form.setValue('partnerId', next.partnerId, { shouldDirty: true });
+                    form.setValue('partnerSelectionMode', next.mode, { shouldDirty: true });
+                  }}
+                />
+              )}
+            />
           </FormField>
           <FormField label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
             <input {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
-            <input {...register('registerInfo.nationality')} className={inputCls(!!regErr?.nationality, false, false)} />
+            <Controller
+              name="registerInfo.nationality"
+              control={form.control}
+              render={({ field }) => (
+                <CountrySelect
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!regErr?.nationality}
+                  placeholder={t('visitRequestV2:registrant.nationality')}
+                />
+              )}
+            />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
             <input {...register('registerInfo.phone')} placeholder="+84…" className={inputCls(!!regErr?.phone, false, false)} />
@@ -220,6 +282,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
                   onToggle={() => toggleCard(clientKey)}
                   campuses={campuses}
                   campusesLoading={campusesLoading}
+                  takenCampusCodes={takenCampusCodes}
                   copySources={campusVisitFields.fields
                     .map((_, i) => i)
                     .filter(i => i !== index)
@@ -242,7 +305,8 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
         </div>
         <button
           type="button"
-          disabled={campusVisitFields.fields.length >= V2_MAX_CAMPUSES}
+          data-testid="v2-add-campus"
+          disabled={campusVisitFields.fields.length >= campusLimit}
           className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-[#004c91]/40 px-4 py-2.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-40"
           onClick={() => {
             if (vm.addCampusVisit()) {
@@ -253,27 +317,35 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
           }}
         >
           <Plus className="h-4 w-4" />
-          {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: V2_MAX_CAMPUSES })}
+          {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: campusLimit })}
         </button>
       </FormSection>
 
-      {/* ── Submit ── */}
-      {vm.submitError && (
-        <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{vm.submitError}</span>
-        </div>
+      {/* ── Submit ──
+          When the host supplies a footer node (the modal shell), the actions are portalled into
+          it so they can be sticky while the body scrolls. The portal keeps them inside THIS
+          <form>, so type="submit" still works and there is no second form implementation. */}
+      {submitBar(
+        <>
+          {vm.submitError && (
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{vm.submitError}</span>
+            </div>
+          )}
+          <div className="flex justify-end pt-4">
+            <button
+              type="submit"
+              data-testid="v2-submit"
+              disabled={vm.isSubmitting}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60"
+            >
+              {vm.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {mode === 'authenticated' ? t('visitRequestV2:submit.authenticated') : t('visitRequestV2:submit.public')}
+            </button>
+          </div>
+        </>,
       )}
-      <div className="flex justify-end pt-4">
-        <button
-          type="submit"
-          disabled={vm.isSubmitting}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60"
-        >
-          {vm.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          {mode === 'authenticated' ? t('visitRequestV2:submit.authenticated') : t('visitRequestV2:submit.public')}
-        </button>
-      </div>
 
       {/* ── Apply-to-all confirmation (never applies without an explicit confirm) ── */}
       {vm.applyToAllPrompt && (

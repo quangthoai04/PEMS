@@ -21,7 +21,9 @@
     "fullName": "Full name",
     "jobTitle": "Job title",
     "organization": "Organization",
-    "nationality": "Nationality"
+    "nationality": "Nationality",
+    "stt": "No.",
+    "actions": "Actions"
   },
   "card": {
     "cardN": "Campus {{n}}",
@@ -90,6 +92,15 @@
   "submit": {
     "public": "Submit & receive OTP",
     "authenticated": "Submit request"
+  },
+  "modal": {
+    "title": "Campus visit registration",
+    "close": "Close",
+    "discardTitle": "Discard what you entered?",
+    "discardBody": "You have entered data in this form. Closing now will dismiss this window.",
+    "keepEditing": "Keep editing",
+    "discardConfirm": "Close",
+    "done": "Done"
   },
   "success": {
     "title": "Visit request submitted",

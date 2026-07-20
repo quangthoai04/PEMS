@@ -112,6 +112,11 @@ export interface UseVisitRequestFormV2Options {
   /** Supplier of per-campus processing choices (authenticated Staff/Leader only). */
   getCampusProcessing?: () => CampusProcessingChoice[];
   minAdvanceHours?: number;
+  /**
+   * How many campuses are open for registration right now (from the backend). Caps the campus
+   * array so the limit tracks the real campus list instead of a hardcoded number.
+   */
+  maxCampuses?: number;
 }
 
 /** Pending apply-to-all confirmation: which card is the source and whose content gets replaced. */
@@ -165,10 +170,13 @@ export const useVisitRequestFormV2 = (
   const autoSaveBlockedRef = useRef(false);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
 
+  const maxCampuses = options?.maxCampuses ?? V2_MAX_CAMPUSES;
+
   const schema = useMemo(
-    () => buildVisitRequestV2Schema(minAdvanceHours, (key, opts) => t(key, { ns: 'validation', ...opts })),
+    () => buildVisitRequestV2Schema(
+      minAdvanceHours, (key, opts) => t(key, { ns: 'validation', ...opts }), maxCampuses),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, i18n.language, minAdvanceHours],
+    [t, i18n.language, minAdvanceHours, maxCampuses],
   );
 
   const form = useForm<VisitRequestV2Schema>({
@@ -235,13 +243,13 @@ export const useVisitRequestFormV2 = (
   const addCampusVisit = useCallback(
     (copyFromIndex?: number) => {
       const current = form.getValues('campusVisits');
-      if (current.length >= V2_MAX_CAMPUSES) return false;
+      if (current.length >= Math.min(maxCampuses, V2_MAX_CAMPUSES)) return false;
       const fresh = createEmptyCampusVisit();
       const source = copyFromIndex !== undefined ? current[copyFromIndex] : undefined;
       campusVisitFields.append(source ? cloneCampusVisitContent(source, fresh) : fresh);
       return true;
     },
-    [form, campusVisitFields],
+    [form, campusVisitFields, maxCampuses],
   );
 
   /** Caller confirms first when the card has user content (`campusVisitHasUserContent`). */

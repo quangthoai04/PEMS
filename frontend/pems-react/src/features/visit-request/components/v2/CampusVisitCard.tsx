@@ -1,10 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { useFieldArray, type UseFormReturn } from 'react-hook-form';
+import { Controller, useFieldArray, type UseFormReturn } from 'react-hook-form';
 import { AlertCircle, ChevronDown, Copy, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 import type { RegistrationCampusOption } from '../../api/visitRequestApi';
 import { FormField, inputCls } from '../shared/FormField';
+import { CountrySelect } from '../shared/CountrySelect';
+import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import {
   isAllowedExcelFile,
   validateSupportTeamExcel,
@@ -29,6 +31,8 @@ interface Props {
   onToggle: () => void;
   campuses: RegistrationCampusOption[];
   campusesLoading: boolean;
+  /** Campus CODEs already chosen on ANY card — filtered out here so a campus cannot be picked twice. */
+  takenCampusCodes?: string[];
   /** Labels of the OTHER cards offered as one-time copy sources (empty → no copy UI). */
   copySources: Array<{ index: number; label: string }>;
   onCopyFrom: (sourceIndex: number) => void;
@@ -71,6 +75,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   onToggle,
   campuses,
   campusesLoading,
+  takenCampusCodes = [],
   copySources,
   onCopyFrom,
   onApplyToAll,
@@ -147,36 +152,160 @@ export const CampusVisitCard: React.FC<Props> = ({
 
   const bodyId = `campus-card-body-${clientKey}`;
 
-  const personRow = (
+  const cellError = (msg?: string) =>
+    msg ? <p className="px-2 pb-1 text-xs font-semibold text-red-600">{msg}</p> : null;
+
+  /**
+   * Name / job title are plain text; organization and nationality reuse the SAME searchable
+   * comboboxes as v1 (free text still allowed when nothing matches). Every field goes through
+   * Controller because each row is rendered twice — desktop table and mobile card — and two
+   * uncontrolled `register()` refs for one field make React Hook Form track only the last one.
+   */
+  const personFieldCell = (
     kind: 'visitors' | 'supportTeam',
     rowIndex: number,
-    onRemoveRow: () => void,
-    removable: boolean,
-  ) => (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] items-start">
-      {(['fullName', 'jobTitle', 'organization', 'nationality'] as const).map(f => (
-        <div key={f}>
+    field: 'fullName' | 'jobTitle' | 'organization' | 'nationality',
+    isCell: boolean,
+  ) => {
+    const name = `${base}.${kind}.${rowIndex}.${field}` as const;
+    const hasError = !!fieldError(`${kind}.${rowIndex}.${field}`);
+    const placeholder = t(`visitRequestV2:person.${field}`);
+
+    if (field === 'organization' || field === 'nationality') {
+      return (
+        <Controller
+          name={name}
+          control={control}
+          render={({ field: f }) => (field === 'nationality' ? (
+            <CountrySelect
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              onBlur={f.onBlur}
+              hasError={hasError}
+              placeholder={placeholder}
+              isCell={isCell}
+            />
+          ) : (
+            <OrganizationCombobox
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              onBlur={f.onBlur}
+              hasError={hasError}
+              placeholder={placeholder}
+              isCell={isCell}
+            />
+          ))}
+        />
+      );
+    }
+
+    return (
+      <Controller
+        name={name}
+        control={control}
+        render={({ field: f }) => (
           <input
-            {...register(`${base}.${kind}.${rowIndex}.${f}`)}
-            placeholder={t(`visitRequestV2:person.${f}`)}
-            aria-label={t(`visitRequestV2:person.${f}`)}
-            className={inputCls(!!fieldError(`${kind}.${rowIndex}.${f}`), false, false)}
+            value={f.value ?? ''}
+            onChange={f.onChange}
+            onBlur={f.onBlur}
+            placeholder={placeholder}
+            aria-label={placeholder}
+            className={isCell
+              ? `w-full border-0 bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-[#004c91] ${hasError ? 'bg-red-50/40' : ''}`
+              : inputCls(hasError, false, false)}
           />
-          {fieldError(`${kind}.${rowIndex}.${f}`) && (
-            <p className="mt-1 text-xs font-semibold text-red-600">{fieldError(`${kind}.${rowIndex}.${f}`)}</p>
-          )}
-        </div>
-      ))}
-      <button
-        type="button"
-        aria-label={t('visitRequestV2:card.removeRow')}
-        disabled={!removable}
-        className="mt-2 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
-        onClick={onRemoveRow}
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
-    </div>
+        )}
+      />
+    );
+  };
+
+  const PERSON_COLUMNS = ['fullName', 'jobTitle', 'organization', 'nationality'] as const;
+
+  /**
+   * Desktop renders a table whose leading column is a RE-DERIVED ordinal (`i + 1`), so removing a
+   * row renumbers the rest automatically — the number is never stored. Below `lg` the same rows
+   * become stacked cards, since a 6-column table cannot stay readable on a phone.
+   */
+  const personTable = (
+    kind: 'visitors' | 'supportTeam',
+    rows: { id: string }[],
+    onRemoveRow: (i: number) => void,
+    canRemoveRow: (i: number) => boolean,
+  ) => (
+    <>
+      <div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block">
+        <table data-testid={`v2-${kind}-table`} className="w-full min-w-[760px] border-collapse text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50">
+            <tr>
+              <th scope="col" className="w-12 p-3 text-center font-bold text-slate-700">
+                {t('visitRequestV2:person.stt')}
+              </th>
+              {PERSON_COLUMNS.map(c => (
+                <th key={c} scope="col" className="border-l border-slate-200 p-3 text-left font-bold text-slate-700">
+                  {t(`visitRequestV2:person.${c}`)}
+                </th>
+              ))}
+              <th scope="col" className="w-14 border-l border-slate-200 p-3 text-center font-bold text-slate-700">
+                {t('visitRequestV2:person.actions')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((f, i) => (
+              <tr key={f.id} className="border-b border-slate-100 last:border-b-0 hover:bg-orange-50/30">
+                <td className="p-3 text-center font-bold text-slate-400">{i + 1}</td>
+                {PERSON_COLUMNS.map(c => (
+                  <td key={c} className="border-l border-slate-100 p-0 align-top">
+                    {personFieldCell(kind, i, c, true)}
+                    {cellError(fieldError(`${kind}.${i}.${c}`))}
+                  </td>
+                ))}
+                <td className="border-l border-slate-100 p-2 text-center align-top">
+                  <button
+                    type="button"
+                    aria-label={t('visitRequestV2:card.removeRow')}
+                    disabled={!canRemoveRow(i)}
+                    className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                    onClick={() => onRemoveRow(i)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="space-y-3 lg:hidden">
+        {rows.map((f, i) => (
+          <div key={f.id} className="rounded-xl border border-slate-200 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400">
+                {t('visitRequestV2:person.stt')} {i + 1}
+              </span>
+              <button
+                type="button"
+                aria-label={t('visitRequestV2:card.removeRow')}
+                disabled={!canRemoveRow(i)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                onClick={() => onRemoveRow(i)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {PERSON_COLUMNS.map(c => (
+                <div key={c}>
+                  {personFieldCell(kind, i, c, false)}
+                  {cellError(fieldError(`${kind}.${i}.${c}`))}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
   );
 
   return (
@@ -259,9 +388,13 @@ export const CampusVisitCard: React.FC<Props> = ({
               disabled={campusesLoading}
             >
               <option value="">{t('visitRequestV2:card.campusPlaceholder')}</option>
-              {campuses.map(c => (
-                <option key={c.campusCode} value={c.campusCode}>{c.campusName}</option>
-              ))}
+              {campuses
+                // Hide campuses already taken by another card; this card keeps its own selection.
+                .filter(c => c.campusCode === campusCode
+                  || !takenCampusCodes.includes(c.campusCode.toUpperCase()))
+                .map(c => (
+                  <option key={c.campusCode} value={c.campusCode}>{c.campusName}</option>
+                ))}
             </select>
           </FormField>
           <FormField label={t('visitRequestV2:card.startAt')} required error={fieldError('startDatetime')} showValidIcon={false}>
@@ -344,13 +477,12 @@ export const CampusVisitCard: React.FC<Props> = ({
           {fieldError('visitors') && (
             <p className="mb-2 text-xs font-semibold text-red-600">{fieldError('visitors')}</p>
           )}
-          <div className="space-y-2">
-            {visitorFields.fields.map((f, i) => (
-              <React.Fragment key={f.id}>
-                {personRow('visitors', i, () => visitorFields.remove(i), visitorFields.fields.length > 1)}
-              </React.Fragment>
-            ))}
-          </div>
+          {personTable(
+            'visitors',
+            visitorFields.fields,
+            i => visitorFields.remove(i),
+            () => visitorFields.fields.length > 1,
+          )}
           <button
             type="button"
             className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50 disabled:opacity-40"
@@ -397,13 +529,12 @@ export const CampusVisitCard: React.FC<Props> = ({
               e.target.value = '';
             }}
           />
-          <div className="space-y-2">
-            {supportFields.fields.map((f, i) => (
-              <React.Fragment key={f.id}>
-                {personRow('supportTeam', i, () => supportFields.remove(i), true)}
-              </React.Fragment>
-            ))}
-          </div>
+          {personTable(
+            'supportTeam',
+            supportFields.fields,
+            i => supportFields.remove(i),
+            () => true,
+          )}
           <button
             type="button"
             className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50 disabled:opacity-40"
