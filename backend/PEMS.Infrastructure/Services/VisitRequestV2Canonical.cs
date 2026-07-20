@@ -24,6 +24,20 @@ public static class VisitRequestV2Canonical
     public static string ScopeOf(int campusCount)
         => campusCount > 1 ? VisitScopes.MultiCampus : VisitScopes.SingleCampus;
 
+    /// <summary>
+    /// Scope from the DISTINCT campuses actually being visited — the only correct basis, and
+    /// independent of how many entries the payload happens to contain. The validator already
+    /// rejects duplicates, so this normally equals the entry count; deriving it from the distinct
+    /// set means a request can never be recorded as MULTI_CAMPUS because the same campus appeared
+    /// twice, regardless of validation order. Client-sent scope is never consulted.
+    /// </summary>
+    public static string ScopeOf(IEnumerable<CampusVisitFormDto> campuses)
+        => ScopeOf(campuses
+            .Select(c => c.CampusId?.Trim().ToUpperInvariant() ?? string.Empty)
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count());
+
     /// <summary>has_mixed = any campus differs in normalized copyable form content OR member set (ignores campus/time).</summary>
     public static bool ComputeHasMixed(IList<CampusVisitFormDto> campuses)
     {

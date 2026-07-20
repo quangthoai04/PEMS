@@ -104,7 +104,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
 
         // ── Backend-derived scope + mixed flag (NEVER from the client). has_mixed compares only normalized
         //    COPYABLE form content + member sets — not campus_id, not schedule. Shared with edit/resubmit. ──
-        var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits.Count);
+        var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits);
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(form.CampusVisits);
 
         // Compatibility projection = the smallest-campus_id campus (transition only; real data is per-instance).
