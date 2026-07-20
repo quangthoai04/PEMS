@@ -1,10 +1,12 @@
 # PEMS Per-Campus Form V2 — Review environment guide
 
-**Status:** `V2 EXPERIENCE READY (core + most interactive journeys) — the isolated review database is
-built, all outbound integrations are neutralised, and the core create/read/authorization/report
-journeys PLUS pending-edit, resubmit, amendment (submit+approve) and identity-claim are verified
-end-to-end through real Chromium. Public-OTP is verified at the backend-mechanism level; assignment/
-invitation and photo-upload UI are NOT YET RUN. This is not FULL V2 EXPERIENCE READY — see §5c.`
+**Status:** `V2 EXPERIENCE READY — the isolated review database is built, all outbound integrations
+are neutralised, and all six interactive UI groups are verified end-to-end through real Chromium:
+entry-point cutover, the public multi-campus form with OTP, pending-edit/resubmit, amendment
+(submit+approve), identity-claim (accept+decline), assignment+invitation, and student photo-upload.
+Two real defects were found and fixed along the way (a CORS block and a documents.owner_type enum
+mismatch). Read the caveats in §5c before treating any sub-case as exhaustively covered. Phase I
+contract-drop remains NOT READY.`
 
 Phase I contract-drop remains **NOT READY** and is not part of this environment. The review
 database keeps all ten legacy columns; nothing here drops a column.
@@ -144,6 +146,13 @@ MySQL on `localhost:3306`:
 netstat -ano | findstr <api-pid>     # expect only :5299 listen + :3306 to localhost
 ```
 
+> **`sent_emails.status` is NOT proof of a real send when SMTP is off.** With `Smtp:Enabled=false`,
+> `EmailService` logs the message (`[EmailService-DEV] To:…`) and returns, but some handlers still
+> record the `sent_emails` row as `SENT`. So a `SENT` row can mean "logged, not dispatched." The
+> authoritative signal for an actual outbound is the API log line **`Sent email to …`** (the real
+> SMTP path) versus **`[EmailService-DEV] To:…`** (logged only). Grep the log, don't trust the DB
+> status column, when auditing whether mail left the machine.
+
 Confirm the flags reached the API:
 
 ```
@@ -223,23 +232,48 @@ page) and confirmed in the database. Preconditions that are not themselves the j
 (creating a request, a leader's approve/reject) were set up via the authenticated API; the journey's
 own action was always performed in the DOM.
 
+Preconditions that are not themselves the journey under test (creating a request, a leader's
+approve/reject/host-assign, advancing a visit stage) were set up via the authenticated API; the
+journey's own action was always performed in the DOM.
+
 | Group | Result | Evidence |
 |---|---|---|
 | Login form (INTERNAL) | **PASS** | real form → `/api/auth/login` 200 → token stored → dashboard reachable |
-| **1 · Pending edit** | **PASS** | owner opens detail, `pending-edit` → edits HN delegation → PUT 200. DB: HN `PE_HN_EDITED`, `form_revision 1→2`; **HCM untouched (`form_revision 1`)** — per-campus copy-on-write |
-| **1 · Resubmit** | **PASS** | leader rejects (single campus → request REJECTED); owner `resubmit` action shows → edits → POST 200 |
-| **3 · Identity claim** | **PASS (render)** | A≠B request → claim email **logged, not sent** → claim page loads real data via `GET /api/public/visit-contact-claims/{token}` 200 with accept/decline UI. The *accept* step needs SSO/OTP and was not completed |
-| **4 · Amendment + approval** | **PASS** | approved+self-hosted instance; owner submits amendment via modal → POST 200; **leader approves via UI** → POST 200. DB: canonical detail `AM_HN_AMENDED`, amendment `APPROVED`, `approval_revision` bumped |
-| **6 · Public OTP** | **PARTIAL** | initiate → OTP **logged, not sent** (`662833`) → verify → request 9027 created (`fsv=2`). Backend OTP path (initiate/snapshot-bind/verify/create) fully exercised on the real stack **via the public API**; the multi-step public form + OtpVerificationModal were **not** driven in the browser |
-| **2 · Assignment + invitation** | **NOT RUN** | needs approve → host-assign → participant-invite screens; multi-actor state not set up this session |
-| **5 · Photo upload (UI)** | **NOT RUN** | needs a student assigned to an instance advanced to DURING/AFTER stage, then the upload panel; the image-only contract itself is covered by the frontend gates |
+| **Entry-point cutover** | **PASS** | Home, FAQ (exact CTA) and Partners "Đăng ký tham quan" all navigate to `/visit-registration/v2` when v2 is enabled — the FAQ/Partners bug is fixed |
+| **Public V2 form + OTP** | **PASS** | full form driven: registrant+contact, HN+HCM with distinct data, add-campus keeps campus-0 data intact, submit → **OtpVerificationModal** → OTP **logged, not sent** → verify. DB (req 9031): `fsv=2`, `has_mixed=1`, **2 instances / 2 details**, HN≠HCM matching the UI |
+| **1 · Pending edit** | **PASS** | owner `pending-edit` → edits HN delegation → PUT 200. DB: HN `PE_HN_EDITED` `form_revision 1→2`; HCM untouched — per-campus copy-on-write |
+| **1 · Resubmit** | **PASS** | leader rejects → owner `resubmit` → POST 200 |
+| **3 · Identity claim** | **PASS** | claim emails **logged, not sent**. **Decline** (req 9032, authed invited contact) → `DECLINED`, access stays `PENDING_CONFIRMATION`, request not cancelled. **Accept** (req 9033) → `APPLIED`, contact linked (`new_user_id`) + `ACTIVE`. ⚠️ see caveat below |
+| **4 · Amendment + approval** | **PASS** | owner submits amendment via modal → POST 200; leader approves via UI → POST 200. DB: canonical `AM_HN_AMENDED`, `APPROVED`, `approval_revision` bumped |
+| **6 · Public OTP** | **PASS** | covered by "Public V2 form + OTP" above — the OTP modal is driven end to end in the browser (initiate → logged code → verify → create) |
+| **2 · Assignment + invitation** | **PASS** | leader approves + self-hosts (instance `ASSIGNED`); host invites a **student** → student accepts via the invitation UI → participant `ACCEPTED`. Scope: an **HCM student gets 404** on the HN invitation (sibling isolation) |
+| **5 · Photo upload** | **PASS (after a fix)** | instance advanced to `AFTER_VISIT`; the accepted **student** uploads a photo via the contribution UI → 200; `documents` row created (`VISIT_INSTANCE_MEDIA`, `PUBLISHED`, `created_by`=student). Storage stayed local (Drive off). **This surfaced a real bug — see below** |
 
-**This is not FULL V2 EXPERIENCE READY:** groups 2 and 5 have not run, and group 6 is verified at the
-mechanism level but not through the browser form.
+### Two real defects found and fixed
 
-An **environment defect was found and fixed** while doing this: the review frontend origin `:5273`
-was not in `Cors:AllowedOrigins`, so the browser could not talk to the API at all. Fixed in
-`Start-ReviewApi.ps1` via a process env override (see §3). No product code was involved.
+1. **CORS** — the review frontend origin `:5273` was not in `Cors:AllowedOrigins`, so the browser
+   could not talk to the API (page served 200 but every call failed and bounced to `/login`). Fixed
+   in `Start-ReviewApi.ps1` via a process env override (see §3). No product code involved.
+2. **`documents.owner_type` enum** — photo upload wrote `VISIT_INSTANCE_MEDIA`, a value the master
+   schema's enum never contained, so every upload failed with MySQL 1265. Fixed by extending the enum
+   (idempotent patch + master + fresh-target) with a regression test that reads the SQL and asserts
+   the enum covers every value the code writes.
+
+### Caveats — do not over-read these as exhaustive
+
+- **Claim accept needs a real Google SSO in production.** The backend requires an authenticated
+  session whose email equals the invited email; the UI's accept CTA is "Đăng nhập bằng Google". The
+  review has no real Google accounts, so the invited contacts were provisioned directly (simulating
+  the account Google-SSO would create on first login) and driven with a session token. The
+  accept/decline *mechanism* is faithfully exercised; the Google login step itself is not, and cannot
+  be, in this review.
+- **Invite/decline variants.** Staff and Department invites use the same endpoint/mechanism as the
+  Student invite that was driven; the invitation *decline* path was not each individually driven.
+- **Photo validation.** The happy-path upload was driven; the image-only/5 MB *rejection* cases are
+  enforced by the accept attribute + client validation (and covered by the frontend gates), not
+  re-driven in the browser here.
+- **Phone format** — the backend accepts national-format phones the frontend zod rejects (see §6);
+  UI-created requests always use `+84…`, so the review used that format.
 
 ---
 
