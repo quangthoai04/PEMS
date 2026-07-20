@@ -2,7 +2,7 @@
 
 ## Mục đích
 Bộ scripts này là **candidate** để chuẩn bị loại bỏ 10 trường dữ liệu legacy V1 khỏi bảng `visit_requests`.
-Hiện tại, hệ thống đang ở trạng thái **NOT READY FOR EXECUTION** do vẫn còn dual-read và compatibility write. Bộ script này CHỈ ĐƯỢC CHẠY trên các disposable database có tiền tố `pems_i_` (như `pems_i_fresh`, `pems_i_upgrade`, `pems_i_rollback`) để drill test.
+Hiện tại, hệ thống đang ở trạng thái: `IN PROGRESS — candidate draft hardened/static-reviewed; disposable drills NOT RUN; NOT READY FOR EXECUTION.` Bộ script này CHỈ ĐƯỢC CHẠY trên các disposable database có tiền tố `pems_i_` (như `pems_i_fresh`, `pems_i_upgrade`, `pems_i_rollback`) để drill test.
 TUYỆT ĐỐI KHÔNG CHẠY TRÊN `pems_db`, `pems_test` hay `pems_pr3_test`.
 
 ## Các file scripts

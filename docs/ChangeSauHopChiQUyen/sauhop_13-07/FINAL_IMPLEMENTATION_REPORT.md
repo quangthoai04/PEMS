@@ -101,7 +101,7 @@ gate (no/wrong secret + unknown profile → 401) and resolving identity server-s
 `campus_leader_hn`→STAFF, never HCM). The E2E actor uses a real seeded session (no production middleware bypass); the
 run secret is never persisted (trace off, no log).
 
-**Deferred:** Phase I — guarded contract-drop prep on disposable DBs only. **✅ COMPLETE (Blocked)**. Zero-unclassified audit performed (`PHASE_I_AUDIT_REPORT.md`). Guarded candidate scripts generated with explicit allowlists. Regression gates passed (Unit 530, Arch 14, FE build ✓). Expected conclusion reached: "Phase I guarded contract-drop candidate prepared; execution NOT READY while V1 fallback + legacy runtime reads of the 10 global fields are retained by design with both flags OFF; no real database modified."
+**Deferred:** Phase I — guarded contract-drop prep on disposable DBs only. **✅ COMPLETE (Blocked)**. Zero-unclassified audit performed (`PHASE_I_AUDIT_REPORT.md`). Guarded candidate scripts generated with explicit allowlists. Regression gates passed (Unit 530, Arch 14, FE build ✓). Expected conclusion reached: `IN PROGRESS — candidate draft hardened/static-reviewed; disposable drills NOT RUN; NOT READY FOR EXECUTION.`
 
 ## 2. Safety invariants (all holding)
 

@@ -577,7 +577,7 @@ caveats); no backend production/IT code changed this session; v2 backend covered
 - **Guarded Scripts**: Prepared 5 candidate scripts (`01_preflight.sql`, `02_guarded_up.sql`, `03_verify.sql`, `04_down_restore.sql`, `README.md`) with explicit `pems_i_fresh/upgrade/refusal/rollback` database guards.
 - **Drill Execution**: Disposable MySQL environment drills could not be executed locally due to missing MySQL binaries on the execution environment. Full commands and missing binaries are documented in `PHASE_I_AUDIT_REPORT.md`.
 - **Regression Gates**: Unit 530/530 · Architecture 14/14 · Frontend tsc 0 · build ✓.
-- **Conclusion**: Phase I guarded contract-drop candidate prepared and tested structurally; execution remains **NOT READY** while V1 fallback, legacy runtime readers/writers, persisted V1 data and default-OFF flags remain. No real database was modified.
+- **Conclusion**: `IN PROGRESS — candidate draft hardened/static-reviewed; disposable drills NOT RUN; NOT READY FOR EXECUTION.`
 
 ## Verified test gates (updated each group)
 - Unit 435/435 · Architecture 14/14 · IntegrationTests 306/306 (Phase A).

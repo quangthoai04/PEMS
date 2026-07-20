@@ -1,22 +1,28 @@
 -- Guarded UP Script for Phase I
--- MUST SET @ENABLE_PHASE_1_DROP = 1 to run
-DELIMITER //
+-- This script contains ONLY the DDL payload.
+-- It MUST be executed via run_migration.ps1 which ensures zero-mutation refusal before execution.
+-- DO NOT RUN THIS SCRIPT DIRECTLY ON PRODUCTION!
 
-CREATE PROCEDURE `ExecutePhase1Drop`()
-BEGIN
-    DECLARE db_name VARCHAR(255);
-    SELECT DATABASE() INTO db_name;
-    
-    IF db_name NOT IN ('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback') THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Refused: Not an allowed disposable database.';
-    END IF;
+-- 1. Drop dependent index ft_visit_requests_frontend_search and recreate without delegation_name
+ALTER TABLE `visit_requests` DROP INDEX `ft_visit_requests_frontend_search`;
+ALTER TABLE `visit_requests` ADD FULLTEXT KEY `ft_visit_requests_frontend_search` (
+    `request_code`, `registrant_full_name`, `registrant_organization`, `registrant_email`,
+    `contact_person_full_name`, `contact_person_organization`, `contact_person_email`
+);
 
-    IF @ENABLE_PHASE_1_DROP != 1 OR @ENABLE_PHASE_1_DROP IS NULL THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Refused: Explicit opt-in required (@ENABLE_PHASE_1_DROP = 1)';
-    END IF;
+-- 2. Drop other dependent indexes
+ALTER TABLE `visit_requests` DROP INDEX `idx_visit_requests_visit_type`;
+ALTER TABLE `visit_requests` DROP INDEX `idx_visit_requests_media_consent`;
 
-    -- Proceed to drop columns
-    ALTER TABLE `visit_requests`
+-- 3. Drop dependent CHECK constraint for visit_type dynamically
+SET @chk_name = (SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'visit_requests' AND CONSTRAINT_TYPE = 'CHECK' AND ENFORCED = 'YES' LIMIT 1);
+SET @sql = IF(@chk_name IS NOT NULL, CONCAT('ALTER TABLE visit_requests DROP CHECK ', @chk_name), 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 4. Drop the 10 legacy columns
+ALTER TABLE `visit_requests`
     DROP COLUMN `delegation_name`,
     DROP COLUMN `visit_type`,
     DROP COLUMN `visit_type_other`,
@@ -27,11 +33,5 @@ BEGIN
     DROP COLUMN `media_consent_status`,
     DROP COLUMN `media_consent_note`,
     DROP COLUMN `note_to_fptu`;
-    
-    SELECT 'Phase I Drop Completed' as result;
-END//
 
-DELIMITER ;
-
-CALL ExecutePhase1Drop();
-DROP PROCEDURE ExecutePhase1Drop;
+SELECT 'Phase I Drop Completed' as result;
