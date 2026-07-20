@@ -253,10 +253,12 @@ try {
         param([string]$Sql, [switch]$Transform)
         $p = Join-Path $txDir ('case_' + [guid]::NewGuid().ToString('N') + '.sql')
         Set-Content -LiteralPath $p -Value $Sql -Encoding UTF8
-        $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $importer,
-                  '-DbName', 'pems_i_refusal', '-SqlPath', $p, '-MysqlExe', $spyExe, '-ScanOnly')
-        if ($Transform) { $args += '-TransformMaster' }
-        $out = & powershell @args 2>&1 | Out-String
+        # Not $args: that is a PowerShell automatic variable and assigning to it here would
+        # clobber the caller's argument array.
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $importer,
+                    '-DbName', 'pems_i_refusal', '-SqlPath', $p, '-MysqlExe', $spyExe, '-ScanOnly')
+        if ($Transform) { $psArgs += '-TransformMaster' }
+        $out = & powershell @psArgs 2>&1 | Out-String
         return @{ Output = $out; ExitCode = $LASTEXITCODE }
     }
 
@@ -289,10 +291,88 @@ try {
     $r6 = Invoke-Importer -Sql "SELECT 1;" -Transform
     Assert-True 'L8 transform of an already-safe file is a no-op success' ($r6.ExitCode -eq 0) ("exit $($r6.ExitCode)")
 
+    # A fresh-create dump recreates its own schema first. All three preamble statements are
+    # removable; the output is still re-scanned, so this is not a blanket exemption.
+    $freshCreate = "DROP DATABASE IF EXISTS pems_db;`nCREATE DATABASE pems_db;`nUSE pems_db;`nCREATE TABLE t (id INT);"
+    $r7 = Invoke-Importer -Sql $freshCreate -Transform
+    Assert-True 'L10 fresh-create preamble (DROP+CREATE+USE) transforms' ($r7.ExitCode -eq 0) ("exit $($r7.ExitCode): " + $r7.Output)
+
+    # A DROP DATABASE aimed at something the preamble did not create must still not be laundered
+    # into a "safe" artifact just because -TransformMaster was passed... it is removed, but the
+    # re-scan is what decides, and a leftover protected reference still fails.
+    $r8 = Invoke-Importer -Sql "DROP DATABASE pems_test;`nSELECT * FROM pems_test.users;" -Transform
+    Assert-True 'L11 leftover protected reference still fails after preamble removal' ($r8.ExitCode -ne 0) 'protected reference laundered'
+
     Assert-True 'L9 no mysql process was spawned in any transform case' (-not (Test-Path -LiteralPath $spyLog)) 'the spy was invoked'
 }
 finally {
     Remove-Item -LiteralPath $txDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host ''
+Write-Host '=== M. Review mode is a separate allowlist, not a widened one ==='
+
+# The review database is long-lived application data; the drill databases get dropped and rebuilt
+# by destructive migrations. Merging the two lists would let a review fixture land on a database
+# mid-migration, or hand the review database to the Phase I destructive runner. -Mode keeps them
+# apart, and these cases prove the separation actually holds rather than being a comment.
+$rmDir = Join-Path ([System.IO.Path]::GetTempPath()) ('pems_rm_' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $rmDir | Out-Null
+try {
+    $spyLog = Join-Path $rmDir 'invocations.log'
+    $spyExe = Join-Path $rmDir 'mysql.cmd'
+    Set-Content -LiteralPath $spyExe -Value ("@echo off`r`necho INVOKED %* >> `"$spyLog`"`r`nexit /b 0") -Encoding ASCII
+    $importer = Join-Path $PSScriptRoot '..\import_disposable_fixture.ps1'
+
+    $safeSql = Join-Path $rmDir 'safe.sql'
+    Set-Content -LiteralPath $safeSql -Value "CREATE TABLE t (id INT);" -Encoding ASCII
+    $unsafeSql = Join-Path $rmDir 'unsafe.sql'
+    Set-Content -LiteralPath $unsafeSql -Value "USE pems_db;`r`nDROP TABLE t;" -Encoding ASCII
+
+    function Invoke-Mode {
+        param([string]$Db, [string]$ModeName, [string]$Sql)
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $importer `
+            -DbName $Db -Mode $ModeName -SqlPath $Sql -MysqlExe $spyExe -ScanOnly 2>&1 | Out-String
+        return @{ Output = $out; ExitCode = $LASTEXITCODE }
+    }
+
+    $m1 = Invoke-Mode 'pems_review_v2' 'Review' $safeSql
+    Assert-True 'M1 review target accepted in Review mode' ($m1.ExitCode -eq 0) ("exit $($m1.ExitCode): " + $m1.Output)
+
+    $m2 = Invoke-Mode 'pems_review_v2' 'Drill' $safeSql
+    Assert-True 'M2 review target REFUSED in Drill mode' ($m2.ExitCode -ne 0) 'review db reachable from drill mode'
+
+    $m3 = Invoke-Mode 'pems_i_upgrade' 'Review' $safeSql
+    Assert-True 'M3 drill target REFUSED in Review mode' ($m3.ExitCode -ne 0) 'drill db reachable from review mode'
+
+    $m4 = Invoke-Mode 'pems_i_upgrade' 'Drill' $safeSql
+    Assert-True 'M4 drill target accepted in Drill mode' ($m4.ExitCode -eq 0) ("exit $($m4.ExitCode)")
+
+    # Review mode must not weaken the denylist in any way.
+    $m5 = Invoke-Mode 'pems_review_v2' 'Review' $unsafeSql
+    Assert-True 'M5 review mode still refuses a protected USE' ($m5.ExitCode -ne 0) 'review mode weakened the denylist'
+
+    Assert-True 'M6 no mysql process was spawned in any review-mode case' (-not (Test-Path -LiteralPath $spyLog)) 'the spy was invoked'
+}
+finally {
+    Remove-Item -LiteralPath $rmDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host ''
+Write-Host '=== N. The Phase I destructive runner allowlist is unchanged ==='
+
+# Adding the review database to the importer must NOT leak into the destructive runner, which
+# drops columns and rebuilds indexes. Assert on its actual ValidateSet.
+$runner = Join-Path $PSScriptRoot '..\run_migration.ps1'
+if (Test-Path -LiteralPath $runner) {
+    $runnerText = Get-Content -LiteralPath $runner -Raw
+    Assert-True 'N1 destructive runner still lists exactly the four drill databases' `
+        ($runnerText -match "ValidateSet\('pems_i_fresh',\s*'pems_i_upgrade',\s*'pems_i_refusal',\s*'pems_i_rollback'\)") `
+        'runner allowlist changed'
+    Assert-True 'N2 destructive runner does not mention the review database' `
+        (-not ($runnerText -match 'pems_review_v2')) 'review db leaked into the destructive runner'
+} else {
+    Write-Host 'SKIP  N: run_migration.ps1 not found'
 }
 
 Write-Host ''

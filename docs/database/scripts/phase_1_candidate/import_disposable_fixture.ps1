@@ -23,9 +23,18 @@
     ASCII-only on purpose (Windows PowerShell 5.1 reads .ps1 as ANSI without a BOM).
 #>
 param(
+    # Two SEPARATE allowlists, selected by -Mode. They are deliberately not merged:
+    #   Drill  - the four Phase I destructive drill databases
+    #   Review - the single long-lived application review database
+    # Keeping them apart means a review fixture can never land on a drill database mid-migration,
+    # and the review database can never be handed to the Phase I destructive runner, which still
+    # enforces its own exact four-name allowlist independently.
     [Parameter(Mandatory = $true)]
-    [ValidateSet('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback')]
+    [ValidateSet('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback', 'pems_review_v2')]
     [string]$DbName,
+
+    [ValidateSet('Drill', 'Review')]
+    [string]$Mode = 'Drill',
 
     [Parameter(Mandatory = $true)]
     [string]$SqlPath,
@@ -54,7 +63,9 @@ $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib\SqlSafetyGuard.ps1')
 
-$ALLOWLIST  = @('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback')
+$DRILL_ALLOWLIST  = @('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback')
+$REVIEW_ALLOWLIST = @('pems_review_v2')
+$ALLOWLIST  = if ($Mode -eq 'Review') { $REVIEW_ALLOWLIST } else { $DRILL_ALLOWLIST }
 $PROTECTED  = @('pems_db', 'pems_test', 'pems_pr3_test')
 
 function Fail([string]$message) {
@@ -66,13 +77,17 @@ function Fail([string]$message) {
 Write-Host '========================================'
 Write-Host 'PEMS disposable fixture import (safe path)'
 Write-Host '========================================'
+Write-Host ("Mode            : {0}" -f $Mode)
 Write-Host ("Target database : {0}" -f $DbName)
 Write-Host ("Payload         : {0}" -f $SqlPath)
 
 # ---- 1. exact allowlist ---------------------------------------------------
-# ValidateSet already constrains this; re-checking costs nothing and a destructive tool should
-# never depend on a single gate.
-if ($ALLOWLIST -notcontains $DbName) { Fail "'$DbName' is not in the exact disposable allowlist." }
+# ValidateSet constrains the union of both lists; this narrows it to the list for the SELECTED
+# mode, so -Mode Review cannot reach a drill database and -Mode Drill cannot reach the review one.
+# A destructive tool should never depend on a single gate.
+if ($ALLOWLIST -notcontains $DbName) {
+    Fail "'$DbName' is not in the exact $Mode allowlist ($($ALLOWLIST -join ', '))."
+}
 if ($PROTECTED -contains $DbName)    { Fail "'$DbName' is a protected database." }
 
 # ---- 2. statement-aware safety scan ---------------------------------------
@@ -98,9 +113,19 @@ if (-not $scan.IsSafe) {
     Write-Host ''
     Write-Host '-- TransformMaster: attempting asserted header transformation --'
 
+    # The removable set is exactly the fresh-create preamble a full dump uses to recreate its own
+    # schema: DROP DATABASE / CREATE DATABASE / USE. Nothing else is ever transformed away - an
+    # admin statement or a fully-qualified protected reference is a refusal, not a fixup.
+    #
+    # DROP DATABASE is included because omitting it does not make the import safer: the statement
+    # names the dump's OWN database, and the whole point of the transformation is that the payload
+    # must not address any database at all. What keeps this honest is that the output is re-scanned
+    # by the same guard, so a DROP DATABASE aimed at anything else still fails.
     $statements = Split-SqlStatements -Sql $payloadText
     $removable = @($statements | Where-Object {
-        $_.Normalized -match '^USE(\s|`|$)' -or $_.Normalized -match '^CREATE\s+(DATABASE|SCHEMA)(\s|`|$)'
+        $_.Normalized -match '^USE(\s|`|$)' -or
+        $_.Normalized -match '^CREATE\s+(DATABASE|SCHEMA)(\s|`|$)' -or
+        $_.Normalized -match '^DROP\s+(DATABASE|SCHEMA)(\s|`|$)'
     })
     $other = @($scan.Findings | Where-Object { $_.Kind -ne 'DATABASE_CONTROL' })
 
