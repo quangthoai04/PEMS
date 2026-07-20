@@ -3,27 +3,18 @@
  * CTA cuối trang trước Footer — Đăng ký tham quan / Liên hệ Phòng HTQT.
  */
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { CalendarDays, Mail } from 'lucide-react';
 import { VisitingFormPopup } from '../modals/VisitingFormPopup';
 import { useTranslation } from 'react-i18next';
-import { usePerCampusV2Capability } from '../../shared/features/perCampusV2Capability';
-import { resolvePublicVisitEntry } from '../../shared/features/perCampusV2Entry';
+import { useVisitEntryCta } from '../../shared/features/useVisitEntryCta';
 
 export function FinalCtaSection() {
   const { t } = useTranslation(['home']);
-  const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
-  const navigate = useNavigate();
-
-  // Default entry point cutover (mirrors HeroSection): v2 route when enabled, else v1 popup.
-  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
-  const capabilityResolving = v2Status === 'loading';
-  const handleBookVisit = () => {
-    const entry = resolvePublicVisitEntry(v2Enabled);
-    if (entry.kind === 'v2-route') navigate(entry.to);
-    else setIsVisitorFormOpen(true);
-  };
+  // Shared entry decision (mirrors HeroSection): v2 route when enabled, v1 popup only for a real
+  // backend OFF, error+retry on a capability fetch failure — never a silent v1 fallback.
+  const visitCta = useVisitEntryCta('public');
+  const capabilityResolving = visitCta.isResolving;
+  const handleBookVisit = visitCta.trigger;
 
   return (
     <>
@@ -58,7 +49,7 @@ export function FinalCtaSection() {
         </div>
       </section>
 
-      <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />
+      <VisitingFormPopup isOpen={visitCta.popupOpen} onClose={visitCta.closePopup} />
     </>
   );
 }

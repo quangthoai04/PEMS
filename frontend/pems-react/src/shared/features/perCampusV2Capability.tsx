@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import {
   getPerCampusFormV2Capability,
   type PerCampusFormV2Capability,
@@ -21,19 +21,27 @@ export interface PerCampusV2CapabilityState {
   enabled: boolean;
   readEnabled: boolean;
   writeEnabled: boolean;
+  /**
+   * Re-fetch the capability after a transient failure (CORS/timeout/network). Entry points must
+   * distinguish a real backend "v2 is OFF" (status 'ready', enabled false) from a fetch FAILURE
+   * (status 'error') — on failure they surface an error + this retry, never a silent v1 fallback.
+   */
+  retry: () => void;
 }
 
-const LOADING_STATE: PerCampusV2CapabilityState = {
+const noop = () => {};
+
+const LOADING_STATE: Omit<PerCampusV2CapabilityState, 'retry'> = {
   status: 'loading', enabled: false, readEnabled: false, writeEnabled: false,
 };
 
-const FAILSAFE_STATE: PerCampusV2CapabilityState = {
+const FAILSAFE_STATE: Omit<PerCampusV2CapabilityState, 'retry'> = {
   status: 'error', enabled: false, readEnabled: false, writeEnabled: false,
 };
 
 // Outside the provider we return the fail-safe (v1) state so a missing provider can
 // never accidentally route users into v2.
-const PerCampusV2CapabilityContext = createContext<PerCampusV2CapabilityState>(FAILSAFE_STATE);
+const PerCampusV2CapabilityContext = createContext<PerCampusV2CapabilityState>({ ...FAILSAFE_STATE, retry: noop });
 
 // Session cache: one in-flight/resolved promise shared by every provider mount, so the
 // capability is fetched at most once per page load.
@@ -52,7 +60,15 @@ export function __resetPerCampusV2CapabilityCache(): void {
 }
 
 export function PerCampusV2CapabilityProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<PerCampusV2CapabilityState>(LOADING_STATE);
+  const [state, setState] = useState<Omit<PerCampusV2CapabilityState, 'retry'>>(LOADING_STATE);
+  // Bumping this re-runs the fetch effect; used by retry() after a transient failure.
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const retry = useCallback(() => {
+    cachedCapability = null;
+    setState(LOADING_STATE);
+    setReloadToken((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -68,15 +84,16 @@ export function PerCampusV2CapabilityProvider({ children }: { children: ReactNod
       })
       .catch(() => {
         if (!active) return;
-        // Drop the cached rejection so a later mount/navigation can retry, and fail SAFE to v1.
+        // Drop the cached rejection so retry() can re-fetch. Surface status 'error' — entry points
+        // must NOT silently downgrade to v1 on a fetch failure; only a real backend OFF does that.
         cachedCapability = null;
         setState(FAILSAFE_STATE);
       });
     return () => { active = false; };
-  }, []);
+  }, [reloadToken]);
 
   return (
-    <PerCampusV2CapabilityContext.Provider value={state}>
+    <PerCampusV2CapabilityContext.Provider value={{ ...state, retry }}>
       {children}
     </PerCampusV2CapabilityContext.Provider>
   );

@@ -24,7 +24,13 @@ import { SubmittedVisitRequestDetailModal } from '../../../components/modals/Sub
 import SearchMatchContexts from '../../../features/visit-request/components/SearchMatchContexts';
 import { VisitingFormPopup } from '../../../components/modals/VisitingFormPopup';
 import { usePerCampusV2Capability } from '../../../shared/features/perCampusV2Capability';
-import { resolveAuthenticatedCreateEntry } from '../../../shared/features/perCampusV2Entry';
+import { V2_AUTHENTICATED_CREATE_PATH } from '../../../shared/features/perCampusV2Entry';
+import {
+  resolveVisitEntryOutcome,
+  notifyCapabilityError,
+  notifyCapabilityLoading,
+  dismissCapabilityToasts,
+} from '../../../shared/features/useVisitEntryCta';
 import { resolveVisitRowRoutes } from '../../../features/visit-request/utils/visitVersionRouting';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
@@ -211,10 +217,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Default create-entry cutover: route to the v2 create page when the capability is enabled,
   // otherwise open the v1 authenticated create popup. Fail-safe to v1 while loading / on error.
-  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
+  const { status: v2Status, enabled: v2Enabled, retry: retryCapability } = usePerCampusV2Capability();
   const handleCreateVisitRequest = () => {
-    const entry = resolveAuthenticatedCreateEntry(v2Enabled);
-    if (entry.kind === 'v2-route') navTo(entry.to);
+    const outcome = resolveVisitEntryOutcome(v2Status, v2Enabled);
+    if (outcome === 'error') { notifyCapabilityError(retryCapability); return; }
+    if (outcome === 'loading') { notifyCapabilityLoading(); return; }
+    dismissCapabilityToasts();
+    // v2 enabled → the real v2 create page; a real backend OFF → the legacy v1 popup. A capability
+    // fetch failure never silently downgrades to v1 (handled above).
+    if (outcome === 'v2-route') navTo(V2_AUTHENTICATED_CREATE_PATH);
     else setShowCreateModal(true);
   };
 

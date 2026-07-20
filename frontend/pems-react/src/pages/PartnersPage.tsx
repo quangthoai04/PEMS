@@ -21,6 +21,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import 'flag-icons/css/flag-icons.min.css';
 import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
+import { useVisitEntryCta } from '../shared/features/useVisitEntryCta';
 import { publicPartnersApi } from '../features/public-partners/api/publicPartnersApi';
 import { usePublicPartnerImage } from '../features/public-partners/hooks/usePublicPartnerImage';
 import { findMatchingCountryValue } from '../features/public-partners/utils/countryMatch';
@@ -221,8 +222,9 @@ export function PartnersPage() {
   const tCountry = useCountryTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
-  
+  // Route to the v2 form when per-campus v2 is enabled; only open the v1 popup for a real backend OFF.
+  const visitCta = useVisitEntryCta('public');
+
   const ALL_COUNTRIES_LABEL = t('partners:list.allCountries');
   const ALL_TYPES_LABEL = t('partners:list.allTypes');
 
@@ -374,7 +376,7 @@ export function PartnersPage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
-                  onClick={() => setIsVisitorFormOpen(true)}
+                  onClick={visitCta.trigger}
                   className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
                 >
                   {t('partners:list.bookVisit')}
@@ -625,7 +627,7 @@ export function PartnersPage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
-                onClick={() => setIsVisitorFormOpen(true)}
+                onClick={visitCta.trigger}
                 className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
               >
                 {t('partners:list.bookVisit')} <ArrowRight className="w-4 h-4" />
@@ -640,7 +642,7 @@ export function PartnersPage() {
           </div>
         </div>
       </div>
-      <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />
+      <VisitingFormPopup isOpen={visitCta.popupOpen} onClose={visitCta.closePopup} />
     </>
   );
 }
