@@ -33,6 +33,11 @@ interface Props {
   footerSlot?: HTMLElement | null;
   /** Lets a host warn before discarding typed data (modal close / Esc). */
   onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Hands the host the draft controls so a close prompt can offer "save draft and exit" and
+   * "discard changes" without reimplementing draft storage.
+   */
+  onDraftControls?: (controls: { saveDraftNow: () => void; discardDraft: () => void }) => void;
 }
 
 /**
@@ -42,7 +47,7 @@ interface Props {
  * derives scope/mixed state; nothing here is a mock and there is no silent v1 fallback).
  */
 export const VisitRequestFormV2: React.FC<Props> = ({
-  mode, draftNamespace, onSuccess, footerSlot, onDirtyChange,
+  mode, draftNamespace, onSuccess, footerSlot, onDirtyChange, onDraftControls,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'validation']);
   const { campuses, loading: campusesLoading } = useRegistrationCampuses();
@@ -84,12 +89,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   });
   const { form, campusVisitFields } = vm;
 
-  // Hydrate the draft once (per-campus draft, or a one-time migration of the global draft).
+  // Look for a saved draft once, but never apply it silently — the user is offered the choice.
   const hydratedRef = useRef(false);
   useEffect(() => {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
-    vm.hydrateDraft();
+    vm.detectDraft();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -155,6 +160,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const isDirty = form.formState.isDirty;
   useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
 
+  const { saveDraftNow, discardDraft } = vm;
+  useEffect(() => {
+    onDraftControls?.({ saveDraftNow, discardDraft });
+  }, [onDraftControls, saveDraftNow, discardDraft]);
+
   const submitBar = (node: React.ReactNode) =>
     footerSlot ? createPortal(node, footerSlot) : node;
 
@@ -169,6 +179,37 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   return (
     <form onSubmit={vm.onSubmit} noValidate className="space-y-2">
+      {/* A saved draft is OFFERED, never applied behind the user's back. */}
+      {vm.draftAvailableAt !== null && (
+        <div
+          role="status"
+          data-testid="v2-draft-prompt"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900"
+        >
+          <span className="flex-1">
+            {t('visitRequestV2:draft.foundAt', {
+              time: new Date(vm.draftAvailableAt).toLocaleString('vi-VN'),
+            })}
+          </span>
+          <button
+            type="button"
+            data-testid="v2-draft-restore"
+            onClick={vm.restoreDraft}
+            className="rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#003a6f]"
+          >
+            {t('visitRequestV2:draft.restore')}
+          </button>
+          <button
+            type="button"
+            data-testid="v2-draft-discard"
+            onClick={vm.discardDraft}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+          >
+            {t('visitRequestV2:draft.discard')}
+          </button>
+        </div>
+      )}
+
       {vm.migratedFromGlobalDraft && (
         <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800">
           {t('visitRequestV2:draft.migrated')}

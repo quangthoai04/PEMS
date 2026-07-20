@@ -87,7 +87,10 @@
     "confirm": "Xóa cơ sở"
   },
   "draft": {
-    "migrated": "Bản nháp cũ (biểu mẫu chung) đã được chuyển sang dạng theo từng cơ sở — kiểm tra lại nội dung từng thẻ trước khi gửi."
+    "migrated": "Bản nháp cũ (biểu mẫu chung) đã được chuyển sang dạng theo từng cơ sở — kiểm tra lại nội dung từng thẻ trước khi gửi.",
+    "foundAt": "Có bản nháp đã lưu lúc {{time}}. Bạn muốn khôi phục không?",
+    "restore": "Khôi phục bản nháp",
+    "discard": "Bỏ bản nháp"
   },
   "submit": {
     "public": "Gửi yêu cầu & nhận mã OTP",
@@ -100,7 +103,8 @@
     "discardBody": "Bạn đã nhập dữ liệu trong biểu mẫu. Đóng bây giờ sẽ đóng cửa sổ này.",
     "keepEditing": "Tiếp tục nhập",
     "discardConfirm": "Đóng",
-    "done": "Hoàn tất"
+    "done": "Hoàn tất",
+    "saveDraftAndExit": "Lưu nháp và thoát"
   },
   "success": {
     "title": "Đã gửi yêu cầu tham quan",

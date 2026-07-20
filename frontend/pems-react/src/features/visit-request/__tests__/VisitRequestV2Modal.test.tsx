@@ -75,6 +75,40 @@ describe('VisitRequestV2Modal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('offers save-draft-and-exit as well as discard, so closing never means losing work', () => {
+    const saveDraftNow = vi.fn();
+    const discardDraft = vi.fn();
+    const { onClose } = open();
+    act(() => {
+      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft });
+    });
+    markDirty();
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+    fireEvent.click(screen.getByTestId('v2-modal-save-draft'));
+
+    expect(saveDraftNow).toHaveBeenCalledTimes(1);
+    expect(discardDraft).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('discarding clears the draft rather than leaving it to reappear later', () => {
+    const saveDraftNow = vi.fn();
+    const discardDraft = vi.fn();
+    const { onClose } = open();
+    act(() => {
+      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft });
+    });
+    markDirty();
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+    fireEvent.click(screen.getByTestId('v2-modal-discard'));
+
+    expect(discardDraft).toHaveBeenCalledTimes(1);
+    expect(saveDraftNow).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('asks before discarding typed data, and honours "keep editing"', () => {
     const { onClose } = open();
     markDirty();

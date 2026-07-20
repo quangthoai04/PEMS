@@ -165,6 +165,8 @@ export const useVisitRequestFormV2 = (
 
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [migratedFromGlobalDraft, setMigratedFromGlobalDraft] = useState(false);
+  /** When set, a saved draft is waiting for the user to restore or discard it. */
+  const [draftAvailableAt, setDraftAvailableAt] = useState<number | null>(null);
 
   const submissionIdRef = useRef<string | null>(null);
   const autoSaveBlockedRef = useRef(false);
@@ -218,11 +220,42 @@ export const useVisitRequestFormV2 = (
     return true;
   }, [form, draftNamespace]);
 
+  /**
+   * Reports whether a usable draft exists WITHOUT applying it, so the user is asked first — v1
+   * offered "restore" / "discard" and silently overwriting the form is the behaviour that lost
+   * work. Autosave stays blocked until they decide; otherwise the empty form would immediately
+   * overwrite the very draft being offered.
+   */
+  const detectDraft = useCallback((): boolean => {
+    const { draft } = loadVisitRequestV2DraftWithMigration(draftNamespace);
+    if (!draft) {
+      setDraftHydrated(true);
+      return false;
+    }
+    autoSaveBlockedRef.current = true;
+    setDraftAvailableAt(draft.savedAt ?? null);
+    return true;
+  }, [draftNamespace]);
+
+  /** Applies the offered draft and resumes autosave. */
+  const restoreDraft = useCallback(() => {
+    hydrateDraft();
+    setDraftAvailableAt(null);
+    autoSaveBlockedRef.current = false;
+  }, [hydrateDraft]);
+
   const discardDraft = useCallback(() => {
     clearVisitRequestV2Draft(draftNamespace);
     setMigratedFromGlobalDraft(false);
+    setDraftAvailableAt(null);
+    autoSaveBlockedRef.current = false;
     setDraftHydrated(true);
   }, [draftNamespace]);
+
+  /** Force-saves immediately, bypassing the debounce — for "save draft and exit". */
+  const saveDraftNow = useCallback(() => {
+    saveVisitRequestV2Draft(form.getValues(), undefined, draftNamespace);
+  }, [form, draftNamespace]);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -544,7 +577,11 @@ export const useVisitRequestFormV2 = (
     // Draft
     draftHydrated,
     hydrateDraft,
+    detectDraft,
+    draftAvailableAt,
+    restoreDraft,
     discardDraft,
+    saveDraftNow,
     migratedFromGlobalDraft,
     resetForm,
   };

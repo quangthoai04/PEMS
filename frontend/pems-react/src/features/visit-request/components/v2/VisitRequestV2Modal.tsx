@@ -33,6 +33,8 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
   const [dirty, setDirty] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [result, setResult] = useState<{ response: V2CreateResponse; values: VisitRequestV2Schema } | null>(null);
+  const [draftControls, setDraftControls] =
+    useState<{ saveDraftNow: () => void; discardDraft: () => void } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Closing with typed data always asks first — an accidental Esc must not discard the form.
@@ -114,6 +116,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
               }}
               footerSlot={footerEl}
               onDirtyChange={setDirty}
+              onDraftControls={setDraftControls}
             />
           )}
         </div>
@@ -145,7 +148,9 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
               {t('visitRequestV2:modal.discardTitle')}
             </h3>
             <p className="mt-2 text-sm text-slate-600">{t('visitRequestV2:modal.discardBody')}</p>
-            <div className="mt-4 flex justify-end gap-2">
+            {/* Three outcomes, as v1 offered: keep the work for later, keep editing, or throw
+                it away deliberately. Closing is never the same as discarding. */}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold"
@@ -155,9 +160,25 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
               </button>
               <button
                 type="button"
+                data-testid="v2-modal-save-draft"
+                className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white hover:bg-[#003a6f]"
+                onClick={() => {
+                  draftControls?.saveDraftNow();
+                  setConfirmClose(false);
+                  onClose();
+                }}
+              >
+                {t('visitRequestV2:modal.saveDraftAndExit')}
+              </button>
+              <button
+                type="button"
                 data-testid="v2-modal-discard"
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white"
-                onClick={() => { setConfirmClose(false); onClose(); }}
+                onClick={() => {
+                  draftControls?.discardDraft();
+                  setConfirmClose(false);
+                  onClose();
+                }}
               >
                 {t('visitRequestV2:modal.discardConfirm')}
               </button>
