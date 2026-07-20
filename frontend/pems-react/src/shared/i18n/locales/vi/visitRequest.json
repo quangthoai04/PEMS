@@ -119,7 +119,9 @@
     "hostFinalWarning": "Lưu ý: host chính thức KHÔNG thể thay đổi sau khi gán theo quy trình hiện tại.",
     "visitorInfo": "Đơn của bạn sẽ được gửi tới Staff Leader của từng cơ sở để duyệt.",
     "loadingCandidates": "Đang tải danh sách host...",
-    "noCandidates": "Không có IC Staff hợp lệ tại cơ sở của bạn."
+    "noCandidates": "Không có IC Staff hợp lệ tại cơ sở của bạn.",
+    "candidatesError": "Không tải được danh sách host.",
+    "retryCandidates": "Thử lại"
   },
   "hostConflictConfirm": {
     "title": "Host bị trùng lịch",

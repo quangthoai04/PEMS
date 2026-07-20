@@ -14,6 +14,9 @@ import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
 import { FormSection } from '../shared/FormSection';
 import { OtpVerificationModal } from '../OtpVerificationModal';
+import type { CreatorRole } from '../sections/CampusProcessingSection';
+import type { CampusProcessingChoice } from '../../api/visitRequestApi';
+import { useAuthContext } from '../../../../shared/auth/AuthContext';
 
 interface Props {
   mode: UseVisitRequestFormV2Options['mode'];
@@ -35,7 +38,34 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
 
-  const vm = useVisitRequestFormV2(onSuccess, () => setShowErrors(true), { mode, draftNamespace });
+  // ── Authenticated create: who processes each campus (backend re-authorizes everything). ──
+  const { user } = useAuthContext();
+  const isAuthenticated = mode === 'authenticated';
+
+  const creatorRole: CreatorRole = React.useMemo(() => {
+    const rc = (user?.roleCode || '').toUpperCase();
+    const sr = (user?.subRole || '').toUpperCase();
+    if (rc === 'STAFF') return sr === 'LEADER' ? 'STAFF_LEADER' : 'STAFF';
+    return 'VISITOR';
+  }, [user?.roleCode, user?.subRole]);
+
+  // Keyed by campus CODE, so reordering or removing a card never moves a decision onto another
+  // campus. Entries for campuses no longer selected are dropped at submit time, never sent.
+  const [campusProcessing, setCampusProcessing] = useState<Record<string, CampusProcessingChoice>>({});
+  const campusProcessingRef = useRef(campusProcessing);
+  campusProcessingRef.current = campusProcessing;
+
+  const vm = useVisitRequestFormV2(onSuccess, () => setShowErrors(true), {
+    mode,
+    draftNamespace,
+    getCampusProcessing: () => {
+      if (!isAuthenticated) return [];
+      const selected = new Set(
+        form.getValues('campusVisits').map(cv => (cv.campus || '').toUpperCase()).filter(Boolean),
+      );
+      return Object.values(campusProcessingRef.current).filter(p => selected.has(p.campusId));
+    },
+  });
   const { form, campusVisitFields } = vm;
 
   // Hydrate the draft once (per-campus draft, or a one-time migration of the global draft).
@@ -199,6 +229,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({ mode, draftNamespace, onSu
                   onRemove={() => requestRemove(index)}
                   canRemove={campusVisitFields.fields.length > 1}
                   showErrors={showErrors}
+                  processing={isAuthenticated ? {
+                    role: creatorRole,
+                    ownCampusCode: user?.campusCode,
+                    values: campusProcessing,
+                    onChange: next => setCampusProcessing(prev => ({ ...prev, [next.campusId]: next })),
+                  } : undefined}
                 />
               </div>
             );

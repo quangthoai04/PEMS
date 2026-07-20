@@ -12,6 +12,9 @@ import {
   type ExcelTranslator,
 } from '../ExcelUpload/excelValidator';
 import { downloadVisitorTemplate, downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
+import { CampusProcessingV2Panel } from './CampusProcessingV2Panel';
+import type { CreatorRole } from '../sections/CampusProcessingSection';
+import type { CampusProcessingChoice } from '../../api/visitRequestApi';
 
 const MAX_EXCEL_FILE_BYTES = 5 * 1024 * 1024; // 5MB per-campus import cap
 
@@ -33,6 +36,17 @@ interface Props {
   onRemove: () => void;
   canRemove: boolean;
   showErrors?: boolean;
+  /**
+   * Authenticated create only: who will process THIS campus. Omitted entirely for the public
+   * form, which never renders internal processing controls and never sends a processing intent.
+   */
+  processing?: {
+    role: CreatorRole;
+    ownCampusCode?: string | null;
+    /** All choices keyed by campus CODE; this card reads its own by the campus it currently watches. */
+    values: Record<string, CampusProcessingChoice>;
+    onChange: (next: CampusProcessingChoice) => void;
+  };
 }
 
 /** Counts leaf errors under one campus card so the collapsed header can show a badge. */
@@ -63,6 +77,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   onRemove,
   canRemove,
   showErrors,
+  processing,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
   const { register, control, watch, formState: { errors } } = form;
@@ -453,6 +468,19 @@ export const CampusVisitCard: React.FC<Props> = ({
               <input {...register(`${base}.notes`)} className={inputCls(!!fieldError('notes'), false, false)} />
             </FormField>
           </div>
+
+          {/* Who processes THIS campus — authenticated create only; absent for public submit. */}
+          {processing && (
+            <CampusProcessingV2Panel
+              campusCode={campusCode}
+              role={processing.role}
+              ownCampusCode={processing.ownCampusCode}
+              startDatetime={watch(`${base}.startDatetime`)}
+              endDatetime={watch(`${base}.endDatetime`)}
+              value={processing.values[(campusCode || '').toUpperCase()]}
+              onChange={processing.onChange}
+            />
+          )}
         </fieldset>
       </div>
     </div>
