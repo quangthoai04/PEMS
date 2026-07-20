@@ -1,9 +1,10 @@
 # PEMS Per-Campus Form V2 — Review environment guide
 
-**Status:** `V2 EXPERIENCE READY (core journeys) — the isolated review database is built, all outbound
-integrations are neutralised, and the core create/read/authorization/report journeys are verified
-end-to-end on the real stack. Interactive UI journeys for edit/amendment/transfer/photo remain for
-hands-on owner review.`
+**Status:** `V2 EXPERIENCE READY (core + most interactive journeys) — the isolated review database is
+built, all outbound integrations are neutralised, and the core create/read/authorization/report
+journeys PLUS pending-edit, resubmit, amendment (submit+approve) and identity-claim are verified
+end-to-end through real Chromium. Public-OTP is verified at the backend-mechanism level; assignment/
+invitation and photo-upload UI are NOT YET RUN. This is not FULL V2 EXPERIENCE READY — see §5c.`
 
 Phase I contract-drop remains **NOT READY** and is not part of this environment. The review
 database keeps all ten legacy columns; nothing here drops a column.
@@ -121,6 +122,14 @@ $env:VITE_API_BASE_URL = 'http://localhost:5299/api'
 npx vite --port 5273 --strictPort
 ```
 
+**CORS:** the API only accepts browser calls from origins in `Cors:AllowedOrigins` (committed list:
+`:3000/:3001/:3002/:5173`). A frontend on any other port — including the `:5273` used here — is
+blocked, and the symptom is subtle: the page serves (HTTP 200) but every API call fails with a
+Network Error and the app bounces to `/login`. `Start-ReviewApi.ps1` adds the review frontend origin
+via `Cors__AllowedOrigins__4` (its `-FrontendOrigin` parameter, default `http://localhost:5273`) — a
+process env override, not an `appsettings.json` edit. Run the frontend on `:5173` (already allowed)
+or keep the launcher's `:5273` default; if you pick another port, pass it to `-FrontendOrigin`.
+
 The launcher disables: SMTP (`Smtp__Enabled=false` — the mail pipeline still runs and *logs*
 messages, so email-driven journeys stay reviewable, nothing leaves the machine), Google Drive
 storage (`GoogleDrive__Enabled=false`, `Storage__Provider=Local`), Turnstile, FeID SSO, and the
@@ -207,22 +216,30 @@ No product defect was found. One journey initially failed on a wrong test assert
 was expected to be *denied*, but the documented contract scopes them to their own campus); corrected
 against `PerCampusFormV2ReadTests` §4 and re-verified.
 
-### 5b. Remaining for hands-on interactive UI review
+### 5c. Interactive UI journeys (2026-07-20, real Chromium → review API → MySQL)
 
-These need a person clicking through the UI (or a longer browser-automation pass) and were **not**
-executed this session:
+These were driven through the actual browser UI (login form, detail/edit/amendment screens, claim
+page) and confirmed in the database. Preconditions that are not themselves the journey under test
+(creating a request, a leader's approve/reject) were set up via the authenticated API; the journey's
+own action was always performed in the DOM.
 
-- multi-campus **form editing** in the browser: add/remove a campus, "same for all" copy, per-campus
-  guest/support lists not sharing mutable state;
-- **pending-edit / resubmit** hydration per campus through the UI;
-- **host / department / student** assignment and invitation screens;
-- **contact transfer** and **amendment** UI (the underlying claim/amendment tables are exercised by
-  create and by the unit suites, but the transfer/amendment *screens* were not driven here);
-- **student photo upload** in the browser (the image-only contract is covered by the frontend gates;
-  it was not re-driven end to end here);
-- public **OTP** initiate/verify in the browser (create-v2 was exercised via the authenticated
-  endpoint; the OTP path with SMTP disabled logs the code rather than emailing it — read it from the
-  API log to complete the flow).
+| Group | Result | Evidence |
+|---|---|---|
+| Login form (INTERNAL) | **PASS** | real form → `/api/auth/login` 200 → token stored → dashboard reachable |
+| **1 · Pending edit** | **PASS** | owner opens detail, `pending-edit` → edits HN delegation → PUT 200. DB: HN `PE_HN_EDITED`, `form_revision 1→2`; **HCM untouched (`form_revision 1`)** — per-campus copy-on-write |
+| **1 · Resubmit** | **PASS** | leader rejects (single campus → request REJECTED); owner `resubmit` action shows → edits → POST 200 |
+| **3 · Identity claim** | **PASS (render)** | A≠B request → claim email **logged, not sent** → claim page loads real data via `GET /api/public/visit-contact-claims/{token}` 200 with accept/decline UI. The *accept* step needs SSO/OTP and was not completed |
+| **4 · Amendment + approval** | **PASS** | approved+self-hosted instance; owner submits amendment via modal → POST 200; **leader approves via UI** → POST 200. DB: canonical detail `AM_HN_AMENDED`, amendment `APPROVED`, `approval_revision` bumped |
+| **6 · Public OTP** | **PARTIAL** | initiate → OTP **logged, not sent** (`662833`) → verify → request 9027 created (`fsv=2`). Backend OTP path (initiate/snapshot-bind/verify/create) fully exercised on the real stack **via the public API**; the multi-step public form + OtpVerificationModal were **not** driven in the browser |
+| **2 · Assignment + invitation** | **NOT RUN** | needs approve → host-assign → participant-invite screens; multi-actor state not set up this session |
+| **5 · Photo upload (UI)** | **NOT RUN** | needs a student assigned to an instance advanced to DURING/AFTER stage, then the upload panel; the image-only contract itself is covered by the frontend gates |
+
+**This is not FULL V2 EXPERIENCE READY:** groups 2 and 5 have not run, and group 6 is verified at the
+mechanism level but not through the browser form.
+
+An **environment defect was found and fixed** while doing this: the review frontend origin `:5273`
+was not in `Cors:AllowedOrigins`, so the browser could not talk to the API at all. Fixed in
+`Start-ReviewApi.ps1` via a process env override (see §3). No product code was involved.
 
 ---
 
@@ -245,6 +262,16 @@ Open business decisions — **not** self-selected, and they will surface during 
    produce no matched-context code, so a row can match with nothing to show for it. Options are to
    keep them searchable and add field codes, or drop them from the keyword predicate. There is a
    privacy trade-off either way; it is not being decided by guesswork.
+
+3. **Phone-format asymmetry (observation, NEEDS-BUSINESS-DECISION).** The backend create validator
+   accepts any phone up to 50 chars (`OperationalContact.Phone`, `Registrant.Phone`), while the
+   frontend V2 schema validates with `libphonenumber-js`'s `isValidPhoneNumber(value)` **without a
+   country**, which requires international `+84…` format. A request created through the real UI is
+   always frontend-validated, so it round-trips fine; but a request that gets a national-format phone
+   (`0900000000`) into the database by any other path — API, import, seed — **cannot be saved by the
+   V2 edit form**, because the hydrated value fails re-validation. This is pre-existing (v1 uses the
+   same schema) and low-severity, but whether the backend should enforce the same format is a product
+   decision, not one to self-select. Not changed here.
 
 Deferred and unchanged by this environment: R6 per-occurrence disposition (F1), exact manifest
 depth (F5), deterministic fresh target (F7), and the Phase I contract-drop itself.

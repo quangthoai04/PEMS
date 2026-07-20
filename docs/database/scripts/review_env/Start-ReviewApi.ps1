@@ -25,6 +25,10 @@ param(
     [string]$MysqlHost     = 'localhost',
     [string]$MysqlPort     = '3306',
     [string]$Urls          = 'http://localhost:5299',
+    # The frontend origin the review browser runs on. Must be allowed by CORS or every browser API
+    # call fails with a Network Error and the app bounces to /login. The committed allowlist covers
+    # :5173; a non-default review port is added below via an indexed env override (no appsettings edit).
+    [string]$FrontendOrigin = 'http://localhost:5273',
     [string]$BaseOutputPath
 )
 
@@ -79,6 +83,12 @@ $env:BusinessCardOcr__DefaultApiCode = ''
 # not in appsettings. They are neutralised in the review database itself (status = DISABLED),
 # which is review data - not production configuration.
 
+# ---- CORS: allow the review frontend origin ------------------------------
+# The committed Cors:AllowedOrigins array (indices 0..3) covers localhost:3000/3001/3002/5173.
+# Append the review origin at the next index rather than editing appsettings.json. ASP.NET binds
+# Cors__AllowedOrigins__4 as a new array element.
+$env:Cors__AllowedOrigins__4 = $FrontendOrigin
+
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
 $env:ASPNETCORE_URLS        = $Urls
 
@@ -87,6 +97,7 @@ Write-Host 'PEMS review API'
 Write-Host '========================================'
 Write-Host ("Database : {0} (user {1})" -f $REVIEW_DB, $MysqlUser)
 Write-Host ("URLs     : {0}" -f $Urls)
+Write-Host ("CORS +   : {0}" -f $FrontendOrigin)
 Write-Host 'V2 flags : read=ON write=ON (process only)'
 Write-Host 'Outbound : SMTP off, Drive off, Turnstile off, FeID inert, OCR unresolvable'
 Write-Host ''

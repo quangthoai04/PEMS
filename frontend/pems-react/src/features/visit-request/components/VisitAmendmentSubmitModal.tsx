@@ -234,7 +234,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.delegationName')}</span>
-            <input className={field} value={delegationName} onChange={e => setDelegationName(e.target.value)} />
+            <input data-testid="amendment-delegation-input" className={field} value={delegationName} onChange={e => setDelegationName(e.target.value)} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.visitType')}</span>
