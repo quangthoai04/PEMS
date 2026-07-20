@@ -131,7 +131,9 @@ export function VisitPhotoPanel({
     const toastId = toast.loading('Đang tải lên...');
     try {
       await visitPhotosApi.upload(visitInstanceId, files);
-      toast.success('Đã tải ảnh/video đoàn khách lên.', { id: toastId });
+      // Upload is image-only (accept + backend purpose policy). The video element below is kept
+      // for historical files that predate that policy — it is a renderer, not an upload path.
+      toast.success('Đã tải ảnh đoàn khách lên.', { id: toastId });
       await load();
     } catch (e: any) {
       toast.error(errMsg(e, 'Không thể tải lên. Vui lòng thử lại.'), { id: toastId });
