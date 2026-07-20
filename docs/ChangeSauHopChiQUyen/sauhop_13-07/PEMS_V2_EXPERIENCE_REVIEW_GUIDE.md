@@ -1,10 +1,17 @@
 # PEMS Per-Campus Form V2 — Review environment guide
 
-**Status:** `IN PROGRESS — review code/fixtures prepared; real-stack review BLOCKED pending
-restricted database bootstrap.`
+**Status:** `V2 EXPERIENCE READY (core journeys) — the isolated review database is built, all outbound
+integrations are neutralised, and the core create/read/authorization/report journeys are verified
+end-to-end on the real stack. Interactive UI journeys for edit/amendment/transfer/photo remain for
+hands-on owner review.`
 
 Phase I contract-drop remains **NOT READY** and is not part of this environment. The review
 database keeps all ten legacy columns; nothing here drops a column.
+
+> **Two setup steps need root, done once by the owner** (see §1): the database bootstrap, and a
+> one-line server setting the master's validation triggers require —
+> `SET PERSIST log_bin_trust_function_creators = 1;`. After the triggers are imported you may set
+> it back to `0`.
 
 ---
 
@@ -73,42 +80,68 @@ that chain is for upgrading an older v1 database, not for a fresh one.
 
 ### To reset review data
 
-```sql
-DROP DATABASE `pems_review_v2`;
+Re-run the build with `-Reset`, which drops every table **inside** `pems_review_v2` (never
+`DROP DATABASE`, so it stays within the schema the restricted account owns) and re-imports:
+
+```powershell
+.\Build-ReviewDatabase.ps1 -Reset
 ```
 
-then re-run the bootstrap and `Build-ReviewDatabase.ps1`.
+After a reset, re-apply the review-only data steps the journeys rely on: set a known password on the
+seed users and set the `api_configurations` rows to `DISABLED` (both are plain `UPDATE`s inside the
+review database — the outbound neutralisation is review data, not production config).
 
 ---
 
-## 3. Run the stack with V2 flags on
+## 3. Run the stack with V2 flags on — and every outbound integration OFF
 
-The flags are `PerCampusFormV2:Enabled` (read) and `PerCampusFormV2Write:Enabled` (write). Both
-default to **false** in code (`PerCampusFormV2Options`, `PerCampusFormV2WriteOptions`) and are not
-set in any committed `appsettings*.json`. Turn them on **per process only** — never by editing a
-committed config file:
+**Do not just point `dotnet run` at the review database.** A review database holds
+production-shaped seed data, so the reminder background job fires against real email addresses, and
+`appsettings.json` ships `Smtp:Enabled=true` with live Gmail credentials. The first review start-up
+did exactly this and sent one real email before it was caught. Choosing the database and choosing
+what the process may talk to are two separate decisions.
+
+Use the launcher, which sets the V2 flags and pins **every** outbound switch off, all as process
+environment variables — it never edits `appsettings.json`, never removes a credential, and never
+changes production behaviour:
 
 ```powershell
-# Backend
-$env:ConnectionStrings__DefaultConnection = 'server=localhost;port=3306;database=pems_review_v2;user=pems_review;Password=<pw>;AllowUserVariables=True;GuidFormat=None'
-$env:PerCampusFormV2__Enabled      = 'true'
-$env:PerCampusFormV2Write__Enabled = 'true'
-dotnet run --project backend\PEMS.Api
+$env:MYSQL_BIN      = 'C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe'
+$env:MYSQL_USER     = 'pems_review'
+$env:MYSQL_PASSWORD = '<the password you chose>'
+
+cd docs\database\scripts\review_env
+.\Start-ReviewApi.ps1                 # API on http://localhost:5299
 ```
 
 ```powershell
-# Frontend (separate terminal)
+# Frontend (separate terminal), pointed at the review API
 cd frontend\pems-react
-npm run dev
+$env:VITE_API_BASE_URL = 'http://localhost:5299/api'
+npx vite --port 5273 --strictPort
 ```
 
-Confirm the flags actually reached the API before reviewing anything:
+The launcher disables: SMTP (`Smtp__Enabled=false` — the mail pipeline still runs and *logs*
+messages, so email-driven journeys stay reviewable, nothing leaves the machine), Google Drive
+storage (`GoogleDrive__Enabled=false`, `Storage__Provider=Local`), Turnstile, FeID SSO, and the
+Document AI OCR default code. Google Translate and Document AI credentials live in the
+`api_configurations` table, not in appsettings; every such row in the review database is set to
+`DISABLED`.
+
+**Verify no outbound before reviewing.** With the API running, its only external socket should be
+MySQL on `localhost:3306`:
+
+```powershell
+netstat -ano | findstr <api-pid>     # expect only :5299 listen + :3306 to localhost
+```
+
+Confirm the flags reached the API:
 
 ```
-GET /api/public/features/per-campus-form-v2
+GET /api/public/features/per-campus-form-v2   ->   {"readEnabled":true,"writeEnabled":true,"enabled":true}
 ```
 
-`enabled` is the AND of read and write. Write ON with read OFF is an invalid combination that the
+`enabled` is the AND of read and write. Write ON with read OFF is an invalid combination the
 create-v2 handler rejects by design — it would create records no read path can surface.
 
 ---
@@ -146,39 +179,60 @@ The v2 scenarios are created by running the real journeys with the flags on, not
 That is deliberate: hand-written rows can encode states the business flow cannot actually reach,
 which makes a review look healthier than the product is.
 
-Suggested order, each building on the last:
+### 5a. Verified end-to-end on the real review stack (2026-07-20)
 
-| # | Journey | What to check |
+These ran against the built `pems_review_v2` through the review API and, where noted, real
+Chromium. Requests were created via the authenticated create-v2 endpoint and the results checked in
+the database and through the read API.
+
+| Journey | Result | Evidence |
 |---|---|---|
-| 1 | Public V2 form, **single campus**, complete OTP | request is created with `form_schema_version = 2` and one `visit_instance_form_details` row |
-| 2 | Public V2 form, **multi-campus uniform** (same content per campus) | one detail row per campus; `has_mixed_campus_details = 0` |
-| 3 | Public V2 form, **multi-campus mixed** (different delegation name / purpose per campus) | each campus keeps its own values; adding/removing a campus must not copy or lose another campus's data |
-| 4 | Registrant A **=** contact A | no identity claim is raised |
-| 5 | Registrant A **≠** contact B | claim flow appears and behaves as designed |
-| 6 | Visitor opens detail, pending-edit, resubmit | each campus hydrates with its own values |
-| 7 | Staff Leader **HN** logs in | sees and acts on the HN instance only; the HCM sibling is not visible |
-| 8 | Staff Leader **HCM** logs in | mirror of 7; approving HN must not approve HCM |
-| 9 | Host / department / student assignment or invitation | per the permission matrix |
-| 10 | Amendment / contact transfer | history and revision surfaces |
-| 11 | Reports and per-campus email surfaces | each campus shows its own delegation name, not the smallest-campus projection |
-| 12 | Student photo upload | JPG/JPEG/PNG/WEBP only, 5 MB max, messages say `ảnh` |
+| Public V2 form renders | **PASS** | real Chromium loads `/visit-registration/v2`, 50 form controls, consumes `/api/public/features/per-campus-form-v2` |
+| Create V2 **single-campus** | **PASS** | req 9012 → `form_schema_version=2`, `has_mixed=0`, one detail row |
+| Create V2 **multi-campus** | **PASS** | req 9013 → two detail rows |
+| Create V2 **mixed** | **PASS** | req 9014 → HN=`CAMPUS_TOUR`, HCM=`WORKSHOP` as two distinct canonical rows |
+| `has_mixed` derivation | **PASS** | genuinely-identical content → `has_mixed=0` (req 9015); any per-campus difference → `has_mixed=1`. Content-sensitive, not scope-sensitive |
+| Owner reads mixed detail | **PASS** | both `MIXED_HN_DELEGATION` and `MIXED_HCM_DELEGATION` present, each on its own campus |
+| Staff Leader **HN** scope | **PASS** | sees only the HN campus of the mixed request; HCM sibling absent; `canViewAllCampuses=false` |
+| Staff Leader **HCM** scope | **PASS** | mirror — sees only HCM |
+| Unrelated-campus leader | **PASS** | Da Nang leader gets **403** on the request |
+| **Canonical report filter** | **PASS** | HO overview `visitType=WORKSHOP` surfaces req 9014 (whose only WORKSHOP is the HCM *canonical* detail; its projection is `CAMPUS_TOUR`) and excludes 9013; `MEETING` is the mirror. Proves the report filters on the canonical detail, never the compatibility projection — the core C1/C2 invariant, live |
+| Mixed request-level label | **PASS** | req 9014 shows `"Khác nhau theo cơ sở"` at request level |
+| Identity A **=** contact | **PASS** | req 9012 → `PRIMARY_CONTACT_ACCESS = ACTIVE`, owner user set |
+| Identity A **≠** contact | **PASS** | req 9016 → `PENDING_CONFIRMATION` + an `INITIAL_CLAIM` / `PRIMARY_CONTACT` identity-change row |
+| 10 legacy columns retained | **PASS** | no contract-drop; V1 compatibility intact |
+| No outbound traffic | **PASS** | API's only external socket is MySQL on localhost; zero SMTP/HTTP egress after the launcher |
 
-Negative checks worth running alongside: a user from another campus cannot read or write your
-instance; duplicate submit does not create a second request; a stale row version is rejected; with
-both flags OFF the V1 behaviour is unchanged; and no raw technical exception text reaches the UI.
+No product defect was found. One journey initially failed on a wrong test assertion (a Staff Leader
+was expected to be *denied*, but the documented contract scopes them to their own campus); corrected
+against `PerCampusFormV2ReadTests` §4 and re-verified.
+
+### 5b. Remaining for hands-on interactive UI review
+
+These need a person clicking through the UI (or a longer browser-automation pass) and were **not**
+executed this session:
+
+- multi-campus **form editing** in the browser: add/remove a campus, "same for all" copy, per-campus
+  guest/support lists not sharing mutable state;
+- **pending-edit / resubmit** hydration per campus through the UI;
+- **host / department / student** assignment and invitation screens;
+- **contact transfer** and **amendment** UI (the underlying claim/amendment tables are exercised by
+  create and by the unit suites, but the transfer/amendment *screens* were not driven here);
+- **student photo upload** in the browser (the image-only contract is covered by the frontend gates;
+  it was not re-driven end to end here);
+- public **OTP** initiate/verify in the browser (create-v2 was exercised via the authenticated
+  endpoint; the OTP path with SMTP disabled logs the code rather than emailing it — read it from the
+  API log to complete the flow).
 
 ---
 
 ## 6. Known limitations and open decisions
 
-**Not yet executed by anyone.** The journeys in §5 are specified, not verified — the review
-database has not been built because the bootstrap in §1 is an owner action. Treat the table above
-as a checklist to run, not as a passed matrix.
-
-Already verified independently of this environment, on real MySQL/Pomelo:
+Also verified independently of this environment, on real MySQL/Pomelo:
 
 - uniform **and** mixed v2 report/invoice reads source the canonical per-campus detail, never the
-  compatibility projection (20/20 regressions; reverting either fix makes them fail);
+  compatibility projection (20/20 regressions; reverting either fix makes them fail) — now also
+  confirmed live in §5a;
 - the photo upload contract is image-only end to end.
 
 Open business decisions — **not** self-selected, and they will surface during §5:
