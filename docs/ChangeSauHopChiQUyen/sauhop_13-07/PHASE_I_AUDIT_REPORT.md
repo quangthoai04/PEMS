@@ -72,7 +72,7 @@ break, or silently change behaviour, once those columns are dropped.
 
 ## 5. Corrected counts
 
-**10 blocker sites** (a site may span several fields — expanding one site into one row per field
+**At least 10 blocker sites** (not exhaustive — the two report readers in &sect;8b were missing from this table; superseded by &sect;8b) (a site may span several fields — expanding one site into one row per field
 is what produced the previous revision's inconsistent totals).
 
 | Category | Sites |
@@ -126,6 +126,29 @@ Drill-fixture note: the raw master seed is correctly **refused** by the data gat
 v2-consistent (`UPDATE visit_requests SET form_schema_version = 2`); the structural prerequisites
 already held (`check_detail_per_instance`, `check_projection_parity` both PASS). This drills the
 mechanism — it is **not** evidence that production data is ready.
+
+## 8b. Follow-up session — corrections applied after this report's first revision
+
+| ID | Finding | Status |
+|---|---|---|
+| F2 | `GetStaffLeaderDeptInvoiceItemsQuery` and `GetHoReportOverviewQueryHandler` gated the canonical read on `FormSchemaVersion >= PerCampus` **AND `HasMixedCampusDetails`**, so **uniform v2** fell back to the compatibility projection (7 sites) | **FIXED** `494bbdf5` — all v2 now reads `ci.FormDetail`; V1 unchanged. These were **missing from §3**, so the earlier "exactly 10 blocker sites" wording was not exhaustive and is withdrawn |
+| F3 | `check_projection_parity` only proved a detail *existed*; it never compared values | **FIXED** `4b6735b1` — all 10 fields compared against the deterministic (campus_id ASC) projection with NULL-safe `<=>`, no COALESCE/TRIM |
+| F4 | `Down` had **no read-only preflight**; `04_down_restore.sql` added columns and backfilled before testing `@unbackfilled`, so a failed gate left an auto-committed partial mutation | **FIXED** `4b6735b1` — mode-aware preflight (`UP`/`DOWN`) runs before both payloads; proven below |
+| F1 | R6 occurrence-level appendix still incomplete | **OPEN** (§9) |
+| F5 | Exact-manifest depth (ordered index members, `SEQ_IN_INDEX`, normalized CHECK expression, charset/collation, views/triggers/FK dependency sweep) | **PARTIAL** — columns/ordinals/defaults/comments and CHECK uniqueness-by-expression are enforced; the remaining manifest depth is **OPEN** |
+| F6 | Phase II stopped too broadly | **ADDRESSED** — the independent instance-scoped readers were migrated (F2) without touching the mixed request-level email/notification question |
+| F7 | Fresh target still blind-regex generated | **OPEN** — not run, not trusted |
+| F9 | `VisitPhotoPanel` success toast still says `ảnh/video` | **OPEN** (cosmetic) |
+| F10 | Phantom search hit (`RegistrantFullName/Nationality/JobTitle` searchable with no matched-context code) | **OPEN — NEEDS-BUSINESS-DECISION**, not self-selected |
+
+**F4 refusal evidence (`pems_i_rollback`, pre-UP state):**
+`check_down_state_is_post_up → FAIL: DOWN requires the post-UP state but 10 legacy column(s) still exist`
+→ `PHASE1_PREFLIGHT_RESULT: FAIL` → "REFUSED: … restore payload was NOT executed (zero mutation)" → exit 1,
+schema fingerprint unchanged (`4b6b715e5a3185283dc003d0f1632aae`).
+
+**Full lifecycle re-drill (`pems_i_rollback`, after the fixes):** UP (16 gates PASS, dropped
+`visit_requests_chk_7`) → verify(UP) PASS → **DOWN preflight PASS** → DOWN → verify(DOWN) PASS.
+Schema FP `4b6b715e…` and data FP `60207c9bb800e52e03bb0a2b39b28996` both **identical to pre-UP**.
 
 ## 9. Known remaining gaps
 
