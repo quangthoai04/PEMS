@@ -8,18 +8,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, Download,
-  FileText, Loader2, RefreshCw, Send, Star, Users, X, XCircle, DollarSign,
+  AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  ChevronUp, Download, FileText, Loader2, RefreshCw, Send, Star, TrendingDown, TrendingUp,
+  Users, X, XCircle, DollarSign,
 } from 'lucide-react';
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { reportsApi } from '../../../features/reports/api/reportsApi';
 import type {
-  StaffLeaderInvoiceItem, StaffLeaderReportV2, StaffLeaderV2DepartmentRow,
+  StaffLeaderExpenseVisit, StaffLeaderExpenseVisits,
+  StaffLeaderReportV2, StaffLeaderV2DepartmentRow,
   StaffLeaderV2Filters, StaffLeaderV2PersonnelRow, StaffLeaderV2Preset,
 } from '../../../features/reports/types/staffLeaderReportsV2.types';
-import { TaskHandoverModal } from '../departments/TaskHandoverModal';
 
 // Palette chart đã validate CVD/contrast.
 const CHART_BLUE = '#1e6fc0';
@@ -32,9 +33,10 @@ const PRESETS: { value: StaffLeaderV2Preset; label: string }[] = [
   { value: 'CUSTOM', label: 'Tùy chỉnh' },
 ];
 
-const ITEM_TYPE_LABELS: Record<string, string> = {
-  ROOM: 'Phòng họp', TRANSPORT: 'Xe / di chuyển', MEAL: 'Ẩm thực', EQUIPMENT: 'Thiết bị',
-  BANNER: 'Băng rôn', LED: 'LED', OTHER: 'Khác',
+// Loại chi phí — bảng kê phòng ban (LOGISTICS) luôn hiển thị là "Hạng mục yêu cầu".
+const ORIGIN_LABELS: Record<string, string> = {
+  REQUEST_ITEM: 'Hạng mục yêu cầu', MANUAL: 'Nhập tay', ADDITIONAL: 'Phát sinh',
+  DAMAGE_LOSS: 'Đền bù hư hỏng/mất mát', OTHER: 'Khác',
 };
 
 const thClass = 'px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap text-left';
@@ -43,6 +45,79 @@ const tdClass = 'px-3 py-2.5 text-sm text-slate-600';
 const vnMoney = (v: number) => `${v.toLocaleString('vi-VN')} ₫`;
 const fmtDate = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
 const fmtDateTime = (iso: string) => (iso ? `${iso.slice(11, 16)} ${fmtDate(iso)}` : '—');
+
+/** Số dòng mỗi trang của các bảng nhân sự / phòng ban. */
+const PAGE_SIZE = 10;
+
+type RankSort = 'DEFAULT' | 'BEST' | 'WORST';
+
+/** Điểm xếp hạng tốt/kém: chuẩn hóa (hoàn thành, giờ làm, feedback) về 0..1 rồi cộng lại. */
+const rankScore = (completed: number, maxCompleted: number, hours: number, maxHours: number, feedback: number | null) =>
+  (maxCompleted > 0 ? completed / maxCompleted : 0)
+  + (maxHours > 0 ? hours / maxHours : 0)
+  + ((feedback ?? 0) / 5);
+
+/** Cặp nút "Tốt nhất / Kém nhất" — bấm lại nút đang chọn để bỏ xếp hạng. */
+function RankSortButtons({ sort, onChange }: { sort: RankSort; onChange: (s: RankSort) => void }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(sort === 'BEST' ? 'DEFAULT' : 'BEST')}
+        title="Xếp hạng theo hoàn thành + giờ làm việc + feedback, tốt nhất lên đầu"
+        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+          sort === 'BEST' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+        }`}
+      >
+        <TrendingUp className="w-3.5 h-3.5" /> Tốt nhất
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(sort === 'WORST' ? 'DEFAULT' : 'WORST')}
+        title="Xếp hạng theo hoàn thành + giờ làm việc + feedback, kém nhất lên đầu"
+        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+          sort === 'WORST' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+        }`}
+      >
+        <TrendingDown className="w-3.5 h-3.5" /> Kém nhất
+      </button>
+    </div>
+  );
+}
+
+/** Thanh phân trang client-side gắn dưới bảng. */
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-t border-slate-200">
+      <span className="text-[11px] font-medium text-slate-400">
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total} dòng
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onChange(page - 1)}
+          disabled={page <= 1}
+          title="Trang trước"
+          className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-xs font-bold text-slate-600 px-2 whitespace-nowrap">{page}/{totalPages}</span>
+        <button
+          type="button"
+          onClick={() => onChange(page + 1)}
+          disabled={page >= totalPages}
+          title="Trang sau"
+          className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** Ô thông số compact — 3 phần cùng 1 trang nên hạn chế khung/ô to. */
 function StatTile({ label, value, sub, tone = 'blue', icon }: {
@@ -98,8 +173,8 @@ export function StaffLeaderReportManagement() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Mỗi phần đóng/mở độc lập — mặc định mở cả 3.
-  const [openSections, setOpenSections] = useState({ visits: true, personnel: true, departments: true });
+  // Mỗi phần đóng/mở độc lập — mặc định mở cả 4.
+  const [openSections, setOpenSections] = useState({ visits: true, personnel: true, departments: true, expenses: true });
   const toggleSection = (key: keyof typeof openSections) =>
     setOpenSections((s) => ({ ...s, [key]: !s[key] }));
 
@@ -160,6 +235,8 @@ export function StaffLeaderReportManagement() {
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'STAFF' | 'STUDENT'>('ALL');
   const [personnelNotes, setPersonnelNotes] = useState<Record<number, string>>({});
   const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+  const [personnelSort, setPersonnelSort] = useState<RankSort>('DEFAULT');
+  const [personnelPage, setPersonnelPage] = useState(1);
 
   const personnelRows = useMemo(() => {
     const rows = data?.personnel.rows ?? [];
@@ -167,6 +244,16 @@ export function StaffLeaderReportManagement() {
     if (roleFilter === 'STUDENT') return rows.filter((r) => r.role === 'STUDENT');
     return rows;
   }, [data, roleFilter]);
+
+  const rankedPersonnelRows = useMemo(() => {
+    if (personnelSort === 'DEFAULT') return personnelRows;
+    const maxVisits = Math.max(0, ...personnelRows.map((r) => r.visitCount));
+    const maxHours = Math.max(0, ...personnelRows.map((r) => r.totalHours));
+    const score = (r: StaffLeaderV2PersonnelRow) => rankScore(r.visitCount, maxVisits, r.totalHours, maxHours, r.feedbackAverage);
+    const sorted = [...personnelRows].sort((a, b) => score(b) - score(a));
+    return personnelSort === 'BEST' ? sorted : sorted.reverse();
+  }, [personnelRows, personnelSort]);
+  const pagedPersonnelRows = rankedPersonnelRows.slice((personnelPage - 1) * PAGE_SIZE, personnelPage * PAGE_SIZE);
 
   const sendPersonnelReport = async (row: StaffLeaderV2PersonnelRow) => {
     setSendingUserId(row.userId);
@@ -177,7 +264,7 @@ export function StaffLeaderReportManagement() {
         toDate: data?.toDate,
         note: personnelNotes[row.userId]?.trim() || undefined,
       });
-      toast.success(res.message || 'Đã gửi báo cáo.');
+      toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
     } finally {
@@ -185,73 +272,151 @@ export function StaffLeaderReportManagement() {
     }
   };
 
-  // ── Phần 3: panel danh sách biên bản nghiệm thu phòng ban ──
-  const [invoiceDept, setInvoiceDept] = useState<StaffLeaderV2DepartmentRow | null>(null);
-  const [invoiceRange, setInvoiceRange] = useState<{ fromDate: string; toDate: string }>({ fromDate: '', toDate: '' });
-  const [invoiceItems, setInvoiceItems] = useState<StaffLeaderInvoiceItem[]>([]);
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
-  const [invoiceLoaded, setInvoiceLoaded] = useState(false);
-  const [viewItem, setViewItem] = useState<StaffLeaderInvoiceItem | null>(null);
+  // ── Phần 3: ghi chú + gửi email báo cáo phối hợp cho từng phòng ban ──
+  const [deptNotes, setDeptNotes] = useState<Record<number, string>>({});
+  const [sendingDeptId, setSendingDeptId] = useState<number | null>(null);
+  const [deptSort, setDeptSort] = useState<RankSort>('DEFAULT');
+  const [deptPage, setDeptPage] = useState(1);
 
-  const openInvoicePanel = (dept: StaffLeaderV2DepartmentRow) => {
-    setInvoiceDept(dept);
-    setInvoiceRange({ fromDate: data?.fromDate ?? '', toDate: data?.toDate ?? '' });
-    setInvoiceItems([]);
-    setInvoiceLoaded(false);
+  // Xếp hạng phòng ban: không có số giờ làm việc nên chỉ dựa vào hoàn thành + feedback.
+  const rankedDeptRows = useMemo(() => {
+    const rows = data?.departments.rows ?? [];
+    if (deptSort === 'DEFAULT') return rows;
+    const maxCompleted = Math.max(0, ...rows.map((r) => r.completed));
+    const score = (r: StaffLeaderV2DepartmentRow) => rankScore(r.completed, maxCompleted, 0, 0, r.feedbackAverage);
+    const sorted = [...rows].sort((a, b) => score(b) - score(a));
+    return deptSort === 'BEST' ? sorted : sorted.reverse();
+  }, [data, deptSort]);
+  const pagedDeptRows = rankedDeptRows.slice((deptPage - 1) * PAGE_SIZE, deptPage * PAGE_SIZE);
+
+  // Dữ liệu kỳ mới → quay về trang 1 của các bảng.
+  useEffect(() => { setPersonnelPage(1); setDeptPage(1); }, [data]);
+
+  const sendDepartmentReport = async (row: StaffLeaderV2DepartmentRow) => {
+    setSendingDeptId(row.departmentId);
+    try {
+      const res = await reportsApi.sendStaffLeaderDepartmentReport({
+        departmentId: row.departmentId,
+        fromDate: data?.fromDate,
+        toDate: data?.toDate,
+        note: deptNotes[row.departmentId]?.trim() || undefined,
+      });
+      toast.success(res.message || `Đã gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}.`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
+    } finally {
+      setSendingDeptId(null);
+    }
   };
 
-  const loadInvoiceItems = async () => {
-    if (!invoiceDept) return;
-    if (!invoiceRange.fromDate || !invoiceRange.toDate) {
-      toast.error('Chọn khoảng ngày để lấy danh sách đơn.');
+  // ── Phần 4: thống kê chi phí các đoàn (panel tải theo khoảng ngày riêng) ──
+  const [expenseRange, setExpenseRange] = useState<{ fromDate: string; toDate: string }>({ fromDate: '', toDate: '' });
+  const [expenseData, setExpenseData] = useState<StaffLeaderExpenseVisits | null>(null);
+  const [expenseLoading, setExpenseLoading] = useState(false);
+  const [expenseLoaded, setExpenseLoaded] = useState(false);
+  const [viewExpenseVisit, setViewExpenseVisit] = useState<StaffLeaderExpenseVisit | null>(null);
+
+  useEffect(() => {
+    if (data && !expenseRange.fromDate) setExpenseRange({ fromDate: data.fromDate, toDate: data.toDate });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const loadExpenseVisits = async () => {
+    if (!expenseRange.fromDate || !expenseRange.toDate) {
+      toast.error('Chọn khoảng ngày để tải danh sách.');
       return;
     }
-    setInvoiceLoading(true);
+    setExpenseLoading(true);
     try {
-      const items = await reportsApi.getStaffLeaderDeptInvoiceItems(
-        invoiceDept.departmentId, invoiceRange.fromDate, invoiceRange.toDate);
-      setInvoiceItems(items);
-      setInvoiceLoaded(true);
+      const res = await reportsApi.getStaffLeaderExpenseVisits(expenseRange.fromDate, expenseRange.toDate);
+      setExpenseData(res);
+      setExpenseLoaded(true);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Không tải được danh sách đơn.');
+      toast.error(e?.response?.data?.message || 'Không tải được thống kê chi phí.');
     } finally {
-      setInvoiceLoading(false);
+      setExpenseLoading(false);
     }
   };
 
-
-
-  // "Xuất PDF" mở hộp thoại IN (không tải file): dựng hẳn 1 cửa sổ mới chỉ chứa
-  // HTML danh sách rồi in cửa sổ đó — không phụ thuộc CSS/layout của trang nên không bị in trắng.
-  const exportInvoicePdf = () => {
-    if (!invoiceDept || invoiceItems.length === 0) {
-      toast.error('Chưa có đơn nào để xuất bản in.');
+  // "Xuất thống kê PDF" chi phí: cửa sổ in riêng (như exportInvoicePdf) gồm 2 phần —
+  // (1) gộp bảng kê chi phí của từng đoàn, (2) thống kê theo loại + số tiền phải trả
+  // từng phòng ban. Giữ bố cục gọn: mỗi đoàn 1 khối trong cùng 1 bảng.
+  const exportExpensePdf = () => {
+    if (!expenseData || expenseData.rows.length === 0) {
+      toast.error('Chưa có dữ liệu chi phí để xuất thống kê.');
       return;
     }
     const esc = (s: string | null | undefined) =>
       (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const rowsHtml = invoiceItems.map((it, idx) => `
-      <tr>
-        <td style="text-align:center">${idx + 1}</td>
-        <td>${esc(it.title)}</td>
-        <td>${esc(it.delegationName)}</td>
-        <td style="text-align:center">${fmtDate(it.usageStartAt)}</td>
-        <td style="text-align:center">${it.quantity}</td>
-      </tr>`).join('');
+    const num = (v: number) => v.toLocaleString('vi-VN');
+
+    // Phần 1 — chi tiết theo từng đoàn.
+    const visitBlocks = expenseData.rows.map((v2, vIdx) => {
+      const reportRows = v2.reports.map((r) => {
+        const source = r.reportScope === 'GENERAL' ? 'Host' : (r.departmentName ?? 'Phòng ban');
+        if (r.noExpense) {
+          const title = r.logisticsItemTitle ?? 'Đơn yêu cầu';
+          return `<tr><td colspan="5" style="color:#64748b">${esc(title)} — ${esc(source)}: <i>Không có chi phí</i></td><td style="text-align:right">0</td></tr>`;
+        }
+        const itemRows = r.items.map((it) => `
+          <tr>
+            <td>${esc(it.itemName)}</td>
+            <td>${r.reportScope === 'LOGISTICS' ? 'Hạng mục yêu cầu' : esc(ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin)}</td>
+            <td>${esc(source)}</td>
+            <td style="text-align:right">${it.quantity}</td>
+            <td style="text-align:right">${num(it.unitPrice)}</td>
+            <td style="text-align:right">${num(it.totalAmount)}</td>
+          </tr>`).join('');
+        const noteRow = r.reportNote
+          ? `<tr><td colspan="6" style="color:#64748b;font-style:italic">Ghi chú (${esc(source)}): ${esc(r.reportNote)}</td></tr>`
+          : '';
+        return itemRows + noteRow;
+      }).join('');
+      return `
+        <tr style="background:#eef2f7"><td colspan="5" style="font-weight:700">${vIdx + 1}. ${esc(v2.delegationName)} (${esc(v2.requestCode)}) — ${fmtDate(v2.visitDate)}</td>
+          <td style="text-align:right;font-weight:700">${num(v2.totalExpense)}</td></tr>
+        ${reportRows}`;
+    }).join('');
+
+    // Phần 2 — theo loại (bảng kê phòng ban tính là "Hạng mục yêu cầu") + theo phòng ban.
+    const byType = new Map<string, { count: number; total: number }>();
+    const byDept = new Map<string, { count: number; total: number }>();
+    for (const v2 of expenseData.rows) {
+      for (const r of v2.reports) {
+        if (r.reportScope === 'LOGISTICS') {
+          const key = r.departmentName ?? 'Phòng ban khác';
+          const cur = byDept.get(key) ?? { count: 0, total: 0 };
+          cur.count += 1; cur.total += r.totalAmount;
+          byDept.set(key, cur);
+        }
+        if (r.noExpense) continue;
+        for (const it of r.items) {
+          const label = r.reportScope === 'LOGISTICS' ? 'Hạng mục yêu cầu' : (ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin);
+          const cur = byType.get(label) ?? { count: 0, total: 0 };
+          cur.count += 1; cur.total += it.totalAmount;
+          byType.set(label, cur);
+        }
+      }
+    }
+    const typeRows = [...byType.entries()].sort((a, b) => b[1].total - a[1].total)
+      .map(([label, t2]) => `<tr><td>${esc(label)}</td><td style="text-align:right">${t2.count}</td><td style="text-align:right">${num(t2.total)}</td></tr>`)
+      .join('');
+    const deptRows2 = [...byDept.entries()].sort((a, b) => b[1].total - a[1].total)
+      .map(([name, d2]) => `<tr><td>${esc(name)}</td><td style="text-align:right">${d2.count}</td><td style="text-align:right">${num(d2.total)}</td></tr>`)
+      .join('');
+
     const html = `<!doctype html><html><head><meta charset="utf-8" />
-      <title>Danh sách biên bản nghiệm thu hậu cần — ${esc(invoiceDept.name)}</title>
+      <title>Thống kê chi phí tiếp khách — ${esc(data?.campusName)}</title>
       <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 28px; }
         .top { display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 22px; font-size: 12px; }
         h2 { text-align: center; text-transform: uppercase; margin: 4px 0 2px; font-size: 20px; }
+        h3 { font-size: 14px; text-transform: uppercase; color: #004c91; margin: 22px 0 8px; }
         .sub { text-align: center; font-size: 14px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { border: 1px solid #475569; padding: 6px 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #475569; padding: 5px 7px; }
         th { background: #f1f5f9; }
-        .total td { font-weight: 700; }
-        .sign { display: flex; justify-content: space-between; margin-top: 44px; text-align: center; font-size: 14px; }
-        .sign div { width: 48%; }
-        .sign .hint { font-size: 11px; color: #64748b; }
+        .total td { font-weight: 700; background: #fff7ed; }
       </style></head><body>
       <div class="top">
         <div>
@@ -263,18 +428,27 @@ export function StaffLeaderReportManagement() {
           <div style="font-weight:800;font-size:11px;color:#f37021">Độc lập - Tự do - Hạnh phúc</div>
         </div>
       </div>
-      <h2>DANH SÁCH BIÊN BẢN NGHIỆM THU HẬU CẦN</h2>
-      <p class="sub">Phòng ban: <b>${esc(invoiceDept.name)}</b> · Kỳ: <b>${fmtDate(invoiceRange.fromDate)} – ${fmtDate(invoiceRange.toDate)}</b></p>
+      <h2>BẢNG THỐNG KÊ CHI PHÍ TIẾP KHÁCH</h2>
+      <p class="sub">Kỳ: <b>${fmtDate(expenseRange.fromDate)} – ${fmtDate(expenseRange.toDate)}</b> · ${expenseData.rows.length} đoàn</p>
+
+      <h3>Phần 1 · Chi phí theo từng đoàn</h3>
       <table>
-        <thead><tr><th>STT</th><th>Hạng mục</th><th>Đoàn khách</th><th>Ngày</th><th>SL</th></tr></thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
+        <thead><tr><th>Hạng mục</th><th>Loại</th><th>Bên kê khai</th><th>SL</th><th>Đơn giá (₫)</th><th>Thành tiền (₫)</th></tr></thead>
+        <tbody>${visitBlocks}</tbody>
+        <tfoot><tr class="total"><td colspan="5" style="text-align:right;text-transform:uppercase">Tổng chi phí các đoàn</td><td style="text-align:right">${num(expenseData.totalAmount)}</td></tr></tfoot>
       </table>
-      <div class="sign">
-        <div><b>ĐẠI DIỆN VĂN PHÒNG IC</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-        <div><b>ĐẠI DIỆN PHÒNG BAN</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-      </div>
+
+      <h3>Phần 2 · Thống kê theo loại chi phí</h3>
+      <table>
+        <thead><tr><th>Loại</th><th style="width:90px">Số hạng mục</th><th style="width:130px">Tổng tiền (₫)</th></tr></thead>
+        <tbody>${typeRows || '<tr><td colspan="3" style="text-align:center;color:#64748b">Không có hạng mục nào</td></tr>'}</tbody>
+      </table>
+
+      <h3>Phần 3 · Chi phí phải thanh toán cho từng phòng ban</h3>
+      <table>
+        <thead><tr><th>Phòng ban</th><th style="width:90px">Số đơn</th><th style="width:130px">Tổng tiền (₫)</th></tr></thead>
+        <tbody>${deptRows2 || '<tr><td colspan="3" style="text-align:center;color:#64748b">Không có phòng ban nào kê khai chi phí</td></tr>'}</tbody>
+      </table>
       </body></html>`;
     const win = window.open('', '_blank', 'width=980,height=720');
     if (!win) {
@@ -285,32 +459,14 @@ export function StaffLeaderReportManagement() {
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 350);
-    toast.success('Đã mở bản in danh sách — chọn "Save as PDF" để lưu.');
+    toast.success('Đã mở bản in thống kê — chọn "Save as PDF" để lưu.');
   };
 
-  // Biên bản đã ký giữa 2 bên — TaskHandoverModal (chỉ xem) nhận DTO PascalCase.
-  const toHandoverDto = (it: StaffLeaderInvoiceItem) => ({
-    LogisticsItemId: it.logisticsItemId,
-    Title: it.title,
-    Quantity: it.quantity,
-    ItemType: it.itemType,
-    UsageEndTime: it.usageEndAt ? it.usageEndAt.slice(11, 16) : undefined,
-    UsageDate: it.usageEndAt ? `${it.usageEndAt.slice(8, 10)}-${it.usageEndAt.slice(5, 7)}-${it.usageEndAt.slice(0, 4)}` : undefined,
-    DelegationName: it.delegationName,
-    SenderName: it.hostName,
-    AssigneeName: it.assigneeName,
-    BorrowNote: it.borrowNote,
-    ReturnNote: it.returnNote,
-    BorrowProviderSignature: it.borrowProviderSignature ? { Name: it.borrowProviderSignature.name, SignedAt: it.borrowProviderSignature.signedAt } : null,
-    BorrowBorrowerSignature: it.borrowBorrowerSignature ? { Name: it.borrowBorrowerSignature.name, SignedAt: it.borrowBorrowerSignature.signedAt } : null,
-    ReturnProviderSignature: it.returnProviderSignature ? { Name: it.returnProviderSignature.name, SignedAt: it.returnProviderSignature.signedAt } : null,
-    ReturnBorrowerSignature: it.returnBorrowerSignature ? { Name: it.returnBorrowerSignature.name, SignedAt: it.returnBorrowerSignature.signedAt } : null,
-  });
+
 
   const v = data?.visits;
   const p = data?.personnel;
   const d = data?.departments;
-  const e = data?.expenses;
 
   return (
     <div className="w-full space-y-8 pb-16 animate-in fade-in duration-300">
@@ -513,13 +669,13 @@ export function StaffLeaderReportManagement() {
               />
             </div>
 
-            {/* Bộ lọc vai trò */}
-            <div className="flex items-center gap-2 mt-5 mb-3">
+            {/* Bộ lọc vai trò + xếp hạng */}
+            <div className="flex flex-wrap items-center gap-2 mt-5 mb-3">
               {(['ALL', 'STAFF', 'STUDENT'] as const).map((rf) => (
                 <button
                   key={rf}
                   type="button"
-                  onClick={() => setRoleFilter(rf)}
+                  onClick={() => { setRoleFilter(rf); setPersonnelPage(1); }}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
                     roleFilter === rf ? 'bg-[#004c91] text-white border-[#004c91]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
@@ -530,9 +686,13 @@ export function StaffLeaderReportManagement() {
               <span className="text-[11px] text-slate-400 ml-2 flex items-center gap-1">
                 <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> = Staff Leader
               </span>
+              <div className="ml-auto">
+                <RankSortButtons sort={personnelSort} onChange={(s) => { setPersonnelSort(s); setPersonnelPage(1); }} />
+              </div>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50">
                   <tr>
@@ -551,11 +711,11 @@ export function StaffLeaderReportManagement() {
                   {personnelRows.length === 0 && (
                     <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">Không có nhân sự nào.</td></tr>
                   )}
-                  {personnelRows.map((row, idx) => {
+                  {pagedPersonnelRows.map((row, idx) => {
                     const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
                     return (
                       <tr key={row.userId} className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
-                        <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{(personnelPage - 1) * PAGE_SIZE + idx + 1}</td>
                         <td className={`${tdClass} font-semibold text-slate-800`}>
                           <span className="flex items-center gap-1.5">
                             {row.fullName}
@@ -604,6 +764,8 @@ export function StaffLeaderReportManagement() {
                   })}
                 </tbody>
               </table>
+              </div>
+              <Pagination page={personnelPage} total={rankedPersonnelRows.length} onChange={setPersonnelPage} />
             </div>
           </Section>
 
@@ -627,7 +789,13 @@ export function StaffLeaderReportManagement() {
               />
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 mt-5">
+            {/* Xếp hạng phòng ban (hoàn thành + feedback) */}
+            <div className="flex items-center justify-end mt-5 mb-3">
+              <RankSortButtons sort={deptSort} onChange={(s) => { setDeptSort(s); setDeptPage(1); }} />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50">
                   <tr>
@@ -637,201 +805,229 @@ export function StaffLeaderReportManagement() {
                     <th className={thClass}>Hoàn thành</th>
                     <th className={thClass}>Từ chối</th>
                     <th className={thClass}>Feedback</th>
-                    <th className={thClass}>Hành động</th>
+                    <th className={thClass}>Ghi chú</th>
+                    <th className={thClass}></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {d!.rows.length === 0 && (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Không có phòng ban nào.</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Không có phòng ban nào.</td></tr>
                   )}
-                  {d!.rows.map((row, idx) => (
-                    <tr key={row.departmentId} className={invoiceDept?.departmentId === row.departmentId ? 'bg-orange-50/60' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
-                      <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
-                      <td className={`${tdClass} font-semibold text-slate-800`}>{row.name}</td>
-                      <td className={`${tdClass} whitespace-nowrap`}>{row.totalRequests}</td>
-                      <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-semibold`}>{row.completed}</td>
-                      <td className={`${tdClass} whitespace-nowrap text-rose-600 font-semibold`}>{row.rejected}</td>
-                      <td className={`${tdClass} whitespace-nowrap`}>
-                        {row.feedbackAverage != null
-                          ? <span className="font-bold text-slate-700">{row.feedbackAverage.toFixed(1)}★ <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span></span>
-                          : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className={`${tdClass} whitespace-nowrap`}>
-                        <button
-                          type="button"
-                          onClick={() => openInvoicePanel(row)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] text-xs font-bold rounded-lg border border-orange-200 transition-colors cursor-pointer"
-                        >
-                          <FileText className="w-3.5 h-3.5" /> Thống kê chi phí
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {pagedDeptRows.map((row, idx) => {
+                    const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
+                    return (
+                      <tr
+                        key={row.departmentId}
+                        className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}
+                      >
+                        <td className={`${tdClass} whitespace-nowrap`}>{(deptPage - 1) * PAGE_SIZE + idx + 1}</td>
+                        <td className={`${tdClass} font-semibold text-slate-800`}>{row.name}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>{row.totalRequests}</td>
+                        <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-semibold`}>{row.completed}</td>
+                        <td className={`${tdClass} whitespace-nowrap text-rose-600 font-semibold`}>{row.rejected}</td>
+                        <td className={`${tdClass} whitespace-nowrap`}>
+                          {row.feedbackAverage != null ? (
+                            <span className={`inline-flex items-center gap-1 font-bold ${lowFeedback ? 'text-rose-600' : 'text-slate-700'}`}>
+                              {row.feedbackAverage.toFixed(1)}★
+                              <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span>
+                              {lowFeedback && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" aria-label="Feedback dưới 2 sao" />}
+                            </span>
+                          ) : <span className="text-slate-400">—</span>}
+                        </td>
+                        <td className={tdClass}>
+                          <input
+                            type="text"
+                            value={deptNotes[row.departmentId] ?? ''}
+                            onChange={(ev) => setDeptNotes((s) => ({ ...s, [row.departmentId]: ev.target.value }))}
+                            placeholder="Ghi chú..."
+                            className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#004c91]"
+                          />
+                        </td>
+                        <td className={`${tdClass} whitespace-nowrap`}>
+                          <button
+                            type="button"
+                            onClick={() => sendDepartmentReport(row)}
+                            disabled={sendingDeptId === row.departmentId}
+                            title={`Gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            {sendingDeptId === row.departmentId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Gửi
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              </div>
+              <Pagination page={deptPage} total={rankedDeptRows.length} onChange={setDeptPage} />
             </div>
+          </Section>
 
-            {/* ── Panel hóa đơn của phòng ban đã chọn ── */}
-            {invoiceDept && (
-              <div className="mt-5 rounded-2xl border-2 border-orange-200 bg-orange-50/40 overflow-hidden">
-                <div className="px-5 py-3.5 bg-[#f37021] text-white flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-black flex items-center gap-2">
-                    <FileText className="w-4 h-4" /> Biên bản nghiệm thu — {invoiceDept.name}
-                  </h3>
-                  <button type="button" onClick={() => setInvoiceDept(null)} className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer">
-                    <X className="w-4 h-4" />
+          {/* ═══ 4 · Thống kê chi phí ═══ */}
+          <Section
+            index={4}
+            title="Thống kê chi phí"
+            subtitle="Chi phí tiếp khách của từng đoàn (bảng kê của Host và các phòng ban) theo khoảng ngày."
+            open={openSections.expenses}
+            onToggle={() => toggleSection('expenses')}
+          >
+            <div className="rounded-2xl border-2 border-orange-200 bg-orange-50/40 overflow-hidden">
+              <div className="px-5 py-3.5 bg-[#f37021] text-white flex items-center gap-2">
+                <DollarSign className="w-4 h-4" />
+                <h3 className="text-sm font-black">Thống kê chi phí tiếp khách — {data.campusName}</h3>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Chọn khoảng ngày */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-bold text-slate-600">Khoảng ngày:</span>
+                  <input type="date" value={expenseRange.fromDate}
+                    onChange={(ev) => setExpenseRange((s) => ({ ...s, fromDate: ev.target.value }))}
+                    className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                  <span className="text-slate-400 text-sm">→</span>
+                  <input type="date" value={expenseRange.toDate}
+                    onChange={(ev) => setExpenseRange((s) => ({ ...s, toDate: ev.target.value }))}
+                    className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
+                  <button
+                    type="button"
+                    onClick={loadExpenseVisits}
+                    disabled={expenseLoading}
+                    className="px-4 py-2 bg-[#004c91] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {expenseLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Tải danh sách'}
                   </button>
                 </div>
 
-                <div className="p-5 space-y-4">
-                  {/* Chọn khoảng ngày */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-xs font-bold text-slate-600">Khoảng ngày:</span>
-                    <input type="date" value={invoiceRange.fromDate}
-                      onChange={(e) => setInvoiceRange((s) => ({ ...s, fromDate: e.target.value }))}
-                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
-                    <span className="text-slate-400 text-sm">→</span>
-                    <input type="date" value={invoiceRange.toDate}
-                      onChange={(e) => setInvoiceRange((s) => ({ ...s, toDate: e.target.value }))}
-                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white outline-none focus:border-[#f37021]" />
-                    <button
-                      type="button"
-                      onClick={loadInvoiceItems}
-                      disabled={invoiceLoading}
-                      className="px-4 py-2 bg-[#004c91] text-white text-xs font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
-                    >
-                      {invoiceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Tải danh sách đơn'}
-                    </button>
-                  </div>
+                {expenseLoaded && expenseData && expenseData.rows.length === 0 && (
+                  <p className="text-sm text-slate-500 py-4 text-center">Không có đoàn nào có dữ liệu chi phí trong khoảng ngày này.</p>
+                )}
 
-                  {invoiceLoaded && invoiceItems.length === 0 && (
-                    <p className="text-sm text-slate-500 py-4 text-center">Phòng ban chưa nhận đơn yêu cầu nào trong khoảng ngày này.</p>
-                  )}
-
-                  {invoiceItems.length > 0 && (
-                    <>
-                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                        <table className="w-full text-left border-collapse">
-                          <thead className="bg-slate-50">
-                            <tr>
-                              <th className={thClass}>STT</th>
-                              <th className={thClass}>Đơn yêu cầu</th>
-                              <th className={thClass}>Đoàn khách</th>
-                              <th className={thClass}>Ngày</th>
-                              <th className={thClass}>SL</th>
-                              <th className={thClass}>Biên bản</th>
+                {expenseData && expenseData.rows.length > 0 && (
+                  <>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className={thClass}>STT</th>
+                            <th className={thClass}>Tên đoàn khách</th>
+                            <th className={thClass}>Thời gian</th>
+                            <th className={thClass}>Số tiền</th>
+                            <th className={thClass}></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {expenseData.rows.map((row, idx) => (
+                            <tr key={row.visitInstanceId} className={idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
+                              <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                              <td className={`${tdClass} font-semibold text-slate-800`}>
+                                {row.delegationName}
+                                <span className="block text-[11px] font-normal text-slate-400">{row.requestCode}</span>
+                              </td>
+                              <td className={`${tdClass} whitespace-nowrap`}>{fmtDateTime(row.visitDate)}</td>
+                              <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-bold`}>{vnMoney(row.totalExpense)}</td>
+                              <td className={`${tdClass} whitespace-nowrap`}>
+                                <button
+                                  type="button"
+                                  onClick={() => setViewExpenseVisit(row)}
+                                  className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer"
+                                >
+                                  Xem chi tiết
+                                </button>
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {invoiceItems.map((it, idx) => (
-                              <tr key={it.logisticsItemId}>
-                                <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
-                                <td className={`${tdClass} font-semibold text-slate-800`}>
-                                  {it.title}
-                                  <span className="block text-[11px] font-normal text-slate-400">{ITEM_TYPE_LABELS[it.itemType] ?? it.itemType} · {it.requestCode}</span>
-                                </td>
-                                <td className={tdClass}>{it.delegationName}</td>
-                                <td className={`${tdClass} whitespace-nowrap`}>{fmtDateTime(it.usageStartAt)}</td>
-                                <td className={`${tdClass} whitespace-nowrap`}>{it.quantity}</td>
-                                <td className={`${tdClass} whitespace-nowrap`}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setViewItem(it)}
-                                    className="text-xs font-bold text-[#004c91] hover:underline cursor-pointer"
-                                  >
-                                    Xem chi tiết
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                      <div className="flex flex-wrap items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={exportInvoicePdf}
-                          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 text-slate-700 text-xs font-black rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
-                        >
-                          <Download className="w-4 h-4" /> Tải về / In danh sách (PDF)
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm font-black text-slate-700 uppercase">
+                        Tổng chi phí các đoàn:{' '}
+                        <span className="text-base text-[#c2410c]">{vnMoney(expenseData.totalAmount)}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={exportExpensePdf}
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 text-slate-700 text-xs font-black rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" /> Xuất thống kê PDF
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            )}
-          </Section>
-
-          {/* ═══ 4 · Thống kê chi phí tiếp khách ═══ */}
-          <Section
-            index={4}
-            title="Thống kê chi phí các đoàn khách"
-            subtitle="Tổng hợp chi phí chung (Host) và hậu cần (các phòng ban) của từng đoàn."
-            open={openSections.visits}
-            onToggle={() => {}}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-              <StatTile label="Tổng chi phí" value={e ? vnMoney(e.totalAmount) : '—'} tone="blue" icon={<DollarSign className="w-4 h-4 opacity-60" />} />
-              <StatTile label="Chi phí chung" value={e ? vnMoney(e.totalGeneral) : '—'} tone="amber" />
-              <StatTile label="Chi phí hậu cần" value={e ? vnMoney(e.totalLogistics) : '—'} tone="slate" />
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className={thClass}>STT</th>
-                    <th className={thClass}>Đoàn khách</th>
-                    <th className={thClass}>Ngày đến</th>
-                    <th className={thClass}>Chi phí chung</th>
-                    <th className={thClass}>Chi phí hậu cần</th>
-                    <th className={thClass}>Tổng cộng</th>
-                    <th className={thClass}>Trạng thái chốt</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(!e || e.rows.length === 0) && (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Không có đoàn nào trong kỳ có dữ liệu chi phí.</td></tr>
-                  )}
-                  {e?.rows.map((row, idx) => (
-                    <tr key={row.visitInstanceId} className={idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
-                      <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
-                      <td className={`${tdClass} font-semibold text-slate-800`}>
-                        {row.delegationName}
-                        <span className="block text-[11px] font-normal text-slate-400">{row.groupCode}</span>
-                      </td>
-                      <td className={`${tdClass} whitespace-nowrap`}>{fmtDate(row.visitDate ?? '')}</td>
-                      <td className={`${tdClass} whitespace-nowrap text-amber-700 font-medium`}>{vnMoney(row.generalExpense)}</td>
-                      <td className={`${tdClass} whitespace-nowrap text-slate-600 font-medium`}>{vnMoney(row.logisticsExpense)}</td>
-                      <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-bold`}>{vnMoney(row.totalExpense)}</td>
-                      <td className={`${tdClass} whitespace-nowrap`}>
-                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
-                          row.status === 'ĐÃ CHỐT' ? 'bg-emerald-100 text-emerald-700' :
-                          row.status === 'ĐÃ LƯU' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </Section>
 
         </>
       )}
 
-      {/* Modal biên bản đã ký giữa 2 bên (chỉ xem) */}
-      {viewItem && (
-        <TaskHandoverModal
-          isOpen
-          readOnly
-          detailData={toHandoverDto(viewItem)}
-          onClose={() => setViewItem(null)}
-        />
+      {/* Modal ghi chú chi phí của 1 đoàn — phần 4 "Xem chi tiết" */}
+      {viewExpenseVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50" onClick={() => setViewExpenseVisit(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="px-5 py-3.5 bg-[#004c91] text-white flex items-center justify-between gap-3">
+              <h3 className="text-sm font-black truncate">
+                Ghi chú chi phí — {viewExpenseVisit.delegationName}
+                <span className="block text-[11px] font-medium opacity-75">
+                  {viewExpenseVisit.requestCode} · {fmtDateTime(viewExpenseVisit.visitDate)}
+                </span>
+              </h3>
+              <button type="button" onClick={() => setViewExpenseVisit(null)} className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-3">
+              {viewExpenseVisit.reports.map((r, i) => (
+                <div key={i} className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-50">
+                    <span className="text-xs font-bold text-slate-800">
+                      {r.reportScope === 'GENERAL' ? 'Chi phí chung (Host)' : (r.logisticsItemTitle ?? 'Đơn yêu cầu')}
+                    </span>
+                    {r.departmentName && (
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-200/70 rounded px-1.5 py-0.5">{r.departmentName}</span>
+                    )}
+                    {r.noExpense && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">Không có chi phí</span>
+                    )}
+                    <span className="ml-auto text-xs font-black text-[#004c91]">{vnMoney(r.totalAmount)}</span>
+                  </div>
+                  {!r.noExpense && r.items.length > 0 && (
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <tbody className="divide-y divide-slate-50">
+                        {r.items.map((it, j) => (
+                          <tr key={j}>
+                            <td className="pl-4 pr-2 py-1 text-slate-400 whitespace-nowrap w-36">
+                              {r.reportScope === 'LOGISTICS' ? 'Hạng mục yêu cầu' : (ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin)}
+                            </td>
+                            <td className="px-2 py-1 font-semibold text-slate-700">{it.itemName}</td>
+                            <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-14">
+                              {it.quantity}{it.unitName ? ` ${it.unitName}` : ''}
+                            </td>
+                            <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-24">{it.unitPrice.toLocaleString('vi-VN')}</td>
+                            <td className="pl-2 pr-3 py-1 text-right font-bold text-slate-700 whitespace-nowrap w-28">{vnMoney(it.totalAmount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {r.reportNote && (
+                    <p className="px-3 py-1.5 text-[11px] italic text-slate-500 border-t border-slate-100">Ghi chú: {r.reportNote}</p>
+                  )}
+                </div>
+              ))}
+
+              <div className="rounded-xl bg-orange-50 border border-orange-100 px-3 py-2 text-right text-xs font-black text-slate-700 uppercase">
+                Tổng chi phí đoàn:
+                <span className="text-sm text-[#c2410c] ml-1.5">{vnMoney(viewExpenseVisit.totalExpense)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

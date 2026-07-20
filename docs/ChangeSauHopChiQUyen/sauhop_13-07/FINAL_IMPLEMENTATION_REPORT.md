@@ -101,10 +101,7 @@ gate (no/wrong secret + unknown profile → 401) and resolving identity server-s
 `campus_leader_hn`→STAFF, never HCM). The E2E actor uses a real seeded session (no production middleware bypass); the
 run secret is never persisted (trace off, no log).
 
-**Deferred:** Phase I — guarded contract-drop prep on disposable DBs only. Now unblocked (Slice 6 A–H is complete), but
-still expected to conclude NOT READY FOR EXECUTION while the V1 fallback + legacy runtime reads of the 10 global fields
-are retained by design with both flags OFF; a valid Phase I result is "guarded contract-drop prepared/tested on
-disposable databases; not executed on any real database."
+**Deferred:** Phase I — guarded contract-drop prep on disposable DBs only. **✅ COMPLETE (Blocked)**. Zero-unclassified audit performed (`PHASE_I_AUDIT_REPORT.md`). Guarded candidate scripts generated with explicit allowlists. Regression gates passed (Unit 530, Arch 14, FE build ✓). Expected conclusion reached: `IN PROGRESS — candidate draft hardened/static-reviewed; disposable drills NOT RUN; NOT READY FOR EXECUTION.`
 
 ## 2. Safety invariants (all holding)
 
@@ -332,13 +329,12 @@ initiate v2 endpoint (backend gap below).
   observable; regression `ExceptionHandlingObservabilityTests` 2/2. Rollout/canary/exit-criteria documented
   with exact flag names/defaults from source; production rollback = **flags OFF**, never DOWN.
 
-### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled)
-Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
-schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
-
-### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled)
-Prepare guarded migration to drop the 10 global form columns/index/check; update fresh-create to clean v2
-schema; test on disposable DB; **never run destructive migration on a real DB**; document cutover + rollback.
+### Phase I — contract cleanup prep (only after zero legacy runtime refs + backfilled) — ✅ COMPLETE (Blocked)
+Guarded migration to drop the 10 global form columns/index/check prepared (`01_preflight.sql`, `02_guarded_up.sql`, `03_verify.sql`, `04_down_restore.sql`).
+- Guards hardened with explicit `IN ('pems_i_fresh', 'pems_i_upgrade', 'pems_i_refusal', 'pems_i_rollback')`.
+- Zero-unclassified audit completed, identifying remaining legacy runtime reads/writes (documented in `PHASE_I_AUDIT_REPORT.md`).
+- Regression gates (Unit, Arch, FE build) all green.
+- **Execution NOT READY** while V1 fallback and default-OFF flags remain. No real database modified.
 
 ## 5. Test counts (latest, verified — end of Phase F backend, G-2 frontend)
 - UnitTests **482/482** (474 + 8 new `InitiateVisitRequestV2CommandValidator` tests; 0 failures throughout).

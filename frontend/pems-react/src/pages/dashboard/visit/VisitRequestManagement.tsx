@@ -16,7 +16,7 @@ import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
   FileText, ArrowRightCircle, Info, ClipboardList, Star, CheckCircle2,
-  PencilLine, MailOpen, RefreshCw,
+  PencilLine, MailOpen, RefreshCw, FileX, FileMinus,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -1184,10 +1184,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <ActionIconButton title="Hủy lịch thăm" tone="red" icon={<XCircle className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setCancel({ open: true, row, mode: can('CANCEL_BY_HOST') ? 'host' : 'visitor', instanceId: null, text: '', submitting: false, error: null, confirmed: false }); }} />
         ) : showReason ? (
-          <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<AlertCircle className="h-5 w-5" />}
+          <ActionIconButton title="Xem lý do từ chối" tone="orange" icon={<FileX className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setReason({ open: true, row }); }} />
         ) : isCancelledRow ? (
-          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<Info className="h-5 w-5" />}
+          <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<FileMinus className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); setCancelReason({ open: true, row }); }} />
         ) : fb && !fb.alreadySubmitted ? (
           <ActionIconButton title="Đánh giá chuyến thăm" tone="orange" icon={<Star className="h-5 w-5" />}
@@ -1396,9 +1396,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
                     {/* Slot 4: Cancel / Cancel Reason / Feedback */}
                     {item.instanceStatus === 'REJECTED' ? (
-                      <ActionIconButton title="Xem lý do từ chối cơ sở" tone="orange" icon={<AlertCircle className="h-5 w-5" />} onClick={() => openCampusRejectReason(row, item)} />
+                      <ActionIconButton title="Xem lý do từ chối cơ sở" tone="orange" icon={<FileX className="h-5 w-5" />} onClick={() => openCampusRejectReason(row, item)} />
                     ) : item.canViewCancelReason ? (
-                      <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<Info className="h-5 w-5" />} onClick={() => openCampusCancelReason(row, item)} />
+                      <ActionIconButton title="Xem lý do hủy" tone="gray" icon={<FileMinus className="h-5 w-5" />} onClick={() => openCampusCancelReason(row, item)} />
                     ) : item.canCancelCampusVisit ? (
                       <ActionIconButton title="Hủy lịch thăm cơ sở" tone="red" icon={<XCircle className="h-5 w-5" />} onClick={() => openCampusCancel(row, item)} />
                     ) : item.visitInstanceId && feedbackByInstance[item.visitInstanceId] ? (

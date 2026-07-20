@@ -38,6 +38,10 @@ public sealed class DeptLeaderInvoiceItemV2Dto
     public string? AssigneeName { get; set; }
     public string? BorrowNote { get; set; }
     public string? ReturnNote { get; set; }
+    /// <summary>Tổng chi phí phòng ban đã kê khai cho đơn này (0 nếu chưa kê hoặc "Không có chi phí").</summary>
+    public decimal TotalExpense { get; set; }
+    /// <summary>Phòng ban đã xác nhận "Không có chi phí" cho đơn này.</summary>
+    public bool NoExpense { get; set; }
     public DeptLeaderInvoiceSignatureV2Dto? BorrowProviderSignature { get; set; }
     public DeptLeaderInvoiceSignatureV2Dto? BorrowBorrowerSignature { get; set; }
     public DeptLeaderInvoiceSignatureV2Dto? ReturnProviderSignature { get; set; }
@@ -102,6 +106,33 @@ public sealed class GetDeptLeaderInvoiceItemsV2QueryHandler
             .ToListAsync(cancellationToken);
 
         var itemIds = rows.Select(r => r.LogisticsItemId).ToList();
+
+        // Chi phí phòng ban đã kê khai (bảng kê LOGISTICS) cho từng đơn — phục vụ cột "Số tiền"
+        // và tổng tiền của phần Thống kê chi phí.
+        var expenseReports = itemIds.Count == 0
+            ? new List<(ulong ItemId, bool NoExpense, ulong ReportId)>()
+            : (await _db.VisitExpenseReports.AsNoTracking()
+                .Where(r => r.LogisticsItemId != null && itemIds.Contains(r.LogisticsItemId.Value)
+                            && r.ReportScope == "LOGISTICS" && r.Status != "CANCELLED")
+                .Select(r => new { ItemId = r.LogisticsItemId!.Value, r.NoExpense, r.ExpenseReportId })
+                .ToListAsync(cancellationToken))
+                .Select(r => (r.ItemId, r.NoExpense, ReportId: r.ExpenseReportId))
+                .ToList();
+        var expenseReportIds = expenseReports.Select(r => r.ReportId).ToList();
+        var expenseTotals = expenseReportIds.Count == 0
+            ? new Dictionary<ulong, decimal>()
+            : await _db.VisitExpenseItems.AsNoTracking()
+                .Where(i => expenseReportIds.Contains(i.ExpenseReportId))
+                .GroupBy(i => i.ExpenseReportId)
+                .Select(g => new { ReportId = g.Key, Total = g.Sum(i => i.Quantity * i.UnitPrice) })
+                .ToDictionaryAsync(x => x.ReportId, x => x.Total, cancellationToken);
+        var expenseByItem = expenseReports
+            .GroupBy(r => r.ItemId)
+            .ToDictionary(
+                g => g.Key,
+                g => (Total: g.Sum(r => r.NoExpense ? 0 : expenseTotals.GetValueOrDefault(r.ReportId)),
+                      NoExpense: g.All(r => r.NoExpense)));
+
         var handovers = await _db.VisitLogisticsItemHandovers.AsNoTracking()
             .Where(h => itemIds.Contains(h.LogisticsItemId))
             .Select(h => new
@@ -151,6 +182,8 @@ public sealed class GetDeptLeaderInvoiceItemsV2QueryHandler
                 AssigneeName = NameOf(r.AssigneeId),
                 BorrowNote = borrow?.ConditionNote,
                 ReturnNote = ret?.ConditionNote,
+                TotalExpense = expenseByItem.TryGetValue(r.LogisticsItemId, out var ex) ? Math.Round(ex.Total, 2) : 0,
+                NoExpense = expenseByItem.TryGetValue(r.LogisticsItemId, out var ex2) && ex2.NoExpense,
                 BorrowProviderSignature = Sig(borrow?.ProviderSignedBy, borrow?.ProviderSignedAt),
                 BorrowBorrowerSignature = Sig(borrow?.BorrowerSignedBy, borrow?.BorrowerSignedAt),
                 ReturnProviderSignature = Sig(ret?.ProviderSignedBy, ret?.ProviderSignedAt),

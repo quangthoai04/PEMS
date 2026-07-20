@@ -13,6 +13,7 @@ import type {
   StaffLeaderReportV2,
   StaffLeaderV2Filters,
   StaffLeaderInvoiceItem,
+  StaffLeaderExpenseVisits,
 } from '../types/staffLeaderReportsV2.types';
 import type { HoReportV2, HoV2Filters } from '../types/hoReportsV2.types';
 import type {
@@ -213,6 +214,24 @@ export const reportsApi = {
         ? plainMatch[1]
         : `PEMS_BaoCao_Campus.${ext}`;
     return { blob: response.data as Blob, fileName };
+  },
+
+  /** Gửi email báo cáo phối hợp tiếp khách cho trưởng 1 phòng ban (phần 3). */
+  sendStaffLeaderDepartmentReport: async (payload: {
+    departmentId: number; fromDate?: string; toDate?: string; note?: string;
+  }): Promise<{ success: boolean; message: string }> => {
+    const { data } = await httpClient.post<{ success: boolean; message: string }>(
+      '/reports/staff-leader-report-v2/send-department-report', payload,
+    );
+    return data;
+  },
+
+  /** Thống kê chi phí các đoàn trong khoảng ngày — panel phần 4 (Staff Leader). */
+  getStaffLeaderExpenseVisits: async (fromDate: string, toDate: string): Promise<StaffLeaderExpenseVisits> => {
+    const { data } = await httpClient.get<StaffLeaderExpenseVisits>(
+      '/reports/staff-leader-report-v2/expense-visits', { params: { fromDate, toDate } },
+    );
+    return data;
   },
 
   /** Gửi hóa đơn hậu cần (kèm đơn giá) qua email cho phòng ban. */

@@ -225,7 +225,7 @@ export function VisitPhotoPanel({
           <input
             type="file"
             multiple
-            accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,image/jpeg,image/png,image/webp,video/mp4,video/webm"
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
             className="hidden"
             ref={fileInputRef}
             onChange={handleUpload}
@@ -237,10 +237,10 @@ export function VisitPhotoPanel({
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
           >
             <UploadCloud className="w-4 h-4" />
-            {uploading ? 'Đang tải lên...' : 'Upload ảnh/video'}
+            {uploading ? 'Đang tải lên...' : 'Upload ảnh'}
           </button>
           <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-            JPG/JPEG/PNG/WEBP/MP4/WEBM, tối đa 100MB/file, 10 file mỗi lần.
+            JPG/JPEG/PNG/WEBP, tối đa 5MB/file, 10 file mỗi lần.
           </p>
         </div>
       )}

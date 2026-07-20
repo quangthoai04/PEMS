@@ -98,9 +98,11 @@ public sealed class GetStaffLeaderDeptInvoiceItemsQueryHandler
                     li.Quantity,
                     li.Status,
                     ci.VisitRequest.RequestCode,
-                    // Instance row: mixed v2 shows THIS instance's detail name.
+                    // Instance row: for EVERY v2 request (uniform or mixed) the canonical source is
+                    // THIS instance's per-campus detail. Gating on HasMixedCampusDetails would let a
+                    // uniform v2 row fall back to the compatibility projection on visit_requests,
+                    // which v2 business/report output must never source (and which blocks Phase I).
                     DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                     && ci.VisitRequest.HasMixedCampusDetails
                         ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                         : ci.VisitRequest.DelegationName,
                     StartAt = startAt,
