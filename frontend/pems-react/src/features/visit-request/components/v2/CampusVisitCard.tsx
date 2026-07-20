@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 import type { RegistrationCampusOption } from '../../api/visitRequestApi';
 import { FormField, inputCls } from '../shared/FormField';
+import { AutoGrowTextarea } from '../shared/AutoGrowTextarea';
 import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import {
@@ -430,11 +431,42 @@ export const CampusVisitCard: React.FC<Props> = ({
               <input {...register(`${base}.visitTypeOther`)} className={inputCls(!!fieldError('visitTypeOther'), false, false)} />
             </FormField>
           )}
-          <FormField label={t('visitRequestV2:card.purpose')} required error={fieldError('purpose')} className="lg:col-span-2" showValidIcon={false}>
-            <textarea rows={2} {...register(`${base}.purpose`)} className={`${inputCls(!!fieldError('purpose'), false, false)} h-auto py-2`} />
+        </div>
+
+        {/* Purpose and working content sit side by side on desktop and stack when narrow — they are
+            read together, and both grow with their content rather than scrolling internally. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
+          <FormField label={t('visitRequestV2:card.purpose')} required error={fieldError('purpose')} showValidIcon={false}>
+            <Controller
+              name={`${base}.purpose`}
+              control={control}
+              render={({ field }) => (
+                <AutoGrowTextarea
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!fieldError('purpose')}
+                  maxLength={2000}
+                  minRows={3}
+                />
+              )}
+            />
           </FormField>
-          <FormField label={t('visitRequestV2:card.workingContent')} error={fieldError('workingContent')} className="lg:col-span-2" showValidIcon={false}>
-            <textarea rows={3} {...register(`${base}.workingContent`)} className={`${inputCls(!!fieldError('workingContent'), false, false)} h-auto py-2`} />
+          <FormField label={t('visitRequestV2:card.workingContent')} required error={fieldError('workingContent')} showValidIcon={false}>
+            <Controller
+              name={`${base}.workingContent`}
+              control={control}
+              render={({ field }) => (
+                <AutoGrowTextarea
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!fieldError('workingContent')}
+                  maxLength={4000}
+                  minRows={3}
+                />
+              )}
+            />
           </FormField>
         </div>
 
@@ -559,13 +591,13 @@ export const CampusVisitCard: React.FC<Props> = ({
             <FormField label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <input {...register(`${base}.operationalContact.fullName`)} className={inputCls(!!fieldError('operationalContact.fullName'), false, false)} />
             </FormField>
-            <FormField label={t('visitRequestV2:person.organization')} error={fieldError('operationalContact.organization')} showValidIcon={false}>
+            <FormField label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
               <input {...register(`${base}.operationalContact.organization`)} className={inputCls(!!fieldError('operationalContact.organization'), false, false)} />
             </FormField>
             <FormField label={t('visitRequestV2:card.phone')} required error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <input {...register(`${base}.operationalContact.phone`)} placeholder="+84…" className={inputCls(!!fieldError('operationalContact.phone'), false, false)} />
             </FormField>
-            <FormField label={t('visitRequestV2:card.email')} error={fieldError('operationalContact.email')} showValidIcon={false}>
+            <FormField label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
               <input type="email" {...register(`${base}.operationalContact.email`)} className={inputCls(!!fieldError('operationalContact.email'), false, false)} />
             </FormField>
           </div>

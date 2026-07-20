@@ -248,7 +248,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           <FormField label={t('visitRequestV2:person.fullName')} required error={cpErr?.fullName?.message} showValidIcon={false}>
             <input {...register('contactPoint.fullName')} className={inputCls(!!cpErr?.fullName, false, false)} />
           </FormField>
-          <FormField label={t('visitRequestV2:person.organization')} error={cpErr?.organization?.message} showValidIcon={false}>
+          <FormField label={t('visitRequestV2:person.organization')} required error={cpErr?.organization?.message} showValidIcon={false}>
             <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={cpErr?.phone?.message} showValidIcon={false}>

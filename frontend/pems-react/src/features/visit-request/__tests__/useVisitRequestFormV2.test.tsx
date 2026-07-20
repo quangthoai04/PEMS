@@ -36,7 +36,7 @@ const validValues = (): VisitRequestV2Schema => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'ĐM', organization: '', phone: '+84987654321', email: 'contact@example.com' },
+  contactPoint: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [{
@@ -47,8 +47,9 @@ const validValues = (): VisitRequestV2Schema => ({
     delegationName: 'Đoàn A',
     visitType: 'MEETING',
     purpose: 'Trao đổi',
+    workingContent: 'Nội dung làm việc',
     visitors: [{ fullName: 'Khách 1', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
-    operationalContact: { fullName: 'ĐM CS', organization: '', phone: '+84911111111', email: '' },
+    operationalContact: { fullName: 'ĐM CS', organization: 'ĐH X', phone: '+84911111111', email: 'dmcs@example.com' },
   }],
 });
 
