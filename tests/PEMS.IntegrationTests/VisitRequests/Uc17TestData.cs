@@ -5,6 +5,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Application.Common;
+using PEMS.Application.Delegations.Commands.InitiateVisitRequestV2;
 
 namespace PEMS.IntegrationTests.VisitRequests;
 
@@ -35,7 +36,8 @@ public static class Uc17TestData
         => $"it-uc17-{label}-{Guid.NewGuid():N}@it-uc17.pems.local";
 
     /// <summary>
-    /// Seeds one challenge row exactly as OtpService.CreateChallengeAsync would have.
+    /// Seeds one challenge row exactly as OtpService.CreateChallengeAsync would have,
+    /// along with a corresponding VisitRequestPendingForm snapshot.
     /// </summary>
     public static async Task<OtpToken> SeedChallengeAsync(
         ApplicationDbContext db,
@@ -49,7 +51,11 @@ public static class Uc17TestData
         DateTime? nextAttemptAllowedAt = null,
         DateTime? humanVerificationRequiredAt = null,
         DateTime? invalidatedAt = null,
-        string issueReason = "INITIAL")
+        string issueReason = "INITIAL",
+        string? campusCode = null,
+        string? delegationName = null,
+        DateTime? start = null,
+        DateTime? end = null)
     {
         var now = VietnamTime.Now();
         var token = new OtpToken
@@ -71,8 +77,62 @@ public static class Uc17TestData
             CreatedAt = now
         };
         db.OtpTokens.Add(token);
+
+        var s = start ?? now.AddDays(10).Date.AddHours(9);
+        var e = end ?? s.AddHours(4);
+        var cCode = campusCode ?? "HOLOLA";
+        var dName = delegationName ?? "Đoàn Test";
+
+        await SeedPendingFormAsync(db, email, submissionId, cCode, dName, s, e);
+
         await db.SaveChangesAsync();
         return token;
+    }
+
+    public static async Task SeedPendingFormAsync(
+        ApplicationDbContext db,
+        string email,
+        string submissionId,
+        string campusCode,
+        string delegationName,
+        DateTime start,
+        DateTime end)
+    {
+        var now = VietnamTime.Now();
+        var rawPayload = FormV2Payload(email, submissionId, campusCode, delegationName, start, end);
+        var json = System.Text.Json.JsonSerializer.Serialize(rawPayload);
+        var form = System.Text.Json.JsonSerializer.Deserialize<PEMS.Application.Common.DTOs.VisitRequestFormDataV2>(
+            json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+        var snapshot = V2PendingFormSnapshot.Serialize(form);
+        var fingerprint = V2PendingFormSnapshot.Fingerprint(form);
+
+        var existingPending = await db.VisitRequestPendingForms.FirstOrDefaultAsync(p => p.SubmissionId == submissionId);
+        if (existingPending is null)
+        {
+            db.VisitRequestPendingForms.Add(new PEMS.Domain.Entities.Delegations.VisitRequestPendingForm
+            {
+                SubmissionId = submissionId,
+                RegistrantEmail = email.Trim().ToLowerInvariant(),
+                FormSchemaVersion = 2,
+                FingerprintV2 = fingerprint,
+                SnapshotJson = snapshot,
+                CreatedAt = now,
+                ExpiresAt = now.AddMinutes(15),
+                ConsumedAt = null,
+            });
+        }
+        else
+        {
+            existingPending.RegistrantEmail = email.Trim().ToLowerInvariant();
+            existingPending.FingerprintV2 = fingerprint;
+            existingPending.SnapshotJson = snapshot;
+            existingPending.ExpiresAt = now.AddMinutes(15);
+            existingPending.ConsumedAt = null;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     public static Task<string> FirstActiveCampusCodeAsync(ApplicationDbContext db)
@@ -158,4 +218,95 @@ public static class Uc17TestData
         payload.Remove("sessionToken");
         return payload;
     }
+
+    // ── V2 per-campus payload builders ────────────────────────────────────────
+
+    /// <summary>
+    /// Builds the per-campus V2 form payload (<c>VisitRequestFormDataV2</c> shape) for a
+    /// single campus. The V2 structure nests delegation/visit content INSIDE each campus
+    /// entry rather than at the request level.
+    /// </summary>
+    public static Dictionary<string, object?> FormV2Payload(
+        string email,
+        string submissionId,
+        string campusCode,
+        string delegationName,
+        DateTime start,
+        DateTime end)
+        => new()
+        {
+            ["submissionId"] = submissionId,
+            ["registrant"] = new Dictionary<string, object?>
+            {
+                ["fullName"] = "IT UC17 Người đăng ký",
+                ["nationality"] = "Việt Nam",
+                ["organization"] = "Công ty Kiểm Thử UC17",
+                ["jobTitle"] = "QA",
+                ["phone"] = "0912345678",
+                ["email"] = email,
+            },
+            ["primaryContact"] = new Dictionary<string, object?>
+            {
+                ["fullName"] = "IT UC17 Người đăng ký",
+                ["organization"] = "Công ty Kiểm Thử UC17",
+                ["phone"] = "0912345678",
+                ["email"] = email,
+            },
+            ["partnerId"] = null,
+            ["campusVisits"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["campusId"] = campusCode,
+                    ["plannedStartAt"] = start.ToString("yyyy-MM-dd'T'HH:mm:ss"),
+                    ["plannedEndAt"] = end.ToString("yyyy-MM-dd'T'HH:mm:ss"),
+                    ["delegationName"] = delegationName,
+                    ["visitType"] = "CAMPUS_TOUR",
+                    ["visitTypeOther"] = null,
+                    ["purpose"] = "Tham quan và trao đổi hợp tác (integration test)",
+                    ["workingContent"] = "Test working content",
+                    ["visitors"] = Array.Empty<object>(),
+                    ["externalSupportMembers"] = Array.Empty<object>(),
+                    ["operationalContact"] = new Dictionary<string, object?>
+                    {
+                        ["fullName"] = "IT UC17 Người đăng ký",
+                        ["organization"] = "Công ty Kiểm Thử UC17",
+                        ["phone"] = "0912345678",
+                        ["email"] = email,
+                    },
+                    ["workingLanguage"] = "VI",
+                    ["transportationNote"] = null,
+                    ["mediaConsentStatus"] = "DECLINED",
+                    ["mediaConsentNote"] = null,
+                    ["notes"] = null,
+                    ["processing"] = null,
+                }
+            },
+        };
+
+    /// <summary>V2 initiate payload wraps the form in a <c>form</c> property.</summary>
+    public static Dictionary<string, object?> InitiateV2Payload(
+        string email, string submissionId, string campusCode, string delegationName,
+        DateTime start, DateTime end)
+        => new()
+        {
+            ["form"] = FormV2Payload(email, submissionId, campusCode, delegationName, start, end),
+        };
+
+    /// <summary>V2 verify payload adds otpCode + sessionToken alongside the form.</summary>
+    public static Dictionary<string, object?> VerifyV2Payload(
+        string email,
+        string submissionId,
+        string sessionToken,
+        string otpCode,
+        string campusCode,
+        string delegationName,
+        DateTime start,
+        DateTime end)
+        => new()
+        {
+            ["form"] = FormV2Payload(email, submissionId, campusCode, delegationName, start, end),
+            ["otpCode"] = otpCode,
+            ["sessionToken"] = sessionToken,
+        };
 }

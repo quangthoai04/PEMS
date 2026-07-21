@@ -96,9 +96,11 @@ public sealed class PemsWebApplicationFactory : WebApplicationFactory<FaqsContro
                         ?? new PEMS.Application.Common.Options.PerCampusFormV2WriteOptions();
                     services.AddSingleton(perCampusV2Write);
 
-                    var connectionString = configuration.GetConnectionString("DefaultConnection")
+                    var originalConnectionString = configuration.GetConnectionString("DefaultConnection")
                         ?? throw new InvalidOperationException(
                             "ConnectionStrings:DefaultConnection is not configured in appsettings.Testing.json.");
+
+                    var connectionString = DisposableDatabaseManager.GetDisposableConnectionString(originalConnectionString);
 
                     // Mirrors Program.cs: every pooled MySQL session is pinned to +07:00 so
                     // CURRENT_TIMESTAMP defaults/triggers produce Vietnam wall-clock in tests too.

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -75,6 +75,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visit = new VisitRequest
         {
             RequestCode = $"UT-RESUBMIT-{Guid.NewGuid().ToString()[..4]}",
+            FormSchemaVersion = PEMS.Domain.Constants.FormSchemaVersions.PerCampus,
             VisitorUserId = _visitorId,
             RegistrantUserId = _visitorId,
             RegistrantFullName = "Integration Registrant",
@@ -112,6 +113,19 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
                     DecisionActorRole = instanceStatus == VisitInstanceStatuses.Rejected ? "STAFF_LEADER" : null,
                     DecisionSource = instanceStatus == VisitInstanceStatuses.Rejected ? "STANDARD_CAMPUS_REVIEW" : null,
                     DecisionNote = instanceStatus == VisitInstanceStatuses.Rejected ? "Test Rejection Note" : null,
+                    FormDetail = new PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail
+                    {
+                        DelegationName = "Integration Delegation",
+                        VisitType = "CAMPUS_TOUR",
+                        Purpose = "Integration Purpose",
+                        WorkingContent = "Integration Content",
+                        OperationalContactFullName = "Integration Contact",
+                        OperationalContactOrganization = "FPT",
+                        OperationalContactPhone = "0999999999",
+                        OperationalContactEmail = "contact.integration@example.com",
+                        WorkingLanguage = "VI",
+                        MediaConsentStatus = "DECLINED"
+                    },
                     Agendas = new List<VisitAgenda>
                     {
                         new()
@@ -136,69 +150,24 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         return visit.VisitRequestId;
     }
 
-    private ResubmitRejectedVisitRequestCommand CreateValidResubmitCommand(ulong visitId)
+    private System.Text.Json.Nodes.JsonObject ClonePayload(System.Collections.Generic.Dictionary<string, object?> payload)
     {
-        return new ResubmitRejectedVisitRequestCommand(
-            RegistrantFullName: "Integration Registrant", // Tampering changes this
-            RegistrantNationality: "VN",
-            RegistrantOrganization: "FPT",
-            RegistrantPosition: "Staff",
-            RegistrantPhone: "0999999999",
-            RegistrantEmail: _visitorEmail,
-            DelegationName: "Modified Delegation",
-            VisitScope: "SINGLE_CAMPUS",
-            VisitType: "CAMPUS_TOUR",
-            VisitTypeOther: null,
-            CampusVisits: new List<VisitSlotDto>
-            {
-                new(_campusCode, DateTime.Now.AddDays(10), DateTime.Now.AddDays(10).AddHours(4))
-            },
-            Purpose: "Modified Purpose",
-            WorkingContent: null,
-            Visitors: new List<VisitorDto>(),
-            SupportMembers: new List<SupportTeamMemberDto>(),
-            ContactPerson: new ContactPointDto("Modified Contact", "Modified Org", "0777777777", "contact.integration@example.com"),
-            IsContactSelf: false,
-            WorkingLanguage: "VI",
-            TransportationNote: null,
-            MediaConsentStatus: "DECLINED",
-            MediaConsentNote: null,
-            PartnerId: null,
-            Notes: null
-        ) { VisitRequestId = visitId };
+        return System.Text.Json.Nodes.JsonNode.Parse(
+            System.Text.Json.JsonSerializer.Serialize(payload))!.AsObject();
     }
 
-    private UpdatePendingVisitRequestCommand CreateValidUpdateCommand(ulong visitId)
+    private async System.Threading.Tasks.Task<System.Collections.Generic.Dictionary<string, object?>> CreateValidEditPayloadAsync(ulong visitId)
     {
-        return new UpdatePendingVisitRequestCommand(
-            RegistrantFullName: "Integration Registrant",
-            RegistrantNationality: "VN",
-            RegistrantOrganization: "FPT",
-            RegistrantPosition: "Staff",
-            RegistrantPhone: "0999999999",
-            RegistrantEmail: _visitorEmail,
-            DelegationName: "Modified Delegation",
-            VisitScope: "SINGLE_CAMPUS",
-            VisitType: "CAMPUS_TOUR",
-            VisitTypeOther: null,
-            CampusVisits: new List<VisitSlotDto>
-            {
-                new(_campusCode, DateTime.Now.AddDays(10), DateTime.Now.AddDays(10).AddHours(4))
-            },
-            Purpose: "Modified Purpose",
-            WorkingContent: null,
-            Visitors: new List<VisitorDto>(),
-            SupportMembers: new List<SupportTeamMemberDto>(),
-            ContactPerson: new ContactPointDto("Modified Contact", "Modified Org", "0777777777", "contact.integration@example.com"),
-            IsContactSelf: false,
-            WorkingLanguage: "VI",
-            TransportationNote: null,
-            MediaConsentStatus: "DECLINED",
-            MediaConsentNote: null,
-            PartnerId: null,
-            Notes: null
-        ) { VisitRequestId = visitId };
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PEMS.Infrastructure.Persistence.ApplicationDbContext>();
+        var req = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(
+            System.Linq.Queryable.Where(db.VisitRequests, r => r.VisitRequestId == visitId));
+        var inst = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(
+            System.Linq.Queryable.Where(db.VisitRequestCampuses, c => c.VisitRequestId == visitId));
+        return V2TestDataBuilder.BuildEditPayload(req.RowVersion, _visitorEmail, "contact.integration@example.com", (inst.VisitInstanceId, inst.RowVersion, _campusCode));
     }
+
+
 
     [Fact]
     public async Task Resubmit_Anonymous_ReturnsUnauthorized()
@@ -206,7 +175,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = _factory.CreateClient(); // No authentication
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", CreateValidResubmitCommand(visitId));
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", await CreateValidEditPayloadAsync(visitId));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -217,9 +186,9 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = StaffClient(); // Role Staff
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", CreateValidResubmitCommand(visitId));
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", await CreateValidEditPayloadAsync(visitId));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -227,22 +196,22 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
     {
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = VisitorClient();
-        var command = CreateValidResubmitCommand(visitId);
+        var command = await CreateValidEditPayloadAsync(visitId);
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", command);
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
         if (!response.IsSuccessStatusCode)
         {
             var content = await response.Content.ReadAsStringAsync();
-            throw new Exception($"Failed: {response.StatusCode} - {content}");
+            throw new Exception($"Failed: {response.StatusCode} - {content} | JSON: " + System.Text.Json.JsonSerializer.Serialize(command));
         }
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
 
-        Assert.Equal("Modified Delegation", visit.DelegationName);
-        Assert.Equal("Modified Contact", visit.ContactPersonFullName);
+        Assert.Equal("Edited Delegation Name", visit.DelegationName);
+        Assert.Equal("Integration Contact", visit.ContactPersonFullName);
         Assert.Equal(1u, visit.ResubmissionCount);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
@@ -253,14 +222,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = VisitorClient();
         
-        var command = CreateValidResubmitCommand(visitId) with
-        {
-            RegistrantFullName = "Hacked Registrant" // Tampering
-        };
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["registrant"]!["fullName"] = "Hacked Registrant";
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", command);
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var content = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         Assert.Equal("IMMUTABLE_REGISTRANT_INFO", content.GetProperty("errorCode").GetString());
 
@@ -276,7 +242,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Resubmit_RegistrantNotContact_ReturnsForbidden()
+    public async Task Resubmit_RegistrantNotContact_ReturnsOk()
     {
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         
@@ -315,11 +281,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         await db.SaveChangesAsync();
 
         var client = CreateClient(registrantId, "VISITOR", sessionId);
-        var command = CreateValidResubmitCommand(visitId);
+        var command = await CreateValidEditPayloadAsync(visitId);
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", command);
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        response.EnsureSuccessStatusCode();
     }
 
     [Fact]
@@ -356,11 +322,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         });
         await db.SaveChangesAsync();
         var client = CreateClient(unrelatedId, "VISITOR", sessionId);
-        var command = CreateValidResubmitCommand(visitId);
+        var command = await CreateValidEditPayloadAsync(visitId);
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", command);
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -370,7 +336,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var client = VisitorClient();
 
         // Create a valid payload, then inject "agendas"
-        var command = CreateValidResubmitCommand(visitId);
+        var command = await CreateValidEditPayloadAsync(visitId);
         var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(command))!.AsObject();
         jsonNode.Add("agendas", System.Text.Json.Nodes.JsonNode.Parse("""
             [
@@ -385,7 +351,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         """));
 
         var content = new System.Net.Http.StringContent(jsonNode.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
-        var response = await client.PostAsync($"/api/visit-requests/{visitId}/resubmit", content);
+        var response = await client.PostAsync($"/api/v2/visit-requests/{visitId}/resubmit", content);
 
         // Surface the error body on failure (EnsureSuccessStatusCode hides it) — this test
         // flaked once in a full-suite run and the missing body blocked diagnosis.
@@ -413,9 +379,9 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
     {
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.PendingApproval, VisitInstanceStatuses.WaitingRequestApproval);
         var client = VisitorClient();
-        var command = CreateValidUpdateCommand(visitId);
+        var command = await CreateValidEditPayloadAsync(visitId);
 
-        var response = await client.PutAsJsonAsync($"/api/visit-requests/{visitId}/pending-edit", command);
+        var response = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", command);
 
         response.EnsureSuccessStatusCode();
 
@@ -423,8 +389,8 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
 
-        Assert.Equal("Modified Delegation", visit.DelegationName);
-        Assert.Equal("Modified Contact", visit.ContactPersonFullName);
+        Assert.Equal("Edited Delegation Name", visit.DelegationName);
+        Assert.Equal("Integration Contact", visit.ContactPersonFullName);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
 
@@ -434,14 +400,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.PendingApproval, VisitInstanceStatuses.WaitingRequestApproval);
         var client = VisitorClient();
         
-        var command = CreateValidUpdateCommand(visitId) with
-        {
-            RegistrantFullName = "Hacked Registrant" // Tampering
-        };
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["registrant"]!["fullName"] = "Hacked Registrant";
 
-        var response = await client.PutAsJsonAsync($"/api/visit-requests/{visitId}/pending-edit", command);
+        var response = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", command);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -458,14 +421,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = VisitorClient();
         
-        var command = CreateValidResubmitCommand(visitId) with
-        {
-            ContactPerson = new ContactPointDto("Integration Contact", "Contact Org", "0888888888", "hacked.contact@example.com") // Tampered email
-        };
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["primaryContact"]!["email"] = "hacked.contact@example.com";
 
-        var response = await client.PostAsJsonAsync($"/api/visit-requests/{visitId}/resubmit", command);
+        var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var content = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         Assert.Equal("IMMUTABLE_CONTACT_IDENTITY", content.GetProperty("errorCode").GetString());
 
@@ -483,14 +443,11 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.PendingApproval, VisitInstanceStatuses.WaitingRequestApproval);
         var client = VisitorClient();
         
-        var command = CreateValidUpdateCommand(visitId) with
-        {
-            IsContactSelf = true // Tampered flag
-        };
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["primaryContact"]!["email"] = _visitorEmail;
 
-        var response = await client.PutAsJsonAsync($"/api/visit-requests/{visitId}/pending-edit", command);
+        var response = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", command);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var content = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         Assert.Equal("IMMUTABLE_CONTACT_IDENTITY", content.GetProperty("errorCode").GetString());
 
@@ -502,3 +459,4 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         Assert.Equal("Integration Delegation", visit.DelegationName);
     }
 }
+

@@ -33,7 +33,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     private ulong _visitorId, _visitorSessionId;
     private ulong _campus1Id, _campus2Id;
     private string _campus1Code = "", _campus2Code = "";
-    private string _staffEmail = "", _leaderEmail = "";
+    private string _staffEmail = "", _leaderEmail = "", _visitorEmail = "";
 
     public async Task InitializeAsync()
     {
@@ -50,6 +50,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         _staffEmail = await db.Users.AsNoTracking().Where(u => u.UserId == _staffId).Select(u => u.Email).FirstAsync();
         _leaderEmail = await db.Users.AsNoTracking().Where(u => u.UserId == _leaderId).Select(u => u.Email).FirstAsync();
+        _visitorEmail = await db.Users.AsNoTracking().Where(u => u.UserId == _visitorId).Select(u => u.Email).FirstAsync();
 
         var staff = await db.Users.AsNoTracking().FirstAsync(u => u.UserId == _staffId);
         _campus1Id = staff.PrimaryCampusId!.Value;
@@ -161,68 +162,17 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
     private static string UniqueContactEmail() => $"it-actor-rel-contact-{Guid.NewGuid():N}@example.com";
 
-    private static Dictionary<string, object?> CreatePayload(
+    private Dictionary<string, object?> CreatePayload(
         string delegationName,
         string contactEmail,
-        (string CampusCode, string Mode, ulong? HostUserId)[] campuses)
+        (string CampusCode, string Mode, ulong? HostUserId)[] campuses,
+        string? registrantEmailOverride = null)
     {
-        var start = DateTime.Now.AddDays(10).Date.AddHours(9);
-        var slots = new List<Dictionary<string, object?>>();
-        var processing = new List<Dictionary<string, object?>>();
-        var offsetDays = 0;
-        foreach (var (code, mode, hostId) in campuses)
-        {
-            var s = start.AddDays(offsetDays++);
-            slots.Add(new Dictionary<string, object?>
-            {
-                ["campusId"] = code,
-                ["startDatetime"] = s.ToString("yyyy-MM-dd'T'HH:mm:ss"),
-                ["endDatetime"] = s.AddHours(4).ToString("yyyy-MM-dd'T'HH:mm:ss"),
-            });
-            processing.Add(new Dictionary<string, object?>
-            {
-                ["campusId"] = code,
-                ["mode"] = mode,
-                ["hostUserId"] = hostId,
-            });
-        }
-
-        return new Dictionary<string, object?>
-        {
-            // Identity fields are display-only (server overrides them from the JWT user).
-            ["registrantFullName"] = "IT Actor Relation",
-            ["registrantNationality"] = "Việt Nam",
-            ["registrantOrganization"] = "FPT University (IT)",
-            ["registrantPosition"] = "IC Staff",
-            ["registrantPhone"] = "0912345678",
-            ["registrantEmail"] = "spoofed-identity@evil.example.com",
-            ["delegationName"] = delegationName,
-            ["visitScope"] = campuses.Length > 1 ? "MULTI_CAMPUS" : "SINGLE_CAMPUS",
-            ["visitType"] = "CAMPUS_TOUR",
-            ["visitTypeOther"] = null,
-            ["campusVisits"] = slots,
-            ["purpose"] = "Tham quan và trao đổi hợp tác (integration test)",
-            ["workingContent"] = null,
-            ["visitors"] = Array.Empty<object>(),
-            ["supportMembers"] = Array.Empty<object>(),
-            ["contactPerson"] = new Dictionary<string, object?>
-            {
-                ["fullName"] = "IT Đầu Mối",
-                ["organization"] = "Công ty Kiểm Thử",
-                ["phone"] = "0987654321",
-                ["email"] = contactEmail,
-            },
-            ["isContactSelf"] = false,
-            ["workingLanguage"] = "VI",
-            ["transportationNote"] = null,
-            ["mediaConsentStatus"] = "DECLINED",
-            ["mediaConsentNote"] = null,
-            ["partnerId"] = null,
-            ["notes"] = null,
-            ["campusProcessing"] = processing,
-            ["confirmedHostConflict"] = false,
-            ["submissionId"] = Guid.NewGuid().ToString(),
-        };
+        return V2TestDataBuilder.BuildCreatePayload(
+            delegationName: delegationName,
+            registrantEmail: registrantEmailOverride ?? _visitorEmail,
+            contactEmail: contactEmail,
+            campuses: campuses);
     }
 
     private static async Task<string?> ErrorCodeOf(HttpResponseMessage response)
@@ -241,15 +191,16 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         var payload = CreatePayload(name, UniqueContactEmail(),
             new[] { (_campus1Code, "SELF_HOST", (ulong?)null) });
 
-        var response = await VisitorClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
-        Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.UnprocessableEntity,
-            $"expected 4xx rejection, got {(int)response.StatusCode}");
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Equal(VisitRequestErrorCodes.InvalidCampusSubmissionMode, await ErrorCodeOf(response));
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
     [Fact]
@@ -260,7 +211,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         var payload = CreatePayload(name, contactEmail,
             new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
 
-        var response = await VisitorClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();
@@ -269,12 +220,15 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
             .FirstAsync(v => v.DelegationName == name);
 
         Assert.Equal(_visitorId, vr.RegistrantUserId);
-        Assert.NotNull(vr.VisitorUserId);
-        Assert.NotEqual(_visitorId, vr.VisitorUserId); // contact is a different (new) VISITOR account
+        Assert.Equal(_visitorEmail, vr.RegistrantEmail);
+        Assert.Null(vr.VisitorUserId);
+        var claim = await db.VisitRequestIdentityChanges.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.VisitRequestId == vr.VisitRequestId && c.ChangeKind == "INITIAL_CLAIM");
+        Assert.NotNull(claim);
+        Assert.Equal("PENDING", claim!.Status);
+        Assert.Equal(contactEmail.ToLowerInvariant(), claim.NewEmailNormalized);
         Assert.Equal(VisitRequestStatuses.PendingApproval, vr.Status);
         Assert.All(vr.CampusInstances, i => Assert.Equal("WAITING_REQUEST_APPROVAL", i.Status));
-        // Registrant identity came from the DB user, never the payload.
-        Assert.NotEqual("spoofed-identity@evil.example.com", vr.RegistrantEmail);
     }
 
     /// <summary>
@@ -289,10 +243,10 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
             new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
 
         var slots = (List<Dictionary<string, object?>>)payload["campusVisits"]!;
-        var expectedStart = DateTime.Parse((string)slots[0]["startDatetime"]!);
+        var expectedStart = DateTime.Parse((string)slots[0]["plannedStartAt"]!);
 
         var before = VietnamTime.Now().AddMinutes(-1);
-        var response = await VisitorClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         var after = VietnamTime.Now().AddMinutes(1);
 
         var body = await response.Content.ReadAsStringAsync();
@@ -303,11 +257,9 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
             .FirstAsync(v => v.DelegationName == name);
 
-        // Under the old UTC policy these were ~7h behind Vietnam "now" — must be in-window now.
         Assert.InRange(vr.SubmittedAt, before, after);
         Assert.InRange(vr.CreatedAt, before, after);
 
-        // Planned wall-clock round-trips verbatim: no +7/−7 shift, no double conversion.
         var instance = Assert.Single(vr.CampusInstances);
         Assert.Equal(expectedStart, instance.PlannedStartAt);
     }
@@ -319,9 +271,10 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff self-host " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SELF_HOST", (ulong?)null) });
+            new[] { (_campus1Code, "SELF_HOST", (ulong?)null) },
+            registrantEmailOverride: _staffEmail);
 
-        var response = await StaffClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.OK, $"expected 200, got {(int)response.StatusCode}: {body}");
 
@@ -341,7 +294,6 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         Assert.Equal(_staffId, instance.HostAssignedBy);
         Assert.Equal("STAFF", instance.DecisionActorRole);
         Assert.Equal("INTERNAL_SELF_HOST", instance.DecisionSource);
-        // Coordinator remains the campus Staff Leader so the campus keeps a monitor.
         Assert.NotNull(instance.CoordinatorUserId);
 
         var hostParticipant = await db.VisitParticipants
@@ -357,9 +309,10 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         {
             (_campus1Code, "SELF_HOST", (ulong?)null),
             (_campus2Code, "SEND_FOR_REVIEW", (ulong?)null),
-        });
+        },
+        registrantEmailOverride: _staffEmail);
 
-        var response = await StaffClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.OK, $"expected 200, got {(int)response.StatusCode}: {body}");
 
@@ -381,14 +334,17 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff other campus " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus2Code, "SELF_HOST", (ulong?)null) });
+            new[] { (_campus2Code, "SELF_HOST", (ulong?)null) },
+            registrantEmailOverride: _staffEmail);
 
-        var response = await StaffClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
     [Fact]
@@ -396,10 +352,17 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff assign " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_leaderId) });
+            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_leaderId) },
+            registrantEmailOverride: _staffEmail);
 
-        var response = await StaffClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
     [Fact]
@@ -407,25 +370,37 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff self contact " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, _staffEmail,
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            registrantEmailOverride: _staffEmail);
 
-        var response = await StaffClient().PostAsJsonAsync("/api/visit-requests", payload);
-        Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity or HttpStatusCode.Conflict,
-            $"expected 4xx rejection, got {(int)response.StatusCode}");
+        var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Equal(VisitRequestErrorCodes.InternalRegistrantCannotBeContact, await ErrorCodeOf(response));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
     [Fact]
     public async Task Staff_OtherInternalEmailAsContact_IsRejected()
     {
         var name = DelegationPrefix + "Staff internal contact " + Guid.NewGuid().ToString("N")[..8];
-        var payload = CreatePayload(name, _leaderEmail, // an internal (Staff Leader) email
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+        var payload = CreatePayload(name, _leaderEmail,
+            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            registrantEmailOverride: _staffEmail);
 
-        var response = await StaffClient().PostAsJsonAsync("/api/visit-requests", payload);
-        Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict,
-            $"expected 400/409, got {(int)response.StatusCode}");
+        var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(VisitRequestErrorCodes.ContactEmailCannotBeUsedForVisitorAccount, await ErrorCodeOf(response));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
     // ── Staff Leader ────────────────────────────────────────────────────────
@@ -435,9 +410,10 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Leader assign " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_staffId) });
+            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_staffId) },
+            registrantEmailOverride: _leaderEmail);
 
-        var response = await LeaderClient().PostAsJsonAsync("/api/visit-requests", payload);
+        var response = await LeaderClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.OK, $"expected 200, got {(int)response.StatusCode}: {body}");
 
@@ -460,12 +436,18 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Leader bad host " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_visitorId) });
+            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_visitorId) },
+            registrantEmailOverride: _leaderEmail);
 
-        var response = await LeaderClient().PostAsJsonAsync("/api/visit-requests", payload);
-        Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity,
-            $"expected 400, got {(int)response.StatusCode}");
+        var response = await LeaderClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Equal(VisitRequestErrorCodes.InvalidHostCandidate, await ErrorCodeOf(response));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
     // ── Registrant relation stays read-only ────────────────────────────────
@@ -475,10 +457,11 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff no-cancel " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            registrantEmailOverride: _staffEmail);
 
         var client = StaffClient();
-        var createResponse = await client.PostAsJsonAsync("/api/visit-requests", payload);
+        var createResponse = await client.PostAsJsonAsync("/api/v2/visit-requests", payload);
         Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
 
         ulong requestId;
@@ -489,11 +472,17 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
                 .Select(v => v.VisitRequestId).FirstAsync();
         }
 
-        // The registrant relation never grants owner mutations: cancel → 403.
         var cancelResponse = await client.PostAsJsonAsync(
             $"/api/Delegations/{requestId}/cancel",
             new Dictionary<string, object?> { ["cancellationReason"] = "IT registrant must not cancel" });
         Assert.Equal(HttpStatusCode.Forbidden, cancelResponse.StatusCode);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var vr = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == requestId);
+            Assert.Equal(VisitRequestStatuses.PendingApproval, vr.Status);
+        }
     }
 
     [Fact]
@@ -501,10 +490,11 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff registered tab " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            registrantEmailOverride: _staffEmail);
 
         var client = StaffClient();
-        var createResponse = await client.PostAsJsonAsync("/api/visit-requests", payload);
+        var createResponse = await client.PostAsJsonAsync("/api/v2/visit-requests", payload);
         Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
 
         var listResponse = await client.GetAsync(

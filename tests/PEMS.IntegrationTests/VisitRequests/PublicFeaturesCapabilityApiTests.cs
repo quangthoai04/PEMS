@@ -60,7 +60,14 @@ public sealed class PublicFeaturesCapabilityApiTests : IClassFixture<PemsWebAppl
     public async Task Endpoint_is_anonymous_and_defaults_off()
     {
         // No X-Test-UserId header → anonymous. Must still return 200 (not 401).
-        var client = _factory.CreateClient();
+        var client = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<PerCampusFormV2Options>();
+                services.AddSingleton(new PerCampusFormV2Options { Enabled = false });
+                services.RemoveAll<PerCampusFormV2WriteOptions>();
+                services.AddSingleton(new PerCampusFormV2WriteOptions { Enabled = false });
+            })).CreateClient();
 
         var response = await client.GetAsync("/api/public/features/per-campus-form-v2");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

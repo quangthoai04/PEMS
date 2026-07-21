@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -26,8 +26,7 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// </summary>
 public sealed class CreateVisitRequestV2CommandTests
 {
-    private const string ConnString =
-        "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None";
+    private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString("server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
     private const ulong Registrant = 8;
     private static bool? _dbUp;
     private static readonly DateTime Now = DateTime.Now;
@@ -111,7 +110,7 @@ public sealed class CreateVisitRequestV2CommandTests
         ApplicationDbContext db, bool read, bool write, INotificationService? notifications = null)
         => new(db, new FakeUser(), new FixedClock(), new VisitRequestV2CreateService(db),
             notifications ?? new RecordingNotifications(),
-            new RecordingClaimService(),
+            new RecordingClaimService(), new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write },
             new VisitRequestAggregateStatusService(db));

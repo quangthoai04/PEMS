@@ -26,8 +26,7 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// </summary>
 public sealed class VisitInvitationDetailV2Tests
 {
-    private const string ConnString =
-        "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None";
+    private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString("server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
 
     private const ulong VisitorOwner = 8, InvitedUserId = 4, OtherUserId = 9;
     private const ulong Campus1 = 1, Campus2 = 2, Campus3 = 3;

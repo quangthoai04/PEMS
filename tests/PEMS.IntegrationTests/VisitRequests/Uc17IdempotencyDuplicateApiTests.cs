@@ -21,7 +21,7 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// </summary>
 public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebApplicationFactory>, IAsyncLifetime
 {
-    private const string VerifyEndpoint = "/api/visit-requests/verify";
+    private const string VerifyEndpoint = "/api/v2/visit-requests/verify";
 
     private readonly PemsWebApplicationFactory _factory;
     private string _campusCode = null!;
@@ -53,11 +53,17 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
     /// <summary>Seeds a fresh challenge and returns its session token.</summary>
-    private async Task<string> SeedChallengeAsync(string email, string submissionId, string code = "123456")
+    private async Task<string> SeedChallengeAsync(
+        string email, string submissionId, string code = "123456",
+        string? campusCode = null, string? delegation = null, DateTime? start = null, DateTime? end = null)
     {
         var sessionToken = $"it-session-{Guid.NewGuid():N}";
         using var scope = _factory.Services.CreateScope();
-        await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, sessionToken, code);
+        await Uc17TestData.SeedChallengeAsync(
+            Db(scope), email, submissionId, sessionToken, code,
+            campusCode: campusCode ?? _campusCode,
+            delegationName: delegation ?? "Đoàn Test",
+            start: start, end: end);
         return sessionToken;
     }
 
@@ -67,7 +73,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
     {
         var client = _factory.CreateClient();
         return await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, code, campusCode, delegation, start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, code, campusCode, delegation, start, end));
     }
 
     // ── §32.1: same submissionId, sequential retry → 200 with the SAME request, 1 row ──
@@ -77,8 +83,8 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
     {
         var email = Uc17TestData.UniqueEmail("idem-seq");
         var submissionId = Guid.NewGuid().ToString();
-        var sessionToken = await SeedChallengeAsync(email, submissionId);
         var (start, end) = FutureSlot();
+        var sessionToken = await SeedChallengeAsync(email, submissionId, "123456", _campusCode, "Đoàn Idem", start, end);
 
         var first = await VerifyAsync(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Idem", start, end);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
@@ -104,8 +110,8 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
     {
         var email = Uc17TestData.UniqueEmail("idem-conc");
         var submissionId = Guid.NewGuid().ToString();
-        var sessionToken = await SeedChallengeAsync(email, submissionId);
         var (start, end) = FutureSlot();
+        var sessionToken = await SeedChallengeAsync(email, submissionId, "123456", _campusCode, "Đoàn IdemConc", start, end);
 
         var responses = await Task.WhenAll(
             VerifyAsync(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn IdemConc", start, end),
@@ -129,14 +135,14 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
     {
         var email = Uc17TestData.UniqueEmail("idem-reuse");
         var submissionId = Guid.NewGuid().ToString();
-        var sessionToken = await SeedChallengeAsync(email, submissionId);
         var (start, end) = FutureSlot();
+        var sessionToken = await SeedChallengeAsync(email, submissionId, "123456", _campusCode, "Đoàn Reuse", start, end);
 
         var first = await VerifyAsync(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Reuse", start, end);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
         // New challenge, SAME submissionId, but different core content (other delegation).
-        var secondSession = await SeedChallengeAsync(email, submissionId);
+        var secondSession = await SeedChallengeAsync(email, submissionId, "123456", _campusCode, "Đoàn Khác Hẳn", start, end);
         var reuse = await VerifyAsync(email, submissionId, secondSession, "123456", _campusCode, "Đoàn Khác Hẳn", start, end);
 
         Assert.Equal(HttpStatusCode.Conflict, reuse.StatusCode);
@@ -156,7 +162,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         var (start, end) = FutureSlot();
 
         var firstSubmission = Guid.NewGuid().ToString();
-        var firstSession = await SeedChallengeAsync(email, firstSubmission);
+        var firstSession = await SeedChallengeAsync(email, firstSubmission, "123456", _campusCode, "Đoàn Dup", start, end);
         var first = await VerifyAsync(email, firstSubmission, firstSession, "123456", _campusCode, "Đoàn Dup", start, end);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         var firstCode = (await ReadJsonAsync(first)).GetProperty("requestCode").GetString();
@@ -172,7 +178,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
 
         // A SECOND submit intent (new submissionId, new OTP) with identical core content.
         var secondSubmission = Guid.NewGuid().ToString();
-        var secondSession = await SeedChallengeAsync(email, secondSubmission);
+        var secondSession = await SeedChallengeAsync(email, secondSubmission, "123456", _campusCode, "Đoàn Dup", start, end);
         var dup = await VerifyAsync(email, secondSubmission, secondSession, "123456", _campusCode, "Đoàn Dup", start, end);
 
         Assert.Equal(HttpStatusCode.Conflict, dup.StatusCode);
@@ -206,12 +212,12 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         var (start, end) = FutureSlot();
 
         var s1 = Guid.NewGuid().ToString();
-        var first = await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1), "123456",
+        var first = await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1, "123456", _campusCode, "Đoàn Campus", start, end), "123456",
             _campusCode, "Đoàn Campus", start, end);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
         var s2 = Guid.NewGuid().ToString();
-        var second = await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2), "123456",
+        var second = await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2, "123456", _secondCampusCode, "Đoàn Campus", start, end), "123456",
             _secondCampusCode, "Đoàn Campus", start, end);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
     }
@@ -223,11 +229,11 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         var (start, end) = FutureSlot();
 
         var s1 = Guid.NewGuid().ToString();
-        Assert.Equal(HttpStatusCode.OK, (await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1), "123456",
+        Assert.Equal(HttpStatusCode.OK, (await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1, "123456", _campusCode, "Đoàn Time", start, end), "123456",
             _campusCode, "Đoàn Time", start, end)).StatusCode);
 
         var s2 = Guid.NewGuid().ToString();
-        Assert.Equal(HttpStatusCode.OK, (await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2), "123456",
+        Assert.Equal(HttpStatusCode.OK, (await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2, "123456", _campusCode, "Đoàn Time", start.AddDays(1), end.AddDays(1)), "123456",
             _campusCode, "Đoàn Time", start.AddDays(1), end.AddDays(1))).StatusCode);
     }
 
@@ -240,7 +246,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         var (start, end) = FutureSlot();
 
         var s1 = Guid.NewGuid().ToString();
-        var first = await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1), "123456",
+        var first = await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1, "123456", _campusCode, "Đoàn Rejected", start, end), "123456",
             _campusCode, "Đoàn Rejected", start, end);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
@@ -253,7 +259,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         }
 
         var s2 = Guid.NewGuid().ToString();
-        var second = await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2), "123456",
+        var second = await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2, "123456", _campusCode, "Đoàn Rejected", start, end), "123456",
             _campusCode, "Đoàn Rejected", start, end);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
     }
@@ -267,7 +273,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         var (start, end) = FutureSlot();
 
         var s1 = Guid.NewGuid().ToString();
-        var first = await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1), "123456",
+        var first = await VerifyAsync(email, s1, await SeedChallengeAsync(email, s1, "123456", _campusCode, "Đoàn Window", start, end), "123456",
             _campusCode, "Đoàn Window", start, end);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
@@ -280,7 +286,7 @@ public sealed class Uc17IdempotencyDuplicateApiTests : IClassFixture<PemsWebAppl
         }
 
         var s2 = Guid.NewGuid().ToString();
-        var second = await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2), "123456",
+        var second = await VerifyAsync(email, s2, await SeedChallengeAsync(email, s2, "123456", _campusCode, "Đoàn Window", start, end), "123456",
             _campusCode, "Đoàn Window", start, end);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
     }

@@ -31,8 +31,7 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// </summary>
 public sealed class PublicInitiateVisitRequestV2Tests
 {
-    private const string ConnString =
-        "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None";
+    private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString("server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
     private const ulong SeedRegistrant = 8;
     private static bool? _dbUp;
     private static readonly DateTime Now = DateTime.Now;

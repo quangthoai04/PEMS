@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -33,8 +33,7 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// </summary>
 public sealed class VisitContactTransferWorkflowTests
 {
-    private const string ConnString =
-        "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None";
+    private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString("server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
     private const ulong Registrant = 8;
     private static bool? _dbUp;
     private static readonly DateTime Now = DateTime.Now;
@@ -195,6 +194,7 @@ public sealed class VisitContactTransferWorkflowTests
             var handler = new CreateVisitRequestV2CommandHandler(
                 db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
                 new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+                new UserProvisionService(db),
                 NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
                 new PerCampusFormV2Options { Enabled = true }, WriteOn,
                 new VisitRequestAggregateStatusService(db));
@@ -408,6 +408,7 @@ public sealed class VisitContactTransferWorkflowTests
                 var handler = new CreateVisitRequestV2CommandHandler(
                     db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
                     new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+                    new UserProvisionService(db),
                     NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
                     new PerCampusFormV2Options { Enabled = true }, WriteOn,
                 new VisitRequestAggregateStatusService(db));

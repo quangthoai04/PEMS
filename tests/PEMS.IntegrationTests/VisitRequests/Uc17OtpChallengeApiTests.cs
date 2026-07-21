@@ -21,8 +21,8 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// </summary>
 public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationFactory>, IAsyncLifetime
 {
-    private const string VerifyEndpoint = "/api/visit-requests/verify";
-    private const string InitiateEndpoint = "/api/visit-requests/initiate";
+    private const string VerifyEndpoint = "/api/v2/visit-requests/verify";
+    private const string InitiateEndpoint = "/api/v2/visit-requests/initiate";
     private const string ResendEndpoint = "/api/visit-requests/resend-otp";
     private const string RecoverEndpoint = "/api/visit-requests/otp/recover";
     private const string BypassToken = "TEST_HUMAN_OK"; // Turnstile:DevBypassToken in appsettings.Testing.json
@@ -73,7 +73,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
 
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "000000", _campusCode, "Đoàn Wrong", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "000000", _campusCode, "Đoàn Wrong", start, end));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await ReadJsonAsync(response);
@@ -103,7 +103,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
 
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "000000", _campusCode, "Đoàn Burn", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "000000", _campusCode, "Đoàn Burn", start, end));
 
         Assert.Equal((HttpStatusCode)428, response.StatusCode);
         var body = await ReadJsonAsync(response);
@@ -130,11 +130,12 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var (start, end) = FutureSlot();
 
         using (var scope = _factory.Services.CreateScope())
-            await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, sessionToken, "123456", attemptCount: 9);
+            await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, sessionToken, "123456", attemptCount: 9,
+                campusCode: _campusCode, delegationName: "Đoàn Final", start: start, end: end);
 
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Final", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Final", start, end));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await ReadJsonAsync(response);
@@ -165,7 +166,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
 
         var client = _factory.CreateClient();
         Task<HttpResponseMessage> Attempt(string code) => client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, code, _campusCode, "Đoàn Conc", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, code, _campusCode, "Đoàn Conc", start, end));
 
         var responses = await Task.WhenAll(Attempt("000001"), Attempt("000002"));
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
@@ -193,14 +194,14 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
 
         // Wrong attempt #6 → typed error carries retryAfterSeconds = 2.
         var first = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "000000", _campusCode, "Đoàn Cool", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "000000", _campusCode, "Đoàn Cool", start, end));
         Assert.Equal(HttpStatusCode.BadRequest, first.StatusCode);
         var firstBody = await ReadJsonAsync(first);
         Assert.Equal(2, firstBody.GetProperty("retryAfterSeconds").GetInt32());
 
         // Immediate retry (even with the CORRECT code) → 429 and NO attempt consumed.
         var second = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Cool", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Cool", start, end));
         Assert.Equal((HttpStatusCode)429, second.StatusCode);
         var secondBody = await ReadJsonAsync(second);
         Assert.Equal("OTP_RETRY_LATER", secondBody.GetProperty("errorCode").GetString());
@@ -261,7 +262,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         // challenge now answers 429 (recovery rate-limited) instead of 428 (please do CAPTCHA):
         // offering another CAPTCHA would be a lie — a second recovery would be denied anyway.
         var oldVerify = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, oldSession, "123456", _campusCode, "Đoàn Recover", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, oldSession, "123456", _campusCode, "Đoàn Recover", start, end));
         Assert.Equal((HttpStatusCode)429, oldVerify.StatusCode);
     }
 
@@ -309,13 +310,14 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var (start, end) = FutureSlot();
 
         using (var scope = _factory.Services.CreateScope())
-            await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, sessionToken, "123456");
+            await Uc17TestData.SeedChallengeAsync(Db(scope), email, submissionId, sessionToken, "123456",
+                campusCode: "ZZ", delegationName: "Đoàn Rollback", start: start, end: end);
 
         var client = _factory.CreateClient();
 
         // Correct OTP but a nonexistent campus → create fails AFTER verify.
         var failing = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "123456", "ZZ", "Đoàn Rollback", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "123456", "ZZ", "Đoàn Rollback", start, end));
         Assert.Equal(HttpStatusCode.UnprocessableEntity, failing.StatusCode);
 
         using (var verifyScope = _factory.Services.CreateScope())
@@ -325,9 +327,13 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
             Assert.Null(token.UsedAt); // rollback un-consumed the OTP
         }
 
+        // Update pending form to valid campus (simulating client re-initiating/fixing payload before retrying verify)
+        using (var updateScope = _factory.Services.CreateScope())
+            await Uc17TestData.SeedPendingFormAsync(Db(updateScope), email, submissionId, _campusCode, "Đoàn Rollback", start, end);
+
         // Same OTP retried with a valid campus now succeeds — atomic consume+create.
         var retry = await client.PostAsJsonAsync(VerifyEndpoint,
-            Uc17TestData.VerifyPayload(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Rollback", start, end));
+            Uc17TestData.VerifyV2Payload(email, submissionId, sessionToken, "123456", _campusCode, "Đoàn Rollback", start, end));
         Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
 
         using (var verifyScope = _factory.Services.CreateScope())
@@ -349,7 +355,7 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
 
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync(InitiateEndpoint,
-            Uc17TestData.InitiatePayload(email, submissionId, _campusCode, "Đoàn Init", start, end));
+            Uc17TestData.InitiateV2Payload(email, submissionId, _campusCode, "Đoàn Init", start, end));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await ReadJsonAsync(response);
@@ -381,12 +387,12 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         for (var i = 0; i < 5; i++)
         {
             var ok = await client.PostAsJsonAsync(InitiateEndpoint,
-                Uc17TestData.InitiatePayload(email, Guid.NewGuid().ToString(), _campusCode, "Đoàn Quota", start, end));
+                Uc17TestData.InitiateV2Payload(email, Guid.NewGuid().ToString(), _campusCode, "Đoàn Quota", start, end));
             Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         }
 
         var sixth = await client.PostAsJsonAsync(InitiateEndpoint,
-            Uc17TestData.InitiatePayload(email, Guid.NewGuid().ToString(), _campusCode, "Đoàn Quota", start, end));
+            Uc17TestData.InitiateV2Payload(email, Guid.NewGuid().ToString(), _campusCode, "Đoàn Quota", start, end));
         Assert.Equal((HttpStatusCode)429, sixth.StatusCode);
         var body = await ReadJsonAsync(sixth);
         // Specific per-quota code: the standard (INITIAL/RESEND) hourly soft limit was hit.
