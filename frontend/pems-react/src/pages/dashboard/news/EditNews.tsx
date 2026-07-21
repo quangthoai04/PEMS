@@ -3,27 +3,30 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { UploadCloud, Plus, Trash2, ArrowLeft, ImagePlus, X } from 'lucide-react';
+import { UploadCloud, Plus, Trash2, ArrowLeft, Languages, RotateCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
 import { validateFile } from '../../../shared/utils/fileValidation';
+import { SectionImagesEditor, type SectionImageItem } from './components/SectionImagesEditor';
+import { BilingualColumns, LanguageColumnLabel } from './components/BilingualColumns';
+import { useBilingualTranslate } from './components/useBilingualTranslate';
+import { CollapsibleSection } from './components/CollapsibleSection';
+import { AutoGrowInput, AutoGrowTextarea } from './components/AutoGrowInput';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface SectionImage {
-  fileId: number | null;        // id trong bảng files (null = chưa upload xong / ảnh legacy)
-  previewUrl: string;           // blob:/data: URL hoặc /api/files/{id}/content
-  uploading: boolean;
-  legacyBase64?: string;        // ảnh base64 của bài cũ — sẽ được migrate lên Drive khi lưu
-}
 
 interface Section {
   id: number;
   sectionTitle: string;
   sectionBodyHtml: string;      // text-only, no <img> tags
-  sectionImage: SectionImage | null;
+  sectionImages: SectionImageItem[];
+  legacyBase64?: string;        // ảnh base64 duy nhất của bài cũ — sẽ được migrate lên Drive khi lưu
+  englishSectionTitle: string;
+  englishSectionBodyHtml: string;
+  englishTitleTouched: boolean;
+  englishBodyTouched: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,12 +54,12 @@ async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
 
 // Preview that works for blob:/data: URLs (plain <img>) and backend /api/files
 // URLs (need the Authorization header → authenticated blob fetch).
-function SectionImagePreview({ image, alt }: { image: SectionImage; alt: string }) {
-  const isBackendUrl = image.previewUrl.startsWith('/');
-  const authSrc = useAuthenticatedImage(isBackendUrl ? image.previewUrl : null);
-  const src = isBackendUrl ? authSrc : image.previewUrl;
-  if (!src) return <div className="w-full h-40 bg-gray-100 animate-pulse rounded-lg" />;
-  return <img src={src} alt={alt} className="w-full h-auto object-contain rounded-lg" />;
+function LegacyImagePreview({ src, alt }: { src: string; alt: string }) {
+  const isBackendUrl = src.startsWith('/');
+  const authSrc = useAuthenticatedImage(isBackendUrl ? src : null);
+  const resolved = isBackendUrl ? authSrc : src;
+  if (!resolved) return <div className="w-full h-40 bg-gray-100 animate-pulse rounded-lg" />;
+  return <img src={resolved} alt={alt} className="w-full h-auto object-contain rounded-lg" />;
 }
 
 // ─── Quill toolbar (no image button — images managed separately) ───────────────
@@ -88,13 +91,58 @@ export function EditNews() {
   const [submitting, setSubmitting] = useState(false);
   const [rowVersion, setRowVersion] = useState(0);
   const [newsStatus, setNewsStatus] = useState('');
+  const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
 
   // ── Form fields ──
   const [title,    setTitle]    = useState('');
   const [summary,  setSummary]  = useState('');
   const [sections, setSections] = useState<Section[]>([
-    { id: 1, sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
+    { id: 1, sectionTitle: '', sectionBodyHtml: '', sectionImages: [], englishSectionTitle: '', englishSectionBodyHtml: '', englishTitleTouched: false, englishBodyTouched: false },
   ]);
+
+  // Bilingual editor. This page always edits the Vietnamese original; the English column is
+  // shown whenever either (a) the post already has an English translation — loaded alongside
+  // the Vietnamese one so both display side-by-side and are saved independently — or (b) the
+  // user turns on the toggle to add a first English translation. Auto-translate (debounce +
+  // "Dịch lại") only runs for case (b): once English already exists, its text is user-owned and
+  // should not be silently overwritten by further Vietnamese edits.
+  const englishAlreadyExists = availableLanguages.includes('en');
+  const [addingEnglish, setAddingEnglish] = useState(false);
+  const showEnglishColumn = languageCode === 'vi' && (englishAlreadyExists || addingEnglish);
+  const [englishTitle, setEnglishTitle] = useState('');
+  const [englishSummary, setEnglishSummary] = useState('');
+  const [englishTitleTouched, setEnglishTitleTouched] = useState(false);
+  const [englishSummaryTouched, setEnglishSummaryTouched] = useState(false);
+
+  const { translating, retranslateNow } = useBilingualTranslate({
+    enabled: addingEnglish && !englishAlreadyExists,
+    newsId,
+    title,
+    summary,
+    sections: sections.map((s, i) => ({ sectionOrder: i + 1, sectionTitle: s.sectionTitle, sectionBodyHtml: s.sectionBodyHtml })),
+    onTranslated: (result) => {
+      if (!englishTitleTouched) setEnglishTitle(result.title);
+      if (!englishSummaryTouched) setEnglishSummary(result.summary);
+      setSections(prev => prev.map((s, i) => {
+        const match = result.sections.find(r => r.sectionOrder === i + 1);
+        if (!match) return s;
+        return {
+          ...s,
+          englishSectionTitle: s.englishTitleTouched ? s.englishSectionTitle : match.sectionTitle,
+          englishSectionBodyHtml: s.englishBodyTouched ? s.englishSectionBodyHtml : match.sectionBodyHtml,
+        };
+      }));
+    },
+  });
+
+  async function handleRetranslate() {
+    setEnglishTitleTouched(false);
+    setEnglishSummaryTouched(false);
+    setSections(prev => prev.map(s => ({ ...s, englishTitleTouched: false, englishBodyTouched: false })));
+    const ok = await retranslateNow();
+    if (ok) toast.success('Đã dịch lại sang tiếng Anh.');
+    else toast.error('Không thể dịch tự động. Vui lòng thử lại.');
+  }
 
   // ── Cover image ──
   const [currentCoverFileId, setCurrentCoverFileId] = useState<number | null>(null);
@@ -109,6 +157,39 @@ export function EditNews() {
     if (!newsId) return;
     let cancelled = false;
 
+    type RawSection = {
+      sectionTitle?: string;
+      sectionBodyHtml?: string;
+      files?: { fileId: number; url?: string; usageType?: string }[];
+    };
+
+    function mapSections(rawSections: RawSection[]): Section[] {
+      return rawSections.map((s, i) => {
+        const rawHtml = s.sectionBodyHtml ?? '';
+
+        // Ưu tiên ảnh thật từ news_section_files (có thể nhiều ảnh); nếu bài cũ nhúng
+        // base64 trong HTML (chỉ 1 ảnh legacy tối đa) thì giữ lại để migrate khi lưu.
+        const inlineFiles = (s.files ?? []).filter(f => f.usageType === 'INLINE_IMAGE' && f.url);
+        const legacySrc = inlineFiles.length === 0 ? extractFirstImgSrc(rawHtml) : null;
+
+        const sectionImages: SectionImageItem[] = inlineFiles.map(f => ({
+          fileId: f.fileId, previewUrl: f.url!, uploading: false,
+        }));
+
+        return {
+          id:              i + 1,
+          sectionTitle:    s.sectionTitle ?? '',
+          sectionBodyHtml: stripImgTags(rawHtml),
+          sectionImages,
+          legacyBase64:    legacySrc?.startsWith('data:') ? legacySrc : undefined,
+          englishSectionTitle: '',
+          englishSectionBodyHtml: '',
+          englishTitleTouched: false,
+          englishBodyTouched: false,
+        };
+      });
+    }
+
     async function fetchNews() {
       setLoading(true);
       try {
@@ -121,48 +202,41 @@ export function EditNews() {
         setNewsStatus(data.status ?? '');
         setTitle(data.title ?? '');
         setSummary(data.summary ?? '');
+        const langs: string[] = Array.isArray(data.availableLanguages) ? data.availableLanguages : [];
+        setAvailableLanguages(langs);
 
         if (data.coverFile?.fileId) {
           setCurrentCoverFileId(data.coverFile.fileId);
           setExistingCoverUrl(data.coverFile.url ?? null);
         }
 
-        if (Array.isArray(data.sections) && data.sections.length > 0) {
-          setSections(
-            data.sections.map(
-              (
-                s: {
-                  sectionTitle?: string;
-                  sectionBodyHtml?: string;
-                  files?: { fileId: number; url?: string; usageType?: string }[];
-                },
-                i: number,
-              ) => {
-                const rawHtml = s.sectionBodyHtml ?? '';
+        const viSections: Section[] = Array.isArray(data.sections) && data.sections.length > 0
+          ? mapSections(data.sections)
+          : [];
 
-                // Ưu tiên ảnh thật từ news_section_files; nếu bài cũ nhúng base64
-                // trong HTML thì giữ lại để migrate lên Drive khi lưu.
-                const inlineFile = (s.files ?? []).find(f => f.usageType === 'INLINE_IMAGE' && f.url);
-                const legacySrc = inlineFile ? null : extractFirstImgSrc(rawHtml);
-
-                let sectionImage: SectionImage | null = null;
-                if (inlineFile) {
-                  sectionImage = { fileId: inlineFile.fileId, previewUrl: inlineFile.url!, uploading: false };
-                } else if (legacySrc) {
-                  sectionImage = legacySrc.startsWith('data:')
-                    ? { fileId: null, previewUrl: legacySrc, uploading: false, legacyBase64: legacySrc }
-                    : { fileId: null, previewUrl: legacySrc, uploading: false };
-                }
-
-                return {
-                  id:              i + 1,
-                  sectionTitle:    s.sectionTitle ?? '',
-                  sectionBodyHtml: stripImgTags(rawHtml),
-                  sectionImage,
-                };
-              },
-            ),
-          );
+        // Khi bài đã có bản tiếng Anh, tải luôn để hiển thị 2 cột song song thay vì phải
+        // chuyển qua trang sửa riêng (?lang=en).
+        if (languageCode === 'vi' && langs.includes('en')) {
+          try {
+            const { data: enData } = await httpClient.get(`/news/${newsId}`, { params: { languageCode: 'en' } });
+            if (cancelled) return;
+            setEnglishTitle(enData.title ?? '');
+            setEnglishSummary(enData.summary ?? '');
+            const enSections: RawSection[] = Array.isArray(enData.sections) ? enData.sections : [];
+            setSections(
+              (viSections.length > 0 ? viSections : mapSections([])).map((s, i) => ({
+                ...s,
+                englishSectionTitle: enSections[i]?.sectionTitle ?? '',
+                englishSectionBodyHtml: stripImgTags(enSections[i]?.sectionBodyHtml ?? ''),
+              })),
+            );
+          } catch {
+            // Bản tiếng Anh tồn tại theo availableLanguages nhưng tải lỗi — vẫn hiển thị
+            // được bản tiếng Việt, chỉ là chưa có cột tiếng Anh.
+            if (viSections.length > 0) setSections(viSections);
+          }
+        } else if (viSections.length > 0) {
+          setSections(viSections);
         }
       } catch {
         if (!cancelled) {
@@ -201,53 +275,13 @@ export function EditNews() {
     }
   }
 
-  // ── Section image — upload lên Google Drive ngay khi chọn (không lưu base64) ──
-
-  async function handleSectionImagePick(index: number, e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const v = validateFile(file, 'NEWS_IMAGE');
-    if (!v.ok) { toast.error(v.message ?? 'File không hợp lệ.'); return; }
-
-    const sectionId = sections[index]?.id;
-    const previewUrl = URL.createObjectURL(file);
-    setSections(prev => prev.map(s =>
-      s.id === sectionId ? { ...s, sectionImage: { fileId: null, previewUrl, uploading: true } } : s
-    ));
-
-    try {
-      const uploaded = await uploadFileToEndpoint('/news/section-file-upload', 'file', file);
-      setSections(prev => prev.map(s =>
-        s.id === sectionId && s.sectionImage
-          ? { ...s, sectionImage: { fileId: uploaded.fileId, previewUrl: s.sectionImage.previewUrl, uploading: false } }
-          : s
-      ));
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? 'Không thể tải ảnh nội dung lên.');
-      setSections(prev => prev.map(s =>
-        s.id === sectionId ? { ...s, sectionImage: null } : s
-      ));
-    }
-  }
-
-  function removeSectionImage(index: number) {
-    setSections(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], sectionImage: null };
-      return next;
-    });
-  }
-
   // ── Section CRUD ──────────────────────────────────────────────────────────
 
   function addSection() {
     if (sections.length >= 10) return;
     setSections(prev => [
       ...prev,
-      { id: Date.now(), sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
+      { id: Date.now(), sectionTitle: '', sectionBodyHtml: '', sectionImages: [], englishSectionTitle: '', englishSectionBodyHtml: '', englishTitleTouched: false, englishBodyTouched: false },
     ]);
   }
 
@@ -263,14 +297,47 @@ export function EditNews() {
     });
   }
 
+  function updateEnglishSection(index: number, field: 'englishSectionTitle' | 'englishSectionBodyHtml', value: string) {
+    setSections(prev => {
+      const next = [...prev];
+      const touchedField = field === 'englishSectionTitle' ? 'englishTitleTouched' : 'englishBodyTouched';
+      next[index] = { ...next[index], [field]: value, [touchedField]: true };
+      return next;
+    });
+  }
+
+  /** ReactQuill fires onChange on mount/programmatic value sync too (source 'api'/'silent'), not
+   * only on real typing (source 'user') — applying a translated value into the EN Quill editor
+   * must not be mistaken for the user manually editing it, or it would permanently block further
+   * auto-translate updates. Only forward genuine user edits to updateEnglishSection. */
+  function updateEnglishSectionBodyFromQuill(index: number, value: string, source: string) {
+    if (source !== 'user') return;
+    updateEnglishSection(index, 'englishSectionBodyHtml', value);
+  }
+
+  function updateSectionImages(index: number, updater: (prev: SectionImageItem[]) => SectionImageItem[]) {
+    setSections(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], sectionImages: updater(next[index].sectionImages) };
+      return next;
+    });
+  }
+
   // ── Submit ────────────────────────────────────────────────────────────────
 
   async function handleSubmit() {
     if (!title.trim())   { toast.error('Vui lòng nhập tiêu đề tin tức.'); return; }
+    if (title.length > 150) { toast.error('Tiêu đề không được vượt quá 150 ký tự.'); return; }
     if (!summary.trim()) { toast.error('Vui lòng nhập mô tả ngắn.'); return; }
+    if (summary.length > 500) { toast.error('Mô tả ngắn không được vượt quá 500 ký tự.'); return; }
     if (coverUploading)  { toast.error('Vui lòng chờ ảnh bìa tải lên xong.'); return; }
     if (sections.some(s => !s.sectionTitle.trim())) {
       toast.error('Vui lòng nhập tiêu đề cho tất cả các mục nội dung.');
+      return;
+    }
+    const overLongSection = sections.find(s => s.sectionTitle.length > 255);
+    if (overLongSection) {
+      toast.error(`Tiêu đề mục ${sections.indexOf(overLongSection) + 1} không được vượt quá 255 ký tự.`);
       return;
     }
     const emptyBody = sections.find(s => !s.sectionBodyHtml.replace(/<[^>]+>/g, '').trim());
@@ -278,9 +345,29 @@ export function EditNews() {
       toast.error(`Nội dung chi tiết mục ${sections.indexOf(emptyBody) + 1} không được để trống.`);
       return;
     }
-    if (sections.some(s => s.sectionImage?.uploading)) {
+    if (sections.some(s => s.sectionImages.some(img => img.uploading))) {
       toast.error('Ảnh nội dung đang được tải lên, vui lòng chờ.');
       return;
+    }
+    if (showEnglishColumn) {
+      if (!englishTitle.trim()) { toast.error('Tiêu đề tiếng Anh không được để trống.'); return; }
+      if (englishTitle.length > 150) { toast.error('Tiêu đề tiếng Anh không được vượt quá 150 ký tự.'); return; }
+      if (englishSummary.length > 500) { toast.error('Mô tả ngắn (Anh) không được vượt quá 500 ký tự.'); return; }
+      for (const s of sections) {
+        if (!s.englishSectionTitle.trim()) {
+          toast.error(`Tiêu đề tiếng Anh của mục ${sections.indexOf(s) + 1} không được để trống.`);
+          return;
+        }
+        if (s.englishSectionTitle.length > 255) {
+          toast.error(`Tiêu đề tiếng Anh của mục ${sections.indexOf(s) + 1} không được vượt quá 255 ký tự.`);
+          return;
+        }
+        const strippedEn = s.englishSectionBodyHtml.replace(/<[^>]+>/g, '').trim();
+        if (!strippedEn) {
+          toast.error(`Nội dung tiếng Anh của mục ${sections.indexOf(s) + 1} không được để trống.`);
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
@@ -289,21 +376,36 @@ export function EditNews() {
       // (backend từ chối payload chứa data:image).
       const migrated = [...sections];
       for (let i = 0; i < migrated.length; i++) {
-        const img = migrated[i].sectionImage;
-        if (img && img.fileId === null && img.legacyBase64) {
-          const file = await dataUrlToFile(img.legacyBase64, `news-section-${newsId}-${i + 1}.png`);
+        const legacy = migrated[i].legacyBase64;
+        if (legacy && migrated[i].sectionImages.length === 0) {
+          const file = await dataUrlToFile(legacy, `news-section-${newsId}-${i + 1}.png`);
           const uploaded = await uploadFileToEndpoint('/news/section-file-upload', 'file', file);
-          migrated[i] = { ...migrated[i], sectionImage: { ...img, fileId: uploaded.fileId, legacyBase64: undefined } };
+          migrated[i] = {
+            ...migrated[i],
+            sectionImages: [{ fileId: uploaded.fileId, previewUrl: legacy, uploading: false }],
+            legacyBase64: undefined,
+          };
         }
       }
-      const broken = migrated.find(s => s.sectionImage && s.sectionImage.fileId === null);
+      const broken = migrated.find(s => s.sectionImages.some(img => img.fileId === null));
       if (broken) {
-        toast.error(`Ảnh của mục ${migrated.indexOf(broken) + 1} chưa tải lên thành công. Vui lòng chọn lại ảnh.`);
+        toast.error(`Một số ảnh của mục ${migrated.indexOf(broken) + 1} chưa tải lên thành công. Vui lòng chọn lại ảnh.`);
         setSubmitting(false);
         return;
       }
 
-      await httpClient.put(`/news/${newsId}`, {
+      const toSectionFiles = (images: SectionImageItem[]) =>
+        images.filter(img => img.fileId).map((img, i) => ({
+          fileId: img.fileId as number,
+          usageType: 'INLINE_IMAGE',
+          displayOrder: i + 1,
+        }));
+
+      // rowVersion lives on the News row itself (not per-translation) — saving the Vietnamese
+      // translation already bumps it server-side, so the English save right after must reuse the
+      // NEW version the first call returns, not the one captured at page load, or the optimistic
+      // concurrency check on the second PUT falsely reports "edited by someone else".
+      const { data: viSaveResult } = await httpClient.put(`/news/${newsId}`, {
         rowVersion,
         coverFileId: currentCoverFileId ?? null,
         title:       title.trim(),
@@ -313,11 +415,50 @@ export function EditNews() {
           sectionOrder:    i + 1,
           sectionTitle:    s.sectionTitle.trim(),
           sectionBodyHtml: s.sectionBodyHtml,
-          sectionFiles:    s.sectionImage?.fileId
-            ? [{ fileId: s.sectionImage.fileId, usageType: 'INLINE_IMAGE', displayOrder: 1 }]
-            : [],
+          sectionFiles:    toSectionFiles(s.sectionImages),
         })),
       });
+      const latestRowVersion: number = viSaveResult?.newRowVersion ?? rowVersion;
+
+      // Lưu bản tiếng Anh — dùng đúng kiến trúc multilingual hiện có, không tạo cơ chế lưu mới:
+      // bản đã tồn tại thì PUT như một bản dịch bình thường (?lang=en); bản mới thì
+      // AddMultilingualNewsCommand (giống hệt luồng "thêm bản dịch" đã có).
+      if (showEnglishColumn) {
+        try {
+          if (englishAlreadyExists) {
+            await httpClient.put(`/news/${newsId}`, {
+              rowVersion: latestRowVersion,
+              coverFileId: currentCoverFileId ?? null,
+              title: englishTitle.trim(),
+              summary: englishSummary.trim(),
+              languageCode: 'en',
+              contentSections: migrated.map((s, i) => ({
+                sectionOrder:    i + 1,
+                sectionTitle:    s.englishSectionTitle.trim(),
+                sectionBodyHtml: s.englishSectionBodyHtml,
+                sectionFiles:    toSectionFiles(s.sectionImages),
+              })),
+            });
+          } else {
+            await httpClient.post('/news/addmultilingualnews', {
+              newsId,
+              languageCode: 'en',
+              title: englishTitle.trim(),
+              summary: englishSummary.trim(),
+              sections: migrated.map((s, i) => ({
+                sectionOrder:    i + 1,
+                sectionTitle:    s.englishSectionTitle.trim(),
+                sectionBodyHtml: s.englishSectionBodyHtml,
+                sectionFiles:    toSectionFiles(s.sectionImages),
+              })),
+              copySectionFilesFromLanguage: 'vi',
+            });
+          }
+        } catch (err: unknown) {
+          const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+          toast.error(msg ?? 'Đã lưu bản tiếng Việt nhưng không thể lưu bản tiếng Anh. Vui lòng thử dịch lại.');
+        }
+      }
 
       toast.success(
         newsStatus === 'REJECTED'
@@ -354,7 +495,7 @@ export function EditNews() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="p-4 sm:p-6 md:p-8 pb-12 max-w-5xl mx-auto"
+      className="p-4 sm:p-6 md:p-8 pb-12 max-w-7xl mx-auto"
     >
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
@@ -388,54 +529,159 @@ export function EditNews() {
       <div className="space-y-8">
 
         {/* ── 1. Thông tin cơ bản ── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">1. Thông tin cơ bản</h2>
+        <CollapsibleSection
+          title="1. Thông tin cơ bản"
+          headerExtra={languageCode === 'vi' && (
+            <>
+              {showEnglishColumn && !englishAlreadyExists && (
+                <button
+                  type="button"
+                  onClick={handleRetranslate}
+                  disabled={translating}
+                  title="Dịch lại sang tiếng Anh"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-white/90 border border-white/40 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${translating ? 'animate-spin' : ''}`} />
+                  {translating ? 'Đang dịch...' : 'Dịch lại'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { if (!englishAlreadyExists) setAddingEnglish(v => !v); }}
+                disabled={englishAlreadyExists}
+                title={
+                  englishAlreadyExists
+                    ? 'Bài đã có bản dịch tiếng Anh'
+                    : addingEnglish ? 'Tắt soạn song ngữ' : 'Bật soạn song ngữ Việt – Anh'
+                }
+                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                  showEnglishColumn ? 'bg-white text-[#004c91]' : 'bg-white/10 text-white hover:bg-white/20'
+                } ${englishAlreadyExists ? 'cursor-default' : ''}`}
+              >
+                <Languages className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        >
+          <div className="flex flex-col gap-6">
+
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Tiêu đề tin tức <span className="text-red-500">*</span>
+                      {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${title.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {title.length}/150
+                    </span>
+                  </div>
+                  <AutoGrowInput
+                    value={title}
+                    onChange={setTitle}
+                    placeholder="Nhập tiêu đề tin tức..."
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                      title.length > 150
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {title.length > 150 && (
+                    <p className="text-xs text-red-500 mt-1">Tiêu đề không được vượt quá 150 ký tự.</p>
+                  )}
+                </div>
+              }
+              right={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Title <span className="text-red-500">*</span>
+                      <LanguageColumnLabel>EN</LanguageColumnLabel>
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishTitle.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {englishTitle.length}/150
+                    </span>
+                  </div>
+                  <AutoGrowInput
+                    value={englishTitle}
+                    onChange={v => { setEnglishTitle(v); setEnglishTitleTouched(true); }}
+                    placeholder="Enter news title..."
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                      englishTitle.length > 150
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {englishTitle.length > 150 && (
+                    <p className="text-xs text-red-500 mt-1">Title must not exceed 150 characters.</p>
+                  )}
+                </div>
+              }
+            />
+
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Mô tả ngắn <span className="text-red-500">*</span>
+                      {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${summary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {summary.length}/500
+                    </span>
+                  </div>
+                  <AutoGrowTextarea
+                    value={summary}
+                    onChange={setSummary}
+                    placeholder="Nhập mô tả ngắn gọn..."
+                    className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                      summary.length > 500
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {summary.length > 500 && (
+                    <p className="text-xs text-red-500 mt-1">Mô tả ngắn không được vượt quá 500 ký tự.</p>
+                  )}
+                </div>
+              }
+              right={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Summary
+                      <LanguageColumnLabel>EN</LanguageColumnLabel>
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishSummary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {englishSummary.length}/500
+                    </span>
+                  </div>
+                  <AutoGrowTextarea
+                    value={englishSummary}
+                    onChange={v => { setEnglishSummary(v); setEnglishSummaryTouched(true); }}
+                    placeholder="Enter a short summary..."
+                    className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                      englishSummary.length > 500
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {englishSummary.length > 500 && (
+                    <p className="text-xs text-red-500 mt-1">Summary must not exceed 500 characters.</p>
+                  )}
+                </div>
+              }
+            />
+
           </div>
-          <div className="p-6 flex flex-col gap-6">
-
-            <div>
-              <label className="block text-gray-900 font-bold mb-2">
-                Tiêu đề tin tức <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  maxLength={150}
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="Nhập tiêu đề tin tức..."
-                  className="w-full pr-16 pl-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">
-                  {title.length}/150
-                </span>
-              </div>
-            </div>
-
-            {/* Summary — no character limit */}
-            <div>
-              <label className="block text-gray-900 font-bold mb-2">
-                Mô tả ngắn <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                rows={3}
-                value={summary}
-                onChange={e => setSummary(e.target.value)}
-                placeholder="Nhập mô tả ngắn gọn..."
-                className="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800 resize-none"
-              />
-            </div>
-
-          </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── 2. Ảnh đại diện ── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">2. Ảnh đại diện</h2>
-          </div>
-          <div className="p-6">
+        <CollapsibleSection title="2. Ảnh đại diện">
             <label className="block w-full cursor-pointer">
               <input
                 type="file"
@@ -474,15 +720,11 @@ export function EditNews() {
             {coverDisplaySrc && !coverUploading && (
               <p className="mt-2 text-xs text-gray-400 text-center">Click vào ảnh để thay ảnh mới</p>
             )}
-          </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── 3. Nội dung chi tiết ── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">3. Nội dung chi tiết</h2>
-          </div>
-          <div className="p-6 flex flex-col gap-8">
+        <CollapsibleSection title="3. Nội dung chi tiết">
+          <div className="flex flex-col gap-8">
 
             {sections.map((section, index) => (
               <div key={section.id}>
@@ -490,112 +732,145 @@ export function EditNews() {
                 <div className="flex flex-col gap-5">
 
                   {/* Section heading row */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-gray-900 font-bold">
-                        Tiêu đề mục {index + 1} <span className="text-red-500">*</span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        {index > 0 && (
-                          <button
-                            onClick={() => removeSection(index)}
-                            className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" /> Xóa mục
-                          </button>
-                        )}
-                        {index === sections.length - 1 && sections.length < 10 && (
-                          <button
-                            onClick={addSection}
-                            className="flex items-center gap-1.5 bg-[#004c91] hover:bg-[#003a70] text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors shadow-sm"
-                          >
-                            <Plus className="w-4 h-4" /> Thêm mục
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <input
-                      type="text"
-                      value={section.sectionTitle}
-                      onChange={e => updateSection(index, 'sectionTitle', e.target.value)}
-                      placeholder="Nhập tiêu đề mục nội dung..."
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800"
-                    />
-                  </div>
-
-                  {/* Text body — image button removed from Quill toolbar */}
-                  <div>
-                    <label className="block text-gray-900 font-bold mb-2">
-                      Nội dung <span className="text-red-500">*</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Mục {index + 1} <span className="text-red-500">*</span>
                     </label>
-                    <div className="border border-gray-300 rounded-lg overflow-hidden focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-colors">
-                      {/* @ts-ignore */}
-                      <ReactQuill
-                        key={`quill-${section.id}`}
-                        theme="snow"
-                        value={section.sectionBodyHtml}
-                        onChange={value => updateSection(index, 'sectionBodyHtml', value)}
-                        placeholder="Nhập nội dung chi tiết..."
-                        className="bg-white"
-                        modules={QUILL_MODULES}
-                      />
+                    <div className="flex items-center gap-2">
+                      {index > 0 && (
+                        <button
+                          onClick={() => removeSection(index)}
+                          className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" /> Xóa mục
+                        </button>
+                      )}
+                      {index === sections.length - 1 && sections.length < 10 && (
+                        <button
+                          onClick={addSection}
+                          className="flex items-center gap-1.5 bg-[#004c91] hover:bg-[#003a70] text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors shadow-sm"
+                        >
+                          <Plus className="w-4 h-4" /> Thêm mục
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Section image — separate zone, max 1 per section */}
-                  <div>
-                    <label className="block text-gray-900 font-bold mb-2">Ảnh minh họa</label>
-
-                    {section.sectionImage ? (
-                      <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                        <SectionImagePreview image={section.sectionImage} alt={`Ảnh mục ${index + 1}`} />
-                        {section.sectionImage.uploading && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
-                            <div className="flex items-center gap-2 text-white font-bold text-sm">
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              Đang tải lên...
-                            </div>
-                          </div>
-                        )}
-                        {/* Remove button */}
-                        <button
-                          type="button"
-                          onClick={() => removeSectionImage(index)}
-                          className="absolute top-2 right-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
-                          title="Xóa ảnh"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                        {/* Replace button */}
-                        <label className="absolute bottom-2 right-2 cursor-pointer">
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/jpg,image/webp"
-                            className="hidden"
-                            onChange={e => handleSectionImagePick(index, e)}
-                          />
-                          <span className="flex items-center gap-1.5 bg-white/90 hover:bg-white text-[#004c91] text-xs font-bold px-3 py-1.5 rounded-lg shadow transition-colors border border-gray-200 cursor-pointer">
-                            <ImagePlus className="w-3.5 h-3.5" /> Thay ảnh
-                          </span>
-                        </label>
-                      </div>
-                    ) : (
-                      <label className="block cursor-pointer">
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/jpg,image/webp"
-                          className="hidden"
-                          onChange={e => handleSectionImagePick(index, e)}
-                        />
-                        <div className="flex items-center gap-3 p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#004c91] hover:bg-[#eef5fa] transition-colors group cursor-pointer">
-                          <ImagePlus className="w-5 h-5 text-gray-400 group-hover:text-[#004c91] shrink-0 transition-colors" />
-                          <span className="text-sm text-gray-500 group-hover:text-[#004c91] font-medium transition-colors">
-                            Thêm ảnh minh họa (tùy chọn — tối đa 1 ảnh mỗi mục)
+                  <BilingualColumns
+                    showEnglish={showEnglishColumn}
+                    left={
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-gray-900 font-bold text-sm">
+                            Tiêu đề mục <span className="text-red-500">*</span>
+                            {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                          </label>
+                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {section.sectionTitle.length}/255
                           </span>
                         </div>
-                      </label>
-                    )}
-                  </div>
+                        <AutoGrowInput
+                          value={section.sectionTitle}
+                          onChange={v => updateSection(index, 'sectionTitle', v)}
+                          placeholder="Nhập tiêu đề mục nội dung..."
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                            section.sectionTitle.length > 255
+                              ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                              : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                          }`}
+                        />
+                        {section.sectionTitle.length > 255 && (
+                          <p className="text-xs text-red-500 mt-1">Tiêu đề mục không được vượt quá 255 ký tự.</p>
+                        )}
+                      </div>
+                    }
+                    right={
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-gray-900 font-bold text-sm">
+                            Section title
+                            <LanguageColumnLabel>EN</LanguageColumnLabel>
+                          </label>
+                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.englishSectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {section.englishSectionTitle.length}/255
+                          </span>
+                        </div>
+                        <AutoGrowInput
+                          value={section.englishSectionTitle}
+                          onChange={v => updateEnglishSection(index, 'englishSectionTitle', v)}
+                          placeholder="Enter section title..."
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                            section.englishSectionTitle.length > 255
+                              ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                              : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                          }`}
+                        />
+                        {section.englishSectionTitle.length > 255 && (
+                          <p className="text-xs text-red-500 mt-1">Section title must not exceed 255 characters.</p>
+                        )}
+                      </div>
+                    }
+                  />
+
+                  <BilingualColumns
+                    showEnglish={showEnglishColumn}
+                    left={
+                      <div>
+                        <label className="block text-gray-900 font-bold mb-2">
+                          Nội dung <span className="text-red-500">*</span>
+                          {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                        </label>
+                        <div className="news-quill-compact border border-gray-300 rounded-lg overflow-hidden focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-colors">
+                          {/* @ts-ignore */}
+                          <ReactQuill
+                            key={`quill-vi-${section.id}`}
+                            theme="snow"
+                            value={section.sectionBodyHtml}
+                            onChange={value => updateSection(index, 'sectionBodyHtml', value)}
+                            placeholder="Nhập nội dung chi tiết..."
+                            className="bg-white"
+                            modules={QUILL_MODULES}
+                          />
+                        </div>
+                      </div>
+                    }
+                    right={
+                      <div>
+                        <label className="block text-gray-900 font-bold mb-2">
+                          Content
+                          <LanguageColumnLabel>EN</LanguageColumnLabel>
+                        </label>
+                        <div className="news-quill-compact border border-gray-300 rounded-lg overflow-hidden focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-colors">
+                          {/* @ts-ignore */}
+                          <ReactQuill
+                            key={`quill-en-${section.id}`}
+                            theme="snow"
+                            value={section.englishSectionBodyHtml}
+                            onChange={(value, _delta, source) => updateEnglishSectionBodyFromQuill(index, value, source)}
+                            placeholder="Enter detailed content..."
+                            className="bg-white"
+                            modules={QUILL_MODULES}
+                          />
+                        </div>
+                      </div>
+                    }
+                  />
+
+                  {/* Legacy single embedded image from an old post — offered for migration only. */}
+                  {section.legacyBase64 && section.sectionImages.length === 0 && (
+                    <div>
+                      <label className="block text-gray-900 font-bold mb-2">Ảnh cũ (sẽ được chuyển sang hệ thống lưu trữ mới khi lưu)</label>
+                      <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                        <LegacyImagePreview src={section.legacyBase64} alt={`Ảnh cũ mục ${index + 1}`} />
+                      </div>
+                    </div>
+                  )}
+
+                  <SectionImagesEditor
+                    images={section.sectionImages}
+                    onChange={updater => updateSectionImages(index, updater)}
+                    uploadEndpoint="/news/section-file-upload"
+                  />
 
                 </div>
               </div>
@@ -605,7 +880,7 @@ export function EditNews() {
               {sections.length}/10 mục nội dung
             </div>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Buttons ── */}
         <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">

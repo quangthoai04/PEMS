@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, Languages, X } from 'lucide-react';
+import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, Languages, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -181,213 +181,82 @@ function RejectPopup({ onConfirm, onCancel, loading }: { onConfirm: (reason: str
   );
 }
 
-// ─── Popup: Dịch bài viết (auto-translate + chỉnh tay trước khi lưu) ─────────
+// ─── Inline: chọn ngôn ngữ đích để dịch + lưu bài viết ngay lập tức ──────────
+// Một bước duy nhất: bấm chọn ngôn ngữ → dịch (Google Cloud Translation) và lưu bản dịch cùng
+// lúc (kèm ảnh của các mục, giữ nguyên qua copySectionFilesFromLanguage) — không có bước xem
+// trước/chỉnh tay riêng.
 
-interface TranslateDraftSection {
-  sectionOrder: number;
-  sectionTitle: string;
-  sectionBodyHtml: string;
-}
-
-function TranslateModal({ news, onClose, onSaved }: {
+function TranslateLanguagePicker({ news, onClose, onSaved }: {
   news: NewsDetail;
   onClose: () => void;
   onSaved: (languageCode: string) => void;
 }) {
   const existing = news.availableLanguages ?? [news.languageCode];
   const targetOptions = ALL_LANGUAGES.filter(l => !existing.includes(l));
+  const [translatingLang, setTranslatingLang] = useState<string | null>(null);
 
-  const [sourceLang] = useState(news.languageCode);
-  const [targetLang, setTargetLang] = useState(targetOptions[0] ?? '');
-  const [translating, setTranslating] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Prefill bằng nội dung nguồn để người dùng có thể dịch tay khi chưa cấu hình API dịch.
-  const [draftTitle, setDraftTitle] = useState(news.title);
-  const [draftSummary, setDraftSummary] = useState(news.summary ?? '');
-  const [draftSections, setDraftSections] = useState<TranslateDraftSection[]>(
-    news.sections.map(s => ({
-      sectionOrder: s.sectionOrder,
-      sectionTitle: s.sectionTitle,
-      sectionBodyHtml: s.sectionBodyHtml,
-    })),
-  );
-
-  async function handleAutoTranslate() {
-    if (!targetLang) return;
-    setTranslating(true);
-    const toastId = toast.loading('Đang dịch bài viết...');
+  async function handleTranslate(targetLang: string) {
+    setTranslatingLang(targetLang);
+    const toastId = toast.loading(`Đang dịch sang ${LANGUAGE_LABELS[targetLang] ?? targetLang}...`);
     try {
-      const { data } = await httpClient.post(`/news/${news.newsId}/translations/auto-translate`, {
-        sourceLanguage: sourceLang,
+      await httpClient.post(`/news/${news.newsId}/translations/auto-translate`, {
+        sourceLanguage: news.languageCode,
         targetLanguage: targetLang,
-        save: false,
-      });
-      setDraftTitle(data.title ?? '');
-      setDraftSummary(data.summary ?? '');
-      setDraftSections((data.sections ?? []).map((s: TranslateDraftSection) => ({
-        sectionOrder: s.sectionOrder,
-        sectionTitle: s.sectionTitle,
-        sectionBodyHtml: s.sectionBodyHtml,
-      })));
-      toast.success('Đã dịch xong. Kiểm tra lại nội dung trước khi lưu.', { id: toastId });
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? 'Không thể dịch bài viết. Kiểm tra cấu hình API dịch.', { id: toastId });
-    } finally {
-      setTranslating(false);
-    }
-  }
-
-  async function handleSave() {
-    if (!targetLang) return;
-    if (!draftTitle.trim()) { toast.error('Tiêu đề bản dịch không được để trống.'); return; }
-    setSaving(true);
-    const toastId = toast.loading('Đang lưu bản dịch...');
-    try {
-      await httpClient.post('/news/addmultilingualnews', {
-        newsId: news.newsId,
-        languageCode: targetLang,
-        title: draftTitle.trim(),
-        summary: draftSummary.trim(),
-        sections: draftSections.map(s => ({
-          sectionOrder: s.sectionOrder,
-          sectionTitle: s.sectionTitle,
-          sectionBodyHtml: s.sectionBodyHtml,
-        })),
-        copySectionFilesFromLanguage: sourceLang,
+        save: true,
       });
       toast.success('Dịch bài viết thành công.', { id: toastId });
       onSaved(targetLang);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? 'Không thể lưu bản dịch.', { id: toastId });
+      toast.error(msg ?? 'Không thể dịch bài viết. Kiểm tra cấu hình API dịch.', { id: toastId });
     } finally {
-      setSaving(false);
+      setTranslatingLang(null);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4 py-8">
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <Languages className="w-5 h-5 text-[#004c91]" /> Dịch bài viết
-          </h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 bg-[#004c91]">
+        <h3 className="text-[15px] font-bold text-white uppercase tracking-wide flex items-center gap-2">
+          <Languages className="w-4 h-4" /> Dịch bài viết
+        </h3>
+        <button onClick={onClose} className="p-1.5 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-colors">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
-        {/* Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
-          {targetOptions.length === 0 ? (
-            <p className="text-gray-500 text-sm">Bài viết đã có đủ bản dịch cho tất cả ngôn ngữ được hỗ trợ.</p>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-end gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Ngôn ngữ nguồn</label>
-                  <div className="px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 text-sm font-medium text-gray-600">
-                    {LANGUAGE_LABELS[sourceLang] ?? sourceLang}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Ngôn ngữ đích <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={targetLang}
-                    onChange={e => setTargetLang(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-[#004c91] bg-white"
-                  >
-                    {targetOptions.map(l => (
-                      <option key={l} value={l}>{LANGUAGE_LABELS[l] ?? l}</option>
-                    ))}
-                  </select>
-                </div>
+      {/* Body */}
+      <div className="p-6">
+        {targetOptions.length === 0 ? (
+          <p className="text-gray-500 text-sm">Bài viết đã có đủ bản dịch cho tất cả ngôn ngữ được hỗ trợ.</p>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500 mb-4">
+              Chọn ngôn ngữ để dịch tự động (Google Cloud Translation) và lưu ngay — tiêu đề, mô tả, nội dung từng mục và ảnh đều được giữ nguyên.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {targetOptions.map(l => (
                 <button
-                  onClick={handleAutoTranslate}
-                  disabled={translating || saving || !targetLang}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-xl hover:bg-[#003a70] transition-colors disabled:opacity-50"
+                  key={l}
+                  onClick={() => handleTranslate(l)}
+                  disabled={translatingLang !== null}
+                  className="flex items-center gap-2 px-5 py-3 border border-gray-200 rounded-xl font-semibold text-gray-700 hover:border-[#004c91] hover:bg-[#eef5fa] hover:text-[#004c91] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {translating && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                  Dịch tự động
+                  {translatingLang === l && <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />}
+                  {LANGUAGE_LABELS[l] ?? l}
                 </button>
-              </div>
-
-              <p className="text-xs text-gray-400">
-                Có thể bấm “Dịch tự động” (Google Cloud Translation) hoặc tự chỉnh nội dung bên dưới rồi lưu.
-                Ảnh của bài viết được giữ nguyên cho bản dịch.
-              </p>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tiêu đề</label>
-                <input
-                  type="text"
-                  value={draftTitle}
-                  onChange={e => setDraftTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-[#004c91]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Mô tả ngắn</label>
-                <textarea
-                  rows={2}
-                  value={draftSummary}
-                  onChange={e => setDraftSummary(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:outline-none focus:border-[#004c91]"
-                />
-              </div>
-
-              {draftSections.map((s, i) => (
-                <div key={s.sectionOrder} className="border border-gray-200 rounded-xl p-4 space-y-3">
-                  <label className="block text-xs font-bold text-gray-500 uppercase">Mục {i + 1}</label>
-                  <input
-                    type="text"
-                    value={s.sectionTitle}
-                    onChange={e => setDraftSections(prev => prev.map((p, pi) => pi === i ? { ...p, sectionTitle: e.target.value } : p))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#004c91]"
-                    placeholder="Tiêu đề mục..."
-                  />
-                  <div
-                    className="text-sm text-gray-600 border border-gray-100 bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto"
-                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(s.sectionBodyHtml) }}
-                  />
-                </div>
               ))}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
-          <button
-            onClick={onClose}
-            disabled={saving || translating}
-            className="px-5 py-2.5 border border-gray-300 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
-          >
-            Hủy
-          </button>
-          {targetOptions.length > 0 && (
-            <button
-              onClick={handleSave}
-              disabled={saving || translating || !targetLang}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#f37021] text-white font-bold rounded-xl hover:bg-[#d9621a] transition-colors text-sm disabled:opacity-50"
-            >
-              {saving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              Lưu bản dịch
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </div>
+            </div>
+          </>
+        )}
+      </div>
+    </motion.div>
   );
 }
 
@@ -408,6 +277,104 @@ function AuthenticatedImage({ url, alt, className, style }: {
   if (isExternal) return <img src={url} alt={alt ?? ''} className={className} style={style} />;
   if (!authSrc) return null;
   return <img src={authSrc} alt={alt ?? ''} className={className} style={style} />;
+}
+
+// ─── Section images: 4-per-row square grid, "+N" overflow tile, click to expand ─
+
+function ImageLightbox({ files, startIndex, onClose }: { files: SectionFile[]; startIndex: number; onClose: () => void }) {
+  const [index, setIndex] = useState(startIndex);
+  const file = files[index];
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') setIndex(i => (i - 1 + files.length) % files.length);
+      else if (e.key === 'ArrowRight') setIndex(i => (i + 1) % files.length);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [files.length, onClose]);
+
+  if (!file) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center px-4" onClick={onClose}>
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+      >
+        <X className="w-6 h-6" />
+      </button>
+
+      {files.length > 1 && (
+        <button
+          onClick={e => { e.stopPropagation(); setIndex(i => (i - 1 + files.length) % files.length); }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+      )}
+
+      <div onClick={e => e.stopPropagation()} className="max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-3">
+        <AuthenticatedImage url={file.url} alt={file.fileName ?? ''} className="max-w-[90vw] max-h-[80vh] object-contain rounded-lg" />
+        {files.length > 1 && (
+          <span className="text-white/70 text-sm font-medium">{index + 1}/{files.length}</span>
+        )}
+      </div>
+
+      {files.length > 1 && (
+        <button
+          onClick={e => { e.stopPropagation(); setIndex(i => (i + 1) % files.length); }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+        >
+          <ChevronRight className="w-6 h-6" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SectionImageGrid({ files }: { files: SectionFile[] }) {
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const images = files.filter(f => f.usageType === 'INLINE_IMAGE' && f.url);
+  if (images.length === 0) return null;
+
+  const MAX_VISIBLE = 4;
+  const visible = images.slice(0, MAX_VISIBLE);
+  const overflowCount = images.length - MAX_VISIBLE;
+
+  return (
+    <>
+      <div className="grid grid-cols-4 gap-2 mt-4 mb-2 max-w-xl">
+        {visible.map((f, i) => {
+          const isLastVisibleWithOverflow = i === MAX_VISIBLE - 1 && overflowCount > 0;
+          return (
+            <button
+              key={f.sectionFileId}
+              type="button"
+              onClick={() => setLightboxIndex(i)}
+              className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 shadow-sm group"
+            >
+              <AuthenticatedImage
+                url={f.url}
+                alt={f.fileName ?? ''}
+                className="w-full h-full object-cover transition-transform group-hover:scale-105"
+              />
+              {isLastVisibleWithOverflow && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <span className="text-white text-lg font-bold">+{overflowCount}</span>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {lightboxIndex !== null && (
+        <ImageLightbox files={images} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+      )}
+    </>
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -533,16 +500,6 @@ export function NewsDetailDashboard() {
             loading={actionLoading}
           />
         )}
-        {showTranslateModal && news && (
-          <TranslateModal
-            news={news}
-            onClose={() => setShowTranslateModal(false)}
-            onSaved={lang => {
-              setShowTranslateModal(false);
-              setSelectedLang(lang); // chuyển sang xem bản dịch vừa tạo
-            }}
-          />
-        )}
       </AnimatePresence>
 
       <motion.div
@@ -550,7 +507,7 @@ export function NewsDetailDashboard() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         transition={{ duration: 0.3 }}
-        className="p-4 sm:p-6 md:p-8 pb-12 min-h-full max-w-4xl mx-auto"
+        className="p-4 sm:p-6 md:p-8 pb-12 min-h-full"
       >
         {/* Breadcrumb */}
         <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
@@ -576,10 +533,14 @@ export function NewsDetailDashboard() {
             )}
             {actions.canTranslate && (
               <button
-                onClick={() => setShowTranslateModal(true)}
-                className="flex items-center gap-2 bg-white border border-[#004c91] text-[#004c91] font-semibold px-4 py-2 rounded-xl hover:bg-[#eef5fa] transition-colors text-sm"
+                onClick={() => setShowTranslateModal(v => !v)}
+                className={`flex items-center gap-2 font-semibold px-4 py-2 rounded-xl transition-colors text-sm ${
+                  showTranslateModal
+                    ? 'bg-[#004c91] text-white'
+                    : 'bg-white border border-[#004c91] text-[#004c91] hover:bg-[#eef5fa]'
+                }`}
               >
-                <Languages className="w-4 h-4" /> Dịch bài viết
+                <Languages className="w-4 h-4" /> {showTranslateModal ? 'Đóng dịch bài viết' : 'Dịch bài viết'}
               </button>
             )}
             {actions.canApprove && (
@@ -618,6 +579,19 @@ export function NewsDetailDashboard() {
             )}
           </div>
         </div>
+
+        <AnimatePresence>
+          {showTranslateModal && (
+            <TranslateLanguagePicker
+              news={news}
+              onClose={() => setShowTranslateModal(false)}
+              onSaved={lang => {
+                setShowTranslateModal(false);
+                setSelectedLang(lang); // chuyển sang xem bản dịch vừa tạo
+              }}
+            />
+          )}
+        </AnimatePresence>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sm:p-12 overflow-hidden">
 
@@ -705,14 +679,7 @@ export function NewsDetailDashboard() {
               <div key={section.sectionId}>
                 <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.sectionTitle}</h3>
                 <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(section.sectionBodyHtml) }} />
-                {section.files.filter(f => f.usageType === 'INLINE_IMAGE' && f.url).map(f => (
-                  <AuthenticatedImage
-                    key={f.sectionFileId}
-                    url={f.url}
-                    alt={f.fileName ?? ''}
-                    className="rounded-lg mt-4 mb-2 border border-gray-100 shadow-sm mx-auto block" style={{ maxWidth: '65%', maxHeight: '380px', objectFit: 'contain' }}
-                  />
-                ))}
+                <SectionImageGrid files={section.files} />
               </div>
             ))}
           </div>

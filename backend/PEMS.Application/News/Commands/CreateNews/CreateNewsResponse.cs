@@ -11,7 +11,7 @@ public sealed class CreateNewsResponse
 public sealed class CreateNewsData
 {
     public ulong NewsId { get; init; }
-    public ulong VisitInstanceId { get; init; }
+    public ulong? VisitInstanceId { get; init; }
     public string Status { get; init; } = string.Empty;
     public string StatusLabel { get; init; } = string.Empty;
     public DateTime SubmittedAt { get; init; }

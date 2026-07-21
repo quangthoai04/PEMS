@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.News.Commands.CreateNews;
 
@@ -7,10 +8,16 @@ public sealed class CreateNewsCommandValidator : AbstractValidator<CreateNewsCom
     private static readonly HashSet<string> ValidUsageTypes =
         new(StringComparer.OrdinalIgnoreCase) { "INLINE_IMAGE", "ATTACHMENT" };
 
+    private const int MaxSectionFiles = 10;
+
     public CreateNewsCommandValidator()
     {
+        // VisitInstanceId is optional at the shape level — Student-must-select-a-đoàn is
+        // enforced in the handler where the current user's role is known. Here we only
+        // reject an explicitly invalid (zero) id.
         RuleFor(x => x.VisitInstanceId)
             .GreaterThan(0ul)
+            .When(x => x.VisitInstanceId.HasValue)
             .WithMessage("Visit instance không hợp lệ.");
 
         RuleFor(x => x.Title)
@@ -18,7 +25,9 @@ public sealed class CreateNewsCommandValidator : AbstractValidator<CreateNewsCom
             .MaximumLength(150).WithMessage("Tiêu đề không được vượt quá 150 ký tự.");
 
         RuleFor(x => x.Summary)
-            .NotEmpty().WithMessage("Mô tả ngắn không được để trống.");
+            .NotEmpty().WithMessage("Mô tả ngắn không được để trống.")
+            .MaximumLength(NewsConstants.Limits.SummaryMaxLength)
+            .WithMessage($"Mô tả ngắn không được vượt quá {NewsConstants.Limits.SummaryMaxLength} ký tự.");
 
         RuleFor(x => x.ContentSections)
             .NotNull().WithMessage("Nội dung chi tiết là bắt buộc.")
@@ -27,33 +36,60 @@ public sealed class CreateNewsCommandValidator : AbstractValidator<CreateNewsCom
             .Must(s => s == null || s.Select(x => x.SectionOrder).Distinct().Count() == s.Count)
             .WithMessage("Thứ tự nội dung không được trùng nhau.");
 
-        RuleForEach(x => x.ContentSections).ChildRules(section =>
-        {
-            section.RuleFor(s => s.SectionOrder)
-                .InclusiveBetween(1, 10)
-                .WithMessage("Thứ tự nội dung phải từ 1 đến 10.");
+        RuleForEach(x => x.ContentSections).ChildRules(section => ApplySectionRules(section));
 
-            section.RuleFor(s => s.SectionTitle)
-                .NotEmpty().WithMessage("Tiêu đề nội dung không được để trống.")
-                .MaximumLength(255).WithMessage("Tiêu đề nội dung không được vượt quá 255 ký tự.");
+        // English translation block — optional, but when EnglishTitle/EnglishSummary/
+        // EnglishContentSections are provided they follow the same shape rules as the
+        // Vietnamese ones (reused, not duplicated logic).
+        RuleFor(x => x.EnglishTitle)
+            .MaximumLength(150).WithMessage("Tiêu đề (Anh) không được vượt quá 150 ký tự.")
+            .When(x => !string.IsNullOrWhiteSpace(x.EnglishTitle));
 
-            section.RuleFor(s => s.SectionBodyHtml)
-                .NotEmpty().WithMessage("Nội dung chi tiết không được để trống.");
+        RuleFor(x => x.EnglishSummary)
+            .MaximumLength(NewsConstants.Limits.SummaryMaxLength)
+            .WithMessage($"Mô tả ngắn (Anh) không được vượt quá {NewsConstants.Limits.SummaryMaxLength} ký tự.")
+            .When(x => !string.IsNullOrWhiteSpace(x.EnglishSummary));
 
-            section.RuleForEach(s => s.SectionFiles)
-                .ChildRules(file =>
-                {
-                    file.RuleFor(f => f.FileId)
-                        .GreaterThan(0ul).WithMessage("File ID không hợp lệ.");
+        RuleFor(x => x.EnglishContentSections)
+            .Must(s => s == null || (s.Count >= 1 && s.Count <= 10))
+            .WithMessage("Nội dung tiếng Anh phải có từ 1 đến 10 mục.")
+            .Must(s => s == null || s.Select(x => x.SectionOrder).Distinct().Count() == s.Count)
+            .WithMessage("Thứ tự nội dung tiếng Anh không được trùng nhau.")
+            .When(x => x.EnglishContentSections != null);
 
-                    file.RuleFor(f => f.UsageType)
-                        .Must(t => ValidUsageTypes.Contains(t))
-                        .WithMessage("Loại file phải là INLINE_IMAGE hoặc ATTACHMENT.");
+        RuleForEach(x => x.EnglishContentSections).ChildRules(section => ApplySectionRules(section));
+    }
 
-                    file.RuleFor(f => f.DisplayOrder)
-                        .GreaterThanOrEqualTo(0).WithMessage("Thứ tự hiển thị không hợp lệ.");
-                })
-                .When(s => s.SectionFiles != null && s.SectionFiles.Count > 0);
-        });
+    private static void ApplySectionRules(InlineValidator<CreateNewsContentSectionDto> section)
+    {
+        section.RuleFor(s => s.SectionOrder)
+            .InclusiveBetween(1, 10)
+            .WithMessage("Thứ tự nội dung phải từ 1 đến 10.");
+
+        section.RuleFor(s => s.SectionTitle)
+            .NotEmpty().WithMessage("Tiêu đề nội dung không được để trống.")
+            .MaximumLength(255).WithMessage("Tiêu đề nội dung không được vượt quá 255 ký tự.");
+
+        section.RuleFor(s => s.SectionBodyHtml)
+            .NotEmpty().WithMessage("Nội dung chi tiết không được để trống.");
+
+        section.RuleFor(s => s.SectionFiles)
+            .Must(files => files == null || files.Count <= MaxSectionFiles)
+            .WithMessage($"Mỗi mục nội dung chỉ được tối đa {MaxSectionFiles} ảnh/video.");
+
+        section.RuleForEach(s => s.SectionFiles)
+            .ChildRules(file =>
+            {
+                file.RuleFor(f => f.FileId)
+                    .GreaterThan(0ul).WithMessage("File ID không hợp lệ.");
+
+                file.RuleFor(f => f.UsageType)
+                    .Must(t => ValidUsageTypes.Contains(t))
+                    .WithMessage("Loại file phải là INLINE_IMAGE hoặc ATTACHMENT.");
+
+                file.RuleFor(f => f.DisplayOrder)
+                    .GreaterThanOrEqualTo(0).WithMessage("Thứ tự hiển thị không hợp lệ.");
+            })
+            .When(s => s.SectionFiles != null && s.SectionFiles.Count > 0);
     }
 }

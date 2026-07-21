@@ -68,7 +68,7 @@ function formatDate(iso?: string | null): string {
 }
 
 export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
-  const { t } = useTranslation(['search']);
+  const { t, i18n } = useTranslation(['search']);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -159,7 +159,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       setLoading(true);
       setError(false);
       try {
-        const data = await publicSearchApi.search({ keyword: debouncedKeyword, limit: 5 });
+        const data = await publicSearchApi.search({ keyword: debouncedKeyword, limit: 5, languageCode: i18n.language });
         if (!cancelled) setResult(data);
       } catch {
         if (!cancelled) {
@@ -171,7 +171,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedKeyword]);
+  }, [debouncedKeyword, i18n.language]);
 
   const handleChipClick = (label: string) => {
     setKeyword(label);

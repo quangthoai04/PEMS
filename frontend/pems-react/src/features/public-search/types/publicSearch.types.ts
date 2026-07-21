@@ -37,4 +37,6 @@ export interface SearchInformationResult {
 export interface SearchInformationParams {
   keyword: string;
   limit?: number;
+  /** Preferred language for News/FAQ result text — same convention as News/FAQ public pages. */
+  languageCode?: string;
 }

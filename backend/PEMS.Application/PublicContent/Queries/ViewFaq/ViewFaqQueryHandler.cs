@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
+using PEMS.Application.PublicContent.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.PublicContent.Queries.ViewFAQ;
@@ -9,10 +10,12 @@ namespace PEMS.Application.PublicContent.Queries.ViewFAQ;
 public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, PaginatedResult<ViewFaqDto>>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly IFaqTranslationCache _translationCache;
 
-    public ViewFaqQueryHandler(IApplicationDbContext dbContext)
+    public ViewFaqQueryHandler(IApplicationDbContext dbContext, IFaqTranslationCache translationCache)
     {
         _dbContext = dbContext;
+        _translationCache = translationCache;
     }
 
     public async Task<PaginatedResult<ViewFaqDto>> Handle(
@@ -58,20 +61,32 @@ public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, Paginate
                 x.Question,
                 x.Answer,
                 x.DisplayOrder,
-                x.CreatedAt
+                x.CreatedAt,
+                x.UpdatedAt
             })
             .ToListAsync(cancellationToken);
 
+        // Question/answer are Vietnamese-only in the DB by design; translate + cache for any
+        // other requested language (falls back to the Vietnamese text for "vi"/unsupported).
+        var translations = await _translationCache.TranslateAsync(
+            rawItems.Select(x => new FaqTranslationSource(x.FaqId, x.Question, x.Answer, x.UpdatedAt)).ToList(),
+            request.LanguageCode,
+            cancellationToken);
+
         var items = rawItems
-            .Select(x => new ViewFaqDto
+            .Select(x =>
             {
-                FaqId = x.FaqId,
-                FaqType = x.FaqType,
-                FaqTypeLabel = FaqConstants.ToTypeLabel(x.FaqType, request.LanguageCode),
-                Question = x.Question,
-                Answer = x.Answer,
-                DisplayOrder = x.DisplayOrder,
-                CreatedAt = x.CreatedAt
+                translations.TryGetValue(x.FaqId, out var translated);
+                return new ViewFaqDto
+                {
+                    FaqId = x.FaqId,
+                    FaqType = x.FaqType,
+                    FaqTypeLabel = FaqConstants.ToTypeLabel(x.FaqType, request.LanguageCode),
+                    Question = translated.Question ?? x.Question,
+                    Answer = translated.Answer ?? x.Answer,
+                    DisplayOrder = x.DisplayOrder,
+                    CreatedAt = x.CreatedAt
+                };
             })
             .ToList();
 

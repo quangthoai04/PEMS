@@ -46,6 +46,15 @@ public static class NewsConstants
         public const string HoReadonly = "HO_READONLY";
     }
 
+    public static class Limits
+    {
+        // Summary is mirrored verbatim into news_translations.seo_description, which is
+        // VARCHAR(500) — this is the actual hard ceiling; exceeding it throws a raw MySQL
+        // "Data too long for column 'seo_description'" error, so it must be validated here (not
+        // 150, which was Title's limit, mistakenly reused for Summary).
+        public const int SummaryMaxLength = 500;
+    }
+
     public static string ToVietnameseStatusLabel(string status) => status switch
     {
         Status.PendingReview => "Chờ Duyệt",

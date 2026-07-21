@@ -27,6 +27,16 @@ body {
   min-height: 250px;
 }
 
+/* Compact Quill variant — grows with content instead of always reserving 250px (used by the
+   bilingual News editor, where two columns of short section text otherwise look artificially tall). */
+.news-quill-compact .ql-editor {
+  min-height: 120px;
+}
+
+.news-quill-compact .ql-container {
+  min-height: 120px;
+}
+
 .custom-quill-no-border .ql-toolbar.ql-snow {
   border-left: none !important;
   border-right: none !important;

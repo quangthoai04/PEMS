@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Partners.Common;
+using PEMS.Application.PublicContent.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.PublicContent.Queries.SearchInformation;
@@ -12,8 +13,13 @@ namespace PEMS.Application.PublicContent.Queries.SearchInformation;
 public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInformationQuery, SearchInformationDto>
 {
     private readonly IApplicationDbContext _db;
+    private readonly IFaqTranslationCache _faqTranslationCache;
 
-    public SearchInformationQueryHandler(IApplicationDbContext db) => _db = db;
+    public SearchInformationQueryHandler(IApplicationDbContext db, IFaqTranslationCache faqTranslationCache)
+    {
+        _db = db;
+        _faqTranslationCache = faqTranslationCache;
+    }
 
     public async Task<SearchInformationDto> Handle(SearchInformationQuery request, CancellationToken cancellationToken)
     {
@@ -25,11 +31,14 @@ public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInform
 
         var pattern = $"%{keyword}%";
         var limit = request.Limit;
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? NewsConstants.Languages.Default
+            : request.LanguageCode!.Trim();
 
         // Run sequentially — a single DbContext instance cannot execute concurrent queries.
 
-        // News — PUBLISHED only, matched on the 'vi' translation (site is Vietnamese-first; matches
-        // ViewNewsQueryHandler's default-language convention).
+        // News — PUBLISHED only, matched on any translation; result text prefers the requested
+        // language and falls back to 'vi' — same convention as ViewNewsQueryHandler.
         var rawNews = await _db.News
             .AsNoTracking()
             .Where(n => n.Status == NewsConstants.Status.Published)
@@ -44,7 +53,7 @@ public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInform
                 n.PublishedAt,
                 Translation = _db.NewsTranslations
                     .Where(t => t.NewsId == n.NewsId)
-                    .OrderBy(t => t.LanguageCode == "vi" ? 0 : 1)
+                    .OrderBy(t => t.LanguageCode == requestedLang ? 0 : (t.LanguageCode == "vi" ? 1 : 2))
                     .Select(t => new { t.Title, t.Summary })
                     .FirstOrDefault(),
             })
@@ -70,19 +79,34 @@ public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInform
             .ToListAsync(cancellationToken);
 
         // FAQs — PUBLISHED only, matched on question/answer (same contract as ViewFaqQueryHandler).
-        var faqs = await _db.Faqs
+        // Question text (and type label) prefer the requested language, translated + cached —
+        // faqs.question/answer are Vietnamese-only in the DB by design.
+        var rawFaqs = await _db.Faqs
             .AsNoTracking()
             .Where(f => f.Status == FaqConstants.Status.Published)
             .Where(f => EF.Functions.Like(f.Question, pattern) || EF.Functions.Like(f.Answer, pattern))
             .OrderBy(f => f.DisplayOrder)
             .Take(limit)
-            .Select(f => new SearchFaqResultDto
-            {
-                FaqId = f.FaqId,
-                Question = f.Question,
-                FaqTypeLabel = FaqConstants.ToVietnameseTypeLabel(f.FaqType),
-            })
+            .Select(f => new { f.FaqId, f.FaqType, f.Question, f.Answer, f.UpdatedAt })
             .ToListAsync(cancellationToken);
+
+        var faqTranslations = await _faqTranslationCache.TranslateAsync(
+            rawFaqs.Select(f => new FaqTranslationSource(f.FaqId, f.Question, f.Answer, f.UpdatedAt)).ToList(),
+            requestedLang,
+            cancellationToken);
+
+        var faqs = rawFaqs
+            .Select(f =>
+            {
+                faqTranslations.TryGetValue(f.FaqId, out var translated);
+                return new SearchFaqResultDto
+                {
+                    FaqId = f.FaqId,
+                    Question = translated.Question ?? f.Question,
+                    FaqTypeLabel = FaqConstants.ToTypeLabel(f.FaqType, requestedLang),
+                };
+            })
+            .ToList();
 
         // Campuses — ACTIVE only, matched on name/code/city (same visibility as GetActiveCampusesQuery).
         var campuses = await _db.Campuses

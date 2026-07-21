@@ -12,6 +12,12 @@ public sealed class SearchInformationQuery : IRequest<SearchInformationDto>
 {
     public string? Keyword { get; init; }
 
+    /// <summary>
+    /// Preferred language for News/FAQ result text — same "prefer requested, fall back to vi"
+    /// convention as ViewNewsQuery/ViewFaqQuery. Partners have no per-language content today.
+    /// </summary>
+    public string? LanguageCode { get; init; }
+
     /// <summary>Max results per section (news/partners/faqs/campuses). Default 5, clamped to [1, 20].</summary>
     private readonly int _limit = 5;
     public int Limit

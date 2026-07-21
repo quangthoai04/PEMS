@@ -221,6 +221,18 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // UC Translate News Draft: POST /api/news/translate-draft — same translation preview as
+        // auto-translate above, but for a post being composed (no NewsId yet). Never persists.
+        [HttpPost("translate-draft")]
+        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        public async Task<IActionResult> TranslateNewsDraft(
+            [FromBody] PEMS.Application.News.Commands.TranslateNewsDraft.TranslateNewsDraftCommand command,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpPost("managenewsvisibility")]
         public async Task<IActionResult> ManageNewsVisibility(
             [FromBody] PEMS.Application.News.Commands.ManageNewsVisibility.ManageNewsVisibilityCommand command,
