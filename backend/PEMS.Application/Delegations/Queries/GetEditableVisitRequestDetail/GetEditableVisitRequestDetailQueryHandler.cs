@@ -122,27 +122,11 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
 
         // Form-content locals default to the v1 global projection; for a (non-mixed) v2 request they are
         // re-sourced from the per-campus detail + instance member links (never the global fields).
-        string delegationName = visit.DelegationName;
-        string? visitType = visit.VisitType;
-        string? visitTypeOther = visit.VisitTypeOther;
-        string? purpose = visit.Purpose;
-        string? workingContent = visit.WorkingContent;
-        string? workingLanguage = visit.WorkingLanguage;
-        string? transportationNote = visit.TransportationNote;
-        string? mediaConsentStatus = visit.MediaConsentStatus;
-        string? mediaConsentNote = visit.MediaConsentNote;
-        string? noteToFptu = visit.NoteToFptu;
+        string delegationName;
+        string? visitType, visitTypeOther, purpose, workingContent, workingLanguage;
+        string? transportationNote, mediaConsentStatus, mediaConsentNote, noteToFptu;
+        List<EditableGuestMemberDto> visitorMembers, supportMembers;
         var orderedInstances = instances.OrderBy(i => i.PlannedStartAt).ToList();
-        var visitorMembers = visit.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
-        var supportMembers = visit.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
 
         if (isV2)
         {
@@ -150,7 +134,9 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             // instance's per-campus detail (owner is authorized for all instances).
             var allInstanceIds = orderedInstances.Select(i => i.VisitInstanceId).ToList();
             var content = await _formReadService.ResolveCampusFormContentAsync(visit, allInstanceIds, cancellationToken);
-            var rep = content[orderedInstances[0].VisitInstanceId];
+            if (!content.TryGetValue(orderedInstances[0].VisitInstanceId, out var rep))
+                throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
+
             delegationName = rep.DelegationName;
             visitType = rep.VisitType;
             visitTypeOther = rep.VisitTypeOther;
@@ -163,6 +149,29 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             noteToFptu = rep.NoteToFptu;
             visitorMembers = rep.Visitors.Select(MapRow).ToList();
             supportMembers = rep.SupportMembers.Select(MapRow).ToList();
+        }
+        else
+        {
+            delegationName = visit.DelegationName;
+            visitType = visit.VisitType;
+            visitTypeOther = visit.VisitTypeOther;
+            purpose = visit.Purpose;
+            workingContent = visit.WorkingContent;
+            workingLanguage = visit.WorkingLanguage;
+            transportationNote = visit.TransportationNote;
+            mediaConsentStatus = visit.MediaConsentStatus;
+            mediaConsentNote = visit.MediaConsentNote;
+            noteToFptu = visit.NoteToFptu;
+            visitorMembers = visit.GuestMembers
+                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapMember)
+                .ToList();
+            supportMembers = visit.GuestMembers
+                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapMember)
+                .ToList();
         }
 
         return new EditableVisitRequestDetailDto

@@ -76,14 +76,14 @@ public sealed class ViewMyVisitInvitationsQueryHandler
                 RequestCode = x.vr.RequestCode,
                 // Mixed per-campus v2 invitations show THIS instance's detail (no global fallback);
                 // v1/non-mixed keep the projection (byte-identical there).
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.vr.DelegationName,
                 OrganizationName = x.vr.RegistrantOrganization,
-                Purpose = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                Purpose = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? (x.c.FormDetail != null ? x.c.FormDetail.Purpose : null)
                     : x.vr.Purpose,
-                WorkingContent = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                WorkingContent = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? (x.c.FormDetail != null ? x.c.FormDetail.WorkingContent : null)
                     : x.vr.WorkingContent,
                 FormSchemaVersion = x.vr.FormSchemaVersion,

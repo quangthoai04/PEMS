@@ -221,26 +221,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // Form-content locals default to the v1 global compatibility projection. For a (non-mixed) v2
         // request they are re-sourced from the per-campus detail + instance-member links via the central
         // resolver — NEVER the global fields; a missing detail throws VISIT_FORM_DETAIL_MISSING (no fallback).
-        string delegationName = visitRequest.DelegationName;
-        string? visitType = visitRequest.VisitType;
-        string? visitTypeOther = visitRequest.VisitTypeOther;
-        string? purpose = visitRequest.Purpose;
-        string? workingContent = visitRequest.WorkingContent;
-        string? workingLanguage = visitRequest.WorkingLanguage;
-        string? mediaConsentStatus = visitRequest.MediaConsentStatus;
-        string? mediaConsentNote = visitRequest.MediaConsentNote;
-        string? transportationNote = visitRequest.TransportationNote;
-        string? noteToFptu = visitRequest.NoteToFptu;
-        var guestMembers = visitRequest.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
-        var externalSupportMembers = visitRequest.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
+        string delegationName;
+        string? visitType, visitTypeOther, purpose, workingContent, workingLanguage;
+        string? mediaConsentStatus, mediaConsentNote, transportationNote, noteToFptu;
+        List<SubmittedGuestMemberDto> guestMembers;
+        List<SubmittedGuestMemberDto> externalSupportMembers;
 
         if (isV2)
         {
@@ -249,7 +234,9 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             var visibleIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
             var content = await _formReadService.ResolveCampusFormContentAsync(
                 visitRequest, visibleIds, cancellationToken);
-            var rep = content[visibleInstances[0].VisitInstanceId];
+            if (!content.TryGetValue(visibleInstances[0].VisitInstanceId, out var rep))
+                throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
+
             delegationName = rep.DelegationName;
             visitType = rep.VisitType;
             visitTypeOther = rep.VisitTypeOther;
@@ -262,6 +249,29 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             noteToFptu = rep.NoteToFptu;
             guestMembers = rep.Visitors.Select(MapMemberRow).ToList();
             externalSupportMembers = rep.SupportMembers.Select(MapMemberRow).ToList();
+        }
+        else
+        {
+            delegationName = visitRequest.DelegationName;
+            visitType = visitRequest.VisitType;
+            visitTypeOther = visitRequest.VisitTypeOther;
+            purpose = visitRequest.Purpose;
+            workingContent = visitRequest.WorkingContent;
+            workingLanguage = visitRequest.WorkingLanguage;
+            mediaConsentStatus = visitRequest.MediaConsentStatus;
+            mediaConsentNote = visitRequest.MediaConsentNote;
+            transportationNote = visitRequest.TransportationNote;
+            noteToFptu = visitRequest.NoteToFptu;
+            guestMembers = visitRequest.GuestMembers
+                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapMember)
+                .ToList();
+            externalSupportMembers = visitRequest.GuestMembers
+                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(MapMember)
+                .ToList();
         }
 
         // Decision counters: over the VISIBLE campuses for v2 (no hidden-campus aggregate leak). v1 keeps

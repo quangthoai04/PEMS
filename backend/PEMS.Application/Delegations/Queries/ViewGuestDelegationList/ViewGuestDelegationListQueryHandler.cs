@@ -212,7 +212,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             // never a hidden sibling campus's content.
             var keyword = request.Keyword.ToLower();
             q = q.Where(x =>
-                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails)
+                (x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
                     : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)) ||
@@ -345,7 +345,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.vr.RequestCode,
                 x.vr.FormSchemaVersion,
                 x.vr.HasMixedCampusDetails,
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.vr.DelegationName,
                 x.vr.PartnerId,
@@ -538,7 +538,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             // global projection is never business content for mixed requests).
             var kw = request.Keyword.ToLower();
             q = q.Where(vr =>
-                ((vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails)
+                (vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? vr.CampusInstances.Any(ci => ci.FormDetail != null
                         && ci.FormDetail.DelegationName.ToLower().Contains(kw))
                     : (vr.DelegationName != null && vr.DelegationName.ToLower().Contains(kw))) ||
@@ -818,8 +818,10 @@ public sealed class ViewGuestDelegationListQueryHandler
                 // A request-level row cannot represent a MIXED v2 request with one name — the projection
                 // (smallest campus) is never shown as business content; the row is explicitly labeled and
                 // the per-campus names live in the campus progress items/detail view (plan §8.3).
-                DelegationName = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
-                    ? "Khác nhau theo cơ sở"
+                DelegationName = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                    ? (vr.HasMixedCampusDetails
+                        ? "Khác nhau theo cơ sở"
+                        : (instances.FirstOrDefault()?.FormDetail != null ? instances.FirstOrDefault()!.FormDetail!.DelegationName : vr.DelegationName))
                     : vr.DelegationName,
                 PartnerName = vr.Partner != null ? vr.Partner.Name : vr.RegistrantOrganization,
                 RequestStatus = vr.Status,

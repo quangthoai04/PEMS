@@ -60,7 +60,6 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                     ci.VisitRequest.RequestCode,
                     // Instance row: mixed v2 shows THIS instance's detail name.
                     DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                     && ci.VisitRequest.HasMixedCampusDetails
                         ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                         : ci.VisitRequest.DelegationName,
                 })
@@ -85,7 +84,6 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                     ci.VisitRequest.RequestCode,
                     // Instance row: mixed v2 shows THIS instance's detail name.
                     DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                     && ci.VisitRequest.HasMixedCampusDetails
                         ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                         : ci.VisitRequest.DelegationName,
                 })

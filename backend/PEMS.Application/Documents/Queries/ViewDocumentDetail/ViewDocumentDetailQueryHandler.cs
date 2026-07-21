@@ -71,7 +71,7 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
             switch (document.OwnerType)
             {
                 case "VISIT":
-                    var visitRequest = await _context.VisitRequests.Include(v => v.CampusInstances).AsNoTracking().FirstOrDefaultAsync(v => v.VisitRequestId == document.OwnerId, cancellationToken);
+                    var visitRequest = await _context.VisitRequests.Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail).AsNoTracking().FirstOrDefaultAsync(v => v.VisitRequestId == document.OwnerId, cancellationToken);
                     var visitInstance = visitRequest?.CampusInstances.FirstOrDefault();
 
                     if (visitRequest == null)
@@ -87,8 +87,9 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
                             // Mixed v2 titles from the owning instance's detail; a request-level document
                             // on a mixed request gets the explicit label (plan §8.3).
                             VisitTitle = visitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                         && visitRequest.HasMixedCampusDetails
-                                ? (visitInstance?.FormDetail?.DelegationName ?? "Khác nhau theo cơ sở")
+                                ? (visitRequest.HasMixedCampusDetails
+                                    ? "Khác nhau theo cơ sở"
+                                    : (visitInstance?.FormDetail?.DelegationName ?? visitRequest.DelegationName))
                                 : visitRequest.DelegationName,
                             VisitRequestId = visitRequest.VisitRequestId,
                             ExpectedStartDate = visitInstance?.PlannedStartAt,
@@ -138,10 +139,8 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
                             MinuteId = minute.MinutesId,
                             MinuteTitle = minute.Title,
                             Status = minute.Status,
-                            VisitTitle = mInst?.VisitRequest is { } mvr
-                                         && mvr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                         && mvr.HasMixedCampusDetails
-                                ? mInst.FormDetail?.DelegationName
+                            VisitTitle = mInst?.VisitRequest is { } mvr && mvr.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                                ? (mInst.FormDetail?.DelegationName ?? mvr.DelegationName)
                                 : mInst?.VisitRequest?.DelegationName,
                             VisitRequestId = mInst?.VisitRequestId
                         };

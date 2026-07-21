@@ -119,6 +119,16 @@ public sealed class VerifyAndCreateVisitRequestCommandHandler
             //       same core visit identity committed within the window → consume the OTP
             //       but create NOTHING new (no request/account/children/notifications). ──
             var duplicateWindowStart = now.AddMinutes(-DuplicateWindowMinutes);
+
+            // Row-level lock the fingerprint so concurrent requests sequence on the duplicate check.
+            var dbContext = (DbContext)_db;
+            await dbContext.Database.ExecuteSqlRawAsync(
+                "INSERT IGNORE INTO visit_request_fingerprint_guards (fingerprint, created_at, updated_at) VALUES ({0}, {1}, {1})",
+                fingerprint, now);
+            await dbContext.Set<VisitRequestFingerprintGuard>()
+                .FromSqlRaw("SELECT * FROM visit_request_fingerprint_guards WHERE fingerprint = {0} FOR UPDATE", fingerprint)
+                .FirstOrDefaultAsync(cancellationToken);
+
             var duplicate = await _db.VisitRequests.AsNoTracking()
                 .Where(r => r.BusinessFingerprint == fingerprint
                             && r.SubmittedAt >= duplicateWindowStart

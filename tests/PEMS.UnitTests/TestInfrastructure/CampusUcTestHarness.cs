@@ -48,6 +48,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitRequestCampus> VisitRequestCampuses => Set<VisitRequestCampus>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<VisitRequestFingerprintGuard> VisitRequestFingerprintGuards => Set<VisitRequestFingerprintGuard>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -13,6 +13,7 @@ using PEMS.Domain.Entities.Feedbacks;
 using PEMS.Domain.Entities.Galleries;
 using PEMS.Domain.Entities.Minutes;
 using PEMS.Domain.Entities.News;
+using PEMS.Domain.Entities.News;
 using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Partners;
 using PEMS.Domain.Entities.Users;
@@ -83,6 +84,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; set; }
     public DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; set; }
     public DbSet<VisitRequestPendingForm> VisitRequestPendingForms { get; set; }
+    public DbSet<VisitRequestFingerprintGuard> VisitRequestFingerprintGuards { get; set; }
 
     // ── Minutes + Feedback ────────────────────────────────────────────────
     public DbSet<Minute> Minutes { get; set; }

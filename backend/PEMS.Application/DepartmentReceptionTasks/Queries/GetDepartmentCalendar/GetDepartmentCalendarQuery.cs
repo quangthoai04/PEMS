@@ -105,7 +105,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                        p, u, r, c, vr,
                                        EffectiveDelegationName =
                                            vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                                           && vr.HasMixedCampusDetails
                                                ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
                                                : vr.DelegationName,
                                    };
@@ -195,7 +194,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                      l, c, vr, startAt, latestAttemptStatus, borrowSigned, returnSigned,
                                      EffectiveDelegationName =
                                          vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                                         && vr.HasMixedCampusDetails
                                              ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
                                              : vr.DelegationName,
                                  };

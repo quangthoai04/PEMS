@@ -158,7 +158,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 // Mixed per-campus v2 rows show THIS instance's detail (no global fallback);
                 // v1/non-mixed keep the projection (byte-identical there).
                 EffectiveDelegationName =
-                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
                         ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
                         : vr.DelegationName,
             })
@@ -281,11 +281,11 @@ public sealed class GetAssignmentsProgressListQueryHandler
             {
                 p, u, inst, vr,
                 EffectiveDelegationName =
-                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
                         ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
                         : vr.DelegationName,
                 EffectiveWorkingContent =
-                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus && vr.HasMixedCampusDetails
+                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
                         ? (inst.FormDetail != null ? inst.FormDetail.WorkingContent : null)
                         : vr.WorkingContent,
             })

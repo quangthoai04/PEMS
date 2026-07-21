@@ -94,7 +94,6 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             {
                 c.VisitInstanceId,
                 Title = c.VisitRequest!.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        && c.VisitRequest.HasMixedCampusDetails
                     ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
                     : c.VisitRequest.DelegationName,
             })

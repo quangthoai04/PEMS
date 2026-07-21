@@ -258,7 +258,6 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.VisitInstance.VisitRequest.RequestCode,
                 // Instance row: mixed v2 shows THIS instance's detail name.
                 DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
                     ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
                     : li.VisitInstance.VisitRequest.DelegationName,
                 li.Title,
@@ -302,7 +301,6 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.VisitInstance.VisitRequest.RequestCode,
                 // Instance row: mixed v2 shows THIS instance's detail name.
                 DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
                     ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
                     : li.VisitInstance.VisitRequest.DelegationName,
                 h.HandoverType,
@@ -656,7 +654,6 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 DelegationName = _db.VisitRequestCampuses
                     .Where(ci => (ulong?)ci.VisitInstanceId == f.VisitInstanceId)
                     .Select(ci => ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                  && ci.VisitRequest.HasMixedCampusDetails
                         ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                         : ci.VisitRequest.DelegationName)
                     .FirstOrDefault(),

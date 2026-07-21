@@ -180,23 +180,19 @@ public sealed class GetVisitProcessDetailQueryHandler
         // MIXED request still returns 200 — we source ONLY the TARGET instance's form content + member
         // links, never the global fields and never a sibling campus). v1 keeps the global projection. ──
         var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-        string delegationName = visit.DelegationName;
-        string? visitType = visit.VisitType, visitTypeOther = visit.VisitTypeOther;
-        string? purpose = visit.Purpose, workingContent = visit.WorkingContent;
-        string? workingLanguage = visit.WorkingLanguage;
-        string? mediaConsentStatus = visit.MediaConsentStatus, mediaConsentNote = visit.MediaConsentNote;
-        string? transportationNote = visit.TransportationNote, noteToFptu = visit.NoteToFptu;
-        var guestMembers = visit.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-        var externalSupportMembers = visit.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
+        string delegationName;
+        string? visitType, visitTypeOther, purpose, workingContent, workingLanguage;
+        string? mediaConsentStatus, mediaConsentNote, transportationNote, noteToFptu;
+        List<VisitProcessGuestMemberDto> guestMembers;
+        List<VisitProcessGuestMemberDto> externalSupportMembers;
+
         if (isV2)
         {
             var content = await _formReadService.ResolveCampusFormContentAsync(
                 visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            var d = content[instance.VisitInstanceId];
+            if (!content.TryGetValue(instance.VisitInstanceId, out var d))
+                throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
+
             delegationName = d.DelegationName;
             visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
             purpose = d.Purpose; workingContent = d.WorkingContent;
@@ -205,6 +201,21 @@ public sealed class GetVisitProcessDetailQueryHandler
             transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
             guestMembers = d.Visitors.Select(MapRow).ToList();
             externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
+        }
+        else
+        {
+            delegationName = visit.DelegationName;
+            visitType = visit.VisitType; visitTypeOther = visit.VisitTypeOther;
+            purpose = visit.Purpose; workingContent = visit.WorkingContent;
+            workingLanguage = visit.WorkingLanguage;
+            mediaConsentStatus = visit.MediaConsentStatus; mediaConsentNote = visit.MediaConsentNote;
+            transportationNote = visit.TransportationNote; noteToFptu = visit.NoteToFptu;
+            guestMembers = visit.GuestMembers
+                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
+            externalSupportMembers = visit.GuestMembers
+                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
+                .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
         }
 
         // ── Request summary (read-only mirror of the guest's original form) ──

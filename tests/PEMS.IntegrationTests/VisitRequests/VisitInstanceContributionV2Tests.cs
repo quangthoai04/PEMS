@@ -46,7 +46,7 @@ public sealed class VisitInstanceContributionV2Tests
         if (_dbUp is null)
         {
             try { using var db = NewContext(); _dbUp = db.Database.CanConnect(); }
-            catch { _dbUp = false; }
+            catch (Exception e) { throw new Exception("DB INIT FAILED: " + e.ToString()); }
         }
         Assert.True(_dbUp!.Value, "pems_pr3_test is not reachable — import the PR-2 master into it to run these tests.");
     }

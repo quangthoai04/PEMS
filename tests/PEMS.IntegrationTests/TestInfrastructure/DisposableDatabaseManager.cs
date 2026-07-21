@@ -21,7 +21,8 @@ public static class DisposableDatabaseManager
             if (_disposableConnectionString != null)
                 return _disposableConnectionString;
 
-            _disposableDbName = "pems_test_run_" + Guid.NewGuid().ToString("N")[..8];
+            // Generate full 32 character guid to match allowlist regex
+            _disposableDbName = "pems_test_run_" + Guid.NewGuid().ToString("N");
             
             // Remove 'database=xyz;' and 'GuidFormat=xyz;' for the MySql.Data master connection
             var masterConnStr = Regex.Replace(originalConnectionString, @"database=[^;]+;?", "", RegexOptions.IgnoreCase);
@@ -44,7 +45,7 @@ public static class DisposableDatabaseManager
                 
                 if (dir != null)
                 {
-                    var sqlPath = Path.Combine(dir.FullName, "docs", "database", "scripts", "PEMS_FULL_V2_SEED_COMPLETE_ROLE_RELATIONS_STAFF_LEADER_INVITES_FIXED.sql");
+                    var sqlPath = Path.Combine(dir.FullName, "docs", "database", "scripts", "PEMS_FULL_V2_SEED_COMPLETE_CONTACT_GUARD_AND_DASHBOARD_COVERAGE.sql");
                     if (File.Exists(sqlPath))
                     {
                         var sqlContent = File.ReadAllText(sqlPath);
@@ -58,20 +59,34 @@ public static class DisposableDatabaseManager
             // For the app/tests to use (EF Core supports GuidFormat)
             _disposableConnectionString = Regex.Replace(originalConnectionString, @"database=[^;]+;", $"database={_disposableDbName};", RegexOptions.IgnoreCase);
             
+            // Emergency cleanup
             AppDomain.CurrentDomain.ProcessExit += (s, e) =>
             {
                 try
                 {
-                    using var conn = new MySqlConnection(masterConnStr);
-                    conn.Open();
-                    using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"DROP DATABASE IF EXISTS `{_disposableDbName}`;";
-                    cmd.ExecuteNonQuery();
+                    DropDisposableDatabase(masterConnStr, _disposableDbName);
                 }
                 catch {}
             };
             
             return _disposableConnectionString;
         }
+    }
+
+    public static void DropDisposableDatabase(string originalConnectionString, string dbName)
+    {
+        if (string.IsNullOrWhiteSpace(dbName) || !Regex.IsMatch(dbName, @"^pems_test_run_[0-9a-fA-F]{32}$"))
+        {
+            throw new InvalidOperationException($"Attempted to drop a database with an invalid or protected name: {dbName}");
+        }
+
+        var masterConnStr = Regex.Replace(originalConnectionString, @"database=[^;]+;?", "", RegexOptions.IgnoreCase);
+        masterConnStr = Regex.Replace(masterConnStr, @"GuidFormat=[^;]+;?", "", RegexOptions.IgnoreCase);
+
+        using var conn = new MySqlConnection(masterConnStr);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"DROP DATABASE IF EXISTS `{dbName}`;";
+        cmd.ExecuteNonQuery();
     }
 }

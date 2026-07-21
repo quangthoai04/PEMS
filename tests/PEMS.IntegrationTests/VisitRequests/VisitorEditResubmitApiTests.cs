@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -78,6 +78,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             FormSchemaVersion = PEMS.Domain.Constants.FormSchemaVersions.PerCampus,
             VisitorUserId = _visitorId,
             RegistrantUserId = _visitorId,
+            PrimaryContactAccessStatus = "ACTIVE",
             RegistrantFullName = "Integration Registrant",
             RegistrantNationality = "VN",
             RegistrantOrganization = "FPT",

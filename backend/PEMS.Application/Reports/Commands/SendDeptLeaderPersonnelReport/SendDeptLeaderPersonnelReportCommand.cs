@@ -80,7 +80,6 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
                 {
                     ci.VisitRequest.RequestCode,
                     DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                     && ci.VisitRequest.HasMixedCampusDetails
                         ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                         : ci.VisitRequest.DelegationName,
                     ci.PlannedStartAt,
@@ -100,7 +99,6 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
                 {
                     ci.VisitRequest.RequestCode,
                     DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                     && ci.VisitRequest.HasMixedCampusDetails
                         ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                         : ci.VisitRequest.DelegationName,
                     PlannedStartAt = startAt,

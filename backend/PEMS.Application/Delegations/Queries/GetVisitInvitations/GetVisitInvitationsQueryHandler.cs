@@ -79,7 +79,7 @@ public sealed class GetVisitInvitationsQueryHandler
         {
             var keyword = request.Keyword.ToLower();
             q = q.Where(x =>
-                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails)
+                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus)
                     ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
                     : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)));
@@ -121,7 +121,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 x.c.VisitRequestId,
                 x.c.CampusId,
                 x.vr.RequestCode,
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
+                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.vr.DelegationName,
                 x.vr.VisitScope,

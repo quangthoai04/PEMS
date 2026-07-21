@@ -29,7 +29,6 @@ public static class VisitInstanceEffectiveName
             {
                 c.VisitInstanceId,
                 Name = c.VisitRequest!.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                       && c.VisitRequest.HasMixedCampusDetails
                     ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
                     : c.VisitRequest.DelegationName,
             })
@@ -38,7 +37,7 @@ public static class VisitInstanceEffectiveName
 
     /// <summary>In-memory variant for a loaded pair (the caller must have included the detail for v2).</summary>
     public static string? Of(VisitRequest request, VisitInstanceFormDetail? instanceDetail)
-        => request.FormSchemaVersion >= FormSchemaVersions.PerCampus && request.HasMixedCampusDetails
+        => request.FormSchemaVersion >= FormSchemaVersions.PerCampus
             ? instanceDetail?.DelegationName
             : request.DelegationName;
 }

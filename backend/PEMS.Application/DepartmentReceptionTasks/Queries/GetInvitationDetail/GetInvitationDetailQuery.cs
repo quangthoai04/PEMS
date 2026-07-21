@@ -89,11 +89,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
             // global projection, byte-identical. The participant is already scoped to one instance. ──
             var visit = camp.VisitRequest;
             var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-            string delegationName = visit.DelegationName;
-            string purpose = visit.Purpose ?? "";
-            string workingContent = visit.WorkingContent ?? "";
-            string contactPersonFullName = visit.ContactPersonFullName ?? "";
-            string contactPersonPhone = visit.ContactPersonPhone ?? "";
+            string delegationName, purpose, workingContent, contactPersonFullName, contactPersonPhone;
             if (isV2)
             {
                 var content = await _formReadService.ResolveCampusFormContentAsync(
@@ -104,6 +100,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
                 workingContent = d.WorkingContent ?? "";
                 contactPersonFullName = d.OperationalContact.FullName ?? "";
                 contactPersonPhone = d.OperationalContact.Phone ?? "";
+            }
+            else
+            {
+                delegationName = visit.DelegationName;
+                purpose = visit.Purpose ?? "";
+                workingContent = visit.WorkingContent ?? "";
+                contactPersonFullName = visit.ContactPersonFullName ?? "";
+                contactPersonPhone = visit.ContactPersonPhone ?? "";
             }
 
             return new InvitationDetailDto

@@ -288,8 +288,8 @@ public sealed class GetHoReportOverviewQueryHandler
                 r.VisitRequestId,
                 r.RequestCode,
                 // Request-level row: a MIXED v2 request has no single business name (plan §8.3).
-                DelegationName = r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
-                    ? "Khác nhau theo cơ sở"
+                DelegationName = r.FormSchemaVersion >= FormSchemaVersions.PerCampus
+                    ? (r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName)
                     : r.DelegationName,
                 r.RegistrantOrganization,
                 r.SubmittedAt,

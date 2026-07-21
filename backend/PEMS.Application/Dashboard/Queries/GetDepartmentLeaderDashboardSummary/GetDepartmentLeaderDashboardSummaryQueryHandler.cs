@@ -113,7 +113,6 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 VisitInstanceId = li.VisitInstanceId,
                 VisitRequestId = li.VisitInstance.VisitRequestId,
                 DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
                     ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
                     : li.VisitInstance.VisitRequest.DelegationName,
                 TaskTitle = li.Title,
@@ -140,7 +139,6 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 VisitInstanceId = x.c.VisitInstanceId,
                 VisitRequestId = x.c.VisitRequestId,
                 DelegationName = x.c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && x.c.VisitRequest.HasMixedCampusDetails
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.c.VisitRequest.DelegationName,
                 TaskTitle = "Thu moi tham gia don tiep",
@@ -168,7 +166,6 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 VisitInstanceId = li.VisitInstanceId,
                 VisitRequestId = li.VisitInstance.VisitRequestId,
                 DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
                     ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
                     : li.VisitInstance.VisitRequest.DelegationName,
                 OrganizationName = li.VisitInstance.VisitRequest.RegistrantOrganization,
@@ -192,7 +189,6 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 VisitInstanceId = x.c.VisitInstanceId,
                 VisitRequestId = x.c.VisitRequestId,
                 DelegationName = x.c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && x.c.VisitRequest.HasMixedCampusDetails
                     ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
                     : x.c.VisitRequest.DelegationName,
                 OrganizationName = x.c.VisitRequest.RegistrantOrganization,
