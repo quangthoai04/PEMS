@@ -1,4 +1,4 @@
-using PEMS.Application.Common.DTOs;
+﻿using PEMS.Application.Common.DTOs;
 using PEMS.Domain.Entities.Delegations;
 
 namespace PEMS.Application.Common.Interfaces;
@@ -21,5 +21,5 @@ public interface IVisitRequestV2CreateService
         ulong? registrantUserId,
         string createdSource,
         DateTime vietnamNow,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, System.Collections.Generic.Dictionary<string, System.Action<VisitRequestCampus>>? campusInitializers = null);
 }

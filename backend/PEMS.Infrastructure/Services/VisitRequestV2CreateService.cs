@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Campuses.Common;
@@ -35,7 +35,8 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         ulong? registrantUserId,
         string createdSource,
         DateTime vietnamNow,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        System.Collections.Generic.Dictionary<string, System.Action<PEMS.Domain.Entities.Delegations.VisitRequestCampus>>? campusInitializers = null)
     {
         if (form.CampusVisits is null || form.CampusVisits.Count == 0)
             throw new BusinessRuleException("Cần ít nhất một cơ sở.", VisitRequestErrorCodes.InvalidVisitTime);
@@ -206,6 +207,11 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     CreatedBy = creatorUserId,
                 },
             });
+
+            if (campusInitializers != null && campusInitializers.TryGetValue(campus.CampusCode, out var initializer))
+            {
+                initializer(request.CampusInstances.Last());
+            }
         }
 
         _db.VisitRequests.Add(request);

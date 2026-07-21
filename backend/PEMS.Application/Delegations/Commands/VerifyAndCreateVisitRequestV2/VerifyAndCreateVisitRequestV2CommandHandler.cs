@@ -10,6 +10,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.InitiateVisitRequestV2;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -78,11 +79,12 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
 
         var now = _clock.VietnamNow;
         var email = form.Registrant.Email.Trim().ToLowerInvariant();
+        var currentFingerprint = V2PendingFormSnapshot.Fingerprint(form);
 
         // ── Idempotency pre-check (BEFORE OTP verify): a retry whose original submit already committed must
         //    replay idempotently — its OTP is already consumed, so re-verifying would surface a misleading
         //    OTP error. Never verifies the OTP on this path. ──
-        var replay = await CheckIdempotentReplayAsync(form.SubmissionId, cancellationToken);
+        var replay = await CheckIdempotentReplayAsync(form.SubmissionId, currentFingerprint, cancellationToken);
         if (replay is not null)
             return replay;
 
@@ -101,7 +103,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             {
                 // A concurrent/earlier retry of THIS submission may have already created the request and
                 // consumed the OTP — replay idempotently instead of erroring.
-                var lateReplay = await CheckIdempotentReplayAsync(form.SubmissionId, cancellationToken);
+                var lateReplay = await CheckIdempotentReplayAsync(form.SubmissionId, currentFingerprint, cancellationToken);
                 if (lateReplay is not null)
                 {
                     await tx.CommitAsync(cancellationToken);
@@ -125,7 +127,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
                 .FirstOrDefaultAsync(p => p.SubmissionId == form.SubmissionId, cancellationToken);
             if (pending is null || pending.ConsumedAt is not null || pending.ExpiresAt <= now)
             {
-                var lateReplay = await CheckIdempotentReplayAsync(form.SubmissionId, cancellationToken);
+                var lateReplay = await CheckIdempotentReplayAsync(form.SubmissionId, currentFingerprint, cancellationToken);
                 if (lateReplay is not null)
                 {
                     await tx.CommitAsync(cancellationToken);
@@ -139,7 +141,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
 
             // Defence-in-depth: the verify-time form must match the bound snapshot's canonical fingerprint.
             // A mismatch means the client changed core content after initiate → stable conflict, no create.
-            if (V2PendingFormSnapshot.Fingerprint(form) != pending.FingerprintV2)
+            if (currentFingerprint != pending.FingerprintV2)
                 throw new ConflictException(
                     "Nội dung biểu mẫu đã thay đổi so với lúc khởi tạo. Vui lòng gửi lại.",
                     InitiateVisitRequestV2ErrorCodes.SubmissionFormMismatch);
@@ -147,18 +149,60 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             var boundForm = V2PendingFormSnapshot.Deserialize(pending.SnapshotJson);
             var boundEmail = boundForm.Registrant.Email.Trim().ToLowerInvariant();
 
-            // ── 3. Provision ONLY the registrant account (from the BOUND snapshot). The primary contact, if
-            //       different, is deliberately NOT provisioned here — CreateV2Async leaves visitor_user_id
-            //       NULL and creates the INITIAL_CLAIM (Phase D links contact B only after B accepts). ──
+            // ── 3. Duplicate guard (business fingerprint): another submit intent with the same core visit
+            //       identity committed within 15 mins → consume OTP/snapshot and throw 409 DUPLICATE_VISIT_REQUEST. ──
+            var boundRegistrantEmail = VisitRequestFingerprintBuilder.NormalizeEmail(boundForm.Registrant.Email);
+            var boundContactEmail = VisitRequestFingerprintBuilder.NormalizeEmail(boundForm.PrimaryContact.Email);
+            var campusCount = boundForm.CampusVisits
+                .Select(c => c.CampusId?.Trim().ToUpperInvariant() ?? string.Empty)
+                .Where(c => c.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            var boundScope = campusCount > 1 ? VisitScopes.MultiCampus : VisitScopes.SingleCampus;
+            var fingerprint = VisitRequestFingerprintBuilder.BuildV2(
+                boundRegistrantEmail, boundContactEmail, boundScope,
+                boundForm.CampusVisits.Select(cv => (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther)));
+
+            var duplicateWindowStart = now.AddMinutes(-15);
+            var duplicate = await _db.VisitRequests.AsNoTracking()
+                .Where(r => r.BusinessFingerprint == fingerprint
+                            && r.SubmittedAt >= duplicateWindowStart
+                            && r.Status != VisitRequestStatuses.Rejected
+                            && r.Status != VisitRequestStatuses.Cancelled)
+                .OrderByDescending(r => r.SubmittedAt)
+                .Select(r => new { r.VisitRequestId, r.RequestCode, r.Status, r.SubmittedAt })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (duplicate is not null)
+            {
+                otpToken.UsedAt = now;
+                pending.ConsumedAt = now;
+                await _db.SaveChangesAsync(cancellationToken);
+                await tx.CommitAsync(cancellationToken);
+                committed = true;
+
+                throw new ConflictException(
+                    "Một đơn đăng ký với nội dung tương tự vừa được gửi trước đó. Không có đơn mới nào được tạo.",
+                    VisitRequestErrorCodes.DuplicateVisitRequest,
+                    new
+                    {
+                        existingVisitRequestId = duplicate.VisitRequestId,
+                        existingRequestCode    = duplicate.RequestCode,
+                        existingStatus         = duplicate.Status,
+                        existingSubmittedAt    = duplicate.SubmittedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
+                    });
+            }
+
+            // ── 4. Provision ONLY the registrant account (from the BOUND snapshot). ──
             await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(boundEmail, cancellationToken);
             var registrantUserId = await _userProvisionService.EnsureVisitorAccountAsync(
                 boundEmail, boundForm.Registrant.FullName, boundForm.Registrant.Phone, now, cancellationToken);
 
-            // ── 4. Build the whole v2 aggregate FROM THE BOUND SNAPSHOT in this transaction. ──
+            // ── 5. Build the whole v2 aggregate FROM THE BOUND SNAPSHOT in this transaction. ──
             created = await _createService.CreateV2Async(
                 boundForm, registrantUserId, "VISITOR_SUBMITTED", now, cancellationToken);
 
-            // ── 5. Consume the OTP AND the bound snapshot atomically with the request. A rollback un-consumes both. ──
+            // ── 6. Consume the OTP AND the bound snapshot atomically with the request. A rollback un-consumes both. ──
             otpToken.UsedAt = now;
             pending.ConsumedAt = now;
             await _db.SaveChangesAsync(cancellationToken);
@@ -171,7 +215,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             // uq_visit_requests_submission_id: a concurrent retry of the SAME submission intent won the insert
             // race. Roll back, re-query the winner and replay idempotently; otherwise the error is not swallowed.
             await tx.RollbackAsync(cancellationToken);
-            var raced = await CheckIdempotentReplayAsync(form.SubmissionId, cancellationToken);
+            var raced = await CheckIdempotentReplayAsync(form.SubmissionId, currentFingerprint, cancellationToken);
             if (raced is not null)
                 return raced;
             throw;
@@ -183,7 +227,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             throw;
         }
 
-        // ── 6. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
+        // ── 7. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
         await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
@@ -198,15 +242,23 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
     /// no OTP verify, no side effects). Consistent with the authenticated create-v2 idempotency.
     /// </summary>
     private async Task<VerifyAndCreateVisitRequestV2Response?> CheckIdempotentReplayAsync(
-        string submissionId, CancellationToken cancellationToken)
+        string submissionId, string? currentFingerprint, CancellationToken cancellationToken)
     {
         var existing = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.SubmissionId == submissionId && v.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-            .Select(v => v.VisitRequestId)
+            .Select(v => new { v.VisitRequestId, v.BusinessFingerprint })
             .FirstOrDefaultAsync(cancellationToken);
-        if (existing == 0)
+        if (existing is null)
             return null;
-        return await ToResponseAsync(existing, cancellationToken, idempotent: true,
+
+        if (currentFingerprint != null && !string.Equals(existing.BusinessFingerprint, currentFingerprint, StringComparison.Ordinal))
+        {
+            throw new ConflictException(
+                "SubmissionId đã được sử dụng cho một yêu cầu khác với nội dung khác.",
+                VisitRequestErrorCodes.IdempotencyKeyReused);
+        }
+
+        return await ToResponseAsync(existing.VisitRequestId, cancellationToken, idempotent: true,
             "Đơn đăng ký này đã được ghi nhận trước đó. Không có đơn mới nào được tạo.");
     }
 

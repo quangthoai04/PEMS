@@ -1,3 +1,46 @@
+-- ============================================================================
+-- PEMS FULL V2 CONTACT VISITOR GUARD - FIXED VERIFICATION BUILD
+-- Fix: operational-contact snapshot verification resolves its request parent via
+--      visit_request_campuses.visit_instance_id -> visit_request_id.
+-- The invalid reference visit_instance_form_details.visit_request_id is removed.
+-- Source file is preserved; this is a new full SQL output.
+-- ============================================================================
+
+-- =====================================================================
+-- PEMS FULL FRESH-CREATE SQL — PER-CAMPUS FORM V2 SEED COMPLETE
+-- Updated from: PEMS_FULL_V11_REMOVED_TTS_19_07_26(7).sql
+--
+-- Safe-update correction:
+--   * SQL_SAFE_UPDATES is disabled before the first bulk UPDATE;
+--   * the original session value is restored after all seed verification queries.
+--
+-- Reset coverage correction:
+--   * every one of the 76 CREATE TABLE targets is now dropped before recreation;
+--   * every one of the 32 CREATE TRIGGER targets is explicitly dropped;
+--   * legacy gallery tables/triggers from earlier seeds are also removed.
+--
+-- V2 seed guarantees:
+--   * every seeded visit_request is finalized with form_schema_version = 2;
+--   * every campus instance has one visit_instance_form_details snapshot;
+--   * every request member is linked through visit_instance_guest_members;
+--   * registrant_user_id and primary-contact access state are populated;
+--   * relation coverage is explicit and business-valid:
+--       - VISITOR can be registrant and primary contact;
+--       - STAFF/STAFF can be registrant, IC_SUPPORT invitee and host/self-host;
+--       - STAFF/LEADER can be registrant, IC_SUPPORT invitee and self-host;
+--       - primary contact owner remains a VISITOR account for every request;
+--   * instance-level and request-level baseline revisions are created;
+--   * representative multi-campus requests contain genuinely different
+--     per-campus content and therefore has_mixed_campus_details = 1;
+--   * legacy global form columns remain only as the compatibility projection
+--     required by the current dual-track backend. They are not the V2 source.
+--
+-- Direct local seed import mode:
+--   * this file explicitly selects `pems_db`;
+--   * all existing PEMS tables in `pems_db` are dropped and recreated;
+--   * use this version only when `pems_db` contains disposable seed data.
+-- =====================================================================
+
 -- =====================================================================
 -- PEMS FULL SQL WITH RICH NEWS SEED
 -- Generated merged file: original fresh-create + updated News seed
@@ -25,7 +68,7 @@
 -- ASSIGNED in visit_participants is kept only for:
 --   1) IC_HOST assigned as main host; or
 --   2) DEPARTMENT/STAFF assigned by Department Leader as department task.
--- STAFF/STAFF IC_SUPPORT, STUDENT, and DEPARTMENT/LEADER DEPT_SUPPORT invitation
+-- STAFF/STAFF or STAFF/LEADER IC_SUPPORT, STUDENT, and DEPARTMENT/LEADER DEPT_SUPPORT invitation
 -- rows previously using ASSIGNED have been normalized to ACCEPTED.
 -- =====================================================================
 
@@ -234,97 +277,139 @@ SET SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTIT
 -- =====================================================================
 SET time_zone = '+07:00';
 
-DROP DATABASE IF EXISTS pems_db;
-CREATE DATABASE IF NOT EXISTS pems_db
+-- Directly rebuild the existing local seed database.
+CREATE DATABASE IF NOT EXISTS `pems_db`
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
+USE `pems_db`;
 
-USE pems_db;
+-- MySQL Workbench may enable SQL_SAFE_UPDATES for the session.
+-- This full seed intentionally performs bulk UPDATE statements after recreating
+-- the schema, so temporarily disable safe-update mode for this script.
+SET @pems_previous_sql_safe_updates := @@SESSION.SQL_SAFE_UPDATES;
+SET SESSION SQL_SAFE_UPDATES = 0;
+
+SELECT CONCAT('PEMS V2 direct seed rebuild target: ', DATABASE()) AS import_target;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
-DROP TRIGGER IF EXISTS trg_departments_one_ic_bi;
-DROP TRIGGER IF EXISTS trg_departments_one_ic_bu;
-DROP TRIGGER IF EXISTS trg_users_validate_bi;
-DROP TRIGGER IF EXISTS trg_users_validate_bu;
-DROP TRIGGER IF EXISTS trg_auth_providers_validate_bi;
-DROP TRIGGER IF EXISTS trg_auth_providers_validate_bu;
-DROP TRIGGER IF EXISTS trg_sessions_validate_bi;
-DROP TRIGGER IF EXISTS trg_visit_requests_decision_validate_bi;
-DROP TRIGGER IF EXISTS trg_visit_requests_decision_validate_bu;
-DROP TRIGGER IF EXISTS trg_visit_campuses_assignment_validate_bi;
-DROP TRIGGER IF EXISTS trg_visit_campuses_assignment_validate_bu;
-DROP TRIGGER IF EXISTS trg_visit_campuses_aggregate_ai;
-DROP TRIGGER IF EXISTS trg_visit_campuses_aggregate_au;
-DROP TRIGGER IF EXISTS trg_visit_requests_cancel_validate_bu;
-DROP TRIGGER IF EXISTS trg_visit_campuses_cancel_validate_bu;
-DROP TRIGGER IF EXISTS trg_api_usage_quotas_scope_bi;
-DROP TRIGGER IF EXISTS trg_api_usage_quotas_scope_bu;
-DROP TRIGGER IF EXISTS trg_agenda_templates_scope_bi;
-DROP TRIGGER IF EXISTS trg_agenda_templates_scope_bu;
-DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bi;
-DROP TRIGGER IF EXISTS trg_agenda_template_defaults_scope_bu;
-DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bi;
-DROP TRIGGER IF EXISTS trg_feedbacks_not_self_bu;
-DROP TRIGGER IF EXISTS trg_visit_photos_validate_bi;
-DROP TRIGGER IF EXISTS trg_visit_photos_validate_bu;
-DROP TRIGGER IF EXISTS trg_expense_reports_scope_bi;
-DROP TRIGGER IF EXISTS trg_expense_reports_scope_bu;
 
-DROP TABLE IF EXISTS audit_logs;
-DROP TABLE IF EXISTS agenda_template_defaults;
-DROP TABLE IF EXISTS agenda_template_items;
-DROP TABLE IF EXISTS agenda_templates;
-DROP TABLE IF EXISTS api_request_logs;
-DROP TABLE IF EXISTS api_usage_quotas;
-DROP TABLE IF EXISTS api_configurations;
-DROP TABLE IF EXISTS calendar_events;
-DROP TABLE IF EXISTS notifications;
-DROP TABLE IF EXISTS sent_emails;
-DROP TABLE IF EXISTS email_templates;
-DROP TABLE IF EXISTS photo_face_tags;
-DROP TABLE IF EXISTS gallery_item_tts_audios;
-DROP TABLE IF EXISTS gallery_item_contents;
-DROP TABLE IF EXISTS gallery_item_media;
-DROP TABLE IF EXISTS gallery_items;
-DROP TABLE IF EXISTS gallery_locations;
-DROP TABLE IF EXISTS gallery_areas;
-DROP TABLE IF EXISTS gallery_images;
-DROP TABLE IF EXISTS galleries;
-DROP TABLE IF EXISTS faqs;
-DROP TABLE IF EXISTS news_section_files;
-DROP TABLE IF EXISTS news_content_sections;
-DROP TABLE IF EXISTS news_translations;
-DROP TABLE IF EXISTS news;
-DROP TABLE IF EXISTS minute_action_items;
-DROP TABLE IF EXISTS feedback_rating_items;
-DROP TABLE IF EXISTS feedbacks;
-DROP TABLE IF EXISTS minutes;
-DROP TABLE IF EXISTS visit_expense_report_events;
-DROP TABLE IF EXISTS visit_expense_items;
-DROP TABLE IF EXISTS visit_expense_reports;
-DROP TABLE IF EXISTS visit_logistics_items;
-DROP TABLE IF EXISTS visit_agendas;
-DROP TABLE IF EXISTS visit_photos;
-DROP TABLE IF EXISTS visit_photo_folders;
-DROP TABLE IF EXISTS visit_participants;
-DROP TABLE IF EXISTS visit_guest_members;
-DROP TABLE IF EXISTS visit_request_pending_forms;
-DROP TABLE IF EXISTS visit_request_campuses;
-DROP TABLE IF EXISTS visit_requests;
-DROP TABLE IF EXISTS documents;
-DROP TABLE IF EXISTS files;
-DROP TABLE IF EXISTS partner_contacts;
-DROP TABLE IF EXISTS partners;
-DROP TABLE IF EXISTS security_events;
-DROP TABLE IF EXISTS login_logs;
-DROP TABLE IF EXISTS otp_tokens;
-DROP TABLE IF EXISTS user_sessions;
-DROP TABLE IF EXISTS user_auth_providers;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS departments;
-DROP TABLE IF EXISTS campuses;
-DROP TABLE IF EXISTS roles;
+-- Complete reset coverage generated from every CREATE object below.
+-- This prevents Error 1050 when rerunning the full seed over an older PEMS seed.
+DROP TRIGGER IF EXISTS `trg_departments_one_ic_bi`;
+DROP TRIGGER IF EXISTS `trg_departments_one_ic_bu`;
+DROP TRIGGER IF EXISTS `trg_users_validate_bi`;
+DROP TRIGGER IF EXISTS `trg_users_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_auth_providers_validate_bi`;
+DROP TRIGGER IF EXISTS `trg_auth_providers_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_sessions_validate_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_requests_cancel_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_identity_changes_transfer_bi`;
+DROP TRIGGER IF EXISTS `trg_identity_changes_transfer_bu`;
+DROP TRIGGER IF EXISTS `trg_api_usage_quotas_scope_bi`;
+DROP TRIGGER IF EXISTS `trg_api_usage_quotas_scope_bu`;
+DROP TRIGGER IF EXISTS `trg_agenda_templates_scope_bi`;
+DROP TRIGGER IF EXISTS `trg_agenda_templates_scope_bu`;
+DROP TRIGGER IF EXISTS `trg_agenda_template_defaults_scope_bi`;
+DROP TRIGGER IF EXISTS `trg_agenda_template_defaults_scope_bu`;
+DROP TRIGGER IF EXISTS `trg_feedbacks_not_self_bi`;
+DROP TRIGGER IF EXISTS `trg_feedbacks_not_self_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_photos_validate_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_photos_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_expense_reports_scope_bi`;
+DROP TRIGGER IF EXISTS `trg_expense_reports_scope_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_cancel_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_assignment_validate_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_assignment_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_aggregate_ai`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_aggregate_au`;
+DROP TRIGGER IF EXISTS `trg_visit_requests_decision_validate_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_requests_decision_validate_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_requests_primary_contact_guard_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_requests_primary_contact_guard_bu`;
+DROP TRIGGER IF EXISTS `trg_users_protect_active_primary_contact_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_request_identity_changes_user_guard_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_request_identity_changes_user_guard_bu`;
+
+DROP TABLE IF EXISTS `audit_log_changes`;
+DROP TABLE IF EXISTS `audit_logs`;
+DROP TABLE IF EXISTS `api_request_logs`;
+DROP TABLE IF EXISTS `api_usage_quotas`;
+DROP TABLE IF EXISTS `api_configuration_headers`;
+DROP TABLE IF EXISTS `business_card_ocr_jobs`;
+DROP TABLE IF EXISTS `api_configurations`;
+DROP TABLE IF EXISTS `visit_instance_reminder_settings`;
+DROP TABLE IF EXISTS `calendar_event_reminders`;
+DROP TABLE IF EXISTS `calendar_event_attendees`;
+DROP TABLE IF EXISTS `calendar_events`;
+DROP TABLE IF EXISTS `notifications`;
+DROP TABLE IF EXISTS `email_action_tokens`;
+DROP TABLE IF EXISTS `email_draft_attachments`;
+DROP TABLE IF EXISTS `email_draft_recipients`;
+DROP TABLE IF EXISTS `email_drafts`;
+DROP TABLE IF EXISTS `sent_email_attachments`;
+DROP TABLE IF EXISTS `sent_email_recipients`;
+DROP TABLE IF EXISTS `sent_emails`;
+DROP TABLE IF EXISTS `email_templates`;
+DROP TABLE IF EXISTS `photo_face_tags`;
+DROP TABLE IF EXISTS `gallery_item_contents`;
+DROP TABLE IF EXISTS `gallery_item_media`;
+DROP TABLE IF EXISTS `gallery_items`;
+DROP TABLE IF EXISTS `gallery_locations`;
+DROP TABLE IF EXISTS `gallery_areas`;
+DROP TABLE IF EXISTS `faqs`;
+DROP TABLE IF EXISTS `news_section_files`;
+DROP TABLE IF EXISTS `news_content_sections`;
+DROP TABLE IF EXISTS `news_translations`;
+DROP TABLE IF EXISTS `news`;
+DROP TABLE IF EXISTS `feedback_rating_items`;
+DROP TABLE IF EXISTS `feedbacks`;
+DROP TABLE IF EXISTS `minute_action_items`;
+DROP TABLE IF EXISTS `visit_guest_partner_links`;
+DROP TABLE IF EXISTS `minute_participants`;
+DROP TABLE IF EXISTS `minutes`;
+DROP TABLE IF EXISTS `visit_logistics_assignment_attempts`;
+DROP TABLE IF EXISTS `visit_expense_report_events`;
+DROP TABLE IF EXISTS `visit_expense_items`;
+DROP TABLE IF EXISTS `visit_expense_reports`;
+DROP TABLE IF EXISTS `visit_logistics_item_handovers`;
+DROP TABLE IF EXISTS `visit_logistics_items`;
+DROP TABLE IF EXISTS `visit_agendas`;
+DROP TABLE IF EXISTS `agenda_template_defaults`;
+DROP TABLE IF EXISTS `agenda_template_items`;
+DROP TABLE IF EXISTS `agenda_templates`;
+DROP TABLE IF EXISTS `visit_request_pending_forms`;
+DROP TABLE IF EXISTS `visit_request_revision_history`;
+DROP TABLE IF EXISTS `visit_instance_form_revision_history`;
+DROP TABLE IF EXISTS `visit_instance_amendment_changes`;
+DROP TABLE IF EXISTS `visit_instance_amendments`;
+DROP TABLE IF EXISTS `visit_request_identity_change_events`;
+DROP TABLE IF EXISTS `visit_request_identity_changes`;
+DROP TABLE IF EXISTS `visit_instance_guest_members`;
+DROP TABLE IF EXISTS `visit_instance_form_details`;
+DROP TABLE IF EXISTS `visit_photos`;
+DROP TABLE IF EXISTS `visit_photo_folders`;
+DROP TABLE IF EXISTS `visit_participants`;
+DROP TABLE IF EXISTS `visit_guest_members`;
+DROP TABLE IF EXISTS `visit_request_campuses`;
+DROP TABLE IF EXISTS `visit_requests`;
+DROP TABLE IF EXISTS `documents`;
+DROP TABLE IF EXISTS `partner_aliases`;
+DROP TABLE IF EXISTS `partner_contacts`;
+DROP TABLE IF EXISTS `partners`;
+DROP TABLE IF EXISTS `files`;
+DROP TABLE IF EXISTS `security_events`;
+DROP TABLE IF EXISTS `login_logs`;
+DROP TABLE IF EXISTS `otp_tokens`;
+DROP TABLE IF EXISTS `user_sessions`;
+DROP TABLE IF EXISTS `user_auth_providers`;
+DROP TABLE IF EXISTS `users`;
+DROP TABLE IF EXISTS `departments`;
+DROP TABLE IF EXISTS `campuses`;
+DROP TABLE IF EXISTS `roles`;
+DROP TABLE IF EXISTS `gallery_item_tts_audios`;
+DROP TABLE IF EXISTS `gallery_images`;
+DROP TABLE IF EXISTS `galleries`;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -4192,7 +4277,6 @@ DELIMITER ;
 SET NAMES utf8mb4;
 SET SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
 SET time_zone = '+07:00'; -- Vietnam wall-clock cho CURRENT_TIMESTAMP/NOW() của seed section này
-USE pems_db;
 
 
 -- ---------------------------------------------------------------------
@@ -7721,8 +7805,6 @@ INSERT INTO email_action_tokens (email_action_token_id, token_hash, action_group
 -- Safe to run after the full seed. Re-runnable.
 -- =====================================================================
 
-USE pems_db;
-
 START TRANSACTION;
 
 UPDATE email_templates
@@ -9624,6 +9706,350 @@ COMMIT;
 
 
 -- =====================================================================
+-- ROLE / RELATION COVERAGE FIX — VISITOR, STAFF, STAFF LEADER
+--
+-- Canonical relation rules represented by this seed:
+--   * VISITOR: may be registrant and is the only request-level primary-contact role.
+--              VISITOR is never an internal host or visit_participants invitee.
+--   * STAFF + STAFF: may register an internal request, receive IC_SUPPORT invitations,
+--                    be assigned host, or self-host the request they registered.
+--   * STAFF + LEADER: may register an internal request and self-host while approving.
+--                     It is deliberately NOT seeded as IC_SUPPORT because canonical
+--                     PEMS rules require IC_SUPPORT = STAFF + STAFF of the same campus.
+--
+-- Requests 3046..3050 now model real STAFF_CREATED requests. Their primary-contact
+-- owners remain the existing verified VISITOR accounts 206..210.
+-- =====================================================================
+START TRANSACTION;
+
+-- 1) Replace the five fake STAFF_CREATED registrants with real IC accounts.
+UPDATE visit_requests vr
+JOIN users registrant
+  ON registrant.user_id = CASE vr.visit_request_id
+    WHEN 3046 THEN 4
+    WHEN 3047 THEN 9
+    WHEN 3048 THEN 12
+    WHEN 3049 THEN 13
+    WHEN 3050 THEN 16
+  END
+SET vr.registrant_user_id = registrant.user_id,
+    vr.registrant_full_name = registrant.full_name,
+    vr.registrant_organization = CASE vr.visit_request_id
+      WHEN 3046 THEN 'FPT University - IC Hà Nội'
+      WHEN 3047 THEN 'FPT University - IC TP.HCM'
+      WHEN 3048 THEN 'FPT University - IC Đà Nẵng'
+      WHEN 3049 THEN 'FPT University - IC Cần Thơ'
+      WHEN 3050 THEN 'FPT University - IC Quy Nhơn'
+    END,
+    vr.registrant_job_title = CASE registrant.sub_role
+      WHEN 'LEADER' THEN 'IC Staff Leader'
+      ELSE 'IC Staff'
+    END,
+    vr.registrant_phone = registrant.phone,
+    vr.registrant_email = registrant.email,
+    vr.registrant_nationality = 'Việt Nam',
+    vr.created_source = 'STAFF_CREATED',
+    vr.created_by = registrant.user_id,
+    vr.primary_contact_access_status = 'ACTIVE',
+    vr.primary_contact_verified_at = CASE vr.visit_request_id
+      WHEN 3046 THEN '2026-07-06 13:08:00'
+      WHEN 3047 THEN '2026-07-07 14:08:00'
+      WHEN 3048 THEN '2026-07-08 15:08:00'
+      WHEN 3049 THEN '2026-07-09 08:08:00'
+      WHEN 3050 THEN '2026-07-10 09:08:00'
+    END,
+    vr.note_to_fptu = CONCAT(
+      COALESCE(NULLIF(TRIM(vr.note_to_fptu), ''), 'Internal request seed.'),
+      '\nRelation coverage: registered by ', registrant.email,
+      '; verified VISITOR primary contact = ', vr.contact_person_email, '.'
+    )
+WHERE vr.visit_request_id IN (3046, 3047, 3048, 3049, 3050)
+  AND registrant.status = 'ACTIVE';
+
+-- 2) Keep authorship of the aggregate/campus/member snapshots aligned with the
+--    internal account that really registered each request.
+UPDATE visit_request_campuses
+SET created_by = CASE visit_request_id
+      WHEN 3046 THEN 4
+      WHEN 3047 THEN 9
+      WHEN 3048 THEN 12
+      WHEN 3049 THEN 13
+      WHEN 3050 THEN 16
+    END
+WHERE visit_request_id IN (3046, 3047, 3048, 3049, 3050);
+
+UPDATE visit_guest_members
+SET created_by = CASE visit_request_id
+      WHEN 3046 THEN 4
+      WHEN 3047 THEN 9
+      WHEN 3048 THEN 12
+      WHEN 3049 THEN 13
+      WHEN 3050 THEN 16
+    END
+WHERE visit_request_id IN (3046, 3047, 3048, 3049, 3050);
+
+-- 3) Regular IC Staff self-host case: user 4 registered request 3046 and accepts
+--    the host role during the same internal-create workflow.
+UPDATE visit_request_campuses
+SET current_host_user_id = 4,
+    host_assigned_by = 4,
+    host_assigned_at = '2026-07-07 10:00:00',
+    decided_by = 4,
+    decided_at = '2026-07-07 10:00:00',
+    decision_actor_role = 'STAFF',
+    decision_source = 'INTERNAL_SELF_HOST',
+    decision_note = 'Seed relation coverage: registering IC Staff HN self-hosts own-campus request during internal creation.',
+    updated_at = '2026-07-07 10:00:00',
+    updated_by = 4
+WHERE visit_instance_id = 5046
+  AND visit_request_id = 3046
+  AND campus_id = 1;
+
+-- Swap the previous host/support participant snapshots without violating
+-- UNIQUE(visit_instance_id,user_id).
+DELETE FROM visit_participants
+WHERE participant_id IN (7141, 7142);
+
+INSERT INTO visit_participants
+  (participant_id, visit_instance_id, user_id, participant_role, is_host, status,
+   invited_by, invited_at, responded_at, assigned_by, assigned_at, note,
+   created_at, created_by, updated_at, updated_by)
+VALUES
+  (7141, 5046, 4, 'IC_HOST', TRUE, 'ASSIGNED',
+   4, '2026-07-07 09:00:00', '2026-07-07 09:20:00', 4, '2026-07-07 10:00:00',
+   'Role coverage: STAFF/STAFF registrant self-hosts own request via INTERNAL_SELF_HOST.',
+   '2026-07-07 09:00:00', 4, '2026-07-07 10:00:00', 4),
+  (7142, 5046, 101, 'IC_SUPPORT', FALSE, 'ACCEPTED',
+   4, '2026-07-07 10:05:00', '2026-07-07 10:20:00', NULL, NULL,
+   'Role coverage: another regular IC Staff accepts an IC_SUPPORT invitation from the self-host.',
+   '2026-07-07 10:05:00', 4, '2026-07-07 10:20:00', 101);
+
+-- 4) Staff Leader self-host case: user 9 registered request 3047, approved the
+--    campus instance, and selected themself as the official host.
+UPDATE visit_request_campuses
+SET current_host_user_id = 9,
+    host_assigned_by = 9,
+    host_assigned_at = '2026-07-08 10:00:00',
+    decided_by = 9,
+    decided_at = '2026-07-08 10:00:00',
+    decision_actor_role = 'STAFF_LEADER',
+    decision_source = 'STANDARD_CAMPUS_REVIEW',
+    decision_note = 'Seed relation coverage: Staff Leader HCM registers, approves, and self-hosts the campus request.',
+    updated_at = '2026-07-08 10:00:00',
+    updated_by = 9
+WHERE visit_instance_id = 5047
+  AND visit_request_id = 3047
+  AND campus_id = 2;
+
+UPDATE visit_participants
+SET user_id = 9,
+    invited_by = 9,
+    responded_at = '2026-07-08 09:20:00',
+    assigned_by = 9,
+    assigned_at = '2026-07-08 10:00:00',
+    note = 'Role coverage: STAFF/LEADER registrant approves and self-hosts the same-campus request.',
+    created_at = '2026-07-08 09:00:00',
+    created_by = 9,
+    updated_at = '2026-07-08 10:00:00',
+    updated_by = 9
+WHERE participant_id = 7145
+  AND visit_instance_id = 5047
+  AND participant_role = 'IC_HOST';
+
+UPDATE visit_agendas
+SET responsible_user_id = 9,
+    created_by = 9
+WHERE visit_instance_id = 5047;
+
+-- 5) Seed the completed INITIAL_CLAIM history for A != B internal requests.
+--    The request registrant is STAFF/STAFF LEADER; the confirmed owner is VISITOR.
+DELETE FROM visit_request_identity_change_events
+WHERE identity_change_id BETWEEN 99401 AND 99405;
+DELETE FROM visit_request_identity_changes
+WHERE identity_change_id BETWEEN 99401 AND 99405;
+
+INSERT INTO visit_request_identity_changes
+  (identity_change_id, visit_request_id, change_kind, target_relation,
+   confirmation_method, old_user_id, new_user_id, old_email_normalized,
+   new_email_normalized, new_email_masked, pending_snapshot_json, status,
+   expected_request_row_version, requested_by, requested_at, expires_at,
+   applied_at, declined_at, cancelled_at, superseded_at, retention_until,
+   redacted_at, reason, resend_count, created_at, updated_at)
+VALUES
+  (99401, 3046, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 206, NULL,
+   'omar.almansouri@gulf-innovation.example', 'o***@gulf-innovation.example',
+   JSON_OBJECT('seedCase','STAFF_REGISTRANT_VISITOR_CONTACT','registrantUserId',4,'primaryContactUserId',206),
+   'APPLIED', 0, 4, '2026-07-06 13:03:30', '2026-07-09 13:03:30',
+   '2026-07-06 13:08:00', NULL, NULL, NULL, '2026-10-04 13:08:00', NULL,
+   'Seed: verified Visitor accepted INITIAL_CLAIM from IC Staff registrant.', 0,
+   '2026-07-06 13:03:30', '2026-07-06 13:08:00'),
+  (99402, 3047, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 207, NULL,
+   'linh.tran@seattle-edtech.example', 'l***@seattle-edtech.example',
+   JSON_OBJECT('seedCase','STAFF_LEADER_REGISTRANT_VISITOR_CONTACT','registrantUserId',9,'primaryContactUserId',207),
+   'APPLIED', 1, 9, '2026-07-07 14:03:30', '2026-07-10 14:03:30',
+   '2026-07-07 14:08:00', NULL, NULL, NULL, '2026-10-05 14:08:00', NULL,
+   'Seed: verified Visitor accepted INITIAL_CLAIM from Staff Leader registrant.', 0,
+   '2026-07-07 14:03:30', '2026-07-07 14:08:00'),
+  (99403, 3048, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 208, NULL,
+   'grace.okafor@lagos-tech.example', 'g***@lagos-tech.example',
+   JSON_OBJECT('seedCase','STAFF_REGISTRANT_VISITOR_CONTACT','registrantUserId',12,'primaryContactUserId',208),
+   'APPLIED', 2, 12, '2026-07-08 15:03:30', '2026-07-11 15:03:30',
+   '2026-07-08 15:08:00', NULL, NULL, NULL, '2026-10-06 15:08:00', NULL,
+   'Seed: verified Visitor accepted INITIAL_CLAIM from IC Staff registrant.', 0,
+   '2026-07-08 15:03:30', '2026-07-08 15:08:00'),
+  (99404, 3049, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 209, NULL,
+   'mateo.alvarez@andes-exchange.example', 'm***@andes-exchange.example',
+   JSON_OBJECT('seedCase','STAFF_LEADER_REGISTRANT_VISITOR_CONTACT','registrantUserId',13,'primaryContactUserId',209),
+   'APPLIED', 3, 13, '2026-07-09 08:03:30', '2026-07-12 08:03:30',
+   '2026-07-09 08:08:00', NULL, NULL, NULL, '2026-10-07 08:08:00', NULL,
+   'Seed: verified Visitor accepted INITIAL_CLAIM from Staff Leader registrant.', 0,
+   '2026-07-09 08:03:30', '2026-07-09 08:08:00'),
+  (99405, 3050, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 210, NULL,
+   'priya.raman@singapore-ai.example', 'p***@singapore-ai.example',
+   JSON_OBJECT('seedCase','STAFF_REGISTRANT_VISITOR_CONTACT','registrantUserId',16,'primaryContactUserId',210),
+   'APPLIED', 4, 16, '2026-07-10 09:03:30', '2026-07-13 09:03:30',
+   '2026-07-10 09:08:00', NULL, NULL, NULL, '2026-10-08 09:08:00', NULL,
+   'Seed: verified Visitor accepted INITIAL_CLAIM from IC Staff registrant.', 0,
+   '2026-07-10 09:03:30', '2026-07-10 09:08:00');
+
+INSERT INTO visit_request_identity_change_events
+  (identity_change_event_id, identity_change_id, visit_request_id, event_type,
+   from_status, to_status, actor_user_id, email_masked, reason, correlation_id, created_at)
+VALUES
+  (99401, 99401, 3046, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 4, 'o***@gulf-innovation.example', 'Staff registrant requested primary-contact confirmation.', 'seed-rel-3046', '2026-07-06 13:03:30'),
+  (99402, 99401, 3046, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 206, 'o***@gulf-innovation.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3046', '2026-07-06 13:08:00'),
+  (99403, 99402, 3047, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 9, 'l***@seattle-edtech.example', 'Staff Leader registrant requested primary-contact confirmation.', 'seed-rel-3047', '2026-07-07 14:03:30'),
+  (99404, 99402, 3047, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 207, 'l***@seattle-edtech.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3047', '2026-07-07 14:08:00'),
+  (99405, 99403, 3048, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 12, 'g***@lagos-tech.example', 'Staff registrant requested primary-contact confirmation.', 'seed-rel-3048', '2026-07-08 15:03:30'),
+  (99406, 99403, 3048, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 208, 'g***@lagos-tech.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3048', '2026-07-08 15:08:00'),
+  (99407, 99404, 3049, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 13, 'm***@andes-exchange.example', 'Staff Leader registrant requested primary-contact confirmation.', 'seed-rel-3049', '2026-07-09 08:03:30'),
+  (99408, 99404, 3049, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 209, 'm***@andes-exchange.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3049', '2026-07-09 08:08:00'),
+  (99409, 99405, 3050, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 16, 'p***@singapore-ai.example', 'Staff registrant requested primary-contact confirmation.', 'seed-rel-3050', '2026-07-10 09:03:30'),
+  (99410, 99405, 3050, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 210, 'p***@singapore-ai.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3050', '2026-07-10 09:08:00');
+
+-- ---------------------------------------------------------------------
+-- CONTACT/VISITOR ROLE GUARD SEED ALIGNMENT
+-- Request-level primary contact and per-campus operational contact are distinct:
+--   * visit_requests.visitor_user_id = login-capable ACTIVE VISITOR owner only;
+--   * visit_instance_form_details.operational_contact_* = campus work snapshot only.
+-- ---------------------------------------------------------------------
+
+-- Dedicated inactive VISITOR account used only by the rollback-safe negative tests.
+-- It is intentionally not linked to any request.
+INSERT INTO users
+  (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role,
+   primary_campus_id, department_id, gender, avatar_url, student_code, fe_id,
+   status, email_verified_at, failed_login_count, locked_until, created_via,
+   first_login_at, last_login_at, created_at, created_by, updated_at, updated_by)
+VALUES
+  (99680, 'Inactive Visitor Guard Test', 'inactive.visitor.guard@example.test', '+84996000080',
+   'Test', NULL, 6, NULL, NULL, NULL, 'OTHER', NULL, NULL, NULL,
+   'INACTIVE', '2026-07-11 08:00:00', 0, NULL, 'VISITOR_FORM',
+   NULL, NULL, '2026-07-11 08:00:00', NULL, NULL, NULL);
+
+-- Seed case 8.2: Visitor A (user 8) registered while Visitor B (user 21) is the
+-- confirmed primary contact. The original request aggregate/campus/detail/member/
+-- revision/audit rows are preserved; only the canonical request relation is aligned.
+UPDATE visit_requests vr
+JOIN users registrant ON registrant.user_id = 8
+SET vr.registrant_user_id = registrant.user_id,
+    vr.registrant_full_name = registrant.full_name,
+    vr.registrant_organization = 'SeoulTech Global Engagement Center',
+    vr.registrant_job_title = 'Director of Global Programs',
+    vr.registrant_phone = registrant.phone,
+    vr.registrant_email = registrant.email,
+    vr.registrant_nationality = COALESCE(registrant.nationality, 'Hàn Quốc'),
+    vr.created_source = 'VISITOR_SUBMITTED',
+    vr.created_by = registrant.user_id,
+    vr.visitor_user_id = 21,
+    vr.primary_contact_access_status = 'ACTIVE',
+    vr.primary_contact_verified_at = '2026-06-10 08:34:00',
+    vr.note_to_fptu = CONCAT(
+      COALESCE(NULLIF(TRIM(vr.note_to_fptu), ''), 'Visitor-submitted relation seed.'),
+      '
+Contact guard coverage: Visitor A user_id=8 registered; Visitor B user_id=21 is the confirmed primary contact.'
+    )
+WHERE vr.visit_request_id = 1002;
+
+DELETE FROM visit_request_identity_change_events
+WHERE identity_change_id = 99601;
+DELETE FROM visit_request_identity_changes
+WHERE identity_change_id = 99601;
+
+INSERT INTO visit_request_identity_changes
+  (identity_change_id, visit_request_id, change_kind, target_relation,
+   confirmation_method, old_user_id, new_user_id, old_email_normalized,
+   new_email_normalized, new_email_masked, pending_snapshot_json, status,
+   expected_request_row_version, requested_by, requested_at, expires_at,
+   applied_at, declined_at, cancelled_at, superseded_at, retention_until,
+   redacted_at, reason, resend_count, created_at, updated_at)
+VALUES
+  (99601, 1002, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 21, NULL,
+   'aoi.tanaka@kyoto-global.example', 'a***@kyoto-global.example',
+   JSON_OBJECT('seedCase','VISITOR_A_REGISTRANT_VISITOR_B_CONTACT','registrantUserId',8,'primaryContactUserId',21),
+   'APPLIED', 1, 8, '2026-06-10 08:30:00', '2026-06-13 08:30:00',
+   '2026-06-10 08:34:00', NULL, NULL, NULL, '2026-09-08 08:34:00', NULL,
+   'Seed: Visitor B accepted INITIAL_CLAIM requested by Visitor A.', 0,
+   '2026-06-10 08:30:00', '2026-06-10 08:34:00');
+
+INSERT INTO visit_request_identity_change_events
+  (identity_change_event_id, identity_change_id, visit_request_id, event_type,
+   from_status, to_status, actor_user_id, email_masked, reason, correlation_id, created_at)
+VALUES
+  (99601, 99601, 1002, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 8,
+   'a***@kyoto-global.example', 'Visitor A requested Visitor B as primary contact.',
+   'seed-contact-guard-1002', '2026-06-10 08:30:00'),
+  (99602, 99601, 1002, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 21,
+   'a***@kyoto-global.example', 'Visitor B accepted and became the ACTIVE request owner.',
+   'seed-contact-guard-1002', '2026-06-10 08:34:00');
+
+-- Seed cases 8.5 and 8.6: internal registrants with unclaimed contacts.
+-- Approval may proceed per campus, but no account relation is granted before claim APPLIED.
+UPDATE visit_requests
+SET visitor_user_id = NULL,
+    primary_contact_access_status = 'PENDING_CONFIRMATION',
+    primary_contact_verified_at = NULL,
+    note_to_fptu = CONCAT(
+      COALESCE(NULLIF(TRIM(note_to_fptu), ''), 'Internal request seed.'),
+      '
+Contact guard coverage: INITIAL_CLAIM is still PENDING; visitor_user_id intentionally remains NULL.'
+    )
+WHERE visit_request_id IN (3048, 3049);
+
+UPDATE visit_request_identity_changes
+SET new_user_id = NULL,
+    status = 'PENDING',
+    applied_at = NULL,
+    retention_until = NULL,
+    reason = CASE identity_change_id
+      WHEN 99403 THEN 'Seed: IC Staff registrant invited an external primary contact; claim is still pending.'
+      WHEN 99404 THEN 'Seed: Staff Leader registrant invited an external primary contact; claim is still pending.'
+      ELSE reason
+    END,
+    updated_at = CASE identity_change_id
+      WHEN 99403 THEN '2026-07-08 15:03:30'
+      WHEN 99404 THEN '2026-07-09 08:03:30'
+      ELSE updated_at
+    END
+WHERE identity_change_id IN (99403, 99404);
+
+DELETE FROM visit_request_identity_change_events
+WHERE identity_change_event_id IN (99406, 99408);
+
+-- Operational contact remains a campus snapshot. Reusing a Staff email is valid and
+-- does not grant request ownership or create a user relation.
+UPDATE visit_instance_form_details
+SET operational_contact_full_name = 'IC Staff Hà Nội',
+    operational_contact_organization = 'FPT University - IC Hà Nội',
+    operational_contact_phone = '0901000004',
+    operational_contact_email = 'staff.hn@fpt.edu.vn',
+    updated_at = '2026-07-11 09:00:00',
+    updated_by = 4
+WHERE visit_instance_id = 5046;
+
+COMMIT;
+
+-- =====================================================================
 -- Final aggregate normalization for campus-independent approval seed data.
 -- This runs BEFORE campus aggregate triggers are created, so it can safely
 -- read visit_request_campuses and update visit_requests in one statement.
@@ -9649,15 +10075,12 @@ END
 WHERE vr.status <> 'CANCELLED';
 
 -- =====================================================================
--- PER-CAMPUS FORM v2 SEED-TIME BACKFILL — runs at the END of the seed section,
--- AFTER every visit_requests enrichment UPDATE, so each per-campus detail snapshot
--- matches the FINAL global values (fresh-create equivalent of 03_backfill.sql).
--- All statements are guarded (idempotent). Steps:
---   1. one detail row per campus instance, cloned from the global request form;
---   2. link every member to every instance of its request (v1 shared-list semantics);
---   3. primary_contact_access_status = ACTIVE where a contact owner exists;
---   4. one immutable baseline (form_revision=1) revision-history row per instance.
+-- PER-CAMPUS FORM V2 — COMPLETE FRESH-SEED FINALIZATION
+-- Runs after every request/campus/member enrichment and before campus aggregate
+-- triggers. The statements are deterministic and re-runnable on this fresh seed.
 -- =====================================================================
+
+-- 1) One canonical V2 detail snapshot per campus instance.
 INSERT INTO visit_instance_form_details (
   visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content,
   operational_contact_full_name, operational_contact_organization,
@@ -9666,55 +10089,551 @@ INSERT INTO visit_instance_form_details (
   form_revision, approval_revision, row_version, created_at, created_by)
 SELECT
   vrc.visit_instance_id, vr.delegation_name, vr.visit_type, vr.visit_type_other, vr.purpose, vr.working_content,
-  vr.contact_person_full_name, vr.contact_person_organization, vr.contact_person_phone, vr.contact_person_email,
+  vr.contact_person_full_name, NULLIF(TRIM(vr.contact_person_organization), ''),
+  vr.contact_person_phone, NULLIF(TRIM(vr.contact_person_email), ''),
   vr.working_language, vr.transportation_note, vr.media_consent_status, vr.media_consent_note, vr.note_to_fptu,
-  1, 1, 0, vrc.created_at, vr.created_by
+  1, 1, 0, vrc.created_at, COALESCE(vr.created_by, vr.visitor_user_id)
 FROM visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
-WHERE NOT EXISTS (SELECT 1 FROM visit_instance_form_details d WHERE d.visit_instance_id = vrc.visit_instance_id);
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM visit_instance_form_details d
+  WHERE d.visit_instance_id = vrc.visit_instance_id
+);
 
+-- 2) Preserve V1 shared-member semantics as independent V2 instance links.
 INSERT INTO visit_instance_guest_members (
   visit_request_id, visit_instance_id, guest_member_id, display_order, created_at, created_by)
 SELECT
-  m.visit_request_id, vrc.visit_instance_id, m.guest_member_id, m.display_order, vrc.created_at, m.created_by
+  m.visit_request_id, vrc.visit_instance_id, m.guest_member_id, m.display_order,
+  vrc.created_at, COALESCE(m.created_by, vr.created_by, vr.visitor_user_id)
 FROM visit_guest_members m
 JOIN visit_request_campuses vrc ON vrc.visit_request_id = m.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = m.visit_request_id
 WHERE NOT EXISTS (
-  SELECT 1 FROM visit_instance_guest_members l
-  WHERE l.visit_instance_id = vrc.visit_instance_id AND l.guest_member_id = m.guest_member_id);
+  SELECT 1
+  FROM visit_instance_guest_members l
+  WHERE l.visit_instance_id = vrc.visit_instance_id
+    AND l.guest_member_id = m.guest_member_id
+);
 
+-- 3) Link every seeded registrant to the exact normalized account represented by
+--    registrant_email. The final seed intentionally covers both A == B (Visitor submits
+--    and owns the request) and A != B (Staff/Staff Leader submits while a verified
+--    Visitor account is the primary contact). The relation is stored explicitly so
+--    V2 edit/resubmit/co-editor authorization works immediately.
+UPDATE visit_requests vr
+JOIN users registrant
+  ON LOWER(TRIM(registrant.email)) = LOWER(TRIM(vr.registrant_email))
+JOIN roles registrant_role
+  ON registrant_role.role_id = registrant.role_id
+SET vr.registrant_user_id = registrant.user_id
+WHERE vr.registrant_user_id IS NULL
+  AND registrant.status = 'ACTIVE'
+  AND registrant_role.role_code IN ('VISITOR','STAFF');
+
+-- 4) Existing seeded contact owners are already verified accounts, therefore the
+--    primary-contact relation is ACTIVE. A real A != B create remains PENDING and
+--    is handled by visit_request_identity_changes at runtime.
 UPDATE visit_requests
 SET primary_contact_access_status = 'ACTIVE',
     primary_contact_verified_at = COALESCE(primary_contact_verified_at, email_verified_at, submitted_at)
 WHERE visitor_user_id IS NOT NULL;
 
+-- 5) Produce representative genuine mixed-campus V2 rows. Only non-compatibility
+--    campuses are changed, so the legacy projection remains the smallest-campus
+--    snapshot exactly as required during the dual-track period.
+UPDATE visit_instance_form_details d
+JOIN visit_request_campuses vrc
+  ON vrc.visit_instance_id = d.visit_instance_id
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+JOIN campuses c
+  ON c.campus_id = vrc.campus_id
+JOIN (
+  SELECT visit_request_id, MIN(campus_id) AS compatibility_campus_id
+  FROM visit_request_campuses
+  GROUP BY visit_request_id
+) compatibility
+  ON compatibility.visit_request_id = vrc.visit_request_id
+SET d.delegation_name = LEFT(CONCAT(d.delegation_name, ' — ', c.campus_code), 200),
+    d.purpose = CONCAT(
+      d.purpose,
+      '\nTrọng tâm riêng tại ', c.name,
+      ': làm việc theo nhu cầu và nguồn lực của cơ sở này.'
+    ),
+    d.working_content = CONCAT(
+      COALESCE(NULLIF(TRIM(d.working_content), ''), 'Nội dung làm việc theo kế hoạch chung.'),
+      '\nNội dung V2 riêng tại ', c.name,
+      ': trao đổi với đầu mối vận hành và rà soát kế hoạch tại cơ sở.'
+    ),
+    d.working_language = CASE WHEN MOD(vrc.campus_id, 2) = 0 THEN 'VI' ELSE 'EN' END,
+    d.transportation_note = CONCAT(
+      COALESCE(NULLIF(TRIM(d.transportation_note), ''), 'Di chuyển theo kế hoạch của đoàn.'),
+      '\nHướng dẫn riêng cho ', c.name, ': ', COALESCE(c.address, c.city, c.name), '.'
+    ),
+    d.updated_by = COALESCE(d.created_by, vr.created_by, vr.visitor_user_id)
+WHERE vr.visit_scope = 'MULTI_CAMPUS'
+  AND vr.visit_request_id IN (2001, 2004, 3059, 3064, 3074, 3084, 3089, 9006)
+  AND vrc.campus_id <> compatibility.compatibility_campus_id;
+
+-- 6) Compute has_mixed_campus_details from normalized per-campus detail + member
+--    sets. Campus/time/status differences alone do not make the form mixed.
+UPDATE visit_requests vr
+JOIN (
+  SELECT
+    vrc.visit_request_id,
+    MAX(
+      CASE WHEN
+           NOT (d.delegation_name <=> base_d.delegation_name)
+        OR NOT (d.visit_type <=> base_d.visit_type)
+        OR NOT (d.visit_type_other <=> base_d.visit_type_other)
+        OR NOT (d.purpose <=> base_d.purpose)
+        OR NOT (d.working_content <=> base_d.working_content)
+        OR NOT (d.operational_contact_full_name <=> base_d.operational_contact_full_name)
+        OR NOT (d.operational_contact_organization <=> base_d.operational_contact_organization)
+        OR NOT (d.operational_contact_phone <=> base_d.operational_contact_phone)
+        OR NOT (d.operational_contact_email <=> base_d.operational_contact_email)
+        OR NOT (d.working_language <=> base_d.working_language)
+        OR NOT (d.transportation_note <=> base_d.transportation_note)
+        OR NOT (d.media_consent_status <=> base_d.media_consent_status)
+        OR NOT (d.media_consent_note <=> base_d.media_consent_note)
+        OR NOT (d.note_to_fptu <=> base_d.note_to_fptu)
+        OR COALESCE(member_sig.member_signature, SHA2('', 256))
+           <> COALESCE(base_member_sig.member_signature, SHA2('', 256))
+      THEN 1 ELSE 0 END
+    ) AS is_mixed
+  FROM visit_request_campuses vrc
+  JOIN visit_instance_form_details d
+    ON d.visit_instance_id = vrc.visit_instance_id
+  JOIN (
+    SELECT vrc0.visit_request_id, vrc0.visit_instance_id
+    FROM visit_request_campuses vrc0
+    JOIN (
+      SELECT visit_request_id, MIN(campus_id) AS min_campus_id
+      FROM visit_request_campuses
+      GROUP BY visit_request_id
+    ) base_campus
+      ON base_campus.visit_request_id = vrc0.visit_request_id
+     AND base_campus.min_campus_id = vrc0.campus_id
+  ) base_instance
+    ON base_instance.visit_request_id = vrc.visit_request_id
+  JOIN visit_instance_form_details base_d
+    ON base_d.visit_instance_id = base_instance.visit_instance_id
+  LEFT JOIN (
+    SELECT
+      visit_instance_id,
+      SHA2(
+        COALESCE(
+          GROUP_CONCAT(
+            CONCAT(guest_member_id, ':', display_order)
+            ORDER BY guest_member_id, display_order
+            SEPARATOR '|'
+          ),
+          ''
+        ),
+        256
+      ) AS member_signature
+    FROM visit_instance_guest_members
+    GROUP BY visit_instance_id
+  ) member_sig
+    ON member_sig.visit_instance_id = vrc.visit_instance_id
+  LEFT JOIN (
+    SELECT
+      visit_instance_id,
+      SHA2(
+        COALESCE(
+          GROUP_CONCAT(
+            CONCAT(guest_member_id, ':', display_order)
+            ORDER BY guest_member_id, display_order
+            SEPARATOR '|'
+          ),
+          ''
+        ),
+        256
+      ) AS member_signature
+    FROM visit_instance_guest_members
+    GROUP BY visit_instance_id
+  ) base_member_sig
+    ON base_member_sig.visit_instance_id = base_instance.visit_instance_id
+  GROUP BY vrc.visit_request_id
+) mixed
+  ON mixed.visit_request_id = vr.visit_request_id
+SET vr.has_mixed_campus_details = mixed.is_mixed;
+
+-- 7) Promote only structurally complete requests to V2. A request is never labelled
+--    V2 while any campus is missing its canonical detail row.
+UPDATE visit_requests vr
+JOIN (
+  SELECT
+    vrc.visit_request_id,
+    COUNT(*) AS instance_count,
+    COUNT(d.visit_instance_id) AS detail_count
+  FROM visit_request_campuses vrc
+  LEFT JOIN visit_instance_form_details d
+    ON d.visit_instance_id = vrc.visit_instance_id
+  GROUP BY vrc.visit_request_id
+) completeness
+  ON completeness.visit_request_id = vr.visit_request_id
+SET vr.form_schema_version = 2
+WHERE completeness.instance_count = completeness.detail_count
+  AND completeness.instance_count > 0;
+
+-- 8) Immutable baseline revision for every final per-campus V2 snapshot.
 INSERT INTO visit_instance_form_revision_history (
   visit_request_id, visit_instance_id, form_revision, approval_revision,
   source_type, source_id, snapshot_json, applied_by, applied_at, reason)
 SELECT
   vrc.visit_request_id, d.visit_instance_id, 1, 1, 'CREATE', NULL,
   JSON_OBJECT(
-    'delegationName', d.delegation_name, 'visitType', d.visit_type, 'visitTypeOther', d.visit_type_other,
-    'purpose', d.purpose, 'workingContent', d.working_content,
-    'operationalContact', JSON_OBJECT('fullName', d.operational_contact_full_name,
-      'organization', d.operational_contact_organization, 'phone', d.operational_contact_phone,
-      'email', d.operational_contact_email),
-    'workingLanguage', d.working_language, 'transportationNote', d.transportation_note,
-    'mediaConsentStatus', d.media_consent_status, 'mediaConsentNote', d.media_consent_note,
-    'noteToFptu', d.note_to_fptu),
-  d.created_by, d.created_at, 'Fresh-create baseline'
+    'delegationName', d.delegation_name,
+    'visitType', d.visit_type,
+    'visitTypeOther', d.visit_type_other,
+    'purpose', d.purpose,
+    'workingContent', d.working_content,
+    'operationalContact', JSON_OBJECT(
+      'fullName', d.operational_contact_full_name,
+      'organization', d.operational_contact_organization,
+      'phone', d.operational_contact_phone,
+      'email', d.operational_contact_email
+    ),
+    'workingLanguage', d.working_language,
+    'transportationNote', d.transportation_note,
+    'mediaConsentStatus', d.media_consent_status,
+    'mediaConsentNote', d.media_consent_note,
+    'noteToFptu', d.note_to_fptu
+  ),
+  COALESCE(d.created_by, vr.registrant_user_id, vr.visitor_user_id),
+  COALESCE(d.created_at, vr.created_at, vr.submitted_at),
+  'Fresh-create Per-Campus Form V2 baseline'
 FROM visit_instance_form_details d
-JOIN visit_request_campuses vrc ON vrc.visit_instance_id = d.visit_instance_id
-WHERE NOT EXISTS (
-  SELECT 1 FROM visit_instance_form_revision_history h
-  WHERE h.visit_instance_id = d.visit_instance_id AND h.form_revision = 1);
+JOIN visit_request_campuses vrc
+  ON vrc.visit_instance_id = d.visit_instance_id
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+WHERE vr.form_schema_version = 2
+  AND NOT EXISTS (
+    SELECT 1
+    FROM visit_instance_form_revision_history h
+    WHERE h.visit_instance_id = d.visit_instance_id
+      AND h.form_revision = 1
+  );
 
--- =====================================================================
+-- 9) Request-level baseline revision for registrant + primary-contact display data.
+INSERT INTO visit_request_revision_history (
+  visit_request_id, request_revision, source_type, source_id,
+  snapshot_json, applied_by, applied_at, reason)
+SELECT
+  vr.visit_request_id, 1, 'CREATE', NULL,
+  JSON_OBJECT(
+    'formSchemaVersion', vr.form_schema_version,
+    'visitScope', vr.visit_scope,
+    'hasMixedCampusDetails', vr.has_mixed_campus_details,
+    'registrant', JSON_OBJECT(
+      'userId', vr.registrant_user_id,
+      'fullName', vr.registrant_full_name,
+      'organization', vr.registrant_organization,
+      'jobTitle', vr.registrant_job_title,
+      'phone', vr.registrant_phone,
+      'email', vr.registrant_email,
+      'nationality', vr.registrant_nationality
+    ),
+    'primaryContact', JSON_OBJECT(
+      'userId', vr.visitor_user_id,
+      'fullName', vr.contact_person_full_name,
+      'organization', vr.contact_person_organization,
+      'phone', vr.contact_person_phone,
+      'email', vr.contact_person_email,
+      'accessStatus', vr.primary_contact_access_status,
+      'verifiedAt', vr.primary_contact_verified_at
+    )
+  ),
+  COALESCE(vr.created_by, vr.registrant_user_id, vr.visitor_user_id),
+  COALESCE(vr.created_at, vr.submitted_at),
+  'Fresh-create Per-Campus Form V2 request baseline'
+FROM visit_requests vr
+WHERE vr.form_schema_version = 2
+  AND NOT EXISTS (
+    SELECT 1
+    FROM visit_request_revision_history h
+    WHERE h.visit_request_id = vr.visit_request_id
+      AND h.request_revision = 1
+  );
+
+-- 10) V2 seed integrity evidence. Every issue_count must be 0, while
+--     representative_mixed_v2_requests must be greater than 0.
+SELECT 'non_v2_seed_requests' AS check_name, COUNT(*) AS issue_count
+FROM visit_requests
+WHERE form_schema_version <> 2;
+
+SELECT 'v2_requests_without_registrant_user' AS check_name, COUNT(*) AS issue_count
+FROM visit_requests
+WHERE form_schema_version = 2
+  AND registrant_user_id IS NULL;
+
+SELECT 'v2_instances_missing_form_detail' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+WHERE vr.form_schema_version = 2
+  AND d.visit_instance_id IS NULL;
+
+SELECT 'v2_member_link_gaps' AS check_name, COUNT(*) AS issue_count
+FROM visit_guest_members m
+JOIN visit_requests vr ON vr.visit_request_id = m.visit_request_id
+JOIN visit_request_campuses vrc ON vrc.visit_request_id = m.visit_request_id
+LEFT JOIN visit_instance_guest_members l
+  ON l.visit_instance_id = vrc.visit_instance_id
+ AND l.guest_member_id = m.guest_member_id
+WHERE vr.form_schema_version = 2
+  AND l.guest_member_id IS NULL;
+
+SELECT 'v2_instances_missing_baseline_revision' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_instance_form_revision_history h
+  ON h.visit_instance_id = vrc.visit_instance_id
+ AND h.form_revision = 1
+WHERE vr.form_schema_version = 2
+  AND h.revision_history_id IS NULL;
+
+SELECT 'v2_requests_missing_baseline_revision' AS check_name, COUNT(*) AS issue_count
+FROM visit_requests vr
+LEFT JOIN visit_request_revision_history h
+  ON h.visit_request_id = vr.visit_request_id
+ AND h.request_revision = 1
+WHERE vr.form_schema_version = 2
+  AND h.request_revision_history_id IS NULL;
+
+SELECT 'v2_primary_contact_state_mismatch' AS check_name, COUNT(*) AS issue_count
+FROM visit_requests
+WHERE form_schema_version = 2
+  AND (
+       (primary_contact_access_status = 'ACTIVE' AND visitor_user_id IS NULL)
+    OR (primary_contact_access_status = 'PENDING_CONFIRMATION' AND visitor_user_id IS NOT NULL)
+  );
+
+SELECT 'v2_scope_instance_count_mismatch' AS check_name, COUNT(*) AS issue_count
+FROM visit_requests vr
+JOIN (
+  SELECT visit_request_id, COUNT(*) AS campus_count
+  FROM visit_request_campuses
+  GROUP BY visit_request_id
+) c ON c.visit_request_id = vr.visit_request_id
+WHERE vr.form_schema_version = 2
+  AND (
+       (vr.visit_scope = 'SINGLE_CAMPUS' AND c.campus_count <> 1)
+    OR (vr.visit_scope = 'MULTI_CAMPUS' AND c.campus_count < 2)
+  );
+
+SELECT 'representative_mixed_v2_requests' AS check_name, COUNT(*) AS mixed_request_count
+FROM visit_requests
+WHERE form_schema_version = 2
+  AND has_mixed_campus_details = 1;
+
 -- Create campus instance validation/aggregate triggers AFTER all seed and
 -- enrichment UPDATEs. If these triggers are created before seed updates that
 -- join visit_request_campuses with visit_requests, MySQL raises Error 1442.
 -- =====================================================================
 DELIMITER $$
+
+-- =====================================================================
+-- REQUEST-LEVEL PRIMARY CONTACT ACTIVE VISITOR GUARDS
+-- These triggers are intentionally created after seed normalization so the full
+-- fresh-create import can repair legacy rows first, then finish fail-closed.
+-- =====================================================================
+CREATE TRIGGER trg_visit_requests_primary_contact_guard_bi
+BEFORE INSERT ON visit_requests
+FOR EACH ROW
+BEGIN
+  DECLARE v_user_count INT DEFAULT 0;
+  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+
+  IF NEW.visitor_user_id IS NOT NULL THEN
+    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
+      INTO v_user_count, v_role_code, v_user_status
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.visitor_user_id;
+
+    IF v_user_count = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
+    END IF;
+
+    IF v_role_code <> 'VISITOR' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+    END IF;
+
+    IF v_user_status <> 'ACTIVE' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+    END IF;
+  END IF;
+
+  IF NEW.primary_contact_access_status = 'ACTIVE'
+     AND NEW.visitor_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER';
+  END IF;
+
+  IF NEW.primary_contact_access_status = 'PENDING_CONFIRMATION'
+     AND NEW.visitor_user_id IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_visit_requests_primary_contact_guard_bu
+BEFORE UPDATE ON visit_requests
+FOR EACH ROW
+FOLLOWS trg_visit_requests_cancel_validate_bu
+BEGIN
+  DECLARE v_user_count INT DEFAULT 0;
+  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+
+  IF NEW.visitor_user_id IS NOT NULL THEN
+    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
+      INTO v_user_count, v_role_code, v_user_status
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.visitor_user_id;
+
+    IF v_user_count = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
+    END IF;
+
+    IF v_role_code <> 'VISITOR' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+    END IF;
+
+    IF v_user_status <> 'ACTIVE' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+    END IF;
+  END IF;
+
+  IF NEW.primary_contact_access_status = 'ACTIVE'
+     AND NEW.visitor_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER';
+  END IF;
+
+  IF NEW.primary_contact_access_status = 'PENDING_CONFIRMATION'
+     AND NEW.visitor_user_id IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER';
+  END IF;
+END$$
+
+-- A currently linked ACTIVE primary contact cannot be silently converted into an
+-- internal account or deactivated. Cancelled requests are excluded by decision.
+CREATE TRIGGER trg_users_protect_active_primary_contact_bu
+BEFORE UPDATE ON users
+FOR EACH ROW
+FOLLOWS trg_users_validate_bu
+BEGIN
+  DECLARE v_new_role_code VARCHAR(30) DEFAULT NULL;
+  DECLARE v_linked_request_count INT DEFAULT 0;
+
+  IF NOT (NEW.role_id <=> OLD.role_id)
+     OR NOT (NEW.status <=> OLD.status) THEN
+    SELECT role_code
+      INTO v_new_role_code
+    FROM roles
+    WHERE role_id = NEW.role_id;
+
+    SELECT COUNT(*)
+      INTO v_linked_request_count
+    FROM visit_requests vr
+    WHERE vr.visitor_user_id = OLD.user_id
+      AND vr.primary_contact_access_status = 'ACTIVE'
+      AND vr.status <> 'CANCELLED';
+
+    IF v_linked_request_count > 0 AND v_new_role_code <> 'VISITOR' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE';
+    END IF;
+
+    IF v_linked_request_count > 0 AND NEW.status <> 'ACTIVE' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED';
+    END IF;
+  END IF;
+END$$
+
+-- Identity claims/transfers may remain PENDING without an account. As soon as a
+-- new_user_id is assigned (including APPLIED), it must be an ACTIVE VISITOR.
+CREATE TRIGGER trg_visit_request_identity_changes_user_guard_bi
+BEFORE INSERT ON visit_request_identity_changes
+FOR EACH ROW
+FOLLOWS trg_identity_changes_transfer_bi
+BEGIN
+  DECLARE v_user_count INT DEFAULT 0;
+  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+
+  IF NEW.new_user_id IS NOT NULL THEN
+    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
+      INTO v_user_count, v_role_code, v_user_status
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.new_user_id;
+
+    IF v_user_count = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
+    END IF;
+
+    IF v_role_code <> 'VISITOR' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+    END IF;
+
+    IF v_user_status <> 'ACTIVE' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+    END IF;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_visit_request_identity_changes_user_guard_bu
+BEFORE UPDATE ON visit_request_identity_changes
+FOR EACH ROW
+FOLLOWS trg_identity_changes_transfer_bu
+BEGIN
+  DECLARE v_user_count INT DEFAULT 0;
+  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+
+  IF NEW.new_user_id IS NOT NULL THEN
+    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
+      INTO v_user_count, v_role_code, v_user_status
+    FROM users u
+    JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.new_user_id;
+
+    IF v_user_count = 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
+    END IF;
+
+    IF v_role_code <> 'VISITOR' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+    END IF;
+
+    IF v_user_status <> 'ACTIVE' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+    END IF;
+  END IF;
+END$$
 
 CREATE TRIGGER trg_visit_campuses_cancel_validate_bu
 BEFORE UPDATE ON visit_request_campuses
@@ -10164,6 +11083,43 @@ END$$
 
 DELIMITER ;
 
+
+-- =====================================================================
+-- STAFF LEADER INVITATION COVERAGE
+-- Staff Leader may be invited as a non-host IC_SUPPORT participant.
+-- participant_role remains IC_SUPPORT; effective role is resolved from users.sub_role.
+-- Each row uses a same-campus visit instance and a same-campus IC Staff inviter.
+-- =====================================================================
+INSERT INTO visit_participants
+(participant_id, visit_instance_id, user_id, participant_role, is_host, status,
+ invited_by, invited_at, responded_at, assigned_by, assigned_at, note,
+ created_at, created_by, updated_at, updated_by)
+VALUES
+  (99501, 5055, 3,  'IC_SUPPORT', FALSE, 'INVITED',
+   4,  '2026-07-06 09:00:00', NULL, NULL, NULL,
+   'Staff Leader HN invitation coverage: INVITED as IC_SUPPORT, not host.',
+   '2026-07-06 09:00:00', 4, NULL, NULL),
+
+  (99502, 5010, 9,  'IC_SUPPORT', FALSE, 'ACCEPTED',
+   10, '2026-07-06 09:05:00', '2026-07-06 09:25:00', NULL, NULL,
+   'Staff Leader HCM invitation coverage: ACCEPTED as IC_SUPPORT, not host.',
+   '2026-07-06 09:05:00', 10, '2026-07-06 09:25:00', 9),
+
+  (99503, 5020, 11, 'IC_SUPPORT', FALSE, 'DECLINED',
+   12, '2026-07-06 09:10:00', '2026-07-06 09:35:00', NULL, NULL,
+   'Staff Leader DN invitation coverage: DECLINED as IC_SUPPORT, not host.',
+   '2026-07-06 09:10:00', 12, '2026-07-06 09:35:00', 11),
+
+  (99504, 5030, 13, 'IC_SUPPORT', FALSE, 'REMOVED',
+   14, '2026-07-06 09:15:00', NULL, NULL, NULL,
+   'Staff Leader CT invitation coverage: REMOVED as IC_SUPPORT, not host.',
+   '2026-07-06 09:15:00', 14, '2026-07-06 10:00:00', 14),
+
+  (99505, 5040, 15, 'IC_SUPPORT', FALSE, 'ACCEPTED',
+   16, '2026-07-06 09:20:00', '2026-07-06 09:45:00', NULL, NULL,
+   'Staff Leader QN invitation coverage: ACCEPTED as IC_SUPPORT, not host.',
+   '2026-07-06 09:20:00', 16, '2026-07-06 09:45:00', 15);
+
 -- =====================================================================
 -- Verification: invitation ASSIGNED misuse should be zero.
 -- Expected issue_count = 0.
@@ -10175,10 +11131,163 @@ JOIN users u ON u.user_id = vp.user_id
 JOIN roles r ON r.role_id = u.role_id
 WHERE vp.status = 'ASSIGNED'
   AND (
-        (r.role_code = 'STAFF' AND u.sub_role = 'STAFF' AND vp.participant_role = 'IC_SUPPORT')
+        (r.role_code = 'STAFF' AND u.sub_role IN ('STAFF','LEADER') AND vp.participant_role = 'IC_SUPPORT')
      OR (r.role_code = 'STUDENT' AND vp.participant_role = 'STUDENT')
      OR (r.role_code = 'DEPARTMENT' AND u.sub_role = 'LEADER' AND vp.participant_role = 'DEPT_SUPPORT')
   );
+
+-- =====================================================================
+-- Final role/relation coverage checks.
+-- Every *_missing_* / invalid_* issue_count must be 0.
+-- =====================================================================
+SELECT 'missing_visitor_registrant_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users u ON u.user_id = vr.registrant_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'VISITOR'
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_visitor_primary_contact_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users u ON u.user_id = vr.visitor_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'VISITOR'
+           AND vr.primary_contact_access_status = 'ACTIVE'
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_staff_registrant_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users u ON u.user_id = vr.registrant_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'STAFF' AND u.sub_role = 'STAFF'
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_staff_leader_registrant_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users u ON u.user_id = vr.registrant_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'STAFF' AND u.sub_role = 'LEADER'
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_regular_staff_host_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_request_campuses vrc
+         JOIN users u ON u.user_id = vrc.current_host_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'STAFF' AND u.sub_role = 'STAFF'
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_staff_leader_self_host_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_request_campuses vrc
+         JOIN users u ON u.user_id = vrc.current_host_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'STAFF' AND u.sub_role = 'LEADER'
+           AND vrc.current_host_user_id = vrc.host_assigned_by
+           AND vrc.current_host_user_id = vrc.decided_by
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_regular_staff_invitation_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_participants vp
+         JOIN users u ON u.user_id = vp.user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_code = 'STAFF' AND u.sub_role = 'STAFF'
+           AND vp.participant_role = 'IC_SUPPORT'
+           AND vp.status IN ('INVITED','ACCEPTED','DECLINED','REMOVED')
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_staff_leader_invitation_coverage' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_participants vp
+         JOIN users u ON u.user_id = vp.user_id
+         JOIN roles r ON r.role_id = u.role_id
+         JOIN visit_request_campuses vrc ON vrc.visit_instance_id = vp.visit_instance_id
+         WHERE r.role_code = 'STAFF'
+           AND u.sub_role = 'LEADER'
+           AND vp.participant_role = 'IC_SUPPORT'
+           AND vp.is_host = FALSE
+           AND u.primary_campus_id = vrc.campus_id
+           AND vp.status IN ('INVITED','ACCEPTED','DECLINED','REMOVED')
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'missing_staff_leader_invitation_status_coverage' AS check_name,
+       4 - COUNT(DISTINCT vp.status) AS issue_count
+FROM visit_participants vp
+JOIN users u ON u.user_id = vp.user_id
+JOIN roles r ON r.role_id = u.role_id
+WHERE r.role_code = 'STAFF'
+  AND u.sub_role = 'LEADER'
+  AND vp.participant_role = 'IC_SUPPORT'
+  AND vp.is_host = FALSE
+  AND vp.status IN ('INVITED','ACCEPTED','DECLINED','REMOVED');
+
+SELECT 'missing_staff_leader_invitation_campus_coverage' AS check_name,
+       (
+         SELECT COUNT(*)
+         FROM campuses c
+         WHERE c.status = 'ACTIVE'
+       ) - COUNT(DISTINCT vrc.campus_id) AS issue_count
+FROM visit_participants vp
+JOIN users u ON u.user_id = vp.user_id
+JOIN roles r ON r.role_id = u.role_id
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = vp.visit_instance_id
+WHERE r.role_code = 'STAFF'
+  AND u.sub_role = 'LEADER'
+  AND vp.participant_role = 'IC_SUPPORT'
+  AND vp.is_host = FALSE
+  AND u.primary_campus_id = vrc.campus_id;
+
+SELECT 'invalid_primary_contact_non_visitor_role' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_requests vr
+JOIN users u ON u.user_id = vr.visitor_user_id
+JOIN roles r ON r.role_id = u.role_id
+WHERE r.role_code <> 'VISITOR';
+
+SELECT 'invalid_ic_support_role_or_campus' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_participants vp
+JOIN users u ON u.user_id = vp.user_id
+JOIN roles r ON r.role_id = u.role_id
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = vp.visit_instance_id
+WHERE vp.participant_role = 'IC_SUPPORT'
+  AND NOT (
+    r.role_code = 'STAFF'
+    AND u.sub_role IN ('STAFF','LEADER')
+    AND u.primary_campus_id = vrc.campus_id
+  );
+
+SELECT 'invalid_staff_created_registrant_relation' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_requests vr
+LEFT JOIN users registrant ON registrant.user_id = vr.registrant_user_id
+LEFT JOIN roles rr ON rr.role_id = registrant.role_id
+WHERE vr.created_source = 'STAFF_CREATED'
+  AND NOT (
+    rr.role_code = 'STAFF'
+    AND registrant.sub_role IN ('STAFF','LEADER')
+    AND vr.created_by = vr.registrant_user_id
+  );
+
+SELECT 'staff_created_missing_applied_initial_claim_history' AS check_name,
+       COUNT(*) AS issue_count
+FROM visit_requests vr
+JOIN users registrant ON registrant.user_id = vr.registrant_user_id
+JOIN roles rr ON rr.role_id = registrant.role_id
+LEFT JOIN visit_request_identity_changes ic
+  ON ic.visit_request_id = vr.visit_request_id
+ AND ic.change_kind = 'INITIAL_CLAIM'
+ AND ic.status = 'APPLIED'
+ AND ic.new_user_id = vr.visitor_user_id
+WHERE vr.created_source = 'STAFF_CREATED'
+  AND rr.role_code = 'STAFF'
+  AND vr.registrant_user_id <> vr.visitor_user_id
+  AND ic.identity_change_id IS NULL;
 
 -- Final DB-level check after all appended coverage rows: operational campus instances must have agenda.
 SELECT 'operational_visit_instances_missing_agenda_final' AS check_name,
@@ -10193,3 +11302,780 @@ WHERE vrc.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED')
 
 -- Fixed participant rows in this generated SQL:
 -- 7002, 7016, 7022, 7034, 7048, 7054, 7060, 7066, 7080, 7092, 7098, 7112, 7124, 7130, 7144, 7150, 7166, 7182, 7198, 7214, 7232, 7238, 7256, 7262, 7280, 7286, 7300, 7306, 7320, 7326, 99014, 99213, 99218, 99223
+
+
+
+-- =====================================================================
+-- CONTACT / VISITOR ROLE GUARD — ROLLBACK-SAFE DATABASE SELF-TESTS
+-- All negative mutations are isolated in transactions and rolled back. Results are
+-- emitted as rows; no intentionally invalid relation remains in the final seed.
+-- =====================================================================
+DROP TEMPORARY TABLE IF EXISTS pems_contact_guard_test_results;
+CREATE TEMPORARY TABLE pems_contact_guard_test_results (
+  sequence_no INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  test_type VARCHAR(20) NOT NULL,
+  test_case VARCHAR(30) NOT NULL,
+  operation_summary VARCHAR(500) NOT NULL,
+  expected_sqlstate VARCHAR(10) NOT NULL,
+  expected_message VARCHAR(255) NOT NULL,
+  actual_sqlstate VARCHAR(10) NOT NULL,
+  actual_message VARCHAR(1000) NOT NULL,
+  result ENUM('PASS','FAIL') NOT NULL,
+  PRIMARY KEY (sequence_no)
+) ENGINE=MEMORY;
+
+DROP PROCEDURE IF EXISTS sp_pems_contact_guard_tests;
+DELIMITER $$
+CREATE PROCEDURE sp_pems_contact_guard_tests()
+BEGIN
+  DECLARE v_sqlstate CHAR(5) DEFAULT NULL;
+  DECLARE v_message VARCHAR(1000) DEFAULT NULL;
+  DECLARE v_raised BOOLEAN DEFAULT FALSE;
+  DECLARE v_condition_ok INT DEFAULT 0;
+
+  -- NEG-01: INSERT request with ADMIN as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    INSERT INTO visit_requests
+      (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id,
+       created_source, form_schema_version, has_mixed_campus_details,
+       registrant_full_name, registrant_organization, registrant_job_title,
+       registrant_phone, registrant_email, registrant_nationality,
+       delegation_name, visit_scope, visit_type, visit_type_other, purpose, working_content,
+       contact_person_full_name, contact_person_organization, contact_person_phone,
+       contact_person_email, working_language, transportation_note,
+       media_consent_status, media_consent_note, note_to_fptu,
+       primary_contact_access_status, primary_contact_verified_at,
+       status, submitted_at, email_verified_at, row_version,
+       created_at, created_by, updated_at, updated_by)
+    VALUES
+      (99790, 'VR-GUARD-TEMP-99790', 1, 8, NULL,
+       'VISITOR_SUBMITTED', 2, 0,
+       'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester',
+       '+84997000000', 'visitor@example.com', 'Test',
+       'Temporary contact guard verification', 'SINGLE_CAMPUS', 'MEETING', NULL,
+       'Rollback-safe trigger verification only.', NULL,
+       'Guard Test Contact', 'Guard Test Organization', '+84997000001',
+       'guard.contact@example.test', 'EN', NULL,
+       'DECLINED', NULL, 'Rollback-safe test row.',
+       'ACTIVE', '2026-07-12 08:00:00',
+       'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0,
+       '2026-07-12 08:00:00', 8, NULL, NULL);
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-01', 'INSERT request with ADMIN as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-02: Assign HO as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 2, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-02', 'Assign HO as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-03: Assign STAFF + LEADER as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 3, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-03', 'Assign STAFF + LEADER as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-04: Assign STAFF + STAFF as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 4, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-04', 'Assign STAFF + STAFF as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-05: Assign DEPARTMENT + LEADER as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 5, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-05', 'Assign DEPARTMENT + LEADER as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-06: Assign DEPARTMENT + STAFF as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 6, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-06', 'Assign DEPARTMENT + STAFF as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-07: Assign STUDENT as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 7, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-07', 'Assign STUDENT as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-08: Assign INACTIVE VISITOR as visitor_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 99680, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-08', 'Assign INACTIVE VISITOR as visitor_user_id', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
+
+  -- NEG-09: Set ACTIVE primary contact with visitor_user_id NULL
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-09', 'Set ACTIVE primary contact with visitor_user_id NULL', '45000', 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER', 'PASS', 'FAIL'));
+
+  -- NEG-10: Set PENDING_CONFIRMATION while visitor_user_id is already assigned
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 8, primary_contact_access_status = 'PENDING_CONFIRMATION' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-10', 'Set PENDING_CONFIRMATION while visitor_user_id is already assigned', '45000', 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER', 'PASS', 'FAIL'));
+
+  -- NEG-11: Change linked primary-contact role from VISITOR to STAFF
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE users SET role_id = 3, sub_role = 'STAFF', primary_campus_id = 1, department_id = 1 WHERE user_id = 8;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-11', 'Change linked primary-contact role from VISITOR to STAFF', '45000', 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE', 'PASS', 'FAIL'));
+
+  -- NEG-12: Deactivate VISITOR linked to an active primary-contact relation
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE users SET status = 'INACTIVE' WHERE user_id = 8;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-12', 'Deactivate VISITOR linked to an active primary-contact relation', '45000', 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED', 'PASS', 'FAIL'));
+
+  -- NEG-13: Insert APPLIED identity change with internal STAFF new_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    INSERT INTO visit_request_identity_changes
+      (identity_change_id, visit_request_id, change_kind, target_relation,
+       confirmation_method, old_user_id, new_user_id, old_email_normalized,
+       new_email_normalized, new_email_masked, pending_snapshot_json, status,
+       expected_request_row_version, requested_by, requested_at, expires_at,
+       applied_at, reason, resend_count, created_at, updated_at)
+     VALUES
+      (99720, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 4,
+       'visitor@example.com', 'staff.hn@fpt.edu.vn', 's***@fpt.edu.vn',
+       JSON_OBJECT('seedCase','NEGATIVE_INTERNAL_IDENTITY_CHANGE'), 'APPLIED',
+       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
+       '2026-07-12 08:05:00', 'Rollback-safe negative test.', 0,
+       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-13', 'Insert APPLIED identity change with internal STAFF new_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-14: Update pending identity change to internal STAFF new_user_id
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_request_identity_changes SET new_user_id = 4, status = 'APPLIED', applied_at = '2026-07-12 08:05:00' WHERE identity_change_id = 99403;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-14', 'Update pending identity change to internal STAFF new_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- POS-01: INSERT request with ACTIVE VISITOR primary contact
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    INSERT INTO visit_requests
+      (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id,
+       created_source, form_schema_version, has_mixed_campus_details,
+       registrant_full_name, registrant_organization, registrant_job_title,
+       registrant_phone, registrant_email, registrant_nationality,
+       delegation_name, visit_scope, visit_type, visit_type_other, purpose, working_content,
+       contact_person_full_name, contact_person_organization, contact_person_phone,
+       contact_person_email, working_language, transportation_note,
+       media_consent_status, media_consent_note, note_to_fptu,
+       primary_contact_access_status, primary_contact_verified_at,
+       status, submitted_at, email_verified_at, row_version,
+       created_at, created_by, updated_at, updated_by)
+    VALUES
+      (99790, 'VR-GUARD-TEMP-99790', 8, 8, NULL,
+       'VISITOR_SUBMITTED', 2, 0,
+       'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester',
+       '+84997000000', 'visitor@example.com', 'Test',
+       'Temporary contact guard verification', 'SINGLE_CAMPUS', 'MEETING', NULL,
+       'Rollback-safe trigger verification only.', NULL,
+       'Guard Test Contact', 'Guard Test Organization', '+84997000001',
+       'guard.contact@example.test', 'EN', NULL,
+       'DECLINED', NULL, 'Rollback-safe test row.',
+       'ACTIVE', '2026-07-12 08:00:00',
+       'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0,
+       '2026-07-12 08:00:00', 8, NULL, NULL);
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests WHERE visit_request_id = 99790 AND visitor_user_id = 8 AND primary_contact_access_status = 'ACTIVE';
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-01', 'INSERT request with ACTIVE VISITOR primary contact', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-02: PENDING_CONFIRMATION with visitor_user_id NULL
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'PENDING_CONFIRMATION', primary_contact_verified_at = NULL WHERE visit_request_id = 3048;
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests WHERE visit_request_id = 3048 AND visitor_user_id IS NULL AND primary_contact_access_status = 'PENDING_CONFIRMATION';
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-02', 'PENDING_CONFIRMATION with visitor_user_id NULL', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-03: TRANSFER PENDING keeps the old ACTIVE VISITOR owner
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
+    INSERT INTO visit_request_identity_changes
+      (identity_change_id, visit_request_id, change_kind, target_relation,
+       confirmation_method, old_user_id, new_user_id, old_email_normalized,
+       new_email_normalized, new_email_masked, pending_snapshot_json, status,
+       expected_request_row_version, requested_by, requested_at, expires_at,
+       reason, resend_count, created_at, updated_at)
+    VALUES
+      (99710, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, NULL,
+       'visitor@example.com', 'aoi.tanaka@kyoto-global.example', 'a***@kyoto-global.example',
+       JSON_OBJECT('seedCase','POSITIVE_TRANSFER_PENDING'), 'PENDING',
+       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
+       'Rollback-safe positive transfer pending test.', 0,
+       '2026-07-12 08:00:00', NULL);
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 AND (SELECT visitor_user_id FROM visit_requests WHERE visit_request_id = 1001) = 8 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_request_identity_changes WHERE identity_change_id = 99710 AND status = 'PENDING' AND new_user_id IS NULL;
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-03', 'TRANSFER PENDING keeps the old ACTIVE VISITOR owner', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-04: TRANSFER APPLIED switches owner to a new ACTIVE VISITOR
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
+    INSERT INTO visit_request_identity_changes
+      (identity_change_id, visit_request_id, change_kind, target_relation,
+       confirmation_method, old_user_id, new_user_id, old_email_normalized,
+       new_email_normalized, new_email_masked, pending_snapshot_json, status,
+       expected_request_row_version, requested_by, requested_at, expires_at,
+       applied_at, reason, resend_count, created_at, updated_at)
+    VALUES
+      (99711, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 21,
+       'visitor@example.com', 'aoi.tanaka@kyoto-global.example', 'a***@kyoto-global.example',
+       JSON_OBJECT('seedCase','POSITIVE_TRANSFER_APPLIED'), 'APPLIED',
+       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
+       '2026-07-12 08:05:00', 'Rollback-safe positive transfer applied test.', 0,
+       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
+    UPDATE visit_requests
+    SET visitor_user_id = 21,
+        primary_contact_access_status = 'ACTIVE',
+        primary_contact_verified_at = '2026-07-12 08:05:00'
+    WHERE visit_request_id = 1001;
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 AND (SELECT visitor_user_id FROM visit_requests WHERE visit_request_id = 1001) = 21 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_request_identity_changes WHERE identity_change_id = 99711 AND status = 'APPLIED' AND new_user_id = 21;
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-04', 'TRANSFER APPLIED switches owner to a new ACTIVE VISITOR', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-05: Staff registrant uses a different ACTIVE VISITOR contact
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3046;
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests vr JOIN users ru ON ru.user_id = vr.registrant_user_id JOIN roles rr ON rr.role_id = ru.role_id JOIN users cu ON cu.user_id = vr.visitor_user_id JOIN roles cr ON cr.role_id = cu.role_id WHERE vr.visit_request_id = 3046 AND rr.role_code = 'STAFF' AND ru.sub_role = 'STAFF' AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE' AND vr.registrant_user_id <> vr.visitor_user_id;
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-05', 'Staff registrant uses a different ACTIVE VISITOR contact', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-06: Staff Leader registrant uses a different ACTIVE VISITOR contact
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3047;
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests vr JOIN users ru ON ru.user_id = vr.registrant_user_id JOIN roles rr ON rr.role_id = ru.role_id JOIN users cu ON cu.user_id = vr.visitor_user_id JOIN roles cr ON cr.role_id = cu.role_id WHERE vr.visit_request_id = 3047 AND rr.role_code = 'STAFF' AND ru.sub_role = 'LEADER' AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE' AND vr.registrant_user_id <> vr.visitor_user_id;
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-06', 'Staff Leader registrant uses a different ACTIVE VISITOR contact', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-07: Operational contact may reuse a Staff email as a snapshot
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    END;
+    UPDATE visit_instance_form_details SET operational_contact_email = 'staff.hn@fpt.edu.vn' WHERE visit_instance_id = 5046;
+    IF NOT v_raised THEN
+      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_instance_form_details d JOIN users u ON LOWER(u.email) = LOWER(d.operational_contact_email) JOIN roles r ON r.role_id = u.role_id WHERE d.visit_instance_id = 5046 AND r.role_code = 'STAFF';
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-07', 'Operational contact may reuse a Staff email as a snapshot', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+END$$
+DELIMITER ;
+
+CALL sp_pems_contact_guard_tests();
+DROP PROCEDURE IF EXISTS sp_pems_contact_guard_tests;
+
+SELECT sequence_no, test_type, test_case, operation_summary,
+       expected_sqlstate, expected_message, actual_sqlstate, actual_message, result
+FROM pems_contact_guard_test_results
+ORDER BY sequence_no;
+
+SELECT 'contact_guard_negative_failures' AS check_name,
+       COUNT(*) AS issue_count
+FROM pems_contact_guard_test_results
+WHERE test_type = 'NEGATIVE' AND result <> 'PASS';
+
+SELECT 'contact_guard_positive_failures' AS check_name,
+       COUNT(*) AS issue_count
+FROM pems_contact_guard_test_results
+WHERE test_type = 'POSITIVE' AND result <> 'PASS';
+
+-- =====================================================================
+-- CONTACT / VISITOR ROLE GUARD — FINAL VERIFICATION QUERIES
+-- Every issue_count must be 0 and every row-returning invalid query must return 0 rows.
+-- =====================================================================
+
+-- 12.1 No primary contact has a wrong role/status/access state. Expected: 0 rows.
+SELECT
+    vr.visit_request_id,
+    vr.request_code,
+    vr.visitor_user_id,
+    u.email,
+    r.role_code,
+    u.status,
+    vr.primary_contact_access_status
+FROM visit_requests vr
+JOIN users u
+  ON u.user_id = vr.visitor_user_id
+JOIN roles r
+  ON r.role_id = u.role_id
+WHERE r.role_code <> 'VISITOR'
+   OR u.status <> 'ACTIVE'
+   OR vr.primary_contact_access_status <> 'ACTIVE';
+
+-- 12.2 ACTIVE without visitor_user_id. Expected issue_count: 0.
+SELECT COUNT(*) AS issue_count
+FROM visit_requests
+WHERE primary_contact_access_status = 'ACTIVE'
+  AND visitor_user_id IS NULL;
+
+-- 12.3 PENDING with visitor_user_id already assigned. Expected issue_count: 0.
+SELECT COUNT(*) AS issue_count
+FROM visit_requests
+WHERE primary_contact_access_status = 'PENDING_CONFIRMATION'
+  AND visitor_user_id IS NOT NULL;
+
+-- 12.4 Internal registrants must still use a VISITOR primary contact. Expected: 0 rows.
+SELECT
+    vr.request_code,
+    rr.role_code AS registrant_role,
+    cr.role_code AS contact_role
+FROM visit_requests vr
+JOIN users registrant
+  ON registrant.user_id = vr.registrant_user_id
+JOIN roles rr
+  ON rr.role_id = registrant.role_id
+JOIN users contact_user
+  ON contact_user.user_id = vr.visitor_user_id
+JOIN roles cr
+  ON cr.role_id = contact_user.role_id
+WHERE rr.role_code IN ('STAFF', 'DEPARTMENT', 'HO', 'ADMIN', 'STUDENT')
+  AND cr.role_code <> 'VISITOR';
+
+-- 12.5 APPLIED identity changes must target an ACTIVE VISITOR. Expected: 0 rows.
+SELECT
+    ic.identity_change_id,
+    ic.visit_request_id,
+    ic.change_kind,
+    ic.status,
+    ic.new_user_id,
+    r.role_code,
+    u.status AS user_status
+FROM visit_request_identity_changes ic
+JOIN users u
+  ON u.user_id = ic.new_user_id
+JOIN roles r
+  ON r.role_id = u.role_id
+WHERE ic.status = 'APPLIED'
+  AND (
+      r.role_code <> 'VISITOR'
+      OR u.status <> 'ACTIVE'
+  );
+
+-- Required seed case coverage. Expected issue_count: 0 for each row.
+SELECT 'case_8_1_visitor_same_registrant_and_contact' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users u ON u.user_id = vr.registrant_user_id
+         JOIN roles r ON r.role_id = u.role_id
+         WHERE vr.request_code = 'VR-SC-HN-0001'
+           AND vr.registrant_user_id = vr.visitor_user_id
+           AND vr.primary_contact_access_status = 'ACTIVE'
+           AND r.role_code = 'VISITOR' AND u.status = 'ACTIVE'
+       ) THEN 0 ELSE 1 END AS issue_count
+UNION ALL
+SELECT 'case_8_2_visitor_a_registrant_visitor_b_contact',
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users ru ON ru.user_id = vr.registrant_user_id
+         JOIN roles rr ON rr.role_id = ru.role_id
+         JOIN users cu ON cu.user_id = vr.visitor_user_id
+         JOIN roles cr ON cr.role_id = cu.role_id
+         WHERE vr.request_code = 'VR-SC-HN-0002'
+           AND vr.registrant_user_id <> vr.visitor_user_id
+           AND vr.primary_contact_access_status = 'ACTIVE'
+           AND rr.role_code = 'VISITOR' AND ru.status = 'ACTIVE'
+           AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE'
+       ) THEN 0 ELSE 1 END
+UNION ALL
+SELECT 'case_8_3_staff_registrant_visitor_contact',
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users ru ON ru.user_id = vr.registrant_user_id
+         JOIN roles rr ON rr.role_id = ru.role_id
+         JOIN users cu ON cu.user_id = vr.visitor_user_id
+         JOIN roles cr ON cr.role_id = cu.role_id
+         WHERE vr.visit_request_id = 3046
+           AND rr.role_code = 'STAFF' AND ru.sub_role = 'STAFF'
+           AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE'
+           AND vr.primary_contact_access_status = 'ACTIVE'
+       ) THEN 0 ELSE 1 END
+UNION ALL
+SELECT 'case_8_4_staff_leader_registrant_visitor_contact',
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users ru ON ru.user_id = vr.registrant_user_id
+         JOIN roles rr ON rr.role_id = ru.role_id
+         JOIN users cu ON cu.user_id = vr.visitor_user_id
+         JOIN roles cr ON cr.role_id = cu.role_id
+         WHERE vr.visit_request_id = 3047
+           AND rr.role_code = 'STAFF' AND ru.sub_role = 'LEADER'
+           AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE'
+           AND vr.primary_contact_access_status = 'ACTIVE'
+       ) THEN 0 ELSE 1 END
+UNION ALL
+SELECT 'case_8_5_staff_registrant_pending_claim',
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users ru ON ru.user_id = vr.registrant_user_id
+         JOIN roles rr ON rr.role_id = ru.role_id
+         JOIN visit_request_identity_changes ic ON ic.visit_request_id = vr.visit_request_id
+         WHERE vr.visit_request_id = 3048
+           AND rr.role_code = 'STAFF' AND ru.sub_role = 'STAFF'
+           AND vr.visitor_user_id IS NULL
+           AND vr.primary_contact_access_status = 'PENDING_CONFIRMATION'
+           AND ic.change_kind = 'INITIAL_CLAIM' AND ic.status = 'PENDING'
+           AND ic.new_user_id IS NULL
+       ) THEN 0 ELSE 1 END
+UNION ALL
+SELECT 'case_8_6_staff_leader_registrant_pending_claim',
+       CASE WHEN EXISTS (
+         SELECT 1 FROM visit_requests vr
+         JOIN users ru ON ru.user_id = vr.registrant_user_id
+         JOIN roles rr ON rr.role_id = ru.role_id
+         JOIN visit_request_identity_changes ic ON ic.visit_request_id = vr.visit_request_id
+         WHERE vr.visit_request_id = 3049
+           AND rr.role_code = 'STAFF' AND ru.sub_role = 'LEADER'
+           AND vr.visitor_user_id IS NULL
+           AND vr.primary_contact_access_status = 'PENDING_CONFIRMATION'
+           AND ic.change_kind = 'INITIAL_CLAIM' AND ic.status = 'PENDING'
+           AND ic.new_user_id IS NULL
+       ) THEN 0 ELSE 1 END;
+
+SELECT 'operational_contact_staff_email_is_snapshot_only' AS check_name,
+       CASE WHEN EXISTS (
+         SELECT 1
+         FROM visit_instance_form_details d
+         JOIN visit_request_campuses vic
+           ON vic.visit_instance_id = d.visit_instance_id
+         JOIN users u
+           ON LOWER(u.email) = LOWER(d.operational_contact_email)
+         JOIN roles r
+           ON r.role_id = u.role_id
+         WHERE d.visit_instance_id = 5046
+           AND r.role_code = 'STAFF'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM visit_requests vr
+             WHERE vr.visit_request_id = vic.visit_request_id
+               AND vr.visitor_user_id = u.user_id
+           )
+       ) THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'required_contact_guard_triggers_present' AS check_name,
+       5 - COUNT(*) AS issue_count
+FROM information_schema.triggers
+WHERE trigger_schema = DATABASE()
+  AND trigger_name IN (
+    'trg_visit_requests_primary_contact_guard_bi',
+    'trg_visit_requests_primary_contact_guard_bu',
+    'trg_users_protect_active_primary_contact_bu',
+    'trg_visit_request_identity_changes_user_guard_bi',
+    'trg_visit_request_identity_changes_user_guard_bu'
+  );
+
+-- Restore the session setting that existed before this full seed started.
+SET SESSION SQL_SAFE_UPDATES = @pems_previous_sql_safe_updates;

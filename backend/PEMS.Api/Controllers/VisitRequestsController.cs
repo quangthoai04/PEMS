@@ -33,15 +33,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// to the verify endpoint.
     /// </summary>
     [HttpPost("initiate")]
-    [ProducesResponseType(typeof(InitiateVisitRequestResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> Initiate(
-        [FromBody] InitiateVisitRequestCommand command,
-        CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult Initiate()
     {
-        var result = await _mediator.Send(command, cancellationToken);
-        return Ok(result);
+        return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
     /// <summary>
@@ -53,17 +48,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// 409 DUPLICATE_VISIT_REQUEST.
     /// </summary>
     [HttpPost("verify")]
-    [ProducesResponseType(typeof(VerifyAndCreateVisitRequestResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    [ProducesResponseType(StatusCodes.Status428PreconditionRequired)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> Verify(
-        [FromBody] VerifyAndCreateVisitRequestCommand command,
-        CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult Verify()
     {
-        var result = await _mediator.Send(command, cancellationToken);
-        return Ok(result);
+        return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
     /// <summary>
@@ -111,17 +99,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// </summary>
     [HttpPost]
     [Authorize]
-    [ProducesResponseType(typeof(CreateAuthenticatedVisitRequestResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> CreateAuthenticated(
-        [FromBody] CreateAuthenticatedVisitRequestCommand command,
-        CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult CreateAuthenticated()
     {
-        var result = await _mediator.Send(command, cancellationToken);
-        return Ok(result);
+        return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
     /// <summary>
@@ -150,10 +131,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// </summary>
     [HttpGet("{visitRequestId}/edit-detail")]
     [Authorize]
-    public async Task<IActionResult> GetEditableDetail(ulong visitRequestId, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult GetEditableDetail(ulong visitRequestId)
     {
-        var result = await _mediator.Send(new GetEditableVisitRequestDetailQuery(visitRequestId), cancellationToken);
-        return Ok(result);
+        return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
     /// <summary>
@@ -242,13 +223,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// </summary>
     [HttpPut("{visitRequestId}/pending-edit")]
     [Authorize]
-    public async Task<IActionResult> UpdatePending(
-        ulong visitRequestId,
-        [FromBody] UpdatePendingVisitRequestCommand command,
-        CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult UpdatePending(ulong visitRequestId)
     {
-        var result = await _mediator.Send(command with { VisitRequestId = visitRequestId }, cancellationToken);
-        return Ok(result);
+        return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
     /// <summary>
@@ -275,13 +253,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// </summary>
     [HttpPost("{visitRequestId}/resubmit")]
     [Authorize]
-    public async Task<IActionResult> Resubmit(
-        ulong visitRequestId,
-        [FromBody] ResubmitRejectedVisitRequestCommand command,
-        CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult Resubmit(ulong visitRequestId)
     {
-        var result = await _mediator.Send(command with { VisitRequestId = visitRequestId }, cancellationToken);
-        return Ok(result);
+        return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
     // ── Per-campus v2 primary-contact INITIAL_CLAIM (plan §16.4) ─────────────────────────────

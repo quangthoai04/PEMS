@@ -26,6 +26,7 @@ public sealed class CreateVisitRequestV2CommandHandler
     private readonly IVisitRequestV2CreateService _createService;
     private readonly INotificationService _notificationService;
     private readonly IVisitContactClaimService _contactClaimService;
+    private readonly IUserProvisionService _userProvisionService;
     private readonly ILogger<CreateVisitRequestV2CommandHandler> _logger;
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
     private readonly PerCampusFormV2Options _readFlag;
@@ -35,7 +36,7 @@ public sealed class CreateVisitRequestV2CommandHandler
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IVisitRequestV2CreateService createService,
         INotificationService notificationService,
-        IVisitContactClaimService contactClaimService,
+        IVisitContactClaimService contactClaimService, IUserProvisionService userProvisionService,
         ILogger<CreateVisitRequestV2CommandHandler> logger,
         PerCampusFormV2Options readFlag, PerCampusFormV2WriteOptions writeFlag,
         IVisitRequestAggregateStatusService aggregateStatus)
@@ -46,6 +47,7 @@ public sealed class CreateVisitRequestV2CommandHandler
         _createService = createService;
         _notificationService = notificationService;
         _contactClaimService = contactClaimService;
+        _userProvisionService = userProvisionService;
         _logger = logger;
         _aggregateStatus = aggregateStatus;
         _readFlag = readFlag;
@@ -90,6 +92,19 @@ public sealed class CreateVisitRequestV2CommandHandler
         var form = request.Form;
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
+
+        var contactEmail = form.PrimaryContact.Email.Trim().ToLowerInvariant();
+        var registrantEmail = actor.Email!.ToLowerInvariant();
+
+        if (isInternal && (contactEmail == registrantEmail))
+            throw new BusinessRuleException(
+                "Nhân sự nội bộ không thể là đầu mối liên hệ của đoàn khách. Vui lòng nhập một người khác (tài khoản VISITOR).",
+                VisitRequestErrorCodes.InternalRegistrantCannotBeContact);
+
+        if (isInternal && contactEmail != registrantEmail)
+        {
+            await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(contactEmail, cancellationToken);
+        }
 
         // ── Per-campus processing (authenticated create only; default = route to the campus Staff Leader).
         //    Authorization is the SAME role × mode × campus matrix as the v1 authenticated create, kept in
@@ -171,68 +186,46 @@ public sealed class CreateVisitRequestV2CommandHandler
 
         var now = _clock.VietnamNow;
         VisitRequest created;
-        ulong? notifyAssignedHostId = null;
 
+        ulong? notifyAssignedHostId = null;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
             try
             {
-                created = await _createService.CreateV2Async(
-                    form, registrantUserId, createdSource, now, cancellationToken);
 
-                var campusCodesById = await _db.Campuses
-                    .Where(c => selectedCodes.Contains(c.CampusCode))
-                    .Select(c => new { c.CampusId, c.CampusCode })
-                    .ToDictionaryAsync(c => c.CampusId, c => c.CampusCode, cancellationToken);
-
-                foreach (var instance in created.CampusInstances)
+                var initializers = new System.Collections.Generic.Dictionary<string, System.Action<PEMS.Domain.Entities.Delegations.VisitRequestCampus>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var kvp in plans)
                 {
-                    var code = campusCodesById.TryGetValue(instance.CampusId, out var cc) ? cc : null;
-                    if (code is null || !plans.TryGetValue(code, out var plan))
-                        continue; // No direct plan → stays WAITING_REQUEST_APPROVAL, routed to that campus's Leader.
-
-                    var decision = V2CampusProcessingRules.Derive(processingActor, plan);
-
-                    // Non-blocking hosting-overlap warning — same policy as the v1 create: the user must
-                    // acknowledge it for THIS campus before the direct assignment is written.
-                    var conflict = await _db.VisitRequestCampuses.AnyAsync(c =>
-                        c.CurrentHostUserId == decision.HostUserId
-                        && (c.Status == VisitInstanceStatus.Assigned
-                            || c.Status == VisitInstanceStatus.BeforeVisit
-                            || c.Status == VisitInstanceStatus.DuringVisit)
-                        && c.PlannedStartAt < instance.PlannedEndAt
-                        && c.PlannedEndAt > instance.PlannedStartAt,
-                        cancellationToken);
-                    if (conflict && !plan.ConfirmedHostConflict)
-                        throw new ConflictException(
-                            "Host được chọn đã phụ trách một đoàn khác trùng khung giờ. Vui lòng xác nhận trước khi tiếp tục.",
-                            "HOST_SCHEDULE_CONFLICT_CONFIRMATION_REQUIRED");
-
-                    instance.Status            = VisitInstanceStatus.Assigned;
-                    instance.DecidedBy         = registrantUserId;
-                    instance.DecidedAt         = now;
-                    instance.DecisionActorRole = decision.DecisionActorRole;
-                    instance.DecisionSource    = decision.DecisionSource;
-                    instance.CurrentHostUserId = decision.HostUserId;
-                    instance.HostAssignedBy    = registrantUserId;
-                    instance.HostAssignedAt    = now;
-
+                    var decision = V2CampusProcessingRules.Derive(processingActor, kvp.Value);
                     if (decision.IsLeaderAssignOther)
                         notifyAssignedHostId = decision.HostUserId;
 
-                    // Official IC_HOST participant row — same semantics as the approve flow.
-                    instance.Participants.Add(new VisitParticipant
+                    initializers[kvp.Key] = instance =>
                     {
-                        UserId          = decision.HostUserId,
-                        ParticipantRole = ParticipantRoles.IcHost,
-                        IsHost          = true,
-                        Status          = ParticipantStatuses.Assigned,
-                        AssignedBy      = registrantUserId,
-                        AssignedAt      = now,
-                        CreatedAt       = now,
-                        CreatedBy       = registrantUserId,
-                    });
+                        instance.Status = VisitInstanceStatus.Assigned;
+                        instance.DecidedBy = registrantUserId;
+                        instance.DecidedAt = now;
+                        instance.DecisionActorRole = decision.DecisionActorRole;
+                        instance.DecisionSource = decision.DecisionSource;
+                        instance.CurrentHostUserId = decision.HostUserId;
+                        instance.HostAssignedBy = registrantUserId;
+                        instance.HostAssignedAt = now;
+                        instance.Participants.Add(new VisitParticipant
+                        {
+                            UserId = decision.HostUserId,
+                            ParticipantRole = ParticipantRoles.IcHost,
+                            IsHost = true,
+                            Status = ParticipantStatuses.Assigned,
+                            AssignedBy = registrantUserId,
+                            AssignedAt = now,
+                            CreatedAt = now,
+                            CreatedBy = registrantUserId,
+                        });
+                    };
                 }
+
+                created = await _createService.CreateV2Async(
+                    form, registrantUserId, createdSource, now, cancellationToken, initializers);
 
                 // Aggregate status — single source that mirrors the SQL aggregate trigger.
                 _aggregateStatus.Apply(created);
