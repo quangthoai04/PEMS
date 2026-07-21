@@ -12,6 +12,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
 
@@ -675,7 +676,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         if (!string.Equals(request.RegistrantFullName, r.FullName, StringComparison.Ordinal) ||
             !string.Equals(request.RegistrantNationality, r.Nationality, StringComparison.Ordinal) ||
             !string.Equals(request.RegistrantJobTitle, r.JobTitle, StringComparison.Ordinal) ||
-            !string.Equals(request.RegistrantPhone, r.Phone, StringComparison.Ordinal) ||
+            // Compare NORMALIZED phones so the same number in national vs E.164 form is treated as
+            // unchanged — the stored value is E.164 (create normalizes it), and a direct API edit
+            // sending "0912345678" must not read as an immutable-field violation.
+            !string.Equals(PhoneNumber.NormalizeOrOriginal(request.RegistrantPhone),
+                           PhoneNumber.NormalizeOrOriginal(r.Phone), StringComparison.Ordinal) ||
             !string.Equals(request.RegistrantEmail, r.Email, StringComparison.OrdinalIgnoreCase) ||
             request.PartnerId != edit.PartnerId)
         {
@@ -714,7 +719,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         }
         Apply("contact_person_full_name", request.ContactPersonFullName, c.FullName, () => request.ContactPersonFullName = c.FullName);
         Apply("contact_person_organization", request.ContactPersonOrganization, c.Organization, () => request.ContactPersonOrganization = c.Organization);
-        Apply("contact_person_phone", request.ContactPersonPhone, c.Phone, () => request.ContactPersonPhone = c.Phone);
+        // Store the contact phone as E.164, like create — and normalize the stored side of the diff
+        // too, so re-saving an unchanged national-format number does not log a spurious change.
+        var contactPhone = PhoneNumber.NormalizeOrOriginal(c.Phone);
+        Apply("contact_person_phone", PhoneNumber.NormalizeOrOriginal(request.ContactPersonPhone), contactPhone,
+            () => request.ContactPersonPhone = contactPhone);
         return changed;
     }
 

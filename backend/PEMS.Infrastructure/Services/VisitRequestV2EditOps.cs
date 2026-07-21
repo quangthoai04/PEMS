@@ -4,6 +4,7 @@ using System.Text.Json;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
 
@@ -104,7 +105,7 @@ internal static class VisitRequestV2EditOps
         detail.OperationalContactFullName = content.OperationalContact.FullName;
         // Org + email are optional — blank normalizes to NULL (the DB CHECK rejects an empty string).
         detail.OperationalContactOrganization = Clean(content.OperationalContact.Organization);
-        detail.OperationalContactPhone = content.OperationalContact.Phone;
+        detail.OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(content.OperationalContact.Phone);
         detail.OperationalContactEmail = Clean(content.OperationalContact.Email);
         detail.WorkingLanguage = content.WorkingLanguage;
         detail.TransportationNote = Clean(content.TransportationNote);
@@ -129,7 +130,7 @@ internal static class VisitRequestV2EditOps
             WorkingContent = content.WorkingContent,
             OperationalContactFullName = content.OperationalContact.FullName,
             OperationalContactOrganization = Clean(content.OperationalContact.Organization),
-            OperationalContactPhone = content.OperationalContact.Phone,
+            OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(content.OperationalContact.Phone),
             OperationalContactEmail = Clean(content.OperationalContact.Email),
             WorkingLanguage = content.WorkingLanguage,
             TransportationNote = Clean(content.TransportationNote),
