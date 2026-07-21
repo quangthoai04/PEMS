@@ -23,8 +23,10 @@ export const publicPartnersApi = {
     return data;
   },
 
-  async getPublicPartnerDetail(idOrSlug: string | number): Promise<PublicPartner> {
-    const { data } = await httpClient.get<PublicPartner>(API_ENDPOINTS.publicPartners.detail(idOrSlug));
+  async getPublicPartnerDetail(idOrSlug: string | number, languageCode?: string): Promise<PublicPartner> {
+    const { data } = await httpClient.get<PublicPartner>(API_ENDPOINTS.publicPartners.detail(idOrSlug), {
+      params: languageCode ? { languageCode } : undefined,
+    });
     return data;
   },
 
@@ -33,8 +35,10 @@ export const publicPartnersApi = {
     return data;
   },
 
-  async getPublicPartnerTypes(): Promise<PublicPartnerType[]> {
-    const { data } = await httpClient.get<PublicPartnerType[]>(API_ENDPOINTS.publicPartners.types);
+  async getPublicPartnerTypes(languageCode?: string): Promise<PublicPartnerType[]> {
+    const { data } = await httpClient.get<PublicPartnerType[]>(API_ENDPOINTS.publicPartners.types, {
+      params: languageCode ? { languageCode } : undefined,
+    });
     return data;
   },
 };

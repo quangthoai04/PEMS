@@ -7,9 +7,8 @@ namespace PEMS.Application.Partners.Queries.GetPublicPartnerTypes;
 /// GET /api/public/partners/types — distinct partner_type values (with counts) among APPROVED +
 /// PUBLIC partners, for the public directory's partner type filter. Anonymous.
 /// </summary>
-public sealed class GetPublicPartnerTypesQuery : IRequest<List<PublicPartnerTypeDto>>
-{
-}
+public sealed record GetPublicPartnerTypesQuery(string? LanguageCode = null)
+    : IRequest<List<PublicPartnerTypeDto>>;
 
 public sealed class PublicPartnerTypeDto
 {

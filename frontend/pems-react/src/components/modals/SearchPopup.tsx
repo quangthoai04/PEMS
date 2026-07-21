@@ -117,8 +117,8 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       try {
         const [campuses, partnerTypes, faqTypes] = await Promise.all([
           authenticationApi.getActiveCampuses().catch(() => []),
-          publicPartnersApi.getPublicPartnerTypes().catch(() => []),
-          publicFaqApi.getFaqTypeCounts().catch(() => []),
+          publicPartnersApi.getPublicPartnerTypes(i18n.language).catch(() => []),
+          publicFaqApi.getFaqTypeCounts(i18n.language).catch(() => []),
         ]);
         if (cancelled) return;
 
@@ -140,7 +140,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen]);
+  }, [isOpen, i18n.language]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword.trim()), 350);

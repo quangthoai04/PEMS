@@ -59,14 +59,15 @@ public sealed class PublicPartnersController : ControllerBase
     /// list page's partner type filter.</summary>
     [AllowAnonymous]
     [HttpGet("types")]
-    public async Task<IActionResult> GetPartnerTypes(CancellationToken cancellationToken)
-        => Ok(await _mediator.Send(new GetPublicPartnerTypesQuery(), cancellationToken));
+    public async Task<IActionResult> GetPartnerTypes(
+        [FromQuery] string? languageCode, CancellationToken cancellationToken)
+        => Ok(await _mediator.Send(new GetPublicPartnerTypesQuery(languageCode), cancellationToken));
 
     [AllowAnonymous]
     [HttpGet("{partnerIdOrSlug}")]
     public async Task<IActionResult> GetPublicPartnerDetail(
-        string partnerIdOrSlug, CancellationToken cancellationToken)
-        => Ok(await _mediator.Send(new GetPublicPartnerDetailQuery(partnerIdOrSlug), cancellationToken));
+        string partnerIdOrSlug, [FromQuery] string? languageCode, CancellationToken cancellationToken)
+        => Ok(await _mediator.Send(new GetPublicPartnerDetailQuery(partnerIdOrSlug, languageCode), cancellationToken));
 
     /// <summary>
     /// Partner-scoped public file proxy (logo/cover) — inline, cacheable, no session needed. The public
