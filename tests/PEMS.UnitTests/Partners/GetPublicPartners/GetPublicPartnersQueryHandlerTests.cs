@@ -1,3 +1,6 @@
+using Moq;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Partners.Common;
 using PEMS.Application.Partners.Queries.GetPublicPartners;
 using PEMS.UnitTests.Partners.TestInfrastructure;
 
@@ -14,7 +17,11 @@ public class GetPublicPartnersQueryHandlerTests
 {
     private static async Task<GetPublicPartnersResponse> RunAsync(PartnersTestDbContext db, string? country = null)
     {
-        var handler = new GetPublicPartnersQueryHandler(db);
+        var mockCache = new Mock<IPartnerDescriptionTranslationCache>();
+        mockCache.Setup(m => m.TranslateAsync(It.IsAny<List<PartnerDescriptionTranslationSource>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new Dictionary<ulong, string>());
+                 
+        var handler = new GetPublicPartnersQueryHandler(db, mockCache.Object);
         return await handler.Handle(
             new GetPublicPartnersQuery { Country = country, Page = 1, PageSize = 24 },
             CancellationToken.None);
