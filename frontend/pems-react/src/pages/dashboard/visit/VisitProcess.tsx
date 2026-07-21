@@ -1367,7 +1367,7 @@ export function VisitProcess() {
           renderEmptyState()
         ) : (
           <>
-            <VisitDuringTab isReadOnly={duringReadOnly} isDept={isDept} visitInstanceId={perm?.visitInstanceId} />
+            <VisitDuringTab isReadOnly={duringReadOnly} isDept={isDept} visitInstanceId={perm?.visitInstanceId} guestMembers={detail?.requestSummary?.guestMembers || []} supportMembers={detail?.requestSummary?.externalSupportMembers || []} />
             {renderStageBar({
               stage: 'during',
               canDo: !!perm?.canCompleteVisit,

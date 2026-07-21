@@ -42,7 +42,7 @@ function PartnerLogo({ partner }: { partner: PublicPartner }) {
 }
 
 export function PartnersSection() {
-  const { t } = useTranslation(['home']);
+  const { t, i18n } = useTranslation(['home']);
   const [partners, setPartners] = useState<PublicPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
@@ -50,12 +50,12 @@ export function PartnersSection() {
   useEffect(() => {
     let cancelled = false;
     publicPartnersApi
-      .getPublicPartners({ pageSize: 36 })
+      .getPublicPartners({ pageSize: 36, languageCode: i18n.language })
       .then((data) => { if (!cancelled) setPartners(data.items ?? []); })
       .catch(() => { /* trang chủ vẫn hiển thị bình thường khi API lỗi */ })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [i18n.language]);
 
   if (!loading && partners.length === 0) return null;
 

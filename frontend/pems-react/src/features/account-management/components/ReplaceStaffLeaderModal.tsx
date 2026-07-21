@@ -7,6 +7,17 @@ import type {
   ReplaceStaffLeaderResponse,
   StaffLeaderReplacementPreview,
 } from '../types/accountManagement.types';
+import {
+  ACCOUNT_EMAIL_MAX_LENGTH,
+  ACCOUNT_FULL_NAME_MAX_LENGTH,
+  REPLACEMENT_REASON_MAX_LENGTH,
+  normalizeAccountEmail,
+  normalizeFullName,
+  normalizeReplacementReason,
+  validateAccountEmail,
+  validateFullName,
+  validateReplacementReason,
+} from '../validation/accountIdentityValidation';
 
 interface Props {
   campusId: string | number;
@@ -26,7 +37,16 @@ const OLD_LEADER_WARNING: Record<string, string> = {
   LOCKED: 'Staff Leader hiện tại đang bị khóa. Việc thay thế sẽ giữ nguyên trạng thái khóa và ghi nhận security event.',
 };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Field-level errors; the create-new inputs are only validated in mode CREATE_NEW_USER. */
+type ReplaceFieldErrors = { fullName?: string; email?: string; reason?: string; candidate?: string };
+
+// Red border for a field that failed validation (identity spec §7.4).
+const fieldClass = (hasError: boolean) =>
+  `w-full px-4 py-2.5 rounded-xl border outline-none text-sm bg-white ${
+    hasError
+      ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
+      : 'border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]'
+  }`;
 
 /**
  * Replace Staff Leader (Trưởng phòng IC) of a campus — HO only. Two modes: promote an existing IC
@@ -46,6 +66,7 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ReplaceFieldErrors>({});
 
   useEffect(() => {
     let active = true;
@@ -69,38 +90,50 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
   const selectedCandidate = candidates.find((c) => String(c.userId) === candidateId) ?? null;
 
   // New-leader identity for the confirm dialog.
-  const newLeaderName = mode === 'EXISTING_USER' ? selectedCandidate?.fullName : newUser.fullName.trim();
-  const newLeaderEmail = mode === 'EXISTING_USER' ? selectedCandidate?.email : newUser.email.trim();
+  const newLeaderName = mode === 'EXISTING_USER' ? selectedCandidate?.fullName : normalizeFullName(newUser.fullName);
+  const newLeaderEmail = mode === 'EXISTING_USER' ? selectedCandidate?.email : normalizeAccountEmail(newUser.email);
 
-  const validate = (): string | null => {
-    if (!reason.trim()) return 'Vui lòng nhập lý do thay thế.';
+  /**
+   * Reason is always required. The create-new name/email are validated ONLY in CREATE_NEW_USER —
+   * in EXISTING_USER those inputs are hidden and must never block the flow (spec §6.3.1 / AC-07).
+   */
+  const validate = (): ReplaceFieldErrors => {
+    const errors: ReplaceFieldErrors = {};
+    const reasonError = validateReplacementReason(reason);
+    if (reasonError) errors.reason = reasonError;
+
     if (mode === 'EXISTING_USER') {
-      if (!candidateId) return 'Vui lòng chọn nhân sự thay thế.';
+      if (!candidateId) errors.candidate = 'Vui lòng chọn nhân sự thay thế.';
     } else {
-      if (!newUser.fullName.trim()) return 'Vui lòng nhập họ và tên người thay thế.';
-      if (!EMAIL_RE.test(newUser.email.trim())) return 'Vui lòng nhập email hợp lệ.';
+      const fullNameError = validateFullName(newUser.fullName);
+      if (fullNameError) errors.fullName = fullNameError;
+      const emailError = validateAccountEmail(newUser.email);
+      if (emailError) errors.email = emailError;
     }
-    return null;
+    return errors;
   };
 
   const openConfirm = () => {
-    const err = validate();
-    if (err) { setSubmitError(err); return; }
+    const errors = validate();
+    setFieldErrors(errors);
+    if (Object.values(errors).some(Boolean)) { setSubmitError(null); return; }
     setSubmitError(null);
     setShowConfirm(true);
   };
 
   const submit = async () => {
+    if (submitting) return; // double-click guard
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // Normalized values are what the backend stores and compares against.
       const result = await accountManagementApi.replaceStaffLeader({
         campusId,
         mode,
-        reason: reason.trim(),
+        reason: normalizeReplacementReason(reason),
         ...(mode === 'EXISTING_USER'
           ? { newLeaderUserId: candidateId }
-          : { fullName: newUser.fullName.trim(), email: newUser.email.trim() }),
+          : { fullName: normalizeFullName(newUser.fullName), email: normalizeAccountEmail(newUser.email) }),
       });
       onReplaced(result);
     } catch (err) {
@@ -203,14 +236,23 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                   <div>
                     <select
                       value={candidateId}
-                      onChange={(e) => setCandidateId(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                      aria-invalid={!!fieldErrors.candidate}
+                      aria-describedby={fieldErrors.candidate ? 'replace-candidate-error' : undefined}
+                      onChange={(e) => { setCandidateId(e.target.value); setFieldErrors((prev) => ({ ...prev, candidate: undefined })); }}
+                      className={`w-full px-4 py-2.5 rounded-xl border outline-none text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer ${
+                        fieldErrors.candidate
+                          ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
+                          : 'border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]'
+                      }`}
                     >
                       <option value="">-- Chọn nhân sự IC Staff --</option>
                       {candidates.map((c) => (
                         <option key={c.userId} value={c.userId}>{c.fullName} — {c.email}</option>
                       ))}
                     </select>
+                    {fieldErrors.candidate && (
+                      <p id="replace-candidate-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.candidate}</p>
+                    )}
                     {candidates.length === 0 && (
                       <p className="mt-1.5 text-xs text-gray-500">Phòng IC của cơ sở chưa có nhân sự IC Staff phù hợp. Bạn có thể tạo tài khoản mới.</p>
                     )}
@@ -218,23 +260,45 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-1.5">Họ và tên <span className="text-red-500">*</span></label>
+                      <label htmlFor="replace-full-name" className="block text-sm font-bold text-gray-700 mb-1.5">Họ và tên <span className="text-red-500">*</span></label>
                       <input
+                        id="replace-full-name"
+                        type="text"
                         value={newUser.fullName}
-                        onChange={(e) => setNewUser({ ...newUser, fullName: e.target.value })}
+                        maxLength={ACCOUNT_FULL_NAME_MAX_LENGTH}
+                        autoComplete="name"
+                        aria-invalid={!!fieldErrors.fullName}
+                        aria-describedby={fieldErrors.fullName ? 'replace-full-name-error' : undefined}
+                        onChange={(e) => { setNewUser({ ...newUser, fullName: e.target.value }); setFieldErrors((prev) => ({ ...prev, fullName: undefined })); }}
+                        onBlur={(e) => setFieldErrors((prev) => ({ ...prev, fullName: validateFullName(e.target.value) ?? undefined }))}
                         placeholder="Trần Văn B"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm bg-white"
+                        className={fieldClass(!!fieldErrors.fullName)}
                       />
+                      {fieldErrors.fullName && (
+                        <p id="replace-full-name-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.fullName}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-1.5">Email <span className="text-red-500">*</span></label>
+                      <label htmlFor="replace-email" className="block text-sm font-bold text-gray-700 mb-1.5">Email <span className="text-red-500">*</span></label>
                       <input
+                        id="replace-email"
                         type="email"
                         value={newUser.email}
-                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                        placeholder="example@domain.com"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm bg-white"
+                        maxLength={ACCOUNT_EMAIL_MAX_LENGTH}
+                        autoComplete="email"
+                        inputMode="email"
+                        aria-invalid={!!fieldErrors.email}
+                        aria-describedby={fieldErrors.email ? 'replace-email-error' : undefined}
+                        onChange={(e) => { setNewUser({ ...newUser, email: e.target.value }); setFieldErrors((prev) => ({ ...prev, email: undefined })); }}
+                        onBlur={(e) => setFieldErrors((prev) => ({ ...prev, email: validateAccountEmail(e.target.value) ?? undefined }))}
+                        placeholder="example@gmail.com"
+                        className={fieldClass(!!fieldErrors.email)}
                       />
+                      {fieldErrors.email ? (
+                        <p id="replace-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.email}</p>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.</p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -242,14 +306,24 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
 
               {/* 4. Reason (required) */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Lý do thay thế <span className="text-red-500">*</span></label>
+                <label htmlFor="replace-reason" className="block text-sm font-bold text-gray-700 mb-2">Lý do thay thế <span className="text-red-500">*</span></label>
                 <textarea
+                  id="replace-reason"
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  maxLength={REPLACEMENT_REASON_MAX_LENGTH}
+                  aria-invalid={!!fieldErrors.reason}
+                  aria-describedby={fieldErrors.reason ? 'replace-reason-error' : undefined}
+                  onChange={(e) => { setReason(e.target.value); setFieldErrors((prev) => ({ ...prev, reason: undefined })); }}
+                  onBlur={(e) => setFieldErrors((prev) => ({ ...prev, reason: validateReplacementReason(e.target.value) ?? undefined }))}
                   rows={2}
                   placeholder="Ví dụ: Thay đổi nhân sự phụ trách Phòng Hợp tác Quốc tế."
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm bg-white resize-none"
+                  className={`${fieldClass(!!fieldErrors.reason)} resize-none`}
                 />
+                {fieldErrors.reason ? (
+                  <p id="replace-reason-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.reason}</p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-gray-500">Tối thiểu 10 ký tự, tối đa 500 ký tự.</p>
+                )}
               </div>
 
               {submitError && (
@@ -288,19 +362,31 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
               <p>Bạn có chắc muốn thay thế Staff Leader của <strong className="text-[#004c91]">{headerCampus}</strong>?</p>
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
                 <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Cơ sở / Phòng ban</p>
+                  <p className="font-bold text-gray-800">
+                    {headerCampus} — {preview?.icDepartmentName ?? 'Phòng Hợp tác Quốc tế'}
+                  </p>
+                </div>
+                <div>
                   <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Người hiện tại</p>
                   <p className="font-bold text-gray-800">{current.fullName} — {current.email}</p>
                 </div>
                 <div className="flex justify-center text-gray-400"><ArrowRight className="w-4 h-4 rotate-90" /></div>
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Người thay thế</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                    Người thay thế ({mode === 'EXISTING_USER' ? 'nhân sự IC có sẵn' : 'tài khoản mới'})
+                  </p>
                   <p className="font-bold text-[#0aa14f]">
                     {newLeaderName || '(tài khoản mới)'}{newLeaderEmail ? ` — ${newLeaderEmail}` : ''}
                   </p>
                 </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Lý do thay thế</p>
+                  <p className="font-medium text-gray-700 break-words">{normalizeReplacementReason(reason)}</p>
+                </div>
               </div>
               <p className="text-xs text-amber-700">
-                Sau khi xác nhận, người hiện tại sẽ không còn quyền Staff Leader và các phiên đăng nhập hiện tại sẽ bị thu hồi.
+                Sau khi xác nhận, người hiện tại sẽ được chuyển về vai trò Staff (STAFF/STAFF) và các phiên đăng nhập liên quan sẽ bị thu hồi.
               </p>
               {submitError && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">{submitError}</div>

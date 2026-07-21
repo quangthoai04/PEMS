@@ -41,13 +41,22 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
 
     public async Task<CreateAccountResponse> Handle(CreateAccountCommand request, CancellationToken cancellationToken)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
+        // Identity is normalized once, then used for every comparison, the insert, the audit entry
+        // and the notification email — a direct API call never bypasses the shared rules.
+        var email = AccountIdentityRules.NormalizeEmail(request.Email);
+        var fullName = AccountIdentityRules.NormalizeFullName(request.FullName);
+        if (AccountIdentityRules.ValidateFullName(fullName) is { } nameError)
+            throw new ValidationException(nameError);
+        if (AccountIdentityRules.ValidateEmail(email) is { } emailError)
+            throw new ValidationException(emailError);
+
         var actorId = _currentUser.UserId;
         var actorCampus = _currentUser.PrimaryCampusId;
         var privileged = AccountProvisioningRules.IsPrivileged(_currentUser.RoleCode);
 
         if (await _db.Users.AsNoTracking().AnyAsync(u => u.Email == email, cancellationToken))
-            throw new ConflictException("Email này đã tồn tại trong hệ thống.", AccountErrorCodes.EmailAlreadyExists);
+            throw new ConflictException(
+                AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
 
         var isStaffLeaderCaller = _currentUser.RoleCode == RoleCodes.Staff
             && _currentUser.SubRole == UserSubRoles.Leader;
@@ -173,7 +182,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         var now = _clock.VietnamNow;
         var user = new User
         {
-            FullName = request.FullName.Trim(),
+            FullName = fullName,
             Email = email,
             Phone = Clean(request.Phone),
             Gender = request.Gender,

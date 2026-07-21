@@ -27,6 +27,15 @@ import type {
   RoleAssignmentOptions,
   StaffLeaderAvailability,
 } from '../../../features/account-management/types/accountManagement.types';
+import {
+  ACCOUNT_EMAIL_MAX_LENGTH,
+  ACCOUNT_FULL_NAME_MAX_LENGTH,
+  normalizeAccountEmail,
+  normalizeFullName,
+  validateAccountEmail,
+  validateFullName,
+} from '../../../features/account-management/validation/accountIdentityValidation';
+import type { AccountIdentityFieldErrors } from '../../../features/account-management/validation/accountIdentityValidation';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
 import { RelatedVisitorsTab } from '../../../features/account-management/components/RelatedVisitorsTab';
 
@@ -159,6 +168,10 @@ export function AccountManagement() {
   });
   // Field-level error shown right under the MSSV input in the create modal (spec §5.5 / §7.2).
   const [createStudentCodeError, setCreateStudentCodeError] = useState<string | null>(null);
+  // Identity (họ tên / email) errors rendered under their own input, not in the footer alert.
+  // Shared rules with the backend — see validation/accountIdentityValidation.ts.
+  const [createFieldErrors, setCreateFieldErrors] = useState<AccountIdentityFieldErrors>({});
+  const [editFieldErrors, setEditFieldErrors] = useState<AccountIdentityFieldErrors>({});
 
   const mockDeptStaff = [
     { id: '1', department: 'Phòng Đào tạo', name: 'Nguyễn Văn A (Phó trưởng phòng)', email: 'nguyenvana.dt@fpt.edu.vn', phone: '0987654321' },
@@ -178,6 +191,7 @@ export function AccountManagement() {
     setRoleError(null);
     setRoleSaving(false);
     setBasicInfoEmailConfirm(null);
+    setEditFieldErrors({});
   };
 
   const closeViewDrawer = () => {
@@ -205,6 +219,7 @@ export function AccountManagement() {
     // Role editing is intentionally isolated from the account-detail snapshot.
     // All other fields keep the exact values loaded by UC-98 and remain read-only.
     setRoleError(null);
+    setEditFieldErrors({});
     const roleCode: string = selectedAccount.role;
     setRoleEditForm({
       roleCode,
@@ -662,6 +677,7 @@ export function AccountManagement() {
   const handleCreateAccount = async () => {
     setCreateError(null);
     setCreateStudentCodeError(null);
+    setCreateFieldErrors({});
     const role = manualForm.role;
     if (!role) { setCreateError('Vui lòng chọn vai trò.'); return; }
     if (isHO && !createCampus) { setCreateError('Vui lòng chọn cơ sở.'); return; }
@@ -669,10 +685,18 @@ export function AccountManagement() {
       setCreateError('Vui lòng chọn cơ sở cho vai trò này.');
       return;
     }
-    if (!manualForm.name.trim()) { setCreateError('Vui lòng nhập họ và tên.'); return; }
-    const email = manualForm.email.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setCreateError('Vui lòng nhập email hợp lệ.');
+
+    // Identity: shared rules, normalized values, errors pinned to their own field. The backend
+    // re-validates everything (a direct API call is rejected the same way).
+    const fullName = normalizeFullName(manualForm.name);
+    const email = normalizeAccountEmail(manualForm.email);
+    const identityErrors: AccountIdentityFieldErrors = {};
+    const fullNameError = validateFullName(fullName);
+    if (fullNameError) identityErrors.fullName = fullNameError;
+    const emailError = validateAccountEmail(email);
+    if (emailError) identityErrors.email = emailError;
+    if (identityErrors.fullName || identityErrors.email) {
+      setCreateFieldErrors(identityErrors);
       return;
     }
 
@@ -722,7 +746,7 @@ export function AccountManagement() {
     try {
       const result = await accountManagementApi.createAccount({
         roleCode: role as any,
-        fullName: manualForm.name.trim(),
+        fullName,
         email,
         phone: manualForm.phone || null,
         // The create form has no gender field; the column is an ENUM
@@ -741,6 +765,7 @@ export function AccountManagement() {
         pushToast('warning', `Đã tạo tài khoản ${result.email} nhưng gửi email thông báo thất bại.`);
 
       setIsCreateModalOpen(false);
+      setCreateFieldErrors({});
       setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' });
       setCreateCampus('');
       setSelectedDept('');
@@ -751,6 +776,9 @@ export function AccountManagement() {
       // A duplicate MSSV maps to its own field (modal stays open, other inputs kept — spec §5.8).
       if (role === 'STUDENT' && /mã số sinh viên/i.test(msg)) {
         setCreateStudentCodeError(msg);
+      } else if (/email/i.test(msg)) {
+        // Backend identity rejections (duplicate/domain/format) belong under the email input.
+        setCreateFieldErrors((prev) => ({ ...prev, email: msg }));
       } else {
         setCreateError(msg);
       }
@@ -759,6 +787,18 @@ export function AccountManagement() {
       setCreating(false);
     }
   };
+
+  // Red border for an invalid identity input in the create modal (spec §7.4).
+  const createInputClass = (hasError: boolean) =>
+    `w-full px-4 py-2.5 rounded-xl border outline-none transition-shadow text-sm bg-white disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed ${
+      hasError
+        ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-400'
+        : 'border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]'
+    }`;
+
+  // "Xác nhận tạo" stays disabled until họ tên + email pass the shared rules (spec §6.1.5).
+  const createIdentityInvalid =
+    validateFullName(manualForm.name) !== null || validateAccountEmail(manualForm.email) !== null;
 
   // ── UC-100-SL role editor: derived flags (spec §3.6 / §8.1). ──
   // Whether the selected role actually differs from the snapshot (incl. its dependent field), so
@@ -777,9 +817,10 @@ export function AccountManagement() {
       && String(roleEditForm.departmentId || '') !== String(selectedAccount.departmentId ?? '')) ||
     (roleEditForm.roleCode === 'STUDENT'
       && roleEditForm.studentCode.trim() !== (selectedAccount.studentId ?? '')) ||
-    // Identity changes (normalized) also count, but only for editable targets.
-    (canEditIdentity && roleEditForm.fullName.trim() !== (selectedAccount.name ?? '')) ||
-    (canEditIdentity && roleEditForm.email.trim().toLowerCase() !== String(selectedAccount.email ?? '').toLowerCase())
+    // Identity changes count only for editable targets, and only after normalization — a pure
+    // whitespace/casing edit is a no-op and must not trigger a session revoke (spec §6.2.3).
+    (canEditIdentity && normalizeFullName(roleEditForm.fullName) !== normalizeFullName(selectedAccount.name)) ||
+    (canEditIdentity && normalizeAccountEmail(roleEditForm.email) !== normalizeAccountEmail(selectedAccount.email))
   );
 
   // Staff-Leader submit gate: options must be loaded/valid and the role's required field present.
@@ -788,21 +829,14 @@ export function AccountManagement() {
     !!roleOptionsError ||
     (roleEditForm.roleCode === 'STAFF' && !roleOptions?.icDepartment) ||
     (roleEditForm.roleCode === 'DEPARTMENT' && !roleEditForm.departmentId) ||
-    (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0) ||
-    // Identity fields (when editable) must be non-empty and the email well-formed.
-    (canEditIdentity && roleEditForm.fullName.trim().length === 0) ||
-    (canEditIdentity && roleEditForm.email.trim().length === 0) ||
-    (canEditIdentity && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(roleEditForm.email.trim()))
+    (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0)
   );
 
-  // HO basic-info submit gate (spec §7.1/§8): identity required + well-formed email. Applies to any
-  // editable-identity target (covers the HO flow where roleUpdateBlocked's isStaffLeader guard is off).
+  // Identity submit gate — the same shared rules as the create modal, so both flows accept and
+  // reject exactly the same values (spec §6.2.1/§6.2.2). Applies to every editable-identity target.
   const identityInvalid = canEditIdentity && !!roleEditForm && (
-    roleEditForm.fullName.trim().length === 0 ||
-    roleEditForm.fullName.trim().length > 150 ||
-    roleEditForm.email.trim().length === 0 ||
-    roleEditForm.email.trim().length > 150 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(roleEditForm.email.trim())
+    validateFullName(roleEditForm.fullName) !== null ||
+    validateAccountEmail(roleEditForm.email) !== null
   );
 
   // Switch the target role and reset the dependent fields (spec §3.3/§3.4/§3.5 — always fresh on a
@@ -824,16 +858,23 @@ export function AccountManagement() {
   const handleUpdateBasicInfo = () => {
     if (!selectedAccount || !roleEditForm) return;
     setRoleError(null);
-    const fullName = roleEditForm.fullName.trim();
-    const email = roleEditForm.email.trim();
-    if (!fullName) { setRoleError('Vui lòng nhập họ và tên.'); return; }
-    if (fullName.length > 150) { setRoleError('Họ và tên không được vượt quá 150 ký tự.'); return; }
-    if (!email) { setRoleError('Vui lòng nhập email.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setRoleError('Email không đúng định dạng.'); return; }
-    if (email.length > 150) { setRoleError('Email không được vượt quá 150 ký tự.'); return; }
+    setEditFieldErrors({});
+
+    // Same shared rules as create; each violation lands under its own field, not in the alert.
+    const fullName = normalizeFullName(roleEditForm.fullName);
+    const email = normalizeAccountEmail(roleEditForm.email);
+    const identityErrors: AccountIdentityFieldErrors = {};
+    const fullNameError = validateFullName(fullName);
+    if (fullNameError) identityErrors.fullName = fullNameError;
+    const emailError = validateAccountEmail(email);
+    if (emailError) identityErrors.email = emailError;
+    if (identityErrors.fullName || identityErrors.email) {
+      setEditFieldErrors(identityErrors);
+      return;
+    }
 
     const oldEmail = String(selectedAccount.email ?? '');
-    const emailChanged = email.toLowerCase() !== oldEmail.trim().toLowerCase();
+    const emailChanged = email !== normalizeAccountEmail(oldEmail);
     if (emailChanged) {
       // Confirm before an email change (session revoke + SSO/FEID re-link).
       setBasicInfoEmailConfirm({ oldEmail, newEmail: email });
@@ -849,8 +890,8 @@ export function AccountManagement() {
     try {
       const res = await accountManagementApi.updateBasicAccountInfo({
         userId: (selectedAccount.userId ?? selectedAccount.id) as any,
-        fullName: roleEditForm.fullName.trim(),
-        email: roleEditForm.email.trim(),
+        fullName: normalizeFullName(roleEditForm.fullName),
+        email: normalizeAccountEmail(roleEditForm.email),
       });
       setBasicInfoEmailConfirm(null);
       const emailNote = res.emailChanged
@@ -864,7 +905,9 @@ export function AccountManagement() {
       loadStatistics();
     } catch (err) {
       const msg = getAccountErrorMessage(err, 'Không thể cập nhật thông tin tài khoản. Vui lòng thử lại.');
-      setRoleError(msg);
+      // Backend identity rejections (duplicate/domain/format) belong under the email input.
+      if (/email/i.test(msg)) setEditFieldErrors((prev) => ({ ...prev, email: msg }));
+      else setRoleError(msg);
       pushToast('error', msg);
     } finally {
       setRoleSaving(false);
@@ -1582,12 +1625,15 @@ export function AccountManagement() {
                   const selectClass = (disabled = false) =>
                     `px-3 py-2 pr-8 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all appearance-none w-full ${disabled ? 'opacity-70 cursor-not-allowed border-gray-200' : 'border-gray-200 focus:bg-white'}`;
 
-                  // Gray, clearly-disabled styling for locked fields (spec §4.6).
-                  const identityInputClass = (disabled: boolean) =>
-                    `px-3 py-2 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] transition-all w-full ${
+                  // Gray, clearly-disabled styling for locked fields (spec §4.6); red border while
+                  // the field has a validation error (identity spec §7.4).
+                  const identityInputClass = (disabled: boolean, hasError = false) =>
+                    `px-3 py-2 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none transition-all w-full ${
                       disabled
-                        ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
-                        : 'bg-white border-gray-200 focus:bg-white'
+                        ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed focus:ring-2 focus:ring-[#004c91]'
+                        : hasError
+                          ? 'bg-white border-red-400 focus:ring-2 focus:ring-red-400'
+                          : 'bg-white border-gray-200 focus:bg-white focus:ring-2 focus:ring-[#004c91]'
                     }`;
 
                   // Locked-target identity display value (snapshot); editable value comes from the form.
@@ -1599,30 +1645,62 @@ export function AccountManagement() {
                   const editGrid = (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
                       <div className="flex flex-col min-w-0">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                        <label htmlFor="edit-full-name" className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
                           Họ và tên{canEditIdentity && <span className="ml-1 text-red-500">*</span>}
-                        </span>
+                        </label>
                         <input
+                          id="edit-full-name"
                           type="text"
                           value={canEditIdentity ? (roleEditForm?.fullName ?? '') : (data.name ?? '')}
-                          maxLength={150}
+                          maxLength={ACCOUNT_FULL_NAME_MAX_LENGTH}
+                          autoComplete="name"
                           disabled={identityDisabled}
-                          onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, fullName: e.target.value } : prev))}
-                          className={identityInputClass(identityDisabled)}
+                          aria-invalid={!!editFieldErrors.fullName}
+                          aria-describedby={editFieldErrors.fullName ? 'edit-full-name-error' : undefined}
+                          onChange={(e) => {
+                            setRoleEditForm((prev) => (prev ? { ...prev, fullName: e.target.value } : prev));
+                            setEditFieldErrors((prev) => ({ ...prev, fullName: undefined }));
+                          }}
+                          onBlur={(e) => canEditIdentity && setEditFieldErrors((prev) => ({
+                            ...prev,
+                            fullName: validateFullName(e.target.value) ?? undefined,
+                          }))}
+                          className={identityInputClass(identityDisabled, !!editFieldErrors.fullName)}
                         />
+                        {editFieldErrors.fullName && (
+                          <p id="edit-full-name-error" className="mt-1.5 text-sm text-red-600 font-medium">{editFieldErrors.fullName}</p>
+                        )}
                       </div>
                       <div className="flex flex-col min-w-0">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                        <label htmlFor="edit-email" className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
                           Email{canEditIdentity && <span className="ml-1 text-red-500">*</span>}
-                        </span>
+                        </label>
                         <input
+                          id="edit-email"
                           type="email"
                           value={canEditIdentity ? (roleEditForm?.email ?? '') : (data.email ?? '')}
-                          maxLength={150}
+                          maxLength={ACCOUNT_EMAIL_MAX_LENGTH}
+                          autoComplete="email"
+                          inputMode="email"
                           disabled={identityDisabled}
-                          onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, email: e.target.value } : prev))}
-                          className={identityInputClass(identityDisabled)}
+                          aria-invalid={!!editFieldErrors.email}
+                          aria-describedby={editFieldErrors.email ? 'edit-email-error' : undefined}
+                          onChange={(e) => {
+                            setRoleEditForm((prev) => (prev ? { ...prev, email: e.target.value } : prev));
+                            setEditFieldErrors((prev) => ({ ...prev, email: undefined }));
+                          }}
+                          onBlur={(e) => canEditIdentity && setEditFieldErrors((prev) => ({
+                            ...prev,
+                            email: validateAccountEmail(e.target.value) ?? undefined,
+                          }))}
+                          className={identityInputClass(identityDisabled, !!editFieldErrors.email)}
                         />
+                        {editFieldErrors.email && (
+                          <p id="edit-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{editFieldErrors.email}</p>
+                        )}
+                        {canEditIdentity && !editFieldErrors.email && (
+                          <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.</p>
+                        )}
                       </div>
                       <DisplayField label="Giới tính" value={genderLabel(data.gender)} />
                       <DisplayField label="Số điện thoại" value={data.phone} />
@@ -2036,24 +2114,59 @@ export function AccountManagement() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">Họ và tên <span className="text-red-500">*</span></label>
-                      <input 
-                        type="text" 
+                      <label htmlFor="create-full-name" className="block text-sm font-bold text-gray-700 mb-2">Họ và tên <span className="text-red-500">*</span></label>
+                      <input
+                        id="create-full-name"
+                        type="text"
                         value={manualForm.name}
-                        onChange={(e) => setManualForm({...manualForm, name: e.target.value})}
-                        placeholder="Trần Văn C" 
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-white" 
+                        maxLength={ACCOUNT_FULL_NAME_MAX_LENGTH}
+                        autoComplete="name"
+                        disabled={creating}
+                        aria-invalid={!!createFieldErrors.fullName}
+                        aria-describedby={createFieldErrors.fullName ? 'create-full-name-error' : undefined}
+                        onChange={(e) => {
+                          setManualForm({ ...manualForm, name: e.target.value });
+                          // Clear as soon as the user starts fixing it; re-checked on blur/submit.
+                          setCreateFieldErrors((prev) => ({ ...prev, fullName: undefined }));
+                        }}
+                        onBlur={(e) => setCreateFieldErrors((prev) => ({
+                          ...prev,
+                          fullName: validateFullName(e.target.value) ?? undefined,
+                        }))}
+                        placeholder="Trần Văn C"
+                        className={createInputClass(!!createFieldErrors.fullName)}
                       />
+                      {createFieldErrors.fullName && (
+                        <p id="create-full-name-error" className="mt-1.5 text-sm text-red-600 font-medium">{createFieldErrors.fullName}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">Email (Tên đăng nhập) <span className="text-red-500">*</span></label>
+                      <label htmlFor="create-email" className="block text-sm font-bold text-gray-700 mb-2">Email (Tên đăng nhập) <span className="text-red-500">*</span></label>
                       <input
+                        id="create-email"
                         type="email"
                         value={manualForm.email}
-                        onChange={(e) => setManualForm({...manualForm, email: e.target.value})}
-                        placeholder="example@domain.com"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-white"
+                        maxLength={ACCOUNT_EMAIL_MAX_LENGTH}
+                        autoComplete="email"
+                        inputMode="email"
+                        disabled={creating}
+                        aria-invalid={!!createFieldErrors.email}
+                        aria-describedby={createFieldErrors.email ? 'create-email-error' : undefined}
+                        onChange={(e) => {
+                          setManualForm({ ...manualForm, email: e.target.value });
+                          setCreateFieldErrors((prev) => ({ ...prev, email: undefined }));
+                        }}
+                        onBlur={(e) => setCreateFieldErrors((prev) => ({
+                          ...prev,
+                          email: validateAccountEmail(e.target.value) ?? undefined,
+                        }))}
+                        placeholder="example@gmail.com"
+                        className={createInputClass(!!createFieldErrors.email)}
                       />
+                      {createFieldErrors.email && (
+                        <p id="create-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{createFieldErrors.email}</p>
+                      )}
+                      <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.</p>
                     </div>
 
                     {/* PHẦN B — MSSV bắt buộc khi tạo tài khoản STUDENT (spec §5.2). */}
@@ -2089,7 +2202,7 @@ export function AccountManagement() {
               )}
               <div className="flex items-center justify-end gap-3">
                 <button
-                  onClick={() => { setIsCreateModalOpen(false); setCreateError(null); setCreateStudentCodeError(null); }}
+                  onClick={() => { setIsCreateModalOpen(false); setCreateError(null); setCreateStudentCodeError(null); setCreateFieldErrors({}); }}
                   className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none"
                 >
                   Hủy bỏ
@@ -2098,6 +2211,7 @@ export function AccountManagement() {
                   onClick={handleCreateAccount}
                   disabled={
                     creating ||
+                    createIdentityInvalid ||
                     (isHO && manualForm.role === 'STAFF' && !!createCampus &&
                       (slAvailabilityLoading || (!!slAvailability && !slAvailability.canCreateStaffLeader))) ||
                     (isHO && manualForm.role === 'HO' && !!createCampus &&

@@ -12,6 +12,21 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { CAMPUS_PROVINCES, campusReadinessReasons } from '../../../features/campus-management/constants';
 import {
+  CAMPUS_ADDRESS_MAX_LENGTH,
+  CAMPUS_CODE_MAX_LENGTH,
+  CAMPUS_EMAIL_MAX_LENGTH,
+  CAMPUS_FIELD_VALIDATORS,
+  CAMPUS_NAME_MAX_LENGTH,
+  CAMPUS_PHONE_MAX_LENGTH,
+  isCampusMasterFormValid,
+  normalizeCampusMasterForm,
+  validateCampusMasterForm,
+} from '../../../features/campus-management/validation/campusMasterValidation';
+import type {
+  CampusMasterFieldErrors,
+  CampusMasterForm,
+} from '../../../features/campus-management/validation/campusMasterValidation';
+import {
   useCampusFilterOptions,
   useCampusList,
 } from '../../../features/campus-management/hooks/useCampusManagement';
@@ -79,10 +94,10 @@ export function CampusManagement() {
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   // ── UC-81 Create modal ──
-  const emptyCreate = { campusCode: '', name: '', city: CAMPUS_PROVINCES[0], address: '', phone: '', email: '' };
+  const emptyCreate: CampusMasterForm = { campusCode: '', name: '', city: CAMPUS_PROVINCES[0], address: '', phone: '', email: '' };
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyCreate);
-  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [createForm, setCreateForm] = useState<CampusMasterForm>(emptyCreate);
+  const [createErrors, setCreateErrors] = useState<CampusMasterFieldErrors>({});
   const [creating, setCreating] = useState(false);
 
   // Debounce the search box (UC-83 §4 step 2). Reset to page 1 on change.
@@ -216,7 +231,8 @@ export function CampusManagement() {
     setIsCreateOpen(true);
   };
 
-  const setCreateField = (field: keyof typeof emptyCreate, value: string) => {
+  // Typing clears the field's error; it is re-evaluated on blur (spec §11.3).
+  const setCreateField = (field: keyof CampusMasterForm, value: string) => {
     setCreateForm((prev) => ({ ...prev, [field]: value }));
     setCreateErrors((prev) => {
       if (!prev[field]) return prev;
@@ -226,33 +242,35 @@ export function CampusManagement() {
     });
   };
 
-  // UC-81 §6 — basic required + format validation before calling the API (AF-01).
-  const validateCreate = (): boolean => {
-    const errs: Record<string, string> = {};
-    if (!createForm.campusCode.trim()) errs.campusCode = 'Vui lòng nhập mã campus.';
-    if (!createForm.name.trim()) errs.name = 'Vui lòng nhập tên campus.';
-    if (!createForm.city.trim()) errs.city = 'Vui lòng chọn thành phố.';
-    if (!createForm.address.trim()) errs.address = 'Vui lòng nhập địa chỉ.';
-    if (!createForm.phone.trim()) errs.phone = 'Vui lòng nhập số điện thoại.';
-    else if ((createForm.phone.match(/\d/g) ?? []).length < 8) errs.phone = 'Số điện thoại không đúng định dạng.';
-    if (!createForm.email.trim()) errs.email = 'Vui lòng nhập email.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createForm.email.trim())) errs.email = 'Email không đúng định dạng.';
-    setCreateErrors(errs);
-    return Object.keys(errs).length === 0;
+  const blurCreateField = (field: keyof CampusMasterForm) => {
+    const message = CAMPUS_FIELD_VALIDATORS[field](createForm[field]);
+    setCreateErrors((prev) => {
+      const next = { ...prev };
+      if (message) next[field] = message;
+      else delete next[field];
+      return next;
+    });
   };
 
+  // The submit button is already disabled while the form is invalid; this is the belt-and-braces
+  // pass so a keyboard submit can never skip validation (spec §11.2/§11.3).
+  const createFormIsValid = isCampusMasterFormValid(createForm);
+
   const handleCreate = async () => {
-    if (!validateCreate()) return;
+    // Guard against a double click / Enter landing a second request (spec §11.6).
+    if (creating) return;
+
+    const errs = validateCampusMasterForm(createForm);
+    if (Object.keys(errs).length > 0) {
+      setCreateErrors(errs);
+      return;
+    }
+
     setCreating(true);
     try {
-      const res = await campusManagementApi.createCampus({
-        campusCode: createForm.campusCode.trim(),
-        name: createForm.name.trim(),
-        city: createForm.city.trim(),
-        address: createForm.address.trim(),
-        phone: createForm.phone.trim(),
-        email: createForm.email.trim(),
-      });
+      // Send the SAME normalized values the validation ran against — the code reaches the API
+      // uppercased, spaces collapsed, email lowercased (spec §3).
+      const res = await campusManagementApi.createCampus(normalizeCampusMasterForm(createForm));
       setIsCreateOpen(false);
       // §22.2 — create succeeds without a Staff Leader; explain why it is not on the form yet.
       pushToast('success', `Đã tạo campus "${res.name}" và phòng ban IC mặc định.`);
@@ -526,70 +544,100 @@ export function CampusManagement() {
             </div>
 
             <div className="p-6 space-y-4 overflow-y-auto">
-              {([
-                { key: 'campusCode', label: 'Mã code', placeholder: 'VD: HN, HCM...' },
-                { key: 'name', label: 'Tên campus', placeholder: 'VD: FPT University Hà Nội' },
-              ] as const).map((f) => (
-                <div key={f.key} className="space-y-1.5">
-                  <label className="text-sm font-bold text-gray-900 block">{f.label}<span className="text-red-500 ml-1">*</span></label>
-                  <input
-                    type="text"
-                    className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all ${createErrors[f.key] ? 'border-red-400' : 'border-gray-200'}`}
-                    placeholder={f.placeholder}
-                    value={createForm[f.key]}
-                    onChange={(e) => setCreateField(f.key, e.target.value)}
-                  />
-                  {createErrors[f.key] && <p className="text-xs text-red-500 font-medium">{createErrors[f.key]}</p>}
-                </div>
-              ))}
+              <CreateField label="Mã code" field="campusCode" error={createErrors.campusCode}>
+                <input
+                  id="create-campusCode"
+                  type="text"
+                  maxLength={CAMPUS_CODE_MAX_LENGTH}
+                  autoCapitalize="characters"
+                  className={createInputCls(!!createErrors.campusCode)}
+                  placeholder="VD: HN, HCM..."
+                  value={createForm.campusCode}
+                  onChange={(e) => setCreateField('campusCode', e.target.value)}
+                  onBlur={() => blurCreateField('campusCode')}
+                  aria-invalid={!!createErrors.campusCode}
+                  aria-describedby={createErrors.campusCode ? 'create-campusCode-error' : undefined}
+                />
+              </CreateField>
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold text-gray-900 block">Chọn vị trí<span className="text-red-500 ml-1">*</span></label>
+              <CreateField label="Tên campus" field="name" error={createErrors.name}>
+                <input
+                  id="create-name"
+                  type="text"
+                  maxLength={CAMPUS_NAME_MAX_LENGTH}
+                  className={createInputCls(!!createErrors.name)}
+                  placeholder="VD: FPT University Hà Nội"
+                  value={createForm.name}
+                  onChange={(e) => setCreateField('name', e.target.value)}
+                  onBlur={() => blurCreateField('name')}
+                  aria-invalid={!!createErrors.name}
+                  aria-describedby={createErrors.name ? 'create-name-error' : undefined}
+                />
+              </CreateField>
+
+              {/* §6.1 — the field holds a province, not a free-form "vị trí". */}
+              <CreateField label="Tỉnh/Thành phố" field="city" error={createErrors.city}>
                 <select
-                  className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all bg-white ${createErrors.city ? 'border-red-400' : 'border-gray-200'}`}
+                  id="create-city"
+                  className={`${createInputCls(!!createErrors.city)} bg-white`}
                   value={createForm.city}
                   onChange={(e) => setCreateField('city', e.target.value)}
+                  onBlur={() => blurCreateField('city')}
+                  aria-invalid={!!createErrors.city}
+                  aria-describedby={createErrors.city ? 'create-city-error' : undefined}
                 >
                   {CAMPUS_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
-                {createErrors.city && <p className="text-xs text-red-500 font-medium">{createErrors.city}</p>}
-              </div>
+              </CreateField>
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold text-gray-900 block">Địa chỉ<span className="text-red-500 ml-1">*</span></label>
+              <CreateField label="Địa chỉ" field="address" error={createErrors.address}>
                 <input
+                  id="create-address"
                   type="text"
-                  className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all ${createErrors.address ? 'border-red-400' : 'border-gray-200'}`}
+                  maxLength={CAMPUS_ADDRESS_MAX_LENGTH}
+                  className={createInputCls(!!createErrors.address)}
                   placeholder="Số nhà, đường, phường/xã..."
                   value={createForm.address}
                   onChange={(e) => setCreateField('address', e.target.value)}
+                  onBlur={() => blurCreateField('address')}
+                  aria-invalid={!!createErrors.address}
+                  aria-describedby={createErrors.address ? 'create-address-error' : undefined}
                 />
-                {createErrors.address && <p className="text-xs text-red-500 font-medium">{createErrors.address}</p>}
-              </div>
+              </CreateField>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-bold text-gray-900 block">Số điện thoại<span className="text-red-500 ml-1">*</span></label>
+                <CreateField label="Số điện thoại" field="phone" error={createErrors.phone}>
                   <input
+                    id="create-phone"
                     type="text"
-                    className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all ${createErrors.phone ? 'border-red-400' : 'border-gray-200'}`}
+                    maxLength={CAMPUS_PHONE_MAX_LENGTH}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    className={createInputCls(!!createErrors.phone)}
                     placeholder="VD: 024 7300 5588"
                     value={createForm.phone}
                     onChange={(e) => setCreateField('phone', e.target.value)}
+                    onBlur={() => blurCreateField('phone')}
+                    aria-invalid={!!createErrors.phone}
+                    aria-describedby={createErrors.phone ? 'create-phone-error' : undefined}
                   />
-                  {createErrors.phone && <p className="text-xs text-red-500 font-medium">{createErrors.phone}</p>}
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-bold text-gray-900 block">Email<span className="text-red-500 ml-1">*</span></label>
+                </CreateField>
+                <CreateField label="Email" field="email" error={createErrors.email}>
                   <input
+                    id="create-email"
                     type="email"
-                    className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all ${createErrors.email ? 'border-red-400' : 'border-gray-200'}`}
+                    maxLength={CAMPUS_EMAIL_MAX_LENGTH}
+                    inputMode="email"
+                    autoComplete="email"
+                    className={createInputCls(!!createErrors.email)}
                     placeholder="VD: hn@fpt.edu.vn"
                     value={createForm.email}
                     onChange={(e) => setCreateField('email', e.target.value)}
+                    onBlur={() => blurCreateField('email')}
+                    aria-invalid={!!createErrors.email}
+                    aria-describedby={createErrors.email ? 'create-email-error' : undefined}
                   />
-                  {createErrors.email && <p className="text-xs text-red-500 font-medium">{createErrors.email}</p>}
-                </div>
+                </CreateField>
               </div>
             </div>
 
@@ -601,10 +649,11 @@ export function CampusManagement() {
               >
                 Hủy
               </button>
+              {/* §11.2 — disabled while the form is invalid, not only while submitting. */}
               <button
                 onClick={handleCreate}
-                disabled={creating}
-                className="px-5 py-2 bg-[#f37021] text-white font-bold rounded-xl hover:bg-[#e85c0d] transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                disabled={creating || !createFormIsValid}
+                className="px-5 py-2 bg-[#f37021] text-white font-bold rounded-xl hover:bg-[#e85c0d] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {creating && <Loader2 className="w-4 h-4 animate-spin" />}
                 Tạo mới
@@ -738,6 +787,32 @@ export function CampusManagement() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+const createInputCls = (hasError: boolean) =>
+  `w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all ${hasError ? 'border-red-400' : 'border-gray-200'}`;
+
+/**
+ * One labelled field of the create modal. The error node carries the id referenced by the input's
+ * aria-describedby, so a screen reader announces the message with the field (spec §11.3).
+ */
+function CreateField({ label, field, error, children }: {
+  label: string;
+  field: keyof CampusMasterForm;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={`create-${field}`} className="text-sm font-bold text-gray-900 block">
+        {label}<span className="text-red-500 ml-1">*</span>
+      </label>
+      {children}
+      {error && (
+        <p id={`create-${field}-error`} className="text-xs text-red-500 font-medium">{error}</p>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 using System.Linq;
 using FluentValidation;
+using PEMS.Application.Accounts.Common;
 
 namespace PEMS.Application.Accounts.Commands.CreateAccount;
 
@@ -11,14 +12,10 @@ public sealed class CreateAccountCommandValidator : AbstractValidator<CreateAcco
         RuleFor(x => x.Gender)
             .IsInEnum().WithMessage("Gender must be one of Male, Female, Other.");
 
-        RuleFor(x => x.Email)
-            .NotEmpty().WithMessage("Email is required.")
-            .EmailAddress().WithMessage("A valid email is required.")
-            .MaximumLength(150);
+        // Identity fields share one rule set with UpdateBasicAccountInfo / ReplaceStaffLeader.
+        RuleFor(x => x.Email).ApplyAccountEmailRules();
 
-        RuleFor(x => x.FullName)
-            .NotEmpty().WithMessage("Full name is required.")
-            .MaximumLength(150);
+        RuleFor(x => x.FullName).ApplyAccountFullNameRules();
 
         RuleFor(x => x.RoleCode)
             .NotEmpty().WithMessage("Role is required.");

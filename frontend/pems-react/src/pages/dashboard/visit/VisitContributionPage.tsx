@@ -370,6 +370,7 @@ export function VisitContributionPage() {
                 canView={perm.canViewMedia}
                 instanceStatus={summary.instanceStatus}
                 onChanged={loadData}
+                relation={perm.relation}
               />
             )}
             {perm.canViewNews && workspace.news && (

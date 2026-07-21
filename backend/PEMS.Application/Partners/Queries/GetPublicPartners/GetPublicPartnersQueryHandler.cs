@@ -13,8 +13,14 @@ public sealed class GetPublicPartnersQueryHandler
     : IRequestHandler<GetPublicPartnersQuery, GetPublicPartnersResponse>
 {
     private readonly IApplicationDbContext _db;
+    private readonly IPartnerDescriptionTranslationCache _descriptionTranslator;
 
-    public GetPublicPartnersQueryHandler(IApplicationDbContext db) => _db = db;
+    public GetPublicPartnersQueryHandler(
+        IApplicationDbContext db, IPartnerDescriptionTranslationCache descriptionTranslator)
+    {
+        _db = db;
+        _descriptionTranslator = descriptionTranslator;
+    }
 
     public async Task<GetPublicPartnersResponse> Handle(
         GetPublicPartnersQuery request, CancellationToken cancellationToken)
@@ -66,25 +72,49 @@ public sealed class GetPublicPartnersQueryHandler
             _ => query.OrderBy(p => p.Name),
         };
 
-        var items = await query
+        var rows = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(p => new PublicPartnerDto
+            .Select(p => new
             {
-                PartnerId = p.PartnerId,
-                Name = p.Name,
-                ShortName = p.ShortName,
-                Country = p.Country,
-                City = p.City,
-                WebsiteUrl = p.WebsiteUrl,
-                Address = p.Address,
-                Description = p.Description,
-                PartnerType = p.PartnerType,
-                LogoFileId = p.LogoFileId,
-                CoverFileId = p.CoverFileId,
-                PublicSlug = p.PublicSlug,
+                p.PartnerId,
+                p.Name,
+                p.ShortName,
+                p.Country,
+                p.City,
+                p.WebsiteUrl,
+                p.Address,
+                p.Description,
+                p.PartnerType,
+                p.LogoFileId,
+                p.CoverFileId,
+                p.PublicSlug,
+                p.UpdatedAt,
             })
             .ToListAsync(cancellationToken);
+
+        // Descriptions are Vietnamese-only in the DB by design (mirrors FAQ) — translated on
+        // demand for a non-"vi" languageCode and cached 24h, same mechanism ViewFaqQueryHandler uses.
+        var translated = await _descriptionTranslator.TranslateAsync(
+            rows.Select(r => new PartnerDescriptionTranslationSource(r.PartnerId, r.Description, r.UpdatedAt)).ToList(),
+            request.LanguageCode,
+            cancellationToken);
+
+        var items = rows.Select(p => new PublicPartnerDto
+        {
+            PartnerId = p.PartnerId,
+            Name = p.Name,
+            ShortName = p.ShortName,
+            Country = p.Country,
+            City = p.City,
+            WebsiteUrl = p.WebsiteUrl,
+            Address = p.Address,
+            Description = translated.TryGetValue(p.PartnerId, out var d) ? d : p.Description,
+            PartnerType = p.PartnerType,
+            LogoFileId = p.LogoFileId,
+            CoverFileId = p.CoverFileId,
+            PublicSlug = p.PublicSlug,
+        }).ToList();
 
         return new GetPublicPartnersResponse
         {

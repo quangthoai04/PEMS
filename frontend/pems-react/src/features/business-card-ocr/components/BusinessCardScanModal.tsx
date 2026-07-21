@@ -103,7 +103,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
     setPartnerId(context?.partnerId ?? null);
     setPartnerName(context?.partnerName ?? '');
     setSelectedPartner(null);
-    setPartnerSearch('');
+    setPartnerSearch(context?.prefillOrganization ?? '');
     setPartnerOptions([]);
     setConfirmedContactId(null);
   };
@@ -176,7 +176,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
       setPhone(result.parsed?.phone ?? '');
       setJobTitle(result.parsed?.jobTitle ?? '');
       setDepartmentName(result.parsed?.departmentName ?? '');
-      setOrganization(result.parsed?.organization ?? '');
+      setOrganization(result.parsed?.organization || context?.prefillOrganization || '');
       setWebsiteOcr(result.parsed?.websiteUrl ?? '');
       setAddressOcr(result.parsed?.address ?? '');
       if (!context?.partnerId && result.matchedPartner) {
@@ -194,13 +194,28 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   };
 
   const confirm = async () => {
-    if (!job || !partnerId || !fullName.trim()) return;
+    const targetPartnerName = partnerSearch.trim() || organization.trim();
+    if (!job || !fullName.trim() || (!partnerId && !targetPartnerName)) return;
+    
     setConfirming(true);
     setError(null);
-    const toastId = showLoadingToast('Đang lưu người liên hệ...', 'ocr-confirm');
+    const toastId = showLoadingToast(partnerId ? 'Đang lưu người liên hệ...' : 'Đang tạo đối tác & lưu...', 'ocr-confirm');
     try {
+      let finalPartnerId = partnerId;
+      if (!finalPartnerId) {
+        const newPartner = await partnersApi.createPartner({
+          name: targetPartnerName,
+          source: 'BUSINESS_CARD_OCR',
+          websiteUrl: websiteOcr.trim() || null,
+          address: addressOcr.trim() || null,
+        });
+        finalPartnerId = newPartner.partnerId;
+        setPartnerId(finalPartnerId);
+        setPartnerName(targetPartnerName);
+      }
+
       const result = await businessCardOcrApi.confirmContact(job.ocrJobId, {
-        partnerId,
+        partnerId: finalPartnerId,
         fullName: fullName.trim(),
         email: email.trim() || null,
         phone: phone.trim() || null,
@@ -215,7 +230,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
       setConfirmedContactId(result.contactId);
       setStep('RESULT');
       updateToastSuccess(toastId, 'Đã lưu người liên hệ thành công.');
-      onConfirmed?.({ partnerId: result.partnerId, contactId: result.contactId });
+      onConfirmed?.({ partnerId: finalPartnerId, contactId: result.contactId });
     } catch (e: any) {
       const message = getApiErrorMessage(e, 'Không thể lưu người liên hệ.');
       setError(message);
@@ -469,7 +484,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                           )}
                           {!partnerId && (
                             <p className="text-[11px] text-amber-600 mt-1.5">
-                              Vui lòng chọn đối tác lưu trữ hoặc tạo hồ sơ đối tác trước.
+                              Nếu không chọn từ danh sách, hệ thống sẽ tự động tạo một đối tác nháp mới với tên "{partnerSearch.trim() || organization.trim()}".
                             </p>
                           )}
                         </div>
@@ -522,10 +537,10 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     onClick={confirm}
-                    disabled={!partnerId || !fullName.trim() || confirming}
+                    disabled={(!partnerId && !partnerSearch.trim() && !organization.trim()) || !fullName.trim() || confirming}
                     className="flex-1 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer"
                   >
-                    {confirming ? 'Đang lưu...' : 'Lưu người liên hệ'}
+                    {confirming ? 'Đang xử lý...' : (partnerId ? 'Lưu người liên hệ' : 'Tạo đối tác nháp & Lưu')}
                   </button>
                   <button
                     onClick={discardAndClose}

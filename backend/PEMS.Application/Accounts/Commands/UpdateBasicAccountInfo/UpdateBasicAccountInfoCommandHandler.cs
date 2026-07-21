@@ -77,20 +77,16 @@ public sealed class UpdateBasicAccountInfoCommandHandler
         if (!targetInScope)
             throw new ForbiddenException("Tài khoản này nằm ngoài phạm vi quản lý của HO.");
 
-        // 9. Only full name / email are accepted (the command carries nothing else).
-        var newFullName = (request.FullName ?? string.Empty).Trim();
-        if (newFullName.Length == 0)
-            throw new ValidationException("Vui lòng nhập họ và tên.");
-        if (newFullName.Length > 150)
-            throw new ValidationException("Họ và tên không được vượt quá 150 ký tự.");
+        // 9. Only full name / email are accepted (the command carries nothing else). Both go through
+        //    the shared identity rules on the NORMALIZED value, so a direct API call is held to the
+        //    exact same standard as the modal.
+        var newFullName = AccountIdentityRules.NormalizeFullName(request.FullName);
+        if (AccountIdentityRules.ValidateFullName(newFullName) is { } nameError)
+            throw new ValidationException(nameError);
 
-        var newEmail = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
-        if (newEmail.Length == 0)
-            throw new ValidationException("Vui lòng nhập email.");
-        if (newEmail.Length > 150)
-            throw new ValidationException("Email không được vượt quá 150 ký tự.");
-        if (!new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(newEmail))
-            throw new ValidationException("Email không đúng định dạng.");
+        var newEmail = AccountIdentityRules.NormalizeEmail(request.Email);
+        if (AccountIdentityRules.ValidateEmail(newEmail) is { } emailError)
+            throw new ValidationException(emailError);
 
         var oldFullName = user.FullName;
         var oldEmail = user.Email;
@@ -103,7 +99,7 @@ public sealed class UpdateBasicAccountInfoCommandHandler
                 u => u.Email == newEmail && u.UserId != user.UserId, cancellationToken);
             if (emailTaken)
                 throw new ConflictException(
-                    "Email này đã được sử dụng bởi một tài khoản khác.", AccountErrorCodes.EmailAlreadyExists);
+                    AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
         }
 
         var now = _clock.VietnamNow;

@@ -199,6 +199,7 @@ export function ParticipantPartnerCell({
           visitInstanceId,
           guestMemberId: guestMemberId || null,
           minuteParticipantId: (minuteParticipantId ?? 0) > 0 ? minuteParticipantId : null,
+          prefillOrganization,
         }}
         onConfirmed={() => { setScanOpen(false); onChanged?.(); }}
       />

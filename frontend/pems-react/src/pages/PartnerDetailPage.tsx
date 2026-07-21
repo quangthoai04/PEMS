@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { useCountryTranslation } from '../shared/hooks/useCountryTranslation';
 
 export function PartnerDetailPage() {
-  const { t } = useTranslation(['partners']);
+  const { t, i18n } = useTranslation(['partners']);
   const tCountry = useCountryTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -37,7 +37,7 @@ export function PartnerDetailPage() {
     setNotFound(false);
     (async () => {
       try {
-        const data = await publicPartnersApi.getPublicPartnerDetail(id);
+        const data = await publicPartnersApi.getPublicPartnerDetail(id, i18n.language);
         if (!cancelled) setPartner(data);
       } catch (e: any) {
         if (cancelled) return;
@@ -48,7 +48,7 @@ export function PartnerDetailPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, i18n.language]);
 
   useEffect(() => {
     window.scrollTo(0, 0);

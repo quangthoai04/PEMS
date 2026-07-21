@@ -3,7 +3,7 @@
  * Cụm module chức năng giám sát thực thi biểu mẫu thời gian thực khách tham quan.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ChevronDown, 
   ChevronUp, 
@@ -28,22 +28,51 @@ import {
   Check,
   Globe,
   Link2,
-  MapPin
+  MapPin,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
+import { businessCardOcrApi } from '../../../features/business-card-ocr/api/businessCardOcrApi';
+import { showLoadingToast, updateToastSuccess, updateToastError } from '../../../shared/utils/toast';
+import type { VisitProcessGuestMember } from '../../../features/delegations/types/delegations.types';
+import { partnersApi } from '../../../features/partners/api/partnersApi';
+import { filesApi } from '../../../shared/api/filesApi';
 
-export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
+export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId, guestMembers = [], supportMembers = [] }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number, guestMembers?: VisitProcessGuestMember[], supportMembers?: VisitProcessGuestMember[] }) {
   const navigate = useNavigate();
   // Image Upload and Card Scanning States
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedCardImage, setUploadedCardImage] = useState<string | null>(null);
   const [isScanned, setIsScanned] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [matchedPartnerFromEmail, setMatchedPartnerFromEmail] = useState<string | null>(null);
+
+  const [suggestedPartners, setSuggestedPartners] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function fetchMatches() {
+      const allMembers = [...guestMembers, ...supportMembers];
+      const orgs = Array.from(new Set(allMembers.map(g => g.organization).filter(Boolean))) as string[];
+      if (!orgs.length) return;
+      const suggestions = new Set<string>();
+      for (const org of orgs) {
+        try {
+          const res = await partnersApi.matchPartner(org);
+          if (res.partnerName) suggestions.add(res.partnerName);
+          if (res.candidates) {
+            res.candidates.forEach(c => suggestions.add(c.name));
+          }
+        } catch (err) {}
+      }
+      setSuggestedPartners(Array.from(suggestions));
+    }
+    fetchMatches();
+  }, [guestMembers, supportMembers]);
 
   // State for Feedback table expansions
   const [expandedRow1, setExpandedRow1] = useState(false);
@@ -181,6 +210,8 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     setShowQuickAddError(false);
   };
 
+  const [currentOcrJobId, setCurrentOcrJobId] = useState<number | null>(null);
+
   // Scan result state
   const [scannedInfo, setScannedInfo] = useState({
     name: "Takahiro Sato",
@@ -203,9 +234,15 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     fileSize: string;
     partner: string;
     uploadedAt: string;
-  }>>([
-    { id: 1, fileName: "Bien_ban_ghi_nho_MOU_Draft.pdf", fileSize: "1.2 MB", partner: "Đại học Tokyo", uploadedAt: "2023-11-20 10:30" }
-  ]);
+  }>>(() => {
+    if (visitInstanceId) {
+      try {
+        const saved = localStorage.getItem(`pems_visit_${visitInstanceId}_docs`);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [];
+  });
 
   const [selectedPartnerForContact, setSelectedPartnerForContact] = useState("");
   const [contactSaveSuccess, setContactSaveSuccess] = useState(false);
@@ -218,22 +255,38 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     website: string;
     address: string;
     targetPartner: string;
-  }>>([]);
+  }>>(() => {
+    if (visitInstanceId) {
+      try {
+        const saved = localStorage.getItem(`pems_visit_${visitInstanceId}_contacts`);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [];
+  });
+
+  // Keep localStorage in sync when state changes
+  useEffect(() => {
+    if (!visitInstanceId) return;
+    localStorage.setItem(`pems_visit_${visitInstanceId}_docs`, JSON.stringify(uploadedDocuments));
+  }, [uploadedDocuments, visitInstanceId]);
+
+  useEffect(() => {
+    if (!visitInstanceId) return;
+    localStorage.setItem(`pems_visit_${visitInstanceId}_contacts`, JSON.stringify(savedContactsList));
+  }, [savedContactsList, visitInstanceId]);
 
   const getAvailablePartners = () => {
-    // 1. Existing partners in the system
-    const existing = [
-      "Đại học Deakin (Deakin University)",
-      "Tập đoàn công nghệ Panasonic",
-      "Đại học Chulalongkorn",
-      "Yuan Ze University (Đại học Nguyên Trí)"
-    ];
-    // 2. Draft/Visit partners whose isPartner is true or newly created
-    const uniqueDrafts = Array.from(new Set(
-      participantsList
-        .filter(p => p.isPartner && p.org)
-        .map(p => p.org)
-    ));
+    // 1. Existing partners in the system: ONLY suggested partners from DB (similar names)
+    const existing = Array.from(new Set([
+      ...suggestedPartners
+    ]));
+    // 2. Draft partners: Guest members' organizations and OCR matches ONLY
+    const allMembers = [...guestMembers, ...supportMembers];
+    const uniqueDrafts = Array.from(new Set([
+      ...allMembers.filter(g => g.organization).map(g => g.organization as string),
+      ...(matchedPartnerFromEmail ? [matchedPartnerFromEmail] : [])
+    ]));
     
     return {
       existing,
@@ -241,8 +294,9 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     };
   };
 
-  const handleAddDocument = () => {
-    if (!partnerDocFile) {
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const handleAddDocument = async () => {
+    if (!partnerDocFile || !docFileInputRef.current?.files?.[0]) {
       setDocError("Vui lòng tải lên tài liệu / ảnh.");
       return;
     }
@@ -251,17 +305,49 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
       return;
     }
     setDocError("");
-    const newDoc = {
-      id: Date.now(),
-      fileName: partnerDocFile.name,
-      fileSize: partnerDocFile.size,
-      partner: selectedPartnerForDoc,
-      uploadedAt: vietnamNowDateTimeLocal().replace('T', ' ')
-    };
-    setUploadedDocuments(prev => [...prev, newDoc]);
-    setPartnerDocFile(null);
-    if (docFileInputRef.current) {
-      docFileInputRef.current.value = "";
+    setIsUploadingDoc(true);
+    const toastId = showLoadingToast('Đang tải lên tài liệu...', 'upload-doc');
+    try {
+      // 1. Resolve partner ID
+      let partnerId: number | null = null;
+      const searchRes = await partnersApi.getPartners({ search: selectedPartnerForDoc, pageSize: 1 });
+      if (searchRes.items.length > 0 && searchRes.items[0].name.toLowerCase() === selectedPartnerForDoc.toLowerCase()) {
+        partnerId = searchRes.items[0].partnerId;
+      } else {
+        const newP = await partnersApi.createPartner({
+          name: selectedPartnerForDoc,
+          source: 'MANUAL'
+        });
+        partnerId = newP.partnerId;
+      }
+
+      // 2. Upload file
+      const uploadedFile = await filesApi.upload(docFileInputRef.current.files[0], 'PARTNER_DOCUMENT');
+
+      // 3. Save document to partner
+      await partnersApi.addDocument(partnerId, {
+         fileId: uploadedFile.fileId,
+         title: partnerDocFile.name,
+         documentCategory: 'MOU_MOA_AGREEMENT'
+      });
+
+      const newDoc = {
+        id: Date.now(),
+        fileName: partnerDocFile.name,
+        fileSize: partnerDocFile.size,
+        partner: selectedPartnerForDoc,
+        uploadedAt: vietnamNowDateTimeLocal().replace('T', ' ')
+      };
+      setUploadedDocuments(prev => [...prev, newDoc]);
+      setPartnerDocFile(null);
+      if (docFileInputRef.current) {
+        docFileInputRef.current.value = "";
+      }
+      updateToastSuccess(toastId, 'Tải lên tài liệu thành công!');
+    } catch (e: any) {
+      updateToastError(toastId, e, 'Lỗi khi tải lên tài liệu.');
+    } finally {
+      setIsUploadingDoc(false);
     }
   };
 
@@ -274,20 +360,61 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     }
   };
 
-  const handleSaveContactToPartner = () => {
+  const [isSavingContact, setIsSavingContact] = useState(false);
+  const handleSaveContactToPartner = async () => {
     if (!selectedPartnerForContact) {
       alert("Vui lòng chọn đối tác để lưu thông tin liên hệ!");
       return;
     }
-    setSavedContactsList(prev => [
-      ...prev,
-      {
-        ...scannedInfo,
-        targetPartner: selectedPartnerForContact
+    setIsSavingContact(true);
+    const toastId = showLoadingToast('Đang lưu thông tin liên hệ...', 'save-contact');
+    try {
+      let partnerId: number | null = null;
+      const searchRes = await partnersApi.getPartners({ search: selectedPartnerForContact, pageSize: 1 });
+      if (searchRes.items.length > 0 && searchRes.items[0].name.toLowerCase() === selectedPartnerForContact.toLowerCase()) {
+        partnerId = searchRes.items[0].partnerId;
+      } else {
+        const newP = await partnersApi.createPartner({
+          name: selectedPartnerForContact,
+          source: 'BUSINESS_CARD_OCR'
+        });
+        partnerId = newP.partnerId;
       }
-    ]);
-    setContactSaveSuccess(true);
-    setTimeout(() => setContactSaveSuccess(false), 5000);
+
+      if (currentOcrJobId) {
+        await businessCardOcrApi.confirmContact(currentOcrJobId, {
+          partnerId,
+          fullName: scannedInfo.name,
+          jobTitle: scannedInfo.title,
+          phone: scannedInfo.phone,
+          email: scannedInfo.email,
+          note: `Trích xuất từ card visit (VisitInstance: ${visitInstanceId})`
+        });
+      } else {
+         await partnersApi.createContact(partnerId, {
+            fullName: scannedInfo.name,
+            jobTitle: scannedInfo.title,
+            phone: scannedInfo.phone,
+            email: scannedInfo.email,
+            note: `Trích xuất từ card visit (VisitInstance: ${visitInstanceId})`
+         });
+      }
+
+      setSavedContactsList(prev => [
+        ...prev,
+        {
+          ...scannedInfo,
+          targetPartner: selectedPartnerForContact
+        }
+      ]);
+      setContactSaveSuccess(true);
+      updateToastSuccess(toastId, 'Lưu thông tin liên hệ thành công!');
+      setTimeout(() => setContactSaveSuccess(false), 5000);
+    } catch (e: any) {
+      updateToastError(toastId, e, 'Lỗi khi lưu thông tin liên hệ.');
+    } finally {
+      setIsSavingContact(false);
+    }
   };
 
   const renderStars = (key: string) => {
@@ -624,11 +751,11 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
                     <div className="flex gap-3 pt-2 font-sans">
                       <button
-                        type="button"
+                        disabled={isUploadingDoc}
                         onClick={handleAddDocument}
-                        className="flex-1 bg-[#004c91] hover:bg-[#003366] text-white text-xs font-bold px-4 py-3 rounded-xl transition-all shadow-sm outline-none cursor-pointer"
+                        className="flex-1 bg-[#004c91] hover:bg-[#003366] text-white text-xs font-bold px-4 py-3 rounded-xl transition-all shadow-sm outline-none cursor-pointer disabled:opacity-50"
                       >
-                        Thêm tài liệu
+                        {isUploadingDoc ? 'Đang tải lên...' : 'Thêm tài liệu'}
                       </button>
                       <button
                         type="button"
@@ -705,42 +832,56 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                  <input 
                     type="file" 
                     ref={fileInputRef} 
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
                         const reader = new FileReader();
                         reader.onload = (event) => {
                           if (event.target?.result) {
                             setUploadedCardImage(event.target.result as string);
-                            setIsScanned(true);
-                             setScannedInfo({
-                               name: "Nguyễn Văn Nhật",
-                               title: "Trưởng phòng Phát triển nguồn nhân lực",
-                               company: "Tập đoàn Công nghệ FPT",
-                               phone: "0987654321",
-                               email: "nhatnv@example.com",
-                               website: "https://fpt.com.vn",
-                               address: "Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội"
-                             });
-                             setMatchedPartnerFromEmail("Tập đoàn Công nghệ FPT");
                           }
                         };
                         reader.readAsDataURL(file);
+
+                        setIsScanning(true);
+                        const toastId = showLoadingToast('Đang phân tích danh thiếp...', 'scan-card');
+                        try {
+                          const result = await businessCardOcrApi.scan(file, { visitInstanceId });
+                          setIsScanned(true);
+                          setScannedInfo({
+                            name: result.parsed?.fullName || "",
+                            title: result.parsed?.jobTitle || "",
+                            company: result.parsed?.organization || "",
+                            phone: result.parsed?.phone || "",
+                            email: result.parsed?.email || "",
+                            website: result.parsed?.websiteUrl || "",
+                            address: result.parsed?.address || ""
+                          });
+                          setCurrentOcrJobId(result.ocrJobId || null);
+                          setMatchedPartnerFromEmail(result.matchedPartner?.partnerName || null);
+                          updateToastSuccess(toastId, 'Đã trích xuất thông tin danh thiếp.');
+                        } catch (err: any) {
+                          updateToastError(toastId, err, 'Lỗi khi quét danh thiếp.');
+                        } finally {
+                          setIsScanning(false);
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                        }
                       }
                     }} 
                     accept="image/*" 
                     className="hidden" 
                  />
                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center hover:border-[#f37021] hover:bg-orange-50/30 transition-all cursor-pointer group"
+                    onClick={() => !isScanning && fileInputRef.current?.click()}
+                    className={`border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center transition-all group ${isScanning ? 'opacity-70 cursor-not-allowed' : 'hover:border-[#f37021] hover:bg-orange-50/30 cursor-pointer'}`}
                  >
                     <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                       <Upload className="w-8 h-8 text-[#004c91]" />
                     </div>
                     <h3 className="text-base font-bold text-gray-800 mb-2">Scan Card Visit</h3>
                     <p className="text-xs text-gray-500 mb-4">Hoặc tải lên hình ảnh name card để tự động trích xuất thông tin</p>
-                    <button type="button" className="px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#003366] transition-colors w-full">
+                    <button disabled={isScanning} type="button" className="px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#003366] transition-colors w-full flex items-center justify-center gap-2 disabled:opacity-50">
+                       {isScanning && <Loader2 className="w-4 h-4 animate-spin" />}
                        Tải ảnh lên / Chụp ảnh
                     </button>
                  </div>
@@ -777,6 +918,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                                     website: "",
                                     address: ""
                                   });
+                                  setCurrentOcrJobId(null);
                                   setMatchedPartnerFromEmail(null);
                                  if (fileInputRef.current) {
                                    fileInputRef.current.value = '';
@@ -921,10 +1063,11 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                      <div className="pt-4 flex justify-end font-sans">
                         <button 
                           type="button"
+                          disabled={isSavingContact}
                           onClick={handleSaveContactToPartner}
-                          className="px-6 py-2.5 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 text-sm cursor-pointer"
+                          className="px-6 py-2.5 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 text-sm cursor-pointer disabled:opacity-50"
                         >
-                           Lưu thông tin liên hệ
+                           {isSavingContact ? 'Đang xử lý...' : 'Lưu thông tin liên hệ'}
                         </button>
                      </div>
                      </div>

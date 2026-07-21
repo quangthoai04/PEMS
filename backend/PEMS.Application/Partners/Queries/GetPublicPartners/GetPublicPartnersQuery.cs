@@ -16,6 +16,10 @@ public sealed class GetPublicPartnersQuery : IRequest<GetPublicPartnersResponse>
     /// <summary>name_asc (default) | newest | country.</summary>
     public string? Sort { get; set; }
 
+    /// <summary>Public-site locale ("vi" default, "en"/"ja"/"ko"/"zh-CN"). Descriptions are
+    /// Vietnamese-only in the DB; a non-"vi" value triggers on-demand translation (cached).</summary>
+    public string? LanguageCode { get; set; }
+
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 24;
 }

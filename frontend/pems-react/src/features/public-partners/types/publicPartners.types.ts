@@ -31,6 +31,8 @@ export interface PublicPartnerListParams {
   sort?: PublicPartnerSort;
   page?: number;
   pageSize?: number;
+  /** Public-site locale ("vi" default, "en"/...) — descriptions are translated server-side when set. */
+  languageCode?: string;
 }
 
 /** One distinct country among APPROVED + PUBLIC partners (GET /public/partners/countries). */

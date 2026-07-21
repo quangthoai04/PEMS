@@ -19,19 +19,27 @@ export interface UploadedFileResponse {
  * Posts a single file as `multipart/form-data` to a backend upload endpoint. Centralizes the FormData
  * boilerplate so feature modules (gallery/news/document/…) don't each re-write an axios multipart call.
  *
- * @param endpoint  backend path, e.g. `/profile/avatar` or `/gallery/images`
- * @param fieldName the multipart field name the endpoint expects (e.g. `file`, `avatar`)
- * @param file      the file to upload
- * @param method    HTTP verb (`post` by default; avatar uses `put`)
+ * @param endpoint    backend path, e.g. `/profile/avatar` or `/gallery/images`
+ * @param fieldName   the multipart field name the endpoint expects (e.g. `file`, `avatar`)
+ * @param file        the file to upload
+ * @param method      HTTP verb (`post` by default; avatar uses `put`)
+ * @param extraFields additional form fields to send alongside the file (e.g. `visitInstanceId` so
+ *                    News image uploads route into that đoàn's own Drive folder)
  */
 export async function uploadFileToEndpoint(
   endpoint: string,
   fieldName: string,
   file: File,
   method: 'post' | 'put' = 'post',
+  extraFields?: Record<string, string | number | undefined>,
 ): Promise<UploadedFileResponse> {
   const formData = new FormData();
   formData.append(fieldName, file);
+  if (extraFields) {
+    for (const [key, value] of Object.entries(extraFields)) {
+      if (value !== undefined) formData.append(key, String(value));
+    }
+  }
 
   const response = await httpClient.request({
     url: endpoint,

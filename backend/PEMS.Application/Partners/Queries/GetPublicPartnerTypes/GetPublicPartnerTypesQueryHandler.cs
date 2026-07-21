@@ -19,19 +19,19 @@ public sealed class GetPublicPartnerTypesQueryHandler
     public async Task<List<PublicPartnerTypeDto>> Handle(
         GetPublicPartnerTypesQuery request, CancellationToken cancellationToken)
     {
-        var groups = await _db.Partners.AsNoTracking()
+        var counts = await _db.Partners.AsNoTracking()
             .Where(p => p.ProfileStatus == PartnerProfileStatuses.Approved
                         && p.Visibility == PartnerVisibilities.Public)
             .GroupBy(p => p.PartnerType)
-            .Select(g => new PublicPartnerTypeDto
-            {
-                Value = g.Key,
-                Label = g.Key,
-                Count = g.Count(),
-            })
+            .Select(g => new { Value = g.Key, Count = g.Count() })
             .OrderBy(t => t.Value)
             .ToListAsync(cancellationToken);
 
-        return groups;
+        return counts.Select(c => new PublicPartnerTypeDto
+        {
+            Value = c.Value,
+            Label = PartnerTypes.ToLabel(c.Value, request.LanguageCode),
+            Count = c.Count,
+        }).ToList();
     }
 }

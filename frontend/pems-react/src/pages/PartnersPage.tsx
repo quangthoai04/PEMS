@@ -4,7 +4,7 @@
  * APPROVED + PUBLIC), không dùng mock data, không dùng globe/map.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
@@ -218,7 +218,7 @@ function CountryFlagShowcase({
 }
 
 export function PartnersPage() {
-  const { t } = useTranslation(['partners']);
+  const { t, i18n } = useTranslation(['partners']);
   const tCountry = useCountryTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -253,13 +253,29 @@ export function PartnersPage() {
   // Trust metrics: total partners overall (unfiltered) + total countries.
   const [totalPartnersOverall, setTotalPartnersOverall] = useState<number | null>(null);
 
+  // selectedCountry/selectedType store the translated "All ..." label as their sentinel "nothing
+  // selected" value — switching language changes what that label IS, so a stale selection left at
+  // the old label would otherwise get sent to the backend as a literal filter value (matching no
+  // real country/type) instead of being recognized as "no filter". Reset only when the current
+  // selection still equals the PREVIOUS language's "All" label, i.e. the user never picked a real
+  // filter; an actual chosen country/type name is left untouched.
+  const prevAllCountriesLabel = useRef(ALL_COUNTRIES_LABEL);
+  const prevAllTypesLabel = useRef(ALL_TYPES_LABEL);
+  useEffect(() => {
+    if (selectedCountry === prevAllCountriesLabel.current) setSelectedCountry(ALL_COUNTRIES_LABEL);
+    if (selectedType === prevAllTypesLabel.current) setSelectedType(ALL_TYPES_LABEL);
+    prevAllCountriesLabel.current = ALL_COUNTRIES_LABEL;
+    prevAllTypesLabel.current = ALL_TYPES_LABEL;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ALL_COUNTRIES_LABEL, ALL_TYPES_LABEL]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const [countries, types, overall] = await Promise.all([
           publicPartnersApi.getPublicPartnerCountries(),
-          publicPartnersApi.getPublicPartnerTypes(),
+          publicPartnersApi.getPublicPartnerTypes(i18n.language),
           publicPartnersApi.getPublicPartners({ page: 1, pageSize: 1 }),
         ]);
         if (cancelled) return;
@@ -274,7 +290,7 @@ export function PartnersPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [i18n.language]);
 
   // Deep-link support: /partners?country=<value>.
   useEffect(() => {
@@ -308,6 +324,7 @@ export function PartnersPage() {
           sort,
           page: currentPage,
           pageSize: PAGE_SIZE,
+          languageCode: i18n.language,
         });
         if (cancelled) return;
         setPartners(res.items);
@@ -323,7 +340,7 @@ export function PartnersPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedSearch, selectedCountry, selectedType, sort, currentPage, reloadToken]);
+  }, [debouncedSearch, selectedCountry, selectedType, sort, currentPage, reloadToken, i18n.language]);
 
   const countryDropdownOptions = useMemo(
     () => [{ value: ALL_COUNTRIES_LABEL, label: ALL_COUNTRIES_LABEL, count: totalPartnersOverall ?? 0 }, ...countryOptions],

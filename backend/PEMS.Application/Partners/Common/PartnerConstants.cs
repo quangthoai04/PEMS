@@ -24,7 +24,39 @@ public static class PartnerVisibilities
 /// <summary>DB enum values of partners.partner_type.</summary>
 public static class PartnerTypes
 {
-    public static readonly string[] All = { "UNIVERSITY", "COMPANY", "GOVERNMENT", "NGO", "OTHER" };
+    public const string University = "UNIVERSITY";
+    public const string Company = "COMPANY";
+    public const string Government = "GOVERNMENT";
+    public const string Ngo = "NGO";
+    public const string Other = "OTHER";
+
+    public static readonly string[] All = { University, Company, Government, Ngo, Other };
+
+    public static string ToVietnameseLabel(string partnerType) => partnerType switch
+    {
+        University => "Trường đại học",
+        Company => "Doanh nghiệp",
+        Government => "Cơ quan nhà nước",
+        Ngo => "Tổ chức phi chính phủ",
+        _ => "Khác"
+    };
+
+    public static string ToEnglishLabel(string partnerType) => partnerType switch
+    {
+        University => "University",
+        Company => "Company",
+        Government => "Government",
+        Ngo => "NGO",
+        _ => "Other"
+    };
+
+    /// <summary>Returns the localised label for <paramref name="partnerType"/> in the requested
+    /// language. Defaults to Vietnamese for any unrecognised <paramref name="languageCode"/>
+    /// (mirrors <c>FaqConstants.ToTypeLabel</c>).</summary>
+    public static string ToLabel(string partnerType, string? languageCode) =>
+        string.Equals(languageCode, "en", System.StringComparison.OrdinalIgnoreCase)
+            ? ToEnglishLabel(partnerType)
+            : ToVietnameseLabel(partnerType);
 }
 
 /// <summary>DB enum values of visit_guest_partner_links.match_status.</summary>

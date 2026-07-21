@@ -3,11 +3,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { UploadCloud, Plus, Trash2, ArrowLeft, ImagePlus, X, Calendar, MapPin, CheckCircle2 } from 'lucide-react';
+import { UploadCloud, Plus, Trash2, ArrowLeft, Calendar, MapPin, CheckCircle2, Languages, RotateCw, FolderOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
 import { validateFile } from '../../../shared/utils/fileValidation';
+import { useAuth } from '../../../shared/hooks/useAuth';
+import { SectionImagesEditor, type SectionImageItem } from './components/SectionImagesEditor';
+import { BilingualColumns, LanguageColumnLabel } from './components/BilingualColumns';
+import { useBilingualTranslate } from './components/useBilingualTranslate';
+import { CollapsibleSection } from './components/CollapsibleSection';
+import { AutoGrowInput, AutoGrowTextarea } from './components/AutoGrowInput';
+import { VisitInstancePhotoPicker } from './components/VisitInstancePhotoPicker';
+import { SmartImage } from './components/SmartImage';
 
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -24,18 +32,17 @@ interface EligibleVisit {
   canSelect: boolean;
 }
 
-interface SectionImage {
-  fileId: number | null;   // set after the Drive upload succeeds
-  previewUrl: string;      // local object URL for instant preview
-  uploading: boolean;
-}
-
 interface ContentSection {
   id: number;
   sectionOrder: number;
   sectionTitle: string;
   sectionBodyHtml: string;
-  sectionImage: SectionImage | null;
+  sectionImages: SectionImageItem[];
+  // English mirror — only used when bilingual mode is on.
+  englishSectionTitle: string;
+  englishSectionBodyHtml: string;
+  englishTitleTouched: boolean;
+  englishBodyTouched: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,20 +70,42 @@ const QUILL_MODULES = {
   ],
 };
 
+let sectionIdCounter = 1;
+function newSection(sectionOrder: number): ContentSection {
+  return {
+    id: Date.now() + sectionIdCounter++,
+    sectionOrder,
+    sectionTitle: '',
+    sectionBodyHtml: '',
+    sectionImages: [],
+    englishSectionTitle: '',
+    englishSectionBodyHtml: '',
+    englishTitleTouched: false,
+    englishBodyTouched: false,
+  };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function CreateNews() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   // Đi từ tab "Sau tiếp khách"/trang Đóng góp: chuyến được chọn sẵn + quay lại đúng trang cũ.
   const presetVisitInstanceId = searchParams.get('visitInstanceId');
   const returnTo = searchParams.get('returnTo');
+
+  // Staff thường được tạo tin không gắn đoàn; Student vẫn bắt buộc chọn đoàn.
+  const isStaff = user?.roleCode === 'STAFF' && (user?.subRole ?? '') === 'STAFF';
+  const isStudent = user?.roleCode === 'STUDENT';
+  const visitRequired = !isStaff; // Student (hoặc role khác) → bắt buộc; Staff → tùy chọn
 
   // Step 0: Eligible visit instances
   const [eligibleVisits, setEligibleVisits]   = useState<EligibleVisit[]>([]);
   const [loadingVisits, setLoadingVisits]     = useState(true);
   const [selectedVisit, setSelectedVisit]     = useState<EligibleVisit | null>(null);
   const [showVisitList, setShowVisitList]     = useState(!presetVisitInstanceId);
+  const [skippedVisit, setSkippedVisit]       = useState(false); // Staff: "không gắn đoàn nào"
   // Khi có preset: khóa chuyến, không cho đổi; lỗi preset hiển thị riêng.
   const [presetError, setPresetError]         = useState<string | null>(null);
   const [presetExistingNewsId, setPresetExistingNewsId] = useState<number | null>(null);
@@ -85,19 +114,61 @@ export function CreateNews() {
   const [title,   setTitle]   = useState('');
   const [summary, setSummary] = useState('');
 
+  // Bilingual editor — on by default, both VI/EN columns show immediately when composing a new
+  // post rather than requiring the user to opt in.
+  const [bilingual, setBilingual] = useState(true);
+  const [englishTitle, setEnglishTitle] = useState('');
+  const [englishSummary, setEnglishSummary] = useState('');
+  const [englishTitleTouched, setEnglishTitleTouched] = useState(false);
+  const [englishSummaryTouched, setEnglishSummaryTouched] = useState(false);
+
   // Step 2: Cover image
   const [imagePreview,    setImagePreview]    = useState<string | null>(null);
   const [coverFileId,     setCoverFileId]     = useState<number | null>(null);
   const [coverUploading,  setCoverUploading]  = useState(false);
+  const [showCoverPicker, setShowCoverPicker] = useState(false);
 
   // Step 3: Content sections
-  const [sections, setSections] = useState<ContentSection[]>([
-    { id: 1, sectionOrder: 1, sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
-  ]);
+  const [sections, setSections] = useState<ContentSection[]>([newSection(1)]);
   const [sectionToDelete, setSectionToDelete] = useState<number | null>(null);
 
   // Submit state
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Bilingual auto-translate (debounced, cancels stale responses) ──────────
+
+  const { translating, retranslateNow } = useBilingualTranslate({
+    enabled: bilingual,
+    title,
+    summary,
+    sections: sections.map(s => ({
+      sectionOrder: s.sectionOrder,
+      sectionTitle: s.sectionTitle,
+      sectionBodyHtml: s.sectionBodyHtml,
+    })),
+    onTranslated: (result) => {
+      if (!englishTitleTouched) setEnglishTitle(result.title);
+      if (!englishSummaryTouched) setEnglishSummary(result.summary);
+      setSections(prev => prev.map(s => {
+        const match = result.sections.find(r => r.sectionOrder === s.sectionOrder);
+        if (!match) return s;
+        return {
+          ...s,
+          englishSectionTitle: s.englishTitleTouched ? s.englishSectionTitle : match.sectionTitle,
+          englishSectionBodyHtml: s.englishBodyTouched ? s.englishSectionBodyHtml : match.sectionBodyHtml,
+        };
+      }));
+    },
+  });
+
+  async function handleRetranslate() {
+    setEnglishTitleTouched(false);
+    setEnglishSummaryTouched(false);
+    setSections(prev => prev.map(s => ({ ...s, englishTitleTouched: false, englishBodyTouched: false })));
+    const ok = await retranslateNow();
+    if (ok) toast.success('Đã dịch lại sang tiếng Anh.');
+    else toast.error('Không thể dịch tự động. Vui lòng thử lại.');
+  }
 
   // ── Load eligible visits ───────────────────────────────────────────────────
 
@@ -147,12 +218,20 @@ export function CreateNews() {
   const handleSelectVisit = (visit: EligibleVisit) => {
     if (!visit.canSelect) return;
     setSelectedVisit(visit);
+    setSkippedVisit(false);
     setShowVisitList(false);
   };
 
   const handleChangeVisit = () => {
     setSelectedVisit(null);
+    setSkippedVisit(false);
     setShowVisitList(true);
+  };
+
+  const handleSkipVisit = () => {
+    setSelectedVisit(null);
+    setSkippedVisit(true);
+    setShowVisitList(false);
   };
 
   // ── Cover upload ───────────────────────────────────────────────────────────
@@ -169,7 +248,8 @@ export function CreateNews() {
     setCoverFileId(null);
     setCoverUploading(true);
     try {
-      const uploaded = await uploadFileToEndpoint('/news/cover-upload', 'file', file);
+      const uploaded = await uploadFileToEndpoint('/news/cover-upload', 'file', file, 'post',
+        selectedVisit ? { visitInstanceId: selectedVisit.visitInstanceId } : undefined);
       setCoverFileId(uploaded.fileId);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Không thể tải ảnh bìa lên.');
@@ -180,53 +260,18 @@ export function CreateNews() {
     }
   };
 
-  // ── Section image — upload lên Google Drive ngay khi chọn (không lưu base64) ──
-
-  async function handleSectionImagePick(index: number, e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const v = validateFile(file, 'NEWS_IMAGE');
-    if (!v.ok) { toast.error(v.message ?? 'File không hợp lệ.'); return; }
-
-    const sectionId = sections[index]?.id;
-    const previewUrl = URL.createObjectURL(file);
-    setSections(prev => prev.map(s =>
-      s.id === sectionId ? { ...s, sectionImage: { fileId: null, previewUrl, uploading: true } } : s
-    ));
-
-    try {
-      const uploaded = await uploadFileToEndpoint('/news/section-file-upload', 'file', file);
-      setSections(prev => prev.map(s =>
-        s.id === sectionId && s.sectionImage
-          ? { ...s, sectionImage: { ...s.sectionImage, fileId: uploaded.fileId, uploading: false } }
-          : s
-      ));
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Không thể tải ảnh nội dung lên.');
-      setSections(prev => prev.map(s =>
-        s.id === sectionId ? { ...s, sectionImage: null } : s
-      ));
-    }
-  }
-
-  function removeSectionImage(index: number) {
-    setSections(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], sectionImage: null };
-      return next;
-    });
+  function handleCoverPickedFromVisitInstance(photos: { fileId: number; url: string }[]) {
+    const picked = photos[0];
+    if (!picked) return;
+    setImagePreview(picked.url);
+    setCoverFileId(picked.fileId);
   }
 
   // ── Section CRUD ───────────────────────────────────────────────────────────
 
   const addSection = () => {
     if (sections.length >= 10) return;
-    setSections(prev => [
-      ...prev,
-      { id: Date.now(), sectionOrder: prev.length + 1, sectionTitle: '', sectionBodyHtml: '', sectionImage: null },
-    ]);
+    setSections(prev => [...prev, newSection(prev.length + 1)]);
   };
 
   const confirmDeleteSection = () => {
@@ -245,16 +290,49 @@ export function CreateNews() {
     });
   };
 
+  /** field update triggered by the user directly editing the English column — marks it "touched"
+   * so future auto-translate results no longer overwrite it. */
+  const updateEnglishSection = (index: number, field: 'englishSectionTitle' | 'englishSectionBodyHtml', value: string) => {
+    setSections(prev => {
+      const next = [...prev];
+      const touchedField = field === 'englishSectionTitle' ? 'englishTitleTouched' : 'englishBodyTouched';
+      next[index] = { ...next[index], [field]: value, [touchedField]: true };
+      return next;
+    });
+  };
+
+  /** ReactQuill fires onChange on mount/programmatic value sync too (source 'api'/'silent'), not
+   * only on real typing (source 'user') — applying a translated value into the EN Quill editor
+   * must not be mistaken for the user manually editing it, or it would permanently block further
+   * auto-translate updates. Only forward genuine user edits to updateEnglishSection. */
+  const updateEnglishSectionBodyFromQuill = (index: number, value: string, source: string) => {
+    if (source !== 'user') return;
+    updateEnglishSection(index, 'englishSectionBodyHtml', value);
+  };
+
+  const updateSectionImages = (index: number, updater: (prev: SectionImageItem[]) => SectionImageItem[]) => {
+    setSections(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], sectionImages: updater(next[index].sectionImages) };
+      return next;
+    });
+  };
+
   // ── Submit ─────────────────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
-    if (!selectedVisit)   { toast.error('Vui lòng chọn chuyến tiếp khách trước.'); return; }
+    if (visitRequired && !selectedVisit) { toast.error('Vui lòng chọn chuyến tiếp khách trước.'); return; }
     if (!title.trim())    { toast.error('Tiêu đề không được để trống.'); return; }
     if (title.length > 150) { toast.error('Tiêu đề không được vượt quá 150 ký tự.'); return; }
     if (!summary.trim())  { toast.error('Mô tả ngắn không được để trống.'); return; }
+    if (summary.length > 500) { toast.error('Mô tả ngắn không được vượt quá 500 ký tự.'); return; }
     for (const s of sections) {
       if (!s.sectionTitle.trim()) {
         toast.error(`Tiêu đề mục ${s.sectionOrder} không được để trống.`);
+        return;
+      }
+      if (s.sectionTitle.length > 255) {
+        toast.error(`Tiêu đề mục ${s.sectionOrder} không được vượt quá 255 ký tự.`);
         return;
       }
       const stripped = s.sectionBodyHtml.replace(/<[^>]+>/g, '').trim();
@@ -263,25 +341,52 @@ export function CreateNews() {
         return;
       }
     }
+    if (bilingual) {
+      if (!englishTitle.trim()) { toast.error('Tiêu đề tiếng Anh không được để trống.'); return; }
+      if (englishTitle.length > 150) { toast.error('Tiêu đề tiếng Anh không được vượt quá 150 ký tự.'); return; }
+      if (englishSummary.length > 500) { toast.error('Mô tả ngắn (Anh) không được vượt quá 500 ký tự.'); return; }
+      for (const s of sections) {
+        if (!s.englishSectionTitle.trim()) {
+          toast.error(`Tiêu đề tiếng Anh của mục ${s.sectionOrder} không được để trống.`);
+          return;
+        }
+        if (s.englishSectionTitle.length > 255) {
+          toast.error(`Tiêu đề tiếng Anh của mục ${s.sectionOrder} không được vượt quá 255 ký tự.`);
+          return;
+        }
+        const strippedEn = s.englishSectionBodyHtml.replace(/<[^>]+>/g, '').trim();
+        if (!strippedEn) {
+          toast.error(`Nội dung tiếng Anh của mục ${s.sectionOrder} không được để trống.`);
+          return;
+        }
+      }
+    }
     if (coverUploading) { toast.error('Ảnh đại diện đang được tải lên, vui lòng chờ.'); return; }
     if (imagePreview !== null && coverFileId === null) {
       toast.error('Ảnh bìa chưa được tải lên thành công. Vui lòng chọn lại ảnh trước khi lưu.');
       return;
     }
-    if (sections.some(s => s.sectionImage?.uploading)) {
+    if (sections.some(s => s.sectionImages.some(img => img.uploading))) {
       toast.error('Ảnh nội dung đang được tải lên, vui lòng chờ.');
       return;
     }
-    const brokenImage = sections.find(s => s.sectionImage && s.sectionImage.fileId === null);
-    if (brokenImage) {
-      toast.error(`Ảnh của mục ${brokenImage.sectionOrder} chưa tải lên thành công. Vui lòng chọn lại ảnh.`);
+    const brokenImageSection = sections.find(s => s.sectionImages.some(img => img.fileId === null));
+    if (brokenImageSection) {
+      toast.error(`Một số ảnh của mục ${brokenImageSection.sectionOrder} chưa tải lên thành công. Vui lòng chọn lại ảnh.`);
       return;
     }
 
     setSubmitting(true);
     try {
-      const payload = {
-        visitInstanceId: selectedVisit.visitInstanceId,
+      const toSectionFiles = (images: SectionImageItem[]) =>
+        images.filter(img => img.fileId).map((img, i) => ({
+          fileId: img.fileId as number,
+          usageType: 'INLINE_IMAGE',
+          displayOrder: i + 1,
+        }));
+
+      const payload: Record<string, unknown> = {
+        visitInstanceId: selectedVisit ? selectedVisit.visitInstanceId : null,
         coverFileId,
         title: title.trim(),
         summary: summary.trim(),
@@ -289,11 +394,20 @@ export function CreateNews() {
           sectionOrder:    s.sectionOrder,
           sectionTitle:    s.sectionTitle.trim(),
           sectionBodyHtml: s.sectionBodyHtml,
-          sectionFiles:    s.sectionImage?.fileId
-            ? [{ fileId: s.sectionImage.fileId, usageType: 'INLINE_IMAGE', displayOrder: 1 }]
-            : [],
+          sectionFiles:    toSectionFiles(s.sectionImages),
         })),
       };
+
+      if (bilingual) {
+        payload.englishTitle = englishTitle.trim();
+        payload.englishSummary = englishSummary.trim();
+        payload.englishContentSections = sections.map(s => ({
+          sectionOrder:    s.sectionOrder,
+          sectionTitle:    s.englishSectionTitle.trim(),
+          sectionBodyHtml: s.englishSectionBodyHtml,
+          sectionFiles:    toSectionFiles(s.sectionImages),
+        }));
+      }
 
       const { data } = await httpClient.post<{ success: boolean; message: string }>('/news', payload);
 
@@ -310,8 +424,9 @@ export function CreateNews() {
     }
   };
 
-  // Khóa form khi chưa chọn chuyến hoặc user đã có bài cho chuyến preset (mỗi người 1 bài/chuyến).
-  const formDisabled = !selectedVisit || presetExistingNewsId !== null;
+  // Khóa form khi (bắt buộc chọn chuyến mà chưa chọn) hoặc user đã có bài cho chuyến preset.
+  const visitStepDone = !visitRequired ? (selectedVisit !== null || skippedVisit) : selectedVisit !== null;
+  const formDisabled = !visitStepDone || presetExistingNewsId !== null;
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -321,7 +436,7 @@ export function CreateNews() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.3 }}
-      className="p-4 sm:p-6 md:p-8 pb-12 max-w-5xl mx-auto"
+      className="p-4 sm:p-6 md:p-8 pb-12 max-w-7xl mx-auto"
     >
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
@@ -343,6 +458,7 @@ export function CreateNews() {
           <div className="bg-[#004c91] px-6 py-3.5">
             <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">
               {presetVisitInstanceId ? '0. CHUYẾN TIẾP KHÁCH' : '0. CHỌN CHUYẾN SAU TIẾP KHÁCH'}
+              {!visitRequired && !presetVisitInstanceId && <span className="ml-2 font-normal normal-case text-white/70">(tùy chọn)</span>}
             </h2>
           </div>
           <div className="p-6">
@@ -388,6 +504,18 @@ export function CreateNews() {
               </div>
             )}
 
+            {skippedVisit && !presetVisitInstanceId && (
+              <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold text-gray-600">Tin tức này sẽ không gắn với chuyến tiếp khách nào.</span>
+                <button
+                  onClick={handleChangeVisit}
+                  className="flex-shrink-0 px-3 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91] rounded-lg hover:bg-[#004c91] hover:text-white transition-colors"
+                >
+                  Chọn chuyến
+                </button>
+              </div>
+            )}
+
             {showVisitList && !presetVisitInstanceId && (
               <>
                 {loadingVisits ? (
@@ -399,6 +527,14 @@ export function CreateNews() {
                   <div className="py-10 text-center">
                     <p className="text-gray-700 font-bold mb-2">Bạn chưa có chuyến tiếp khách nào ở giai đoạn Sau tiếp khách để viết tin tức.</p>
                     <p className="text-gray-500 text-sm">Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia, từ giai đoạn Sau tiếp khách trở đi.</p>
+                    {!visitRequired && (
+                      <button
+                        onClick={handleSkipVisit}
+                        className="mt-4 px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg hover:bg-[#003a70] transition-colors"
+                      >
+                        Tạo tin không gắn đoàn
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -429,12 +565,20 @@ export function CreateNews() {
                         </div>
                       </div>
                     ))}
+                    {!visitRequired && (
+                      <button
+                        onClick={handleSkipVisit}
+                        className="w-full mt-2 px-4 py-2.5 border border-dashed border-gray-300 text-gray-500 text-sm font-bold rounded-xl hover:border-[#004c91] hover:text-[#004c91] transition-colors"
+                      >
+                        Không gắn với đoàn nào
+                      </button>
+                    )}
                   </div>
                 )}
               </>
             )}
 
-            {!selectedVisit && !loadingVisits && !presetError && (
+            {!selectedVisit && !skippedVisit && !loadingVisits && !presetError && visitRequired && (
               <p className="mt-4 text-sm text-amber-600 font-medium">
                 ⚠ Vui lòng chọn chuyến tiếp khách trước khi tạo tin tức.
               </p>
@@ -443,57 +587,163 @@ export function CreateNews() {
         </section>
 
         {/* ── Section 1: THÔNG TIN CƠ BẢN ── */}
-        <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${formDisabled ? 'opacity-50' : ''}`}>
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">1. THÔNG TIN CƠ BẢN</h2>
-          </div>
-          <div className="p-6 flex flex-col gap-6">
-            <div>
-              <label className="block text-gray-900 font-bold mb-2">
-                Tiêu đề tin tức <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  maxLength={150}
-                  placeholder="Nhập tiêu đề tin tức..."
-                  value={title}
-                  disabled={formDisabled}
-                  onChange={e => setTitle(e.target.value)}
-                  className="w-full pr-16 pl-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">{title.length}/150</span>
-              </div>
-            </div>
+        <CollapsibleSection
+          title="1. THÔNG TIN CƠ BẢN"
+          disabled={formDisabled}
+          headerExtra={
+            <>
+              {bilingual && (
+                <button
+                  type="button"
+                  onClick={handleRetranslate}
+                  disabled={translating}
+                  title="Dịch lại sang tiếng Anh"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-white/90 border border-white/40 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${translating ? 'animate-spin' : ''}`} />
+                  {translating ? 'Đang dịch...' : 'Dịch lại'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setBilingual(v => !v)}
+                title={bilingual ? 'Tắt soạn song ngữ' : 'Bật soạn song ngữ Việt – Anh'}
+                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                  bilingual ? 'bg-white text-[#004c91]' : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                <Languages className="w-4 h-4" />
+              </button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-6">
+            <BilingualColumns
+              showEnglish={bilingual}
+              left={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Tiêu đề tin tức <span className="text-red-500">*</span>
+                      {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${title.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {title.length}/150
+                    </span>
+                  </div>
+                  <AutoGrowInput
+                    placeholder="Nhập tiêu đề tin tức..."
+                    value={title}
+                    disabled={formDisabled}
+                    onChange={setTitle}
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 disabled:bg-gray-50 disabled:cursor-not-allowed ${
+                      title.length > 150
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {title.length > 150 && (
+                    <p className="text-xs text-red-500 mt-1">Tiêu đề không được vượt quá 150 ký tự.</p>
+                  )}
+                </div>
+              }
+              right={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Title <span className="text-red-500">*</span>
+                      <LanguageColumnLabel>EN</LanguageColumnLabel>
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishTitle.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {englishTitle.length}/150
+                    </span>
+                  </div>
+                  <AutoGrowInput
+                    placeholder="Enter news title..."
+                    value={englishTitle}
+                    disabled={formDisabled}
+                    onChange={v => { setEnglishTitle(v); setEnglishTitleTouched(true); }}
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 disabled:bg-gray-50 disabled:cursor-not-allowed ${
+                      englishTitle.length > 150
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {englishTitle.length > 150 && (
+                    <p className="text-xs text-red-500 mt-1">Title must not exceed 150 characters.</p>
+                  )}
+                </div>
+              }
+            />
 
-            <div>
-              <label className="block text-gray-900 font-bold mb-2">
-                Mô tả ngắn <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                rows={3}
-                placeholder="Nhập mô tả ngắn gọn..."
-                value={summary}
-                disabled={formDisabled}
-                onChange={e => setSummary(e.target.value)}
-                className="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800 resize-none disabled:bg-gray-50 disabled:cursor-not-allowed"
-              />
-            </div>
+            <BilingualColumns
+              showEnglish={bilingual}
+              left={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Mô tả ngắn <span className="text-red-500">*</span>
+                      {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${summary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {summary.length}/500
+                    </span>
+                  </div>
+                  <AutoGrowTextarea
+                    placeholder="Nhập mô tả ngắn gọn..."
+                    value={summary}
+                    disabled={formDisabled}
+                    onChange={setSummary}
+                    className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 disabled:bg-gray-50 disabled:cursor-not-allowed ${
+                      summary.length > 500
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {summary.length > 500 && (
+                    <p className="text-xs text-red-500 mt-1">Mô tả ngắn không được vượt quá 500 ký tự.</p>
+                  )}
+                </div>
+              }
+              right={
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Summary
+                      <LanguageColumnLabel>EN</LanguageColumnLabel>
+                    </label>
+                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishSummary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {englishSummary.length}/500
+                    </span>
+                  </div>
+                  <AutoGrowTextarea
+                    placeholder="Enter a short summary..."
+                    value={englishSummary}
+                    disabled={formDisabled}
+                    onChange={v => { setEnglishSummary(v); setEnglishSummaryTouched(true); }}
+                    className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 disabled:bg-gray-50 disabled:cursor-not-allowed ${
+                      englishSummary.length > 500
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                        : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                    }`}
+                  />
+                  {englishSummary.length > 500 && (
+                    <p className="text-xs text-red-500 mt-1">Summary must not exceed 500 characters.</p>
+                  )}
+                </div>
+              }
+            />
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Section 2: ẢNH ĐẠI DIỆN ── */}
-        <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${formDisabled ? 'opacity-50' : ''}`}>
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">2. ẢNH ĐẠI DIỆN</h2>
-          </div>
-          <div className="p-6">
+        <CollapsibleSection title="2. ẢNH ĐẠI DIỆN" disabled={formDisabled}>
             <label className={`block w-full cursor-pointer ${formDisabled ? 'pointer-events-none' : ''}`}>
               <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" className="hidden" onChange={handleImageUpload} disabled={formDisabled} />
               <div className={`relative bg-[#eef5fa] border-2 border-dashed border-[#b6d4f0] rounded-xl flex flex-col items-center justify-center text-center hover:bg-[#e4f0fa] transition-colors overflow-hidden ${imagePreview ? 'p-2' : 'p-12 min-h-[200px]'}`}>
                 {imagePreview ? (
                   <div className="relative w-full">
-                    <img src={imagePreview} alt="Preview" className="w-full max-h-[360px] object-contain rounded-lg" />
+                    <SmartImage src={imagePreview} alt="Preview" className="w-full max-h-[360px] object-contain rounded-lg" />
                     {coverUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
                         <div className="flex items-center gap-2 text-white font-bold text-sm">
@@ -517,130 +767,168 @@ export function CreateNews() {
             {imagePreview && !coverUploading && (
               <p className="mt-2 text-xs text-gray-400 text-center">Click vào ảnh để thay ảnh mới</p>
             )}
-          </div>
-        </section>
+            {!formDisabled && selectedVisit && (
+              <button
+                type="button"
+                onClick={() => setShowCoverPicker(true)}
+                className="mt-3 flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#004c91] hover:bg-[#eef5fa] transition-colors group w-full justify-center"
+              >
+                <FolderOpen className="w-4 h-4 text-gray-400 group-hover:text-[#004c91] shrink-0 transition-colors" />
+                <span className="text-sm text-gray-500 group-hover:text-[#004c91] font-medium transition-colors">
+                  Chọn từ ảnh đoàn
+                </span>
+              </button>
+            )}
+            {showCoverPicker && selectedVisit && (
+              <VisitInstancePhotoPicker
+                visitInstanceId={selectedVisit.visitInstanceId}
+                alreadyPickedFileIds={coverFileId !== null ? [coverFileId] : []}
+                maxPickable={1}
+                onClose={() => setShowCoverPicker(false)}
+                onPick={handleCoverPickedFromVisitInstance}
+              />
+            )}
+        </CollapsibleSection>
 
         {/* ── Section 3: NỘI DUNG CHI TIẾT ── */}
-        <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${formDisabled ? 'opacity-50' : ''}`}>
-          <div className="bg-[#004c91] px-6 py-3.5">
-            <h2 className="text-[15px] font-bold text-white uppercase tracking-wide">3. NỘI DUNG CHI TIẾT</h2>
-          </div>
-
-          <div className={`p-6 flex flex-col gap-8 ${formDisabled ? 'pointer-events-none' : ''}`}>
+        <CollapsibleSection title="3. NỘI DUNG CHI TIẾT" disabled={formDisabled}>
+          <div className={`flex flex-col gap-8 ${formDisabled ? 'pointer-events-none' : ''}`}>
             {sections.map((section, index) => (
               <div key={section.id}>
                 {index > 0 && <div className="h-px bg-gray-100 w-full mb-8" />}
                 <div className="flex flex-col gap-5">
 
                   {/* Section heading row */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-gray-900 font-bold">
-                        Tiêu đề mục {index + 1} <span className="text-red-500">*</span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        {index > 0 && (
-                          <button
-                            onClick={() => setSectionToDelete(index)}
-                            className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" /> Xóa mục
-                          </button>
-                        )}
-                        {index === sections.length - 1 && sections.length < 10 && (
-                          <button
-                            onClick={addSection}
-                            className="flex items-center gap-1.5 bg-[#004c91] hover:bg-[#003a70] text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors shadow-sm"
-                          >
-                            <Plus className="w-4 h-4" /> Thêm mục
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="Nhập tiêu đề mục nội dung..."
-                      value={section.sectionTitle}
-                      onChange={e => updateSection(index, 'sectionTitle', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] hover:border-[#004c91] transition-colors text-gray-800"
-                    />
-                  </div>
-
-                  {/* Text body — no image button in toolbar */}
-                  <div>
-                    <label className="block text-gray-900 font-bold mb-2">
-                      Nội dung <span className="text-red-500">*</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-gray-900 font-bold">
+                      Mục {index + 1} <span className="text-red-500">*</span>
                     </label>
-                    <div className="border border-gray-300 rounded-lg overflow-hidden focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-colors">
-                      {/* @ts-ignore */}
-                      <ReactQuill
-                        key={`quill-${section.id}`}
-                        theme="snow"
-                        value={section.sectionBodyHtml}
-                        onChange={value => updateSection(index, 'sectionBodyHtml', value)}
-                        placeholder="Nhập nội dung chi tiết..."
-                        className="bg-white"
-                        modules={QUILL_MODULES}
-                      />
+                    <div className="flex items-center gap-2">
+                      {index > 0 && (
+                        <button
+                          onClick={() => setSectionToDelete(index)}
+                          className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" /> Xóa mục
+                        </button>
+                      )}
+                      {index === sections.length - 1 && sections.length < 10 && (
+                        <button
+                          onClick={addSection}
+                          className="flex items-center gap-1.5 bg-[#004c91] hover:bg-[#003a70] text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors shadow-sm"
+                        >
+                          <Plus className="w-4 h-4" /> Thêm mục
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Section image — separate zone, max 1 per section */}
-                  <div>
-                    <label className="block text-gray-900 font-bold mb-2">Hình ảnh</label>
-
-                    {section.sectionImage ? (
-                      <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                        <img
-                          src={section.sectionImage.previewUrl}
-                          alt={`Ảnh mục ${index + 1}`}
-                          className="w-full h-auto object-contain rounded-lg"
-                        />
-                        {section.sectionImage.uploading && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
-                            <div className="flex items-center gap-2 text-white font-bold text-sm">
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              Đang tải lên...
-                            </div>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeSectionImage(index)}
-                          className="absolute top-2 right-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
-                          title="Xóa ảnh"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                        <label className="absolute bottom-2 right-2 cursor-pointer">
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/jpg,image/webp"
-                            className="hidden"
-                            onChange={e => handleSectionImagePick(index, e)}
-                          />
-                          <span className="flex items-center gap-1.5 bg-white/90 hover:bg-white text-[#004c91] text-xs font-bold px-3 py-1.5 rounded-lg shadow transition-colors border border-gray-200 cursor-pointer">
-                            <ImagePlus className="w-3.5 h-3.5" /> Thay ảnh
-                          </span>
-                        </label>
-                      </div>
-                    ) : (
-                      <label className="block cursor-pointer">
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/jpg,image/webp"
-                          className="hidden"
-                          onChange={e => handleSectionImagePick(index, e)}
-                        />
-                        <div className="flex items-center gap-3 p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#004c91] hover:bg-[#eef5fa] transition-colors group cursor-pointer">
-                          <ImagePlus className="w-5 h-5 text-gray-400 group-hover:text-[#004c91] shrink-0 transition-colors" />
-                          <span className="text-sm text-gray-500 group-hover:text-[#004c91] font-medium transition-colors">
-                            Thêm hình ảnh (tùy chọn — tối đa 1 ảnh mỗi mục)
+                  <BilingualColumns
+                    showEnglish={bilingual}
+                    left={
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-gray-900 font-bold text-sm">
+                            Tiêu đề mục <span className="text-red-500">*</span>
+                            {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                          </label>
+                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {section.sectionTitle.length}/255
                           </span>
                         </div>
-                      </label>
-                    )}
-                  </div>
+                        <AutoGrowInput
+                          placeholder="Nhập tiêu đề mục nội dung..."
+                          value={section.sectionTitle}
+                          onChange={v => updateSection(index, 'sectionTitle', v)}
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                            section.sectionTitle.length > 255
+                              ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                              : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                          }`}
+                        />
+                        {section.sectionTitle.length > 255 && (
+                          <p className="text-xs text-red-500 mt-1">Tiêu đề mục không được vượt quá 255 ký tự.</p>
+                        )}
+                      </div>
+                    }
+                    right={
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-gray-900 font-bold text-sm">
+                            Section title
+                            <LanguageColumnLabel>EN</LanguageColumnLabel>
+                          </label>
+                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.englishSectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {section.englishSectionTitle.length}/255
+                          </span>
+                        </div>
+                        <AutoGrowInput
+                          placeholder="Enter section title..."
+                          value={section.englishSectionTitle}
+                          onChange={v => updateEnglishSection(index, 'englishSectionTitle', v)}
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-1 transition-colors text-gray-800 ${
+                            section.englishSectionTitle.length > 255
+                              ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                              : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91] hover:border-[#004c91]'
+                          }`}
+                        />
+                        {section.englishSectionTitle.length > 255 && (
+                          <p className="text-xs text-red-500 mt-1">Section title must not exceed 255 characters.</p>
+                        )}
+                      </div>
+                    }
+                  />
+
+                  <BilingualColumns
+                    showEnglish={bilingual}
+                    left={
+                      <div>
+                        <label className="block text-gray-900 font-bold mb-2">
+                          Nội dung <span className="text-red-500">*</span>
+                          {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                        </label>
+                        <div className="news-quill-compact border border-gray-300 rounded-lg overflow-hidden focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-colors">
+                          {/* @ts-ignore */}
+                          <ReactQuill
+                            key={`quill-vi-${section.id}`}
+                            theme="snow"
+                            value={section.sectionBodyHtml}
+                            onChange={value => updateSection(index, 'sectionBodyHtml', value)}
+                            placeholder="Nhập nội dung chi tiết..."
+                            className="bg-white"
+                            modules={QUILL_MODULES}
+                          />
+                        </div>
+                      </div>
+                    }
+                    right={
+                      <div>
+                        <label className="block text-gray-900 font-bold mb-2">
+                          Content
+                          <LanguageColumnLabel>EN</LanguageColumnLabel>
+                        </label>
+                        <div className="news-quill-compact border border-gray-300 rounded-lg overflow-hidden focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-colors">
+                          {/* @ts-ignore */}
+                          <ReactQuill
+                            key={`quill-en-${section.id}`}
+                            theme="snow"
+                            value={section.englishSectionBodyHtml}
+                            onChange={(value, _delta, source) => updateEnglishSectionBodyFromQuill(index, value, source)}
+                            placeholder="Enter detailed content..."
+                            className="bg-white"
+                            modules={QUILL_MODULES}
+                          />
+                        </div>
+                      </div>
+                    }
+                  />
+
+                  <SectionImagesEditor
+                    images={section.sectionImages}
+                    onChange={updater => updateSectionImages(index, updater)}
+                    uploadEndpoint="/news/section-file-upload"
+                    visitInstanceId={selectedVisit?.visitInstanceId}
+                  />
 
                 </div>
               </div>
@@ -650,7 +938,7 @@ export function CreateNews() {
               {sections.length}/10 mục nội dung
             </div>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Buttons ── */}
         <div className="flex items-center justify-between gap-4 pt-6 border-t border-gray-200">

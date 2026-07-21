@@ -12,8 +12,14 @@ public sealed class GetPublicPartnerDetailQueryHandler
     : IRequestHandler<GetPublicPartnerDetailQuery, PublicPartnerDto>
 {
     private readonly IApplicationDbContext _db;
+    private readonly IPartnerDescriptionTranslationCache _descriptionTranslator;
 
-    public GetPublicPartnerDetailQueryHandler(IApplicationDbContext db) => _db = db;
+    public GetPublicPartnerDetailQueryHandler(
+        IApplicationDbContext db, IPartnerDescriptionTranslationCache descriptionTranslator)
+    {
+        _db = db;
+        _descriptionTranslator = descriptionTranslator;
+    }
 
     public async Task<PublicPartnerDto> Handle(
         GetPublicPartnerDetailQuery request, CancellationToken cancellationToken)
@@ -27,25 +33,45 @@ public sealed class GetPublicPartnerDetailQueryHandler
             ? query.Where(p => p.PartnerId == id)
             : query.Where(p => p.PublicSlug == idOrSlug);
 
-        var partner = await query
-            .Select(p => new PublicPartnerDto
+        var row = await query
+            .Select(p => new
             {
-                PartnerId = p.PartnerId,
-                Name = p.Name,
-                ShortName = p.ShortName,
-                Country = p.Country,
-                City = p.City,
-                WebsiteUrl = p.WebsiteUrl,
-                Address = p.Address,
-                Description = p.Description,
-                PartnerType = p.PartnerType,
-                LogoFileId = p.LogoFileId,
-                CoverFileId = p.CoverFileId,
-                PublicSlug = p.PublicSlug,
+                p.PartnerId,
+                p.Name,
+                p.ShortName,
+                p.Country,
+                p.City,
+                p.WebsiteUrl,
+                p.Address,
+                p.Description,
+                p.PartnerType,
+                p.LogoFileId,
+                p.CoverFileId,
+                p.PublicSlug,
+                p.UpdatedAt,
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Partner", idOrSlug);
 
-        return partner;
+        var translated = await _descriptionTranslator.TranslateAsync(
+            new[] { new PartnerDescriptionTranslationSource(row.PartnerId, row.Description, row.UpdatedAt) },
+            request.LanguageCode,
+            cancellationToken);
+
+        return new PublicPartnerDto
+        {
+            PartnerId = row.PartnerId,
+            Name = row.Name,
+            ShortName = row.ShortName,
+            Country = row.Country,
+            City = row.City,
+            WebsiteUrl = row.WebsiteUrl,
+            Address = row.Address,
+            Description = translated.TryGetValue(row.PartnerId, out var d) ? d : row.Description,
+            PartnerType = row.PartnerType,
+            LogoFileId = row.LogoFileId,
+            CoverFileId = row.CoverFileId,
+            PublicSlug = row.PublicSlug,
+        };
     }
 }

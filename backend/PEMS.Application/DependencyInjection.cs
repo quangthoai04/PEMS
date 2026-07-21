@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using PEMS.Application.Common.Behaviours;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Partners.Common;
+using PEMS.Application.PublicContent.Common;
 using System.Reflection;
 
 namespace PEMS.Application;
@@ -16,6 +18,15 @@ public static class DependencyInjection
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(assembly));
         services.AddValidatorsFromAssembly(assembly);
+
+        // In-memory cache backing FAQ runtime translation (question/answer are Vietnamese-only
+        // in the DB by design; English is translated on demand and cached — see FaqTranslationCache).
+        services.AddMemoryCache();
+        services.AddScoped<IFaqTranslationCache, FaqTranslationCache>();
+
+        // Same runtime-translate-and-cache pattern for public partner descriptions (also
+        // Vietnamese-only in the DB) — see PartnerDescriptionTranslationCache.
+        services.AddScoped<IPartnerDescriptionTranslationCache, PartnerDescriptionTranslationCache>();
 
         // FluentValidation runs as a MediatR pipeline behaviour for every request.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>));

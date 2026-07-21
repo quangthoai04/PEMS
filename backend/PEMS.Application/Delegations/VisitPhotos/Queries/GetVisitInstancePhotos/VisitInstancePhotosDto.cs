@@ -3,6 +3,12 @@ namespace PEMS.Application.Delegations.VisitPhotos.Queries.GetVisitInstancePhoto
 public sealed class VisitInstancePhotoItemDto
 {
     public ulong VisitPhotoId { get; init; }
+
+    /// <summary>Internal PEMS file id — lets callers (e.g. News section image picker) reference
+    /// this exact already-uploaded file without re-uploading it (avoids duplicate Drive copies).
+    /// Not a Drive id.</summary>
+    public ulong FileId { get; init; }
+
     public string FileName { get; init; } = string.Empty;
 
     /// <summary>Authorized proxy URL (<c>/api/files/{fileId}/content</c>) — no Drive id exposed.</summary>

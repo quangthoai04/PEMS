@@ -68,7 +68,7 @@ function formatDate(iso?: string | null): string {
 }
 
 export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
-  const { t } = useTranslation(['search']);
+  const { t, i18n } = useTranslation(['search']);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -117,8 +117,8 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       try {
         const [campuses, partnerTypes, faqTypes] = await Promise.all([
           authenticationApi.getActiveCampuses().catch(() => []),
-          publicPartnersApi.getPublicPartnerTypes().catch(() => []),
-          publicFaqApi.getFaqTypeCounts().catch(() => []),
+          publicPartnersApi.getPublicPartnerTypes(i18n.language).catch(() => []),
+          publicFaqApi.getFaqTypeCounts(i18n.language).catch(() => []),
         ]);
         if (cancelled) return;
 
@@ -140,7 +140,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen]);
+  }, [isOpen, i18n.language]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword.trim()), 350);
@@ -159,7 +159,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       setLoading(true);
       setError(false);
       try {
-        const data = await publicSearchApi.search({ keyword: debouncedKeyword, limit: 5 });
+        const data = await publicSearchApi.search({ keyword: debouncedKeyword, limit: 5, languageCode: i18n.language });
         if (!cancelled) setResult(data);
       } catch {
         if (!cancelled) {
@@ -171,7 +171,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedKeyword]);
+  }, [debouncedKeyword, i18n.language]);
 
   const handleChipClick = (label: string) => {
     setKeyword(label);
