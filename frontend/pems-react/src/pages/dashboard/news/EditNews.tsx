@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { UploadCloud, Plus, Trash2, ArrowLeft, Languages, RotateCw } from 'lucide-react';
+import { UploadCloud, Plus, Trash2, ArrowLeft, Languages, RotateCw, FolderOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
@@ -14,6 +14,7 @@ import { BilingualColumns, LanguageColumnLabel } from './components/BilingualCol
 import { useBilingualTranslate } from './components/useBilingualTranslate';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import { AutoGrowInput, AutoGrowTextarea } from './components/AutoGrowInput';
+import { VisitInstancePhotoPicker } from './components/VisitInstancePhotoPicker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,8 @@ export function EditNews() {
   const [rowVersion, setRowVersion] = useState(0);
   const [newsStatus, setNewsStatus] = useState('');
   const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
+  // Đoàn gắn với bài viết (nếu có) — ảnh mới tải lên khi sửa vẫn phải vào đúng thư mục đoàn đó.
+  const [visitInstanceId, setVisitInstanceId] = useState<number | null>(null);
 
   // ── Form fields ──
   const [title,    setTitle]    = useState('');
@@ -149,6 +152,7 @@ export function EditNews() {
   const [existingCoverUrl,   setExistingCoverUrl]   = useState<string | null>(null);
   const [coverPreviewUrl,    setCoverPreviewUrl]     = useState<string | null>(null);
   const [coverUploading,     setCoverUploading]      = useState(false);
+  const [showCoverPicker,    setShowCoverPicker]     = useState(false);
   const existingCoverSrc = useAuthenticatedImage(existingCoverUrl);
 
   // ── Load news on mount ────────────────────────────────────────────────────
@@ -202,6 +206,7 @@ export function EditNews() {
         setNewsStatus(data.status ?? '');
         setTitle(data.title ?? '');
         setSummary(data.summary ?? '');
+        setVisitInstanceId(data.visitInstanceId ?? null);
         const langs: string[] = Array.isArray(data.availableLanguages) ? data.availableLanguages : [];
         setAvailableLanguages(langs);
 
@@ -265,7 +270,8 @@ export function EditNews() {
     setCoverPreviewUrl(URL.createObjectURL(file));
     setCoverUploading(true);
     try {
-      const result = await uploadFileToEndpoint('/news/cover-upload', 'file', file);
+      const result = await uploadFileToEndpoint('/news/cover-upload', 'file', file, 'post',
+        visitInstanceId ? { visitInstanceId } : undefined);
       setCurrentCoverFileId(result.fileId);
     } catch {
       toast.error('Tải ảnh bìa thất bại. Vui lòng thử lại.');
@@ -273,6 +279,14 @@ export function EditNews() {
     } finally {
       setCoverUploading(false);
     }
+  }
+
+  function handleCoverPickedFromVisitInstance(photos: { fileId: number; url: string }[]) {
+    const picked = photos[0];
+    if (!picked) return;
+    setCoverPreviewUrl(null);
+    setExistingCoverUrl(picked.url);
+    setCurrentCoverFileId(picked.fileId);
   }
 
   // ── Section CRUD ──────────────────────────────────────────────────────────
@@ -720,6 +734,27 @@ export function EditNews() {
             {coverDisplaySrc && !coverUploading && (
               <p className="mt-2 text-xs text-gray-400 text-center">Click vào ảnh để thay ảnh mới</p>
             )}
+            {visitInstanceId && (
+              <button
+                type="button"
+                onClick={() => setShowCoverPicker(true)}
+                className="mt-3 flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#004c91] hover:bg-[#eef5fa] transition-colors group w-full justify-center"
+              >
+                <FolderOpen className="w-4 h-4 text-gray-400 group-hover:text-[#004c91] shrink-0 transition-colors" />
+                <span className="text-sm text-gray-500 group-hover:text-[#004c91] font-medium transition-colors">
+                  Chọn từ ảnh đoàn
+                </span>
+              </button>
+            )}
+            {showCoverPicker && visitInstanceId && (
+              <VisitInstancePhotoPicker
+                visitInstanceId={visitInstanceId}
+                alreadyPickedFileIds={currentCoverFileId !== null ? [currentCoverFileId] : []}
+                maxPickable={1}
+                onClose={() => setShowCoverPicker(false)}
+                onPick={handleCoverPickedFromVisitInstance}
+              />
+            )}
         </CollapsibleSection>
 
         {/* ── 3. Nội dung chi tiết ── */}
@@ -870,6 +905,7 @@ export function EditNews() {
                     images={section.sectionImages}
                     onChange={updater => updateSectionImages(index, updater)}
                     uploadEndpoint="/news/section-file-upload"
+                    visitInstanceId={visitInstanceId}
                   />
 
                 </div>

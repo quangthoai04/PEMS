@@ -40,12 +40,16 @@ namespace PEMS.Api.Controllers
             => Ok(await _mediator.Send(new SubmitVisitInstanceNewsCommand(newsId), cancellationToken));
 
         // UC Upload News Cover Image: POST /api/news/cover-upload
+        // visitInstanceId (optional form field): when the post being composed is attached to a
+        // đoàn, the image is routed into that đoàn's own Drive folder instead of the flat News
+        // folder — same folder the Student visit-photo feature already uses for that instance.
         [HttpPost("cover-upload")]
         [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
         [RequestSizeLimit(6 * 1024 * 1024)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadNewsCoverImage(
             IFormFile file,
+            [FromForm] ulong? visitInstanceId,
             CancellationToken cancellationToken)
         {
             if (file is null || file.Length == 0)
@@ -56,7 +60,7 @@ namespace PEMS.Api.Controllers
 
             var result = await _mediator.Send(
                 new PEMS.Application.News.Commands.UploadNewsCoverImage.UploadNewsCoverImageCommand(
-                    ms.ToArray(), file.FileName, file.ContentType),
+                    ms.ToArray(), file.FileName, file.ContentType, visitInstanceId),
                 cancellationToken);
 
             return Ok(result);
@@ -71,6 +75,7 @@ namespace PEMS.Api.Controllers
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadNewsSectionImage(
             IFormFile file,
+            [FromForm] ulong? visitInstanceId,
             CancellationToken cancellationToken)
         {
             if (file is null || file.Length == 0)
@@ -81,7 +86,7 @@ namespace PEMS.Api.Controllers
 
             var result = await _mediator.Send(
                 new PEMS.Application.News.Commands.UploadNewsCoverImage.UploadNewsCoverImageCommand(
-                    ms.ToArray(), file.FileName, file.ContentType),
+                    ms.ToArray(), file.FileName, file.ContentType, visitInstanceId),
                 cancellationToken);
 
             return Ok(result);

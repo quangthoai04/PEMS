@@ -5,6 +5,7 @@
 
 export interface VisitInstancePhotoItem {
   visitPhotoId: number;
+  fileId: number;
   fileName: string;
   url: string;
   caption?: string | null;

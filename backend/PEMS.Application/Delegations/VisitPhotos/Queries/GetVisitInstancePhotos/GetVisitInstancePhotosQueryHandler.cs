@@ -24,7 +24,9 @@ public sealed class GetVisitInstancePhotosQueryHandler
     public async Task<VisitInstancePhotosDto> Handle(
         GetVisitInstancePhotosQuery request, CancellationToken cancellationToken)
     {
-        var scope = await VisitPhotoStudentScope.ResolveAcceptedStudentAsync(
+        // Shared with News' "pick from đoàn photos" picker — Host/participant Staff can browse (and
+        // reuse) the same folder's photos, not just the uploading Student.
+        var scope = await VisitInstanceMediaAccessScope.ResolveAsync(
             _db, _currentUser, request.VisitInstanceId, cancellationToken);
         var instance = scope.Instance;
         var visit = instance.VisitRequest;
@@ -78,6 +80,7 @@ public sealed class GetVisitInstancePhotosQueryHandler
             Photos = photos.Select(p => new VisitInstancePhotoItemDto
             {
                 VisitPhotoId = p.VisitPhotoId,
+                FileId = p.FileId,
                 FileName = p.FileName,
                 Url = $"/api/files/{p.FileId}/content",
                 Caption = p.Caption,

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { UploadCloud, Plus, Trash2, ArrowLeft, Calendar, MapPin, CheckCircle2, Languages, RotateCw } from 'lucide-react';
+import { UploadCloud, Plus, Trash2, ArrowLeft, Calendar, MapPin, CheckCircle2, Languages, RotateCw, FolderOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
@@ -14,6 +14,8 @@ import { BilingualColumns, LanguageColumnLabel } from './components/BilingualCol
 import { useBilingualTranslate } from './components/useBilingualTranslate';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import { AutoGrowInput, AutoGrowTextarea } from './components/AutoGrowInput';
+import { VisitInstancePhotoPicker } from './components/VisitInstancePhotoPicker';
+import { SmartImage } from './components/SmartImage';
 
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -124,6 +126,7 @@ export function CreateNews() {
   const [imagePreview,    setImagePreview]    = useState<string | null>(null);
   const [coverFileId,     setCoverFileId]     = useState<number | null>(null);
   const [coverUploading,  setCoverUploading]  = useState(false);
+  const [showCoverPicker, setShowCoverPicker] = useState(false);
 
   // Step 3: Content sections
   const [sections, setSections] = useState<ContentSection[]>([newSection(1)]);
@@ -245,7 +248,8 @@ export function CreateNews() {
     setCoverFileId(null);
     setCoverUploading(true);
     try {
-      const uploaded = await uploadFileToEndpoint('/news/cover-upload', 'file', file);
+      const uploaded = await uploadFileToEndpoint('/news/cover-upload', 'file', file, 'post',
+        selectedVisit ? { visitInstanceId: selectedVisit.visitInstanceId } : undefined);
       setCoverFileId(uploaded.fileId);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Không thể tải ảnh bìa lên.');
@@ -255,6 +259,13 @@ export function CreateNews() {
       setCoverUploading(false);
     }
   };
+
+  function handleCoverPickedFromVisitInstance(photos: { fileId: number; url: string }[]) {
+    const picked = photos[0];
+    if (!picked) return;
+    setImagePreview(picked.url);
+    setCoverFileId(picked.fileId);
+  }
 
   // ── Section CRUD ───────────────────────────────────────────────────────────
 
@@ -732,7 +743,7 @@ export function CreateNews() {
               <div className={`relative bg-[#eef5fa] border-2 border-dashed border-[#b6d4f0] rounded-xl flex flex-col items-center justify-center text-center hover:bg-[#e4f0fa] transition-colors overflow-hidden ${imagePreview ? 'p-2' : 'p-12 min-h-[200px]'}`}>
                 {imagePreview ? (
                   <div className="relative w-full">
-                    <img src={imagePreview} alt="Preview" className="w-full max-h-[360px] object-contain rounded-lg" />
+                    <SmartImage src={imagePreview} alt="Preview" className="w-full max-h-[360px] object-contain rounded-lg" />
                     {coverUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
                         <div className="flex items-center gap-2 text-white font-bold text-sm">
@@ -755,6 +766,27 @@ export function CreateNews() {
             </label>
             {imagePreview && !coverUploading && (
               <p className="mt-2 text-xs text-gray-400 text-center">Click vào ảnh để thay ảnh mới</p>
+            )}
+            {!formDisabled && selectedVisit && (
+              <button
+                type="button"
+                onClick={() => setShowCoverPicker(true)}
+                className="mt-3 flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#004c91] hover:bg-[#eef5fa] transition-colors group w-full justify-center"
+              >
+                <FolderOpen className="w-4 h-4 text-gray-400 group-hover:text-[#004c91] shrink-0 transition-colors" />
+                <span className="text-sm text-gray-500 group-hover:text-[#004c91] font-medium transition-colors">
+                  Chọn từ ảnh đoàn
+                </span>
+              </button>
+            )}
+            {showCoverPicker && selectedVisit && (
+              <VisitInstancePhotoPicker
+                visitInstanceId={selectedVisit.visitInstanceId}
+                alreadyPickedFileIds={coverFileId !== null ? [coverFileId] : []}
+                maxPickable={1}
+                onClose={() => setShowCoverPicker(false)}
+                onPick={handleCoverPickedFromVisitInstance}
+              />
             )}
         </CollapsibleSection>
 
@@ -895,6 +927,7 @@ export function CreateNews() {
                     images={section.sectionImages}
                     onChange={updater => updateSectionImages(index, updater)}
                     uploadEndpoint="/news/section-file-upload"
+                    visitInstanceId={selectedVisit?.visitInstanceId}
                   />
 
                 </div>
