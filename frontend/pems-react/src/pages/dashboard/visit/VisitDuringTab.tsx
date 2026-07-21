@@ -3,7 +3,7 @@
  * Cụm module chức năng giám sát thực thi biểu mẫu thời gian thực khách tham quan.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ChevronDown, 
   ChevronUp, 
@@ -28,22 +28,50 @@ import {
   Check,
   Globe,
   Link2,
-  MapPin
+  MapPin,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
+import { businessCardOcrApi } from '../../../features/business-card-ocr/api/businessCardOcrApi';
+import { showLoadingToast, updateToastSuccess, updateToastError } from '../../../shared/utils/toast';
+import type { VisitProcessGuestMember } from '../../../features/delegations/types/delegations.types';
+import { partnersApi } from '../../../features/partners/api/partnersApi';
 
-export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number }) {
+export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId, guestMembers = [], supportMembers = [] }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number, guestMembers?: VisitProcessGuestMember[], supportMembers?: VisitProcessGuestMember[] }) {
   const navigate = useNavigate();
   // Image Upload and Card Scanning States
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedCardImage, setUploadedCardImage] = useState<string | null>(null);
   const [isScanned, setIsScanned] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [matchedPartnerFromEmail, setMatchedPartnerFromEmail] = useState<string | null>(null);
+
+  const [suggestedPartners, setSuggestedPartners] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function fetchMatches() {
+      const allMembers = [...guestMembers, ...supportMembers];
+      const orgs = Array.from(new Set(allMembers.map(g => g.organization).filter(Boolean))) as string[];
+      if (!orgs.length) return;
+      const suggestions = new Set<string>();
+      for (const org of orgs) {
+        try {
+          const res = await partnersApi.matchPartner(org);
+          if (res.partnerName) suggestions.add(res.partnerName);
+          if (res.candidates) {
+            res.candidates.forEach(c => suggestions.add(c.name));
+          }
+        } catch (err) {}
+      }
+      setSuggestedPartners(Array.from(suggestions));
+    }
+    fetchMatches();
+  }, [guestMembers, supportMembers]);
 
   // State for Feedback table expansions
   const [expandedRow1, setExpandedRow1] = useState(false);
@@ -221,19 +249,16 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
   }>>([]);
 
   const getAvailablePartners = () => {
-    // 1. Existing partners in the system
-    const existing = [
-      "Đại học Deakin (Deakin University)",
-      "Tập đoàn công nghệ Panasonic",
-      "Đại học Chulalongkorn",
-      "Yuan Ze University (Đại học Nguyên Trí)"
-    ];
-    // 2. Draft/Visit partners whose isPartner is true or newly created
-    const uniqueDrafts = Array.from(new Set(
-      participantsList
-        .filter(p => p.isPartner && p.org)
-        .map(p => p.org)
-    ));
+    // 1. Existing partners in the system: ONLY suggested partners from DB (similar names)
+    const existing = Array.from(new Set([
+      ...suggestedPartners
+    ]));
+    // 2. Draft partners: Guest members' organizations and OCR matches ONLY
+    const allMembers = [...guestMembers, ...supportMembers];
+    const uniqueDrafts = Array.from(new Set([
+      ...allMembers.filter(g => g.organization).map(g => g.organization as string),
+      ...(matchedPartnerFromEmail ? [matchedPartnerFromEmail] : [])
+    ]));
     
     return {
       existing,
@@ -705,42 +730,55 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                  <input 
                     type="file" 
                     ref={fileInputRef} 
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
                         const reader = new FileReader();
                         reader.onload = (event) => {
                           if (event.target?.result) {
                             setUploadedCardImage(event.target.result as string);
-                            setIsScanned(true);
-                             setScannedInfo({
-                               name: "Nguyễn Văn Nhật",
-                               title: "Trưởng phòng Phát triển nguồn nhân lực",
-                               company: "Tập đoàn Công nghệ FPT",
-                               phone: "0987654321",
-                               email: "nhatnv@example.com",
-                               website: "https://fpt.com.vn",
-                               address: "Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội"
-                             });
-                             setMatchedPartnerFromEmail("Tập đoàn Công nghệ FPT");
                           }
                         };
                         reader.readAsDataURL(file);
+
+                        setIsScanning(true);
+                        const toastId = showLoadingToast('Đang phân tích danh thiếp...', 'scan-card');
+                        try {
+                          const result = await businessCardOcrApi.scan(file, { visitInstanceId });
+                          setIsScanned(true);
+                          setScannedInfo({
+                            name: result.parsed?.fullName || "",
+                            title: result.parsed?.jobTitle || "",
+                            company: result.parsed?.organization || "",
+                            phone: result.parsed?.phone || "",
+                            email: result.parsed?.email || "",
+                            website: result.parsed?.websiteUrl || "",
+                            address: result.parsed?.address || ""
+                          });
+                          setMatchedPartnerFromEmail(result.matchedPartner?.partnerName || null);
+                          updateToastSuccess(toastId, 'Đã trích xuất thông tin danh thiếp.');
+                        } catch (err: any) {
+                          updateToastError(toastId, err, 'Lỗi khi quét danh thiếp.');
+                        } finally {
+                          setIsScanning(false);
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                        }
                       }
                     }} 
                     accept="image/*" 
                     className="hidden" 
                  />
                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center hover:border-[#f37021] hover:bg-orange-50/30 transition-all cursor-pointer group"
+                    onClick={() => !isScanning && fileInputRef.current?.click()}
+                    className={`border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center transition-all group ${isScanning ? 'opacity-70 cursor-not-allowed' : 'hover:border-[#f37021] hover:bg-orange-50/30 cursor-pointer'}`}
                  >
                     <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                       <Upload className="w-8 h-8 text-[#004c91]" />
                     </div>
                     <h3 className="text-base font-bold text-gray-800 mb-2">Scan Card Visit</h3>
                     <p className="text-xs text-gray-500 mb-4">Hoặc tải lên hình ảnh name card để tự động trích xuất thông tin</p>
-                    <button type="button" className="px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#003366] transition-colors w-full">
+                    <button disabled={isScanning} type="button" className="px-4 py-2 bg-[#004c91] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#003366] transition-colors w-full flex items-center justify-center gap-2 disabled:opacity-50">
+                       {isScanning && <Loader2 className="w-4 h-4 animate-spin" />}
                        Tải ảnh lên / Chụp ảnh
                     </button>
                  </div>

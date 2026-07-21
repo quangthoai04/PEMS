@@ -75,4 +75,6 @@ export interface ScanBusinessCardContext {
   /** Display name of the preselected partner (e.g. when opened from Partner Detail) — avoids
    *  showing a bare "#id" badge while the partner record itself isn't refetched here. */
   partnerName?: string | null;
+  /** Prefill value for organization/partner search */
+  prefillOrganization?: string | null;
 }
