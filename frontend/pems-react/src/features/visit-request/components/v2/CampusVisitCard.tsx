@@ -18,6 +18,7 @@ import { downloadVisitorTemplate, downloadSupportTeamTemplate } from '../ExcelUp
 import { CampusProcessingV2Panel } from './CampusProcessingV2Panel';
 import type { CreatorRole } from '../sections/CampusProcessingSection';
 import type { CampusProcessingChoice } from '../../api/visitRequestApi';
+import { HelpTooltip } from '../shared/HelpTooltip';
 
 const MAX_EXCEL_FILE_BYTES = 5 * 1024 * 1024; // 5MB per-campus import cap
 
@@ -513,7 +514,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             'visitors',
             visitorFields.fields,
             i => visitorFields.remove(i),
-            () => visitorFields.fields.length > 1,
+            () => true,
           )}
           <button
             type="button"
@@ -583,9 +584,9 @@ export const CampusVisitCard: React.FC<Props> = ({
 
         {/* Operational contact (per-campus working contact — a snapshot, never a login) */}
         <fieldset>
-          <legend className="mb-2 text-sm font-extrabold text-slate-900">
+          <legend className="mb-2 text-sm font-extrabold text-slate-900 flex items-center">
             {t('visitRequestV2:card.operationalContact')}
-            <span className="ml-2 text-xs font-medium text-slate-400">{t('visitRequestV2:card.operationalContactHint')}</span>
+            <HelpTooltip content={t('visitRequestV2:card.operationalContactHint')} className="ml-1.5" />
           </legend>
           <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
             <FormField label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>

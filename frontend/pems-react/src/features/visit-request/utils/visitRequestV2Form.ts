@@ -1,4 +1,4 @@
-﻿import { normalizePhone } from '../../../shared/utils/phoneNumber';
+import { normalizePhone } from '../../../shared/utils/phoneNumber';
 import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 import type {
@@ -356,8 +356,8 @@ export const migrateV1DraftToV2 = (
  */
 export const mapServerFieldPathToFormPath = (serverPath: string): string | null => {
   if (!serverPath) return null;
-  let path = serverPath.replace(/^(Form|Edit)\./, '');
-  if (!/^(CampusVisits|Registrant|PrimaryContact)/.test(path)) return null;
+  let path = serverPath.replace(/^(Form|Edit)\./i, '');
+  if (!/^(CampusVisits|Registrant|PrimaryContact)/i.test(path)) return null;
 
   path = path
     .replace(/\[(\d+)\]/g, '.$1')

@@ -10,7 +10,7 @@
   "phoneRequired": "Số điện thoại không được để trống",
   "phoneInvalid": "Số điện thoại không hợp lệ",
   "emailRequired": "Email không được để trống",
-  "emailInvalid": "Email không đúng định dạng (RFC 5322)",
+  "emailInvalid": "Email không đúng định dạng",
   "campusRequired": "Vui lòng chọn cơ sở",
   "startTimeRequired": "Thời gian bắt đầu không được để trống",
   "endTimeRequired": "Thời gian kết thúc không được để trống",

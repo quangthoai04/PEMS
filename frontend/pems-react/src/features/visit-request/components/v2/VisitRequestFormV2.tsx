@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Controller } from 'react-hook-form';
 import { AlertCircle, Loader2, Plus, Send } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import {
   useVisitRequestFormV2,
@@ -12,6 +13,7 @@ import { V2_MAX_CAMPUSES } from '../../schema/visitRequestV2.schema';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import { campusVisitHasUserContent } from '../../utils/visitRequestV2Form';
+import { hasMeaningfulV2Data } from '../../utils/visitRequestV2DraftStorage';
 import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
 import { CountrySelect } from '../shared/CountrySelect';
@@ -37,7 +39,7 @@ interface Props {
    * Hands the host the draft controls so a close prompt can offer "save draft and exit" and
    * "discard changes" without reimplementing draft storage.
    */
-  onDraftControls?: (controls: { saveDraftNow: () => void; discardDraft: () => void }) => void;
+  onDraftControls?: (controls: { saveDraftNow: () => void; discardDraft: () => void; isDirty: () => boolean }) => void;
 }
 
 /**
@@ -157,13 +159,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     .map(cv => (cv.campus || '').toUpperCase())
     .filter(Boolean);
 
-  const isDirty = form.formState.isDirty;
-  useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
-
   const { saveDraftNow, discardDraft } = vm;
   useEffect(() => {
-    onDraftControls?.({ saveDraftNow, discardDraft });
-  }, [onDraftControls, saveDraftNow, discardDraft]);
+    onDraftControls?.({ saveDraftNow, discardDraft, isDirty: () => hasMeaningfulV2Data(form.getValues()) });
+  }, [onDraftControls, saveDraftNow, discardDraft, form]);
 
   const submitBar = (node: React.ReactNode) =>
     footerSlot ? createPortal(node, footerSlot) : node;
@@ -177,38 +176,52 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     );
   };
 
+  const watchedReg = form.watch('registerInfo');
+  const isRegInfoEmpty = !watchedReg?.fullName?.trim() && !watchedReg?.organization?.trim() && !watchedReg?.phone?.trim() && !watchedReg?.email?.trim();
+
   return (
-    <form onSubmit={vm.onSubmit} noValidate className="space-y-2">
-      {/* A saved draft is OFFERED, never applied behind the user's back. */}
-      {vm.draftAvailableAt !== null && (
-        <div
-          role="status"
-          data-testid="v2-draft-prompt"
-          className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900"
-        >
-          <span className="flex-1">
-            {t('visitRequestV2:draft.foundAt', {
-              time: new Date(vm.draftAvailableAt).toLocaleString('vi-VN'),
-            })}
-          </span>
-          <button
-            type="button"
-            data-testid="v2-draft-restore"
-            onClick={vm.restoreDraft}
-            className="rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#003a6f]"
+    <form id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
+      {/* ── Restore Draft Modal ── */}
+      <AnimatePresence>
+        {vm.draftAvailableAt !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm"
           >
-            {t('visitRequestV2:draft.restore')}
-          </button>
-          <button
-            type="button"
-            data-testid="v2-draft-discard"
-            onClick={vm.discardDraft}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-          >
-            {t('visitRequestV2:draft.discard')}
-          </button>
-        </div>
-      )}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+            >
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                {t('visitRequest:draft.title')}
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {t('visitRequest:draft.desc')}
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={vm.discardDraft}
+                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold transition-colors"
+                >
+                  {t('visitRequest:draft.discard')}
+                </button>
+                <button
+                  type="button"
+                  onClick={vm.restoreDraft}
+                  className="px-4 py-2 rounded-xl bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold transition-colors shadow-lg shadow-blue-900/20"
+                >
+                  {t('visitRequest:draft.restore')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {vm.migratedFromGlobalDraft && (
         <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800">
@@ -278,7 +291,8 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         headerRight={
           <button
             type="button"
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={isRegInfoEmpty}
             onClick={syncContactFromRegistrant}
           >
             {t('visitRequestV2:sections.contactSameAsRegistrant')}
@@ -312,9 +326,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         )}
         <div className="space-y-4">
           {campusVisitFields.fields.map((field, index) => {
-            const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || field.id;
+            const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || (field as any).clientKey || field.id;
             return (
-              <div key={clientKey} ref={el => { cardRefs.current.set(clientKey, el); }}>
+              <div key={field.id} ref={el => { cardRefs.current.set(clientKey, el); }}>
                 <CampusVisitCard
                   form={form}
                   index={index}
@@ -377,6 +391,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           <div className="flex justify-end pt-4">
             <button
               type="submit"
+              form="visit-request-v2-form"
               data-testid="v2-submit"
               disabled={vm.isSubmitting}
               className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60"

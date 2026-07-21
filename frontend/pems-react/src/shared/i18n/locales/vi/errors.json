@@ -70,6 +70,7 @@
     "OTP_HUMAN_VERIFICATION_REQUIRED": "Bạn đã nhập sai quá nhiều lần. Vui lòng xác minh bạn không phải robot để nhận mã mới.",
     "HUMAN_VERIFICATION_FAILED": "Xác minh không thành công. Vui lòng thử lại.",
     "OTP_RESEND_RATE_LIMITED": "Bạn đã yêu cầu mã xác thực quá nhiều lần. Vui lòng thử lại sau.",
+    "OTP_SEND_FAILED": "Không thể gửi mã OTP. Vui lòng thử lại sau.",
     "IMMUTABLE_REGISTRANT_INFO": "Không thể thay đổi thông tin người đăng ký sau khi đơn đã được gửi.",
     "IMMUTABLE_CONTACT_IDENTITY": "Không thể thay đổi email, tài khoản hoặc quan hệ đầu mối liên hệ trong lần chỉnh sửa này.",
     "IDEMPOTENCY_KEY_REUSED": "Phiên gửi đơn không hợp lệ. Vui lòng đóng form và gửi lại từ đầu.",

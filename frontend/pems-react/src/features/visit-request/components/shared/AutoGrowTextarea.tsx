@@ -21,18 +21,42 @@ interface Props extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 
  * limit, whereas the schema should tell the user they are over it.
  */
 export const AutoGrowTextarea: React.FC<Props> = ({
-  value, onChange, hasError, maxLength, minRows = 3, className = '', ...rest
+  value, onChange, hasError, maxLength, minRows = 3, className = '', onFocus, ...rest
 }) => {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const resize = useCallback(() => {
     const el = ref.current;
     if (!el) return;
+    
+    // If element is hidden (e.g. inside a collapsed accordion), scrollHeight is 0.
+    // Setting height to 0 will squash the textarea to just its borders/padding.
+    // We skip resizing here; it will resize when it becomes visible.
+    if (el.scrollHeight === 0) return;
+
+    // Tailwind borders add to the element's total height in border-box.
+    // scrollHeight only measures content + padding.
+    const computed = window.getComputedStyle(el);
+    const borderY = parseInt(computed.borderTopWidth || '0') + parseInt(computed.borderBottomWidth || '0');
+
     el.style.height = 'auto';           // collapse first, or the box can only ever grow
-    el.style.height = `${el.scrollHeight}px`;
+    el.style.height = `${el.scrollHeight + borderY}px`;
   }, []);
 
   useEffect(() => { resize(); }, [value, resize]);
+
+  // Handle visibility changes (like opening a collapsed campus card)
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    
+    const observer = new ResizeObserver(() => {
+      if (el.scrollHeight > 0) resize();
+    });
+    
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [resize]);
 
   const over = maxLength !== undefined && value.length > maxLength;
 
@@ -43,6 +67,7 @@ export const AutoGrowTextarea: React.FC<Props> = ({
         rows={minRows}
         value={value}
         onChange={e => { onChange(e.target.value); resize(); }}
+        onFocus={e => { resize(); if (onFocus) onFocus(e); }}
         className={`w-full resize-none overflow-hidden rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-1 ${
           hasError
             ? 'border-red-400 focus:border-red-400 focus:ring-red-400'

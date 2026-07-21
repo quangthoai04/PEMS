@@ -31,7 +31,7 @@ import {
   verifyAndCreateVisitRequestV2,
   type V2CreateResponse,
 } from '../api/visitRequestV2Api';
-import { getApiErrorMessage } from '../../../shared/utils/toast';
+import { getApiErrorMessage, showSuccessToast } from '../../../shared/utils/toast';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
 function getApiErrorCode(error: unknown): string | null {
@@ -280,20 +280,21 @@ export const useVisitRequestFormV2 = (
       const fresh = createEmptyCampusVisit();
       const source = copyFromIndex !== undefined ? current[copyFromIndex] : undefined;
       campusVisitFields.append(source ? cloneCampusVisitContent(source, fresh) : fresh);
+      showSuccessToast(t('visitRequestV2:card.addCampusSuccess'));
       return true;
     },
-    [form, campusVisitFields, maxCampuses],
+    [campusVisitFields, form, maxCampuses, t],
   );
 
-  /** Caller confirms first when the card has user content (`campusVisitHasUserContent`). */
   const removeCampusVisit = useCallback(
     (index: number) => {
       const current = form.getValues('campusVisits');
       if (current.length <= 1) return false;
       campusVisitFields.remove(index);
+      showSuccessToast(t('visitRequestV2:card.removeCampusSuccess'));
       return true;
     },
-    [form, campusVisitFields],
+    [campusVisitFields, form, t],
   );
 
   /** One-time copy INTO an existing card (its campus + schedule are preserved). */
@@ -304,8 +305,9 @@ export const useVisitRequestFormV2 = (
       const target = current[targetIndex];
       if (!source || !target || sourceIndex === targetIndex) return;
       campusVisitFields.update(targetIndex, cloneCampusVisitContent(source, target));
+      showSuccessToast(t('visitRequestV2:card.copySuccess'));
     },
-    [form, campusVisitFields],
+    [form, campusVisitFields, t],
   );
 
   /** Step 1 of apply-to-all: build the confirmation prompt (never applies by itself). */
@@ -328,7 +330,8 @@ export const useVisitRequestFormV2 = (
     const next = applyContentToAllCampuses(current, applyToAllPrompt.sourceIndex);
     campusVisitFields.replace(next);
     setApplyToAllPrompt(null);
-  }, [applyToAllPrompt, form, campusVisitFields]);
+    showSuccessToast(t('visitRequestV2:card.applyAllSuccess'));
+  }, [applyToAllPrompt, form, campusVisitFields, t]);
 
   const cancelApplyToAll = useCallback(() => setApplyToAllPrompt(null), []);
 
@@ -384,7 +387,11 @@ export const useVisitRequestFormV2 = (
       } catch (error) {
         submissionIdRef.current = null;
         const mapped = applyServerFieldErrors(error);
-        setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+        if (mapped) {
+          setSubmitError(t('validation:fixErrorsBeforeContinue'));
+        } else {
+          setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+        }
         if (!mapped) console.error('v2 authenticated create failed', getApiErrorCode(error));
       } finally {
         setIsSubmitting(false);
@@ -417,8 +424,12 @@ export const useVisitRequestFormV2 = (
     } catch (error) {
       submissionIdRef.current = null;
       setSessionToken(null);
-      applyServerFieldErrors(error);
-      setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+      const mapped = applyServerFieldErrors(error);
+      if (mapped) {
+        setSubmitError(t('validation:fixErrorsBeforeContinue'));
+      } else {
+        setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -429,6 +440,7 @@ export const useVisitRequestFormV2 = (
       const idx = campusErrors.findIndex(e => e != null);
       if (idx >= 0) setFirstErrorCampusIndex(idx);
     }
+    setSubmitError(t('validation:fixErrorsBeforeContinue'));
     onInvalid?.(errors);
   });
 

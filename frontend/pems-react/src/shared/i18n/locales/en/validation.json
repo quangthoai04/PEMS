@@ -10,7 +10,7 @@
   "phoneRequired": "Phone number is required",
   "phoneInvalid": "Please enter a valid phone number",
   "emailRequired": "Email is required",
-  "emailInvalid": "Invalid email format (RFC 5322)",
+  "emailInvalid": "Invalid email format",
   "campusRequired": "Please select a campus",
   "startTimeRequired": "Start time is required",
   "endTimeRequired": "End time is required",

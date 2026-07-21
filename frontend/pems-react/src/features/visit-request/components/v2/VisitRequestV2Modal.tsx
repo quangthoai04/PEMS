@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { VisitRequestFormV2 } from './VisitRequestFormV2';
 import { VisitRequestV2SuccessPanel } from './VisitRequestV2SuccessPanel';
@@ -28,20 +29,19 @@ interface Props {
 export const VisitRequestV2Modal: React.FC<Props> = ({
   isOpen, onClose, mode, draftNamespace, onSuccess,
 }) => {
-  const { t } = useTranslation(['visitRequestV2', 'common']);
+  const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'common']);
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
-  const [dirty, setDirty] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [result, setResult] = useState<{ response: V2CreateResponse; values: VisitRequestV2Schema } | null>(null);
   const [draftControls, setDraftControls] =
-    useState<{ saveDraftNow: () => void; discardDraft: () => void } | null>(null);
+    useState<{ saveDraftNow: () => void; discardDraft: () => void; isDirty: () => boolean } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Closing with typed data always asks first — an accidental Esc must not discard the form.
   const requestClose = useCallback(() => {
-    if (dirty) setConfirmClose(true);
+    if (draftControls?.isDirty?.()) setConfirmClose(true);
     else onClose();
-  }, [dirty, onClose]);
+  }, [draftControls, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -64,7 +64,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
 
   // Reset transient shell state between openings so a previous session cannot leak in.
   useEffect(() => {
-    if (!isOpen) { setDirty(false); setConfirmClose(false); setResult(null); }
+    if (!isOpen) { setConfirmClose(false); setResult(null); }
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -111,11 +111,9 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 // Stay open and show the receipt — closing here would hide the request code and,
                 // in the public flow, the whole point of completing OTP.
                 setResult({ response, values });
-                setDirty(false);
                 onSuccess(response, values);
               }}
               footerSlot={footerEl}
-              onDirtyChange={setDirty}
               onDraftControls={setDraftControls}
             />
           )}
@@ -141,51 +139,63 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
         </div>
       </div>
 
-      {confirmClose && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4">
-          <div role="alertdialog" aria-labelledby="v2-close-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 id="v2-close-title" className="text-base font-extrabold text-slate-900">
-              {t('visitRequestV2:modal.discardTitle')}
-            </h3>
-            <p className="mt-2 text-sm text-slate-600">{t('visitRequestV2:modal.discardBody')}</p>
-            {/* Three outcomes, as v1 offered: keep the work for later, keep editing, or throw
-                it away deliberately. Closing is never the same as discarding. */}
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold"
-                onClick={() => setConfirmClose(false)}
-              >
-                {t('visitRequestV2:modal.keepEditing')}
-              </button>
-              <button
-                type="button"
-                data-testid="v2-modal-save-draft"
-                className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white hover:bg-[#003a6f]"
-                onClick={() => {
-                  draftControls?.saveDraftNow();
-                  setConfirmClose(false);
-                  onClose();
-                }}
-              >
-                {t('visitRequestV2:modal.saveDraftAndExit')}
-              </button>
-              <button
-                type="button"
-                data-testid="v2-modal-discard"
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white"
-                onClick={() => {
-                  draftControls?.discardDraft();
-                  setConfirmClose(false);
-                  onClose();
-                }}
-              >
-                {t('visitRequestV2:modal.discardConfirm')}
-              </button>
-            </div>
+      <AnimatePresence>
+        {confirmClose && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="px-6 py-6 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
+                  <AlertCircle className="h-7 w-7 text-[#004c91]" />
+                </div>
+                <h3 className="text-lg font-extrabold text-slate-900">
+                  {t('visitRequest:cancelConfirm.title')}
+                </h3>
+                <p className="mt-2 text-sm font-medium text-slate-600 leading-relaxed">
+                  {t('visitRequest:cancelConfirm.desc')}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2.5 px-6 pb-6">
+                <button
+                  type="button"
+                  data-testid="v2-modal-save-draft"
+                  onClick={() => {
+                    draftControls?.saveDraftNow();
+                    setConfirmClose(false);
+                    onClose();
+                  }}
+                  className="flex w-full items-center justify-center rounded-xl bg-[#004c91] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#013565] shadow-lg shadow-blue-900/20"
+                >
+                  {t('visitRequest:cancelConfirm.saveAndExit')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClose(false)}
+                  className="flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                >
+                  {t('visitRequest:cancelConfirm.continue')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="v2-modal-discard"
+                  onClick={() => {
+                    draftControls?.discardDraft();
+                    setConfirmClose(false);
+                    onClose();
+                  }}
+                  className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
+                >
+                  {t('visitRequest:cancelConfirm.discard')}
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 };
