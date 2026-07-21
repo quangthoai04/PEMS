@@ -18,17 +18,18 @@ import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
 
-function PhotoTile({ photo, canManage, onRemove, onPreview }: {
+function PhotoTile({ photo, canManage, onPreview, selected, onToggleSelect }: {
   photo: VisitInstancePhotoItem;
   canManage: boolean;
-  onRemove: (photo: VisitInstancePhotoItem) => void;
+  selected: boolean;
   onPreview: (photo: VisitInstancePhotoItem, imgUrl: string | null) => void;
+  onToggleSelect: (photo: VisitInstancePhotoItem, selected: boolean) => void;
 }) {
   const imgUrl = useAuthenticatedImage(`/api${photo.url.replace(/^\/api/, '')}`);
   const isVideo = photo.fileName.toLowerCase().endsWith('.mp4') || photo.fileName.toLowerCase().endsWith('.webm');
   return (
     <div 
-      className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-50 cursor-pointer"
+      className={`relative group rounded-xl overflow-hidden border aspect-square bg-slate-50 cursor-pointer transition-all ${selected ? 'border-[#004c91] ring-2 ring-[#004c91] shadow-md' : 'border-slate-200 hover:border-slate-300'}`}
       onClick={() => onPreview(photo, imgUrl)}
     >
       {imgUrl ? (
@@ -49,14 +50,14 @@ function PhotoTile({ photo, canManage, onRemove, onPreview }: {
         </p>
       </div>
       {canManage && photo.canRemove && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onRemove(photo); }}
-          title="Xóa ảnh"
-          className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+        <div
+          className={`absolute top-2 right-2 ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity p-1.5`}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(photo, !selected); }}
         >
-          <Trash2 className="w-4 h-4" />
-        </button>
+          <div className={`w-5 h-5 rounded flex items-center justify-center border shadow-sm ${selected ? 'bg-[#004c91] border-[#004c91]' : 'bg-white/90 border-slate-300 hover:bg-white'}`}>
+            {selected && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -84,7 +85,8 @@ export function VisitPhotoPanel({
   const [data, setData] = useState<VisitInstancePhotos | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<VisitInstancePhotoItem | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showRemovePrompt, setShowRemovePrompt] = useState(false);
   const [removeReason, setRemoveReason] = useState('');
   const [removing, setRemoving] = useState(false);
   const [previewData, setPreviewData] = useState<{ photo: VisitInstancePhotoItem, url: string | null } | null>(null);
@@ -143,13 +145,15 @@ export function VisitPhotoPanel({
   };
 
   const handleRemove = async () => {
-    if (!removeTarget || !removeReason.trim()) return;
+    if (selectedIds.size === 0 || !removeReason.trim()) return;
     setRemoving(true);
-    const toastId = toast.loading('Đang xóa ảnh...');
+    const toastId = toast.loading(`Đang xóa ${selectedIds.size} ảnh...`);
     try {
-      await visitPhotosApi.remove(removeTarget.visitPhotoId, removeReason.trim());
-      toast.success('Đã xóa ảnh.', { id: toastId });
-      setRemoveTarget(null);
+      const promises = Array.from(selectedIds).map(id => visitPhotosApi.remove(id, removeReason.trim()));
+      await Promise.all(promises);
+      toast.success(`Đã xóa ${selectedIds.size} ảnh.`, { id: toastId });
+      setSelectedIds(new Set());
+      setShowRemovePrompt(false);
       setRemoveReason('');
       await load();
     } catch (e: any) {
@@ -157,6 +161,15 @@ export function VisitPhotoPanel({
     } finally {
       setRemoving(false);
     }
+  };
+
+  const toggleSelect = (photo: VisitInstancePhotoItem, isSelected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (isSelected) next.add(photo.visitPhotoId);
+      else next.delete(photo.visitPhotoId);
+      return next;
+    });
   };
 
   if (loading) {
@@ -193,7 +206,8 @@ export function VisitPhotoPanel({
           <div className={columns === 6 ? "grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" : "grid grid-cols-2 sm:grid-cols-4 gap-3"}>
             {(showAll ? data.photos : data.photos.slice(0, maxInitialItems)).map((p) => (
               <PhotoTile key={p.visitPhotoId} photo={p} canManage={canManage}
-                onRemove={(photo) => { setRemoveTarget(photo); setRemoveReason(''); }}
+                selected={selectedIds.has(p.visitPhotoId)}
+                onToggleSelect={toggleSelect}
                 onPreview={(photo, url) => setPreviewData({ photo, url })} />
             ))}
           </div>
@@ -222,39 +236,55 @@ export function VisitPhotoPanel({
         </div>
       )}
 
-      {canManage && data.canUpload && (
-        <div className="pt-1">
-          <input
-            type="file"
-            multiple
-            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={handleUpload}
-          />
-          <button
-            type="button"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
-          >
-            <UploadCloud className="w-4 h-4" />
-            {uploading ? 'Đang tải lên...' : 'Upload ảnh'}
-          </button>
-          <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-            JPG/JPEG/PNG/WEBP, tối đa 5MB/file, 10 file mỗi lần.
-          </p>
+      {canManage && (data.canUpload || selectedIds.size > 0) && (
+        <div className="pt-1 flex flex-wrap items-center gap-3">
+          {data.canUpload && (
+            <div>
+              <input
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleUpload}
+              />
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+              >
+                <UploadCloud className="w-4 h-4" />
+                {uploading ? 'Đang tải lên...' : 'Upload ảnh'}
+              </button>
+            </div>
+          )}
+          {selectedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowRemovePrompt(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-sm font-bold transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Xóa {selectedIds.size} ảnh đã chọn
+            </button>
+          )}
         </div>
+      )}
+      {canManage && data.canUpload && (
+        <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+          JPG/JPEG/PNG/WEBP, tối đa 5MB/file, 10 file mỗi lần.
+        </p>
       )}
 
       {/* Popup xóa mềm — bắt buộc nhập lý do (removal_reason) */}
-      {removeTarget && (
+      {showRemovePrompt && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[120] px-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full">
             <div className="flex justify-center mb-4"><Trash2 className="w-12 h-12 text-red-500" /></div>
             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Xóa ảnh đoàn khách</h3>
-            <p className="text-gray-500 text-center text-sm mb-4 break-all">
-              Xóa ảnh "{removeTarget.fileName}"? Vui lòng nhập lý do xóa.
+            <p className="text-gray-500 text-center text-sm mb-4">
+              Bạn đang chọn xóa {selectedIds.size} ảnh. Vui lòng nhập lý do xóa.
             </p>
             <textarea
               value={removeReason}
@@ -266,7 +296,7 @@ export function VisitPhotoPanel({
             />
             <p className="text-right text-xs text-gray-400 mb-5">{removeReason.length}/500</p>
             <div className="flex gap-3">
-              <button onClick={() => setRemoveTarget(null)} disabled={removing}
+              <button onClick={() => setShowRemovePrompt(false)} disabled={removing}
                 className="flex-1 border border-gray-300 text-gray-600 font-semibold py-2.5 rounded-xl hover:bg-gray-50 transition-colors inline-flex items-center justify-center gap-2">
                 <X className="w-4 h-4" /> Hủy
               </button>
