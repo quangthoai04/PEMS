@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Shared;
 using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Infrastructure.Services;
@@ -443,7 +444,9 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         Add(VisitFieldClassifier.WorkingLanguage, detail.WorkingLanguage, p.WorkingLanguage?.Trim());
         Add(VisitFieldClassifier.OperationalContactFullName, detail.OperationalContactFullName, Clean(p.OperationalContact?.FullName));
         Add(VisitFieldClassifier.OperationalContactOrganization, detail.OperationalContactOrganization, Clean(p.OperationalContact?.Organization));
-        Add(VisitFieldClassifier.OperationalContactPhone, detail.OperationalContactPhone, Clean(p.OperationalContact?.Phone));
+        Add(VisitFieldClassifier.OperationalContactPhone,
+            PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
+            p.OperationalContact?.Phone is { } ph ? PhoneNumber.NormalizeOrOriginal(ph) : null);
         Add(VisitFieldClassifier.OperationalContactEmail, detail.OperationalContactEmail, Clean(p.OperationalContact?.Email));
         Add(VisitFieldClassifier.PlannedStartAt, instance.PlannedStartAt, p.PlannedStartAt);
         Add(VisitFieldClassifier.PlannedEndAt, instance.PlannedEndAt, p.PlannedEndAt);

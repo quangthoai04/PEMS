@@ -1,4 +1,5 @@
 import React from 'react';
+import { HelpTooltip } from './HelpTooltip';
 
 /**
  * Flat section wrapper for the public visit-request form (UC17 single-form spec):
@@ -32,16 +33,14 @@ export const FormSection: React.FC<FormSectionProps> = ({
     className={`scroll-mt-24 border-b border-slate-200 py-7 first:pt-0 last:border-b-0 last:pb-0 ${className}`}
   >
     <div className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-      <div className="min-w-0">
+      <div className="min-w-0 flex items-center">
         <h2
           id={`${id}-title`}
-          className="text-lg font-extrabold text-[#004c91] sm:text-xl"
+          className="text-lg font-extrabold text-[#004c91] sm:text-xl flex items-center flex-wrap"
         >
-          {title} {required && <span className="text-red-500">*</span>}
+          {title} {required && <span className="text-red-500 ml-1">*</span>}
+          {description && <HelpTooltip content={description} className="ml-2" />}
         </h2>
-        {description && (
-          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-        )}
       </div>
       {headerRight}
     </div>

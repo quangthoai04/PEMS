@@ -21,7 +21,9 @@
     "fullName": "Full name",
     "jobTitle": "Job title",
     "organization": "Organization",
-    "nationality": "Nationality"
+    "nationality": "Nationality",
+    "stt": "No.",
+    "actions": "Actions"
   },
   "card": {
     "cardN": "Campus {{n}}",
@@ -32,6 +34,10 @@
     "copyFromLabel": "Copy content from:",
     "copyFromPlaceholder": "Choose source campus…",
     "applyToAll": "Apply this content to the remaining campuses…",
+    "copySuccess": "Content copied successfully",
+    "applyAllSuccess": "Applied to the remaining campuses",
+    "addCampusSuccess": "Campus card added",
+    "removeCampusSuccess": "Campus card removed",
     "campus": "Campus",
     "campusPlaceholder": "Select campus",
     "startAt": "Start",
@@ -85,11 +91,24 @@
     "confirm": "Remove campus"
   },
   "draft": {
-    "migrated": "Your previous draft (shared form) was converted to the per-campus layout — review each campus card before submitting."
+    "migrated": "Your previous draft (shared form) was converted to the per-campus layout — review each campus card before submitting.",
+    "foundAt": "A draft saved at {{time}} was found. Restore it?",
+    "restore": "Restore draft",
+    "discard": "Discard draft"
   },
   "submit": {
     "public": "Submit & receive OTP",
     "authenticated": "Submit request"
+  },
+  "modal": {
+    "title": "Campus visit registration",
+    "close": "Close",
+    "discardTitle": "Discard what you entered?",
+    "discardBody": "You have entered data in this form. Closing now will dismiss this window.",
+    "keepEditing": "Keep editing",
+    "discardConfirm": "Close",
+    "done": "Done",
+    "saveDraftAndExit": "Save draft and exit"
   },
   "success": {
     "title": "Visit request submitted",

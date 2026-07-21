@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Campuses.Common;
@@ -9,6 +9,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
 
@@ -104,7 +105,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
 
         // ── Backend-derived scope + mixed flag (NEVER from the client). has_mixed compares only normalized
         //    COPYABLE form content + member sets — not campus_id, not schedule. Shared with edit/resubmit. ──
-        var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits.Count);
+        var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits);
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(form.CampusVisits);
 
         // Compatibility projection = the smallest-campus_id campus (transition only; real data is per-instance).
@@ -138,7 +139,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             RegistrantNationality = form.Registrant.Nationality,
             RegistrantOrganization = registrantOrg,
             RegistrantJobTitle = form.Registrant.JobTitle,
-            RegistrantPhone = form.Registrant.Phone,
+            RegistrantPhone = PhoneNumber.NormalizeOrOriginal(form.Registrant.Phone),
             RegistrantEmail = form.Registrant.Email,
             VisitScope = scope,
             // Compatibility projection (smallest-campus snapshot) — read paths use the per-instance detail.
@@ -149,7 +150,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             WorkingContent = projection.WorkingContent,
             ContactPersonFullName = form.PrimaryContact.FullName,
             ContactPersonOrganization = form.PrimaryContact.Organization,
-            ContactPersonPhone = form.PrimaryContact.Phone,
+            ContactPersonPhone = PhoneNumber.NormalizeOrOriginal(form.PrimaryContact.Phone),
             ContactPersonEmail = form.PrimaryContact.Email,
             WorkingLanguage = projection.WorkingLanguage,
             TransportationNote = Clean(projection.TransportationNote),
@@ -191,7 +192,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     // reject an empty string, so normalize blank → NULL (which the CHECKs and the now-nullable
                     // columns accept). Name + phone stay required upstream.
                     OperationalContactOrganization = Clean(cv.OperationalContact.Organization),
-                    OperationalContactPhone = cv.OperationalContact.Phone,
+                    OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(cv.OperationalContact.Phone),
                     OperationalContactEmail = Clean(cv.OperationalContact.Email),
                     WorkingLanguage = cv.WorkingLanguage,
                     TransportationNote = Clean(cv.TransportationNote),

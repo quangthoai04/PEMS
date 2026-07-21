@@ -40,7 +40,7 @@ const campus = (id: number, code: string, name: string, rowVersion: number, dele
   decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
   delegationName: delegation, visitType: 'MEETING', visitTypeOther: null, purpose: 'Trao đổi', workingContent: 'ND',
   visitors: [{ guestMemberId: id * 10, memberType: 'VISITOR', fullName: `Khách ${code}`, organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
-  supportMembers: [], operationalContact: { fullName: `OP ${code}`, organization: 'ĐH X', phone: '+84912345678', email: '' },
+  supportMembers: [], operationalContact: { fullName: `OP ${code}`, organization: 'ĐH X', phone: '+84912345678', email: 'op@example.com' },
   workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null, noteToFptu: null,
   formRevision: 1, approvalRevision: 0, rowVersion, activeAmendment: null,
 });

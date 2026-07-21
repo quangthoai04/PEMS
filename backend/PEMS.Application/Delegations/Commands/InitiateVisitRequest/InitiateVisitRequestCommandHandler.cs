@@ -66,10 +66,9 @@ public sealed class InitiateVisitRequestCommandHandler
                 issue.Code,
                 cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            var details = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-            throw new PEMS.Application.Common.Exceptions.BusinessRuleException($"Không thể gửi mã OTP. Lỗi: {ex.Message} - {details}");
+            throw new PEMS.Application.Common.Exceptions.BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.", "OTP_SEND_FAILED");
         }
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;

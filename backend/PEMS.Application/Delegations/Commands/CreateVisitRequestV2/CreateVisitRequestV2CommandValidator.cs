@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FluentValidation;
 using PEMS.Application.Common.DTOs;
+using PEMS.Application.Common.Validation;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
@@ -40,37 +41,13 @@ public sealed class VisitRequestFormDataV2Validator : AbstractValidator<VisitReq
             .NotEmpty().WithMessage("Thiếu submissionId.")
             .MaximumLength(100);
 
-        // ── Registrant (submitter) ──
+        // ── Registrant + request-level primary contact — the SAME shared child validators used by
+        //    pending-edit-v2 and resubmit-v2, so the three write paths cannot drift. ──
         RuleFor(x => x.Registrant).NotNull().WithMessage("Thiếu thông tin người đăng ký.");
-        When(x => x.Registrant is not null, () =>
-        {
-            RuleFor(x => x.Registrant.FullName)
-                .NotEmpty().WithMessage("Họ tên người đăng ký không được để trống.").MaximumLength(150);
-            RuleFor(x => x.Registrant.Organization)
-                .NotEmpty().WithMessage("Đơn vị công tác không được để trống.").MaximumLength(200);
-            RuleFor(x => x.Registrant.JobTitle).MaximumLength(150);
-            RuleFor(x => x.Registrant.Phone).MaximumLength(50);
-            RuleFor(x => x.Registrant.Nationality).MaximumLength(100);
-            RuleFor(x => x.Registrant.Email)
-                .NotEmpty().WithMessage("Email người đăng ký không được để trống.")
-                .EmailAddress().WithMessage("Email người đăng ký không đúng định dạng.")
-                .MaximumLength(150);
-        });
+        RuleFor(x => x.Registrant!).SetValidator(new RegistrantInputV2Validator()).When(x => x.Registrant is not null);
 
-        // ── Request-level primary contact (may be a different visitor → INITIAL_CLAIM) ──
         RuleFor(x => x.PrimaryContact).NotNull().WithMessage("Thiếu thông tin đầu mối liên hệ.");
-        When(x => x.PrimaryContact is not null, () =>
-        {
-            RuleFor(x => x.PrimaryContact.FullName)
-                .NotEmpty().WithMessage("Họ tên đầu mối liên hệ không được để trống.").MaximumLength(150);
-            RuleFor(x => x.PrimaryContact.Email)
-                .NotEmpty().WithMessage("Email đầu mối liên hệ không được để trống.")
-                .EmailAddress().WithMessage("Email đầu mối liên hệ không đúng định dạng.")
-                .MaximumLength(150);
-            RuleFor(x => x.PrimaryContact.Phone)
-                .NotEmpty().WithMessage("Số điện thoại đầu mối liên hệ không được để trống.").MaximumLength(50);
-            RuleFor(x => x.PrimaryContact.Organization).MaximumLength(200);
-        });
+        RuleFor(x => x.PrimaryContact!).SetValidator(new PrimaryContactV2Validator()).When(x => x.PrimaryContact is not null);
 
         // ── Campus collection ──
         RuleFor(x => x.CampusVisits)
@@ -131,20 +108,13 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
             .When(c => c.VisitType == "OTHER");
         RuleFor(c => c.Purpose)
             .NotEmpty().WithMessage("Mục đích thăm không được để trống.").MaximumLength(2000);
-        RuleFor(c => c.WorkingContent).MaximumLength(4000);
+        RuleFor(c => c.WorkingContent)
+            .NotEmpty().WithMessage("Nội dung làm việc không được để trống.").MaximumLength(4000);
 
         // ── Per-campus operational (working) contact — a snapshot, never a login ──
         RuleFor(c => c.OperationalContact).NotNull().WithMessage("Thiếu đầu mối phối hợp của cơ sở.");
-        When(c => c.OperationalContact is not null, () =>
-        {
-            RuleFor(c => c.OperationalContact.FullName)
-                .NotEmpty().WithMessage("Họ tên đầu mối phối hợp không được để trống.").MaximumLength(150);
-            RuleFor(c => c.OperationalContact.Organization).MaximumLength(200);
-            RuleFor(c => c.OperationalContact.Phone).MaximumLength(50);
-            RuleFor(c => c.OperationalContact.Email)
-                .EmailAddress().WithMessage("Email đầu mối phối hợp không đúng định dạng.").MaximumLength(150)
-                .When(c => !string.IsNullOrWhiteSpace(c.OperationalContact.Email));
-        });
+        RuleFor(c => c.OperationalContact!).SetValidator(new OperationalContactV2Validator())
+            .When(c => c.OperationalContact is not null);
 
         // ── Additional per-campus requirements ──
         RuleFor(c => c.WorkingLanguage)
@@ -162,23 +132,11 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
         RuleFor(c => c.Visitors)
             .NotNull().WithMessage("Danh sách khách không hợp lệ.")
             .Must(v => v is null || v.Count <= MaxMembers).WithMessage($"Tối đa {MaxMembers} khách mỗi cơ sở.");
-        RuleForEach(c => c.Visitors).ChildRules(g =>
-        {
-            g.RuleFor(x => x.FullName).NotEmpty().WithMessage("Họ tên khách không được để trống.").MaximumLength(150);
-            g.RuleFor(x => x.Nationality).NotEmpty().WithMessage("Quốc tịch khách không được để trống.").MaximumLength(100);
-            g.RuleFor(x => x.Organization).NotEmpty().WithMessage("Đơn vị công tác khách không được để trống.").MaximumLength(200);
-            g.RuleFor(x => x.JobTitle).NotEmpty().WithMessage("Chức vụ khách không được để trống.").MaximumLength(150);
-        });
+        RuleForEach(c => c.Visitors).SetValidator(new VisitorV2Validator());
 
         RuleFor(c => c.ExternalSupportMembers)
             .NotNull().WithMessage("Danh sách nhân sự hỗ trợ không hợp lệ.")
             .Must(s => s is null || s.Count <= MaxMembers).WithMessage($"Tối đa {MaxMembers} nhân sự hỗ trợ mỗi cơ sở.");
-        RuleForEach(c => c.ExternalSupportMembers).ChildRules(s =>
-        {
-            s.RuleFor(x => x.FullName).NotEmpty().WithMessage("Họ tên nhân sự hỗ trợ không được để trống.").MaximumLength(150);
-            s.RuleFor(x => x.JobTitle).MaximumLength(150);
-            s.RuleFor(x => x.Organization).MaximumLength(200);
-            s.RuleFor(x => x.Nationality).MaximumLength(100);
-        });
+        RuleForEach(c => c.ExternalSupportMembers).SetValidator(new SupportTeamMemberV2Validator());
     }
 }

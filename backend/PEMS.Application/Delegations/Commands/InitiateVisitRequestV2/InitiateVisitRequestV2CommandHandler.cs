@@ -100,10 +100,9 @@ public sealed class InitiateVisitRequestV2CommandHandler
             await _emailService.SendVisitRequestOtpAsync(
                 email, form.Registrant.FullName, issue.Code, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            var details = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-            throw new BusinessRuleException($"Không thể gửi mã OTP. Lỗi: {ex.Message} - {details}");
+            throw new BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.", "OTP_SEND_FAILED");
         }
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;

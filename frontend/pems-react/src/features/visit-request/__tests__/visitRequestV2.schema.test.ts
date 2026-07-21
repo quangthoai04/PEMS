@@ -24,8 +24,12 @@ const validCampus = (campus = 'HN', startOffsetMs = 0, durationMs = 3 * 3600 * 1
   delegationName: 'Đoàn Đại học ABC',
   visitType: 'MEETING' as const,
   purpose: 'Trao đổi hợp tác',
+  workingContent: 'Nội dung làm việc chi tiết',
   visitors: [{ fullName: 'Nguyễn Văn A', jobTitle: 'Giảng viên', organization: 'ĐH ABC', nationality: 'Việt Nam' }],
-  operationalContact: { fullName: 'Trần B', organization: '', phone: '+84912345678', email: '' },
+  // All four operational-contact fields are required — this is the person the campus calls on the day.
+  operationalContact: {
+    fullName: 'Trần B', organization: 'ĐH ABC', phone: '+84912345678', email: 'tranb@example.com',
+  },
 });
 
 const validValues = (): VisitRequestV2Schema => ({

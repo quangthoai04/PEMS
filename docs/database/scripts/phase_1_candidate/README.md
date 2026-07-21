@@ -45,6 +45,41 @@ Rollback ở production là **tắt feature flags**, không phải chạy DOWN d
 | `run_migration.ps1` | Runner fail-closed (ASCII-only cho PowerShell 5.1). |
 | `generate_fresh_target.ps1`, `00_fresh_target.sql` | **CHƯA TIN CẬY** — generator dùng blind regex rewrite, artifact chưa từng import/verify. Xem §9 của audit report. |
 
+## BẮT BUỘC: không bao giờ pipe dump thô vào mysql
+
+Ngày 2026-07-20, `PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql` được import với target dự kiến là
+`pems_i_refusal`, nhưng dump chứa `DROP DATABASE IF EXISTS pems_db` / `CREATE DATABASE pems_db` /
+`USE pems_db` ở top level. Database ghi trên command line chỉ là **default của session**; `USE`
+trong payload đã ghi đè nó và toàn bộ dump chạy vào `pems_db`. Chi tiết:
+[`PHASE_I_DB_IMPORT_INCIDENT_2026_07_20.md`](../../../ChangeSauHopChiQUyen/sauhop_13-07/PHASE_I_DB_IMPORT_INCIDENT_2026_07_20.md).
+
+Vì vậy:
+
+- **Không** dùng `mysql < file.sql`. Đường duy nhất được hỗ trợ là `import_disposable_fixture.ps1`,
+  nó chạy statement-aware guard **trước khi** spawn mysql.
+- `lib/SqlSafetyGuard.ps1` từ chối database-control, admin/server, mysql-client (`SOURCE`, `\.`),
+  tham chiếu fully-qualified tới protected schema, và dynamic SQL không chứng minh được — fail
+  closed với mọi statement không phân loại được.
+- Guard **không bao giờ** tự xoá `USE`/`CREATE DATABASE`. Muốn dùng master làm fixture thì phải
+  `-TransformMaster`: chỉ bỏ đúng các statement đã assert, sang artifact mới, chạy lại chính guard
+  đó trên output, và in manifest source/output hash.
+- Runner từ chối credential có quyền global hoặc quyền trên protected schema. Tạo tài khoản hạn chế
+  bằng `restricted_drill_user.sql` (**chủ dự án tự chạy** — script này GRANT, đúng loại statement
+  mà guard từ chối).
+- `SELECT DATABASE()` được assert trước **và** sau payload. Đây chỉ là lớp chặn cuối, không phải
+  guard: khi đã có session thì phát hiện payload độc hại là quá muộn.
+
+Tests: `tests/Test-SqlSafetyGuard.ps1` — **50 passed, 0 failed** (local, không phải CI), gồm bằng
+chứng **mysql invocation count = 0** cho payload gây sự cố.
+
+## Trạng thái drill hiện tại
+
+**Destructive drills đang BLOCKED.** Tài khoản duy nhất trên server này là `root@localhost`, có
+quyền trên protected schemas; importer từ chối nó đúng như thiết kế. Cần `restricted_drill_user.sql`
+(owner chạy) hoặc một MySQL instance tách biệt. Các drill trong bảng "Kết quả drill đã chạy thật"
+bên dưới là của **phiên trước**, chạy trước khi có harness an toàn — giữ lại làm lịch sử, không
+phải bằng chứng cho HEAD hiện tại.
+
 ## Cách chạy (disposable only)
 
 ```powershell

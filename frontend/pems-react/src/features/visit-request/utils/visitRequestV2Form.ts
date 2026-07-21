@@ -1,3 +1,4 @@
+import { normalizePhone } from '../../../shared/utils/phoneNumber';
 import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 import type {
@@ -139,7 +140,7 @@ const toApiCampusVisit = (
   operationalContact: {
     fullName: cv.operationalContact.fullName.trim(),
     organization: (cv.operationalContact.organization ?? '').trim(),
-    phone: cv.operationalContact.phone.trim(),
+    phone: normalizePhone(cv.operationalContact.phone) ?? cv.operationalContact.phone.trim(),
     email: (cv.operationalContact.email ?? '').trim(),
   },
   workingLanguage: cv.workingLanguage,
@@ -173,13 +174,13 @@ export const buildV2CreatePayload = (
       nationality: values.registerInfo.nationality.trim(),
       organization: values.registerInfo.organization.trim(),
       jobTitle: values.registerInfo.jobTitle.trim(),
-      phone: values.registerInfo.phone.trim(),
+      phone: normalizePhone(values.registerInfo.phone) ?? values.registerInfo.phone.trim(),
       email: values.registerInfo.email.trim(),
     },
     primaryContact: {
       fullName: values.contactPoint.fullName.trim(),
       organization: (values.contactPoint.organization ?? '').trim(),
-      phone: values.contactPoint.phone.trim(),
+      phone: normalizePhone(values.contactPoint.phone) ?? values.contactPoint.phone.trim(),
       email: values.contactPoint.email.trim(),
     },
     partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
@@ -203,13 +204,13 @@ export const buildV2EditPayload = (
     nationality: values.registerInfo.nationality.trim(),
     organization: values.registerInfo.organization.trim(),
     jobTitle: values.registerInfo.jobTitle.trim(),
-    phone: values.registerInfo.phone.trim(),
+    phone: normalizePhone(values.registerInfo.phone) ?? values.registerInfo.phone.trim(),
     email: values.registerInfo.email.trim(),
   },
   primaryContact: {
     fullName: values.contactPoint.fullName.trim(),
     organization: (values.contactPoint.organization ?? '').trim(),
-    phone: values.contactPoint.phone.trim(),
+    phone: normalizePhone(values.contactPoint.phone) ?? values.contactPoint.phone.trim(),
     email: values.contactPoint.email.trim(),
   },
   partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
@@ -355,8 +356,8 @@ export const migrateV1DraftToV2 = (
  */
 export const mapServerFieldPathToFormPath = (serverPath: string): string | null => {
   if (!serverPath) return null;
-  let path = serverPath.replace(/^(Form|Edit)\./, '');
-  if (!/^(CampusVisits|Registrant|PrimaryContact)/.test(path)) return null;
+  let path = serverPath.replace(/^(Form|Edit)\./i, '');
+  if (!/^(CampusVisits|Registrant|PrimaryContact)/i.test(path)) return null;
 
   path = path
     .replace(/\[(\d+)\]/g, '.$1')

@@ -27,12 +27,12 @@ export const FormField: React.FC<FormFieldProps> = ({
   children,
   className = '',
 }) => (
-  <div className={`space-y-2 ${className}`} data-field-error={error ? 'true' : undefined}>
+  <div className={`flex flex-col gap-2 ${className}`} data-field-error={error ? 'true' : undefined}>
     <div>
-      <label className="block text-sm font-bold text-slate-900">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label className="flex flex-wrap items-baseline justify-between gap-2 text-sm font-bold text-slate-900">
+        <span>{label} {required && <span className="text-red-500">*</span>}</span>
+        {subtitle && <span className="text-xs font-medium text-slate-500">{subtitle}</span>}
       </label>
-      {subtitle && <p className="text-xs font-medium text-slate-500 mt-1">{subtitle}</p>}
     </div>
     <div className="relative">
       {children}

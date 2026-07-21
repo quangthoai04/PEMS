@@ -66,9 +66,9 @@ public sealed class RecoverVisitRequestOtpCommandHandler
                 issue.Code,
                 cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            throw new BusinessRuleException("Không thể gửi mã OTP. Lỗi: " + ex.Message);
+            throw new BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.", "OTP_SEND_FAILED");
         }
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;

@@ -17,10 +17,17 @@ public record RegistrantInputV2(
     string Phone,
     string Email);
 
-/// <summary>Per-campus processing intent for authenticated create (SEND_FOR_REVIEW / SELF_HOST / ASSIGN_HOST).</summary>
+/// <summary>
+/// Per-campus processing intent for the AUTHENTICATED create (SEND_FOR_REVIEW / SELF_HOST / ASSIGN_HOST).
+/// Null / SEND_FOR_REVIEW means "route to this campus's Staff Leader" — the only value a public submit
+/// may produce. <see cref="ConfirmedHostConflict"/> is the user's explicit acknowledgement of the
+/// non-blocking host schedule overlap warning for THIS campus (mirrors the v1 create contract); without it
+/// an overlapping host assignment is rejected with HOST_SCHEDULE_CONFLICT_CONFIRMATION_REQUIRED.
+/// </summary>
 public record CampusProcessingV2Dto(
     string Mode,
-    ulong? HostUserId);
+    ulong? HostUserId,
+    bool ConfirmedHostConflict = false);
 
 /// <summary>The complete, independent form snapshot for ONE campus instance.</summary>
 public record CampusVisitFormDto(

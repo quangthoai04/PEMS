@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
@@ -170,7 +171,8 @@ public sealed class VisitContactClaimWorkflowTests
             db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
             new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
-            new PerCampusFormV2Options { Enabled = true }, WriteOn);
+            new PerCampusFormV2Options { Enabled = true }, WriteOn,
+            new VisitRequestAggregateStatusService(db));
         var created = await handler.Handle(
             new CreateVisitRequestV2Command(Form("CL" + Guid.NewGuid().ToString("N"), contactEmail)),
             CancellationToken.None);

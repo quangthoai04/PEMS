@@ -44,6 +44,59 @@ entity (`VisitInstanceFormDetail`), DTOs, validators and tests. The previous rev
 "~120 reviewed / ~80 false positives" is neither exact nor reconcilable with this census and is
 withdrawn.
 
+### 2a. Full-scope census (supersedes §2 as the R6 denominator)
+
+The census above covers **only** PascalCase symbols in `backend/**/*.cs`. R6 requires both
+spellings of each field across backend, EF mapping, API DTOs, SQL, scripts, tests, frontend
+contracts and docs. Re-measured at this HEAD with a committed, reproducible tool
+(`phase_1_candidate/tools/Get-LegacyFieldCensus.ps1`, which emits one CSV row per raw hit so any
+grouping can be reconciled back to the total):
+
+| | |
+|---|---|
+| **Raw hits** | **3 945** |
+| **Matched lines** | 3 487 |
+| **Distinct files** | 410 |
+
+| Area | Raw hits | Files |
+|---|---|---|
+| backend-application | 1 192 | 194 |
+| sql-script | 1 034 | 18 |
+| docs | 603 | 65 |
+| test | 523 | 39 |
+| backend-infrastructure | 322 | 15 |
+| frontend | 162 | 54 |
+| backend-domain | 59 | 10 |
+| frontend-test | 27 | 12 |
+| backend-api | 6 | 2 |
+| other (`PROJECT_KNOWLEDGE.md`) | 17 | 1 |
+
+| Field | Raw hits |
+|---|---|
+| delegation_name | 1 051 |
+| purpose | 1 020 |
+| visit_type | 461 |
+| transportation_note | 294 |
+| working_content | 239 |
+| media_consent_status | 219 |
+| working_language | 200 |
+| visit_type_other | 183 |
+| media_consent_note | 150 |
+| note_to_fptu | 128 |
+
+**The `1172 / 137` figure is therefore an under-count of the R6 scope, not the R6 denominator.**
+It is retained above as the backend-C#-only sub-scope it actually measured.
+
+**Same-name collisions dominate one field.** Of 324 backend `purpose` hits, only 18 sit on a line
+that also mentions `VisitRequest` / `visit_request` / `Delegation` / `FormDetail`; the rest are
+unrelated `Purpose` properties — OTP purpose (`OtpService.cs` alone accounts for 43) and file-upload
+purpose. Raw hit count is consequently a poor proxy for blocker surface, which is exactly why the
+per-occurrence disposition cannot be skipped or estimated.
+
+**Status: F1 remains `OPEN`.** The reproducible census and its reconciliation backbone exist; the
+per-occurrence semantic disposition does not. No claim of `zero-unclassified` is made anywhere in
+this document.
+
 ## 3. Confirmed runtime blockers (verified at file:line)
 
 A blocker = runtime code that reads or writes the **legacy `visit_requests` columns** and would
@@ -149,6 +202,85 @@ schema fingerprint unchanged (`4b6b715e5a3185283dc003d0f1632aae`).
 **Full lifecycle re-drill (`pems_i_rollback`, after the fixes):** UP (16 gates PASS, dropped
 `visit_requests_chk_7`) → verify(UP) PASS → **DOWN preflight PASS** → DOWN → verify(DOWN) PASS.
 Schema FP `4b6b715e…` and data FP `60207c9bb800e52e03bb0a2b39b28996` both **identical to pre-UP**.
+
+## 8c. Third follow-up session — safe-import controls and behavioural verification
+
+### Incident (new finding, outranks the rest)
+
+**F0 — a master dump imported into a disposable target overwrote the protected `pems_db`.** The
+dump carries its own `DROP DATABASE` / `CREATE DATABASE` / `USE pems_db`, so the database named on
+the mysql command line was only a default that the payload discarded. Full record:
+[`PHASE_I_DB_IMPORT_INCIDENT_2026_07_20.md`](./PHASE_I_DB_IMPORT_INCIDENT_2026_07_20.md).
+Owner accepted the reproducible master-seed state; **no PITR performed**; binlogs retained.
+
+Consequence for this report: **no document in this program may claim that protected databases were
+never touched.** The database touch ledger in the incident record is the authoritative one.
+
+### Ledger at this HEAD
+
+| ID | Finding | Status |
+|---|---|---|
+| F0 | `pems_db` overwritten via database-control statements inside an imported dump | **CLOSED WITHOUT RECOVERY** — controls implemented and tested (below); restricted credential still **BLOCKED** on owner action |
+| F2 | Uniform v2 fell back to the compatibility projection in two readers | **VERIFIED** — behavioural regressions now exist and fail on the pre-`494bbdf5` gate |
+| F6 | Independent Phase II slice | **VERIFIED** — same evidence as F2; the mixed request-level question remains untouched and open |
+| F9 | Visit-photo upload text | **VERIFIED** — accept list, 5 MB validation, help text, button and success toast are all image-only; tsc clean, Vitest 99/99, build pass |
+| F8 | Test/drill evidence completeness | **PARTIAL** — every claim in this section carries command, counts and scope; DB-drill evidence is absent because drills are blocked, and that is stated rather than filled in |
+| F1 | R6 occurrence-level appendix | **OPEN** — reproducible census exists (§2a); per-occurrence disposition does not |
+| F3 | 10-field projection parity | **IMPLEMENTED-PARTIALLY-VERIFIED** — happy-path only; the negative matrix needs the blocked drill environment |
+| F4 | DOWN preflight | **IMPLEMENTED-PARTIALLY-VERIFIED** — wrong-state refusal proven earlier; full failure matrix needs the blocked drill environment |
+| F5 | Exact manifest depth | **PARTIAL** — unchanged this session |
+| F7 | Deterministic fresh target | **OPEN** — the statement-aware parser it needs now exists, but the generator has not been rebuilt on it |
+| F10 | Phantom search hit | **NEEDS-BUSINESS-DECISION** — not self-selected |
+
+### C1/C2 behavioural verification (F2/F6)
+
+`tests/PEMS.IntegrationTests/Reports/` — **20/20**, on real MySQL/Pomelo rather than EF InMemory,
+so translation is proven alongside behaviour. Fixture data sets the compatibility projection and
+the canonical per-campus detail to deliberately different values, so each assertion identifies
+which column was actually read.
+
+The regression gate was demonstrated in both directions by reverting each fix in turn:
+
+| Reverted | Failing assertion | Actual |
+|---|---|---|
+| C1 invoice | uniform v2 delegation name | `STALE_GLOBAL_DELEGATION` (the projection) |
+| C1 invoice | missing detail must not fall back | `STALE_GLOBAL_DELEGATION` |
+| C2 HO | uniform v2 matches canonical visit type | `0` requests (false negative) |
+| C2 HO | uniform v2 must not match the stale value | `1` request (false positive) |
+| C2 HO | missing detail must not match | `1` request |
+
+Coverage: V1 parity, uniform v2 stale projection, mixed v2 target-only with no sibling leak,
+missing detail, campus-filter isolation, multi-campus not double-counted, and authorization for
+both handlers.
+
+The disposable `pems_it_regression` database is created and dropped per run by the fixture using
+EF `EnsureCreated`; **no Phase I migration script runs against it**, and the fixture refuses any
+target name that is not exactly that string.
+
+### Safe-import controls (F0)
+
+`phase_1_candidate/tests/Test-SqlSafetyGuard.ps1` — **50 passed, 0 failed** (local run at this
+HEAD; **not** a CI run; no database or credential required).
+
+Proven: the exact incident payload is rejected and **mysql invocation count is 0** (observed via a
+fake-mysql spy, not argued); the authoritative master scans `SAFE FOR DIRECT IMPORT = NO` with 5
+database-control findings; obfuscated `USE`, protected qualified references, admin/replication
+statements and client `SOURCE`/`\.` are refused; hazards inside executable versioned comments and
+routine bodies are caught; dynamic SQL fails closed; TOCTOU is closed by importing the scanned
+bytes; and the asserted transformation is reproducible, never implicit, and refuses to rescue a
+payload that also carries admin statements or leftover protected references. Equally tested: a
+protected name inside a string literal or comment does **not** block a safe import.
+
+### What is blocked, and why
+
+Destructive MySQL drills (F3/F4 negative matrices, F5 drift cases, F7 fresh import) are
+**BLOCKED**. The only login on this server is `root@localhost`, which holds privileges on the
+protected schemas; the safe importer correctly refuses it, and the agent must not create accounts
+or grant privileges on a shared server. Unblocking needs either the restricted account in
+`phase_1_candidate/restricted_drill_user.sql` (owner runs it) or an isolated MySQL instance.
+
+This is a **capability** blocker, not an unknown: the drill content is specified, only the
+environment to run it safely is missing.
 
 ## 9. Known remaining gaps
 

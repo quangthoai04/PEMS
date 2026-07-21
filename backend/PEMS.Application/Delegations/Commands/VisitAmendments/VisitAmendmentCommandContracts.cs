@@ -65,21 +65,24 @@ public sealed class SubmitVisitAmendmentCommandValidator : AbstractValidator<Sub
                 .NotEmpty().MaximumLength(200)
                 .When(x => x.Proposal.VisitType == "OTHER");
             RuleFor(x => x.Proposal.Purpose).NotEmpty().MaximumLength(2000);
-            RuleFor(x => x.Proposal.WorkingContent).MaximumLength(4000);
+            // Same per-campus content contract as create-v2: working content is required, the
+            // operational contact must be complete, and every member row must be filled in. An
+            // amendment REPLACES a campus's content, so it cannot be looser than the original create.
+            RuleFor(x => x.Proposal.WorkingContent)
+                .NotEmpty().WithMessage("Nội dung làm việc không được để trống.").MaximumLength(4000);
             RuleFor(x => x.Proposal.WorkingLanguage).Must(l => l is "EN" or "VI");
             RuleFor(x => x.Proposal.OperationalContact).NotNull();
+            RuleFor(x => x.Proposal.OperationalContact!)
+                .SetValidator(new CreateVisitRequestV2.OperationalContactV2Validator())
+                .When(x => x.Proposal.OperationalContact is not null);
             RuleFor(x => x.Proposal.Reason).MaximumLength(500);
             RuleFor(x => x.Proposal.Visitors)
                 .NotNull().Must(v => v.Count <= 200).WithMessage("Tối đa 200 khách mỗi cơ sở.");
-            RuleForEach(x => x.Proposal.Visitors).ChildRules(g =>
-            {
-                g.RuleFor(v => v.FullName).NotEmpty().MaximumLength(150);
-                g.RuleFor(v => v.Nationality).NotEmpty().MaximumLength(100);
-                g.RuleFor(v => v.Organization).NotEmpty().MaximumLength(200);
-                g.RuleFor(v => v.JobTitle).NotEmpty().MaximumLength(150);
-            });
+            RuleForEach(x => x.Proposal.Visitors).SetValidator(new CreateVisitRequestV2.VisitorV2Validator());
             RuleFor(x => x.Proposal.ExternalSupportMembers)
                 .NotNull().Must(s => s.Count <= 200).WithMessage("Tối đa 200 nhân sự hỗ trợ mỗi cơ sở.");
+            RuleForEach(x => x.Proposal.ExternalSupportMembers)
+                .SetValidator(new CreateVisitRequestV2.SupportTeamMemberV2Validator());
         });
     }
 }

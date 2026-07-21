@@ -31,7 +31,7 @@ import {
   verifyAndCreateVisitRequestV2,
   type V2CreateResponse,
 } from '../api/visitRequestV2Api';
-import { getApiErrorMessage } from '../../../shared/utils/toast';
+import { getApiErrorMessage, showSuccessToast } from '../../../shared/utils/toast';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
 function getApiErrorCode(error: unknown): string | null {
@@ -112,6 +112,11 @@ export interface UseVisitRequestFormV2Options {
   /** Supplier of per-campus processing choices (authenticated Staff/Leader only). */
   getCampusProcessing?: () => CampusProcessingChoice[];
   minAdvanceHours?: number;
+  /**
+   * How many campuses are open for registration right now (from the backend). Caps the campus
+   * array so the limit tracks the real campus list instead of a hardcoded number.
+   */
+  maxCampuses?: number;
 }
 
 /** Pending apply-to-all confirmation: which card is the source and whose content gets replaced. */
@@ -160,15 +165,20 @@ export const useVisitRequestFormV2 = (
 
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [migratedFromGlobalDraft, setMigratedFromGlobalDraft] = useState(false);
+  /** When set, a saved draft is waiting for the user to restore or discard it. */
+  const [draftAvailableAt, setDraftAvailableAt] = useState<number | null>(null);
 
   const submissionIdRef = useRef<string | null>(null);
   const autoSaveBlockedRef = useRef(false);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
 
+  const maxCampuses = options?.maxCampuses ?? V2_MAX_CAMPUSES;
+
   const schema = useMemo(
-    () => buildVisitRequestV2Schema(minAdvanceHours, (key, opts) => t(key, { ns: 'validation', ...opts })),
+    () => buildVisitRequestV2Schema(
+      minAdvanceHours, (key, opts) => t(key, { ns: 'validation', ...opts }), maxCampuses),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, i18n.language, minAdvanceHours],
+    [t, i18n.language, minAdvanceHours, maxCampuses],
   );
 
   const form = useForm<VisitRequestV2Schema>({
@@ -210,11 +220,42 @@ export const useVisitRequestFormV2 = (
     return true;
   }, [form, draftNamespace]);
 
+  /**
+   * Reports whether a usable draft exists WITHOUT applying it, so the user is asked first — v1
+   * offered "restore" / "discard" and silently overwriting the form is the behaviour that lost
+   * work. Autosave stays blocked until they decide; otherwise the empty form would immediately
+   * overwrite the very draft being offered.
+   */
+  const detectDraft = useCallback((): boolean => {
+    const { draft } = loadVisitRequestV2DraftWithMigration(draftNamespace);
+    if (!draft) {
+      setDraftHydrated(true);
+      return false;
+    }
+    autoSaveBlockedRef.current = true;
+    setDraftAvailableAt(draft.savedAt ?? null);
+    return true;
+  }, [draftNamespace]);
+
+  /** Applies the offered draft and resumes autosave. */
+  const restoreDraft = useCallback(() => {
+    hydrateDraft();
+    setDraftAvailableAt(null);
+    autoSaveBlockedRef.current = false;
+  }, [hydrateDraft]);
+
   const discardDraft = useCallback(() => {
     clearVisitRequestV2Draft(draftNamespace);
     setMigratedFromGlobalDraft(false);
+    setDraftAvailableAt(null);
+    autoSaveBlockedRef.current = false;
     setDraftHydrated(true);
   }, [draftNamespace]);
+
+  /** Force-saves immediately, bypassing the debounce — for "save draft and exit". */
+  const saveDraftNow = useCallback(() => {
+    saveVisitRequestV2Draft(form.getValues(), undefined, draftNamespace);
+  }, [form, draftNamespace]);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -235,24 +276,25 @@ export const useVisitRequestFormV2 = (
   const addCampusVisit = useCallback(
     (copyFromIndex?: number) => {
       const current = form.getValues('campusVisits');
-      if (current.length >= V2_MAX_CAMPUSES) return false;
+      if (current.length >= Math.min(maxCampuses, V2_MAX_CAMPUSES)) return false;
       const fresh = createEmptyCampusVisit();
       const source = copyFromIndex !== undefined ? current[copyFromIndex] : undefined;
       campusVisitFields.append(source ? cloneCampusVisitContent(source, fresh) : fresh);
+      showSuccessToast(t('visitRequestV2:card.addCampusSuccess'));
       return true;
     },
-    [form, campusVisitFields],
+    [campusVisitFields, form, maxCampuses, t],
   );
 
-  /** Caller confirms first when the card has user content (`campusVisitHasUserContent`). */
   const removeCampusVisit = useCallback(
     (index: number) => {
       const current = form.getValues('campusVisits');
       if (current.length <= 1) return false;
       campusVisitFields.remove(index);
+      showSuccessToast(t('visitRequestV2:card.removeCampusSuccess'));
       return true;
     },
-    [form, campusVisitFields],
+    [campusVisitFields, form, t],
   );
 
   /** One-time copy INTO an existing card (its campus + schedule are preserved). */
@@ -263,8 +305,9 @@ export const useVisitRequestFormV2 = (
       const target = current[targetIndex];
       if (!source || !target || sourceIndex === targetIndex) return;
       campusVisitFields.update(targetIndex, cloneCampusVisitContent(source, target));
+      showSuccessToast(t('visitRequestV2:card.copySuccess'));
     },
-    [form, campusVisitFields],
+    [form, campusVisitFields, t],
   );
 
   /** Step 1 of apply-to-all: build the confirmation prompt (never applies by itself). */
@@ -287,7 +330,8 @@ export const useVisitRequestFormV2 = (
     const next = applyContentToAllCampuses(current, applyToAllPrompt.sourceIndex);
     campusVisitFields.replace(next);
     setApplyToAllPrompt(null);
-  }, [applyToAllPrompt, form, campusVisitFields]);
+    showSuccessToast(t('visitRequestV2:card.applyAllSuccess'));
+  }, [applyToAllPrompt, form, campusVisitFields, t]);
 
   const cancelApplyToAll = useCallback(() => setApplyToAllPrompt(null), []);
 
@@ -343,7 +387,11 @@ export const useVisitRequestFormV2 = (
       } catch (error) {
         submissionIdRef.current = null;
         const mapped = applyServerFieldErrors(error);
-        setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+        if (mapped) {
+          setSubmitError(t('validation:fixErrorsBeforeContinue'));
+        } else {
+          setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+        }
         if (!mapped) console.error('v2 authenticated create failed', getApiErrorCode(error));
       } finally {
         setIsSubmitting(false);
@@ -376,8 +424,12 @@ export const useVisitRequestFormV2 = (
     } catch (error) {
       submissionIdRef.current = null;
       setSessionToken(null);
-      applyServerFieldErrors(error);
-      setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+      const mapped = applyServerFieldErrors(error);
+      if (mapped) {
+        setSubmitError(t('validation:fixErrorsBeforeContinue'));
+      } else {
+        setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -388,6 +440,7 @@ export const useVisitRequestFormV2 = (
       const idx = campusErrors.findIndex(e => e != null);
       if (idx >= 0) setFirstErrorCampusIndex(idx);
     }
+    setSubmitError(t('validation:fixErrorsBeforeContinue'));
     onInvalid?.(errors);
   });
 
@@ -536,7 +589,11 @@ export const useVisitRequestFormV2 = (
     // Draft
     draftHydrated,
     hydrateDraft,
+    detectDraft,
+    draftAvailableAt,
+    restoreDraft,
     discardDraft,
+    saveDraftNow,
     migratedFromGlobalDraft,
     resetForm,
   };

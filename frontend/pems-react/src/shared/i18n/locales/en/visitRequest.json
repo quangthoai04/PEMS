@@ -119,7 +119,9 @@
     "hostFinalWarning": "Note: the official host CANNOT be changed after assignment in the current flow.",
     "visitorInfo": "Your request will be sent to each campus's Staff Leader for review.",
     "loadingCandidates": "Loading host candidates...",
-    "noCandidates": "No eligible IC Staff at your campus."
+    "noCandidates": "No eligible IC Staff at your campus.",
+    "candidatesError": "Could not load the host list.",
+    "retryCandidates": "Retry"
   },
   "hostConflictConfirm": {
     "title": "Host schedule conflict",

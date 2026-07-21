@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Trang FAQPage (Public) — Help Center
  * Trung tâm trợ giúp công khai của trường — dữ liệu thật từ GET /api/public/faqs và
  * GET /api/public/faqs/type-counts. Chỉ hiển thị FAQ status=PUBLISHED, không dùng mock data.
@@ -26,7 +26,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { publicFaqApi } from '../features/public-faq/api/publicFaqApi';
-import { VisitingFormPopup } from '../components/modals/VisitingFormPopup';
+import { VisitEntrySurfaces } from '../shared/features/VisitEntrySurfaces';
+import { useVisitEntryCta } from '../shared/features/useVisitEntryCta';
 import type { PublicFaqItem, PublicFaqTypeCount } from '../features/public-faq/types/publicFaq.types';
 import { useTranslation } from 'react-i18next';
 
@@ -170,7 +171,8 @@ export function FAQPage() {
   // Public FAQ labels are localised server-side; refetch on language switch (same pattern as NewsPage).
   const lang = i18n.language;
   const typeLabels = useFaqTypeLabels();
-  const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
+  // Route to the v2 form when per-campus v2 is enabled; only open the v1 popup for a real backend OFF.
+  const visitCta = useVisitEntryCta('public');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
@@ -549,7 +551,7 @@ export function FAQPage() {
               <Mail className="w-4 h-4" /> {t('faq:cta.contact')}
             </button>
             <button
-              onClick={() => setIsVisitorFormOpen(true)}
+              onClick={visitCta.trigger}
               className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
             >
               {t('faq:cta.register')} <ArrowRight className="w-4 h-4" />
@@ -558,7 +560,7 @@ export function FAQPage() {
         </div>
       </div>
 
-      <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />
+      <VisitEntrySurfaces cta={visitCta} />
     </div>
   );
 }

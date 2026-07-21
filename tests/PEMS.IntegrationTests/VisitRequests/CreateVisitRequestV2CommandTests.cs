@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Notifications.Common;
@@ -112,7 +113,8 @@ public sealed class CreateVisitRequestV2CommandTests
             notifications ?? new RecordingNotifications(),
             new RecordingClaimService(),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
-            new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write });
+            new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write },
+            new VisitRequestAggregateStatusService(db));
 
     private static VisitRequestFormDataV2 Form(string submissionId)
     {

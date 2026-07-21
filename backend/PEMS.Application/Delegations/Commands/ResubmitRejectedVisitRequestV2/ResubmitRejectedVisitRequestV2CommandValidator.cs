@@ -22,8 +22,15 @@ public sealed class ResubmitRejectedVisitRequestV2CommandValidator
         {
             RuleFor(x => x.Edit.ExpectedRequestRowVersion)
                 .GreaterThanOrEqualTo(0).WithMessage("Thiếu phiên bản dữ liệu của đơn (row version).");
+            // Request-level identity — the SAME shared child validators as create-v2. Resubmit
+            // previously only null-checked these, so a rejected request could be resubmitted with a
+            // blank registrant/contact and pass structural validation.
             RuleFor(x => x.Edit.Registrant).NotNull().WithMessage("Thiếu thông tin người đăng ký.");
+            RuleFor(x => x.Edit.Registrant!).SetValidator(new RegistrantInputV2Validator())
+                .When(x => x.Edit.Registrant is not null);
             RuleFor(x => x.Edit.PrimaryContact).NotNull().WithMessage("Thiếu thông tin đầu mối liên hệ.");
+            RuleFor(x => x.Edit.PrimaryContact!).SetValidator(new PrimaryContactV2Validator())
+                .When(x => x.Edit.PrimaryContact is not null);
 
             RuleFor(x => x.Edit.CampusVisits)
                 .NotEmpty().WithMessage("Phải có ít nhất 1 cơ sở.");

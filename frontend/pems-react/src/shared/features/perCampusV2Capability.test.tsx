@@ -73,4 +73,23 @@ describe('PerCampusV2CapabilityProvider', () => {
     const { result } = renderHook(() => usePerCampusV2Capability());
     expect(result.current.enabled).toBe(false);
   });
+
+  it('retry() re-fetches after a transient failure and recovers to enabled', async () => {
+    // First fetch fails (CORS/timeout), then the retry succeeds — the entry points rely on this to
+    // surface an error + Retry instead of silently downgrading to v1.
+    mockGet
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({ readEnabled: true, writeEnabled: true, enabled: true });
+
+    const { result } = renderHook(() => usePerCampusV2Capability(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.enabled).toBe(false);
+
+    result.current.retry();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.enabled).toBe(true);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
 });

@@ -26,18 +26,15 @@ public sealed class UpdatePendingVisitRequestV2CommandValidator : AbstractValida
             RuleFor(x => x.Edit.ExpectedRequestRowVersion)
                 .GreaterThanOrEqualTo(0).WithMessage("Thiếu phiên bản dữ liệu của đơn (row version).");
 
+            // Request-level identity — the SAME shared child validators as create-v2, so a direct
+            // edit call cannot blank the registrant's job title / nationality or store a non-number
+            // phone (previously the registrant was only null-checked here).
             RuleFor(x => x.Edit.Registrant).NotNull().WithMessage("Thiếu thông tin người đăng ký.");
+            RuleFor(x => x.Edit.Registrant!).SetValidator(new RegistrantInputV2Validator())
+                .When(x => x.Edit.Registrant is not null);
             RuleFor(x => x.Edit.PrimaryContact).NotNull().WithMessage("Thiếu thông tin đầu mối liên hệ.");
-            When(x => x.Edit.PrimaryContact is not null, () =>
-            {
-                RuleFor(x => x.Edit.PrimaryContact.FullName)
-                    .NotEmpty().WithMessage("Họ tên đầu mối liên hệ không được để trống.").MaximumLength(150);
-                RuleFor(x => x.Edit.PrimaryContact.Email)
-                    .NotEmpty().WithMessage("Email đầu mối liên hệ không được để trống.")
-                    .EmailAddress().WithMessage("Email đầu mối liên hệ không đúng định dạng.").MaximumLength(150);
-                RuleFor(x => x.Edit.PrimaryContact.Phone)
-                    .NotEmpty().WithMessage("Số điện thoại đầu mối liên hệ không được để trống.").MaximumLength(50);
-            });
+            RuleFor(x => x.Edit.PrimaryContact!).SetValidator(new PrimaryContactV2Validator())
+                .When(x => x.Edit.PrimaryContact is not null);
 
             RuleFor(x => x.Edit.CampusVisits)
                 .NotEmpty().WithMessage("Phải có ít nhất 1 cơ sở.");

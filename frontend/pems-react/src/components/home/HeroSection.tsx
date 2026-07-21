@@ -1,33 +1,25 @@
-/**
+﻿/**
  * Component HeroSection
  * Hero chữ ký của Homepage — bố cục split-screen (chữ lớn bên trái, quả cầu 3D bên phải),
  * cùng ngôn ngữ thị giác với trang Đối tác để tạo bản sắc riêng cho cả hệ thống.
  */
 
-import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarDays, ArrowRight, ArrowUpRight } from 'lucide-react';
-import { VisitingFormPopup } from '../modals/VisitingFormPopup';
+import { VisitEntrySurfaces } from '../../shared/features/VisitEntrySurfaces';
 import { LazyGlobeShowcase } from './LazyGlobeShowcase';
 import { useTranslation } from 'react-i18next';
-import { usePerCampusV2Capability } from '../../shared/features/perCampusV2Capability';
-import { resolvePublicVisitEntry } from '../../shared/features/perCampusV2Entry';
+import { useVisitEntryCta } from '../../shared/features/useVisitEntryCta';
 
 export function HeroSection() {
   const { t } = useTranslation(['home']);
-  const [isVisitorFormOpen, setIsVisitorFormOpen] = useState(false);
   const navigate = useNavigate();
-
-  // Default entry point cutover: when the per-campus v2 capability is enabled the CTA routes
-  // to the v2 registration page; otherwise (OFF / still loading / errored) it opens the v1 popup.
-  const { status: v2Status, enabled: v2Enabled } = usePerCampusV2Capability();
-  const capabilityResolving = v2Status === 'loading';
-  const handlePrimaryCta = () => {
-    const entry = resolvePublicVisitEntry(v2Enabled);
-    if (entry.kind === 'v2-route') navigate(entry.to);
-    else setIsVisitorFormOpen(true);
-  };
+  // Shared entry decision: v2 route when enabled, v1 popup only for a real backend OFF, and an
+  // error+retry (never a silent v1 fallback) when the capability fetch fails.
+  const visitCta = useVisitEntryCta('public');
+  const capabilityResolving = visitCta.isResolving;
+  const handlePrimaryCta = visitCta.trigger;
 
   return (
     <>
@@ -97,7 +89,7 @@ export function HeroSection() {
         </div>
       </section>
 
-      <VisitingFormPopup isOpen={isVisitorFormOpen} onClose={() => setIsVisitorFormOpen(false)} />
+      <VisitEntrySurfaces cta={visitCta} />
     </>
   );
 }
