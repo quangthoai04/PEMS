@@ -624,9 +624,9 @@ function GoogleDocumentAiConfigForm({
 }) {
   const [name, setName] = useState(config?.name ?? 'Google Document AI - Business Card OCR');
   const [projectId, setProjectId] = useState(config?.projectId ?? '');
-  const [location, setLocation] = useState(config?.location ?? 'us');
+  const [location, setLocation] = useState(config?.location ?? 'asia-southeast1');
   const [processorId, setProcessorId] = useState(config?.processorId ?? '');
-  const [endpoint, setEndpoint] = useState(config?.endpoint ?? 'us-documentai.googleapis.com');
+  const [endpoint, setEndpoint] = useState(config?.endpoint ?? 'asia-southeast1-documentai.googleapis.com');
   const [serviceAccountJson, setServiceAccountJson] = useState('');
   const [replaceCredential, setReplaceCredential] = useState(!config?.hasCredential);
   const [secretRef, setSecretRef] = useState(config?.secretRef ?? '');
@@ -700,7 +700,14 @@ function GoogleDocumentAiConfigForm({
           </div>
           <div>
             <label className={labelCls}>Location *</label>
-            <select className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)}>
+            <select className={inputCls} value={location} onChange={(e) => {
+              const newLoc = e.target.value;
+              setLocation(newLoc);
+              if (newLoc === 'asia-southeast1') setEndpoint('asia-southeast1-documentai.googleapis.com');
+              else if (newLoc === 'us') setEndpoint('us-documentai.googleapis.com');
+              else if (newLoc === 'eu') setEndpoint('eu-documentai.googleapis.com');
+            }}>
+              <option value="asia-southeast1">asia-southeast1 — Singapore</option>
               <option value="us">us</option>
               <option value="eu">eu</option>
             </select>
@@ -712,7 +719,7 @@ function GoogleDocumentAiConfigForm({
           <div>
             <label className={labelCls}>Endpoint *</label>
             <input className={inputCls} value={endpoint} onChange={(e) => setEndpoint(e.target.value)} required
-              placeholder="us-documentai.googleapis.com" />
+              placeholder="asia-southeast1-documentai.googleapis.com" />
           </div>
 
           <div className="md:col-span-2 border-t border-gray-100 pt-4">
