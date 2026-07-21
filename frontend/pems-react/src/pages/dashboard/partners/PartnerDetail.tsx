@@ -109,6 +109,11 @@ export function PartnerDetail() {
   const [cNote, setCNote] = useState('');
   const [cPrimary, setCPrimary] = useState(false);
 
+  // Contacts Pagination & Search
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactPage, setContactPage] = useState(1);
+  const contactsPerPage = 10;
+
   // Aliases
   const [aliases, setAliases] = useState<PartnerAlias[]>([]);
   const [newAlias, setNewAlias] = useState('');
@@ -577,11 +582,12 @@ export function PartnerDetail() {
             {documents.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-6">Chưa có tài liệu</p>
             ) : (
-              documents.map((d) => (
-                <div
-                  key={d.documentId}
-                  className="bg-gradient-to-r from-blue-50/80 to-[#e6f0fa]/80 p-4 rounded-xl border border-blue-100/50 shadow-sm flex items-center gap-4 group hover:border-[#004c91]/50 transition-colors"
-                >
+              <div className="max-h-[250px] overflow-y-auto flex flex-col gap-4 pr-2 custom-scrollbar">
+                {documents.map((d) => (
+                  <div
+                    key={d.documentId}
+                    className="bg-gradient-to-r from-blue-50/80 to-[#e6f0fa]/80 p-4 rounded-xl border border-blue-100/50 shadow-sm flex items-center gap-4 group hover:border-[#004c91]/50 transition-colors"
+                  >
                   <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-[#004c91] flex-shrink-0">
                     <FileText className="w-5 h-5" />
                   </div>
@@ -612,7 +618,8 @@ export function PartnerDetail() {
                     </button>
                   </div>
                 </div>
-              ))
+              ))}
+              </div>
             )}
           </div>
         </div>
@@ -627,14 +634,26 @@ export function PartnerDetail() {
             </div>
             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Danh sách người liên hệ</h2>
           </div>
-          {canManage && (
-            <button
-              onClick={() => openContactForm()}
-              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl transition-colors font-bold text-sm outline-none shadow-sm cursor-pointer"
-            >
-              <Plus className="w-4 h-4" /> Thêm liên hệ
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              placeholder="Tìm kiếm người liên hệ..."
+              value={contactSearch}
+              onChange={(e) => {
+                setContactSearch(e.target.value);
+                setContactPage(1); // Reset to page 1 on search
+              }}
+              className="px-3 py-2 rounded-lg text-sm bg-white/20 border border-white/30 text-white placeholder-white/70 focus:outline-none focus:bg-white focus:text-gray-800 transition-colors"
+            />
+            {canManage && (
+              <button
+                onClick={() => openContactForm()}
+                className="flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl transition-colors font-bold text-sm outline-none shadow-sm cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Thêm liên hệ
+              </button>
+            )}
+          </div>
         </div>
         <div className="p-6">
           <div className="overflow-x-auto">
@@ -651,20 +670,38 @@ export function PartnerDetail() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {contactsLoading ? (
-                  <tr>
-                    <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-400 font-medium bg-gray-50/50">
-                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Đang tải...
-                    </td>
-                  </tr>
-                ) : contacts.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-500 font-medium bg-gray-50/50">
-                      Danh sách trống
-                    </td>
-                  </tr>
-                ) : (
-                  contacts.map((c) => (
+                {(() => {
+                  if (contactsLoading) {
+                    return (
+                      <tr>
+                        <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-400 font-medium bg-gray-50/50">
+                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Đang tải...
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const filteredContacts = contacts.filter(c =>
+                    c.fullName.toLowerCase().includes(contactSearch.toLowerCase()) ||
+                    c.email?.toLowerCase().includes(contactSearch.toLowerCase()) ||
+                    c.phone?.includes(contactSearch)
+                  );
+
+                  if (filteredContacts.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-500 font-medium bg-gray-50/50">
+                          {contactSearch ? 'Không tìm thấy người liên hệ nào khớp với tìm kiếm.' : 'Danh sách trống'}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const totalPages = Math.ceil(filteredContacts.length / contactsPerPage);
+                  const startIndex = (contactPage - 1) * contactsPerPage;
+                  const paginatedContacts = filteredContacts.slice(startIndex, startIndex + contactsPerPage);
+
+                  return paginatedContacts.map((c) => (
                     <tr key={c.contactId} className="hover:bg-gradient-to-r hover:from-[#eaffe4] hover:to-[#ceefda]/40 transition-colors group">
                       <td className="p-3 pl-4">
                         <span className="flex items-center gap-1.5 font-bold text-gray-800 text-sm">
@@ -731,11 +768,47 @@ export function PartnerDetail() {
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
+          
+          {!contactsLoading && contacts.length > 0 && (() => {
+            const filteredContactsCount = contacts.filter(c =>
+              c.fullName.toLowerCase().includes(contactSearch.toLowerCase()) ||
+              c.email?.toLowerCase().includes(contactSearch.toLowerCase()) ||
+              c.phone?.includes(contactSearch)
+            ).length;
+            const totalPages = Math.ceil(filteredContactsCount / contactsPerPage);
+            if (totalPages <= 1) return null;
+            return (
+              <div className="flex items-center justify-between mt-4 border-t border-gray-100 pt-4">
+                <span className="text-sm text-gray-500">
+                  Hiển thị {Math.min(filteredContactsCount, (contactPage - 1) * contactsPerPage + 1)} - {Math.min(filteredContactsCount, contactPage * contactsPerPage)} trong {filteredContactsCount}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={contactPage === 1}
+                    onClick={() => setContactPage(p => p - 1)}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-gray-50 cursor-pointer text-sm font-medium hover:bg-gray-50"
+                  >
+                    Trước
+                  </button>
+                  <span className="px-3 py-1.5 text-sm font-medium text-gray-700">
+                    Trang {contactPage} / {totalPages}
+                  </span>
+                  <button
+                    disabled={contactPage >= totalPages}
+                    onClick={() => setContactPage(p => p + 1)}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-gray-50 cursor-pointer text-sm font-medium hover:bg-gray-50"
+                  >
+                    Sau
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

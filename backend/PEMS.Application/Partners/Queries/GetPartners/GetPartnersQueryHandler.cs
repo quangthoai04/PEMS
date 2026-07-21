@@ -56,7 +56,8 @@ public sealed class GetPartnersQueryHandler : IRequestHandler<GetPartnersQuery, 
             query = query.Where(p =>
                 EF.Functions.Like(p.Name, $"%{s}%")
                 || (p.ShortName != null && EF.Functions.Like(p.ShortName, $"%{s}%"))
-                || (p.PartnerCode != null && EF.Functions.Like(p.PartnerCode, $"%{s}%")));
+                || (p.PartnerCode != null && EF.Functions.Like(p.PartnerCode, $"%{s}%"))
+                || p.Contacts.Any(c => EF.Functions.Like(c.FullName, $"%{s}%")));
         }
         if (!string.IsNullOrWhiteSpace(request.Country))
             query = query.Where(p => p.Country == request.Country);
