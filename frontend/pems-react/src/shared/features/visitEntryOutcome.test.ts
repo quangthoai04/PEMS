@@ -9,8 +9,8 @@ describe('resolveVisitEntryOutcome', () => {
     expect(resolveVisitEntryOutcome('ready', true)).toBe('v2-modal');
   });
 
-  it('ready + disabled → v1 popup (the ONLY path that opens v1)', () => {
-    expect(resolveVisitEntryOutcome('ready', false)).toBe('v1-popup');
+  it('ready + disabled → disabled (the ONLY path that was V1, now disabled)', () => {
+    expect(resolveVisitEntryOutcome('ready', false)).toBe('disabled');
   });
 
   it('error → error (never a silent v1 fallback on CORS/timeout/network failure)', () => {
@@ -24,11 +24,11 @@ describe('resolveVisitEntryOutcome', () => {
     expect(resolveVisitEntryOutcome('loading', true)).toBe('loading');
   });
 
-  it('v1 is reachable ONLY from ready+disabled', () => {
+  it('disabled is reachable ONLY from ready+disabled', () => {
     const combos: Array<['ready' | 'loading' | 'error', boolean]> = [
       ['ready', true], ['ready', false], ['loading', true], ['loading', false], ['error', true], ['error', false],
     ];
-    const v1Combos = combos.filter(([s, e]) => resolveVisitEntryOutcome(s, e) === 'v1-popup');
-    expect(v1Combos).toEqual([['ready', false]]);
+    const disabledCombos = combos.filter(([s, e]) => resolveVisitEntryOutcome(s, e) === 'disabled');
+    expect(disabledCombos).toEqual([['ready', false]]);
   });
 });

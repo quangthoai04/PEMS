@@ -7,7 +7,7 @@ import {
   saveVisitRequestV2Draft,
   V2_DRAFT_SCHEMA_VERSION,
 } from '../utils/visitRequestV2DraftStorage';
-import { saveVisitRequestDraft } from '../utils/visitRequestDraftStorage';
+
 import { createEmptyCampusVisit } from '../utils/visitRequestV2Form';
 import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 
@@ -54,38 +54,7 @@ describe('visitRequestV2DraftStorage', () => {
     expect(loadVisitRequestV2Draft('user-a@example.com')).toBeNull();
   });
 
-  it('migrates the GLOBAL (v1-form) draft when no per-campus draft exists', () => {
-    saveVisitRequestDraft({
-      registerInfo: {
-        fullName: 'Cũ', organization: 'ĐH Cũ', jobTitle: 'GV',
-        phone: '+84911111111', email: 'old@example.com', nationality: 'VN',
-      },
-      delegationName: 'Đoàn Cũ',
-      visits: [
-        { campus: 'HN', startDatetime: '2026-08-10T08:00', endDatetime: '2026-08-10T11:00' },
-        { campus: 'HCM', startDatetime: '2026-08-11T08:00', endDatetime: '2026-08-11T11:00' },
-      ],
-    });
 
-    const { draft, migratedFromGlobalDraft } = loadVisitRequestV2DraftWithMigration();
-    expect(migratedFromGlobalDraft).toBe(true);
-    expect(draft).not.toBeNull();
-    expect(draft!.data.campusVisits).toHaveLength(2);
-    expect(draft!.data.campusVisits![0].delegationName).toBe('Đoàn Cũ');
-    expect(draft!.data.campusVisits![1].delegationName).toBe('Đoàn Cũ');
-
-    // In-memory only: nothing was written under the per-campus key…
-    expect(loadVisitRequestV2Draft()).toBeNull();
-  });
-
-  it('NEVER lets the older global draft shadow an existing per-campus draft', () => {
-    saveVisitRequestV2Draft(v2Data());
-    saveVisitRequestDraft({ delegationName: 'Global mới hơn cũng mặc kệ', visits: [{ campus: 'CT', startDatetime: '2026-09-01T08:00', endDatetime: '2026-09-01T11:00' }] });
-
-    const { draft, migratedFromGlobalDraft } = loadVisitRequestV2DraftWithMigration();
-    expect(migratedFromGlobalDraft).toBe(false);
-    expect(draft!.data.campusVisits?.[0].clientKey).toBe('stable-key-1'); // the v2 draft won
-  });
 
   it('sanitize strips OTP/session/file material from whatever is persisted', () => {
     const dirty = {

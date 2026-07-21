@@ -32,13 +32,14 @@ const open = (onClose = vi.fn()) => {
   return { ...utils, onClose };
 };
 
-/** Simulates the user typing into the form (the shared form reports dirtiness upward). */
-const markDirty = () => act(() => {
-  (lastFormProps.onDirtyChange as (d: boolean) => void)(true);
-});
+let mockIsDirty = false;
+
+const markDirty = () => {
+  mockIsDirty = true;
+};
 
 describe('VisitRequestV2Modal', () => {
-  beforeEach(() => { lastFormProps = {}; });
+  beforeEach(() => { lastFormProps = {}; mockIsDirty = false; });
 
   it('renders nothing when closed', () => {
     const { container } = render(
@@ -80,7 +81,7 @@ describe('VisitRequestV2Modal', () => {
     const discardDraft = vi.fn();
     const { onClose } = open();
     act(() => {
-      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft });
+      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft, isDirty: () => mockIsDirty });
     });
     markDirty();
 
@@ -97,7 +98,7 @@ describe('VisitRequestV2Modal', () => {
     const discardDraft = vi.fn();
     const { onClose } = open();
     act(() => {
-      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft });
+      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft, isDirty: () => mockIsDirty });
     });
     markDirty();
 
@@ -111,12 +112,15 @@ describe('VisitRequestV2Modal', () => {
 
   it('asks before discarding typed data, and honours "keep editing"', () => {
     const { onClose } = open();
+    act(() => {
+      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow: vi.fn(), discardDraft: vi.fn(), isDirty: () => mockIsDirty });
+    });
     markDirty();
 
     fireEvent.click(screen.getByTestId('v2-modal-close'));
     expect(onClose).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText('visitRequestV2:modal.keepEditing'));
+    fireEvent.click(screen.getByText('visitRequest:cancelConfirm.continue'));
     expect(onClose).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('v2-modal-close'));
@@ -132,6 +136,9 @@ describe('VisitRequestV2Modal', () => {
 
   it('Esc on a dirty form prompts instead of discarding', () => {
     const { onClose } = open();
+    act(() => {
+      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow: vi.fn(), discardDraft: vi.fn(), isDirty: () => mockIsDirty });
+    });
     markDirty();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();

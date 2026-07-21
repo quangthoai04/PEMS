@@ -4,8 +4,6 @@ import {
   resolveVisitRowRoutes,
   v2EditPath,
   v2ResubmitPath,
-  v1EditPath,
-  v1ResubmitPath,
 } from '../utils/visitVersionRouting';
 
 describe('visitVersionRouting', () => {
@@ -14,7 +12,7 @@ describe('visitVersionRouting', () => {
     expect(isPerCampusV2(3)).toBe(true);
   });
 
-  it('treats version 1 / missing as legacy v1 (fail-safe)', () => {
+  it('treats version 1 / missing as invalid/legacy', () => {
     expect(isPerCampusV2(1)).toBe(false);
     expect(isPerCampusV2(null)).toBe(false);
     expect(isPerCampusV2(undefined)).toBe(false);
@@ -35,17 +33,17 @@ describe('visitVersionRouting', () => {
     expect(routes.detailRoute).toBe('/dashboard/visit/v2/7');
   });
 
-  it('keeps a v1 request on the legacy routes and flat modal', () => {
+  it('routes a v1 request to unsupported error routes', () => {
     const routes = resolveVisitRowRoutes(5, 1);
     expect(routes.isV2).toBe(false);
-    expect(routes.edit).toBe(v1EditPath(5));
-    expect(routes.resubmit).toBe(v1ResubmitPath(5));
-    expect(routes.detailRoute).toBeNull();
+    expect(routes.edit).toBe('/dashboard/visit/unsupported-version');
+    expect(routes.resubmit).toBe('/dashboard/visit/unsupported-version');
+    expect(routes.detailRoute).toBe('/dashboard/visit/unsupported-version');
   });
 
-  it('falls back to v1 when the version is missing (older cached payload)', () => {
+  it('routes to unsupported error routes when the version is missing', () => {
     const routes = resolveVisitRowRoutes(9, undefined);
     expect(routes.isV2).toBe(false);
-    expect(routes.detailRoute).toBeNull();
+    expect(routes.detailRoute).toBe('/dashboard/visit/unsupported-version');
   });
 });

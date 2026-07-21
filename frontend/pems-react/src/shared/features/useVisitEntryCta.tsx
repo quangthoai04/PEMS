@@ -27,7 +27,7 @@ const LOADING_TOAST_ID = 'v2-capability-loading';
 import type { CapabilityStatus } from './perCampusV2Capability';
 
 /** The four mutually-exclusive outcomes of a visit-registration CTA click. */
-export type VisitEntryOutcome = 'v2-modal' | 'v1-popup' | 'error' | 'loading';
+export type VisitEntryOutcome = 'v2-modal' | 'error' | 'loading' | 'disabled';
 
 /**
  * Pure decision shared by every entry point. `error` and `loading` are deliberately NOT collapsed
@@ -37,7 +37,7 @@ export type VisitEntryOutcome = 'v2-modal' | 'v1-popup' | 'error' | 'loading';
 export function resolveVisitEntryOutcome(status: CapabilityStatus, enabled: boolean): VisitEntryOutcome {
   if (status === 'error') return 'error';
   if (status === 'loading') return 'loading';
-  return enabled ? 'v2-modal' : 'v1-popup';
+  return enabled ? 'v2-modal' : 'disabled';
 }
 
 /** Shows the capability-error toast with a Retry that re-fetches. Reused by all entry points. */
@@ -59,6 +59,13 @@ export function notifyCapabilityError(retry: () => void): void {
   );
 }
 
+export function notifyCapabilityDisabled(): void {
+  toast.error(
+    'Cấu hình hệ thống không hợp lệ (V2 bị tắt). Vui lòng liên hệ quản trị viên.',
+    { id: ERROR_TOAST_ID, duration: 8000 },
+  );
+}
+
 export function notifyCapabilityLoading(): void {
   toast.loading('Đang kiểm tra chế độ đăng ký…', { id: LOADING_TOAST_ID, duration: 2500 });
 }
@@ -71,9 +78,6 @@ export function dismissCapabilityToasts(): void {
 export interface VisitEntryCta {
   /** Wire this to the button's onClick. */
   trigger: () => void;
-  /** v1 popup visibility (only ever opened for a real backend OFF). */
-  popupOpen: boolean;
-  closePopup: () => void;
   /** v2 modal visibility — the CTA outcome when the capability is ON. */
   v2ModalOpen: boolean;
   closeV2Modal: () => void;
@@ -85,7 +89,6 @@ export interface VisitEntryCta {
 
 export function useVisitEntryCta(mode: 'public' | 'authenticated'): VisitEntryCta {
   const { status, enabled, retry } = usePerCampusV2Capability();
-  const [popupOpen, setPopupOpen] = useState(false);
   const [v2ModalOpen, setV2ModalOpen] = useState(false);
 
   const trigger = useCallback(() => {
@@ -97,15 +100,12 @@ export function useVisitEntryCta(mode: 'public' | 'authenticated'): VisitEntryCt
       // Open over the current page — no navigation, matching the v1 CTA experience.
       setV2ModalOpen(true);
     } else {
-      // A real backend "v2 is OFF" — the only path that opens the legacy v1 popup.
-      setPopupOpen(true);
+      notifyCapabilityDisabled();
     }
   }, [status, enabled, retry]);
 
   return {
     trigger,
-    popupOpen,
-    closePopup: () => setPopupOpen(false),
     v2ModalOpen,
     closeV2Modal: () => setV2ModalOpen(false),
     v2Mode: mode,

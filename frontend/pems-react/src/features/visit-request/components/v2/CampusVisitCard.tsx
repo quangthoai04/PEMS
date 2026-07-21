@@ -16,7 +16,7 @@ import {
 } from '../ExcelUpload/excelValidator';
 import { downloadVisitorTemplate, downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
 import { CampusProcessingV2Panel } from './CampusProcessingV2Panel';
-import type { CreatorRole } from '../sections/CampusProcessingSection';
+import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusProcessingChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
 

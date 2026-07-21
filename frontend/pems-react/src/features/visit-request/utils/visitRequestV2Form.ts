@@ -1,5 +1,5 @@
 import { normalizePhone } from '../../../shared/utils/phoneNumber';
-import type { VisitRequestSchema } from '../schema/visitRequest.schema';
+
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 import type {
   V2CampusVisitForm,
@@ -221,132 +221,7 @@ export const buildV2EditPayload = (
   })),
 });
 
-/**
- * v1-shaped projection used ONLY to mint the public OTP challenge: the public v2 flow
- * reuses the v1 `/visit-requests/initiate` endpoint (there is no v2 initiate yet — see
- * FINAL_IMPLEMENTATION_REPORT §6), and that endpoint validates the v1 form shape. The
- * ACTUAL create always sends the full v2 contract to `/v2/visit-requests/verify`; this
- * projection never becomes business content.
- *
- * Times are NEVER adjusted here: a campus shorter than the v1 3-hour minimum will be
- * rejected by initiate and the backend message is surfaced honestly.
- */
-export const projectV2ToV1FormValues = (values: VisitRequestV2Schema): VisitRequestSchema => {
-  const first = values.campusVisits[0] ?? createEmptyCampusVisit('projection');
-  const personKey = (p: { fullName: string; jobTitle?: string; organization?: string; nationality?: string }) =>
-    [p.fullName, p.jobTitle ?? '', p.organization ?? '', p.nationality ?? '']
-      .map(s => s.trim().replace(/\s+/g, ' ').toLowerCase())
-      .join('|');
 
-  const mergedVisitors = new Map<string, VisitRequestSchema['visitors'][number]>();
-  const mergedSupport = new Map<string, VisitRequestSchema['supportTeam'][number]>();
-  for (const cv of values.campusVisits) {
-    for (const v of cv.visitors) {
-      if (v.fullName.trim()) mergedVisitors.set(personKey(v), { ...v });
-    }
-    for (const s of cv.supportTeam) {
-      if (s.fullName.trim()) {
-        mergedSupport.set(personKey(s), {
-          fullName: s.fullName,
-          jobTitle: s.jobTitle ?? '',
-          organization: s.organization ?? '',
-          nationality: s.nationality ?? '',
-        });
-      }
-    }
-  }
-
-  return {
-    registerInfo: { ...values.registerInfo },
-    delegationName: first.delegationName,
-    visitMode: values.campusVisits.length > 1 ? 'multiple' : 'single',
-    visitType: first.visitType,
-    visitTypeOther: first.visitTypeOther ?? '',
-    visits: values.campusVisits.map(cv => ({
-      campus: cv.campus,
-      startDatetime: cv.startDatetime,
-      endDatetime: cv.endDatetime,
-    })),
-    purpose: first.purpose,
-    workingContent: first.workingContent ?? '',
-    visitors: [...mergedVisitors.values()],
-    supportTeam: [...mergedSupport.values()],
-    contactPoint: { ...values.contactPoint, organization: values.contactPoint.organization ?? '' },
-    workingLanguage: first.workingLanguage,
-    transportationNote: first.transportationNote ?? '',
-    mediaConsentStatus: first.mediaConsentStatus,
-    mediaConsentNote: first.mediaConsentNote ?? '',
-    partnerSelectionMode: values.partnerSelectionMode,
-    partnerId: values.partnerId ?? null,
-    notes: first.notes ?? '',
-    timeOverlapConfirmed: false,
-  };
-};
-
-/**
- * Migrates a GLOBAL (v1-shaped) draft into the per-campus v2 shape by duplicating the
- * global form/people/contact/additional snapshot into EVERY campus the user had selected.
- * Fresh clientKeys are generated (v1 drafts have none); the caller must never overwrite
- * an existing, newer v2 draft with this result.
- */
-export const migrateV1DraftToV2 = (
-  v1: Partial<VisitRequestSchema>,
-): Partial<VisitRequestV2Schema> => {
-  const slots = (v1.visits ?? []).length > 0 ? v1.visits! : [{ campus: '', startDatetime: '', endDatetime: '' }];
-
-  const campusVisits: CampusVisitSchema[] = slots.map(slot => ({
-    ...createEmptyCampusVisit(),
-    campus: slot.campus ?? '',
-    startDatetime: slot.startDatetime ?? '',
-    endDatetime: slot.endDatetime ?? '',
-    delegationName: v1.delegationName ?? '',
-    visitType: (v1.visitType as CampusVisitSchema['visitType']) ?? 'CAMPUS_TOUR',
-    visitTypeOther: v1.visitTypeOther ?? '',
-    purpose: v1.purpose ?? '',
-    workingContent: v1.workingContent ?? '',
-    visitors: deepClone(
-      (v1.visitors ?? []).length > 0
-        ? v1.visitors!.map(v => ({
-            fullName: v.fullName ?? '',
-            jobTitle: v.jobTitle ?? '',
-            organization: v.organization ?? '',
-            nationality: v.nationality ?? '',
-          }))
-        : [{ fullName: '', jobTitle: '', organization: '', nationality: '' }],
-    ),
-    supportTeam: deepClone(
-      (v1.supportTeam ?? []).map(s => ({
-        fullName: s.fullName ?? '',
-        jobTitle: s.jobTitle ?? '',
-        organization: s.organization ?? '',
-        nationality: s.nationality ?? '',
-      })),
-    ),
-    operationalContact: {
-      fullName: v1.contactPoint?.fullName ?? '',
-      organization: v1.contactPoint?.organization ?? '',
-      phone: v1.contactPoint?.phone ?? '',
-      email: v1.contactPoint?.email ?? '',
-    },
-    workingLanguage: (v1.workingLanguage as 'VI' | 'EN') ?? 'VI',
-    transportationNote: v1.transportationNote ?? '',
-    mediaConsentStatus: (v1.mediaConsentStatus as 'AGREED' | 'DECLINED') ?? 'DECLINED',
-    mediaConsentNote: v1.mediaConsentNote ?? '',
-    notes: v1.notes ?? '',
-  }));
-
-  return {
-    registerInfo: v1.registerInfo
-      ? { ...v1.registerInfo }
-      : { fullName: '', organization: '', jobTitle: '', phone: '', email: '', nationality: '' },
-    contactPoint: v1.contactPoint
-      ? { ...v1.contactPoint }
-      : { fullName: '', organization: '', phone: '', email: '' },
-    partnerSelectionMode: v1.partnerSelectionMode ?? 'NEW_ORGANIZATION',
-    partnerId: v1.partnerId ?? null,
-    campusVisits,
-  };
-};
 
 /**
  * Maps a backend (FluentValidation) property path to the RHF field path, so a server

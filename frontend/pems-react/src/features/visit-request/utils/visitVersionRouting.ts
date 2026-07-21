@@ -10,21 +10,15 @@ import { v2DetailPath } from './formVersionErrors';
 /** form_schema_version >= 2 → per-campus v2. */
 export const PER_CAMPUS_V2_MIN = 2;
 
-/** A missing version (older cached payloads) is treated as legacy v1 — fail-safe to the v1 UI. */
+/** In V2-only runtime, missing or < 2 is no longer treated as legacy v1, it's just invalid/retired. */
 export const isPerCampusV2 = (formSchemaVersion: number | null | undefined): boolean =>
-  (formSchemaVersion ?? 1) >= PER_CAMPUS_V2_MIN;
+  (formSchemaVersion ?? 0) >= PER_CAMPUS_V2_MIN;
 
 export const v2EditPath = (visitRequestId: number | string): string =>
   `/dashboard/visit/v2/${visitRequestId}/edit`;
 
 export const v2ResubmitPath = (visitRequestId: number | string): string =>
   `/dashboard/visit/v2/${visitRequestId}/resubmit`;
-
-export const v1EditPath = (visitRequestId: number | string): string =>
-  `/dashboard/visit/edit/${visitRequestId}`;
-
-export const v1ResubmitPath = (visitRequestId: number | string): string =>
-  `/dashboard/visit/resubmit/${visitRequestId}`;
 
 export interface VisitRowRoutes {
   isV2: boolean;
@@ -36,17 +30,25 @@ export interface VisitRowRoutes {
 
 /**
  * Resolve the detail/edit/resubmit targets for a management-list row from its form schema version.
- * v2 (mixed or non-mixed) → v2 routes; v1 → the legacy routes/modal.
+ * v2 (mixed or non-mixed) → v2 routes. Legacy/missing → unsupported error path.
  */
 export function resolveVisitRowRoutes(
   visitRequestId: number | string,
   formSchemaVersion: number | null | undefined,
 ): VisitRowRoutes {
   const v2 = isPerCampusV2(formSchemaVersion);
+  if (!v2) {
+    return {
+      isV2: false,
+      edit: '/dashboard/visit/unsupported-version',
+      resubmit: '/dashboard/visit/unsupported-version',
+      detailRoute: '/dashboard/visit/unsupported-version',
+    };
+  }
   return {
-    isV2: v2,
-    edit: v2 ? v2EditPath(visitRequestId) : v1EditPath(visitRequestId),
-    resubmit: v2 ? v2ResubmitPath(visitRequestId) : v1ResubmitPath(visitRequestId),
-    detailRoute: v2 ? v2DetailPath(visitRequestId) : null,
+    isV2: true,
+    edit: v2EditPath(visitRequestId),
+    resubmit: v2ResubmitPath(visitRequestId),
+    detailRoute: v2DetailPath(visitRequestId),
   };
 }

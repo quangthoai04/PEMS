@@ -9,12 +9,9 @@ import {
   createEmptyCampusVisit,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
-  migrateV1DraftToV2,
-  projectV2ToV1FormValues,
   resolvedFormToV2Schema,
 } from '../utils/visitRequestV2Form';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
-import type { VisitRequestSchema } from '../schema/visitRequest.schema';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
 
 const campus = (overrides: Partial<CampusVisitSchema>): CampusVisitSchema => ({
@@ -174,83 +171,6 @@ describe('buildV2EditPayload', () => {
   });
 });
 
-describe('projectV2ToV1FormValues (OTP initiate projection only)', () => {
-  it('maps all campus slots, merges people (deduped), and takes first-campus content', () => {
-    const a = filledCampus('a', 'HN');
-    const b = filledCampus('b', 'HCM');
-    b.visitors = [
-      { fullName: 'Khách HN', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }, // duplicate of A's guest
-      { fullName: 'Khách riêng HCM', jobTitle: 'PGS', organization: 'ĐH Y', nationality: 'VN' },
-    ];
-    const v1 = projectV2ToV1FormValues(values([a, b]));
-
-    expect(v1.visitMode).toBe('multiple');
-    expect(v1.visits).toEqual([
-      { campus: 'HN', startDatetime: '2026-08-01T09:00', endDatetime: '2026-08-01T11:30' },
-      { campus: 'HCM', startDatetime: '2026-08-01T09:00', endDatetime: '2026-08-01T11:30' },
-    ]);
-    expect(v1.delegationName).toBe('Đoàn HN');
-    // B's first guest is an exact duplicate of A's guest → deduped once.
-    expect(v1.visitors.map(x => x.fullName)).toEqual(['Khách HN', 'Khách riêng HCM']);
-    expect(v1.contactPoint.email).toBe('contact@example.com');
-  });
-});
-
-describe('migrateV1DraftToV2 (global draft → per-campus duplication)', () => {
-  const v1Draft: Partial<VisitRequestSchema> = {
-    registerInfo: {
-      fullName: 'Cũ', organization: 'ĐH Cũ', jobTitle: 'GV',
-      phone: '+84911111111', email: 'old@example.com', nationality: 'VN',
-    },
-    delegationName: 'Đoàn Cũ',
-    visitType: 'WORKSHOP',
-    purpose: 'Mục đích cũ',
-    workingContent: 'ND cũ',
-    visits: [
-      { campus: 'HN', startDatetime: '2026-08-10T08:00', endDatetime: '2026-08-10T11:00' },
-      { campus: 'DN', startDatetime: '2026-08-12T13:00', endDatetime: '2026-08-12T16:00' },
-    ],
-    visitors: [{ fullName: 'Khách Cũ', jobTitle: 'GV', organization: 'ĐH Cũ', nationality: 'VN' }],
-    supportTeam: [{ fullName: 'HT Cũ', jobTitle: 'TL', organization: 'ĐH Cũ', nationality: 'VN' }],
-    contactPoint: { fullName: 'ĐM Cũ', organization: 'ĐH Cũ', phone: '+84922222222', email: 'dm@example.com' },
-    workingLanguage: 'EN',
-    mediaConsentStatus: 'AGREED',
-    notes: 'ghi chú cũ',
-  };
-
-  it('duplicates the global snapshot into EVERY selected campus, keeping per-campus schedule', () => {
-    const v2 = migrateV1DraftToV2(v1Draft);
-    expect(v2.campusVisits).toHaveLength(2);
-    const [hn, dn] = v2.campusVisits!;
-    expect(hn.campus).toBe('HN');
-    expect(hn.startDatetime).toBe('2026-08-10T08:00');
-    expect(dn.campus).toBe('DN');
-    expect(dn.startDatetime).toBe('2026-08-12T13:00');
-    for (const cv of [hn, dn]) {
-      expect(cv.delegationName).toBe('Đoàn Cũ');
-      expect(cv.visitors[0].fullName).toBe('Khách Cũ');
-      expect(cv.supportTeam[0].fullName).toBe('HT Cũ');
-      expect(cv.operationalContact.email).toBe('dm@example.com');
-      expect(cv.workingLanguage).toBe('EN');
-      expect(cv.mediaConsentStatus).toBe('AGREED');
-      expect(cv.clientKey).toBeTruthy();
-    }
-    expect(hn.clientKey).not.toBe(dn.clientKey);
-    // The duplicated lists are independent copies, not shared references:
-    hn.visitors[0].fullName = 'SỬA HN';
-    expect(dn.visitors[0].fullName).toBe('Khách Cũ');
-    // Request-level data preserved once:
-    expect(v2.registerInfo?.email).toBe('old@example.com');
-    expect(v2.contactPoint?.email).toBe('dm@example.com');
-  });
-
-  it('yields one empty campus card when the v1 draft had no slots', () => {
-    const v2 = migrateV1DraftToV2({ delegationName: 'Chỉ tên đoàn' });
-    expect(v2.campusVisits).toHaveLength(1);
-    expect(v2.campusVisits![0].campus).toBe('');
-    expect(v2.campusVisits![0].delegationName).toBe('Chỉ tên đoàn');
-  });
-});
 
 describe('mapServerFieldPathToFormPath', () => {
   it('maps campus + nested member paths to the exact RHF path', () => {

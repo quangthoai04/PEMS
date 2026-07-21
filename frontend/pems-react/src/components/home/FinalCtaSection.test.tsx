@@ -4,11 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
 
-// Stub both heavy form shells so this test stays light and only asserts which one opens.
-vi.mock('../modals/VisitingFormPopup', () => ({
-  VisitingFormPopup: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="v1-popup" /> : null,
-}));
+// The CTA now only has V2 modal or toast.error on error/disabled
 vi.mock('../../features/visit-request/components/v2/VisitRequestV2Modal', () => ({
   VisitRequestV2Modal: ({ isOpen }: { isOpen: boolean }) =>
     isOpen ? <div data-testid="v2-modal" /> : null,
@@ -46,19 +42,18 @@ describe('FinalCtaSection v2 cutover', () => {
     fireEvent.click(screen.getByRole('button'));
 
     expect(screen.getByTestId('v2-modal')).toBeInTheDocument();
-    // The CTA must keep the user on the page they were reading.
     expect(navigateMock).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('v1-popup')).toBeNull();
   });
 
-  it('opens the v1 popup when the capability is disabled (flags OFF)', () => {
+  it('surfaces a disabled error when the capability is disabled (flags OFF)', () => {
     capabilityMock.mockReturnValue({ status: 'ready', enabled: false, readEnabled: false, writeEnabled: false, retry: retryMock });
     render(<FinalCtaSection />);
 
     fireEvent.click(screen.getByRole('button'));
 
     expect(navigateMock).not.toHaveBeenCalled();
-    expect(screen.getByTestId('v1-popup')).toBeInTheDocument();
+    expect(screen.queryByTestId('v2-modal')).toBeNull();
+    expect(toastError).toHaveBeenCalledTimes(1);
   });
 
   it('surfaces an error with retry (NOT a silent v1 fallback) when the capability errored', () => {
@@ -69,8 +64,7 @@ describe('FinalCtaSection v2 cutover', () => {
 
     fireEvent.click(screen.getByRole('button'));
 
-    expect(navigateMock).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('v1-popup')).toBeNull();
+    expect(screen.queryByTestId('v2-modal')).toBeNull();
     expect(toastError).toHaveBeenCalledTimes(1);
   });
 

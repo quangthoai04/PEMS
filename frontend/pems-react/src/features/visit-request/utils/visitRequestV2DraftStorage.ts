@@ -1,6 +1,4 @@
 import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
-import { loadVisitRequestDraft } from './visitRequestDraftStorage';
-import { migrateV1DraftToV2 } from './visitRequestV2Form';
 
 /**
  * Draft storage for the per-campus form v2.
@@ -122,28 +120,9 @@ export interface V2DraftLoadResult {
   migratedFromGlobalDraft: boolean;
 }
 
-/**
- * Loads the per-campus draft, falling back to a one-time in-memory migration of the
- * global single-form draft. The migrated result is NOT persisted here — it only becomes
- * the stored v3 draft once the user actually edits the form (autosave), so a newer v3
- * draft can never be clobbered by an older global one.
- */
 export function loadVisitRequestV2DraftWithMigration(namespace?: string): V2DraftLoadResult {
   const own = loadVisitRequestV2Draft(namespace);
-  if (own) return { draft: own, migratedFromGlobalDraft: false };
-
-  const legacy = loadVisitRequestDraft(namespace);
-  if (!legacy) return { draft: null, migratedFromGlobalDraft: false };
-
-  return {
-    draft: {
-      draftSchemaVersion: V2_DRAFT_SCHEMA_VERSION,
-      savedAt: legacy.savedAt,
-      expiresAt: legacy.expiresAt,
-      data: migrateV1DraftToV2(legacy.data),
-    },
-    migratedFromGlobalDraft: true,
-  };
+  return { draft: own, migratedFromGlobalDraft: false };
 }
 
 export function clearVisitRequestV2Draft(namespace?: string): void {

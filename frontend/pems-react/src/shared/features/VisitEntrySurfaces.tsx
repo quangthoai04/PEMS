@@ -1,5 +1,4 @@
 import React from 'react';
-import { VisitingFormPopup } from '../../components/modals/VisitingFormPopup';
 import { VisitRequestV2Modal } from '../../features/visit-request/components/v2/VisitRequestV2Modal';
 import type { VisitEntryCta } from './useVisitEntryCta';
 
@@ -25,11 +24,6 @@ export const VisitEntrySurfaces: React.FC<Props> = ({ cta, draftNamespace, onV2S
       mode={cta.v2Mode}
       draftNamespace={draftNamespace}
       onSuccess={() => { cta.closeV2Modal(); onV2Success?.(); }}
-    />
-    <VisitingFormPopup
-      isOpen={cta.popupOpen}
-      onClose={cta.closePopup}
-      mode={cta.v2Mode}
     />
   </>
 );

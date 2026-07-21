@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import {
   saveVisitRequestV2Draft,
   loadVisitRequestV2Draft,
@@ -84,7 +84,9 @@ describe('v2 draft UX', () => {
 
     const name = screen.getAllByRole('textbox')[0] as HTMLInputElement;
     expect(name.value).toBe('Người Nháp');
-    expect(screen.queryByTestId('v2-draft-prompt')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByTestId('v2-draft-prompt')).toBeNull();
+    });
   });
 
   it('discarding removes the stored draft so it cannot come back', async () => {
@@ -94,7 +96,9 @@ describe('v2 draft UX', () => {
     renderForm();
     await act(async () => { fireEvent.click(screen.getByTestId('v2-draft-discard')); });
 
-    expect(screen.queryByTestId('v2-draft-prompt')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByTestId('v2-draft-prompt')).toBeNull();
+    });
     expect(loadVisitRequestV2Draft(NS)).toBeNull();
   });
 

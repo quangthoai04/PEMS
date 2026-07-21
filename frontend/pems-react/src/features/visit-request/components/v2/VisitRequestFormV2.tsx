@@ -20,7 +20,7 @@ import { CountrySelect } from '../shared/CountrySelect';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
 import { OtpVerificationModal } from '../OtpVerificationModal';
-import type { CreatorRole } from '../sections/CampusProcessingSection';
+import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusProcessingChoice } from '../../api/visitRequestApi';
 import { useAuthContext } from '../../../../shared/auth/AuthContext';
 
@@ -188,6 +188,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            data-testid="v2-draft-prompt"
             className="fixed inset-0 z-[300] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm"
           >
             <motion.div
@@ -205,6 +206,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
+                  data-testid="v2-draft-discard"
                   onClick={vm.discardDraft}
                   className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold transition-colors"
                 >
@@ -212,6 +214,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                 </button>
                 <button
                   type="button"
+                  data-testid="v2-draft-restore"
                   onClick={vm.restoreDraft}
                   className="px-4 py-2 rounded-xl bg-[#004c91] hover:bg-[#013565] text-white text-sm font-bold transition-colors shadow-lg shadow-blue-900/20"
                 >

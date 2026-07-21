@@ -6,7 +6,7 @@ import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 
 vi.mock('../api/visitRequestApi', () => ({
   visitRequestApi: {
-    initiate: vi.fn(),
+
     resendOtp: vi.fn(),
     recoverOtp: vi.fn(),
   },
@@ -168,8 +168,7 @@ describe('useVisitRequestFormV2', () => {
       await result.current.onSubmit();
     });
 
-    // The v1 initiate endpoint is never called — the public flow is pure v2 now.
-    expect(visitRequestApi.initiate).not.toHaveBeenCalled();
+    // The public flow is pure v2 now.
     expect(initiateVisitRequestV2).toHaveBeenCalledTimes(1);
     const [initPayload] = vi.mocked(initiateVisitRequestV2).mock.calls[0];
     expect(initPayload.campusVisits[0].campusId).toBe('HN');
@@ -205,7 +204,7 @@ describe('useVisitRequestFormV2', () => {
       await result.current.onSubmit();
     });
 
-    expect(visitRequestApi.initiate).not.toHaveBeenCalled();
+
     expect(createVisitRequestV2).toHaveBeenCalledTimes(1);
     const [payload] = vi.mocked(createVisitRequestV2).mock.calls[0];
     expect(payload.registrant.email).toBe('reg@example.com');

@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { isValidPhone } from '../../../shared/utils/phoneNumber';
 import i18n from '../../../shared/i18n/config';
 import { parseApiDate } from '../../../shared/utils/vietnamTime';
-import type { ValidationTranslator } from './visitRequest.schema';
-
+export type ValidationTranslator = (key: string, options?: Record<string, unknown>) => string;
+export type CreatorRole = 'VISITOR' | 'STAFF' | 'STAFF_LEADER';
 /**
  * Per-campus form v2 schema (plan §5): the form is `registrant` + `primaryContact`
  * request-level, plus `campusVisits[]` where EVERY element is a complete, independent

@@ -60,7 +60,7 @@ import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTas
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
 import { CreateVisitRequestEntry } from './pages/dashboard/visit/CreateVisitRequestEntry';
-import { EditVisitRequest } from './pages/dashboard/visit/EditVisitRequest';
+
 import { VisitFeedbackPage } from './pages/dashboard/visit/VisitFeedbackPage';
 import { FAQManagement } from './pages/dashboard/faq/FAQManagement';
 import { FAQDetail } from './pages/dashboard/faq/FAQDetail';
@@ -195,12 +195,9 @@ export default function App() {
             <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
             <Route path="visit/create" element={<CreateVisitRequestEntry />} />
-            {/* Visitor sửa đơn pending / sửa & gửi lại đơn bị từ chối (owner-only, backend re-check) */}
-            <Route path="visit/edit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/v2/:visitRequestId" element={<VisitRequestV2DetailPage />} />
             <Route path="visit/v2/:visitRequestId/edit" element={<EditVisitRequestV2Page mode="edit" />} />
             <Route path="visit/v2/:visitRequestId/resubmit" element={<EditVisitRequestV2Page mode="resubmit" />} />
-            <Route path="visit/resubmit/:visitRequestId" element={<EditVisitRequest />} />
             <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
             {/* Student: quản lý ảnh đoàn khách (visit_photos) — backend enforce scope, FE chỉ ẩn menu */}
             <Route path="visit-photos" element={<VisitPhotoManagement />} />

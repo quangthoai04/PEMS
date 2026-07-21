@@ -6,7 +6,7 @@ import {
   type CampusProcessingChoice,
   type CreateHostCandidate,
 } from '../../api/visitRequestApi';
-import type { CreatorRole } from '../sections/CampusProcessingSection';
+import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 
 interface Props {
   /** Campus CODE of THIS card. Empty until the user picks a campus → panel stays hidden. */
