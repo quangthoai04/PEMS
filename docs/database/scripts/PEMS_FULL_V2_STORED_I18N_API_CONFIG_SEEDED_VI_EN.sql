@@ -16,6 +16,7 @@
 --
 -- Reset coverage correction:
 --   * every one of the 76 CREATE TABLE targets is now dropped before recreation;
+--   * additive stored-i18n extension below adds 2 tables (78 current CREATE TABLE targets).
 --   * every one of the 32 CREATE TRIGGER targets is explicitly dropped;
 --   * legacy gallery tables/triggers from earlier seeds are also removed.
 --
@@ -357,6 +358,7 @@ DROP TABLE IF EXISTS `gallery_item_media`;
 DROP TABLE IF EXISTS `gallery_items`;
 DROP TABLE IF EXISTS `gallery_locations`;
 DROP TABLE IF EXISTS `gallery_areas`;
+DROP TABLE IF EXISTS `faq_translations`;
 DROP TABLE IF EXISTS `faqs`;
 DROP TABLE IF EXISTS `news_section_files`;
 DROP TABLE IF EXISTS `news_content_sections`;
@@ -396,6 +398,7 @@ DROP TABLE IF EXISTS `visit_requests`;
 DROP TABLE IF EXISTS `documents`;
 DROP TABLE IF EXISTS `partner_aliases`;
 DROP TABLE IF EXISTS `partner_contacts`;
+DROP TABLE IF EXISTS `partner_translations`;
 DROP TABLE IF EXISTS `partners`;
 DROP TABLE IF EXISTS `files`;
 DROP TABLE IF EXISTS `security_events`;
@@ -797,6 +800,46 @@ CREATE TABLE partners (
   CONSTRAINT fk_partners_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Hồ sơ đối tác; owner_campus_id dùng để Staff Leader duyệt đúng campus';
+
+CREATE TABLE partner_translations (
+  partner_translation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  partner_id BIGINT UNSIGNED NOT NULL,
+  language_code ENUM('vi','en') NOT NULL,
+
+  name VARCHAR(200) NOT NULL,
+  short_name VARCHAR(100) NULL,
+  country VARCHAR(100) NULL,
+  city VARCHAR(100) NULL,
+  description TEXT NULL,
+  address VARCHAR(500) NULL,
+
+  translation_source ENUM('AUTO','MANUAL','LEGACY') NOT NULL DEFAULT 'AUTO',
+  translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+  source_hash CHAR(64) NULL
+    COMMENT 'SHA-256 của nội dung nguồn VI tại lần dịch gần nhất; tránh gọi API khi nội dung không đổi',
+  translated_at DATETIME NULL,
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (partner_translation_id),
+  UNIQUE KEY uq_partner_translations_lang (partner_id, language_code),
+  KEY idx_partner_translations_lang_status (language_code, translation_status),
+  FULLTEXT KEY ft_partner_translations_search (name, short_name, description, address),
+
+  CONSTRAINT fk_partner_translations_partner
+    FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_partner_translations_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_partner_translations_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Nội dung Partner theo ngôn ngữ. Public read chỉ đọc DB, Translation API chỉ chạy khi tạo/sửa nội dung.';
 
 CREATE TABLE partner_contacts (
   contact_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -2600,6 +2643,42 @@ CREATE TABLE faqs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='FAQ tiếng Việt theo nhóm chức năng hệ thống PEMS';
 
+CREATE TABLE faq_translations (
+  faq_translation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  faq_id BIGINT UNSIGNED NOT NULL,
+  language_code ENUM('vi','en') NOT NULL,
+
+  question VARCHAR(500) NOT NULL,
+  answer TEXT NOT NULL,
+
+  translation_source ENUM('AUTO','MANUAL','LEGACY') NOT NULL DEFAULT 'AUTO',
+  translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+  source_hash CHAR(64) NULL
+    COMMENT 'SHA-256 của question + answer nguồn VI tại lần dịch gần nhất',
+  translated_at DATETIME NULL,
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NULL,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NULL,
+
+  PRIMARY KEY (faq_translation_id),
+  UNIQUE KEY uq_faq_translations_lang (faq_id, language_code),
+  KEY idx_faq_translations_lang_status (language_code, translation_status),
+  FULLTEXT KEY ft_faq_translations_search (question, answer),
+
+  CONSTRAINT fk_faq_translations_faq
+    FOREIGN KEY (faq_id) REFERENCES faqs(faq_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_faq_translations_created_by
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_faq_translations_updated_by
+    FOREIGN KEY (updated_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Nội dung FAQ theo ngôn ngữ. Public read không gọi Translation API.';
+
 -- =====================================================================
 -- 8. GALLERY + PHOTO TAGGING
 -- =====================================================================
@@ -2613,11 +2692,17 @@ CREATE TABLE gallery_areas (
   campus_id BIGINT UNSIGNED NOT NULL,
 
   area_name VARCHAR(150) NOT NULL,
+  area_name_en VARCHAR(150) NULL COMMENT 'Tên tiếng Anh đã dịch và lưu trong DB',
   area_key VARCHAR(180) NOT NULL,
   cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện khu vực/tòa/khu lớn',
 
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
+
+  translation_source ENUM('AUTO','MANUAL') NULL,
+  translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+  translation_source_hash CHAR(64) NULL,
+  translated_at DATETIME NULL,
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -2650,11 +2735,17 @@ CREATE TABLE gallery_locations (
   area_id BIGINT UNSIGNED NOT NULL,
 
   location_name VARCHAR(150) NOT NULL,
+  location_name_en VARCHAR(150) NULL COMMENT 'Tên tiếng Anh đã dịch và lưu trong DB',
   location_key VARCHAR(180) NOT NULL,
   cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện vị trí cụ thể',
 
   status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
+
+  translation_source ENUM('AUTO','MANUAL') NULL,
+  translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+  translation_source_hash CHAR(64) NULL,
+  translated_at DATETIME NULL,
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -2687,6 +2778,7 @@ CREATE TABLE gallery_items (
   location_id BIGINT UNSIGNED NOT NULL,
 
   title VARCHAR(255) NOT NULL,
+  title_en VARCHAR(255) NULL COMMENT 'Tiêu đề tiếng Anh đã dịch và lưu trong DB',
   -- Bilingual descriptions live in gallery_item_contents (1:1); the legacy single `description`
   -- column was removed when the manual bilingual audio mechanism replaced EverAI TTS.
   item_type ENUM('MEDIA','VISIT_DELEGATION') NOT NULL DEFAULT 'MEDIA'
@@ -2695,6 +2787,11 @@ CREATE TABLE gallery_items (
   media_kind ENUM('IMAGE','VIDEO','MIXED') NOT NULL DEFAULT 'IMAGE',
   status ENUM('PUBLISHED','HIDDEN') NOT NULL DEFAULT 'PUBLISHED',
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
+
+  translation_source ENUM('AUTO','MANUAL') NULL,
+  translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+  translation_source_hash CHAR(64) NULL,
+  translated_at DATETIME NULL,
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -2710,6 +2807,7 @@ CREATE TABLE gallery_items (
   KEY idx_gallery_items_media_kind (media_kind),
   KEY idx_gallery_items_created_at (created_at),
   FULLTEXT KEY ft_gallery_items_search (title),
+  FULLTEXT KEY ft_gallery_items_search_en (title_en),
 
   CONSTRAINT fk_gallery_items_location
     FOREIGN KEY (location_id) REFERENCES gallery_locations(location_id)
@@ -2735,7 +2833,14 @@ CREATE TABLE gallery_item_media (
   thumbnail_file_id BIGINT UNSIGNED NULL,
 
   caption VARCHAR(500) NULL,
+  caption_en VARCHAR(500) NULL COMMENT 'Caption tiếng Anh đã dịch và lưu trong DB',
   alt_text VARCHAR(255) NULL,
+  alt_text_en VARCHAR(255) NULL COMMENT 'Alt text tiếng Anh đã dịch và lưu trong DB',
+
+  translation_source ENUM('AUTO','MANUAL') NULL,
+  translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+  translation_source_hash CHAR(64) NULL,
+  translated_at DATETIME NULL,
 
   is_primary TINYINT(1) NOT NULL DEFAULT 0,
 
@@ -2793,6 +2898,11 @@ CREATE TABLE gallery_item_contents (
         COMMENT 'Mô tả tiếng Anh, bắt buộc',
     audio_en_file_id BIGINT UNSIGNED NOT NULL
         COMMENT 'files.file_id của bản ghi âm tiếng Anh, bắt buộc',
+
+    translation_source ENUM('AUTO','MANUAL') NULL,
+    translation_status ENUM('PENDING','READY','FAILED','OUTDATED') NOT NULL DEFAULT 'PENDING',
+    translation_source_hash CHAR(64) NULL,
+    translated_at DATETIME NULL,
 
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by BIGINT UNSIGNED NULL,
@@ -12076,6 +12186,597 @@ WHERE trigger_schema = DATABASE()
     'trg_visit_request_identity_changes_user_guard_bi',
     'trg_visit_request_identity_changes_user_guard_bu'
   );
+
+-- =====================================================================
+-- ADDITIVE UPDATE 2026-07-22 — STORED PUBLIC VI/EN CONTENT + LIVE API CONFIG
+-- Nothing from the supplied base is removed.
+--
+-- Runtime rule:
+--   * Translation API is called only when Admin/Staff creates or changes VI content.
+--   * Homepage/public reads VI/EN from DB and never call Translation API.
+--   * Missing/FAILED/OUTDATED EN content must fall back to VI in application code.
+--
+-- Credential portability rule:
+--   * credentials_json_encrypted is intentionally NOT seeded.
+--   * An encrypted payload from one machine is not a portable team credential.
+--   * Each local backend must provide the same Service Account JSON through:
+--       GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT
+--       GOOGLE_TRANSLATION_SERVICE_ACCOUNT
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1. Backfill canonical Vietnamese rows without calling an external API.
+-- ---------------------------------------------------------------------
+INSERT INTO faq_translations (
+  faq_id,
+  language_code,
+  question,
+  answer,
+  translation_source,
+  translation_status,
+  source_hash,
+  translated_at,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+)
+SELECT
+  f.faq_id,
+  'vi',
+  f.question,
+  f.answer,
+  'LEGACY',
+  'READY',
+  SHA2(CONCAT_WS(CHAR(31), f.question, f.answer), 256),
+  COALESCE(f.updated_at, f.created_at),
+  f.created_at,
+  f.created_by,
+  f.updated_at,
+  f.updated_by
+FROM faqs f
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM faq_translations ft
+  WHERE ft.faq_id = f.faq_id
+    AND ft.language_code = 'vi'
+);
+
+INSERT INTO partner_translations (
+  partner_id,
+  language_code,
+  name,
+  short_name,
+  country,
+  city,
+  description,
+  address,
+  translation_source,
+  translation_status,
+  source_hash,
+  translated_at,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+)
+SELECT
+  p.partner_id,
+  'vi',
+  p.name,
+  p.short_name,
+  p.country,
+  p.city,
+  p.description,
+  p.address,
+  'LEGACY',
+  'READY',
+  SHA2(
+    CONCAT_WS(
+      CHAR(31),
+      p.name,
+      COALESCE(p.short_name, ''),
+      COALESCE(p.country, ''),
+      COALESCE(p.city, ''),
+      COALESCE(p.description, ''),
+      COALESCE(p.address, '')
+    ),
+    256
+  ),
+  COALESCE(p.updated_at, p.created_at),
+  p.created_at,
+  p.created_by,
+  p.updated_at,
+  p.updated_by
+FROM partners p
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM partner_translations pt
+  WHERE pt.partner_id = p.partner_id
+    AND pt.language_code = 'vi'
+);
+
+
+-- ---------------------------------------------------------------------
+-- 1B. Seed ready English translations for every FAQ and Partner row.
+-- Public VI/EN reads are fully DB-backed; no Translation API call is
+-- needed when visitors switch language on Homepage/public pages.
+-- ---------------------------------------------------------------------
+INSERT INTO faq_translations (
+  faq_id,
+  language_code,
+  question,
+  answer,
+  translation_source,
+  translation_status,
+  source_hash,
+  translated_at,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+) VALUES
+  (1, 'en', 'Test question for the VISIT_REQUEST group #1?', 'Test answer for the VISIT_REQUEST group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'accdeabb5c093492e523d8b82f0ce2d793a51a4a20e34ee925d64616c53bcbbc', '2026-03-10 09:00:00', '2026-03-10 09:00:00', 2, NULL, NULL),
+  (2, 'en', 'Test question for the VISIT_REQUEST group #2?', 'Test answer for the VISIT_REQUEST group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '5a5c66b90381984e5c99d5bee65b3c0ad178f431b111be6f5247db36d27085c7', '2026-03-10 09:05:00', '2026-03-10 09:05:00', 2, NULL, NULL),
+  (3, 'en', 'Test question for the ACCOUNT_ACCESS group #3?', 'Test answer for the ACCOUNT_ACCESS group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'e76ed257901d778a3b595ffc99a90284c204a8e3659ca0571b574f2dd597045e', '2026-03-10 09:10:00', '2026-03-10 09:10:00', 1, NULL, NULL),
+  (4, 'en', 'Test question for the LOGISTICS_RESOURCE group #4?', 'Test answer for the LOGISTICS_RESOURCE group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '3a27154f8e0b37f1ac3a8c705e3231f0ebeb2fd08f18377c4a6ee8f7a4ad86eb', '2026-03-10 09:15:00', '2026-03-10 09:15:00', 5, NULL, NULL),
+  (5, 'en', 'Test question for the OTHER group #5?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '0c4cc248e24f8b426b3572266609905a738bf1b5ab6786a3afba258dbdae8f1b', '2026-03-10 09:20:00', '2026-03-10 09:20:00', 2, NULL, NULL),
+  (6, 'en', 'Test question for the OTHER group #6?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'c9d766358fac780d87cb9ccad5f318595925a89aa09a348fe2fafd8a040660b2', '2026-03-10 09:25:00', '2026-03-10 09:25:00', 2, NULL, NULL),
+  (7, 'en', 'Test question for the OTHER group #7?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '4a945a537d4a7430141515a7395daf28090f51df32f7760505fd56e32b5fde05', '2026-03-10 09:30:00', '2026-03-10 09:30:00', 2, NULL, NULL),
+  (8, 'en', 'Test question for the OTHER group #8?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '8afd71520916f6f07ee2086420fdbb928955e34959c8d9131c6bd0d2c26056b9', '2026-03-10 09:35:00', '2026-03-10 09:35:00', 1, NULL, NULL),
+  (16001, 'en', 'Test question for the OTHER group #1?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'e8595d045706370400d0b5f962e9f430a7f84a3841242e8ffba4654e849fa964', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16002, 'en', 'Test question for the OTHER group #2?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'c437d0234e66a2b7d076df9ec3e01df87e85883f898a8eb0947c75a70cfcaa1b', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16003, 'en', 'Test question for the OTHER group #3?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '89552b3ad47f42c98ce68421078fab2328a1433c7972c52d5aa6c584b016a899', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16004, 'en', 'Test question for the OTHER group #4?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '832db1cc9b91cb61148422aeaa80b63633cf47706b11873ff8d4bbb65366a390', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16005, 'en', 'Test question for the OTHER group #5?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '0c4cc248e24f8b426b3572266609905a738bf1b5ab6786a3afba258dbdae8f1b', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16006, 'en', 'Test question for the OTHER group #6?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'c9d766358fac780d87cb9ccad5f318595925a89aa09a348fe2fafd8a040660b2', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16007, 'en', 'Test question for the OTHER group #7?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '4a945a537d4a7430141515a7395daf28090f51df32f7760505fd56e32b5fde05', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16008, 'en', 'Test question for the OTHER group #8?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'e19070508ec4d382f138eb41b7f89516c94cdb4e0b0574a3394977908a577576', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16009, 'en', 'Test question for the OTHER group #9?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'ee44649a0eb0559be735194105a3efc727d253b5907fa3826c69188452f4e2ae', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16010, 'en', 'Test question for the OTHER group #10?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '2412b822b0d4046d67cc803694ada1102d7f420911b964e7204f833b843cb732', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16011, 'en', 'Test question for the OTHER group #11?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'e034100502d491134a01231d1d31c93c466491d634e50fd9e48353784cae16c5', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16012, 'en', 'Test question for the OTHER group #12?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'dec8c9ebe30a4779ef29444a2787f2a083e5d2af6cf734adf5fdaec7fd925184', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16013, 'en', 'Test question for the OTHER group #13?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '12166ca8b3f4d44f4b68f41bcc84505ae28e6df9b073209a5b93bc97fce18552', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16014, 'en', 'Test question for the OTHER group #14?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '1defb8bec2b4565df713ee1a6e96f3a4ae2f387d3cd4f1f0383e62eae392a0b0', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16015, 'en', 'Test question for the OTHER group #15?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'e3eae8ac71768119555a5c996b3b4a21094efb2e0a97657fb1b3f4e11e432072', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16016, 'en', 'Test question for the OTHER group #16?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '0a638baa5cffda7f0db93dcf17e2bed32422bcb7d5708da17141aa5888bf52eb', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16017, 'en', 'Test question for the VISIT_REQUEST group #17?', 'Test answer for the VISIT_REQUEST group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '1911bd5290acd7ccadf3934b369b73f5a8d004d3bdb2c8a0ca66285fa28dfe21', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16018, 'en', 'Test question for the VISIT_REQUEST group #18?', 'Test answer for the VISIT_REQUEST group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'ff8bb31769c66af757299a38aef719b02924e542faa33a7c5a71ce55fdc51a11', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16019, 'en', 'Test question for the VISIT_REQUEST group #19?', 'Test answer for the VISIT_REQUEST group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '09bc0a076c92f7626b2ff9a189ca6e4fdb1f3128c64e021c6b7920f794508adf', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16020, 'en', 'Test question for the VISIT_REQUEST group #20?', 'Test answer for the VISIT_REQUEST group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '2ecc655d89491e54d4fb4c2a8f7c4f5bb8871f40b1e71f10f23d30581bd679f0', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16021, 'en', 'Test question for the ACCOUNT_ACCESS group #21?', 'Test answer for the ACCOUNT_ACCESS group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '9e049bcab6823ede069459f8752e7d3d62216d977d25439dcf0e10e0d1cedaeb', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16022, 'en', 'Test question for the ACCOUNT_ACCESS group #22?', 'Test answer for the ACCOUNT_ACCESS group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'b0162e0f866d290086905e8a889a36db27872bb0eee08a4451b3f9945485d859', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16023, 'en', 'Test question for the ACCOUNT_ACCESS group #23?', 'Test answer for the ACCOUNT_ACCESS group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'dbc10232b585eecd1f5ed1a3cd859ab444bd3cfb178a7a25a92eb75ca0cc509a', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16024, 'en', 'Test question for the ACCOUNT_ACCESS group #24?', 'Test answer for the ACCOUNT_ACCESS group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '3d49ab754a5179e1dbdf5b4b75c7bec49f7ee47aac0b58eee0c9d5b40e0fd6c3', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16025, 'en', 'Test question for the LOGISTICS_RESOURCE group #25?', 'Test answer for the LOGISTICS_RESOURCE group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '17989a2a16e700c677cee504751df411c6e4897ad01d0c4181429139baf4665b', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16026, 'en', 'Test question for the LOGISTICS_RESOURCE group #26?', 'Test answer for the LOGISTICS_RESOURCE group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'f71f8ff344e0041fa3e03053376a7db60f616397c51ee66615f7da757b179483', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16027, 'en', 'Test question for the LOGISTICS_RESOURCE group #27?', 'Test answer for the LOGISTICS_RESOURCE group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'f199fdf84fa63bdfc47e10c6a9d15360df3d5fcde52a3209b448d766d535c807', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16028, 'en', 'Test question for the LOGISTICS_RESOURCE group #28?', 'Test answer for the LOGISTICS_RESOURCE group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'ad835e5c23c49dae31b949ba49c8f6da4da398a933583cadf0bca1cdfbab0e2b', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16029, 'en', 'Test question for the OTHER group #29?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'befc6f27850ba2b42f28e2734c61defc11665b71e19cb07565a1d7c40d4884ba', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16030, 'en', 'Test question for the OTHER group #30?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'b47037e40fcb6ab777d25fb70489a8c4e2124ca557be649a49149b968d08fa3a', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16031, 'en', 'Test question for the OTHER group #31?', 'Test answer for the OTHER group, status PUBLISHED; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', '5d185994404ef98c98bbe6eb36c1f27a8507eb62705e632b652eb14d7829e602', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16032, 'en', 'Test question for the OTHER group #32?', 'Test answer for the OTHER group, status HIDDEN; used to test filtering, searching, and displaying English FAQ content.', 'MANUAL', 'READY', 'c13791c30dd70c7161fe04476b13d2dd3701ea12f81db008f4887e9238c695e3', '2026-08-17 08:00:00', '2026-08-17 08:00:00', 2, NULL, NULL),
+  (16033, 'en', 'How can I track the processing status of a visiting delegation?', 'Users open the delegation management screen and filter by status and campus within their authorized scope. The system only displays delegations that fall within the user''s scope.', 'MANUAL', 'READY', '76154e0e6c91b32abf15e1c7f332fe5b7378b0df54f3a82b5cbf3dfe3c8161bc', '2026-08-17 09:00:00', '2026-08-17 09:00:00', 2, NULL, NULL),
+  (16034, 'en', 'Why can''t I see a delegation at another campus?', 'PEMS restricts data by role, sub-role, campus, department, and assignment relationships. Users outside the relevant scope cannot see that delegation.', 'MANUAL', 'READY', '4e89174d4476e672848b7233ee1be6cbc2e026f392d363cff89e0286680d1060', '2026-08-17 09:05:00', '2026-08-17 09:05:00', 2, NULL, NULL),
+  (16035, 'en', 'Where can I download documents or photos from a visit?', 'Documents, photos, and gallery content related to a visit can be accessed from the delegation detail screen or the Document/Gallery module when the user has permission for the relevant scope.', 'MANUAL', 'READY', '3016e97ca13fdf4d9a410e6d9270f4f4539118fb81fb44c592c1fc0af42b5e1a', '2026-08-17 09:10:00', '2026-08-17 09:10:00', 2, NULL, NULL),
+  (16036, 'en', 'Why are some photos or documents not displayed publicly?', 'Some files have internal or private visibility. The system does not display them publicly if they have not been approved or are outside the user''s viewing scope.', 'MANUAL', 'READY', '165a8e76029501525c380b4ca2cb4ec247f5cbbbc82de319b1333dbe88bd9643', '2026-08-17 09:15:00', '2026-08-17 09:15:00', 2, NULL, NULL),
+  (16037, 'en', 'What should I do when I receive a confirmation email from PEMS?', 'The recipient clicks Confirm, Decline, or Negotiate in the email. The system records the response using a one-time token and does not require login for the token-authorized email action.', 'MANUAL', 'READY', '3b3b65c09342554bcd926b7ec0b1b9e4fd68585459d4d2d05aa7efa1e8249fd6', '2026-08-17 09:20:00', '2026-08-17 09:20:00', 2, NULL, NULL),
+  (16038, 'en', 'What happens if I click a button in an old email again?', 'If the response has already been recorded, the system does not update it a second time and shows a message that you have already responded to this request.', 'MANUAL', 'READY', '328678c09baa2c23a619dd7129975143b2cbfc810eeae6bdf7abd69833559edb', '2026-08-17 09:25:00', '2026-08-17 09:25:00', 2, NULL, NULL)
+ON DUPLICATE KEY UPDATE
+  question = VALUES(question),
+  answer = VALUES(answer),
+  translation_source = VALUES(translation_source),
+  translation_status = VALUES(translation_status),
+  source_hash = VALUES(source_hash),
+  translated_at = VALUES(translated_at),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+INSERT INTO partner_translations (
+  partner_id,
+  language_code,
+  name,
+  short_name,
+  country,
+  city,
+  description,
+  address,
+  translation_source,
+  translation_status,
+  source_hash,
+  translated_at,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+) VALUES
+  (1, 'en', 'SeoulTech Global Engagement Center', 'SeoulTech GEC', 'South Korea', 'Seoul', 'Key partner for engineering student exchange, applied AI seminars, and smart campus models.', '232 Gongneung-ro, Nowon-gu, Seoul', 'MANUAL', 'READY', '934d632223b2c1a7bed4348b381c938601171a523d546094be56179b1ef48079', '2026-03-01 14:00:00', '2026-03-01 08:30:00', 4, '2026-03-01 14:00:00', 2),
+  (2, 'en', 'Kyoto Robotics Collaboration Lab', 'Kyoto RoboLab', 'Japan', 'Kyoto', 'Corporate laboratory specializing in service robots; interested in short-term workshops and on-campus showcases.', 'Sakyo Innovation Quarter, Kyoto', 'MANUAL', 'READY', 'a97b8e1af4e4ddbdb2570f4176b9b51bbda3bef9b7e77f15c6db733a1a1d55d3', '2026-03-02 15:00:00', '2026-03-02 09:20:00', 4, '2026-03-02 15:00:00', 3),
+  (3, 'en', 'Singapore Green Mobility Council', 'SGMC', 'Singapore', 'Singapore', 'Council promoting green mobility; currently discussing a potential MOU for on-campus electric vehicle workshops.', '1 Marina Boulevard, Singapore', 'MANUAL', 'READY', '9e245a299bbe4783c420bd1f282394ee2fdc3fc4a6187e352272c31ad6c4bd68', '2026-03-03 10:30:00', '2026-03-03 10:30:00', 4, NULL, NULL),
+  (4, 'en', 'ASEAN Hospitality Network', 'AHN', 'Thailand', 'Bangkok', 'Regional hospitality and tourism network; suitable for the Quy Nhon campus and hospitality programs.', '88 Sukhumvit Road, Bangkok', 'MANUAL', 'READY', 'e3a355926af53373f8786fd52e3bc7933152c3f1debadab09b5f9860410f746d', '2026-03-04 10:00:00', '2026-03-04 09:30:00', 15, '2026-03-04 10:00:00', 2),
+  (5, 'en', 'Munich Applied AI Institute', 'MAAI', 'Germany', 'Munich', 'Applied AI research group interested in blended learning models and laboratories at the Hanoi campus.', 'Garching Research District, Munich', 'MANUAL', 'READY', '21f29aaa039dbd1d43139098744e06c10f8f6a284aa95287be60aca9da6baf23', '2026-03-05 08:30:00', '2026-03-05 08:30:00', 4, NULL, NULL),
+  (6, 'en', 'Nordic Sustainability Alliance', 'NSA', 'Finland', 'Helsinki', 'Non-profit organization focused on sustainability; often requests green campus content and student workshops.', 'Helsinki Innovation Hub', 'MANUAL', 'READY', '3ed5d9e89ea7a6017fd864a9bea8b0c77e6902b0e0b8b3638c7963eedace45c9', '2026-03-05 11:00:00', '2026-03-05 09:00:00', 2, '2026-03-05 11:00:00', 2),
+  (101, 'en', 'Indian Institute of Technology Delhi International Office', 'IIT Delhi IO', 'India', 'New Delhi', 'Newly imported profile from an AI exchange delegation; not yet approved for public display.', 'New Delhi partnership district', 'MANUAL', 'READY', 'fc04b1a4c95c1c12bf30d6b94de348fe6dd2d9fcf7865582a9557b9332f7d5f2', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
+  (102, 'en', 'Politecnico di Milano Mobility Lab', 'Polimi Mobility', 'Italy', 'Milan', 'Awaiting Head Office review of the proposed cooperation in mobility and urban design.', 'Milan partnership district', 'MANUAL', 'READY', '848a13d2891bc9b223ae995ce681fadd2479bcec775cf271022bdc048c23ead6', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
+  (103, 'en', 'University of Technology Sydney Student Exchange', 'UTS Exchange', 'Australia', 'Sydney', 'Partner for student exchange and global skills workshops.', 'Sydney partnership district', 'MANUAL', 'READY', '4a89e0a13b49d80ab22026e6f02dfa03442848c0b840fc74a9abe0c0bbfbc1ed', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (104, 'en', 'Nordic Green Campus Alliance', 'Nordic Green', 'Denmark', 'Copenhagen', 'Rejected for public display because the initial profile lacked legal information.', 'Copenhagen partnership district', 'MANUAL', 'READY', 'fda819b2ea00effea795ef824185d643743f27fb8b18bd71fdba1aeadc4914f1', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (105, 'en', 'Paris Digital Arts Institute', 'Paris Digital', 'France', 'Paris', 'Former partner with no regular exchange activities at present.', 'Paris partnership district', 'MANUAL', 'READY', '4efdb07bc107e71e4b1ad9506d4e66edf9f2170b49087c817f20b3f59ba05916', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (106, 'en', 'Gulf Innovation Fund for Education', 'Gulf InnovFund', 'UAE', 'Dubai', 'Not displayed publicly due to funding verification risks.', 'Dubai partnership district', 'MANUAL', 'READY', '79dadb824eb05e229b8715c1e401ebcef5b78e4f3cbabdcbe303303a17cd5613', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (107, 'en', 'Seattle EdTech Studio', 'Seattle EdTech', 'United States', 'Seattle', 'EdTech company interested in personalized learning products.', 'Seattle partnership district', 'MANUAL', 'READY', 'ded05268ba1f04398c410ad8644573db0db2d5f353487708932574b8501d286d', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (108, 'en', 'Lagos Tech Bridge Initiative', 'Lagos Bridge', 'Nigeria', 'Lagos', 'Initiative connecting African student technology entrepreneurs.', 'Lagos partnership district', 'MANUAL', 'READY', '93c1feb2b10f37c9fa107448bc86d668c8833bb290184257f1738d1c42884e04', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
+  (109, 'en', 'Andes University Exchange Office', 'Andes Exchange', 'Chile', 'Santiago', 'Partner for cultural exchange and multi-campus visit logistics.', 'Santiago partnership district', 'MANUAL', 'READY', '280529b8f65924b0a06b24074cb3665013575f93cca8a23b9d4980597b2fe1eb', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (110, 'en', 'Singapore Applied AI Consortium', 'SG Applied AI', 'Singapore', 'Singapore', 'Partner focused on applied AI in educational operations and campus services.', 'Singapore partnership district', 'MANUAL', 'READY', 'a9188738b491cfda1d0ddf68a6615c33e23ed1443a9f5a04974d9de5636a5510', '2026-04-12 10:00:00', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (120, 'en', 'Nordic Applied Learning Network', 'NALN', 'Finland', 'Helsinki', 'Partner pending approval for the Hanoi campus; used to verify that the Hanoi Staff Leader can view and approve it while Staff Leaders from other campuses cannot process it.', 'Helsinki Education District, Finland', 'MANUAL', 'READY', '4d10fe6ab6eaf8e019eae6968eba38c1f6edc936aa9bfba2a5b1ac53ec723861', '2026-08-18 09:00:00', '2026-08-18 09:00:00', 4, NULL, NULL),
+  (121, 'en', 'ASEAN Digital Mobility Lab', 'ADML', 'Singapore', 'Singapore', 'Partner pending approval for the Ho Chi Minh City campus; used to verify that the HCM Staff Leader can only view requests belonging to their campus.', 'One North, Singapore', 'MANUAL', 'READY', 'f119733bff2679c9da907ea951b009476b2825d1fd037620ca109d88e4bfd734', '2026-08-18 09:05:00', '2026-08-18 09:05:00', 10, NULL, NULL),
+  (122, 'en', 'Pacific Robotics Exchange Center', 'PREC', 'Australia', 'Sydney', 'Partner pending approval for the Da Nang campus; used to verify that the Da Nang Staff Leader approves partners within the correct campus scope.', 'Sydney Innovation Precinct, Australia', 'MANUAL', 'READY', '6a66bed413ca30d9d478c066ad60b582977504b2d9295ec4dca626fdaab59ea4', '2026-08-18 09:10:00', '2026-08-18 09:10:00', 12, NULL, NULL),
+  (123, 'en', 'Mekong Sustainability Collaboration Office', 'MSCO', 'Thailand', 'Bangkok', 'Partner pending approval for the Can Tho campus; used to verify that the Can Tho Staff Leader approves partners within the correct campus scope.', 'Bangkok Sustainability Hub, Thailand', 'MANUAL', 'READY', 'cd1f890a349456c840792700eb16a243fae65774f59bb75868f4e0acd6841385', '2026-08-18 09:15:00', '2026-08-18 09:15:00', 14, NULL, NULL),
+  (124, 'en', 'Coastal Hospitality Innovation Group', 'CHIG', 'Japan', 'Okinawa', 'Partner pending approval for the Quy Nhon campus; used to verify that the Quy Nhon Staff Leader approves partners within the correct campus scope.', 'Okinawa Coastal Innovation Center, Japan', 'MANUAL', 'READY', 'e59cd82a59ad6265b78ed575f813b0f5a7278ae969721a920f702a745d0b8ec1', '2026-08-18 09:20:00', '2026-08-18 09:20:00', 16, NULL, NULL)
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name),
+  short_name = VALUES(short_name),
+  country = VALUES(country),
+  city = VALUES(city),
+  description = VALUES(description),
+  address = VALUES(address),
+  translation_source = VALUES(translation_source),
+  translation_status = VALUES(translation_status),
+  source_hash = VALUES(source_hash),
+  translated_at = VALUES(translated_at),
+  updated_at = VALUES(updated_at),
+  updated_by = VALUES(updated_by);
+
+-- Existing Gallery seed remains VI canonical. EN stays NULL until save-time translation.
+UPDATE gallery_areas
+SET
+  translation_source_hash = SHA2(area_name, 256),
+  translation_status = CASE
+    WHEN area_name_en IS NULL OR TRIM(area_name_en) = '' THEN 'PENDING'
+    ELSE 'READY'
+  END,
+  translated_at = CASE
+    WHEN area_name_en IS NULL OR TRIM(area_name_en) = '' THEN NULL
+    ELSE COALESCE(updated_at, created_at)
+  END;
+
+UPDATE gallery_locations
+SET
+  translation_source_hash = SHA2(location_name, 256),
+  translation_status = CASE
+    WHEN location_name_en IS NULL OR TRIM(location_name_en) = '' THEN 'PENDING'
+    ELSE 'READY'
+  END,
+  translated_at = CASE
+    WHEN location_name_en IS NULL OR TRIM(location_name_en) = '' THEN NULL
+    ELSE COALESCE(updated_at, created_at)
+  END;
+
+UPDATE gallery_items
+SET
+  translation_source_hash = SHA2(title, 256),
+  translation_status = CASE
+    WHEN title_en IS NULL OR TRIM(title_en) = '' THEN 'PENDING'
+    ELSE 'READY'
+  END,
+  translated_at = CASE
+    WHEN title_en IS NULL OR TRIM(title_en) = '' THEN NULL
+    ELSE COALESCE(updated_at, created_at)
+  END;
+
+UPDATE gallery_item_media
+SET
+  translation_source_hash = SHA2(
+    CONCAT_WS(CHAR(31), COALESCE(caption, ''), COALESCE(alt_text, '')),
+    256
+  ),
+  translation_status = CASE
+    WHEN (caption IS NULL OR TRIM(caption) = '' OR caption_en IS NOT NULL)
+     AND (alt_text IS NULL OR TRIM(alt_text) = '' OR alt_text_en IS NOT NULL)
+    THEN 'READY'
+    ELSE 'PENDING'
+  END,
+  translated_at = CASE
+    WHEN (caption IS NULL OR TRIM(caption) = '' OR caption_en IS NOT NULL)
+     AND (alt_text IS NULL OR TRIM(alt_text) = '' OR alt_text_en IS NOT NULL)
+    THEN COALESCE(updated_at, created_at)
+    ELSE NULL
+  END;
+
+UPDATE gallery_item_contents
+SET
+  translation_source_hash = SHA2(description_vi, 256),
+  translation_source = COALESCE(translation_source, 'MANUAL'),
+  translation_status = CASE
+    WHEN description_en IS NULL OR TRIM(description_en) = '' THEN 'PENDING'
+    ELSE 'READY'
+  END,
+  translated_at = CASE
+    WHEN description_en IS NULL OR TRIM(description_en) = '' THEN NULL
+    ELSE COALESCE(updated_at, created_at)
+  END;
+
+-- ---------------------------------------------------------------------
+-- 2. Normalize Google Document AI config to the production processor.
+-- The existing fresh-seed insert receives api_config_id 21007.
+-- ---------------------------------------------------------------------
+UPDATE api_configurations
+SET
+  name = 'Google Document AI - Business Card OCR',
+  provider_name = 'GOOGLE_DOCUMENT_AI',
+  purpose = 'BUSINESS_CARD_OCR',
+  base_url = 'https://asia-southeast1-documentai.googleapis.com',
+  default_method = 'POST',
+  auth_type = 'CUSTOM',
+  credentials_json_encrypted = NULL,
+  settings_json = JSON_OBJECT(
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
+    'location', 'asia-southeast1',
+    'project_id', 'pems-production',
+    'processor_id', '9f4642de7b8f8b25',
+    'max_file_size_mb', 10,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
+  ),
+  secret_ref = 'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
+  data_sensitivity = 'CONFIDENTIAL',
+  allows_provider_training = FALSE,
+  retention_days = 30,
+  rate_limit_per_minute = 20,
+  monthly_quota = 1000,
+  retry_enabled = TRUE,
+  max_retries = 2,
+  cache_ttl_seconds = NULL,
+  last_test_status = 'SUCCESS',
+  last_tested_at = '2026-07-21 20:57:03',
+  last_test_message = 'Kết nối thành công. Processor: pems-business-card-ocr (ENABLED).',
+  timeout_seconds = 60,
+  status = 'ACTIVE',
+  created_at = '2026-07-19 14:43:03',
+  created_by = 1,
+  updated_at = '2026-07-21 20:57:10',
+  updated_by = 1,
+  deleted_at = NULL,
+  deleted_by = NULL
+WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI';
+
+-- ---------------------------------------------------------------------
+-- 3. Seed Google Cloud Translation config as api_config_id 21008.
+-- The same config is reused by News, FAQ, Partner and Gallery save flows.
+-- ---------------------------------------------------------------------
+INSERT INTO api_configurations (
+  api_config_id,
+  api_code,
+  name,
+  provider_name,
+  purpose,
+  base_url,
+  default_method,
+  auth_type,
+  settings_json,
+  credentials_json_encrypted,
+  secret_ref,
+  data_sensitivity,
+  allows_provider_training,
+  retention_days,
+  rate_limit_per_minute,
+  monthly_quota,
+  retry_enabled,
+  max_retries,
+  cache_ttl_seconds,
+  last_test_status,
+  last_tested_at,
+  last_test_message,
+  timeout_seconds,
+  status,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by,
+  deleted_at,
+  deleted_by
+)
+SELECT
+  21008,
+  'NEWS_TRANSLATION_GOOGLE_CLOUD',
+  'Google Cloud Translation - Dịch tin tức',
+  'GOOGLE_CLOUD_TRANSLATION',
+  'NEWS_TRANSLATION',
+  'https://translation.googleapis.com',
+  'POST',
+  'CUSTOM',
+  JSON_OBJECT(
+    'endpoint', 'translation.googleapis.com',
+    'location', 'global',
+    'project_id', 'pems-production',
+    'processor_id', '',
+    'max_file_size_mb', 10,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
+  ),
+  NULL,
+  'GOOGLE_TRANSLATION_SERVICE_ACCOUNT',
+  'INTERNAL',
+  FALSE,
+  NULL,
+  60,
+  10000,
+  TRUE,
+  2,
+  NULL,
+  'SUCCESS',
+  '2026-07-20 23:27:10',
+  'Kết nối Google Cloud Translation thành công ("Xin chào" → "Hello").',
+  30,
+  'ACTIVE',
+  '2026-07-20 23:25:48',
+  1,
+  '2026-07-20 23:27:27',
+  1,
+  NULL,
+  NULL
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM api_configurations
+  WHERE api_code = 'NEWS_TRANSLATION_GOOGLE_CLOUD'
+);
+
+-- Normalize the Translation config and intentionally keep portable secrets out of SQL.
+UPDATE api_configurations
+SET
+  name = 'Google Cloud Translation - Dịch tin tức',
+  provider_name = 'GOOGLE_CLOUD_TRANSLATION',
+  purpose = 'NEWS_TRANSLATION',
+  base_url = 'https://translation.googleapis.com',
+  default_method = 'POST',
+  auth_type = 'CUSTOM',
+  credentials_json_encrypted = NULL,
+  settings_json = JSON_OBJECT(
+    'endpoint', 'translation.googleapis.com',
+    'location', 'global',
+    'project_id', 'pems-production',
+    'processor_id', '',
+    'max_file_size_mb', 10,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
+  ),
+  secret_ref = 'GOOGLE_TRANSLATION_SERVICE_ACCOUNT',
+  data_sensitivity = 'INTERNAL',
+  allows_provider_training = FALSE,
+  retention_days = NULL,
+  rate_limit_per_minute = 60,
+  monthly_quota = 10000,
+  retry_enabled = TRUE,
+  max_retries = 2,
+  cache_ttl_seconds = NULL,
+  last_test_status = 'SUCCESS',
+  last_tested_at = '2026-07-20 23:27:10',
+  last_test_message = 'Kết nối Google Cloud Translation thành công ("Xin chào" → "Hello").',
+  timeout_seconds = 30,
+  status = 'ACTIVE',
+  created_at = '2026-07-20 23:25:48',
+  created_by = 1,
+  updated_at = '2026-07-20 23:27:27',
+  updated_by = 1,
+  deleted_at = NULL,
+  deleted_by = NULL
+WHERE api_code = 'NEWS_TRANSLATION_GOOGLE_CLOUD';
+
+-- ---------------------------------------------------------------------
+-- 4. Current-month global quotas for both live Google configs.
+-- ---------------------------------------------------------------------
+INSERT INTO api_usage_quotas (
+  api_config_id,
+  campus_id,
+  campus_scope_key,
+  period_yyyymm,
+  monthly_limit,
+  used_count,
+  created_by
+)
+SELECT
+  c.api_config_id,
+  NULL,
+  'GLOBAL',
+  DATE_FORMAT(CURRENT_DATE(), '%Y%m'),
+  c.monthly_quota,
+  0,
+  1
+FROM api_configurations c
+WHERE c.api_code IN (
+    'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
+    'NEWS_TRANSLATION_GOOGLE_CLOUD'
+  )
+  AND c.monthly_quota IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM api_usage_quotas q
+    WHERE q.api_config_id = c.api_config_id
+      AND q.campus_scope_key = 'GLOBAL'
+      AND q.period_yyyymm = DATE_FORMAT(CURRENT_DATE(), '%Y%m')
+  );
+
+-- ---------------------------------------------------------------------
+-- 5. Additive verification.
+-- ---------------------------------------------------------------------
+SELECT 'stored_language_schema' AS check_name,
+       CASE
+         WHEN EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = DATABASE() AND table_name = 'faq_translations'
+         )
+          AND EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = DATABASE() AND table_name = 'partner_translations'
+         )
+         THEN 0 ELSE 1
+       END AS issue_count;
+
+SELECT 'google_api_configs_seeded' AS check_name,
+       2 - COUNT(*) AS issue_count
+FROM api_configurations
+WHERE api_code IN (
+  'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
+  'NEWS_TRANSLATION_GOOGLE_CLOUD'
+);
+
+
+
+SELECT 'faq_vi_en_seed_coverage' AS check_name,
+       COUNT(*) AS issue_count
+FROM faqs f
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM faq_translations ft
+  WHERE ft.faq_id = f.faq_id
+    AND ft.language_code = 'vi'
+    AND ft.translation_status = 'READY'
+)
+OR NOT EXISTS (
+  SELECT 1
+  FROM faq_translations ft
+  WHERE ft.faq_id = f.faq_id
+    AND ft.language_code = 'en'
+    AND ft.translation_status = 'READY'
+);
+
+SELECT 'partner_vi_en_seed_coverage' AS check_name,
+       COUNT(*) AS issue_count
+FROM partners p
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM partner_translations pt
+  WHERE pt.partner_id = p.partner_id
+    AND pt.language_code = 'vi'
+    AND pt.translation_status = 'READY'
+)
+OR NOT EXISTS (
+  SELECT 1
+  FROM partner_translations pt
+  WHERE pt.partner_id = p.partner_id
+    AND pt.language_code = 'en'
+    AND pt.translation_status = 'READY'
+);
+
+SELECT 'google_api_credentials_not_seeded' AS check_name,
+       COUNT(*) AS issue_count
+FROM api_configurations
+WHERE api_code IN (
+  'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
+  'NEWS_TRANSLATION_GOOGLE_CLOUD'
+)
+  AND credentials_json_encrypted IS NOT NULL;
 
 -- Restore the session setting that existed before this full seed started.
 SET SESSION SQL_SAFE_UPDATES = @pems_previous_sql_safe_updates;
