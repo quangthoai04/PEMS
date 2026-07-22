@@ -98,7 +98,7 @@
   },
   "submit": {
     "public": "Submit & receive OTP",
-    "authenticated": "Submit request"
+    "authenticated": "Create visit"
   },
   "modal": {
     "title": "Campus visit registration",

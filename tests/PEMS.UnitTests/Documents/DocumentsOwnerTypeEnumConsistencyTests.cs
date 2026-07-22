@@ -28,7 +28,7 @@ public sealed class DocumentsOwnerTypeEnumConsistencyTests
     public static IEnumerable<object[]> SchemaFiles()
     {
         var root = RepoRoot();
-        yield return new object[] { Path.Combine(root, "docs", "database", "scripts", "PEMS_FULL_V2_SEED_COMPLETE_CONTACT_VISITOR_GUARD_FIXED.sql") };
+        yield return new object[] { Path.Combine(root, "docs", "database", "scripts", "PEMS_FULL_V2_SEED_COMPLETE_CONTACT_GUARD_AND_DASHBOARD_COVERAGE.sql") };
         yield return new object[] { Path.Combine(root, "docs", "database", "scripts", "phase_1_candidate", "00_fresh_target.sql") };
     }
 

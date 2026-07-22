@@ -391,6 +391,7 @@ DROP TABLE IF EXISTS `visit_photos`;
 DROP TABLE IF EXISTS `visit_photo_folders`;
 DROP TABLE IF EXISTS `visit_participants`;
 DROP TABLE IF EXISTS `visit_guest_members`;
+DROP TABLE IF EXISTS `visit_request_fingerprint_guards`;
 DROP TABLE IF EXISTS `visit_request_campuses`;
 DROP TABLE IF EXISTS `visit_requests`;
 DROP TABLE IF EXISTS `documents`;
@@ -11348,8 +11349,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     INSERT INTO visit_requests
       (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id,
@@ -11392,8 +11393,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 2, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11412,8 +11413,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 3, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11432,8 +11433,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 4, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11452,8 +11453,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 5, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11472,8 +11473,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 6, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11492,8 +11493,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 7, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11512,8 +11513,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 99680, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11532,8 +11533,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -11552,8 +11553,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 8, primary_contact_access_status = 'PENDING_CONFIRMATION' WHERE visit_request_id = 1001;
   END;
@@ -11572,8 +11573,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE users SET role_id = 3, sub_role = 'STAFF', primary_campus_id = 1, department_id = 1 WHERE user_id = 8;
   END;
@@ -11592,8 +11593,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE users SET status = 'INACTIVE' WHERE user_id = 8;
   END;
@@ -11612,8 +11613,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     INSERT INTO visit_request_identity_changes
       (identity_change_id, visit_request_id, change_kind, target_relation,
@@ -11644,8 +11645,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_request_identity_changes SET new_user_id = 4, status = 'APPLIED', applied_at = '2026-07-12 08:05:00' WHERE identity_change_id = 99403;
   END;
@@ -11664,8 +11665,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     INSERT INTO visit_requests
       (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id,
@@ -11712,8 +11713,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'PENDING_CONFIRMATION', primary_contact_verified_at = NULL WHERE visit_request_id = 3048;
     IF NOT v_raised THEN
@@ -11736,8 +11737,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
     INSERT INTO visit_request_identity_changes
@@ -11773,8 +11774,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
     INSERT INTO visit_request_identity_changes
@@ -11815,8 +11816,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3046;
     IF NOT v_raised THEN
@@ -11839,8 +11840,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3047;
     IF NOT v_raised THEN
@@ -11863,8 +11864,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_instance_form_details SET operational_contact_email = 'staff.hn@fpt.edu.vn' WHERE visit_instance_id = 5046;
     IF NOT v_raised THEN
