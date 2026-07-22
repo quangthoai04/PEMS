@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, Languages, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -84,8 +84,6 @@ const LANGUAGE_LABELS: Record<string, string> = {
   ko: '한국어',
   'zh-CN': '中文',
 };
-
-const ALL_LANGUAGES = ['vi', 'en', 'ja', 'ko', 'zh-CN'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -178,85 +176,6 @@ function RejectPopup({ onConfirm, onCancel, loading }: { onConfirm: (reason: str
         </div>
       </motion.div>
     </div>
-  );
-}
-
-// ─── Inline: chọn ngôn ngữ đích để dịch + lưu bài viết ngay lập tức ──────────
-// Một bước duy nhất: bấm chọn ngôn ngữ → dịch (Google Cloud Translation) và lưu bản dịch cùng
-// lúc (kèm ảnh của các mục, giữ nguyên qua copySectionFilesFromLanguage) — không có bước xem
-// trước/chỉnh tay riêng.
-
-function TranslateLanguagePicker({ news, onClose, onSaved }: {
-  news: NewsDetail;
-  onClose: () => void;
-  onSaved: (languageCode: string) => void;
-}) {
-  const existing = news.availableLanguages ?? [news.languageCode];
-  const targetOptions = ALL_LANGUAGES.filter(l => !existing.includes(l));
-  const [translatingLang, setTranslatingLang] = useState<string | null>(null);
-
-  async function handleTranslate(targetLang: string) {
-    setTranslatingLang(targetLang);
-    const toastId = toast.loading(`Đang dịch sang ${LANGUAGE_LABELS[targetLang] ?? targetLang}...`);
-    try {
-      await httpClient.post(`/news/${news.newsId}/translations/auto-translate`, {
-        sourceLanguage: news.languageCode,
-        targetLanguage: targetLang,
-        save: true,
-      });
-      toast.success('Dịch bài viết thành công.', { id: toastId });
-      onSaved(targetLang);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? 'Không thể dịch bài viết. Kiểm tra cấu hình API dịch.', { id: toastId });
-    } finally {
-      setTranslatingLang(null);
-    }
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: 'auto' }}
-      exit={{ opacity: 0, height: 0 }}
-      className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-[#004c91]">
-        <h3 className="text-[15px] font-bold text-white uppercase tracking-wide flex items-center gap-2">
-          <Languages className="w-4 h-4" /> Dịch bài viết
-        </h3>
-        <button onClick={onClose} className="p-1.5 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-colors">
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* Body */}
-      <div className="p-6">
-        {targetOptions.length === 0 ? (
-          <p className="text-gray-500 text-sm">Bài viết đã có đủ bản dịch cho tất cả ngôn ngữ được hỗ trợ.</p>
-        ) : (
-          <>
-            <p className="text-sm text-gray-500 mb-4">
-              Chọn ngôn ngữ để dịch tự động (Google Cloud Translation) và lưu ngay — tiêu đề, mô tả, nội dung từng mục và ảnh đều được giữ nguyên.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              {targetOptions.map(l => (
-                <button
-                  key={l}
-                  onClick={() => handleTranslate(l)}
-                  disabled={translatingLang !== null}
-                  className="flex items-center gap-2 px-5 py-3 border border-gray-200 rounded-xl font-semibold text-gray-700 hover:border-[#004c91] hover:bg-[#eef5fa] hover:text-[#004c91] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {translatingLang === l && <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />}
-                  {LANGUAGE_LABELS[l] ?? l}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </motion.div>
   );
 }
 
@@ -391,7 +310,6 @@ export function NewsDetailDashboard() {
 
   const [showApprovePopup, setShowApprovePopup]   = useState(false);
   const [showRejectPopup, setShowRejectPopup]     = useState(false);
-  const [showTranslateModal, setShowTranslateModal] = useState(false);
   const [actionLoading, setActionLoading]          = useState(false);
   const [selectedLang, setSelectedLang]            = useState<string | null>(null);
 
@@ -531,18 +449,6 @@ export function NewsDetailDashboard() {
                 <Edit2 className="w-4 h-4" /> Chỉnh sửa
               </button>
             )}
-            {actions.canTranslate && (
-              <button
-                onClick={() => setShowTranslateModal(v => !v)}
-                className={`flex items-center gap-2 font-semibold px-4 py-2 rounded-xl transition-colors text-sm ${
-                  showTranslateModal
-                    ? 'bg-[#004c91] text-white'
-                    : 'bg-white border border-[#004c91] text-[#004c91] hover:bg-[#eef5fa]'
-                }`}
-              >
-                <Languages className="w-4 h-4" /> {showTranslateModal ? 'Đóng dịch bài viết' : 'Dịch bài viết'}
-              </button>
-            )}
             {actions.canApprove && (
               <button
                 onClick={() => setShowApprovePopup(true)}
@@ -579,19 +485,6 @@ export function NewsDetailDashboard() {
             )}
           </div>
         </div>
-
-        <AnimatePresence>
-          {showTranslateModal && (
-            <TranslateLanguagePicker
-              news={news}
-              onClose={() => setShowTranslateModal(false)}
-              onSaved={lang => {
-                setShowTranslateModal(false);
-                setSelectedLang(lang); // chuyển sang xem bản dịch vừa tạo
-              }}
-            />
-          )}
-        </AnimatePresence>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sm:p-12 overflow-hidden">
 
