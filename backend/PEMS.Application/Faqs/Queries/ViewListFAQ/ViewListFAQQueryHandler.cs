@@ -75,6 +75,13 @@ public sealed class ViewListFAQQueryHandler
             })
             .ToListAsync(cancellationToken);
 
+        var faqIds = rawItems.Select(x => x.FaqId).ToList();
+        var englishByFaqId = await _dbContext.FaqTranslations
+            .AsNoTracking()
+            .Where(t => faqIds.Contains(t.FaqId) && t.LanguageCode == "en")
+            .Select(t => new { t.FaqId, t.Question, t.Answer })
+            .ToDictionaryAsync(t => t.FaqId, cancellationToken);
+
         // Collect user IDs to resolve names in one query
         var userIds = rawItems
             .SelectMany(x => new[] { x.CreatedBy, x.UpdatedBy })
@@ -99,6 +106,9 @@ public sealed class ViewListFAQQueryHandler
                 FaqTypeLabel = FaqConstants.ToVietnameseTypeLabel(x.FaqType),
                 Question = x.Question,
                 Answer = x.Answer,
+                EnglishQuestion = englishByFaqId.TryGetValue(x.FaqId, out var en) ? en.Question : null,
+                EnglishAnswer = englishByFaqId.TryGetValue(x.FaqId, out var en2) ? en2.Answer : null,
+                HasEnglishTranslation = englishByFaqId.ContainsKey(x.FaqId),
                 DisplayOrder = x.DisplayOrder,
                 Status = x.Status,
                 StatusLabel = FaqConstants.ToVietnameseStatusLabel(x.Status),

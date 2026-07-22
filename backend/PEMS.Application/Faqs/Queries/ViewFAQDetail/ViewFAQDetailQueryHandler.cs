@@ -38,6 +38,12 @@ public sealed class ViewFAQDetailQueryHandler : IRequestHandler<ViewFAQDetailQue
         if (raw is null)
             throw new NotFoundException($"FAQ with ID {request.FaqId} was not found.");
 
+        var englishTranslation = await _dbContext.FaqTranslations
+            .AsNoTracking()
+            .Where(t => t.FaqId == request.FaqId && t.LanguageCode == "en")
+            .Select(t => new { t.Question, t.Answer })
+            .FirstOrDefaultAsync(cancellationToken);
+
         var userIds = new[] { raw.CreatedBy, raw.UpdatedBy }
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
@@ -59,6 +65,9 @@ public sealed class ViewFAQDetailQueryHandler : IRequestHandler<ViewFAQDetailQue
             FaqTypeLabel = FaqConstants.ToVietnameseTypeLabel(raw.FaqType),
             Question = raw.Question,
             Answer = raw.Answer,
+            EnglishQuestion = englishTranslation?.Question,
+            EnglishAnswer = englishTranslation?.Answer,
+            HasEnglishTranslation = englishTranslation is not null,
             DisplayOrder = raw.DisplayOrder,
             Status = raw.Status,
             StatusLabel = FaqConstants.ToVietnameseStatusLabel(raw.Status),

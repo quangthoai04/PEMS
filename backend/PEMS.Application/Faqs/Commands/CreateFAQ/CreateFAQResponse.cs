@@ -7,6 +7,8 @@ public sealed class CreateFAQResponse
     public string FaqTypeLabel { get; init; } = string.Empty;
     public string Question { get; init; } = string.Empty;
     public string Answer { get; init; } = string.Empty;
+    public string? EnglishQuestion { get; init; }
+    public string? EnglishAnswer { get; init; }
     public int DisplayOrder { get; init; }
     public string Status { get; init; } = string.Empty;
     public string StatusLabel { get; init; } = string.Empty;

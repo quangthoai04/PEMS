@@ -2,20 +2,25 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
-using PEMS.Application.PublicContent.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Faqs;
 
 namespace PEMS.Application.PublicContent.Queries.ViewFAQ;
 
+/// <summary>
+/// Public FAQ list — reads pre-translated VI/EN content straight from <c>faq_translations</c>.
+/// Never calls a translation API: content is translated once, at FAQ create/update time
+/// (see CreateFAQCommandHandler/UpdateFAQCommandHandler), and simply falls back
+/// requested language → 'vi' → the legacy Vietnamese columns on <c>faqs</c> itself for any row
+/// that somehow predates the translation table being populated.
+/// </summary>
 public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, PaginatedResult<ViewFaqDto>>
 {
     private readonly IApplicationDbContext _dbContext;
-    private readonly IFaqTranslationCache _translationCache;
 
-    public ViewFaqQueryHandler(IApplicationDbContext dbContext, IFaqTranslationCache translationCache)
+    public ViewFaqQueryHandler(IApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
-        _translationCache = translationCache;
     }
 
     public async Task<PaginatedResult<ViewFaqDto>> Handle(
@@ -26,6 +31,9 @@ public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, Paginate
         var pageSize = request.PageSize;
         var keyword = request.Keyword?.Trim();
         var faqType = request.FaqType?.Trim();
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? NewsConstants.Languages.Default
+            : request.LanguageCode.Trim().ToLowerInvariant();
 
         var query = _dbContext.Faqs
             .AsNoTracking()
@@ -37,23 +45,7 @@ public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, Paginate
             query = query.Where(x => x.FaqType == faqType);
         }
 
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            var pattern = $"%{keyword}%";
-            query = query.Where(x =>
-                EF.Functions.Like(x.Question, pattern) ||
-                EF.Functions.Like(x.Answer, pattern) ||
-                EF.Functions.Like(x.FaqType, pattern));
-        }
-
-        var totalItems = await query.CountAsync(cancellationToken);
-
         var rawItems = await query
-            .OrderBy(x => x.DisplayOrder)
-            .ThenByDescending(x => x.CreatedAt)
-            .ThenByDescending(x => x.FaqId)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
             .Select(x => new
             {
                 x.FaqId,
@@ -62,31 +54,64 @@ public sealed class ViewFaqQueryHandler : IRequestHandler<ViewFaqQuery, Paginate
                 x.Answer,
                 x.DisplayOrder,
                 x.CreatedAt,
-                x.UpdatedAt
             })
             .ToListAsync(cancellationToken);
 
-        // Question/answer are Vietnamese-only in the DB by design; translate + cache for any
-        // other requested language (falls back to the Vietnamese text for "vi"/unsupported).
-        var translations = await _translationCache.TranslateAsync(
-            rawItems.Select(x => new FaqTranslationSource(x.FaqId, x.Question, x.Answer, x.UpdatedAt)).ToList(),
-            request.LanguageCode,
-            cancellationToken);
+        var faqIds = rawItems.Select(x => x.FaqId).ToList();
+        var translations = faqIds.Count == 0
+            ? new List<FaqTranslation>()
+            : await _dbContext.FaqTranslations
+                .AsNoTracking()
+                .Where(t => faqIds.Contains(t.FaqId) && (t.LanguageCode == requestedLang || t.LanguageCode == "vi"))
+                .ToListAsync(cancellationToken);
 
-        var items = rawItems
-            .Select(x =>
+        var translationsByFaqId = translations
+            .GroupBy(t => t.FaqId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // requested language → 'vi' → the legacy columns on `faqs` itself.
+        var displayed = rawItems.Select(x =>
+        {
+            var rows = translationsByFaqId.GetValueOrDefault(x.FaqId);
+            var chosen = rows?.FirstOrDefault(t => t.LanguageCode == requestedLang)
+                       ?? rows?.FirstOrDefault(t => t.LanguageCode == "vi");
+            return new
             {
-                translations.TryGetValue(x.FaqId, out var translated);
-                return new ViewFaqDto
-                {
-                    FaqId = x.FaqId,
-                    FaqType = x.FaqType,
-                    FaqTypeLabel = FaqConstants.ToTypeLabel(x.FaqType, request.LanguageCode),
-                    Question = translated.Question ?? x.Question,
-                    Answer = translated.Answer ?? x.Answer,
-                    DisplayOrder = x.DisplayOrder,
-                    CreatedAt = x.CreatedAt
-                };
+                x.FaqId,
+                x.FaqType,
+                Question = chosen?.Question ?? x.Question,
+                Answer = chosen?.Answer ?? x.Answer,
+                x.DisplayOrder,
+                x.CreatedAt,
+            };
+        }).ToList();
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            displayed = displayed.Where(x =>
+                x.Question.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                x.Answer.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                x.FaqType.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
+
+        var totalItems = displayed.Count;
+
+        var items = displayed
+            .OrderBy(x => x.DisplayOrder)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.FaqId)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => new ViewFaqDto
+            {
+                FaqId = x.FaqId,
+                FaqType = x.FaqType,
+                FaqTypeLabel = FaqConstants.ToTypeLabel(x.FaqType, requestedLang),
+                Question = x.Question,
+                Answer = x.Answer,
+                DisplayOrder = x.DisplayOrder,
+                CreatedAt = x.CreatedAt
             })
             .ToList();
 

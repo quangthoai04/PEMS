@@ -9,6 +9,9 @@ public sealed class ViewListFAQDto
 
     public string Question { get; init; } = default!;
     public string Answer { get; init; } = default!;
+    public string? EnglishQuestion { get; init; }
+    public string? EnglishAnswer { get; init; }
+    public bool HasEnglishTranslation { get; init; }
 
     public int DisplayOrder { get; init; }
 
