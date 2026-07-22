@@ -114,9 +114,9 @@ export function CreateNews() {
   const [title,   setTitle]   = useState('');
   const [summary, setSummary] = useState('');
 
-  // Bilingual editor — on by default, both VI/EN columns show immediately when composing a new
-  // post rather than requiring the user to opt in.
-  const [bilingual, setBilingual] = useState(true);
+  // Bilingual editor — off by default (VI-only form); the admin opts in via the EN toggle, which
+  // then translates the current Vietnamese content exactly once (unified with FAQ/Partner forms).
+  const [bilingual, setBilingual] = useState(false);
   const [englishTitle, setEnglishTitle] = useState('');
   const [englishSummary, setEnglishSummary] = useState('');
   const [englishTitleTouched, setEnglishTitleTouched] = useState(false);
