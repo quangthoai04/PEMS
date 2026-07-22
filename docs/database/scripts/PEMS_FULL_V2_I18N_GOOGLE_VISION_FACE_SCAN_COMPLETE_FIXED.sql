@@ -5029,7 +5029,8 @@ INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, cre
   (7, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 7?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái PUBLISHED; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 7, 'PUBLISHED', '2026-03-10 09:30:00', 2, NULL, NULL),
   (8, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 8?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái PUBLISHED; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 8, 'PUBLISHED', '2026-03-10 09:35:00', 1, NULL, NULL);
 
--- Removed old galleries seed; migrated to gallery_areas/gallery_locations/gallery_items below.
+-- Removed old galleries seed. Gallery area/location/item seed is intentionally omitted:
+-- Staff Leaders create gallery content through the application on a fresh database.
 
 -- ---------------------------------------------------------------------
 -- 7. Communication, calendar, API, documents and audit
@@ -6978,7 +6979,8 @@ INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, cre
   (16031, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 31?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái PUBLISHED; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 31, 'PUBLISHED', '2026-08-17 08:00:00', 2, NULL, NULL),
   (16032, 'OTHER', 'Câu hỏi kiểm thử nhóm OTHER số 32?', 'Câu trả lời kiểm thử cho nhóm OTHER, trạng thái HIDDEN; dùng để kiểm thử lọc, tìm kiếm và hiển thị FAQ tiếng Việt.', 32, 'HIDDEN', '2026-08-17 08:00:00', 2, NULL, NULL);
 
--- Removed old galleries seed; migrated to gallery_areas/gallery_locations/gallery_items below.
+-- Removed old galleries seed. Gallery area/location/item seed is intentionally omitted:
+-- Staff Leaders create gallery content through the application on a fresh database.
 
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at) VALUES
   (18001, 1, 'VISIT_REQUEST', 3001, 'Email coverage QUEUED 18001', 'Body snapshot for email status QUEUED.', 'thread-18001', NULL, 0, NULL, NULL, 'QUEUED', NULL, 4, NULL, '2026-08-19 08:00:00'),
@@ -7537,66 +7539,15 @@ INSERT INTO minute_action_items (action_item_id, minutes_id, title, note, due_da
   (87, 10018, 'Action item DONE for minutes 10018', 'Ghi chú riêng cho action item status=DONE; không gán owner vì schema hiện tại không có owner_user_id.', '2026-08-13', 'DONE', '2026-08-14 16:00:00', 3, '2026-08-10 15:00:00', 4, '2026-08-14 16:00:00', 4),
   (88, 10018, 'Action item CANCELLED for minutes 10018', 'Ghi chú riêng cho action item status=CANCELLED; không gán owner vì schema hiện tại không có owner_user_id.', '2026-08-14', 'CANCELLED', NULL, 4, '2026-08-10 15:00:00', 4, NULL, NULL);
 -- =====================================================================
--- NEW GALLERY SEED (v10 final): areas, locations, items, item media
--- Old galleries/gallery_images seed has been migrated to the normalized model.
+-- GALLERY AREA / LOCATION SEED INTENTIONALLY OMITTED
+-- Staff Leaders create gallery areas and locations through the application.
+-- A fresh database must start with gallery_areas and gallery_locations empty.
 -- =====================================================================
-
-INSERT INTO gallery_areas (area_id, campus_id, area_name, area_key, status, display_order, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, 'Academic Area', 'academic-area', 'ACTIVE', 0, '2026-04-01 09:00:00', 4, NULL, NULL),
-  (2, 1, 'Lab Zone', 'lab-zone', 'ACTIVE', 1, '2026-04-01 09:30:00', 4, NULL, NULL),
-  (3, 2, 'Green Walkway', 'green-walkway', 'ACTIVE', 2, '2026-04-02 09:00:00', 10, NULL, NULL),
-  (4, 3, 'Riverside Lab', 'riverside-lab', 'ACTIVE', 3, '2026-04-03 09:00:00', 12, NULL, NULL),
-  (5, 4, 'Mekong Workshop Zone', 'mekong-workshop-zone', 'ACTIVE', 4, '2026-04-04 09:00:00', 14, NULL, NULL),
-  (6, 5, 'Coastal Innovation Area', 'coastal-innovation-area', 'ACTIVE', 5, '2026-04-05 09:00:00', 16, NULL, NULL),
-  (7, 1, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 6, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (8, 2, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 7, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (9, 3, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 8, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (10, 4, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 9, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (11, 5, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 10, '2026-08-18 08:00:00', 4, NULL, NULL);
-
-INSERT INTO gallery_locations (location_id, area_id, location_name, location_key, status, display_order, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, 'Alpha Lobby', 'alpha-lobby', 'ACTIVE', 0, '2026-04-01 09:00:00', 4, NULL, NULL),
-  (2, 2, 'Innovation Lab', 'innovation-lab', 'ACTIVE', 0, '2026-04-01 09:30:00', 4, NULL, NULL),
-  (3, 3, 'Central Walkway', 'central-walkway', 'ACTIVE', 0, '2026-04-02 09:00:00', 10, NULL, NULL),
-  (4, 4, 'Da Nang Lab View', 'da-nang-lab-view', 'ACTIVE', 0, '2026-04-03 09:00:00', 12, NULL, NULL),
-  (5, 5, 'CT Workshop Room', 'ct-workshop-room', 'ACTIVE', 0, '2026-04-04 09:00:00', 14, NULL, NULL),
-  (6, 6, 'QN Hospitality Space', 'qn-hospitality-space', 'ACTIVE', 0, '2026-04-05 09:00:00', 16, NULL, NULL),
-  (7, 7, 'Coverage Location 17001', 'coverage-location-17001', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (8, 7, 'Coverage Location 17002', 'coverage-location-17002', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (9, 7, 'Coverage Location 17003', 'coverage-location-17003', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (10, 7, 'Coverage Location 17004', 'coverage-location-17004', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (11, 7, 'Coverage Location 17005', 'coverage-location-17005', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (12, 7, 'Coverage Location 17006', 'coverage-location-17006', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (13, 8, 'Coverage Location 17007', 'coverage-location-17007', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (14, 8, 'Coverage Location 17008', 'coverage-location-17008', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (15, 8, 'Coverage Location 17009', 'coverage-location-17009', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (16, 8, 'Coverage Location 17010', 'coverage-location-17010', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (17, 8, 'Coverage Location 17011', 'coverage-location-17011', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (18, 8, 'Coverage Location 17012', 'coverage-location-17012', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (19, 9, 'Coverage Location 17013', 'coverage-location-17013', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (20, 9, 'Coverage Location 17014', 'coverage-location-17014', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (21, 9, 'Coverage Location 17015', 'coverage-location-17015', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (22, 9, 'Coverage Location 17016', 'coverage-location-17016', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (23, 9, 'Coverage Location 17017', 'coverage-location-17017', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (24, 9, 'Coverage Location 17018', 'coverage-location-17018', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (25, 10, 'Coverage Location 17019', 'coverage-location-17019', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (26, 10, 'Coverage Location 17020', 'coverage-location-17020', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (27, 10, 'Coverage Location 17021', 'coverage-location-17021', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (28, 10, 'Coverage Location 17022', 'coverage-location-17022', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (29, 10, 'Coverage Location 17023', 'coverage-location-17023', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (30, 10, 'Coverage Location 17024', 'coverage-location-17024', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (31, 11, 'Coverage Location 17025', 'coverage-location-17025', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (32, 11, 'Coverage Location 17026', 'coverage-location-17026', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (33, 11, 'Coverage Location 17027', 'coverage-location-17027', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (34, 11, 'Coverage Location 17028', 'coverage-location-17028', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (35, 11, 'Coverage Location 17029', 'coverage-location-17029', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (36, 11, 'Coverage Location 17030', 'coverage-location-17030', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL);
 
 -- ==========================================================================
 -- Gallery item + media seed REMOVED (bilingual audio migration).
 -- Old seed items had a single `description` and no VI/EN audio, so they are no
 -- longer valid. Staff Leaders create gallery items via the UI with real audio.
--- (Areas/locations + their covers above are kept.)
 -- ==========================================================================
 
 -- Photo face tags are kept as a shared photo-tag module, now linked directly to files.
@@ -9778,31 +9729,14 @@ UPDATE documents d SET
 WHERE document_id BETWEEN 1 AND 10;
 
 -- ---------------------------------------------------------------------
--- 10) Gallery hierarchy and media: meaningful area/location/item/caption.
+-- 10) Gallery hierarchy and media: seed-enrichment UPDATEs removed.
+-- Gallery area/location seed no longer exists (Staff Leaders create areas and
+-- locations via the UI), so the old name-enrichment UPDATEs targeting seed IDs
+-- were removed. Gallery item + media seed-enrichment UPDATEs were removed
+-- together with the gallery item seed (bilingual audio migration): the legacy
+-- `description` column no longer exists and there are no seed gallery items to
+-- enrich — Staff Leaders create items via the UI with real VI/EN audio.
 -- ---------------------------------------------------------------------
-UPDATE gallery_areas SET area_name = CASE area_id
-  WHEN 1 THEN 'Khu đón tiếp và sảnh chính'
-  WHEN 2 THEN 'Không gian học tập và thư viện'
-  WHEN 3 THEN 'Phòng lab công nghệ và AI'
-  WHEN 4 THEN 'Khu trải nghiệm sinh viên'
-  WHEN 5 THEN 'Khu hội nghị và ký kết'
-  WHEN 6 THEN 'Campus xanh và tuyến di chuyển nội khu'
-  WHEN 7 THEN 'Khu đổi mới sáng tạo'
-  WHEN 8 THEN 'Không gian văn hóa quốc tế'
-  WHEN 9 THEN 'Khu thực hành hospitality'
-  WHEN 10 THEN 'Khu học thuật sau đại học'
-  WHEN 11 THEN 'Khu media và lưu trữ chuyến thăm'
-  ELSE area_name END
-WHERE area_id BETWEEN 1 AND 11;
-
-UPDATE gallery_locations gl
-JOIN gallery_areas ga ON ga.area_id = gl.area_id
-SET gl.location_name = CONCAT(ga.area_name, ' - điểm ', LPAD(gl.display_order,2,'0'))
-WHERE gl.location_id BETWEEN 1 AND 36;
-
--- Gallery item + media seed-enrichment UPDATEs removed together with the gallery item seed
--- (bilingual audio migration): the legacy `description` column no longer exists and there are no
--- seed gallery items to enrich — Staff Leaders create items via the UI with real VI/EN audio.
 
 -- ---------------------------------------------------------------------
 -- 11) Notifications and calendar: messages linked to actual workflow.
@@ -12653,30 +12587,9 @@ ON DUPLICATE KEY UPDATE
   updated_at = VALUES(updated_at),
   updated_by = VALUES(updated_by);
 
--- Existing Gallery seed remains VI canonical. EN stays NULL until save-time translation.
-UPDATE gallery_areas
-SET
-  translation_source_hash = SHA2(area_name, 256),
-  translation_status = CASE
-    WHEN area_name_en IS NULL OR TRIM(area_name_en) = '' THEN 'PENDING'
-    ELSE 'READY'
-  END,
-  translated_at = CASE
-    WHEN area_name_en IS NULL OR TRIM(area_name_en) = '' THEN NULL
-    ELSE COALESCE(updated_at, created_at)
-  END;
-
-UPDATE gallery_locations
-SET
-  translation_source_hash = SHA2(location_name, 256),
-  translation_status = CASE
-    WHEN location_name_en IS NULL OR TRIM(location_name_en) = '' THEN 'PENDING'
-    ELSE 'READY'
-  END,
-  translated_at = CASE
-    WHEN location_name_en IS NULL OR TRIM(location_name_en) = '' THEN NULL
-    ELSE COALESCE(updated_at, created_at)
-  END;
+-- gallery_areas / gallery_locations translation-metadata init removed:
+-- both tables are empty on a fresh import (no seed), so the app sets
+-- translation metadata when Staff Leaders create areas/locations via the UI.
 
 UPDATE gallery_items
 SET
