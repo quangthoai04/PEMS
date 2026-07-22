@@ -26,8 +26,30 @@ public class GalleryItemMedia
     [Column("caption")]
     public string? Caption { get; set; }
 
+    /// <summary>Caption tiếng Anh đã dịch và lưu trong DB.</summary>
+    [Column("caption_en")]
+    public string? CaptionEn { get; set; }
+
     [Column("alt_text")]
     public string? AltText { get; set; }
+
+    /// <summary>Alt text tiếng Anh đã dịch và lưu trong DB.</summary>
+    [Column("alt_text_en")]
+    public string? AltTextEn { get; set; }
+
+    /// <summary>AUTO | MANUAL.</summary>
+    [Column("translation_source")]
+    public string? TranslationSource { get; set; }
+
+    /// <summary>PENDING | READY | FAILED | OUTDATED.</summary>
+    [Column("translation_status")]
+    public string TranslationStatus { get; set; } = "PENDING";
+
+    [Column("translation_source_hash")]
+    public string? TranslationSourceHash { get; set; }
+
+    [Column("translated_at")]
+    public DateTime? TranslatedAt { get; set; }
 
     [Column("is_primary")]
     public bool IsPrimary { get; set; }

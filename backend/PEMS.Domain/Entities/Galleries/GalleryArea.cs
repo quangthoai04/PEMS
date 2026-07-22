@@ -17,6 +17,10 @@ public class GalleryArea
     [Column("area_name")]
     public string AreaName { get; set; } = null!;
 
+    /// <summary>Tên tiếng Anh đã dịch và lưu trong DB.</summary>
+    [Column("area_name_en")]
+    public string? AreaNameEn { get; set; }
+
     [Column("area_key")]
     public string AreaKey { get; set; } = null!;
 
@@ -29,6 +33,20 @@ public class GalleryArea
 
     [Column("display_order")]
     public uint DisplayOrder { get; set; }
+
+    /// <summary>AUTO | MANUAL.</summary>
+    [Column("translation_source")]
+    public string? TranslationSource { get; set; }
+
+    /// <summary>PENDING | READY | FAILED | OUTDATED.</summary>
+    [Column("translation_status")]
+    public string TranslationStatus { get; set; } = "PENDING";
+
+    [Column("translation_source_hash")]
+    public string? TranslationSourceHash { get; set; }
+
+    [Column("translated_at")]
+    public DateTime? TranslatedAt { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
