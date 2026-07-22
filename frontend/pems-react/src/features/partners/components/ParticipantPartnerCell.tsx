@@ -34,6 +34,9 @@ interface Props {
   prefillContactName?: string | null;
   prefillContactEmail?: string | null;
   prefillJobTitle?: string | null;
+  /** Quốc tịch của khách (nếu dòng này gắn với một guest) — dùng làm giá trị mặc định cho
+   *  Quốc gia trong modal tạo đối tác. */
+  prefillNationality?: string | null;
   /** Nhãn nguồn để ghi vào mô tả đối tác, vd "biên bản cuộc họp #12". */
   sourceLabel?: string | null;
   onChanged?: () => void;
@@ -62,7 +65,7 @@ const NAME_CLS = 'max-w-[180px] truncate text-[13px] font-semibold text-slate-80
 export function ParticipantPartnerCell({
   visitInstanceId, participantKind, minuteParticipantId, guestMemberId,
   link, canManage = true,
-  prefillOrganization, prefillContactName, prefillContactEmail, prefillJobTitle, sourceLabel,
+  prefillOrganization, prefillContactName, prefillContactEmail, prefillJobTitle, prefillNationality, sourceLabel,
   onChanged,
 }: Props) {
   const navigate = useNavigate();
@@ -187,6 +190,7 @@ export function ParticipantPartnerCell({
           contactName: prefillContactName,
           contactEmail: prefillContactEmail,
           jobTitle: prefillJobTitle,
+          nationality: prefillNationality,
           sourceLabel,
         }}
         onDone={() => { setCreateOpen(false); onChanged?.(); }}

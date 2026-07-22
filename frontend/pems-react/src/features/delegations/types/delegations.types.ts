@@ -641,6 +641,8 @@ export interface MinuteParticipant {
   checkedBy: number | null;
   displayOrder: number;
   participantKind: string; // INTERNAL | GUEST | MANUAL
+  /** Looked up live from the linked guest's nationality (null for INTERNAL/MANUAL rows). */
+  guestNationality: string | null;
 }
 
 /** One action item (minute_action_items). No assignee column exists in SQL. */

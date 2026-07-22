@@ -24,6 +24,8 @@ import {
   type PartnerProfileStatus, type PartnerVisibility,
 } from '../types/partners.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
+import { CountrySelect } from '../../visit-request/components/shared/CountrySelect';
+import { CitySelect } from './CitySelect';
 
 interface Prefill {
   /** Ưu tiên làm tên đối tác. */
@@ -31,6 +33,8 @@ interface Prefill {
   contactName?: string | null;
   contactEmail?: string | null;
   jobTitle?: string | null;
+  /** Quốc tịch của khách (nếu có) — giá trị khởi tạo cho Quốc gia, vẫn sửa được. */
+  nationality?: string | null;
   /** Nguồn để ghi vào mô tả: "Tạo từ biên bản …". */
   sourceLabel?: string | null;
 }
@@ -279,7 +283,7 @@ export function CreatePartnerFromParticipantModal({
     if (!open) return;
     setName(prefill?.organization?.trim() || '');
     setPartnerType('UNIVERSITY');
-    setCountry('');
+    setCountry(prefill?.nationality?.trim() || '');
     setCity('');
     setWebsiteUrl('');
     setAddress('');
@@ -295,7 +299,7 @@ export function CreatePartnerFromParticipantModal({
     setDetailLoading(false);
     void runMatch(prefill?.organization, prefill?.contactEmail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, prefill?.organization, prefill?.contactEmail, prefill?.sourceLabel]);
+  }, [open, prefill?.organization, prefill?.contactEmail, prefill?.nationality, prefill?.sourceLabel]);
 
   if (!open) return null;
 
@@ -560,11 +564,11 @@ export function CreatePartnerFromParticipantModal({
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Quốc gia</label>
-                <input
+                <CountrySelect
+                  storeLang="vi"
                   value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  placeholder="VD: Singapore"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] text-gray-700"
+                  onChange={(next) => { if (country.trim() && next.trim().toLowerCase() !== country.trim().toLowerCase()) setCity(''); setCountry(next); }}
+                  placeholder="Chọn hoặc nhập quốc gia..."
                 />
               </div>
             </div>
@@ -572,10 +576,11 @@ export function CreatePartnerFromParticipantModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Thành phố</label>
-                <input
+                <CitySelect
+                  country={country}
                   value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] text-gray-700"
+                  onChange={setCity}
+                  placeholder="Chọn hoặc nhập thành phố..."
                 />
               </div>
               <div>
