@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
   HelpCircle, ChevronLeft, MessageCircle, Info,
-  Edit2, Save, X, Loader2, AlertCircle,
+  Edit2, Save, X, Loader2, AlertCircle, Languages, RotateCw,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import toast, { Toaster } from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { useFaqBilingualTranslate } from './useFaqBilingualTranslate';
+import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
 
 const FAQ_TYPE_OPTIONS = [
   { value: 'ACCOUNT_ACCESS',       label: 'Tài khoản & truy cập' },
@@ -25,6 +27,9 @@ interface FaqDetail {
   faqTypeLabel: string;
   question: string;
   answer: string;
+  englishQuestion?: string | null;
+  englishAnswer?: string | null;
+  hasEnglishTranslation?: boolean;
   displayOrder: number;
   status: string;
   statusLabel: string;
@@ -54,6 +59,37 @@ export function FAQDetail() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Bilingual editor. `hadEnglishAtEditStart` freezes whether an EN translation already existed
+  // when THIS edit session began — the EN column is shown immediately (both translations loaded
+  // from the DB) without auto-translating; `addingEnglish` is only for a FAQ that has no EN yet
+  // (clicking the toggle then translates once). Either way "Dịch lại" is always available so a
+  // hand-edited EN can be explicitly overwritten on request.
+  const [hadEnglishAtEditStart, setHadEnglishAtEditStart] = useState(false);
+  const [addingEnglish, setAddingEnglish] = useState(false);
+  const showEnglishColumn = hadEnglishAtEditStart || addingEnglish;
+  const [englishQuestion, setEnglishQuestion] = useState('');
+  const [englishAnswer, setEnglishAnswer] = useState('');
+  const [englishQuestionTouched, setEnglishQuestionTouched] = useState(false);
+  const [englishAnswerTouched, setEnglishAnswerTouched] = useState(false);
+
+  const { translating: translatingFaq, retranslateNow: retranslateFaq } = useFaqBilingualTranslate({
+    enabled: addingEnglish && !hadEnglishAtEditStart,
+    question: editForm.question,
+    answer: editForm.answer,
+    onTranslated: (result) => {
+      if (!englishQuestionTouched) setEnglishQuestion(result.question);
+      if (!englishAnswerTouched) setEnglishAnswer(result.answer);
+    },
+  });
+
+  async function handleRetranslateFaq() {
+    setEnglishQuestionTouched(false);
+    setEnglishAnswerTouched(false);
+    const ok = await retranslateFaq();
+    if (ok) toast.success('Đã dịch lại sang tiếng Anh.');
+    else toast.error('Không thể dịch tự động. Vui lòng thử lại.');
+  }
+
   useEffect(() => {
     window.scrollTo(0, 0);
     if (!id) return;
@@ -80,6 +116,12 @@ export function FAQDetail() {
   const handleEdit = () => {
     if (!faq) return;
     setEditForm({ faqType: faq.faqType, question: faq.question, answer: faq.answer });
+    setHadEnglishAtEditStart(!!faq.hasEnglishTranslation);
+    setAddingEnglish(false);
+    setEnglishQuestion(faq.englishQuestion ?? '');
+    setEnglishAnswer(faq.englishAnswer ?? '');
+    setEnglishQuestionTouched(false);
+    setEnglishAnswerTouched(false);
     setSaveError(null);
     setIsEditing(true);
   };
@@ -98,6 +140,11 @@ export function FAQDetail() {
         faqType: editForm.faqType,
         question: editForm.question,
         answer: editForm.answer,
+        // Omitted entirely when the EN panel was never opened for a FAQ that has no EN yet — the
+        // backend then auto-translates once and stores the result, same rule as create.
+        ...(showEnglishColumn
+          ? { englishQuestion: englishQuestion.trim(), englishAnswer: englishAnswer.trim() }
+          : {}),
       });
       setFaq(data);
       setIsEditing(false);
@@ -207,22 +254,68 @@ export function FAQDetail() {
                   <span className="text-sm">Chỉnh sửa</span>
                 </button>
               )}
+
+              {isEditing && (
+                <div className="flex items-center gap-2">
+                  {showEnglishColumn && (
+                    <button
+                      type="button"
+                      onClick={handleRetranslateFaq}
+                      disabled={translatingFaq}
+                      title="Dịch lại từ tiếng Việt"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white/80 hover:bg-white/10 disabled:opacity-50"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${translatingFaq ? 'animate-spin' : ''}`} />
+                      {translatingFaq ? 'Đang dịch...' : 'Dịch lại'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { if (!hadEnglishAtEditStart) setAddingEnglish(v => !v); }}
+                    title={
+                      hadEnglishAtEditStart
+                        ? 'FAQ đã có bản dịch tiếng Anh'
+                        : addingEnglish ? 'Tắt soạn song ngữ' : 'Bật soạn song ngữ Việt – Anh'
+                    }
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      showEnglishColumn ? 'bg-white text-[#004c91]' : 'bg-white/10 text-white hover:bg-white/20'
+                    } ${hadEnglishAtEditStart ? 'cursor-default' : ''}`}
+                  >
+                    <Languages className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
 
-            {isEditing ? (
-              <textarea
-                value={editForm.question}
-                onChange={(e) => setEditForm({ ...editForm, question: e.target.value })}
-                className="w-full text-2xl md:text-3xl font-bold text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
-                rows={2}
-                maxLength={500}
-                placeholder="Nhập câu hỏi..."
-              />
-            ) : (
-              <h2 className="text-2xl md:text-3xl font-bold text-white leading-snug">
-                {faq.question}
-              </h2>
-            )}
+            <BilingualColumns
+              showEnglish={isEditing && showEnglishColumn}
+              left={
+                isEditing ? (
+                  <textarea
+                    value={editForm.question}
+                    onChange={(e) => setEditForm({ ...editForm, question: e.target.value })}
+                    className="w-full text-2xl md:text-3xl font-bold text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
+                    rows={2}
+                    maxLength={500}
+                    placeholder="Nhập câu hỏi..."
+                  />
+                ) : (
+                  <h2 className="text-2xl md:text-3xl font-bold text-white leading-snug">
+                    {faq.question}
+                  </h2>
+                )
+              }
+              right={
+                <textarea
+                  value={englishQuestion}
+                  onChange={(e) => { setEnglishQuestion(e.target.value); setEnglishQuestionTouched(true); }}
+                  className="w-full text-2xl md:text-3xl font-bold text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
+                  rows={2}
+                  maxLength={500}
+                  placeholder="Question (English)..."
+                />
+              }
+            />
           </div>
         </div>
 
@@ -233,18 +326,36 @@ export function FAQDetail() {
             Câu trả lời
           </h3>
           <div className="bg-[#e6eff7] rounded-2xl p-6 md:p-8 border border-blue-100/50 min-h-[200px]">
-            {isEditing ? (
-              <textarea
-                value={editForm.answer}
-                onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })}
-                className="w-full text-gray-900 leading-relaxed text-[15px] p-4 bg-white/80 focus:bg-white border border-blue-200 rounded-xl outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all resize-none min-h-[180px]"
-                placeholder="Nhập câu trả lời..."
-              />
-            ) : (
-              <p className="text-gray-700 leading-relaxed text-[15px] whitespace-pre-line font-medium">
-                {faq.answer}
-              </p>
-            )}
+            <BilingualColumns
+              showEnglish={isEditing && showEnglishColumn}
+              left={
+                isEditing ? (
+                  <textarea
+                    value={editForm.answer}
+                    onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })}
+                    className="w-full text-gray-900 leading-relaxed text-[15px] p-4 bg-white/80 focus:bg-white border border-blue-200 rounded-xl outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all resize-none min-h-[180px]"
+                    placeholder="Nhập câu trả lời..."
+                  />
+                ) : (
+                  <p className="text-gray-700 leading-relaxed text-[15px] whitespace-pre-line font-medium">
+                    {faq.answer}
+                  </p>
+                )
+              }
+              right={
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block">
+                    Answer <LanguageColumnLabel>EN</LanguageColumnLabel>
+                  </label>
+                  <textarea
+                    value={englishAnswer}
+                    onChange={(e) => { setEnglishAnswer(e.target.value); setEnglishAnswerTouched(true); }}
+                    className="w-full text-gray-900 leading-relaxed text-[15px] p-4 bg-white/80 focus:bg-white border border-blue-200 rounded-xl outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all resize-none min-h-[180px]"
+                    placeholder="Answer (English)..."
+                  />
+                </div>
+              }
+            />
           </div>
 
           {/* Metadata */}

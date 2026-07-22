@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Eye, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Search, Plus, Eye, ChevronLeft, ChevronRight, X, Loader2, Languages, RotateCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
+import { useFaqBilingualTranslate } from './useFaqBilingualTranslate';
+import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
 
 const FAQ_TYPE_OPTIONS = [
   { value: '', label: 'Tất cả loại bài' },
@@ -72,6 +74,30 @@ export function FAQManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // Bilingual editor — off by default (VI-only form); the admin opts in via the EN toggle, which
+  // then translates the current question/answer exactly once (never per keystroke).
+  const [bilingual, setBilingual] = useState(false);
+  const [englishQuestion, setEnglishQuestion] = useState('');
+  const [englishAnswer, setEnglishAnswer] = useState('');
+  const [englishQuestionTouched, setEnglishQuestionTouched] = useState(false);
+  const [englishAnswerTouched, setEnglishAnswerTouched] = useState(false);
+
+  const { translating: translatingFaq, retranslateNow: retranslateFaq } = useFaqBilingualTranslate({
+    enabled: bilingual,
+    question: newFAQ.question,
+    answer: newFAQ.answer,
+    onTranslated: (result) => {
+      if (!englishQuestionTouched) setEnglishQuestion(result.question);
+      if (!englishAnswerTouched) setEnglishAnswer(result.answer);
+    },
+  });
+
+  async function handleRetranslateFaq() {
+    setEnglishQuestionTouched(false);
+    setEnglishAnswerTouched(false);
+    await retranslateFaq();
+  }
+
   // Debounce search 400ms
   useEffect(() => {
     const t = setTimeout(() => {
@@ -123,6 +149,11 @@ export function FAQManagement() {
     setIsCreateModalOpen(false);
     setNewFAQ({ question: '', answer: '', type: 'ACCOUNT_ACCESS', status: 'PUBLISHED' });
     setCreateError(null);
+    setBilingual(false);
+    setEnglishQuestion('');
+    setEnglishAnswer('');
+    setEnglishQuestionTouched(false);
+    setEnglishAnswerTouched(false);
   };
 
   const handleCreate = async () => {
@@ -135,6 +166,11 @@ export function FAQManagement() {
         question: newFAQ.question.trim(),
         answer: newFAQ.answer.trim(),
         status: newFAQ.status,
+        // Omitted entirely when the EN panel was never opened — the backend then auto-translates
+        // once and stores the result, same rule as News/Partner.
+        ...(bilingual
+          ? { englishQuestion: englishQuestion.trim(), englishAnswer: englishAnswer.trim() }
+          : {}),
       });
       closeCreateModal();
       toast.success('Tạo FAQ thành công!', { duration: 3000 });
@@ -396,14 +432,42 @@ export function FAQManagement() {
       {/* Create FAQ Modal */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+          <div className={`bg-white rounded-2xl shadow-xl w-full overflow-hidden transition-all ${bilingual ? 'max-w-3xl' : 'max-w-lg'}`}>
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-xl font-bold text-[#004c91] flex items-center gap-2">
                 <Plus className="w-5 h-5" /> Thêm mới FAQ
               </h3>
-              <button onClick={closeCreateModal} className="p-1.5 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {bilingual && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setEnglishQuestionTouched(false);
+                      setEnglishAnswerTouched(false);
+                      const ok = await retranslateFaq();
+                      if (ok) toast.success('Đã dịch lại sang tiếng Anh.');
+                      else toast.error('Không thể dịch tự động. Vui lòng thử lại.');
+                    }}
+                    disabled={translatingFaq}
+                    title="Dịch lại sang tiếng Anh"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    <RotateCw className={`w-3.5 h-3.5 ${translatingFaq ? 'animate-spin' : ''}`} />
+                    {translatingFaq ? 'Đang dịch...' : 'Dịch lại'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setBilingual(v => !v)}
+                  title={bilingual ? 'Tắt soạn song ngữ' : 'Bật soạn song ngữ Việt – Anh'}
+                  className={`p-1.5 rounded-lg transition-colors ${bilingual ? 'bg-[#004c91]/10 text-[#004c91]' : 'text-gray-400 hover:bg-gray-100'}`}
+                >
+                  <Languages className="w-4 h-4" />
+                </button>
+                <button onClick={closeCreateModal} className="p-1.5 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="p-6 space-y-4">
@@ -421,24 +485,68 @@ export function FAQManagement() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-gray-900 block">Câu hỏi<span className="text-red-500 ml-1">*</span></label>
-                <textarea
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
-                  placeholder="Nhập câu hỏi..."
-                  value={newFAQ.question}
-                  onChange={(e) => setNewFAQ({ ...newFAQ, question: e.target.value })}
+                <label className="text-sm font-bold text-gray-900 block">
+                  Câu hỏi<span className="text-red-500 ml-1">*</span>
+                  {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                </label>
+                <BilingualColumns
+                  showEnglish={bilingual}
+                  left={
+                    <textarea
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
+                      placeholder="Nhập câu hỏi..."
+                      value={newFAQ.question}
+                      onChange={(e) => setNewFAQ({ ...newFAQ, question: e.target.value })}
+                    />
+                  }
+                  right={
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-bold text-gray-900 block">
+                        Câu hỏi <LanguageColumnLabel>EN</LanguageColumnLabel>
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
+                        placeholder="Question (English)..."
+                        value={englishQuestion}
+                        onChange={(e) => { setEnglishQuestion(e.target.value); setEnglishQuestionTouched(true); }}
+                      />
+                    </div>
+                  }
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-gray-900 block">Trả lời<span className="text-red-500 ml-1">*</span></label>
-                <textarea
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
-                  placeholder="Nhập câu trả lời..."
-                  value={newFAQ.answer}
-                  onChange={(e) => setNewFAQ({ ...newFAQ, answer: e.target.value })}
+                <label className="text-sm font-bold text-gray-900 block">
+                  Trả lời<span className="text-red-500 ml-1">*</span>
+                  {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+                </label>
+                <BilingualColumns
+                  showEnglish={bilingual}
+                  left={
+                    <textarea
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
+                      placeholder="Nhập câu trả lời..."
+                      value={newFAQ.answer}
+                      onChange={(e) => setNewFAQ({ ...newFAQ, answer: e.target.value })}
+                    />
+                  }
+                  right={
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-bold text-gray-900 block">
+                        Trả lời <LanguageColumnLabel>EN</LanguageColumnLabel>
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] resize-none"
+                        placeholder="Answer (English)..."
+                        value={englishAnswer}
+                        onChange={(e) => { setEnglishAnswer(e.target.value); setEnglishAnswerTouched(true); }}
+                      />
+                    </div>
+                  }
                 />
               </div>
 
