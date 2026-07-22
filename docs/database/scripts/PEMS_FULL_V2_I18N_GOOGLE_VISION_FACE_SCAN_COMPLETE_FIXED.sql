@@ -6,6 +6,17 @@
 -- Source file is preserved; this is a new full SQL output.
 -- ============================================================================
 
+
+-- ============================================================================
+-- ADDITIVE UPDATE 2026-07-22 — GOOGLE CLOUD VISION FACE DETECTION
+--   + Preserves every existing schema object, trigger and seed row.
+--   + Adds API configuration 21009 with credentials_json_encrypted = NULL.
+--   + Adds visit_photo_face_scans and visit_photo_face_detections.
+--   + Reuses existing visit_photos, visit_instance_guest_members and
+--     photo_face_tags; no biometric embedding or automatic identity matching.
+--   + Current fresh-create table target count after this update: 80.
+-- ============================================================================
+
 -- =====================================================================
 -- PEMS FULL FRESH-CREATE SQL — PER-CAMPUS FORM V2 SEED COMPLETE
 -- Updated from: PEMS_FULL_V11_REMOVED_TTS_19_07_26(7).sql
@@ -352,6 +363,8 @@ DROP TABLE IF EXISTS `sent_email_attachments`;
 DROP TABLE IF EXISTS `sent_email_recipients`;
 DROP TABLE IF EXISTS `sent_emails`;
 DROP TABLE IF EXISTS `email_templates`;
+DROP TABLE IF EXISTS `visit_photo_face_detections`;
+DROP TABLE IF EXISTS `visit_photo_face_scans`;
 DROP TABLE IF EXISTS `photo_face_tags`;
 DROP TABLE IF EXISTS `gallery_item_contents`;
 DROP TABLE IF EXISTS `gallery_item_media`;
@@ -3529,6 +3542,216 @@ CREATE TABLE api_configurations (
   KEY idx_api_config_test_status (last_test_status, last_tested_at),
   KEY idx_api_provider_status (provider_name, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='API config + encrypted credentials JSON';
+
+-- =====================================================================
+-- GOOGLE CLOUD VISION FACE DETECTION — VISIT PHOTO SCAN STAGING
+-- =====================================================================
+-- visit_photos is the business-owned image record. The composite unique key
+-- allows a scan row to prove that photo, request, campus instance and file are
+-- the same business object. Existing photo_face_tags remains the canonical
+-- final manual tag table after a Staff/Host confirms a detected face.
+
+ALTER TABLE visit_photos
+  ADD UNIQUE KEY uq_visit_photos_face_scan_scope
+    (visit_photo_id, visit_request_id, visit_instance_id, file_id);
+
+CREATE TABLE visit_photo_face_scans (
+  face_scan_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+  visit_photo_id BIGINT UNSIGNED NOT NULL,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
+  api_config_id BIGINT UNSIGNED NOT NULL,
+
+  status ENUM('PENDING','PROCESSING','SUCCEEDED','FAILED','CONFIRMED')
+    NOT NULL DEFAULT 'PENDING',
+
+  provider_name VARCHAR(150) NOT NULL DEFAULT 'GOOGLE_CLOUD_VISION',
+  provider_request_id VARCHAR(255) NULL,
+  feature_type VARCHAR(80) NOT NULL DEFAULT 'FACE_DETECTION',
+
+  image_width INT UNSIGNED NULL,
+  image_height INT UNSIGNED NULL,
+  detected_face_count INT UNSIGNED NOT NULL DEFAULT 0,
+  reviewed_face_count INT UNSIGNED NOT NULL DEFAULT 0,
+  ignored_face_count INT UNSIGNED NOT NULL DEFAULT 0,
+
+  error_code VARCHAR(100) NULL,
+  error_message TEXT NULL,
+
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  requested_by BIGINT UNSIGNED NULL,
+  completed_at DATETIME NULL,
+  confirmed_at DATETIME NULL,
+  confirmed_by BIGINT UNSIGNED NULL,
+
+  row_version INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (face_scan_id),
+  UNIQUE KEY uq_visit_photo_face_scans_scope
+    (face_scan_id, visit_request_id, visit_instance_id, file_id),
+  KEY idx_visit_photo_face_scans_photo_time (visit_photo_id, created_at),
+  KEY idx_visit_photo_face_scans_instance_time (visit_instance_id, created_at),
+  KEY idx_visit_photo_face_scans_request_time (visit_request_id, created_at),
+  KEY idx_visit_photo_face_scans_status_time (status, created_at),
+  KEY idx_visit_photo_face_scans_api_time (api_config_id, created_at),
+  KEY idx_visit_photo_face_scans_requested_by (requested_by, requested_at),
+  KEY idx_visit_photo_face_scans_confirmed_by (confirmed_by, confirmed_at),
+
+  CONSTRAINT fk_visit_photo_face_scans_photo_scope
+    FOREIGN KEY (visit_photo_id, visit_request_id, visit_instance_id, file_id)
+    REFERENCES visit_photos
+      (visit_photo_id, visit_request_id, visit_instance_id, file_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+
+  CONSTRAINT fk_visit_photo_face_scans_api_config
+    FOREIGN KEY (api_config_id) REFERENCES api_configurations(api_config_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+
+  CONSTRAINT fk_visit_photo_face_scans_requested_by
+    FOREIGN KEY (requested_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CONSTRAINT fk_visit_photo_face_scans_confirmed_by
+    FOREIGN KEY (confirmed_by) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+
+  CONSTRAINT ck_visit_photo_face_scans_dimensions CHECK (
+    (image_width IS NULL AND image_height IS NULL)
+    OR (image_width > 0 AND image_height > 0)
+  ),
+
+  CONSTRAINT ck_visit_photo_face_scans_counts CHECK (
+    reviewed_face_count + ignored_face_count <= detected_face_count
+  ),
+
+  CONSTRAINT ck_visit_photo_face_scans_feature CHECK (
+    feature_type = 'FACE_DETECTION'
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='One Google Cloud Vision FACE_DETECTION execution for one private visit photo. Stores scan state/counts only; no face embedding or automatic identity recognition.';
+
+-- FIX 2026-07-22:
+-- MySQL Error 3823: columns referenced by ck_visit_photo_face_detection_review_state
+-- cannot simultaneously use ON UPDATE CASCADE foreign-key actions.
+-- guest_member_id, face_tag_id and reviewed_by now use RESTRICT because their
+-- referenced identifiers are immutable and must not be cascaded automatically.
+
+CREATE TABLE visit_photo_face_detections (
+  face_detection_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+  face_scan_id BIGINT UNSIGNED NOT NULL,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  file_id BIGINT UNSIGNED NOT NULL,
+
+  face_index INT UNSIGNED NOT NULL
+    COMMENT 'One-based stable index inside this scan result',
+
+  bounding_box_x DECIMAL(10,8) NOT NULL
+    COMMENT 'Normalized left coordinate from 0 to 1',
+  bounding_box_y DECIMAL(10,8) NOT NULL
+    COMMENT 'Normalized top coordinate from 0 to 1',
+  bounding_box_width DECIMAL(10,8) NOT NULL
+    COMMENT 'Normalized width from 0 to 1',
+  bounding_box_height DECIMAL(10,8) NOT NULL
+    COMMENT 'Normalized height from 0 to 1',
+  detection_confidence DECIMAL(6,5) NOT NULL
+    COMMENT 'Google Vision detection confidence from 0 to 1',
+
+  guest_member_id BIGINT UNSIGNED NULL
+    COMMENT 'Manual selection; must belong to this exact visit instance',
+  face_tag_id BIGINT UNSIGNED NULL
+    COMMENT 'Final canonical photo_face_tags row created after confirmation',
+
+  review_status ENUM('DETECTED','CONFIRMED','IGNORED')
+    NOT NULL DEFAULT 'DETECTED',
+  review_note VARCHAR(500) NULL,
+  reviewed_at DATETIME NULL,
+  reviewed_by BIGINT UNSIGNED NULL,
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (face_detection_id),
+  UNIQUE KEY uq_visit_photo_face_detection_index (face_scan_id, face_index),
+  UNIQUE KEY uq_visit_photo_face_detection_guest (face_scan_id, guest_member_id),
+  UNIQUE KEY uq_visit_photo_face_detection_tag (face_tag_id),
+  KEY idx_visit_photo_face_detection_instance (visit_instance_id, review_status),
+  KEY idx_visit_photo_face_detection_guest (guest_member_id),
+  KEY idx_visit_photo_face_detection_status (review_status, created_at),
+  KEY idx_visit_photo_face_detection_reviewer (reviewed_by, reviewed_at),
+
+  CONSTRAINT fk_visit_photo_face_detection_scan_scope
+    FOREIGN KEY (face_scan_id, visit_request_id, visit_instance_id, file_id)
+    REFERENCES visit_photo_face_scans
+      (face_scan_id, visit_request_id, visit_instance_id, file_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+
+  CONSTRAINT fk_visit_photo_face_detection_instance_guest
+    FOREIGN KEY (visit_instance_id, guest_member_id)
+    REFERENCES visit_instance_guest_members(visit_instance_id, guest_member_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+
+  CONSTRAINT fk_visit_photo_face_detection_tag
+    FOREIGN KEY (face_tag_id) REFERENCES photo_face_tags(face_tag_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+
+  CONSTRAINT fk_visit_photo_face_detection_reviewed_by
+    FOREIGN KEY (reviewed_by) REFERENCES users(user_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+
+  CONSTRAINT ck_visit_photo_face_detection_index CHECK (face_index > 0),
+
+  CONSTRAINT ck_visit_photo_face_detection_x CHECK (
+    bounding_box_x >= 0 AND bounding_box_x <= 1
+  ),
+  CONSTRAINT ck_visit_photo_face_detection_y CHECK (
+    bounding_box_y >= 0 AND bounding_box_y <= 1
+  ),
+  CONSTRAINT ck_visit_photo_face_detection_width CHECK (
+    bounding_box_width > 0
+    AND bounding_box_width <= 1
+    AND bounding_box_x + bounding_box_width <= 1
+  ),
+  CONSTRAINT ck_visit_photo_face_detection_height CHECK (
+    bounding_box_height > 0
+    AND bounding_box_height <= 1
+    AND bounding_box_y + bounding_box_height <= 1
+  ),
+  CONSTRAINT ck_visit_photo_face_detection_confidence CHECK (
+    detection_confidence >= 0 AND detection_confidence <= 1
+  ),
+
+  CONSTRAINT ck_visit_photo_face_detection_review_state CHECK (
+    (
+      review_status = 'DETECTED'
+      AND face_tag_id IS NULL
+      AND reviewed_by IS NULL
+      AND reviewed_at IS NULL
+    )
+    OR
+    (
+      review_status = 'CONFIRMED'
+      AND guest_member_id IS NOT NULL
+      AND face_tag_id IS NOT NULL
+      AND reviewed_by IS NOT NULL
+      AND reviewed_at IS NOT NULL
+    )
+    OR
+    (
+      review_status = 'IGNORED'
+      AND guest_member_id IS NULL
+      AND face_tag_id IS NULL
+      AND reviewed_by IS NOT NULL
+      AND reviewed_at IS NOT NULL
+    )
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Individual Google Vision face boxes awaiting manual assignment to a guest in the exact campus visit instance. Confirmed rows link to existing photo_face_tags.';
 
 
 -- ---------------------------------------------------------------------
@@ -12706,6 +12929,202 @@ WHERE c.api_code IN (
       AND q.campus_scope_key = 'GLOBAL'
       AND q.period_yyyymm = DATE_FORMAT(CURRENT_DATE(), '%Y%m')
   );
+
+-- ---------------------------------------------------------------------
+-- 5. Seed Google Cloud Vision Face Detection config as api_config_id 21009.
+-- Credential is intentionally not stored in SQL. The backend resolves
+-- GOOGLE_VISION_SERVICE_ACCOUNT from the environment/secret manager.
+-- ---------------------------------------------------------------------
+INSERT INTO api_configurations (
+  api_config_id,
+  api_code,
+  name,
+  provider_name,
+  purpose,
+  base_url,
+  default_method,
+  auth_type,
+  settings_json,
+  credentials_json_encrypted,
+  secret_ref,
+  data_sensitivity,
+  allows_provider_training,
+  retention_days,
+  rate_limit_per_minute,
+  monthly_quota,
+  retry_enabled,
+  max_retries,
+  cache_ttl_seconds,
+  last_test_status,
+  last_tested_at,
+  last_test_message,
+  timeout_seconds,
+  status,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by,
+  deleted_at,
+  deleted_by
+)
+SELECT
+  21009,
+  'FACE_DETECTION_GOOGLE_VISION',
+  'Google Cloud Vision - Face Detection',
+  'GOOGLE_CLOUD_VISION',
+  'FACE_DETECTION',
+  'https://vision.googleapis.com',
+  'POST',
+  'CUSTOM',
+  JSON_OBJECT(
+    'endpoint', 'vision.googleapis.com',
+    'project_id', 'pems-production',
+    'feature_type', 'FACE_DETECTION',
+    'max_faces_per_image', 50,
+    'max_file_size_mb', 8,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp'
+    )
+  ),
+  NULL,
+  'GOOGLE_VISION_SERVICE_ACCOUNT',
+  'RESTRICTED',
+  FALSE,
+  30,
+  20,
+  1000,
+  TRUE,
+  2,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  30,
+  'INACTIVE',
+  CURRENT_TIMESTAMP,
+  1,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM api_configurations
+  WHERE api_code = 'FACE_DETECTION_GOOGLE_VISION'
+);
+
+UPDATE api_configurations
+SET
+  name = 'Google Cloud Vision - Face Detection',
+  provider_name = 'GOOGLE_CLOUD_VISION',
+  purpose = 'FACE_DETECTION',
+  base_url = 'https://vision.googleapis.com',
+  default_method = 'POST',
+  auth_type = 'CUSTOM',
+  settings_json = JSON_OBJECT(
+    'endpoint', 'vision.googleapis.com',
+    'project_id', 'pems-production',
+    'feature_type', 'FACE_DETECTION',
+    'max_faces_per_image', 50,
+    'max_file_size_mb', 8,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp'
+    )
+  ),
+  credentials_json_encrypted = NULL,
+  secret_ref = 'GOOGLE_VISION_SERVICE_ACCOUNT',
+  data_sensitivity = 'RESTRICTED',
+  allows_provider_training = FALSE,
+  retention_days = 30,
+  rate_limit_per_minute = 20,
+  monthly_quota = 1000,
+  retry_enabled = TRUE,
+  max_retries = 2,
+  cache_ttl_seconds = NULL,
+  last_test_status = NULL,
+  last_tested_at = NULL,
+  last_test_message = NULL,
+  timeout_seconds = 30,
+  status = 'INACTIVE',
+  deleted_at = NULL,
+  deleted_by = NULL
+WHERE api_code = 'FACE_DETECTION_GOOGLE_VISION';
+
+INSERT INTO api_usage_quotas (
+  api_config_id,
+  campus_id,
+  campus_scope_key,
+  period_yyyymm,
+  monthly_limit,
+  used_count,
+  created_by
+)
+SELECT
+  c.api_config_id,
+  NULL,
+  'GLOBAL',
+  DATE_FORMAT(CURRENT_DATE(), '%Y%m'),
+  c.monthly_quota,
+  0,
+  1
+FROM api_configurations c
+WHERE c.api_code = 'FACE_DETECTION_GOOGLE_VISION'
+  AND c.monthly_quota IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM api_usage_quotas q
+    WHERE q.api_config_id = c.api_config_id
+      AND q.campus_scope_key = 'GLOBAL'
+      AND q.period_yyyymm = DATE_FORMAT(CURRENT_DATE(), '%Y%m')
+  );
+
+-- ---------------------------------------------------------------------
+-- 6. Google Vision / face-scan additive verification.
+-- ---------------------------------------------------------------------
+SELECT 'google_vision_face_scan_schema' AS check_name,
+       CASE
+         WHEN EXISTS (
+           SELECT 1
+           FROM information_schema.tables
+           WHERE table_schema = DATABASE()
+             AND table_name = 'visit_photo_face_scans'
+         )
+          AND EXISTS (
+           SELECT 1
+           FROM information_schema.tables
+           WHERE table_schema = DATABASE()
+             AND table_name = 'visit_photo_face_detections'
+         )
+         THEN 0 ELSE 1
+       END AS issue_count;
+
+SELECT 'google_vision_api_config_seeded' AS check_name,
+       CASE WHEN COUNT(*) = 1 THEN 0 ELSE 1 END AS issue_count
+FROM api_configurations
+WHERE api_config_id = 21009
+  AND api_code = 'FACE_DETECTION_GOOGLE_VISION'
+  AND provider_name = 'GOOGLE_CLOUD_VISION'
+  AND purpose = 'FACE_DETECTION'
+  AND secret_ref = 'GOOGLE_VISION_SERVICE_ACCOUNT'
+  AND credentials_json_encrypted IS NULL;
+
+SELECT 'google_vision_quota_seeded' AS check_name,
+       CASE WHEN COUNT(*) = 1 THEN 0 ELSE 1 END AS issue_count
+FROM api_usage_quotas q
+JOIN api_configurations c
+  ON c.api_config_id = q.api_config_id
+WHERE c.api_code = 'FACE_DETECTION_GOOGLE_VISION'
+  AND q.campus_scope_key = 'GLOBAL'
+  AND q.period_yyyymm = DATE_FORMAT(CURRENT_DATE(), '%Y%m');
+
+-- ---------------------------------------------------------------------
+-- Existing stored-i18n verification continues below.
+-- ---------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------
 -- 5. Additive verification.
