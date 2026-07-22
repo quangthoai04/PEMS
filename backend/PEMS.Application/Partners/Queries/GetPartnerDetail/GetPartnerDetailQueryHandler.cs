@@ -55,6 +55,12 @@ public sealed class GetPartnerDetailQueryHandler : IRequestHandler<GetPartnerDet
         }
         if (PartnerAccess.CanManagePartnerChildren(_currentUser, partner)) actions.Add("MANAGE_CHILDREN");
 
+        var englishTranslation = await _db.PartnerTranslations
+            .AsNoTracking()
+            .Where(t => t.PartnerId == partner.PartnerId && t.LanguageCode == "en")
+            .Select(t => new { t.Name, t.ShortName, t.Description, t.Address })
+            .FirstOrDefaultAsync(cancellationToken);
+
         return new PartnerDetailDto
         {
             PartnerId = partner.PartnerId,
@@ -83,6 +89,11 @@ public sealed class GetPartnerDetailQueryHandler : IRequestHandler<GetPartnerDet
             ReviewerName = partner.ReviewedBy is { } r && names.TryGetValue(r, out var reviewer) ? reviewer : null,
             ReviewedAt = partner.ReviewedAt,
             AllowedActions = actions,
+            EnglishName = englishTranslation?.Name,
+            EnglishShortName = englishTranslation?.ShortName,
+            EnglishDescription = englishTranslation?.Description,
+            EnglishAddress = englishTranslation?.Address,
+            HasEnglishTranslation = englishTranslation is not null,
         };
     }
 }

@@ -62,6 +62,12 @@ public sealed class PartnerDetailDto
     public string? ReviewerName { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public List<string> AllowedActions { get; set; } = new();
+
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public string? EnglishDescription { get; set; }
+    public string? EnglishAddress { get; set; }
+    public bool HasEnglishTranslation { get; set; }
 }
 
 public sealed class PartnerContactDto

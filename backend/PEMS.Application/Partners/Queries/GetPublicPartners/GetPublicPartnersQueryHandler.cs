@@ -6,25 +6,35 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Partners.Common;
+using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Partners;
 
 namespace PEMS.Application.Partners.Queries.GetPublicPartners;
 
+/// <summary>
+/// Public partner list — reads pre-translated VI/EN content straight from
+/// <c>partner_translations</c>. Never calls a translation API: content is translated once, at
+/// partner create/update time (see CreatePartnerCommandHandler/UpdatePartnerCommandHandler), and
+/// simply falls back requested language → 'vi' → the legacy Vietnamese columns on
+/// <c>partners</c> itself for any row that somehow predates the translation table being populated.
+/// </summary>
 public sealed class GetPublicPartnersQueryHandler
     : IRequestHandler<GetPublicPartnersQuery, GetPublicPartnersResponse>
 {
     private readonly IApplicationDbContext _db;
-    private readonly IPartnerDescriptionTranslationCache _descriptionTranslator;
 
-    public GetPublicPartnersQueryHandler(
-        IApplicationDbContext db, IPartnerDescriptionTranslationCache descriptionTranslator)
+    public GetPublicPartnersQueryHandler(IApplicationDbContext db)
     {
         _db = db;
-        _descriptionTranslator = descriptionTranslator;
     }
 
     public async Task<GetPublicPartnersResponse> Handle(
         GetPublicPartnersQuery request, CancellationToken cancellationToken)
     {
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? NewsConstants.Languages.Default
+            : request.LanguageCode.Trim().ToLowerInvariant();
+
         // Hard rule: the public surface never returns PENDING/REJECTED/PRIVATE/INTERNAL rows.
         var query = _db.Partners.AsNoTracking()
             .Where(p => p.ProfileStatus == PartnerProfileStatuses.Approved
@@ -89,31 +99,42 @@ public sealed class GetPublicPartnersQueryHandler
                 p.LogoFileId,
                 p.CoverFileId,
                 p.PublicSlug,
-                p.UpdatedAt,
             })
             .ToListAsync(cancellationToken);
 
-        // Descriptions are Vietnamese-only in the DB by design (mirrors FAQ) — translated on
-        // demand for a non-"vi" languageCode and cached 24h, same mechanism ViewFaqQueryHandler uses.
-        var translated = await _descriptionTranslator.TranslateAsync(
-            rows.Select(r => new PartnerDescriptionTranslationSource(r.PartnerId, r.Description, r.UpdatedAt)).ToList(),
-            request.LanguageCode,
-            cancellationToken);
+        var partnerIds = rows.Select(r => r.PartnerId).ToList();
+        var translations = partnerIds.Count == 0
+            ? new List<PartnerTranslation>()
+            : await _db.PartnerTranslations
+                .AsNoTracking()
+                .Where(t => partnerIds.Contains(t.PartnerId) && (t.LanguageCode == requestedLang || t.LanguageCode == "vi"))
+                .ToListAsync(cancellationToken);
 
-        var items = rows.Select(p => new PublicPartnerDto
+        var translationsByPartnerId = translations
+            .GroupBy(t => t.PartnerId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var items = rows.Select(p =>
         {
-            PartnerId = p.PartnerId,
-            Name = p.Name,
-            ShortName = p.ShortName,
-            Country = p.Country,
-            City = p.City,
-            WebsiteUrl = p.WebsiteUrl,
-            Address = p.Address,
-            Description = translated.TryGetValue(p.PartnerId, out var d) ? d : p.Description,
-            PartnerType = p.PartnerType,
-            LogoFileId = p.LogoFileId,
-            CoverFileId = p.CoverFileId,
-            PublicSlug = p.PublicSlug,
+            var trs = translationsByPartnerId.GetValueOrDefault(p.PartnerId);
+            var chosen = trs?.FirstOrDefault(t => t.LanguageCode == requestedLang)
+                       ?? trs?.FirstOrDefault(t => t.LanguageCode == "vi");
+
+            return new PublicPartnerDto
+            {
+                PartnerId = p.PartnerId,
+                Name = chosen?.Name ?? p.Name,
+                ShortName = chosen?.ShortName ?? p.ShortName,
+                Country = chosen?.Country ?? p.Country,
+                City = chosen?.City ?? p.City,
+                WebsiteUrl = p.WebsiteUrl,
+                Address = chosen?.Address ?? p.Address,
+                Description = chosen?.Description ?? p.Description,
+                PartnerType = p.PartnerType,
+                LogoFileId = p.LogoFileId,
+                CoverFileId = p.CoverFileId,
+                PublicSlug = p.PublicSlug,
+            };
         }).ToList();
 
         return new GetPublicPartnersResponse

@@ -22,10 +22,24 @@ public sealed class UpdatePartnerCommand : IRequest<UpdatePartnerResponse>
     public string? Visibility { get; set; }
     public ulong? LogoFileId { get; set; }
     public ulong? CoverFileId { get; set; }
+
+    /// <summary>
+    /// English content as currently shown in the EN panel. Null/omitted when the EN panel was
+    /// never opened during this edit — existing EN content (if any) is then left untouched; if no
+    /// EN translation exists yet either, the backend auto-translates once and stores it.
+    /// </summary>
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public string? EnglishDescription { get; set; }
+    public string? EnglishAddress { get; set; }
 }
 
 public sealed class UpdatePartnerResponse
 {
     public ulong PartnerId { get; set; }
     public string ProfileStatus { get; set; } = string.Empty;
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public string? EnglishDescription { get; set; }
+    public string? EnglishAddress { get; set; }
 }
