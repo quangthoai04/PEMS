@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -5,20 +7,25 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Partners.Common;
-using PEMS.Application.PublicContent.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Faqs;
+using PEMS.Domain.Entities.Partners;
 
 namespace PEMS.Application.PublicContent.Queries.SearchInformation;
 
+/// <summary>
+/// Reads pre-translated VI/EN content straight from <c>news_translations</c> /
+/// <c>partner_translations</c> / <c>faq_translations</c> — never calls a translation API. Each
+/// section is matched and displayed in the requested language, falling back to 'vi' (same
+/// convention as ViewNewsQueryHandler/ViewFaqQueryHandler/GetPublicPartnersQueryHandler).
+/// </summary>
 public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInformationQuery, SearchInformationDto>
 {
     private readonly IApplicationDbContext _db;
-    private readonly IFaqTranslationCache _faqTranslationCache;
 
-    public SearchInformationQueryHandler(IApplicationDbContext db, IFaqTranslationCache faqTranslationCache)
+    public SearchInformationQueryHandler(IApplicationDbContext db)
     {
         _db = db;
-        _faqTranslationCache = faqTranslationCache;
     }
 
     public async Task<SearchInformationDto> Handle(SearchInformationQuery request, CancellationToken cancellationToken)
@@ -33,7 +40,7 @@ public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInform
         var limit = request.Limit;
         var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
             ? NewsConstants.Languages.Default
-            : request.LanguageCode!.Trim();
+            : request.LanguageCode!.Trim().ToLowerInvariant();
 
         // Run sequentially — a single DbContext instance cannot execute concurrent queries.
 
@@ -59,14 +66,46 @@ public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInform
             })
             .ToListAsync(cancellationToken);
 
-        // Partners — APPROVED + PUBLIC only, matched on name/shortName/description.
-        var partners = await _db.Partners
+        // Partners — APPROVED + PUBLIC only, matched/displayed on the requested language's
+        // translated content (falls back to 'vi' then the legacy columns on `partners`).
+        var candidatePartners = await _db.Partners
             .AsNoTracking()
             .Where(p => p.ProfileStatus == PartnerProfileStatuses.Approved
                         && p.Visibility == PartnerVisibilities.Public)
-            .Where(p => EF.Functions.Like(p.Name, pattern)
-                        || (p.ShortName != null && EF.Functions.Like(p.ShortName, pattern))
-                        || (p.Description != null && EF.Functions.Like(p.Description, pattern)))
+            .Select(p => new { p.PartnerId, p.Name, p.ShortName, p.Description, p.Country, p.PublicSlug })
+            .ToListAsync(cancellationToken);
+
+        var partnerIds = candidatePartners.Select(p => p.PartnerId).ToList();
+        var partnerTranslations = partnerIds.Count == 0
+            ? new List<PartnerTranslation>()
+            : await _db.PartnerTranslations
+                .AsNoTracking()
+                .Where(t => partnerIds.Contains(t.PartnerId) && (t.LanguageCode == requestedLang || t.LanguageCode == "vi"))
+                .ToListAsync(cancellationToken);
+        var partnerTranslationsByPartnerId = partnerTranslations
+            .GroupBy(t => t.PartnerId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var partners = candidatePartners
+            .Select(p =>
+            {
+                var trs = partnerTranslationsByPartnerId.GetValueOrDefault(p.PartnerId);
+                var chosen = trs?.FirstOrDefault(t => t.LanguageCode == requestedLang)
+                           ?? trs?.FirstOrDefault(t => t.LanguageCode == "vi");
+                return new
+                {
+                    p.PartnerId,
+                    Name = chosen?.Name ?? p.Name,
+                    ShortName = chosen?.ShortName ?? p.ShortName,
+                    Description = chosen?.Description ?? p.Description,
+                    Country = chosen?.Country ?? p.Country,
+                    p.PublicSlug,
+                };
+            })
+            .Where(p =>
+                p.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                (p.ShortName is not null && p.ShortName.Contains(keyword, StringComparison.OrdinalIgnoreCase)) ||
+                (p.Description is not null && p.Description.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
             .OrderBy(p => p.Name)
             .Take(limit)
             .Select(p => new SearchPartnerResultDto
@@ -76,35 +115,52 @@ public sealed class SearchInformationQueryHandler : IRequestHandler<SearchInform
                 Country = p.Country,
                 PublicSlug = p.PublicSlug,
             })
-            .ToListAsync(cancellationToken);
+            .ToList();
 
-        // FAQs — PUBLISHED only, matched on question/answer (same contract as ViewFaqQueryHandler).
-        // Question text (and type label) prefer the requested language, translated + cached —
-        // faqs.question/answer are Vietnamese-only in the DB by design.
-        var rawFaqs = await _db.Faqs
+        // FAQs — PUBLISHED only, matched/displayed on the requested language's translated content
+        // (falls back to 'vi' then the legacy columns on `faqs`).
+        var candidateFaqs = await _db.Faqs
             .AsNoTracking()
             .Where(f => f.Status == FaqConstants.Status.Published)
-            .Where(f => EF.Functions.Like(f.Question, pattern) || EF.Functions.Like(f.Answer, pattern))
-            .OrderBy(f => f.DisplayOrder)
-            .Take(limit)
-            .Select(f => new { f.FaqId, f.FaqType, f.Question, f.Answer, f.UpdatedAt })
+            .Select(f => new { f.FaqId, f.FaqType, f.Question, f.Answer, f.DisplayOrder })
             .ToListAsync(cancellationToken);
 
-        var faqTranslations = await _faqTranslationCache.TranslateAsync(
-            rawFaqs.Select(f => new FaqTranslationSource(f.FaqId, f.Question, f.Answer, f.UpdatedAt)).ToList(),
-            requestedLang,
-            cancellationToken);
+        var faqIds = candidateFaqs.Select(f => f.FaqId).ToList();
+        var faqTranslations = faqIds.Count == 0
+            ? new List<FaqTranslation>()
+            : await _db.FaqTranslations
+                .AsNoTracking()
+                .Where(t => faqIds.Contains(t.FaqId) && (t.LanguageCode == requestedLang || t.LanguageCode == "vi"))
+                .ToListAsync(cancellationToken);
+        var faqTranslationsByFaqId = faqTranslations
+            .GroupBy(t => t.FaqId)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-        var faqs = rawFaqs
+        var faqs = candidateFaqs
             .Select(f =>
             {
-                faqTranslations.TryGetValue(f.FaqId, out var translated);
-                return new SearchFaqResultDto
+                var trs = faqTranslationsByFaqId.GetValueOrDefault(f.FaqId);
+                var chosen = trs?.FirstOrDefault(t => t.LanguageCode == requestedLang)
+                           ?? trs?.FirstOrDefault(t => t.LanguageCode == "vi");
+                return new
                 {
-                    FaqId = f.FaqId,
-                    Question = translated.Question ?? f.Question,
-                    FaqTypeLabel = FaqConstants.ToTypeLabel(f.FaqType, requestedLang),
+                    f.FaqId,
+                    f.FaqType,
+                    Question = chosen?.Question ?? f.Question,
+                    Answer = chosen?.Answer ?? f.Answer,
+                    f.DisplayOrder,
                 };
+            })
+            .Where(f =>
+                f.Question.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                f.Answer.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f.DisplayOrder)
+            .Take(limit)
+            .Select(f => new SearchFaqResultDto
+            {
+                FaqId = f.FaqId,
+                Question = f.Question,
+                FaqTypeLabel = FaqConstants.ToTypeLabel(f.FaqType, requestedLang),
             })
             .ToList();
 

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
+using PEMS.Application.News.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.News;
 using PEMS.Domain.Entities.Notifications;
@@ -21,17 +22,20 @@ public sealed class CreateNewsCommandHandler
     private readonly IApplicationDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly INewsTranslationService _translator;
     private readonly ILogger<CreateNewsCommandHandler> _logger;
 
     public CreateNewsCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentUserService currentUser,
         IHtmlSanitizerService sanitizer,
+        INewsTranslationService translator,
         ILogger<CreateNewsCommandHandler> logger)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _sanitizer = sanitizer;
+        _translator = translator;
         _logger = logger;
     }
 
@@ -208,8 +212,12 @@ public sealed class CreateNewsCommandHandler
             await CreateTranslationAsync(
                 news.NewsId, "vi", sanitizedTitle, sanitizedSummary, request.ContentSections, now, cancellationToken);
 
-            // Step 10b-12b: Optional English translation, created atomically in the same
-            // transaction so the post never ends up English-less due to a partial failure.
+            // Step 10b-12b: English translation, created atomically in the same transaction so the
+            // post never ends up English-less due to a partial failure. Content supplied by the
+            // author (EN panel was opened — machine-translated preview or hand-edited) wins as-is.
+            // Otherwise the backend translates the Vietnamese content once, right now, so a post
+            // is never left English-less just because the EN panel was never opened (same "auto-
+            // translate exactly once at save time" rule FAQ/Partner follow).
             if (request.EnglishContentSections is { Count: > 0 })
             {
                 var sanitizedEnglishTitle = _sanitizer.Sanitize((request.EnglishTitle ?? string.Empty).Trim());
@@ -221,6 +229,47 @@ public sealed class CreateNewsCommandHandler
                 await CreateTranslationAsync(
                     news.NewsId, "en", sanitizedEnglishTitle, sanitizedEnglishSummary,
                     request.EnglishContentSections, now, cancellationToken);
+            }
+            else
+            {
+                var orderedSections = request.ContentSections.OrderBy(s => s.SectionOrder).ToList();
+
+                var plainInputs = new List<string> { sanitizedTitle, sanitizedSummary };
+                plainInputs.AddRange(orderedSections.Select(s => s.SectionTitle));
+                var htmlInputs = orderedSections.Select(s => s.SectionBodyHtml).ToList();
+
+                var plainResults = await _translator.TranslateTextAsync(
+                    plainInputs, NewsConstants.Languages.Default, "en", cancellationToken);
+                var htmlResults = await _translator.TranslateHtmlAsync(
+                    htmlInputs, NewsConstants.Languages.Default, "en", cancellationToken);
+
+                var translatedTitle = _sanitizer.Sanitize(plainResults[0]).Trim();
+                var translatedSummary = _sanitizer.Sanitize(plainResults[1]).Trim();
+
+                var translatedSections = new List<CreateNewsContentSectionDto>(orderedSections.Count);
+                for (var i = 0; i < orderedSections.Count; i++)
+                {
+                    translatedSections.Add(new CreateNewsContentSectionDto
+                    {
+                        SectionOrder = orderedSections[i].SectionOrder,
+                        SectionTitle = _sanitizer.Sanitize(plainResults[2 + i]).Trim(),
+                        SectionBodyHtml = _sanitizer.Sanitize(htmlResults[i]),
+                        SectionFiles = orderedSections[i].SectionFiles,
+                    });
+                }
+
+                if (!string.IsNullOrWhiteSpace(translatedTitle))
+                {
+                    await CreateTranslationAsync(
+                        news.NewsId, "en", translatedTitle, translatedSummary,
+                        translatedSections, now, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Auto-translate returned an empty title for news {NewsId}; post was created without an English translation.",
+                        news.NewsId);
+                }
             }
 
             // Step 13: Notify Staff Leaders of the same campus
