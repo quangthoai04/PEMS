@@ -69,6 +69,13 @@
       "vietnamese": "Tiếng Việt",
       "english": "English"
     },
+    "campusDescriptions": {
+      "hn": "FPT University Hanoi is located in the Hoa Lac Hi-Tech Park. Modern architecture, green spaces, and advanced facilities provide an optimal learning environment.",
+      "hcm": "FPT University Ho Chi Minh City offers a vibrant academic environment with modern technology and a dynamic student community.",
+      "dn": "Located in FPT City Da Nang, a modern learning environment in harmony with nature.",
+      "ct": "FPT University Can Tho — a hub of technology and education in the Mekong Delta region.",
+      "qn": "FPT University Quy Nhon focuses on AI and mathematics, built in a beautiful coastal city."
+    },
     "errors": {
       "narrationFailed": "Unable to play the recording.",
       "contentHidden": "This content is no longer displayed.",

@@ -1884,7 +1884,7 @@ export function CampusDetailVisitPage() {
             transition={{ duration: 1, delay: 0.8 }}
             className="mt-6 text-lg sm:text-xl text-gray-200 font-light max-w-2xl text-center leading-relaxed drop-shadow-md"
           >
-            {fallback.description}
+            {t(`visitFptu:gallery.campusDescriptions.${routeId}`, { defaultValue: fallback.description })}
           </motion.p>
 
           <motion.div
