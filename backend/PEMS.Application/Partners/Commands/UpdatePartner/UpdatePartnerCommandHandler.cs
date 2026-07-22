@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
@@ -26,19 +27,22 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
     private readonly IDateTimeService _clock;
     private readonly INewsTranslationService _translator;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly ILogger<UpdatePartnerCommandHandler> _logger;
 
     public UpdatePartnerCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IDateTimeService clock,
         INewsTranslationService translator,
-        IHtmlSanitizerService sanitizer)
+        IHtmlSanitizerService sanitizer,
+        ILogger<UpdatePartnerCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _translator = translator;
         _sanitizer = sanitizer;
+        _logger = logger;
     }
 
     public async Task<UpdatePartnerResponse> Handle(UpdatePartnerCommand request, CancellationToken cancellationToken)
@@ -204,7 +208,10 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
 
         var enTranslation = translations.FirstOrDefault(t => t.LanguageCode == "en");
 
-        string englishNameOut;
+        // Null means "translation unavailable this save" (auto-translate attempt failed) — the EN
+        // row is then simply left as it was (or absent); public reads already fall back requested
+        // language → vi, and the admin can translate later via the EN panel.
+        string? englishNameOut;
         string? englishShortNameOut;
         string? englishDescriptionOut;
         string? englishAddressOut;
@@ -256,37 +263,51 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
         }
         else if (enTranslation is null)
         {
-            // EN panel was never opened for this partner — auto-translate once now so the profile
-            // is never left English-less, same "translate exactly once at save time" rule as create.
-            var translated = await _translator.TranslateTextAsync(
-                new List<string> { name, shortName ?? string.Empty, descriptionVal ?? string.Empty, addressVal ?? string.Empty },
-                NewsConstants.Languages.Default, "en", cancellationToken);
-            englishNameOut = _sanitizer.Sanitize(translated[0]).Trim();
-            if (string.IsNullOrWhiteSpace(englishNameOut)) englishNameOut = name;
-            var t1 = _sanitizer.Sanitize(translated[1]).Trim();
-            var t2 = _sanitizer.Sanitize(translated[2]).Trim();
-            var t3 = _sanitizer.Sanitize(translated[3]).Trim();
-            englishShortNameOut = string.IsNullOrWhiteSpace(t1) ? null : t1;
-            englishDescriptionOut = string.IsNullOrWhiteSpace(t2) ? null : t2;
-            englishAddressOut = string.IsNullOrWhiteSpace(t3) ? null : t3;
-
-            _db.PartnerTranslations.Add(new PartnerTranslation
+            // EN panel was never opened for this partner — best-effort auto-translate once so the
+            // profile isn't left English-less. A translation-provider hiccup (quota, HTTP 400,
+            // config) must never block the update itself, so failures are logged and skipped.
+            try
             {
-                PartnerId = partner.PartnerId,
-                LanguageCode = "en",
-                Name = englishNameOut,
-                ShortName = englishShortNameOut,
-                Country = countryVal,
-                City = cityVal,
-                Description = englishDescriptionOut,
-                Address = englishAddressOut,
-                TranslationSource = "AUTO",
-                TranslationStatus = "READY",
-                SourceHash = sourceHash,
-                TranslatedAt = now,
-                CreatedAt = now,
-                CreatedBy = _currentUser.UserId,
-            });
+                var translated = await _translator.TranslateTextAsync(
+                    new List<string> { name, shortName ?? string.Empty, descriptionVal ?? string.Empty, addressVal ?? string.Empty },
+                    NewsConstants.Languages.Default, "en", cancellationToken);
+                var t0 = _sanitizer.Sanitize(translated[0]).Trim();
+                var t1 = _sanitizer.Sanitize(translated[1]).Trim();
+                var t2 = _sanitizer.Sanitize(translated[2]).Trim();
+                var t3 = _sanitizer.Sanitize(translated[3]).Trim();
+                englishNameOut = string.IsNullOrWhiteSpace(t0) ? name : t0;
+                englishShortNameOut = string.IsNullOrWhiteSpace(t1) ? null : t1;
+                englishDescriptionOut = string.IsNullOrWhiteSpace(t2) ? null : t2;
+                englishAddressOut = string.IsNullOrWhiteSpace(t3) ? null : t3;
+
+                _db.PartnerTranslations.Add(new PartnerTranslation
+                {
+                    PartnerId = partner.PartnerId,
+                    LanguageCode = "en",
+                    Name = englishNameOut,
+                    ShortName = englishShortNameOut,
+                    Country = countryVal,
+                    City = cityVal,
+                    Description = englishDescriptionOut,
+                    Address = englishAddressOut,
+                    TranslationSource = "AUTO",
+                    TranslationStatus = "READY",
+                    SourceHash = sourceHash,
+                    TranslatedAt = now,
+                    CreatedAt = now,
+                    CreatedBy = _currentUser.UserId,
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Auto-translate to English failed for partner {PartnerId}; leaving it Vietnamese-only for now.",
+                    partner.PartnerId);
+                englishNameOut = null;
+                englishShortNameOut = null;
+                englishDescriptionOut = null;
+                englishAddressOut = null;
+            }
         }
         else
         {

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
@@ -18,17 +19,20 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
     private readonly ICurrentUserService _currentUser;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly INewsTranslationService _translator;
+    private readonly ILogger<UpdateFAQCommandHandler> _logger;
 
     public UpdateFAQCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentUserService currentUser,
         IHtmlSanitizerService sanitizer,
-        INewsTranslationService translator)
+        INewsTranslationService translator,
+        ILogger<UpdateFAQCommandHandler> logger)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _sanitizer = sanitizer;
         _translator = translator;
+        _logger = logger;
     }
 
     public async Task<UpdateFAQResponse> Handle(UpdateFAQCommand request, CancellationToken cancellationToken)
@@ -122,8 +126,11 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
 
             var enTranslation = translations.FirstOrDefault(t => t.LanguageCode == "en");
 
-            string englishQuestionOut;
-            string englishAnswerOut;
+            // Null means "translation unavailable this save" (auto-translate attempt failed) — the
+            // EN row is then left as it was (or absent); public reads already fall back requested
+            // language → vi, and the admin can translate later via the EN panel.
+            string? englishQuestionOut;
+            string? englishAnswerOut;
 
             if (englishProvided)
             {
@@ -162,28 +169,40 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
             }
             else if (enTranslation is null)
             {
-                // EN panel was never opened for this FAQ — auto-translate once now so the FAQ is
-                // never left English-less, same "translate exactly once at save time" rule as create.
-                englishChanged = true;
-                var translated = await _translator.TranslateTextAsync(
-                    new List<string> { sanitizedQuestion, sanitizedAnswer },
-                    NewsConstants.Languages.Default, "en", cancellationToken);
-                englishQuestionOut = _sanitizer.Sanitize(translated[0]).Trim();
-                englishAnswerOut = _sanitizer.Sanitize(translated[1]).Trim();
-
-                _dbContext.FaqTranslations.Add(new FaqTranslation
+                // EN panel was never opened for this FAQ — best-effort auto-translate once so the
+                // FAQ isn't left English-less. A translation-provider hiccup (quota, HTTP 400,
+                // config) must never block the update itself, so failures are logged and skipped.
+                try
                 {
-                    FaqId = faq.FaqId,
-                    LanguageCode = "en",
-                    Question = englishQuestionOut,
-                    Answer = englishAnswerOut,
-                    TranslationSource = "AUTO",
-                    TranslationStatus = "READY",
-                    SourceHash = sourceHash,
-                    TranslatedAt = now,
-                    CreatedAt = now,
-                    CreatedBy = _currentUser.UserId,
-                });
+                    var translated = await _translator.TranslateTextAsync(
+                        new List<string> { sanitizedQuestion, sanitizedAnswer },
+                        NewsConstants.Languages.Default, "en", cancellationToken);
+                    englishQuestionOut = _sanitizer.Sanitize(translated[0]).Trim();
+                    englishAnswerOut = _sanitizer.Sanitize(translated[1]).Trim();
+                    englishChanged = true;
+
+                    _dbContext.FaqTranslations.Add(new FaqTranslation
+                    {
+                        FaqId = faq.FaqId,
+                        LanguageCode = "en",
+                        Question = englishQuestionOut,
+                        Answer = englishAnswerOut,
+                        TranslationSource = "AUTO",
+                        TranslationStatus = "READY",
+                        SourceHash = sourceHash,
+                        TranslatedAt = now,
+                        CreatedAt = now,
+                        CreatedBy = _currentUser.UserId,
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Auto-translate to English failed for FAQ {FaqId}; leaving it Vietnamese-only for now.",
+                        faq.FaqId);
+                    englishQuestionOut = null;
+                    englishAnswerOut = null;
+                }
             }
             else
             {

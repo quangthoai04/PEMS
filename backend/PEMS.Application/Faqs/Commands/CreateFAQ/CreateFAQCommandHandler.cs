@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
@@ -18,17 +19,20 @@ public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, 
     private readonly ICurrentUserService _currentUser;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly INewsTranslationService _translator;
+    private readonly ILogger<CreateFAQCommandHandler> _logger;
 
     public CreateFAQCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentUserService currentUser,
         IHtmlSanitizerService sanitizer,
-        INewsTranslationService translator)
+        INewsTranslationService translator,
+        ILogger<CreateFAQCommandHandler> logger)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _sanitizer = sanitizer;
         _translator = translator;
+        _logger = logger;
     }
 
     public async Task<CreateFAQResponse> Handle(CreateFAQCommand request, CancellationToken cancellationToken)
@@ -67,9 +71,12 @@ public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, 
         var englishProvided = !string.IsNullOrWhiteSpace(providedEnglishQuestion)
                             && !string.IsNullOrWhiteSpace(providedEnglishAnswer);
 
-        string englishQuestion;
-        string englishAnswer;
-        string englishSource;
+        // Null means "translation unavailable" (auto-translate attempt failed) — the EN row is then
+        // simply not created; public reads already fall back requested language → vi, and the
+        // admin can translate later via the EN panel.
+        string? englishQuestion;
+        string? englishAnswer;
+        string englishSource = "AUTO";
         if (englishProvided)
         {
             englishQuestion = providedEnglishQuestion;
@@ -78,12 +85,24 @@ public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, 
         }
         else
         {
-            var translated = await _translator.TranslateTextAsync(
-                new List<string> { sanitizedQuestion, sanitizedAnswer },
-                NewsConstants.Languages.Default, "en", cancellationToken);
-            englishQuestion = _sanitizer.Sanitize(translated[0]).Trim();
-            englishAnswer = _sanitizer.Sanitize(translated[1]).Trim();
-            englishSource = "AUTO";
+            // Best-effort only: a translation-provider hiccup (quota, HTTP 400, config) must never
+            // block creating the FAQ itself.
+            try
+            {
+                var translated = await _translator.TranslateTextAsync(
+                    new List<string> { sanitizedQuestion, sanitizedAnswer },
+                    NewsConstants.Languages.Default, "en", cancellationToken);
+                englishQuestion = _sanitizer.Sanitize(translated[0]).Trim();
+                englishAnswer = _sanitizer.Sanitize(translated[1]).Trim();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Auto-translate to English failed for FAQ \"{Question}\"; saving Vietnamese-only for now.",
+                    sanitizedQuestion);
+                englishQuestion = null;
+                englishAnswer = null;
+            }
         }
 
         var now = VietnamTime.Now();
@@ -120,19 +139,22 @@ public sealed class CreateFAQCommandHandler : IRequestHandler<CreateFAQCommand, 
                 CreatedBy = _currentUser.UserId,
             });
 
-            _dbContext.FaqTranslations.Add(new FaqTranslation
+            if (englishQuestion is not null && englishAnswer is not null)
             {
-                FaqId = faq.FaqId,
-                LanguageCode = "en",
-                Question = englishQuestion,
-                Answer = englishAnswer,
-                TranslationSource = englishSource,
-                TranslationStatus = "READY",
-                SourceHash = sourceHash,
-                TranslatedAt = now,
-                CreatedAt = now,
-                CreatedBy = _currentUser.UserId,
-            });
+                _dbContext.FaqTranslations.Add(new FaqTranslation
+                {
+                    FaqId = faq.FaqId,
+                    LanguageCode = "en",
+                    Question = englishQuestion,
+                    Answer = englishAnswer,
+                    TranslationSource = englishSource,
+                    TranslationStatus = "READY",
+                    SourceHash = sourceHash,
+                    TranslatedAt = now,
+                    CreatedAt = now,
+                    CreatedBy = _currentUser.UserId,
+                });
+            }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

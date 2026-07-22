@@ -232,42 +232,54 @@ public sealed class CreateNewsCommandHandler
             }
             else
             {
-                var orderedSections = request.ContentSections.OrderBy(s => s.SectionOrder).ToList();
-
-                var plainInputs = new List<string> { sanitizedTitle, sanitizedSummary };
-                plainInputs.AddRange(orderedSections.Select(s => s.SectionTitle));
-                var htmlInputs = orderedSections.Select(s => s.SectionBodyHtml).ToList();
-
-                var plainResults = await _translator.TranslateTextAsync(
-                    plainInputs, NewsConstants.Languages.Default, "en", cancellationToken);
-                var htmlResults = await _translator.TranslateHtmlAsync(
-                    htmlInputs, NewsConstants.Languages.Default, "en", cancellationToken);
-
-                var translatedTitle = _sanitizer.Sanitize(plainResults[0]).Trim();
-                var translatedSummary = _sanitizer.Sanitize(plainResults[1]).Trim();
-
-                var translatedSections = new List<CreateNewsContentSectionDto>(orderedSections.Count);
-                for (var i = 0; i < orderedSections.Count; i++)
+                // Best-effort only: a translation-provider hiccup (quota, HTTP 400, config) must
+                // never block creating the post itself — it is simply saved Vietnamese-only, same
+                // rule as FAQ/Partner.
+                try
                 {
-                    translatedSections.Add(new CreateNewsContentSectionDto
+                    var orderedSections = request.ContentSections.OrderBy(s => s.SectionOrder).ToList();
+
+                    var plainInputs = new List<string> { sanitizedTitle, sanitizedSummary };
+                    plainInputs.AddRange(orderedSections.Select(s => s.SectionTitle));
+                    var htmlInputs = orderedSections.Select(s => s.SectionBodyHtml).ToList();
+
+                    var plainResults = await _translator.TranslateTextAsync(
+                        plainInputs, NewsConstants.Languages.Default, "en", cancellationToken);
+                    var htmlResults = await _translator.TranslateHtmlAsync(
+                        htmlInputs, NewsConstants.Languages.Default, "en", cancellationToken);
+
+                    var translatedTitle = _sanitizer.Sanitize(plainResults[0]).Trim();
+                    var translatedSummary = _sanitizer.Sanitize(plainResults[1]).Trim();
+
+                    var translatedSections = new List<CreateNewsContentSectionDto>(orderedSections.Count);
+                    for (var i = 0; i < orderedSections.Count; i++)
                     {
-                        SectionOrder = orderedSections[i].SectionOrder,
-                        SectionTitle = _sanitizer.Sanitize(plainResults[2 + i]).Trim(),
-                        SectionBodyHtml = _sanitizer.Sanitize(htmlResults[i]),
-                        SectionFiles = orderedSections[i].SectionFiles,
-                    });
-                }
+                        translatedSections.Add(new CreateNewsContentSectionDto
+                        {
+                            SectionOrder = orderedSections[i].SectionOrder,
+                            SectionTitle = _sanitizer.Sanitize(plainResults[2 + i]).Trim(),
+                            SectionBodyHtml = _sanitizer.Sanitize(htmlResults[i]),
+                            SectionFiles = orderedSections[i].SectionFiles,
+                        });
+                    }
 
-                if (!string.IsNullOrWhiteSpace(translatedTitle))
-                {
-                    await CreateTranslationAsync(
-                        news.NewsId, "en", translatedTitle, translatedSummary,
-                        translatedSections, now, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(translatedTitle))
+                    {
+                        await CreateTranslationAsync(
+                            news.NewsId, "en", translatedTitle, translatedSummary,
+                            translatedSections, now, cancellationToken);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Auto-translate returned an empty title for news {NewsId}; post was created without an English translation.",
+                            news.NewsId);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _logger.LogWarning(
-                        "Auto-translate returned an empty title for news {NewsId}; post was created without an English translation.",
+                    _logger.LogWarning(ex,
+                        "Auto-translate to English failed for news {NewsId}; post was created Vietnamese-only for now.",
                         news.NewsId);
                 }
             }
