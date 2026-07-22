@@ -10,6 +10,7 @@ public static class ApiIntegrationMapper
     {
         BusinessCardOcrConstants.Purpose,
         NewsTranslationConstants.Purpose,
+        FaceDetectionConstants.Purpose,
     };
 
     public static ApiIntegrationDto ToDto(ApiConfiguration config, ICurrentUserService? currentUser = null)

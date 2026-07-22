@@ -13,6 +13,9 @@ public sealed class FaceDetectionProviderSettings
     [JsonPropertyName("project_id")]
     public string ProjectId { get; set; } = string.Empty;
 
+    [JsonPropertyName("location")]
+    public string Location { get; set; } = "us";
+
     [JsonPropertyName("feature_type")]
     public string FeatureType { get; set; } = "FACE_DETECTION";
 
@@ -46,6 +49,8 @@ public sealed class FaceDetectionProviderSettings
             return new FaceDetectionProviderSettings();
         }
     }
+
+    public string ToJson() => JsonSerializer.Serialize(this, Options);
 }
 
 /// <summary>

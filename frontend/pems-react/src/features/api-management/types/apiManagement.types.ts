@@ -60,6 +60,18 @@ export interface UpsertGoogleTranslationConfigRequest {
   timeoutSeconds: number;
 }
 
+export interface UpsertGoogleVisionFaceDetectionConfigRequest {
+  name: string;
+  projectId: string;
+  location: string;
+  endpoint: string;
+  serviceAccountJson?: string | null;
+  secretRef?: string | null;
+  rateLimitPerMinute: number;
+  monthlyQuota: number;
+  timeoutSeconds: number;
+}
+
 export interface ApiConnectionTestResult {
   success: boolean;
   message: string;

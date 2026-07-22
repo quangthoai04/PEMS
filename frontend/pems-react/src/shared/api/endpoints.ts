@@ -121,6 +121,7 @@ export const API_ENDPOINTS = {
     detail: (id: string | number) => `/api-integrations/${id}`,
     upsertGoogleDocumentAi: '/api-integrations/business-card-ocr/google-document-ai',
     upsertGoogleTranslation: '/api-integrations/news-translation/google-cloud-translation',
+    upsertGoogleVisionFaceDetection: '/api-integrations/face-detection/google-cloud-vision',
     update: (id: string | number) => `/api-integrations/${id}`,
     test: (id: string | number) => `/api-integrations/${id}/test`,
     enable: (id: string | number) => `/api-integrations/${id}/enable`,
