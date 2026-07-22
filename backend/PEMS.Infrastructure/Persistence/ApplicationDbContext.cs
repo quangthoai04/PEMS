@@ -44,6 +44,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     // ── Partners ──────────────────────────────────────────────────────────
     public DbSet<Partner> Partners { get; set; }
+    public DbSet<PartnerTranslation> PartnerTranslations { get; set; }
     public DbSet<PartnerContact> PartnerContacts { get; set; }
     public DbSet<PartnerAlias> PartnerAliases { get; set; }
     public DbSet<VisitGuestPartnerLink> VisitGuestPartnerLinks { get; set; }
@@ -100,6 +101,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     // ── FAQs ──────────────────────────────────────────────────────────────
     // NOTE: no public_contents table in SQL v8.3 — public pages read from news/faqs/galleries/partners.
     public DbSet<Faq> Faqs { get; set; }
+    public DbSet<FaqTranslation> FaqTranslations { get; set; }
 
     // ── Gallery ───────────────────────────────────────────────────────────
     public DbSet<GalleryArea> GalleryAreas { get; set; }

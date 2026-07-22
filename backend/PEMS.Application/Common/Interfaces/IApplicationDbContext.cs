@@ -31,6 +31,7 @@ public interface IApplicationDbContext
     DbSet<LoginLog> LoginLogs { get; }
     DbSet<SecurityEvent> SecurityEvents { get; }
     DbSet<Partner> Partners { get; }
+    DbSet<PartnerTranslation> PartnerTranslations { get; }
     DbSet<PartnerContact> PartnerContacts { get; }
     DbSet<PartnerAlias> PartnerAliases { get; }
     DbSet<VisitGuestPartnerLink> VisitGuestPartnerLinks { get; }
@@ -74,6 +75,7 @@ public interface IApplicationDbContext
     DbSet<NewsContentSection> NewsContentSections { get; }
     DbSet<NewsSectionFile> NewsSectionFiles { get; }
     DbSet<Faq> Faqs { get; }
+    DbSet<FaqTranslation> FaqTranslations { get; }
     DbSet<GalleryArea> GalleryAreas { get; }
     DbSet<GalleryLocation> GalleryLocations { get; }
     DbSet<GalleryItem> GalleryItems { get; }
