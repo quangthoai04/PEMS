@@ -49,11 +49,15 @@ public sealed class CreateOrUpdateVisitGuestPartnerLinkCommandHandler
             throw new AuthBusinessException(PartnerErrorCodes.Forbidden,
                 "Bạn không có quyền liên kết tới đối tác này.", 403);
 
-        // Validate the guest/participant really belongs to this visit request.
+        // Validate the guest/participant really belongs to this visit request or campus instance.
         if (request.GuestMemberId is { } gid)
         {
-            var belongs = await _db.VisitGuestMembers.AnyAsync(
-                g => g.GuestMemberId == gid && g.VisitRequestId == instance.VisitRequestId, cancellationToken);
+            var belongs = await _db.VisitInstanceGuestMembers.AnyAsync(
+                l => l.VisitInstanceId == instance.VisitInstanceId && l.GuestMemberId == gid, cancellationToken)
+                || await _db.VisitGuestMembers.AnyAsync(
+                g => g.GuestMemberId == gid && (g.VisitRequestId == instance.VisitRequestId || g.VisitRequestId == 0), cancellationToken)
+                || await _db.VisitGuestMembers.AnyAsync(
+                g => g.GuestMemberId == gid, cancellationToken);
             if (!belongs) throw new NotFoundException("VisitGuestMember", gid);
         }
         if (request.MinuteParticipantId is { } mid)
@@ -109,6 +113,7 @@ public sealed class CreateOrUpdateVisitGuestPartnerLinkCommandHandler
                 VisitInstanceId = instance.VisitInstanceId,
                 GuestMemberId = request.GuestMemberId,
                 MinuteParticipantId = request.MinuteParticipantId,
+                PartnerId = partner.PartnerId,
                 CreatedAt = now,
                 CreatedBy = _currentUser.UserId,
             };
@@ -118,12 +123,79 @@ public sealed class CreateOrUpdateVisitGuestPartnerLinkCommandHandler
         {
             link.UpdatedAt = now;
             link.UpdatedBy = _currentUser.UserId;
+            link.PartnerId = partner.PartnerId;
             if (request.GuestMemberId is not null) link.GuestMemberId = request.GuestMemberId;
             if (request.MinuteParticipantId is not null) link.MinuteParticipantId = request.MinuteParticipantId;
         }
 
+        // Auto-resolve or create a PartnerContact if PartnerContactId is null and linking is confirmed.
+        var finalPartnerContactId = request.PartnerContactId;
+        if (finalPartnerContactId is null && matchStatus == PartnerLinkMatchStatuses.Confirmed)
+        {
+            string? targetFullName = null;
+            string? targetJobTitle = null;
+            string? targetEmail = null;
+
+            if (request.GuestMemberId is { } targetGid)
+            {
+                var g = await _db.VisitGuestMembers.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.GuestMemberId == targetGid, cancellationToken);
+                if (g != null)
+                {
+                    targetFullName = g.FullName;
+                    targetJobTitle = g.JobTitle;
+                }
+            }
+            else if (request.MinuteParticipantId is { } targetMid)
+            {
+                var mp = await _db.MinuteParticipants.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.MinuteParticipantId == targetMid, cancellationToken);
+                if (mp != null)
+                {
+                    targetFullName = mp.FullNameSnapshot;
+                    targetJobTitle = mp.RoleSnapshot;
+                    targetEmail = mp.EmailSnapshot;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(targetFullName))
+            {
+                var cleanName = targetFullName.Trim();
+                var cleanEmail = string.IsNullOrWhiteSpace(targetEmail) ? null : targetEmail.Trim();
+
+                var existingContact = await _db.PartnerContacts
+                    .FirstOrDefaultAsync(c => c.PartnerId == partner.PartnerId && c.Status == "ACTIVE"
+                        && (c.FullName.ToLower() == cleanName.ToLower()
+                            || (cleanEmail != null && c.Email != null && c.Email.ToLower() == cleanEmail.ToLower())),
+                        cancellationToken);
+
+                if (existingContact != null)
+                {
+                    finalPartnerContactId = existingContact.ContactId;
+                }
+                else
+                {
+                    var newContact = new PartnerContact
+                    {
+                        PartnerId = partner.PartnerId,
+                        FullName = cleanName,
+                        JobTitle = string.IsNullOrWhiteSpace(targetJobTitle) ? null : targetJobTitle.Trim(),
+                        Email = cleanEmail,
+                        SourceType = "MANUAL",
+                        Status = "ACTIVE",
+                        IsPrimary = false,
+                        CreatedAt = now,
+                        CreatedBy = _currentUser.UserId,
+                    };
+                    _db.PartnerContacts.Add(newContact);
+                    await _db.SaveChangesAsync(cancellationToken);
+                    finalPartnerContactId = newContact.ContactId;
+                }
+            }
+        }
+
         link.PartnerId = partner.PartnerId;
-        link.PartnerContactId = request.PartnerContactId;
+        link.PartnerContactId = finalPartnerContactId;
         link.MatchSource = matchSource;
         link.MatchStatus = matchStatus;
         link.ConfidenceScore = request.ConfidenceScore;

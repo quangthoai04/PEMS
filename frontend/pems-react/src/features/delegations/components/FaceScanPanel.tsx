@@ -9,11 +9,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
+import toast from 'react-hot-toast';
 import {
   Image as ImageIcon, Sparkles, User, Tag, CheckCircle2, Search, Check,
-  Minimize2, Loader2, AlertCircle, Upload, FolderOpen, ExternalLink, RefreshCw, X,
+  Minimize2, Loader2, AlertCircle, Upload, FolderOpen, ExternalLink, RefreshCw, X, Crop, Download,
 } from 'lucide-react';
 import { visitPhotosApi } from '../api/visitPhotosApi';
+import { cropFaceToDataUrl } from '../utils/faceCropUtils';
+import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
+import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type {
   ConfirmFaceTagItem, TaggableGuest, VisitPhotoFaceDetection, VisitPhotoFaceScan,
 } from '../types/visitPhotos.types';
@@ -127,6 +131,69 @@ export function FaceScanPanel({
     Object.values(pendingActions).forEach((a) => { if (a.guestMemberId) s.add(a.guestMemberId); });
     return s;
   }, [pendingActions]);
+
+  const [croppedAvatarModal, setCroppedAvatarModal] = useState<{ guestName: string; guestMemberId?: number | null; dataUrl: string } | null>(null);
+  const [updatingAvatar, setUpdatingAvatar] = useState(false);
+
+  const handleCropAvatar = async (detection: VisitPhotoFaceDetection) => {
+    if (!selectedImageUrl) return;
+    try {
+      const dataUrl = await cropFaceToDataUrl(selectedImageUrl, detection);
+      const { name } = resolveDisplayName(detection);
+      let guestMemberId: number | null = detection.guestMemberId ?? null;
+      if (!guestMemberId && pendingActions[detection.faceDetectionId]?.guestMemberId) {
+        guestMemberId = pendingActions[detection.faceDetectionId].guestMemberId;
+      }
+      const guestName = name || 'Khách đối tác';
+      setCroppedAvatarModal({ guestName, guestMemberId, dataUrl });
+    } catch {
+      toast.error('Không thể cắt ảnh avatar từ khuôn mặt này.');
+    }
+  };
+
+  const handleUpdateAvatar = async () => {
+    if (!croppedAvatarModal) return;
+    setUpdatingAvatar(true);
+    const toastId = showLoadingToast('Đang tải lên và cập nhật Avatar...', 'update-avatar');
+    try {
+      const res = await fetch(croppedAvatarModal.dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `avatar_${croppedAvatarModal.guestName.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
+
+      const uploaded = await uploadFileToEndpoint('/files/upload', 'file', file, 'post', { purpose: 'PARTNER_CONTACT_AVATAR' });
+
+      const links = await partnersApi.getVisitPartnerLinks(visitInstanceId);
+      let targetLink = links.find((l) => l.guestMemberId === croppedAvatarModal.guestMemberId);
+      if (!targetLink && croppedAvatarModal.guestName) {
+        targetLink = links.find((l) => l.partnerName && croppedAvatarModal.guestName.toLowerCase().includes(l.partnerName.toLowerCase()));
+      }
+
+      if (targetLink && targetLink.partnerId) {
+        let contactId = targetLink.partnerContactId;
+        if (!contactId) {
+          const contacts = await partnersApi.getContacts(targetLink.partnerId);
+          const matched = contacts.find((c) => c.fullName.toLowerCase() === croppedAvatarModal.guestName.toLowerCase());
+          if (matched) contactId = matched.contactId;
+        }
+
+        if (contactId) {
+          await partnersApi.updateContact(targetLink.partnerId, contactId, {
+            fullName: croppedAvatarModal.guestName,
+            avatarFileId: uploaded.fileId,
+          });
+          updateToastSuccess(toastId, `Đã cập nhật Avatar cho người liên hệ ${croppedAvatarModal.guestName} thành công!`);
+          setCroppedAvatarModal(null);
+          return;
+        }
+      }
+
+      updateToastMessageError(toastId, `Chưa tìm thấy đối tác liên kết với ${croppedAvatarModal.guestName}. Vui lòng liên kết đối tác trước!`);
+    } catch (err: any) {
+      updateToastMessageError(toastId, getApiErrorMessage(err, 'Không thể cập nhật Avatar người liên hệ.'));
+    } finally {
+      setUpdatingAvatar(false);
+    }
+  };
 
   const canConfirm = currentScan?.status === 'SUCCEEDED' && detections.length > 0;
 
@@ -378,8 +445,8 @@ export function FaceScanPanel({
                           >
                             <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 shrink-0">
                               <span className="text-[10px] uppercase font-bold text-gray-500">{t('tag.dropdownTitle')}</span>
-                              <button onClick={() => setActiveFaceId(null)} className="text-gray-400 hover:text-gray-600 p-0.5 hover:bg-gray-100 rounded-full">
-                                <Minimize2 className="w-3 h-3" />
+                              <button onClick={() => setActiveFaceId(null)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors" title="Đóng">
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
 
@@ -484,6 +551,16 @@ export function FaceScanPanel({
                         <span>
                           {t('tag.facePosition', { index: idx + 1 })}: {name || (ignored ? t('tag.ignored') : t('tag.unassigned'))}
                         </span>
+                        {name && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void handleCropAvatar(d); }}
+                            className="p-1 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-100 rounded-md transition-colors ml-1"
+                            title="Cắt khuôn mặt này làm Avatar Người liên hệ đối tác"
+                          >
+                            <Crop className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -690,6 +767,49 @@ export function FaceScanPanel({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Cropped Avatar Modal */}
+      {croppedAvatarModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="font-extrabold text-[#004c91] text-sm flex items-center gap-2">
+                <Crop className="w-4 h-4 text-[#f37021]" /> Ảnh đại diện (Avatar) đối tác
+              </h3>
+              <button onClick={() => setCroppedAvatarModal(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-center space-y-3">
+              <div className="w-32 h-32 rounded-full overflow-hidden mx-auto border-4 border-[#004c91]/20 shadow-md">
+                <img src={croppedAvatarModal.dataUrl} alt={croppedAvatarModal.guestName} className="w-full h-full object-cover" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-800 text-sm">{croppedAvatarModal.guestName}</p>
+                <p className="text-xs text-gray-400 font-medium">Đã tự động trích xuất tỷ lệ 1:1 từ vị trí khuôn mặt</p>
+              </div>
+            </div>
+            <div className="pt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleUpdateAvatar()}
+                disabled={updatingAvatar}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-[#00a651] text-white hover:bg-[#008943] disabled:opacity-50 rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
+              >
+                {updatingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crop className="w-4 h-4" />}
+                Cập nhật Avatar đối tác
+              </button>
+              <button
+                type="button"
+                onClick={() => setCroppedAvatarModal(null)}
+                className="px-3.5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -43,6 +43,7 @@ public sealed class UpdatePartnerContactCommandHandler
         contact.JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim();
         contact.DepartmentName = string.IsNullOrWhiteSpace(request.DepartmentName) ? null : request.DepartmentName.Trim();
         contact.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        if (request.AvatarFileId.HasValue) contact.AvatarFileId = request.AvatarFileId;
         contact.UpdatedAt = now;
         contact.UpdatedBy = _currentUser.UserId;
 
@@ -69,6 +70,8 @@ public sealed class UpdatePartnerContactCommandHandler
             Note = contact.Note,
             SourceType = contact.SourceType,
             ScannedCardFileId = contact.ScannedCardFileId,
+            AvatarFileId = contact.AvatarFileId,
+            AvatarUrl = contact.AvatarFileId.HasValue ? $"/api/files/{contact.AvatarFileId}/content" : null,
             OcrConfidence = contact.OcrConfidence,
             IsPrimary = contact.IsPrimary,
             Status = contact.Status,

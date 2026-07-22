@@ -41,8 +41,7 @@ public sealed class CreatePartnerFromGuestCommandHandler
         if (request.GuestMemberId is { } gid)
         {
             var guest = await _db.VisitGuestMembers.AsNoTracking()
-                .FirstOrDefaultAsync(g => g.GuestMemberId == gid
-                                          && g.VisitRequestId == instance.VisitRequestId, cancellationToken)
+                .FirstOrDefaultAsync(g => g.GuestMemberId == gid, cancellationToken)
                 ?? throw new NotFoundException("VisitGuestMember", gid);
             organization = guest.Organization;
             contactName = guest.FullName;

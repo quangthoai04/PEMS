@@ -82,6 +82,8 @@ public sealed class PartnerContactDto
     public string? Note { get; set; }
     public string SourceType { get; set; } = "MANUAL";
     public ulong? ScannedCardFileId { get; set; }
+    public ulong? AvatarFileId { get; set; }
+    public string? AvatarUrl { get; set; }
     public decimal? OcrConfidence { get; set; }
     public bool IsPrimary { get; set; }
     public string Status { get; set; } = "ACTIVE";

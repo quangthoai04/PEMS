@@ -864,6 +864,7 @@ CREATE TABLE partner_contacts (
   department_name VARCHAR(150) NULL,
   source_type ENUM('MANUAL','BUSINESS_CARD_OCR','IMPORT') NOT NULL DEFAULT 'MANUAL',
   scanned_card_file_id BIGINT UNSIGNED NULL,
+  avatar_file_id BIGINT UNSIGNED NULL,
   ocr_confidence DECIMAL(5,2) NULL,
   note TEXT NULL,
   is_primary BOOLEAN NOT NULL DEFAULT FALSE,

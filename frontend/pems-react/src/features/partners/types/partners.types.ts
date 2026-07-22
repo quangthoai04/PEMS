@@ -111,6 +111,7 @@ export interface CreatePartnerContactPayload {
   jobTitle?: string | null;
   departmentName?: string | null;
   note?: string | null;
+  avatarFileId?: number | null;
 }
 
 export interface CreatePartnerRequest {
@@ -188,6 +189,8 @@ export interface PartnerContact {
   note?: string | null;
   sourceType: 'MANUAL' | 'BUSINESS_CARD_OCR' | 'IMPORT';
   scannedCardFileId?: number | null;
+  avatarFileId?: number | null;
+  avatarUrl?: string | null;
   ocrConfidence?: number | null;
   isPrimary: boolean;
   status: 'ACTIVE' | 'INACTIVE';

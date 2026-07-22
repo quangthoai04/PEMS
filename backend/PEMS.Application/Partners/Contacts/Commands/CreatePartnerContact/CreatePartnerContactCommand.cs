@@ -13,5 +13,6 @@ public sealed class CreatePartnerContactCommand : IRequest<PartnerContactDto>
     public string? JobTitle { get; set; }
     public string? DepartmentName { get; set; }
     public string? Note { get; set; }
+    public ulong? AvatarFileId { get; set; }
     public bool IsPrimary { get; set; }
 }

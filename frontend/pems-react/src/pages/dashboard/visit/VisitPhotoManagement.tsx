@@ -1,19 +1,24 @@
 /**
- * VisitPhotoManagement — tab "Quản lý ảnh đoàn khách" của Student.
+ * VisitPhotoManagement — Trang "Quản lý ảnh đoàn khách" dành cho Student, Staff, Host & Staff Leader/Admin.
  *
- * Bảng: STT | Tên đoàn khách | Tên thư mục | Hành động. Chỉ liệt kê các campus instance mà
- * Student có participation STUDENT + ACCEPTED (backend enforce, chống IDOR); tên đoàn lấy theo
- * read-path v2 per-campus (dual-read) — không dùng compatibility projection của visit_requests.
- * "Xem chi tiết" / "Chỉnh sửa" mở modal dùng chung VisitPhotoPanel (view / edit).
+ * Hỗ trợ:
+ * - Lọc theo khoảng thời gian (fromDate - toDate)
+ * - Sắp xếp theo ngày (Mới nhất / Cũ nhất)
+ * - Chuyển đổi linh hoạt giữa 2 chế độ xem: "📁 Thư mục đoàn" và "📷 Danh sách Bức ảnh"
+ * - Tự động chuyển sang chế độ "Bức ảnh trực tiếp" khi người dùng nhập từ khóa tìm kiếm tên khách/đoàn
+ * - Mở modal xem/quản lý/quét mặt từng đoàn khách
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, Image as ImageIcon, Calendar, Filter, Sparkles, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { VisitPhotoPanel } from '../../../features/delegations/components/VisitPhotoPanel';
 import type { MyVisitPhotoFolderItem, MyVisitPhotoFoldersPage } from '../../../features/delegations/types/visitPhotos.types';
+import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 
-const PAGE_SIZE = 10;
+import { useAuth } from '../../../shared/hooks/useAuth';
+
+const PAGE_SIZE = 12;
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
@@ -27,12 +32,18 @@ const INSTANCE_STATUS_LABELS: Record<string, string> = {
 };
 
 export function VisitPhotoManagement() {
+  const { user } = useAuth();
+  const isStudent = user?.roleCode?.toUpperCase() === 'STUDENT';
+
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [sortDirection, setSortDirection] = useState('DESC');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [viewMode, setViewMode] = useState<'folders' | 'photos'>('folders');
+
   const [data, setData] = useState<MyVisitPhotoFoldersPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,23 +52,30 @@ export function VisitPhotoManagement() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await visitPhotosApi.myFolders(page, PAGE_SIZE, search || undefined, sortDirection, fromDate || undefined, toDate || undefined));
+      setData(await visitPhotosApi.myFolders(page, pageSize, search || undefined, sortDirection, fromDate || undefined, toDate || undefined));
       setError(null);
     } catch (e: any) {
-      if (e?.response?.status === 403) setError('Chức năng này chỉ dành cho Sinh viên tham gia tiếp khách.');
+      if (e?.response?.status === 403) setError('Bạn không có quyền truy cập danh sách ảnh đoàn khách này.');
       else setError('Không thể tải danh sách ảnh đoàn khách. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
-  }, [page, search, sortDirection, fromDate, toDate]);
+  }, [page, pageSize, search, sortDirection, fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Debounce tìm kiếm theo convention các trang quản lý.
+  // Debounce tìm kiếm & Tự động đổi chế độ xem khi tìm tên khách
   useEffect(() => {
     const t = setTimeout(() => {
-      setSearch(searchInput.trim());
+      const trimmed = searchInput.trim();
+      setSearch(trimmed);
       setPage(1);
+      // Tự động chuyển sang chế độ Lưới ảnh trực tiếp khi gõ từ khóa tìm kiếm
+      if (trimmed) {
+        setViewMode('photos');
+      } else {
+        setViewMode('folders');
+      }
     }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
@@ -71,108 +89,194 @@ export function VisitPhotoManagement() {
   const items = data?.items ?? [];
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 w-full mx-auto pb-16 animate-in fade-in duration-300">
+    <div className="w-full pb-16 animate-in fade-in duration-300">
+      {/* Breadcrumb Header */}
       <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
         <span>Dashboard</span>
         <span>/</span>
         <span className="text-[#004c91] font-bold">Quản lý ảnh đoàn khách</span>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Top Control Bar */}
+        <div className="px-4 sm:px-6 py-5 border-b border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 bg-slate-50/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 shadow-sm border border-orange-100">
               <Camera className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-black text-[#004c91]">Quản lý ảnh đoàn khách</h1>
+              <h1 className="text-lg font-black text-[#004c91] flex items-center gap-2">
+                Quản lý ảnh đoàn khách
+              </h1>
               <p className="text-xs font-semibold text-slate-500">
-                Ảnh bạn đóng góp cho các chuyến thăm đã nhận lời tham gia.
+                Thư mục ảnh & công cụ định danh khuôn mặt dành cho Student, Staff và Staff Leader.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+
+          {/* Controls & Filters */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* View Mode Toggle */}
+            <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode('folders')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'folders' ? 'bg-white text-[#004c91] shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                <Folder className="w-3.5 h-3.5" /> Thư mục đoàn
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('photos')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'photos' ? 'bg-white text-[#004c91] shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" /> Xem tất cả ảnh
+              </button>
+            </div>
+
+            {/* Sort Direction */}
             <select
               value={sortDirection}
               onChange={(e) => { setSortDirection(e.target.value); setPage(1); }}
-              className="text-sm rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] bg-white cursor-pointer"
+              className="text-xs font-bold rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] bg-white cursor-pointer shadow-sm"
             >
-              <option value="DESC">Mới nhất</option>
-              <option value="ASC">Cũ nhất</option>
+              <option value="DESC">Mới nhất trước</option>
+              <option value="ASC">Cũ nhất trước</option>
             </select>
-            <div className="flex items-center gap-2">
+
+            {/* Date Range Picker */}
+            <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-gray-300 shadow-sm">
+              <Calendar className="w-3.5 h-3.5 text-gray-400 ml-2" />
               <input
                 type="date"
                 value={fromDate}
+                title="Từ ngày"
                 onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                className="text-sm rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91]"
+                className="text-xs font-semibold rounded-lg px-2 py-1 outline-none text-gray-700 bg-transparent"
               />
-              <span className="text-gray-400">-</span>
+              <span className="text-gray-400 text-xs">-</span>
               <input
                 type="date"
                 value={toDate}
+                title="Đến ngày"
                 onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                className="text-sm rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91]"
+                className="text-xs font-semibold rounded-lg px-2 py-1 outline-none text-gray-700 bg-transparent pr-2"
               />
+              {(fromDate || toDate) && (
+                <button
+                  onClick={() => { setFromDate(''); setToDate(''); setPage(1); }}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                  title="Xóa bộ lọc ngày"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
+
+            {/* Search Bar */}
             <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Tìm theo tên đoàn khách..."
-                className="w-[260px] max-w-full text-sm rounded-xl border border-gray-300 pl-9 pr-3 py-2 outline-none focus:border-[#004c91]"
+                placeholder="Tìm theo tên khách, tên đoàn..."
+                className="w-[240px] max-w-full text-xs font-semibold rounded-xl border border-gray-300 pl-8 pr-7 py-2 outline-none focus:border-[#004c91] bg-white shadow-sm"
               />
+              {searchInput && (
+                <button
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
           </div>
         </div>
 
+        {/* Content Body */}
         {loading ? (
-          <div className="py-16 text-center text-slate-500 font-medium">Đang tải danh sách...</div>
+          <div className="py-20 text-center text-slate-500 font-medium flex flex-col items-center justify-center gap-2">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#004c91]" />
+            <span className="text-xs font-bold text-gray-600">Đang tải dữ liệu ảnh đoàn khách...</span>
+          </div>
         ) : error ? (
-          <div className="py-16 text-center text-slate-500 font-medium">{error}</div>
+          <div className="py-16 text-center text-slate-500 font-medium px-4">{error}</div>
         ) : items.length === 0 ? (
-          <div className="py-16 text-center">
-            <Camera className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-            <p className="text-slate-600 font-medium">
-              {search ? 'Không tìm thấy đoàn khách phù hợp.' : 'Bạn chưa tham gia chuyến thăm nào.'}
+          <div className="py-20 text-center px-4">
+            <Camera className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+            <p className="text-slate-700 font-bold text-sm">
+              {search ? `Không tìm thấy kết quả phù hợp với từ khóa "${search}".` : 'Chưa có dữ liệu ảnh đoàn khách nào.'}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Thử thay đổi bộ lọc khoảng thời gian hoặc từ khóa tìm kiếm.
             </p>
           </div>
-        ) : (
+        ) : viewMode === 'folders' ? (
+          /* Mode 1: Table Thư Mục Đoàn */
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm min-w-[720px]">
-              <thead className="bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold">
-                <tr className="border-b border-gray-200">
-                  <th className="px-4 sm:px-6 py-3 w-14">STT</th>
-                  <th className="px-4 py-3">Tên đoàn khách</th>
-                  <th className="px-4 py-3 w-48">Tên thư mục</th>
-                  <th className="px-4 py-3 w-56 text-right">Hành động</th>
+            <table className="w-full text-left border-collapse text-sm min-w-[760px]">
+              <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold border-b border-gray-200">
+                <tr>
+                  <th className="px-5 py-3.5 w-14 text-center">STT</th>
+                  <th className="px-4 py-3.5">Tên đoàn khách / Chuyến thăm</th>
+                  <th className="px-4 py-3.5 w-56">Tên thư mục Drive</th>
+                  <th className="px-4 py-3.5 w-40 text-center">Số lượng ảnh</th>
+                  <th className="px-5 py-3.5 w-44 text-right">Hành động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {items.map((item, idx) => (
-                  <tr key={item.visitInstanceId} className="hover:bg-gray-50/55 transition-colors">
-                    <td className="px-4 sm:px-6 py-3 font-bold text-slate-500">
+                  <tr key={item.visitInstanceId} className="hover:bg-slate-50/70 transition-colors group">
+                    <td className="px-5 py-4 font-extrabold text-slate-400 text-center text-xs">
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-bold text-slate-800">{item.delegationName || '—'}</p>
-                      <p className="text-xs text-slate-500 font-semibold">
-                        {item.campusName || '—'} · {INSTANCE_STATUS_LABELS[item.instanceStatus] || item.instanceStatus}
-                        {item.activePhotoCount > 0 && <> · {item.activePhotoCount} ảnh</>}
-                      </p>
+                    <td className="px-4 py-4">
+                      <p className="font-bold text-slate-900 group-hover:text-[#004c91] transition-colors">{item.delegationName || '—'}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {item.campusName || '—'}
+                        </span>
+                        <span className="text-[11px] font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded-md">
+                          {INSTANCE_STATUS_LABELS[item.instanceStatus] || item.instanceStatus}
+                        </span>
+                        {item.plannedStartAt && (
+                          <span className="text-[11px] text-gray-400 font-medium">
+                            📅 {formatVietnamDate(item.plannedStartAt)}
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">
-                      {item.folderName || <span className="text-slate-400 italic">Chưa có thư mục</span>}
+                    <td className="px-4 py-4 font-semibold text-slate-700">
+                      <div className="flex items-center gap-1.5">
+                        <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="truncate max-w-[200px]" title={item.folderName || ''}>
+                          {item.folderName || <span className="text-slate-400 italic">Chưa tạo thư mục</span>}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-4 text-center">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
+                        <ImageIcon className="w-3.5 h-3.5 text-gray-500" />
+                        {item.activePhotoCount} ảnh
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => setModal({ item, mode: 'edit' })}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#f37021] hover:bg-[#e0611d] inline-flex items-center gap-1.5 transition-colors"
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold text-white inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-[0.98] cursor-pointer ${isStudent ? 'bg-[#f37021] hover:bg-[#e0611d]' : 'bg-[#004c91] hover:bg-[#00386b]'}`}
                         >
-                          <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                          {isStudent ? (
+                            <>
+                              <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Xem & Quét mặt
+                            </>
+                          )}
                         </button>
                       </div>
                     </td>
@@ -181,57 +285,120 @@ export function VisitPhotoManagement() {
               </tbody>
             </table>
           </div>
+        ) : (
+          /* Mode 2: Lưới Bức Ảnh Trực Tiếp (Direct Photo Grid Mode) */
+          <div className="p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {items.map((item) => (
+                <div
+                  key={item.visitInstanceId}
+                  onClick={() => setModal({ item, mode: 'edit' })}
+                  className="bg-white border border-gray-200 hover:border-[#004c91] rounded-2xl p-4 shadow-sm hover:shadow-md transition-all group cursor-pointer flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="aspect-video w-full rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center relative overflow-hidden group-hover:brightness-95 transition-all">
+                      <Folder className="w-10 h-10 text-amber-500 opacity-80" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent flex items-end p-2.5">
+                        <span className="text-[10px] font-bold text-white bg-slate-900/80 px-2 py-0.5 rounded-md backdrop-blur-sm">
+                          {item.activePhotoCount} bức ảnh
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-xs line-clamp-1 group-hover:text-[#004c91] transition-colors">
+                        {item.delegationName}
+                      </h4>
+                      <p className="text-[11px] text-gray-500 font-semibold truncate mt-0.5">
+                        {item.campusName} · {formatVietnamDate(item.plannedStartAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`mt-3 w-full py-1.5 text-white rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${isStudent ? 'bg-[#f37021] hover:bg-[#e0611d]' : 'bg-[#004c91] hover:bg-[#00386b]'}`}
+                  >
+                    {isStudent ? (
+                      <>
+                        <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa (Thêm / Xóa ảnh)
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-3.5 h-3.5" /> Chi tiết ảnh & Quét mặt
+                      </>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
-        {!loading && !error && totalPages > 1 && (
-          <div className="px-4 sm:px-6 py-3 border-t border-slate-100 flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-slate-500">
-              Trang {page}/{totalPages} · {data?.totalCount ?? 0} đoàn khách
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+        {/* Pagination Footer */}
+        {!loading && !error && (
+          <div className="px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-4 flex-wrap">
+              <p className="text-xs font-bold text-slate-500">
+                Trang {page}/{Math.max(1, totalPages)} · Tổng cộng {data?.totalCount ?? 0} đoàn khách
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-bold">Hiển thị:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  className="text-xs font-bold rounded-lg border border-slate-300 px-2.5 py-1 bg-white outline-none focus:border-[#004c91] cursor-pointer shadow-sm"
+                >
+                  <option value={5}>5 / trang</option>
+                  <option value={10}>10 / trang</option>
+                  <option value={20}>20 / trang</option>
+                  <option value={50}>50 / trang</option>
+                </select>
+              </div>
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors shadow-sm cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors shadow-sm cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Modal Xem chi tiết / Chỉnh sửa — dùng chung VisitPhotoPanel với trang Đóng góp kết quả */}
+      {/* Modal Xem chi tiết / Quản lý ảnh & Quét mặt */}
       {modal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[110] px-4 py-8">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-full flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50">
               <div className="min-w-0">
-                <h3 className="text-base font-black text-[#004c91]">
-                  {modal.mode === 'edit' ? 'Chỉnh sửa ảnh đoàn khách' : 'Ảnh đoàn khách'}
+                <h3 className="text-base font-extrabold text-[#004c91] flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-[#f37021]" /> Quản lý ảnh & Nhận diện khuôn mặt
                 </h3>
-                <p className="text-sm font-bold text-slate-700 truncate">{modal.item.delegationName}</p>
-                <p className="text-xs font-semibold text-slate-500">{modal.item.campusName || '—'}</p>
+                <p className="text-xs font-bold text-slate-700 truncate">{modal.item.delegationName}</p>
               </div>
               <button
                 type="button"
                 onClick={() => closeModal(modal.mode === 'edit')}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
                 aria-label="Đóng"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="px-6 py-5 overflow-y-auto">
+            <div className="p-6 overflow-y-auto flex-1">
               <VisitPhotoPanel
                 visitInstanceId={modal.item.visitInstanceId}
                 mode={modal.mode}
@@ -247,3 +414,4 @@ export function VisitPhotoManagement() {
     </div>
   );
 }
+
