@@ -39,6 +39,7 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Partner> Partners => Set<Partner>();
     public DbSet<Campus> Campuses => Set<Campus>();
+    DbSet<PartnerTranslation> IApplicationDbContext.PartnerTranslations => Set<PartnerTranslation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -120,6 +121,7 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     DbSet<NewsContentSection> IApplicationDbContext.NewsContentSections => Set<NewsContentSection>();
     DbSet<NewsSectionFile> IApplicationDbContext.NewsSectionFiles => Set<NewsSectionFile>();
     DbSet<Faq> IApplicationDbContext.Faqs => Set<Faq>();
+    DbSet<FaqTranslation> IApplicationDbContext.FaqTranslations => Set<FaqTranslation>();
     DbSet<GalleryArea> IApplicationDbContext.GalleryAreas => Set<GalleryArea>();
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();

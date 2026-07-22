@@ -140,6 +140,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     DbSet<LoginLog> IApplicationDbContext.LoginLogs => Set<LoginLog>();
     DbSet<SecurityEvent> IApplicationDbContext.SecurityEvents => Set<SecurityEvent>();
     DbSet<Partner> IApplicationDbContext.Partners => Set<Partner>();
+    DbSet<PartnerTranslation> IApplicationDbContext.PartnerTranslations => Set<PartnerTranslation>();
     DbSet<PartnerContact> IApplicationDbContext.PartnerContacts => Set<PartnerContact>();
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
@@ -175,6 +176,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     DbSet<NewsContentSection> IApplicationDbContext.NewsContentSections => Set<NewsContentSection>();
     DbSet<NewsSectionFile> IApplicationDbContext.NewsSectionFiles => Set<NewsSectionFile>();
     DbSet<Faq> IApplicationDbContext.Faqs => Set<Faq>();
+    DbSet<FaqTranslation> IApplicationDbContext.FaqTranslations => Set<FaqTranslation>();
     DbSet<GalleryArea> IApplicationDbContext.GalleryAreas => Set<GalleryArea>();
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
