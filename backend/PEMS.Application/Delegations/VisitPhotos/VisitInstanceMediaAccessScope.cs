@@ -39,29 +39,24 @@ public static class VisitInstanceMediaAccessScope
         if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId)
             throw new ForbiddenException("Bạn chưa đăng nhập.");
 
-        var roleCode = currentUser.RoleCode ?? string.Empty;
-        var subRole  = currentUser.SubRole  ?? string.Empty;
-        var isAllowedRole = (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff)
-                          || roleCode == RoleCodes.Student;
-        if (!isAllowedRole)
-            throw new ForbiddenException("Chỉ Staff thường và Student mới được truy cập ảnh đoàn.");
-
         var instance = await db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == visitInstanceId, cancellationToken)
             ?? throw new NotFoundException("Chuyến tiếp khách", visitInstanceId);
 
+        var roleCode = currentUser.RoleCode ?? string.Empty;
         var isHost = instance.CurrentHostUserId == userId;
-        var isParticipant = isHost || await db.VisitParticipants
+        var isAdminOrLeader = roleCode == RoleCodes.Admin || (roleCode == RoleCodes.Staff && currentUser.SubRole == UserSubRoles.Leader);
+        var isParticipant = isHost || isAdminOrLeader || await db.VisitParticipants
             .AnyAsync(vp =>
                 vp.VisitInstanceId == visitInstanceId &&
                 vp.UserId == userId &&
-                vp.Status == ParticipantStatuses.Accepted,
+                (vp.Status == ParticipantStatuses.Accepted || vp.Status == ParticipantStatuses.Assigned),
                 cancellationToken);
 
         if (!isParticipant)
             throw new ForbiddenException(
-                "Bạn chỉ có thể truy cập ảnh của chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia.");
+                "Bạn chỉ có thể truy cập ảnh của chuyến tiếp khách mà bạn có quyền quản lý hoặc tham gia.");
 
         var campusCode = await db.Campuses
             .Where(c => c.CampusId == instance.CampusId)

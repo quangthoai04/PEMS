@@ -55,26 +55,11 @@ public sealed class ConfirmFaceTagsCommandHandler : IRequestHandler<ConfirmFaceT
             .ToListAsync(cancellationToken);
         var detectionById = detections.ToDictionary(d => d.FaceDetectionId);
 
-        // Every face of the scan must appear exactly once — no missing face, no unknown id, no dup.
-        var requestIds = request.Faces.Select(f => f.FaceDetectionId).ToList();
-        if (requestIds.Distinct().Count() != requestIds.Count)
-            throw new BusinessRuleException(
-                "Danh sách khuôn mặt gửi lên bị trùng lặp.", FaceScanErrorCodes.InvalidFaceItem);
-        if (requestIds.Count != detections.Count || requestIds.Any(id => !detectionById.ContainsKey(id)))
-            throw new BusinessRuleException(
-                "Phải xử lý đầy đủ tất cả khuôn mặt của lần quét này (gán khách hoặc bỏ qua).",
-                FaceScanErrorCodes.IncompleteFaceList);
-
-        foreach (var item in request.Faces)
-        {
-            var wellFormed = item.Ignored ? item.GuestMemberId is null : item.GuestMemberId is not null;
-            if (!wellFormed)
-                throw new BusinessRuleException(
-                    "Mỗi khuôn mặt phải được gán một khách hoặc đánh dấu bỏ qua.", FaceScanErrorCodes.InvalidFaceItem);
-        }
-
         // One guest cannot appear twice in the same scan.
-        var guestIds = request.Faces.Where(f => !f.Ignored).Select(f => f.GuestMemberId!.Value).ToList();
+        var guestIds = request.Faces
+            .Where(f => !f.Ignored && f.GuestMemberId.HasValue)
+            .Select(f => f.GuestMemberId!.Value)
+            .ToList();
         if (guestIds.Distinct().Count() != guestIds.Count)
             throw new BusinessRuleException(
                 "Một khách không được gán cho hai khuôn mặt trong cùng lần quét.",
@@ -97,15 +82,17 @@ public sealed class ConfirmFaceTagsCommandHandler : IRequestHandler<ConfirmFaceT
         }
 
         var now = _clock.VietnamNow;
+        var requestFaceDict = request.Faces.ToDictionary(f => f.FaceDetectionId);
 
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         try
         {
-            foreach (var item in request.Faces)
+            foreach (var detection in detections)
             {
-                var detection = detectionById[item.FaceDetectionId];
+                requestFaceDict.TryGetValue(detection.FaceDetectionId, out var item);
+                var isGuest = item != null && !item.Ignored && item.GuestMemberId.HasValue;
 
-                if (item.Ignored)
+                if (!isGuest || !guestById.TryGetValue(item!.GuestMemberId!.Value, out var guest))
                 {
                     detection.ReviewStatus = VisitPhotoFaceDetection.ReviewStatusIgnored;
                     detection.GuestMemberId = null;
@@ -115,7 +102,6 @@ public sealed class ConfirmFaceTagsCommandHandler : IRequestHandler<ConfirmFaceT
                 }
                 else
                 {
-                    var guest = guestById[item.GuestMemberId!.Value];
                     var tag = new PhotoFaceTag
                     {
                         FileId = scan.FileId,

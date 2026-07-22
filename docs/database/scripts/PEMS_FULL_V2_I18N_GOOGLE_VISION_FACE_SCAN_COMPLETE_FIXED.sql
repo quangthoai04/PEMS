@@ -4432,7 +4432,7 @@ BEGIN
 END$$
 
 -- Visit photo upload must be an image stored on Google Drive with the dedicated
--- purpose, and the uploader must be an ACTIVE Student who ACCEPTED participation
+-- purpose, and the uploader must be an ACTIVE user who is Host, Staff, Admin, or Participant
 -- in the exact campus instance. Application authorization must perform the same
 -- checks before calling IFileUploadService; these triggers are defense-in-depth.
 CREATE TRIGGER trg_visit_photos_validate_bi
@@ -4443,19 +4443,23 @@ BEGIN
   DECLARE v_valid_file INT DEFAULT 0;
 
   SELECT COUNT(*) INTO v_valid_participant
-  FROM visit_participants vp
-  JOIN users u ON u.user_id = vp.user_id
+  FROM visit_request_campuses vrc
+  JOIN users u ON u.user_id = NEW.uploaded_by
   JOIN roles r ON r.role_id = u.role_id
-  WHERE vp.visit_instance_id = NEW.visit_instance_id
+  LEFT JOIN visit_participants vp ON vp.visit_instance_id = NEW.visit_instance_id
     AND vp.user_id = NEW.uploaded_by
-    AND vp.participant_role = 'STUDENT'
-    AND vp.status = 'ACCEPTED'
-    AND r.role_code = 'STUDENT'
-    AND u.status = 'ACTIVE';
+    AND (vp.status = 'ACCEPTED' OR vp.status = 'ASSIGNED')
+  WHERE vrc.visit_instance_id = NEW.visit_instance_id
+    AND u.status = 'ACTIVE'
+    AND (
+      vrc.current_host_user_id = NEW.uploaded_by
+      OR r.role_code IN ('ADMIN', 'STAFF')
+      OR vp.participant_id IS NOT NULL
+    );
 
   IF v_valid_participant = 0 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE Student with ACCEPTED participation in this visit instance';
+      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE user who is Host, Staff, Admin, or Participant of this visit instance';
   END IF;
 
   SELECT COUNT(*) INTO v_valid_file

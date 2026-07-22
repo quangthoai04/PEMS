@@ -22,6 +22,7 @@ import { useVisitFeedback } from '../../../features/feedbacks/hooks/useVisitFeed
 import { FeedbackGroupSection } from '../../../features/feedbacks/components/FeedbackGroupSection';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { showLoadingToast, updateToastSuccess, updateToastError } from '../../../shared/utils/toast';
 
 // Helper cho collapse header
 function CollapsibleSection({ 
@@ -297,8 +298,10 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   // Handle real file upload to backend
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0 && visitInstanceId) {
-      const fileList = Array.from(e.target.files);
+    const files = e.target.files;
+    if (files && files.length > 0 && visitInstanceId) {
+      const fileList = Array.from(files);
+      const toastId = showLoadingToast(`Đang tải lên ${fileList.length} ảnh để quét nhận diện khuôn mặt...`, 'visit-photo-upload');
       
       setDriveConfig(prev => ({
         ...prev,
@@ -315,13 +318,17 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
           ...prev,
           syncStatus: 'synced'
         }));
+        updateToastSuccess(toastId, `Đã tải lên thành công ${fileList.length} ảnh. Bạn có thể chọn ảnh để quét khuôn mặt.`);
       } catch (err) {
         console.error("Upload error", err);
+        updateToastError(toastId, err, 'Không thể tải ảnh lên. Vui lòng kiểm tra dung lượng hoặc định dạng file (hỗ trợ .jpg, .png lên tới 10MB).');
         setDriveConfig(prev => ({
           ...prev,
           syncStatus: 'error',
           lastSynced: 'Đồng bộ lỗi'
         }));
+      } finally {
+        if (e.target) e.target.value = '';
       }
     }
   };
@@ -440,7 +447,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
           </div>
 
           {/* DISTINCT SEPARATOR LINE */}
-          {!isDept && !isStudent && (
+          {!isDept && (
             <>
               <div className="py-2">
                 <hr className="border-t border-gray-200" />
@@ -460,7 +467,8 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileUpload}
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp,image/*"
+                      multiple
                       className="hidden"
                     />
                     <FaceScanPanel
@@ -468,6 +476,8 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                       photos={uploadedImages.map((img) => ({ visitPhotoId: img.id, url: img.url, name: img.name }))}
                       isReadOnly={isReadOnly}
                       onUploadClick={() => fileInputRef.current?.click()}
+                      folderUrl={driveConfig.folderUrl}
+                      onRefreshPhotos={loadDriveMetadata}
                     />
                   </>
                 )}

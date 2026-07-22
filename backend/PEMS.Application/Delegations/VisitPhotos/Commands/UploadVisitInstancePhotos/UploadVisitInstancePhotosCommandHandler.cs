@@ -42,7 +42,7 @@ public sealed class UploadVisitInstancePhotosCommandHandler
     public async Task<UploadVisitInstancePhotosResponse> Handle(
         UploadVisitInstancePhotosCommand request, CancellationToken cancellationToken)
     {
-        var scope = await VisitPhotoStudentScope.ResolveAcceptedStudentAsync(
+        var scope = await VisitInstanceMediaAccessScope.ResolveAsync(
             _db, _currentUser, request.VisitInstanceId, cancellationToken);
 
         if (!scope.CanUpload)

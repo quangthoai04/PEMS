@@ -103,6 +103,11 @@ public interface IApplicationDbContext
     DbSet<AgendaTemplateDefault> AgendaTemplateDefaults { get; }
     DbSet<AuditLog> AuditLogs { get; }
 
+    /// <summary>
+    /// Database facade for raw SQL execution, transaction management, and connection access.
+    /// </summary>
+    Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

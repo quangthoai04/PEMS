@@ -8,10 +8,10 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Image as ImageIcon, Sparkles, User, Tag, CheckCircle2, Search, Check,
-  Minimize2, Loader2, AlertCircle, Upload,
+  Minimize2, Loader2, AlertCircle, Upload, FolderOpen, ExternalLink, RefreshCw, X,
 } from 'lucide-react';
 import { visitPhotosApi } from '../api/visitPhotosApi';
 import type {
@@ -27,6 +27,8 @@ export interface FaceScanPhoto {
   visitPhotoId: number;
   url: string;
   name: string;
+  uploadedByName?: string;
+  uploadedAt?: string;
 }
 
 interface FaceScanPanelProps {
@@ -34,6 +36,8 @@ interface FaceScanPanelProps {
   photos: FaceScanPhoto[];
   isReadOnly: boolean;
   onUploadClick: () => void;
+  folderUrl?: string;
+  onRefreshPhotos?: () => void | Promise<void>;
 }
 
 function PhotoThumbnail({ url, alt }: { url: string; alt: string }) {
@@ -55,7 +59,9 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
-export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadClick }: FaceScanPanelProps) {
+export function FaceScanPanel({
+  visitInstanceId, photos, isReadOnly, onUploadClick, folderUrl, onRefreshPhotos,
+}: FaceScanPanelProps) {
   const { t } = useTranslation('visitFaceScan');
 
   const [selectedPhotoId, setSelectedPhotoId] = useState<number | null>(photos[0]?.visitPhotoId ?? null);
@@ -68,6 +74,7 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
   const [activeFaceId, setActiveFaceId] = useState<number | null>(null);
   const [pendingActions, setPendingActions] = useState<Record<number, { guestMemberId: number | null; ignored: boolean }>>({});
   const [searchGuestKeyword, setSearchGuestKeyword] = useState('');
+  const [isAlbumModalOpen, setIsAlbumModalOpen] = useState(false);
 
   const selectedPhoto = photos.find((p) => p.visitPhotoId === selectedPhotoId) ?? null;
   const currentScan = scans[0] ?? null; // scans are ordered newest-first by the backend
@@ -121,10 +128,7 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
     return s;
   }, [pendingActions]);
 
-  const allDetectedResolved = detections.length > 0 && detections
-    .filter((d) => d.reviewStatus === 'DETECTED')
-    .every((d) => pendingActions[d.faceDetectionId] !== undefined);
-  const canConfirm = currentScan?.status === 'SUCCEEDED' && detections.length > 0 && allDetectedResolved;
+  const canConfirm = currentScan?.status === 'SUCCEEDED' && detections.length > 0;
 
   const handleScan = async () => {
     if (!selectedPhotoId || scanning || isScanBusy) return;
@@ -164,10 +168,11 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
         .filter((d) => d.reviewStatus === 'DETECTED')
         .map((d) => {
           const action = pendingActions[d.faceDetectionId];
+          const isGuestAssigned = action && action.guestMemberId !== null && !action.ignored;
           return {
             faceDetectionId: d.faceDetectionId,
-            guestMemberId: action?.guestMemberId ?? null,
-            ignored: !!action?.ignored,
+            guestMemberId: isGuestAssigned ? action.guestMemberId : null,
+            ignored: !isGuestAssigned,
           };
         });
       const result = await visitPhotosApi.confirmFaceTags(currentScan.faceScanId, currentScan.rowVersion, faces);
@@ -217,16 +222,32 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
           </div>
         </div>
 
-        {!isReadOnly && (
-          <div className="pt-2">
+        {photos.length > 0 && (
+          <div className="pt-2 space-y-1.5 text-center border-t border-gray-100">
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={onUploadClick}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#004c91] text-white hover:bg-[#00386b] rounded-xl font-bold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <Upload className="w-4 h-4" /> {t('album.uploadButton')}
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={onUploadClick}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#004c91] text-white hover:bg-[#003e79] rounded-xl font-bold text-sm shadow-md transition-all active:scale-[0.98]"
+              onClick={() => {
+                if (onRefreshPhotos) void onRefreshPhotos();
+                setIsAlbumModalOpen(true);
+              }}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[#004c91] hover:bg-blue-50 rounded-lg font-bold text-xs transition-colors cursor-pointer"
             >
-              <Upload className="w-4 h-4" /> {t('album.uploadButton')}
+              <FolderOpen className="w-3.5 h-3.5" /> Thư mục ảnh đoàn (Google Drive)
             </button>
-            <p className="text-[10px] text-gray-400 mt-1 text-center font-medium">{t('album.uploadHint')}</p>
+
+            {!isReadOnly && (
+              <p className="text-[10px] text-gray-400 text-center font-medium">{t('album.uploadHint')}</p>
+            )}
           </div>
         )}
       </div>
@@ -283,13 +304,13 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
               </div>
             )}
 
-            <div className="flex-1 flex items-center justify-center p-3 relative select-none overflow-hidden">
-              <div className="relative max-w-full max-h-[380px] rounded-lg overflow-hidden border border-gray-300 bg-white">
+            <div className="flex-1 flex items-center justify-center p-3 relative select-none">
+              <div className="relative max-w-full max-h-[380px] rounded-lg border border-gray-300 bg-white">
                 {selectedImageUrl ? (
                   <img
                     src={selectedImageUrl}
                     alt={selectedPhoto.name}
-                    className={`max-w-full max-h-[360px] object-contain transition-all ${scanning ? 'brightness-50' : ''}`}
+                    className={`max-w-full max-h-[360px] object-contain rounded-lg transition-all ${scanning ? 'brightness-50' : ''}`}
                   />
                 ) : (
                   <div className="w-[320px] h-[240px] flex items-center justify-center">
@@ -318,6 +339,9 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
                     const availableGuests = taggableGuests.filter((g) =>
                       !resolvedGuestIds.has(g.guestMemberId) || pendingActions[detection.faceDetectionId]?.guestMemberId === g.guestMemberId);
 
+                    const isActive = activeFaceId === detection.faceDetectionId;
+                    const isLowerHalf = detection.boundingBoxY >= 0.5;
+
                     return (
                       <div
                         key={detection.faceDetectionId}
@@ -328,6 +352,8 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
                           height: `${detection.boundingBoxHeight * 100}%`,
                         }}
                         className={`absolute border-2 ${canEdit ? 'cursor-pointer' : 'cursor-default'} transition-all rounded-md group/box ${
+                          isActive ? 'z-50 ring-2 ring-[#004c91]' : 'z-10'
+                        } ${
                           ignored
                             ? 'border-gray-400 bg-gray-400/10'
                             : name
@@ -345,19 +371,19 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
                           </span>
                         </div>
 
-                        {activeFaceId === detection.faceDetectionId && (
+                        {isActive && (
                           <div
-                            className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border border-gray-200 p-3 rounded-2xl shadow-xl z-40 w-56 text-left space-y-2.5"
+                            className={`absolute ${isLowerHalf ? 'bottom-full mb-2' : 'top-full mt-2'} left-1/2 -translate-x-1/2 bg-white border border-gray-200 p-3 rounded-2xl shadow-2xl z-50 w-60 text-left space-y-2.5 max-h-[260px] flex flex-col`}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 shrink-0">
                               <span className="text-[10px] uppercase font-bold text-gray-500">{t('tag.dropdownTitle')}</span>
                               <button onClick={() => setActiveFaceId(null)} className="text-gray-400 hover:text-gray-600 p-0.5 hover:bg-gray-100 rounded-full">
                                 <Minimize2 className="w-3 h-3" />
                               </button>
                             </div>
 
-                            <div className="space-y-1 max-h-[180px] overflow-y-auto pr-1">
+                            <div className="space-y-1 overflow-y-auto pr-1 flex-1 max-h-[190px]">
                               <button
                                 type="button"
                                 onClick={() => handleTag(detection.faceDetectionId, null, true)}
@@ -507,12 +533,163 @@ export function FaceScanPanel({ visitInstanceId, photos, isReadOnly, onUploadCli
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8">
-            <ImageIcon className="w-12 h-12 text-gray-300 mb-2" />
-            <p className="text-sm font-medium">{t('album.selectPrompt')}</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-[#004c91] border border-blue-100 shadow-sm">
+              <FolderOpen className="w-8 h-8" />
+            </div>
+            <div>
+              <p className="text-base font-bold text-gray-800">Chưa chọn ảnh để quét và gán tên khuôn mặt</p>
+              <p className="text-xs text-gray-500 mt-1 max-w-md">
+                Tải ảnh mới lên hoặc chọn ảnh sẵn có trong thư mục Google Drive của đoàn để tiến hành quét nhận diện.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={onUploadClick}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#004c91] text-white hover:bg-[#00386b] rounded-xl font-extrabold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" /> Tải lên ảnh chụp thực tế
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onRefreshPhotos) void onRefreshPhotos();
+                  setIsAlbumModalOpen(true);
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white text-[#004c91] border border-[#004c91] hover:bg-blue-50 rounded-xl font-extrabold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
+              >
+                <FolderOpen className="w-4 h-4" /> Chọn từ thư mục ảnh đoàn (Google Drive)
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* MODAL: CHỌN ẢNH TỪ THƯ MỤC ẢNH ĐOÀN (GOOGLE DRIVE) */}
+      <AnimatePresence>
+        {isAlbumModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAlbumModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer"
+            />
+
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-white rounded-3xl shadow-xl w-full max-w-4xl overflow-hidden relative border border-gray-100 z-10 text-left font-sans flex flex-col max-h-[85vh]"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 shrink-0 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-[#004c91] border border-blue-100 shrink-0">
+                    <FolderOpen className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Thư mục ảnh đoàn (Google Drive)</h3>
+                    <p className="text-xs text-gray-500">Các ảnh chụp đoàn do sinh viên / thành viên đã tải lên Google Drive của đoàn.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {folderUrl && (
+                    <a
+                      href={folderUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 bg-blue-50 text-[#004c91] hover:bg-blue-100 rounded-xl text-xs font-extrabold border border-blue-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" /> Mở Google Drive <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                  {onRefreshPhotos && (
+                    <button
+                      type="button"
+                      onClick={() => void onRefreshPhotos()}
+                      className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Làm mới
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsAlbumModalOpen(false)}
+                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto flex-1">
+                {photos.length === 0 ? (
+                  <div className="py-12 text-center text-gray-400 space-y-3">
+                    <FolderOpen className="w-12 h-12 text-gray-300 mx-auto" />
+                    <p className="text-sm font-bold text-gray-700">Chưa có ảnh nào trong thư mục đoàn.</p>
+                    <p className="text-xs text-gray-400 max-w-md mx-auto">
+                      Bạn có thể dùng nút "Tải lên ảnh chụp thực tế" ngoài màn hình chính để tải ảnh trực tiếp vào thư mục Google Drive của đoàn.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    {photos.map((photo) => (
+                      <div
+                        key={photo.visitPhotoId}
+                        onClick={() => {
+                          setSelectedPhotoId(photo.visitPhotoId);
+                          setIsAlbumModalOpen(false);
+                        }}
+                        className={`group bg-white rounded-2xl border p-3 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md ${
+                          selectedPhotoId === photo.visitPhotoId
+                            ? 'border-[#004c91] ring-2 ring-[#004c91]/20 bg-[#004c91]/5'
+                            : 'border-gray-200 hover:border-[#004c91]'
+                        }`}
+                      >
+                        <div className="aspect-square w-full rounded-xl overflow-hidden bg-gray-100 border border-gray-200 mb-2 relative">
+                          <PhotoThumbnail url={photo.url} alt={photo.name} />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-gray-800 truncate" title={photo.name}>{photo.name}</p>
+                          {photo.uploadedByName && (
+                            <p className="text-[10px] text-gray-400 truncate">Đăng bởi: {photo.uploadedByName}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="mt-3 w-full py-1.5 bg-[#004c91] group-hover:bg-[#00386b] text-white rounded-lg text-xs font-extrabold transition-colors shadow-sm"
+                        >
+                          {selectedPhotoId === photo.visitPhotoId ? 'Đang chọn' : 'Chọn ảnh để quét'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 font-medium">
+                <span>Tổng cộng: <strong>{photos.length}</strong> ảnh trong thư mục đoàn.</span>
+                <button
+                  type="button"
+                  onClick={() => setIsAlbumModalOpen(false)}
+                  className="px-4 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-lg font-bold cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

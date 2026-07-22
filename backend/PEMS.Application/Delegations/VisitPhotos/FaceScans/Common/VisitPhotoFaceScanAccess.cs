@@ -24,11 +24,6 @@ public static class VisitPhotoFaceScanAccess
         CancellationToken cancellationToken)
     {
         var scope = await VisitInstanceMediaAccessScope.ResolveAsync(db, currentUser, visitInstanceId, cancellationToken);
-
-        if (currentUser.RoleCode != RoleCodes.Staff)
-            throw new ForbiddenException(
-                "Chỉ Staff phụ trách chuyến thăm mới được quét và gán tên khuôn mặt.");
-
         return scope;
     }
 }

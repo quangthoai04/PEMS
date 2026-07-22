@@ -25,7 +25,7 @@ public sealed class RemoveVisitPhotoCommandHandler : IRequestHandler<RemoveVisit
             ?? throw new NotFoundException("VisitPhoto", request.VisitPhotoId);
 
         // Scope gate resolves participation from the photo's OWN instance id (anti-IDOR).
-        var scope = await VisitPhotoStudentScope.ResolveAcceptedStudentAsync(
+        var scope = await VisitInstanceMediaAccessScope.ResolveAsync(
             _db, _currentUser, photo.VisitInstanceId, cancellationToken);
 
         if (photo.UploadedBy != scope.UserId)
