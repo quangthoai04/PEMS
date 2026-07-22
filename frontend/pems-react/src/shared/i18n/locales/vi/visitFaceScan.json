@@ -1,0 +1,59 @@
+{
+  "title": "Scan và gán tên khuôn mặt",
+  "album": {
+    "uploadButton": "Tải lên ảnh chụp thực tế",
+    "uploadHint": "Hỗ trợ các file .jpg, .png lên tới 10MB",
+    "empty": "Chưa có ảnh nào được tải lên.",
+    "selectPrompt": "Chọn một ảnh từ album hoặc tải ảnh mới để bắt đầu."
+  },
+  "scan": {
+    "button": "Quét khuôn mặt",
+    "rescanButton": "Quét lại",
+    "scanning": "Đang phân tích khuôn mặt...",
+    "successToast": "Đã quét khuôn mặt thành công.",
+    "errorFallback": "Quét khuôn mặt thất bại. Vui lòng thử lại.",
+    "startingToast": "Đang quét khuôn mặt...",
+    "noFacesDetected": "Không phát hiện khuôn mặt nào trong ảnh này.",
+    "watermarkIdle": "Nhấp nút Quét mặt phía trên để phát hiện khuôn mặt trong ảnh",
+    "watermarkDone": "Mẹo: Click từng khung mặt để gán tên khách tương ứng"
+  },
+  "status": {
+    "PENDING": "Đang chờ",
+    "PROCESSING": "Đang xử lý",
+    "SUCCEEDED": "Đã quét xong",
+    "FAILED": "Quét lỗi",
+    "CONFIRMED": "Đã xác nhận"
+  },
+  "tag": {
+    "dropdownTitle": "Gán danh tính",
+    "selectGuestPlaceholder": "Tìm khách trong đoàn...",
+    "notInDelegation": "Không thuộc đoàn / Bỏ qua",
+    "unassigned": "Chưa định danh",
+    "ignored": "Đã bỏ qua",
+    "loadingGuests": "Đang tải danh sách khách...",
+    "noGuestsFound": "Không tìm thấy khách phù hợp.",
+    "summaryTitle": "Danh sách định danh khuôn mặt trong bức hình này:",
+    "facePosition": "Vị trí #{{index}}"
+  },
+  "confirm": {
+    "button": "Xác nhận kết quả",
+    "pendingRequired": "Còn khuôn mặt chưa xử lý — hãy gán khách hoặc bỏ qua cho từng khuôn mặt trước khi xác nhận.",
+    "successToast": "Đã xác nhận gán tên khuôn mặt.",
+    "errorFallback": "Không thể xác nhận gán tên khuôn mặt. Vui lòng thử lại.",
+    "startingToast": "Đang xác nhận..."
+  },
+  "history": {
+    "title": "Lịch sử quét",
+    "empty": "Chưa có lượt quét nào cho ảnh này.",
+    "time": "Thời gian",
+    "scannedBy": "Người quét",
+    "status": "Trạng thái",
+    "faces": "Số mặt (phát hiện/xác nhận/bỏ qua)",
+    "error": "Lỗi"
+  },
+  "search": {
+    "placeholder": "Tìm ảnh cá nhân trong đoàn...",
+    "filteringFor": "Lọc tìm khuôn mặt gắn với tên chứa:",
+    "clear": "Xóa bộ lọc"
+  }
+}

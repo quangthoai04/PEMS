@@ -280,6 +280,11 @@ export const API_ENDPOINTS = {
     byInstance: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}`,
     upload: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/upload`,
     remove: (visitPhotoId: string | number) => `/visit-photos/${visitPhotoId}/remove`,
+    // Face detection + manual guest tagging (Sau tiếp khách).
+    faceScans: (visitPhotoId: string | number) => `/visit-photos/${visitPhotoId}/face-scans`,
+    faceScanDetail: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}`,
+    taggableGuests: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/taggable-guests`,
+    confirmFaceTags: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}/confirm`,
   },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {

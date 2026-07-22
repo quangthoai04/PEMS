@@ -4,55 +4,24 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Upload, Image as ImageIcon, Sparkles, User, Tag, 
-  FileText, Link2, Globe, CheckCircle2, AlertCircle, 
-  ArrowRight, FolderOpen, ExternalLink, RefreshCw, 
-  Search, Check, Trash2, Camera, Plus, Minimize2, ZoomIn, X, Star, Loader2
+import {
+  Sparkles, FileText, AlertCircle,
+  ArrowRight, FolderOpen, ExternalLink, RefreshCw,
+  Check, X, Star, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { VisitNewsSection } from './VisitNewsSection';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { GeneralExpensePanel } from './GeneralExpensePanel';
+import { FaceScanPanel } from '../../../features/delegations/components/FaceScanPanel';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import { useVisitFeedback } from '../../../features/feedbacks/hooks/useVisitFeedback';
 import { FeedbackGroupSection } from '../../../features/feedbacks/components/FeedbackGroupSection';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
-
-// Default Delegation Members for tag dropdown and display
-const DEFAULT_GUESTS = [
-  { id: 'g1', name: 'Prof. Kenji Takahashi', role: 'Head of Delegation', cardVisit: 'Card Visit #1' },
-  { id: 'g2', name: 'Dr. Yoko Tanaka', role: 'Senior Academic Partner', cardVisit: 'Card Visit #2' },
-  { id: 'g3', name: 'Mr. Akira Sato', role: 'International Relations Coordinator', cardVisit: 'Card Visit #3' },
-  { id: 'g4', name: 'Nguyễn Văn A', role: 'Chủ trì đón tiếp (FPT Host)', cardVisit: 'FPT Staff Card' },
-  { id: 'g5', name: 'Trần Thị B', role: 'Hỗ trợ sự kiện (IC Staff)', cardVisit: 'FPT IC Card' }
-];
-
-// Presets of group photos with predefined face coordinate estimates
-const PRESET_PHOTOS = [
-  {
-    id: 'preset1',
-    url: '/src/assets/FPTbanner_visit/5CS.png',
-    name: 'Đoàn Tokyo tại sảnh tòa nhà Alpha',
-    faces: [
-      { id: 'f1', x: 28, y: 35, width: 10, height: 13, taggedUser: null },
-      { id: 'f2', x: 45, y: 32, width: 10, height: 13, taggedUser: null },
-      { id: 'f3', x: 62, y: 36, width: 10, height: 13, taggedUser: null }
-    ]
-  },
-  {
-    id: 'preset2',
-    url: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?auto=format&fit=crop&w=1200&q=80',
-    name: 'Họp song phương tại phòng VIP 1',
-    faces: [
-      { id: 'f4', x: 32, y: 28, width: 11, height: 14, taggedUser: null },
-      { id: 'f5', x: 50, y: 25, width: 11, height: 14, taggedUser: null }
-    ]
-  }
-];
 
 // Helper cho collapse header
 function CollapsibleSection({ 
@@ -211,6 +180,7 @@ interface VisitAfterTabProps {
 
 export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept = false, visitInstanceId }: VisitAfterTabProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation('visitFaceScan');
   const { user } = useAuthContext();
   const roleCode = (user?.roleCode || '').toUpperCase();
   const isStudent = roleCode === 'STUDENT' || roleCode === 'VISITOR';
@@ -219,36 +189,14 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [feedbackRefreshKey, setFeedbackRefreshKey] = useState(0);
 
-  // Part 1: Images state
+  // Part 1: Images state — real visit_photos rows (id/url/name only; face-scan state lives inside
+  // FaceScanPanel, fetched per photo from the backend, not mocked here).
   const [uploadedImages, setUploadedImages] = useState<Array<{
-    id: string;
+    id: number;
     url: string;
     name: string;
-    faces: Array<{
-      id: string;
-      x: number; // percentage
-      y: number; // percentage
-      width: number;
-      height: number;
-      taggedUser: string | null; // Guest ID
-    }>;
-    isScanning?: boolean;
-    isScanned?: boolean;
-  }>>(() => [
-    {
-      id: 'img-1',
-      url: PRESET_PHOTOS[0].url,
-      name: PRESET_PHOTOS[0].name,
-      faces: PRESET_PHOTOS[0].faces.map((f, idx) => ({
-        ...f,
-        taggedUser: isReadOnly ? (idx === 0 ? 'g1' : idx === 1 ? 'g2' : 'g3') : null
-      })),
-      isScanned: isReadOnly,
-      isScanning: false
-    }
-  ]);
+  }>>([]);
 
-  const [selectedImageId, setSelectedImageId] = useState<string>('img-1');
   const [driveConfig, setDriveConfig] = useState({
     isConnected: true,
     folderName: `vr-${visitInstanceId || '3063'}`,
@@ -258,9 +206,6 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
     uploaderName: '-'
   });
   const [isDriveConfirmed, setIsDriveConfirmed] = useState(isReadOnly);
-
-  const [searchGuestKeyword, setSearchGuestKeyword] = useState('');
-  const [activeFaceSelection, setActiveFaceSelection] = useState<{ imgId: string, faceId: string } | null>(null);
 
   // Part 2: News state
   const [newsTitleVi, setNewsTitleVi] = useState('Nâng tầm hợp tác đào tạo cùng Đại học Tokyo: Chuyến thăm thắt chặt tình hữu nghị');
@@ -274,16 +219,12 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   const [newsContentVi, setNewsContentVi] = useState('');
   const [newsContentEn, setNewsContentEn] = useState('');
   const [fbPostLink, setFbPostLink] = useState('');
-  const [attachedImageIds, setAttachedImageIds] = useState<string[]>(['img-1']);
 
   // "Lưu ý" info modal + the dept article-preview modal. The real "đóng đoàn" CTA lives ONLY in the
   // VisitProcess stage bar (single source of truth); this tab no longer owns a close button so the
   // same action can never appear twice on one tab (đặc tả mục 1.6 / 8.3).
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [isArticleModalOpen, setIsArticleModalOpen] = useState(false);
-
-  // States for interactive scan UI
-  const selectedImage = uploadedImages.find(img => img.id === selectedImageId);
 
   // Handle auto-writing News content based on Meeting Minutes
   const handleAutoGenerateNews = () => {
@@ -325,18 +266,16 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
           return new Date(current.uploadedAt) > new Date(latest.uploadedAt) ? current : latest;
         }, data.photos[0]);
         
-        // Populate actual photos for preview (no face tracking from backend yet)
+        // Real visit_photos rows — url is an authenticated `/api/files/{id}/content` route
+        // (rendered via useAuthenticatedImage inside FaceScanPanel, never a plain public <img src>).
         const realImages = data.photos.map(p => ({
-          id: p.visitPhotoId.toString(),
-          url: `/api${p.url.replace(/^\/api/, '')}`, // Will require auth to view, but img tag might need useAuthenticatedImage if strictly secured, 
-          // However, for the scope of replacing mock data, we provide the proxy URL.
+          id: p.visitPhotoId,
+          url: `/api${p.url.replace(/^\/api/, '')}`,
           name: p.fileName,
-          faces: [],
-          isScanned: false,
-          isScanning: false
         }));
         setUploadedImages(realImages);
-        setSelectedImageId(realImages[0].id);
+      } else {
+        setUploadedImages([]);
       }
 
       setDriveConfig(prev => ({
@@ -384,68 +323,6 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
           lastSynced: 'Đồng bộ lỗi'
         }));
       }
-    }
-  };
-
-  // Simulate scanning of faces
-  const handleTriggerScan = (imgId: string) => {
-    setUploadedImages(prev => prev.map(img => {
-      if (img.id === imgId) {
-        return { ...img, isScanning: true };
-      }
-      return img;
-    }));
-
-    setTimeout(() => {
-      setUploadedImages(prev => prev.map(img => {
-        if (img.id === imgId) {
-          return { ...img, isScanning: false, isScanned: true };
-        }
-        return img;
-      }));
-    }, 1800);
-  };
-
-  // Tag guest to face
-  const handleTagGuest = (faceId: string, guestId: string | null) => {
-    setUploadedImages(prev => prev.map(img => {
-      if (img.id === selectedImageId) {
-        return {
-          ...img,
-          faces: img.faces.map(face => {
-            if (face.id === faceId) {
-              return { ...face, taggedUser: guestId };
-            }
-            return face;
-          })
-        };
-      }
-      return img;
-    }));
-    setActiveFaceSelection(null);
-  };
-
-  // Remove uploaded image
-  const handleDeleteImage = (imgId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (uploadedImages.length <= 1) {
-      alert("Cần giữ lại tối thiểu 1 ảnh chụp đoàn khách để hoàn tất quy trình (Bắt buộc tối thiểu 1 ảnh).");
-      return;
-    }
-    const filtered = uploadedImages.filter(img => img.id !== imgId);
-    setUploadedImages(filtered);
-    setAttachedImageIds(prev => prev.filter(id => id !== imgId));
-    if (selectedImageId === imgId) {
-      setSelectedImageId(filtered[0].id);
-    }
-  };
-
-  // Handle Toggle image attachment to News Post
-  const handleToggleAttachImage = (imgId: string) => {
-    if (attachedImageIds.includes(imgId)) {
-      setAttachedImageIds(prev => prev.filter(id => id !== imgId));
-    } else {
-      setAttachedImageIds(prev => [...prev, imgId]);
     }
   };
 
@@ -569,317 +446,36 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                 <hr className="border-t border-gray-200" />
               </div>
 
-              {/* SUBSECTION 2: FACE SCANNING */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2.5">
-              <span className="w-6 h-6 rounded-lg bg-[#004c91]/10 flex items-center justify-center text-xs font-bold text-[#004c91]">2</span>
-              <h3 className="text-base font-semibold text-[#004c91]">Scan và gán tên khuôn mặt</h3>
-            </div>
-            
-            {/* Gallery grid of uploaded photos */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              
-              {/* Column left side: Album items List & Upload Control */}
-              <div className="lg:col-span-1 space-y-4 flex flex-col justify-between animate-fadeIn">
-                <div className="space-y-3">
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                  {uploadedImages.map((img) => (
-                  <div 
-                    key={img.id}
-                    onClick={() => {
-                      setSelectedImageId(img.id);
-                      setActiveFaceSelection(null);
-                    }}
-                    className={`flex items-center gap-3 p-2 rounded-xl border cursor-pointer group transition-all ${selectedImageId === img.id ? 'bg-[#004c91]/5 border-[#004c91] ring-2 ring-[#004c91]/10' : 'bg-white border-gray-100 hover:border-gray-300'}`}
-                  >
-                    <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0 border border-gray-200 relative">
-                      <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
-                      {img.isScanned && (
-                        <div className="absolute right-0.5 bottom-0.5 bg-emerald-500 text-white p-0.5 rounded-full" title="Đã quét tìm mặt">
-                          <Check className="w-2.5 h-2.5 stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-gray-800 truncate" title={img.name}>{img.name}</p>
-                      <p className="text-[10px] text-gray-400 font-semibold mt-0.5">
-                        {img.faces.filter(f => f.taggedUser).length}/{img.faces.length} mặt đã định danh
-                      </p>
-                    </div>
-                    {!isReadOnly && (
-                      <button
-                        onClick={(e) => handleDeleteImage(img.id, e)}
-                        type="button"
-                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                        title="Xóa ảnh khỏi album"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom file uploader button trigger */}
-            {!isReadOnly && (
-              <div className="pt-2">
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileUpload}
-                  accept="image/*"
-                  className="hidden" 
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#004c91] text-white hover:bg-[#003e79] rounded-xl font-bold text-sm shadow-md transition-all active:scale-[0.98]"
-                >
-                  <Upload className="w-4 h-4" /> Tải lên ảnh chụp thực tế
-                </button>
-                <p className="text-[10px] text-gray-400 mt-1 text-center font-medium">Hỗ trợ các file .jpg, .png lên tới 10MB</p>
-              </div>
-            )}
-          </div>
-
-          {/* Column right side: Interactive big preview area & Face Scanning control */}
-          <div className="lg:col-span-3 border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 flex flex-col min-h-[420px] relative">
-            {selectedImage ? (
-              <>
-                {/* Upper bar with name and action button */}
-                <div className="bg-white px-5 py-3 border-b border-gray-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-gray-500" />
-                    <span className="text-xs font-bold text-gray-700 truncate max-w-[260px]" title={selectedImage.name}>
-                      {selectedImage.name}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    {/* Fast Search Personal photo input search */}
-                    <div className="relative hidden sm:block">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
-                      <input 
-                        type="text"
-                        placeholder="Tìm ảnh cá nhân trong đoàn..."
-                        value={searchGuestKeyword}
-                        onChange={(e) => setSearchGuestKeyword(e.target.value)}
-                        className="pl-8 pr-3 py-1 bg-gray-100 hover:bg-gray-200/50 focus:bg-white text-xs border border-transparent focus:border-[#004c91] rounded-lg outline-none w-[200px]"
-                      />
-                    </div>
-
-                    {!selectedImage.isScanned ? (
-                      <button
-                        type="button"
-                        onClick={() => handleTriggerScan(selectedImage.id)}
-                        disabled={selectedImage.isScanning}
-                        className="px-3.5 py-1.5 bg-[#f37021] hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg text-xs font-extrabold shadow-sm transition-all flex items-center gap-1.5"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        {selectedImage.isScanning ? 'Đang phân tích khuôn mặt...' : 'Quét khuôn mặt (Scan Face)'}
-                      </button>
-                    ) : (
-                      <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Đã quét khuôn mặt thành công
-                      </span>
-                    )}
-                  </div>
+              {/* SUBSECTION 2: FACE SCANNING — real Google Cloud Vision face detection + manual
+                  guest tagging (FaceScanPanel owns all scan/tag state, fetched from the backend). */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-6 h-6 rounded-lg bg-[#004c91]/10 flex items-center justify-center text-xs font-bold text-[#004c91]">2</span>
+                  <h3 className="text-base font-semibold text-[#004c91]">{t('title')}</h3>
                 </div>
 
-                {/* Sub-bar for Fast Search dropdown output match */}
-                {searchGuestKeyword && (
-                  <div className="bg-yellow-50 px-5 py-2 border-b border-yellow-100 text-xs font-semibold text-yellow-900 flex items-center gap-2">
-                    <Tag className="w-3.5 h-3.5 text-[#f37021]" />
-                    <span>Lọc tìm khuôn mặt gắn với tên chứa: <strong className="text-[#004c91]">"{searchGuestKeyword}"</strong></span>
-                    <button 
-                      onClick={() => setSearchGuestKeyword('')}
-                      className="ml-auto underline hover:text-[#004c91] text-gray-500 font-bold"
-                    >
-                      Xóa bộ lọc
-                    </button>
-                  </div>
-                )}
-
-                {/* Big Preview Area with Box overlays */}
-                <div className="flex-1 flex items-center justify-center p-3 relative select-none overflow-hidden">
-                  
-                  {/* Container of the image */}
-                  <div className="relative max-w-full max-h-[380px] rounded-lg overflow-hidden border border-gray-300">
-                    <img 
-                      src={selectedImage.url} 
-                      alt={selectedImage.name} 
-                      className={`max-w-full max-h-[360px] object-contain transition-all ${selectedImage.isScanning ? 'brightness-50' : ''}`} 
+                {visitInstanceId && (
+                  <>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      accept="image/*"
+                      className="hidden"
                     />
-
-                    {/* Laser line simulator during scan */}
-                    {selectedImage.isScanning && (
-                      <motion.div 
-                        initial={{ top: '0%' }}
-                        animate={{ top: '100%' }}
-                        transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
-                        className="absolute left-0 right-0 h-1 bg-gradient-to-r from-orange-500 via-yellow-400 to-orange-500 shadow-[0_0_15px_4px_rgba(243,112,33,1)] z-10"
-                      />
-                    )}
-
-                    {/* Face Bounding Box Overlays */}
-                    {selectedImage.isScanned && selectedImage.faces.map((face) => {
-                      const matchedGuest = DEFAULT_GUESTS.find(g => g.id === face.taggedUser);
-                      
-                      // Highlight search match
-                      const isHighlightedBySearch = searchGuestKeyword 
-                        ? matchedGuest?.name.toLowerCase().includes(searchGuestKeyword.toLowerCase()) 
-                        : true;
-
-                      // Skip rendering if search is active and this face is NOT a match
-                      if (searchGuestKeyword && !isHighlightedBySearch) return null;
-
-                      return (
-                        <div
-                          key={face.id}
-                          style={{
-                            left: `${face.x}%`,
-                            top: `${face.y}%`,
-                            width: `${face.width}%`,
-                            height: `${face.height}%`
-                          }}
-                          className={`absolute border-2 ${isReadOnly ? 'cursor-default border-emerald-500/80 bg-emerald-500/5' : 'cursor-pointer'} transition-all rounded-md group/box ${
-                            matchedGuest 
-                              ? 'border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' 
-                              : 'border-orange-500 bg-orange-500/10 hover:bg-orange-600/30'
-                          }`}
-                          onClick={() => {
-                            if (isReadOnly) return;
-                            setActiveFaceSelection(
-                              activeFaceSelection?.faceId === face.id 
-                                ? null 
-                                : { imgId: selectedImage.id, faceId: face.id }
-                            );
-                          }}
-                        >
-                          {/* Label above face */}
-                          <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 transition-opacity whitespace-nowrap z-20`}>
-                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold shadow-md text-white ${matchedGuest ? 'bg-emerald-600' : 'bg-orange-600'}`}>
-                              {matchedGuest ? matchedGuest.name : 'Chưa định danh'}
-                            </span>
-                          </div>
-
-                          {/* Hover Details overlay */}
-                          {matchedGuest && (
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 hidden group-hover/box:block bg-slate-900 border border-slate-800 text-white p-2 rounded-xl text-[10px] font-medium shadow-xl pointer-events-none z-30 whitespace-nowrap space-y-0.5">
-                              <p className="font-bold text-[#f37021]">{matchedGuest.name}</p>
-                              <p className="text-slate-300">{matchedGuest.role}</p>
-                              <p className="text-slate-400 font-mono text-[9px]">{matchedGuest.cardVisit}</p>
-                            </div>
-                          )}
-
-                          {/* Target Tag Selector Popover if clicked */}
-                          {activeFaceSelection?.faceId === face.id && (
-                            <div 
-                              className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border border-gray-200 p-3 rounded-2xl shadow-xl z-40 w-52 text-left space-y-2.5 animate-in fade-in slide-in-from-top-1"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                                <span className="text-[10px] uppercase font-bold text-gray-500">Gán danh tính (Tag)</span>
-                                <button 
-                                  onClick={() => setActiveFaceSelection(null)}
-                                  className="text-gray-400 hover:text-gray-600 p-0.5 hover:bg-gray-100 rounded-full"
-                                >
-                                  <Minimize2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                              
-                              <div className="space-y-1 max-h-[160px] overflow-y-auto pr-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleTagGuest(face.id, null)}
-                                  className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors ${!face.taggedUser ? 'bg-orange-50 text-[#f37021]' : 'hover:bg-slate-50 text-gray-600'}`}
-                                >
-                                  <span>Bỏ gán tên (Chưa rõ)</span>
-                                  {!face.taggedUser && <Check className="w-3.5 h-3.5" />}
-                                </button>
-                                
-                                {DEFAULT_GUESTS.map((guest) => (
-                                  <button
-                                    key={guest.id}
-                                    type="button"
-                                    onClick={() => handleTagGuest(face.id, guest.id)}
-                                    className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold flex flex-col transition-colors ${face.taggedUser === guest.id ? 'bg-[#004c91]/5 text-[#004c91]' : 'hover:bg-slate-50 text-gray-700'}`}
-                                  >
-                                    <div className="flex items-center justify-between w-full font-bold">
-                                      <span>{guest.name}</span>
-                                      {face.taggedUser === guest.id && <Check className="w-3.5 h-3.5 text-[#004c91]" />}
-                                    </div>
-                                    <span className="text-[9px] text-gray-400 mt-0.5">{guest.role} ({guest.cardVisit})</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                  </div>
-
-                  {/* Empty state overlay while scanning */}
-                  {selectedImage.isScanning && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-6 bg-slate-900/60 z-10">
-                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-t-transparent border-white mb-2"></div>
-                      <p className="text-sm font-bold tracking-wide">Trí tuệ Nhân tạo thực thi định vị khuôn mặt...</p>
-                    </div>
-                  )}
-
-                  {/* Instructions watermark on layout */}
-                  {!selectedImage.isScanned && !selectedImage.isScanning && (
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] text-white font-bold tracking-wide shadow-md">
-                      Nhấp nút Quét mặt phía trên để tự động định danh khách mời
-                    </div>
-                  )}
-
-                  {selectedImage.isScanned && (
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-emerald-900/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] text-white font-bold tracking-wide shadow-md">
-                      Mẹo: Click từng hộp khung bao màu cam để gán tên tương ứng!
-                    </div>
-                  )}
-                </div>
-
-                {/* Tag summary list on bottom bar */}
-                {selectedImage.isScanned && (
-                  <div className="bg-white border-t border-gray-100 p-4">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
-                      Danh sách định danh khuôn mặt trong bức hình này:
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedImage.faces.map((f, fIdx) => {
-                        const matchedG = DEFAULT_GUESTS.find(g => g.id === f.taggedUser);
-                        return (
-                          <div 
-                            key={f.id}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition-colors ${matchedG ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
-                          >
-                            <User className="w-3.5 h-3.5" />
-                            <span>Vị trí #{fIdx + 1}: {matchedG ? `${matchedG.name} (${matchedG.cardVisit})` : 'Chưa gán tên'}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                    <FaceScanPanel
+                      visitInstanceId={visitInstanceId}
+                      photos={uploadedImages.map((img) => ({ visitPhotoId: img.id, url: img.url, name: img.name }))}
+                      isReadOnly={isReadOnly}
+                      onUploadClick={() => fileInputRef.current?.click()}
+                    />
+                  </>
                 )}
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8">
-                <ImageIcon className="w-12 h-12 text-gray-300 mb-2" />
-                <p className="text-sm font-medium">Chọn một ảnh từ album hoặc tải ảnh mới để bắt đầu.</p>
               </div>
-            )}
-          </div>
-          </div>
+            </>
+          )}
         </div>
-      </>
-    )}
-    </div>
-  </CollapsibleSection>
+      </CollapsibleSection>
 
       {/* SECTION 5: NEWS */}
       {visitInstanceId ? (

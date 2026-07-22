@@ -57,4 +57,5 @@ public class VisitPhoto
     public virtual VisitRequestCampus VisitInstance { get; set; } = null!;
     public virtual VisitPhotoFolder Folder { get; set; } = null!;
     public virtual UploadedFile File { get; set; } = null!;
+    public virtual ICollection<VisitPhotoFaceScan> FaceScans { get; set; } = new List<VisitPhotoFaceScan>();
 }

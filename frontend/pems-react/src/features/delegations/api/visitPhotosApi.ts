@@ -5,7 +5,13 @@
  */
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
-import type { MyVisitPhotoFoldersPage, VisitInstancePhotos } from '../types/visitPhotos.types';
+import type {
+  ConfirmFaceTagItem,
+  MyVisitPhotoFoldersPage,
+  TaggableGuest,
+  VisitInstancePhotos,
+  VisitPhotoFaceScan,
+} from '../types/visitPhotos.types';
 
 export const visitPhotosApi = {
   async myFolders(page = 1, pageSize = 10, search?: string, sortDirection = 'DESC', fromDate?: string, toDate?: string): Promise<MyVisitPhotoFoldersPage> {
@@ -31,5 +37,35 @@ export const visitPhotosApi = {
 
   async remove(visitPhotoId: string | number, reason: string): Promise<void> {
     await httpClient.patch(API_ENDPOINTS.visitPhotos.remove(visitPhotoId), { reason });
+  },
+
+  // ── Face detection + manual guest tagging ────────────────────────────────────────────────
+  async startFaceScan(visitPhotoId: string | number): Promise<VisitPhotoFaceScan> {
+    const { data } = await httpClient.post<VisitPhotoFaceScan>(API_ENDPOINTS.visitPhotos.faceScans(visitPhotoId));
+    return data;
+  },
+
+  async getFaceScans(visitPhotoId: string | number): Promise<VisitPhotoFaceScan[]> {
+    const { data } = await httpClient.get<VisitPhotoFaceScan[]>(API_ENDPOINTS.visitPhotos.faceScans(visitPhotoId));
+    return data;
+  },
+
+  async getFaceScanDetail(faceScanId: string | number): Promise<VisitPhotoFaceScan> {
+    const { data } = await httpClient.get<VisitPhotoFaceScan>(API_ENDPOINTS.visitPhotos.faceScanDetail(faceScanId));
+    return data;
+  },
+
+  async getTaggableGuests(visitInstanceId: string | number): Promise<TaggableGuest[]> {
+    const { data } = await httpClient.get<TaggableGuest[]>(API_ENDPOINTS.visitPhotos.taggableGuests(visitInstanceId));
+    return data;
+  },
+
+  async confirmFaceTags(
+    faceScanId: string | number, rowVersion: number, faces: ConfirmFaceTagItem[],
+  ): Promise<VisitPhotoFaceScan> {
+    const { data } = await httpClient.post<VisitPhotoFaceScan>(
+      API_ENDPOINTS.visitPhotos.confirmFaceTags(faceScanId), { rowVersion, faces },
+    );
+    return data;
   },
 };

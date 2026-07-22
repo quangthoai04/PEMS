@@ -7,6 +7,7 @@ using PEMS.Application.ApiIntegrations.Common;
 using PEMS.Application.BusinessCardOcr.Services;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.VisitPhotos.FaceScans.Services;
 using PEMS.Domain.Entities.ApiIntegrations;
 
 namespace PEMS.Application.ApiIntegrations.Commands.TestApiIntegration;
@@ -20,11 +21,13 @@ public sealed class TestApiIntegrationCommandHandler
     private readonly IBusinessCardOcrProvider _provider;
     private readonly IOcrCredentialResolver _credentialResolver;
     private readonly PEMS.Application.News.Services.INewsTranslationService _translationService;
+    private readonly IFaceDetectionProvider _faceDetectionProvider;
 
     public TestApiIntegrationCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IBusinessCardOcrProvider provider, IOcrCredentialResolver credentialResolver,
-        PEMS.Application.News.Services.INewsTranslationService translationService)
+        PEMS.Application.News.Services.INewsTranslationService translationService,
+        IFaceDetectionProvider faceDetectionProvider)
     {
         _db = db;
         _currentUser = currentUser;
@@ -32,6 +35,7 @@ public sealed class TestApiIntegrationCommandHandler
         _provider = provider;
         _credentialResolver = credentialResolver;
         _translationService = translationService;
+        _faceDetectionProvider = faceDetectionProvider;
     }
 
     public async Task<ApiConnectionTestResultDto> Handle(
@@ -44,9 +48,10 @@ public sealed class TestApiIntegrationCommandHandler
             ?? throw new NotFoundException("ApiConfiguration", request.ApiConfigId);
 
         if (config.Purpose != BusinessCardOcrConstants.Purpose
-            && config.Purpose != NewsTranslationConstants.Purpose)
+            && config.Purpose != NewsTranslationConstants.Purpose
+            && config.Purpose != FaceDetectionConstants.Purpose)
             throw new BusinessRuleException(
-                "Chỉ hỗ trợ test kết nối cho cấu hình BUSINESS_CARD_OCR hoặc NEWS_TRANSLATION.",
+                "Chỉ hỗ trợ test kết nối cho cấu hình BUSINESS_CARD_OCR, NEWS_TRANSLATION hoặc FACE_DETECTION.",
                 ApiIntegrationErrorCodes.InvalidPurpose);
 
         var now = _clock.VietnamNow;
@@ -67,6 +72,20 @@ public sealed class TestApiIntegrationCommandHandler
             var settings = OcrProviderSettings.Parse(config.SettingsJson);
             var result = await _translationService.TestConnectionAsync(
                 settings.ProjectId, settings.Location, credential, config.TimeoutSeconds, cancellationToken);
+            success = result.Success;
+            message = result.Message;
+            errorCode = result.ErrorCode;
+        }
+        else if (config.Purpose == FaceDetectionConstants.Purpose)
+        {
+            var runtime = new FaceDetectionRuntimeConfig
+            {
+                ApiConfigId = config.ApiConfigId,
+                Settings = FaceDetectionProviderSettings.Parse(config.SettingsJson),
+                CredentialJson = credential,
+                TimeoutSeconds = config.TimeoutSeconds,
+            };
+            var result = await _faceDetectionProvider.TestConnectionAsync(runtime, cancellationToken);
             success = result.Success;
             message = result.Message;
             errorCode = result.ErrorCode;
@@ -99,10 +118,14 @@ public sealed class TestApiIntegrationCommandHandler
             ApiConfigId = config.ApiConfigId,
             RequestedBy = _currentUser.UserId,
             RelatedType = "CONNECTION_TEST",
-            Endpoint = config.Purpose == NewsTranslationConstants.Purpose
-                ? $"{config.BaseUrl}/v3/.../:translateText (test)"
-                : $"{config.BaseUrl}/v1/.../processors/(get)",
-            Method = config.Purpose == NewsTranslationConstants.Purpose ? "POST" : "GET",
+            Endpoint = config.Purpose switch
+            {
+                _ when config.Purpose == NewsTranslationConstants.Purpose => $"{config.BaseUrl}/v3/.../:translateText (test)",
+                _ when config.Purpose == FaceDetectionConstants.Purpose => $"{config.BaseUrl}/v1/images:annotate (test)",
+                _ => $"{config.BaseUrl}/v1/.../processors/(get)",
+            },
+            Method = config.Purpose == NewsTranslationConstants.Purpose || config.Purpose == FaceDetectionConstants.Purpose
+                ? "POST" : "GET",
             HttpStatus = success ? 200 : null,
             ResponseTimeMs = (int)stopwatch.ElapsedMilliseconds,
             Success = success,

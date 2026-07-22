@@ -96,6 +96,8 @@ public interface IApplicationDbContext
     DbSet<ApiUsageQuota> ApiUsageQuotas { get; }
     DbSet<ApiRequestLog> ApiRequestLogs { get; }
     DbSet<BusinessCardOcrJob> BusinessCardOcrJobs { get; }
+    DbSet<VisitPhotoFaceScan> VisitPhotoFaceScans { get; }
+    DbSet<VisitPhotoFaceDetection> VisitPhotoFaceDetections { get; }
     DbSet<AgendaTemplate> AgendaTemplates { get; }
     DbSet<AgendaTemplateItem> AgendaTemplateItems { get; }
     DbSet<AgendaTemplateDefault> AgendaTemplateDefaults { get; }
