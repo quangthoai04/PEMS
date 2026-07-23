@@ -109,11 +109,6 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits);
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(form.CampusVisits);
 
-        // Compatibility projection = the smallest-campus_id campus (transition only; real data is per-instance).
-        var projection = form.CampusVisits
-            .OrderBy(cv => campusByCode[cv.CampusId.Trim().ToUpperInvariant()].CampusId)
-            .First();
-
         // ── Identity (plan §16.4): same normalized email → one ACTIVE account; different → request is created
         //    now but the contact stays PENDING_CONFIRMATION with an INITIAL_CLAIM (72h). ──
         var registrantEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(form.Registrant.Email);
