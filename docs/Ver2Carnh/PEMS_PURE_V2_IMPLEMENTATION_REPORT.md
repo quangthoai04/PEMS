@@ -311,6 +311,44 @@ Chặn tái diễn: `SchemaContractTests.Mapped_nullability_matches_the_canonica
 
 ---
 
+## 4ter. PHASE 2 — FLOW CLOSURE MATRIX (đang tiến hành)
+
+Trạng thái chỉ dùng: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `FIXED / TESTED` · `VERIFIED` · `BLOCKED`.
+Cột "Runtime test" ghi **file test thật đang chạy trong gate**, không ghi suy luận từ đọc code.
+
+| Flow | Endpoint | Handler / service | Transaction | Idempotency | Audit | Notification | Runtime test | Status |
+|---|---|---|---|---|---|---|---|---|
+| Authenticated create | `POST /api/v2/visit-requests` | `CreateVisitRequestV2CommandHandler` + `VisitRequestV2CreateService` | ✅ | ✅ `submission_id` | ✅ req | ✅ | `CreateVisitRequestV2ServiceTests` (12), `CreateVisitRequestV2CommandTests` (3), `ActorRelationAuthenticatedCreateApiTests` (13) | VERIFIED |
+| Public OTP initiate | `POST /api/v2/visit-requests/initiate` | `InitiateVisitRequestV2CommandHandler` | ✅ | ✅ snapshot bound | — | — | `PublicInitiateVisitRequestV2Tests` (4), `Uc17OtpChallengeApiTests` (11) | VERIFIED |
+| Verify / create | `POST /api/v2/visit-requests/verify` | `VerifyAndCreateVisitRequestV2CommandHandler` | ✅ | ✅ pre + late + race | ✅ req | ✅ post-commit | `VerifyAndCreateVisitRequestV2CommandTests` (3), `PublicInitiateVisitRequestV2Tests` | VERIFIED |
+| Replay verify | idem | idem | ✅ | ✅ không tạo row/thông báo lần hai | — | — | `Uc17IdempotencyDuplicateApiTests` (8) | VERIFIED |
+| Pending edit | `PUT /api/v2/visit-requests/{id}/pending-edit` | `VisitRequestV2EditService` | ✅ | row-version | ✅ 1 audit + change/instance | ✅ | `UpdatePendingVisitRequestV2ServiceTests` (14), `UpdatePendingVisitRequestV2CommandTests` | VERIFIED |
+| Reject → resubmit | `POST /api/v2/visit-requests/{id}/resubmit` | `VisitRequestV2EditService` | ✅ | row-version | ✅ | ✅ | `ResubmitRejectedVisitRequestV2ServiceTests` (6), `VisitorEditResubmitApiTests` (11) | VERIFIED |
+| Safe edit | `PATCH .../safe-details` | `VisitSafeEditService` | ✅ | row-version | ✅ + field changes | ✅ URGENT khi rút media | `VisitSafeEditV2Tests` (4) | VERIFIED |
+| Amendment submit / approve / reject | `.../amendments*` | `VisitAmendmentService` | ✅ | row-version | ✅ req+inst | ✅ | `VisitAmendmentV2Tests` (5) | VERIFIED |
+| Primary-contact claim | `/api/v2/visit-contact-claims/*` | `VisitContactClaimService` + 5 handler | ✅ | replay idempotent | ✅ req | ✅ | `VisitContactClaimWorkflowTests` (7) | VERIFIED |
+| Primary-contact transfer | `/api/v2/visit-contact-transfers/*` | `VisitContactTransfer*` | ✅ | replay idempotent | ✅ req | ✅ | `VisitContactTransferWorkflowTests` (6) | VERIFIED |
+| **Approve campus + assign host** | `POST .../campuses/{iid}/approve` | `ApproveCampusInstanceCommandHandler` | ✅ | 409 khi lặp | **FIXED** — nay có campus/req/inst | ✅ | **`CampusApprovalDecisionV2Tests` (9) — mới** | FIXED / TESTED |
+| **Reject campus** | `POST .../campuses/{iid}/reject` | `RejectCampusInstanceCommandHandler` | ✅ | 409 khi lặp | **FIXED** | ✅ | **`CampusApprovalDecisionV2Tests`** | FIXED / TESTED |
+| **Cancel (request + per-campus)** | `POST .../cancel`, `.../campuses/{iid}/cancel` | `CancelVisitRequestCommandHandler` | ✅ 2-pha | — | **FIXED** — nhánh sau duyệt trước đây thiếu cả `visit_request_id` | ✅ | **`CancelAndInvitationResponseV2Tests` (7) — mới** | FIXED / TESTED |
+| **Invitation accept / decline** | `POST /api/visit-invitations/{pid}/(accept\|decline)` | `RespondVisitParticipantInvitationCommandHandler` | ✅ 1 SaveChanges | 409 khi trả lời lại | **FIXED** — thiếu campus, khác invite/remove | ✅ | **`CancelAndInvitationResponseV2Tests`** | FIXED / TESTED |
+
+### Ba khiếm khuyết thật đã sửa trong Phase 2
+
+1. **Quyết định từng campus không có audit context.** `audit_logs` có `campus_id` / `visit_request_id` / `visit_instance_id` và **index cả ba**, nhưng approve và reject để trống hết. Màn hình audit của Admin lọc theo campus → loại quyết định *duy nhất* mang tính per-campus lại là loại không bao giờ hiện ra.
+2. **Cancel sau duyệt không có `visit_request_id`.** Nhánh `PENDING_APPROVAL` ngay phía trên trong cùng handler thì có. Cancel một campus nay ghi thêm instance + campus; cancel toàn đơn cố ý không ghi campus vì nó không thuộc campus nào.
+3. **Phản hồi lời mời thiếu campus.** `INVITE_VISIT_PARTICIPANT` và `REMOVE_VISIT_PARTICIPANT` đều ghi `campus_id`; riêng phản hồi của chính người được mời thì không.
+
+### Phát hiện đã phân loại, **chưa** sửa trong Phase 2
+
+| # | Phát hiện | Bằng chứng | Phase xử lý |
+|---|---|---|---|
+| P2-F1 | `tests/PEMS.ApplicationTests/` có **139 file `.cs` được Git theo dõi nhưng không có `.csproj`** và không nằm trong `PEMS.slnx` → **chưa từng biên dịch, chưa từng chạy**. Trong đó có `ApproveCampusInstanceCommandTests.cs` và `RejectCampusInstanceCommandTests.cs`. | `find tests/PEMS.ApplicationTests -name '*.csproj'` → rỗng; `git ls-files` → 139 | Phase 7 (quyết định của chủ dự án: khôi phục vào solution hay xóa) |
+| P2-F2 | `FormSchemaVersions` (`Legacy=1`, `PerCampus=2`) **không còn consumer production nào** — 0 tham chiếu trong `backend/` ngoài chính khai báo — nhưng còn **98 tham chiếu trong test harness**, nơi vẫn rẽ nhánh `schemaVersion >= FormSchemaVersions.PerCampus`. | `grep -rn FormSchemaVersions backend` → chỉ dòng khai báo | Phase 7 (compatibility symbol + unused parameter) |
+| P2-F3 | `ViewDocumentDetailQueryHandler.cs:75` dùng `visitRequest?.CampusInstances.FirstOrDefault()` **không có** guard `HasMixedCampusDetails` → chọn campus đại diện thật sự. | đọc trực tiếp | Phase 3 (Documents) |
+
+---
+
 ## 5. PHẦN ĐÃ HOÀN TẤT TRONG PHASE 1 ✅
 
 1. **Xóa đúng 12 phantom mapping** — `VisitRequest` (11) + `VisitRequestPendingForm` (1).

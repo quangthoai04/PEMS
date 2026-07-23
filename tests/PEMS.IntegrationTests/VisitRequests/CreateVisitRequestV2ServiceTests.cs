@@ -280,20 +280,21 @@ public sealed class CreateVisitRequestV2ServiceTests
     }
 
     [Fact]
-    public async Task Compat_projection_is_smallest_campus_when_mixed()
+    public async Task Mixed_content_keeps_each_campus_answering_with_its_own_name()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        // HN = campus_id 1 (smallest), HCM = 2. Mixed content; projection must be HN's delegation.
+        // HN = campus_id 1, HCM = 2, and HCM is submitted FIRST. Neither ordering nor campus_id may
+        // elect a representative: the old create service used to snapshot the smallest campus_id onto
+        // the request, and this asserts there is nothing of the sort left to snapshot.
         var req = await Svc(db).CreateV2Async(
             Form("registrant@example.com", Campus("HCM", delegation: "Đoàn HCM"), Campus("HN", delegation: "Đoàn HN")),
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         Assert.True(req.HasMixedCampusDetails);
-        // Pure V2: no smallest-campus snapshot on the request. Each campus keeps its OWN name, and the
-        // two must differ — that is exactly what "mixed" means.
+        // Each campus keeps its OWN name, and the two differ — that is exactly what "mixed" means.
         var byCampus = req.CampusInstances.ToDictionary(c => c.CampusId, c => c.FormDetail!.DelegationName);
         Assert.Equal("Đoàn HN", byCampus[1UL]);
         Assert.Equal("Đoàn HCM", byCampus[2UL]);
