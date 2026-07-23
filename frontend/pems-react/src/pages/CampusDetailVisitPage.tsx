@@ -41,6 +41,7 @@ import bgDN from "../assets/FPTbanner_visit/DaNang.png";
 import bgQN from "../assets/FPTbanner_visit/QuyNhon.png";
 
 import { youtubeEmbedUrl } from "../shared/utils/youtube";
+import { localizedDbText, isEnglishLanguage } from "../shared/i18n/localizedDbText";
 import { publicVisitFptuApi } from "../features/visit-fptu/publicVisitFptuApi";
 import type {
   PublicGalleryArea,
@@ -95,7 +96,10 @@ const mediaSrc = (url?: string | null) => url || "";
  * media-kind pill, title, and a centered "Xem chi tiết" CTA on hover (BR-PGAL-GRID-02/05/06).
  */
 function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () => void }) {
-  const { t } = useTranslation(['visitFptu']);
+  const { t, i18n } = useTranslation(['visitFptu']);
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  // DB-backed bilingual strings: EN when the header language is EN and a translation exists, else VI.
+  const displayTitle = localizedDbText(item.title, item.titleEn, language);
   const [failed, setFailed] = useState(false);
   const pm = item.primaryMedia;
   const video = isVideo(pm?.mediaType);
@@ -105,7 +109,7 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
   return (
     <button
       onClick={onOpen}
-      title={item.title}
+      title={displayTitle}
       className="group relative aspect-[16/10] rounded-[20px] overflow-hidden cursor-pointer outline-none bg-white/[0.06] shadow-[0_18px_45px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_28px_70px_rgba(0,0,0,0.42)] focus-visible:ring-2 focus-visible:ring-fpt-orange"
     >
       {!pm || failed ? (
@@ -115,7 +119,7 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
       ) : imgSrc ? (
         <img
           src={mediaSrc(imgSrc)}
-          alt={pm.altText || item.title}
+          alt={pm.altText || displayTitle}
           loading="lazy"
           onError={() => setFailed(true)}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.08]"
@@ -158,7 +162,7 @@ function GridCard({ item, onOpen }: { item: PublicGalleryGridItem; onOpen: () =>
 
       {/* Title at the bottom */}
       <div className="absolute inset-x-0 bottom-0 z-[3] p-3 text-left pointer-events-none">
-        <p className="text-white text-sm font-bold leading-tight line-clamp-2 drop-shadow">{item.title}</p>
+        <p className="text-white text-sm font-bold leading-tight line-clamp-2 drop-shadow">{displayTitle}</p>
       </div>
     </button>
   );
@@ -297,6 +301,9 @@ function LocationThumbImage({ url, alt }: { url?: string | null; alt: string }) 
 
 /** Primary-media thumbnail of a Location Showcase gallery item (image, or video poster + play badge). */
 function ShowcaseItemThumb({ item }: { item: PublicGalleryShowcaseItem }) {
+  const { i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const displayTitle = localizedDbText(item.title, item.titleEn, language);
   const [failed, setFailed] = useState(false);
   const pm = item.primaryMedia;
   const isVid = (pm?.mediaType || "").toUpperCase() === "VIDEO";
@@ -312,7 +319,7 @@ function ShowcaseItemThumb({ item }: { item: PublicGalleryShowcaseItem }) {
     <div className="relative w-full h-full">
       <img
         src={src}
-        alt={pm.altText || item.title}
+        alt={pm.altText || displayTitle}
         loading="lazy"
         onError={() => setFailed(true)}
         className="w-full h-full object-cover"
@@ -558,6 +565,7 @@ function GalleryItemDetailModal({
   onNext,
   hasNav,
   t,
+  language,
 }: {
   detail: PublicGalleryItemDetail | null;
   isLoading: boolean;
@@ -567,6 +575,8 @@ function GalleryItemDetailModal({
   onNext: () => void;
   hasNav: boolean;
   t: any;
+  /** Global header language (i18n.resolvedLanguage) — drives the modal's default VI/EN content tab. */
+  language: string;
 }) {
   const [idx, setIdx] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -576,16 +586,25 @@ function GalleryItemDetailModal({
 
   // ── Bilingual content + audio (speaker icon) ──
   // The item carries a Vietnamese + English description and a ready-to-play audio recording for each.
-  // Default is Vietnamese. Switching language stops any playing audio and swaps description + audio URL;
-  // the speaker icon plays the current language's recording directly (no ensure/poll). Switching item or
-  // closing the modal stops the audio.
+  // The DEFAULT tab follows the global header language (VI header → VI tab, EN header → EN tab); the
+  // user may still switch tabs manually, and that manual choice sticks until the global language or the
+  // shown item changes. Switching language stops any playing audio and swaps description + audio URL —
+  // it NEVER autoplays the other recording, refetches the item or resets the carousel.
   type GalleryLanguage = "vi" | "en";
-  const [selectedLanguage, setSelectedLanguage] = useState<GalleryLanguage>("vi");
+  const globalGalleryLanguage: GalleryLanguage = isEnglishLanguage(language) ? "en" : "vi";
+  const [selectedLanguage, setSelectedLanguage] = useState<GalleryLanguage>(globalGalleryLanguage);
   const [audioState, setAudioState] = useState<"idle" | "loading" | "playing" | "error">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const activeContent =
     selectedLanguage === "vi" ? detail?.galleryItem.content?.vi : detail?.galleryItem.content?.en;
+
+  // Localized DB-backed strings (breadcrumb + title). Fall back to VI when EN is missing.
+  const displayAreaName = localizedDbText(detail?.area.areaName, detail?.area.areaNameEn, language);
+  const displayLocationName = localizedDbText(
+    detail?.location.locationName, detail?.location.locationNameEn, language);
+  const displayItemTitle = localizedDbText(
+    detail?.galleryItem.title, detail?.galleryItem.titleEn, language);
 
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
@@ -627,14 +646,26 @@ function GalleryItemDetailModal({
     setSelectedLanguage(lng);
   };
 
-  // Reset carousel + language + stop audio whenever the shown item changes.
+  // Reset carousel + stop audio whenever the shown item changes; the language tab resets to the
+  // CURRENT global header language (not hard-coded VI).
   useEffect(() => {
     setIdx(0);
     setFailed(false);
     setZoomOpen(false);
     stopAudio();
-    setSelectedLanguage("vi");
+    setSelectedLanguage(globalGalleryLanguage);
+    // globalGalleryLanguage is intentionally omitted: this effect only handles ITEM changes — the
+    // global-language change while the same item stays open is handled by the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId, stopAudio]);
+
+  // Global header language changed while the modal is open → stop the playing audio and follow it
+  // (description + audio URL + names swap in place; nothing refetches, nothing autoplays).
+  useEffect(() => {
+    stopAudio();
+    setSelectedLanguage(globalGalleryLanguage);
+  }, [globalGalleryLanguage, stopAudio]);
+
   // Stop audio when the modal unmounts.
   useEffect(() => () => stopAudio(), [stopAudio]);
 
@@ -696,9 +727,9 @@ function GalleryItemDetailModal({
 
             <div className="flex items-center justify-between mb-5 relative z-10 gap-3">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-fpt-orange/90 text-white font-semibold text-[10px] sm:text-xs tracking-widest uppercase rounded-full border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-full overflow-hidden">
-                <span className="truncate">{detail?.area.areaName}</span>
+                <span className="truncate">{displayAreaName}</span>
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                <span className="truncate">{detail?.location.locationName}</span>
+                <span className="truncate">{displayLocationName}</span>
               </div>
               <div className="flex items-center gap-2 relative shrink-0">
                 <button
@@ -729,7 +760,7 @@ function GalleryItemDetailModal({
             </div>
 
             <h3 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/70 mb-3 leading-tight tracking-tight drop-shadow-sm relative z-10 min-h-[2rem]">
-              {isLoading ? t('visitFptu:gallery.labels.loading') : detail?.galleryItem.title || "—"}
+              {isLoading ? t('visitFptu:gallery.labels.loading') : displayItemTitle || "—"}
             </h3>
             <div className="w-24 h-1.5 bg-gradient-to-r from-fpt-orange to-transparent rounded-full opacity-80 relative z-10" />
           </div>
@@ -857,7 +888,7 @@ function GalleryItemDetailModal({
                     {cur.sourceType === "YOUTUBE" ? (
                       <iframe
                         src={cur.embedUrl || youtubeEmbedUrl(cur.youtubeVideoId || "")}
-                        title={cur.altText || detail?.galleryItem.title || "YouTube video"}
+                        title={cur.altText || displayItemTitle || "YouTube video"}
                         className="w-full h-full"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
@@ -875,7 +906,7 @@ function GalleryItemDetailModal({
                     ) : (
                       <img
                         src={mediaSrc(cur.url)}
-                        alt={cur.altText || detail?.galleryItem.title || "FPTU"}
+                        alt={cur.altText || displayItemTitle || "FPTU"}
                         onError={() => setFailed(true)}
                         className="w-full h-full object-cover"
                       />
@@ -984,7 +1015,7 @@ function GalleryItemDetailModal({
                 <div className="w-[92vw] max-w-[1280px] aspect-video bg-black">
                   <iframe
                     src={cur.embedUrl || youtubeEmbedUrl(cur.youtubeVideoId || "")}
-                    title={cur.altText || detail?.galleryItem.title || "YouTube video"}
+                    title={cur.altText || displayItemTitle || "YouTube video"}
                     className="w-full h-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
@@ -1003,7 +1034,7 @@ function GalleryItemDetailModal({
               ) : (
                 <img
                   src={mediaSrc(cur.url)}
-                  alt={cur.altText || detail?.galleryItem.title || "FPTU"}
+                  alt={cur.altText || displayItemTitle || "FPTU"}
                   className="max-w-[92vw] max-h-[90vh] object-contain"
                 />
               )}
@@ -1021,7 +1052,11 @@ function GalleryItemDetailModal({
 }
 
 export function CampusDetailVisitPage() {
-  const { t } = useTranslation(['visitFptu']);
+  const { t, i18n } = useTranslation(['visitFptu']);
+  // Global header language for DB-backed bilingual strings. resolvedLanguage handles "en-US"/"vi-VN"
+  // variants. Display strings are DERIVED at render time only — the bilingual payloads stay in state
+  // untouched, so toggling VI/EN re-renders without refetching or resetting any view state.
+  const language = i18n.resolvedLanguage ?? i18n.language;
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1097,7 +1132,7 @@ export function CampusDetailVisitPage() {
   const flatLocations = useMemo(
     () =>
       areas.flatMap((a) =>
-        a.locations.map((l) => ({ ...l, areaId: a.areaId, areaName: a.areaName })),
+        a.locations.map((l) => ({ ...l, areaId: a.areaId, areaName: a.areaName, areaNameEn: a.areaNameEn })),
       ),
     [areas],
   );
@@ -1762,7 +1797,7 @@ export function CampusDetailVisitPage() {
                       }`}
                     >
                       <span className="uppercase tracking-widest text-[11px] sm:text-xs font-semibold">
-                        {area.areaName}
+                        {localizedDbText(area.areaName, area.areaNameEn, language)}
                       </span>
                       <span className="opacity-90">
                         {showVideoIcon ? <VideoIcon className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
@@ -1818,7 +1853,7 @@ export function CampusDetailVisitPage() {
                     }`}
                   >
                     <span className="font-medium tracking-wide drop-shadow-sm group-hover/sub:translate-x-1 transition-transform">
-                      {loc.locationName}
+                      {localizedDbText(loc.locationName, loc.locationNameEn, language)}
                     </span>
                     <span className="flex items-center shrink-0">
                       <MapPin className="w-4 h-4 opacity-70 group-hover/sub:opacity-100 group-hover/sub:scale-110 transition-all" />
@@ -1962,7 +1997,7 @@ export function CampusDetailVisitPage() {
             <ShowcaseBackground
               src={showcaseArea.areaCoverUrl}
               fallbackSrc={fallback.bg}
-              alt={showcaseArea.areaName}
+              alt={localizedDbText(showcaseArea.areaName, showcaseArea.areaNameEn, language)}
               mediaType={showcaseArea.areaCoverMediaType}
             />
 
@@ -1994,7 +2029,7 @@ export function CampusDetailVisitPage() {
                 {t('visitFptu:gallery.labels.areasCount')}
               </span>
               <h2 className="mt-2 text-white font-black text-4xl sm:text-5xl md:text-6xl leading-[1.05] tracking-tight drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
-                {showcaseArea.areaName}
+                {localizedDbText(showcaseArea.areaName, showcaseArea.areaNameEn, language)}
               </h2>
 
               {/* Prev / next area navigation (BR-PGAL-AREA §6, loops) */}
@@ -2040,7 +2075,11 @@ export function CampusDetailVisitPage() {
                       style={{ top: activeThumbY }}
                     >
                       <span className="inline-block max-w-[44vw] sm:max-w-[240px] truncate px-3.5 py-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md text-white text-sm font-semibold drop-shadow-[0_8px_20px_rgba(0,0,0,0.5)]">
-                        {showcaseLocations[safeThumbIndex]?.locationName}
+                        {localizedDbText(
+                          showcaseLocations[safeThumbIndex]?.locationName,
+                          showcaseLocations[safeThumbIndex]?.locationNameEn,
+                          language,
+                        )}
                       </span>
                     </div>
 
@@ -2051,6 +2090,7 @@ export function CampusDetailVisitPage() {
                     >
                       {showcaseLocations.map((loc, idx) => {
                         const active = idx === safeThumbIndex;
+                        const locDisplayName = localizedDbText(loc.locationName, loc.locationNameEn, language);
                         return (
                           <button
                             key={loc.locationId}
@@ -2061,14 +2101,14 @@ export function CampusDetailVisitPage() {
                               setActiveLocationThumbnailIndex(idx);
                               openLocationShowcase(loc.locationId); // AC-LOC-01: open Location Showcase
                             }}
-                            title={loc.locationName}
+                            title={locDisplayName}
                             className={`relative w-[72px] h-[72px] sm:w-[78px] sm:h-[78px] rounded-[10px] overflow-hidden cursor-pointer shrink-0 transition-all duration-300 ${
                               active
                                 ? "z-10 border-2 border-white opacity-100 scale-[1.14] shadow-[0_0_0_3px_rgba(255,255,255,0.20),0_0_26px_rgba(255,255,255,0.6),0_10px_24px_rgba(0,0,0,0.45)]"
                                 : "border-2 border-white/25 opacity-65 hover:opacity-90 hover:border-white/50"
                             }`}
                           >
-                            <LocationThumbImage url={loc.locationCoverUrl} alt={loc.locationName} />
+                            <LocationThumbImage url={loc.locationCoverUrl} alt={locDisplayName} />
                           </button>
                         );
                       })}
@@ -2112,7 +2152,8 @@ export function CampusDetailVisitPage() {
             <ShowcaseBackground
               src={locationShowcaseLocation.locationCoverUrl}
               fallbackSrc={locationShowcaseArea?.areaCoverUrl || fallback.bg}
-              alt={locationShowcaseLocation.locationName}
+              alt={localizedDbText(
+                locationShowcaseLocation.locationName, locationShowcaseLocation.locationNameEn, language)}
             />
             <div
               className="absolute inset-0 z-[1] pointer-events-none"
@@ -2154,9 +2195,12 @@ export function CampusDetailVisitPage() {
                   </button>
                 )}
                 <h2 className="min-w-0 text-white font-black text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-tight drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
-                  <span className="uppercase">{locationShowcaseArea?.areaName}</span>
+                  <span className="uppercase">
+                    {localizedDbText(locationShowcaseArea?.areaName, locationShowcaseArea?.areaNameEn, language)}
+                  </span>
                   <span className="font-medium text-white/75 text-xl sm:text-2xl md:text-3xl">
-                    {" "}/ {locationShowcaseLocation.locationName}
+                    {" "}/ {localizedDbText(
+                      locationShowcaseLocation.locationName, locationShowcaseLocation.locationNameEn, language)}
                   </span>
                 </h2>
                 {locationSiblings.length > 1 && (
@@ -2228,6 +2272,7 @@ export function CampusDetailVisitPage() {
             onNext={() => stepItemDetail(1)}
             hasNav={detailItems.length > 1}
             t={t}
+            language={language}
           />
         )}
       </AnimatePresence>
