@@ -345,7 +345,7 @@ Cột "Runtime test" ghi **file test thật đang chạy trong gate**, không gh
 |---|---|---|---|
 | P2-F1 | `tests/PEMS.ApplicationTests/` có **139 file `.cs` được Git theo dõi nhưng không có `.csproj`** và không nằm trong `PEMS.slnx` → **chưa từng biên dịch, chưa từng chạy**. Trong đó có `ApproveCampusInstanceCommandTests.cs` và `RejectCampusInstanceCommandTests.cs`. | `find tests/PEMS.ApplicationTests -name '*.csproj'` → rỗng; `git ls-files` → 139 | Phase 7 (quyết định của chủ dự án: khôi phục vào solution hay xóa) |
 | P2-F2 | `FormSchemaVersions` (`Legacy=1`, `PerCampus=2`) **không còn consumer production nào** — 0 tham chiếu trong `backend/` ngoài chính khai báo — nhưng còn **98 tham chiếu trong test harness**, nơi vẫn rẽ nhánh `schemaVersion >= FormSchemaVersions.PerCampus`. | `grep -rn FormSchemaVersions backend` → chỉ dòng khai báo | Phase 7 (compatibility symbol + unused parameter) |
-| P2-F3 | `ViewDocumentDetailQueryHandler.cs:75` dùng `visitRequest?.CampusInstances.FirstOrDefault()` **không có** guard `HasMixedCampusDetails` → chọn campus đại diện thật sự. | đọc trực tiếp | Phase 3 (Documents) |
+| P2-F3 | `ViewDocumentDetailQueryHandler.cs:75` dùng `visitRequest?.CampusInstances.FirstOrDefault()`. **Đính chính phân loại ban đầu:** *tiêu đề* có guard `HasMixedCampusDetails`; **lịch thì không** — mà `has_mixed_campus_details` cố ý không so sánh lịch, nên lịch khác nhau ngay cả khi `mixed = false`. | đọc trực tiếp + `DocumentVisitOwnerContextV2Tests` | **Đã sửa — Phase 3 slice 3D-1** |
 
 ---
 
