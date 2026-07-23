@@ -121,6 +121,7 @@ export const API_ENDPOINTS = {
     detail: (id: string | number) => `/api-integrations/${id}`,
     upsertGoogleDocumentAi: '/api-integrations/business-card-ocr/google-document-ai',
     upsertGoogleTranslation: '/api-integrations/news-translation/google-cloud-translation',
+    upsertGoogleVisionFaceDetection: '/api-integrations/face-detection/google-cloud-vision',
     update: (id: string | number) => `/api-integrations/${id}`,
     test: (id: string | number) => `/api-integrations/${id}/test`,
     enable: (id: string | number) => `/api-integrations/${id}/enable`,
@@ -280,6 +281,11 @@ export const API_ENDPOINTS = {
     byInstance: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}`,
     upload: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/upload`,
     remove: (visitPhotoId: string | number) => `/visit-photos/${visitPhotoId}/remove`,
+    // Face detection + manual guest tagging (Sau tiếp khách).
+    faceScans: (visitPhotoId: string | number) => `/visit-photos/${visitPhotoId}/face-scans`,
+    faceScanDetail: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}`,
+    taggableGuests: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/taggable-guests`,
+    confirmFaceTags: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}/confirm`,
   },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {

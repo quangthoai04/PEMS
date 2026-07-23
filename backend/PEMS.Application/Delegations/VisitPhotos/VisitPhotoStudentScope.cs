@@ -35,46 +35,14 @@ public static class VisitPhotoStudentScope
         ulong visitInstanceId,
         CancellationToken cancellationToken)
     {
-        if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId)
-            throw new ForbiddenException();
-
-        if (currentUser.RoleCode != RoleCodes.Student)
-            throw new ForbiddenException("Chỉ Sinh viên tham gia chuyến thăm mới dùng được chức năng ảnh đoàn khách.");
-
-        // Re-check ACTIVE against the DB — a stale token must not authorize a disabled account.
-        var isActiveStudent = await db.Users
-            .AnyAsync(u => u.UserId == userId
-                           && u.Status == "ACTIVE"
-                           && u.Role.RoleCode == RoleCodes.Student,
-                cancellationToken);
-        if (!isActiveStudent)
-            throw new ForbiddenException("Tài khoản không hợp lệ hoặc đã bị khóa.");
-
-        var instance = await db.VisitRequestCampuses
-            .Include(c => c.VisitRequest)
-            .FirstOrDefaultAsync(c => c.VisitInstanceId == visitInstanceId, cancellationToken)
-            ?? throw new NotFoundException("VisitRequestCampus", visitInstanceId);
-
-        var isAcceptedStudentParticipant = await db.VisitParticipants
-            .AnyAsync(p => p.VisitInstanceId == visitInstanceId
-                           && p.UserId == userId
-                           && p.ParticipantRole == ParticipantRoles.Student
-                           && p.Status == ParticipantStatuses.Accepted,
-                cancellationToken);
-        if (!isAcceptedStudentParticipant)
-            throw new ForbiddenException("Bạn không phải Sinh viên đã nhận lời tham gia chuyến thăm này.");
-
-        var campusCode = await db.Campuses
-            .Where(c => c.CampusId == instance.CampusId)
-            .Select(c => c.CampusCode)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException("Campus", instance.CampusId);
+        var mediaScope = await VisitInstanceMediaAccessScope.ResolveAsync(
+            db, currentUser, visitInstanceId, cancellationToken);
 
         return new VisitPhotoStudentContext
         {
-            UserId = userId,
-            Instance = instance,
-            CampusCode = campusCode,
+            UserId = mediaScope.UserId,
+            Instance = mediaScope.Instance,
+            CampusCode = mediaScope.CampusCode,
         };
     }
 }

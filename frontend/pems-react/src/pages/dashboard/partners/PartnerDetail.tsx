@@ -50,6 +50,13 @@ function getInitials(name: string): string {
   return words.length === 1 ? words[0].slice(0, 2).toUpperCase() : (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
 
+function ContactAvatarImage({ fileId, url, alt, className = 'w-full h-full object-cover' }: { fileId?: number | null; url?: string | null; alt: string; className?: string }) {
+  const targetUrl = url || (fileId ? API_ENDPOINTS.files.content(fileId) : null);
+  const objectUrl = useAuthenticatedImage(targetUrl);
+  if (!objectUrl) return <span>{alt ? alt.charAt(0).toUpperCase() : '?'}</span>;
+  return <img src={objectUrl} alt={alt} className={className} />;
+}
+
 /** Label/value slot matching the original "Thông tin cơ bản" card styling. */
 function Field({
   label, value, icon, className = '',
@@ -704,10 +711,15 @@ export function PartnerDetail() {
                   return paginatedContacts.map((c) => (
                     <tr key={c.contactId} className="hover:bg-gradient-to-r hover:from-[#eaffe4] hover:to-[#ceefda]/40 transition-colors group">
                       <td className="p-3 pl-4">
-                        <span className="flex items-center gap-1.5 font-bold text-gray-800 text-sm">
-                          {c.isPrimary && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
-                          <span className={c.status === 'INACTIVE' ? 'text-gray-400 line-through' : ''}>{c.fullName}</span>
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[#00a651]/10 flex items-center justify-center text-[#00a651] font-bold text-xs shrink-0 overflow-hidden border border-[#00a651]/20 shadow-sm">
+                            <ContactAvatarImage fileId={c.avatarFileId} url={c.avatarUrl} alt={c.fullName} />
+                          </div>
+                          <span className="flex items-center gap-1.5 font-bold text-gray-800 text-sm">
+                            {c.isPrimary && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
+                            <span className={c.status === 'INACTIVE' ? 'text-gray-400 line-through' : ''}>{c.fullName}</span>
+                          </span>
+                        </div>
                       </td>
                       <td className="p-3 text-center text-sm text-gray-700">{c.email || '—'}</td>
                       <td className="p-3 text-center text-sm text-gray-700">{c.phone || '—'}</td>
@@ -986,8 +998,8 @@ export function PartnerDetail() {
 
             <div className="p-6 space-y-6 bg-gray-50/50">
               <div className="flex items-center gap-4 pb-4 border-b border-gray-200">
-                <div className="w-14 h-14 bg-gradient-to-br from-[#eaffe4] to-[#ceefda] rounded-xl flex items-center justify-center text-[#00a651] font-black text-2xl shrink-0 shadow-sm border border-[#00a651]/20">
-                  {viewContact.fullName ? viewContact.fullName.charAt(0).toUpperCase() : '?'}
+                <div className="w-14 h-14 bg-gradient-to-br from-[#eaffe4] to-[#ceefda] rounded-xl flex items-center justify-center text-[#00a651] font-black text-2xl shrink-0 shadow-sm border border-[#00a651]/20 overflow-hidden">
+                  <ContactAvatarImage fileId={viewContact.avatarFileId} url={viewContact.avatarUrl} alt={viewContact.fullName} />
                 </div>
                 <div className="min-w-0">
                   <h4 className="font-black text-gray-900 text-xl tracking-tight truncate">{viewContact.fullName}</h4>

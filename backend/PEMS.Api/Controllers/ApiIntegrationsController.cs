@@ -6,6 +6,7 @@ using PEMS.Application.ApiIntegrations.Commands.TestApiIntegration;
 using PEMS.Application.ApiIntegrations.Commands.UpdateApiIntegrationQuota;
 using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleDocumentAiOcrConfig;
 using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleTranslationConfig;
+using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleVisionFaceDetectionConfig;
 using PEMS.Application.ApiIntegrations.Queries.GetApiIntegrationDetail;
 using PEMS.Application.ApiIntegrations.Queries.GetApiIntegrationLogs;
 using PEMS.Application.ApiIntegrations.Queries.GetApiIntegrationQuota;
@@ -79,6 +80,15 @@ namespace PEMS.Api.Controllers
         [HttpPost("news-translation/google-cloud-translation")]
         public async Task<IActionResult> UpsertGoogleTranslationConfig(
             [FromBody] UpsertGoogleTranslationConfigCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        /// <summary>
+        /// Create-or-update (by api_code) the Google Cloud Vision config for Face Detection.
+        /// Used for both create and edit — there is a single well-known row.
+        /// </summary>
+        [HttpPost("face-detection/google-cloud-vision")]
+        public async Task<IActionResult> UpsertGoogleVisionFaceDetectionConfig(
+            [FromBody] UpsertGoogleVisionFaceDetectionConfigCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
 
         [HttpPost("{apiConfigId}/test")]

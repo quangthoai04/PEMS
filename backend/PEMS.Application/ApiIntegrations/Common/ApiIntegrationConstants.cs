@@ -21,6 +21,16 @@ public static class NewsTranslationConstants
     public const string ProjectIdEnvVar = "GOOGLE_TRANSLATION_PROJECT_ID";
 }
 
+public static class FaceDetectionConstants
+{
+    /// <summary>api_configurations.api_code of the Google Cloud Vision face-detection config row.</summary>
+    public const string ApiCode = "FACE_DETECTION_GOOGLE_VISION";
+    public const string ProviderName = "GOOGLE_CLOUD_VISION";
+    public const string Purpose = "FACE_DETECTION";
+    /// <summary>Default env/secret-manager reference for the service account.</summary>
+    public const string DefaultSecretRef = "GOOGLE_VISION_SERVICE_ACCOUNT";
+}
+
 public static class ApiIntegrationStatuses
 {
     public const string Active = "ACTIVE";

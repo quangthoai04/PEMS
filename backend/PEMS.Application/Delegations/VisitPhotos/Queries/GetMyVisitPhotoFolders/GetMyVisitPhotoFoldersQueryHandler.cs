@@ -27,28 +27,58 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
         GetMyVisitPhotoFoldersQuery request, CancellationToken cancellationToken)
     {
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is not { } userId)
-            throw new ForbiddenException();
-        if (_currentUser.RoleCode != RoleCodes.Student)
-            throw new ForbiddenException("Chỉ Sinh viên tham gia chuyến thăm mới dùng được chức năng ảnh đoàn khách.");
+            throw new ForbiddenException("Bạn chưa đăng nhập.");
 
-        var isActiveStudent = await _db.Users
-            .AnyAsync(u => u.UserId == userId && u.Status == "ACTIVE" && u.Role.RoleCode == RoleCodes.Student,
-                cancellationToken);
-        if (!isActiveStudent)
-            throw new ForbiddenException("Tài khoản không hợp lệ hoặc đã bị khóa.");
+        var roleCode = _currentUser.RoleCode ?? string.Empty;
+        var isStudent = roleCode == RoleCodes.Student;
 
-        // Only instances the Student is allowed into: ACCEPTED or ASSIGNED STUDENT participation.
-        var rows = await _db.VisitParticipants
-            .Where(p => p.UserId == userId
-                        && p.ParticipantRole == ParticipantRoles.Student
-                        && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned))
-            .Select(p => new
+        List<ulong> instanceIds;
+        if (isStudent)
+        {
+            var isActiveStudent = await _db.Users
+                .AnyAsync(u => u.UserId == userId && u.Status == "ACTIVE", cancellationToken);
+            if (!isActiveStudent)
+                throw new ForbiddenException("Tài khoản không hợp lệ hoặc đã bị khóa.");
+
+            instanceIds = await _db.VisitParticipants
+                .Where(p => p.UserId == userId
+                            && p.ParticipantRole == ParticipantRoles.Student
+                            && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned))
+                .Select(p => p.VisitInstanceId)
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            var isLeaderOrAdmin = roleCode == RoleCodes.Admin || (roleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader);
+            if (isLeaderOrAdmin)
             {
-                p.VisitInstance.VisitInstanceId,
-                p.VisitInstance.VisitRequestId,
-                p.VisitInstance.CampusId,
-                p.VisitInstance.Status,
-                p.VisitInstance.PlannedStartAt,
+                instanceIds = await _db.VisitRequestCampuses
+                    .Select(c => c.VisitInstanceId)
+                    .ToListAsync(cancellationToken);
+            }
+            else
+            {
+                var hosted = await _db.VisitRequestCampuses
+                    .Where(c => c.CurrentHostUserId == userId)
+                    .Select(c => c.VisitInstanceId)
+                    .ToListAsync(cancellationToken);
+                var participated = await _db.VisitParticipants
+                    .Where(p => p.UserId == userId && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned))
+                    .Select(p => p.VisitInstanceId)
+                    .ToListAsync(cancellationToken);
+                instanceIds = hosted.Union(participated).ToList();
+            }
+        }
+
+        var rows = await _db.VisitRequestCampuses
+            .Where(c => instanceIds.Contains(c.VisitInstanceId))
+            .Select(r => new
+            {
+                r.VisitInstanceId,
+                r.VisitRequestId,
+                r.CampusId,
+                r.Status,
+                r.PlannedStartAt,
             })
             .ToListAsync(cancellationToken);
 
@@ -58,7 +88,7 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
 
         var requestIds = rows.Select(r => r.VisitRequestId).Distinct().ToList();
         var campusIds = rows.Select(r => r.CampusId).Distinct().ToList();
-        var instanceIds = rows.Select(r => r.VisitInstanceId).ToList();
+        var targetInstanceIds = rows.Select(r => r.VisitInstanceId).ToList();
 
         var campusNames = await _db.Campuses
             .Where(c => campusIds.Contains(c.CampusId))
@@ -69,7 +99,7 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
             .ToDictionaryAsync(f => f.VisitRequestId, f => f.FolderName, cancellationToken);
 
         var photoCounts = (await _db.VisitPhotos
-                .Where(p => instanceIds.Contains(p.VisitInstanceId) && p.Status == "ACTIVE")
+                .Where(p => targetInstanceIds.Contains(p.VisitInstanceId) && p.Status == "ACTIVE")
                 .GroupBy(p => p.VisitInstanceId)
                 .Select(g => new { g.Key, Count = g.Count() })
                 .ToListAsync(cancellationToken))

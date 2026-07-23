@@ -58,7 +58,20 @@ namespace PEMS.Api.Controllers
             CancellationToken cancellationToken)
         {
             var command = new PEMS.Application.Faqs.Commands.UpdateFAQ.UpdateFAQCommand(
-                (ulong)faqId, body.FaqType, body.Question, body.Answer);
+                (ulong)faqId, body.FaqType, body.Question, body.Answer,
+                body.EnglishQuestion, body.EnglishAnswer);
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // UC Translate FAQ Draft: POST /api/faqs/translate-draft — one-shot VI→EN preview for the
+        // "EN" button; never persists (mirrors POST /api/news/translate-draft).
+        [HttpPost("translate-draft")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> TranslateFaqDraft(
+            [FromBody] PEMS.Application.Faqs.Commands.TranslateFaqDraft.TranslateFaqDraftCommand command,
+            CancellationToken cancellationToken)
+        {
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
         }

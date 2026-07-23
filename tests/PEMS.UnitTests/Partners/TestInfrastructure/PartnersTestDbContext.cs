@@ -39,6 +39,7 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Partner> Partners => Set<Partner>();
     public DbSet<Campus> Campuses => Set<Campus>();
+    DbSet<PartnerTranslation> IApplicationDbContext.PartnerTranslations => Set<PartnerTranslation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -121,6 +122,7 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     DbSet<NewsContentSection> IApplicationDbContext.NewsContentSections => Set<NewsContentSection>();
     DbSet<NewsSectionFile> IApplicationDbContext.NewsSectionFiles => Set<NewsSectionFile>();
     DbSet<Faq> IApplicationDbContext.Faqs => Set<Faq>();
+    DbSet<FaqTranslation> IApplicationDbContext.FaqTranslations => Set<FaqTranslation>();
     DbSet<GalleryArea> IApplicationDbContext.GalleryAreas => Set<GalleryArea>();
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
@@ -141,6 +143,8 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     DbSet<ApiUsageQuota> IApplicationDbContext.ApiUsageQuotas => Set<ApiUsageQuota>();
     DbSet<ApiRequestLog> IApplicationDbContext.ApiRequestLogs => Set<ApiRequestLog>();
     DbSet<BusinessCardOcrJob> IApplicationDbContext.BusinessCardOcrJobs => Set<BusinessCardOcrJob>();
+    DbSet<VisitPhotoFaceScan> IApplicationDbContext.VisitPhotoFaceScans => Set<VisitPhotoFaceScan>();
+    DbSet<VisitPhotoFaceDetection> IApplicationDbContext.VisitPhotoFaceDetections => Set<VisitPhotoFaceDetection>();
     DbSet<AgendaTemplate> IApplicationDbContext.AgendaTemplates => Set<AgendaTemplate>();
     DbSet<AgendaTemplateItem> IApplicationDbContext.AgendaTemplateItems => Set<AgendaTemplateItem>();
     DbSet<AgendaTemplateDefault> IApplicationDbContext.AgendaTemplateDefaults => Set<AgendaTemplateDefault>();

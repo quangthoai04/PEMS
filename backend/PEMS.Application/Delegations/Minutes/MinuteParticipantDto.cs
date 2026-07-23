@@ -22,6 +22,13 @@ public sealed class MinuteParticipantDto
     public string? OrganizationSnapshot { get; set; }
     public string? EmailSnapshot { get; set; }
 
+    /// <summary>
+    /// Not a stored snapshot column — looked up live from visit_guest_members.nationality via
+    /// GuestMemberId (when set) so the "create/link partner" modal can default its Country field.
+    /// Null for INTERNAL/MANUAL participants (no linked guest).
+    /// </summary>
+    public string? GuestNationality { get; set; }
+
     /// <summary>PRESENT | ABSENT | EXCUSED (matches the SQL enum).</summary>
     public string AttendanceStatus { get; set; } = "ABSENT";
     public string? AttendanceNote { get; set; }

@@ -1,13 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
+using PEMS.Application.News.Services;
 using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Partners;
@@ -22,17 +27,26 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly INotificationService _notifications;
+    private readonly INewsTranslationService _translator;
+    private readonly IHtmlSanitizerService _sanitizer;
+    private readonly ILogger<CreatePartnerCommandHandler> _logger;
 
     public CreatePartnerCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IDateTimeService clock,
-        INotificationService notifications)
+        INotificationService notifications,
+        INewsTranslationService translator,
+        IHtmlSanitizerService sanitizer,
+        ILogger<CreatePartnerCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _notifications = notifications;
+        _translator = translator;
+        _sanitizer = sanitizer;
+        _logger = logger;
     }
 
     public async Task<CreatePartnerResponse> Handle(CreatePartnerCommand request, CancellationToken cancellationToken)
@@ -72,17 +86,23 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
         var now = _clock.VietnamNow;
         var actorId = _currentUser.UserId;
 
+        var shortName = string.IsNullOrWhiteSpace(request.ShortName) ? null : request.ShortName.Trim();
+        var countryVal = string.IsNullOrWhiteSpace(request.Country) ? null : request.Country.Trim();
+        var cityVal = string.IsNullOrWhiteSpace(request.City) ? null : request.City.Trim();
+        var addressVal = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+        var descriptionVal = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+
         var partner = new Partner
         {
             OwnerCampusId = ownerCampusId,
             PartnerCode = code!,
             Name = name,
-            ShortName = string.IsNullOrWhiteSpace(request.ShortName) ? null : request.ShortName.Trim(),
-            Country = string.IsNullOrWhiteSpace(request.Country) ? null : request.Country.Trim(),
-            City = string.IsNullOrWhiteSpace(request.City) ? null : request.City.Trim(),
+            ShortName = shortName,
+            Country = countryVal,
+            City = cityVal,
             WebsiteUrl = string.IsNullOrWhiteSpace(request.WebsiteUrl) ? null : request.WebsiteUrl.Trim(),
-            Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim(),
-            Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            Address = addressVal,
+            Description = descriptionVal,
             PartnerType = string.IsNullOrWhiteSpace(request.PartnerType) ? "UNIVERSITY" : request.PartnerType!,
             CooperationStatus = "POTENTIAL",
             ProfileStatus = PartnerProfileStatuses.PendingApproval,
@@ -93,6 +113,62 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
             CreatedBy = actorId,
         };
 
+        // English: content provided by the admin (EN panel was opened — machine-translated preview
+        // or hand-edited) wins as-is (MANUAL). Otherwise the backend translates once, right now, so
+        // a partner profile is never created English-less. country/city are proper nouns, copied
+        // through unchanged rather than machine translated.
+        var providedEnglishName = _sanitizer.Sanitize(request.EnglishName ?? string.Empty).Trim();
+        var providedEnglishShortName = _sanitizer.Sanitize(request.EnglishShortName ?? string.Empty).Trim();
+        var providedEnglishDescription = _sanitizer.Sanitize(request.EnglishDescription ?? string.Empty).Trim();
+        var providedEnglishAddress = _sanitizer.Sanitize(request.EnglishAddress ?? string.Empty).Trim();
+        var englishProvided = !string.IsNullOrWhiteSpace(providedEnglishName);
+
+        // Null englishName means "translation unavailable" (never requested, or the auto-translate
+        // attempt below failed) — the EN row is then simply not created; public reads already fall
+        // back requested language → vi, and the admin can translate later via the EN panel.
+        string? englishName;
+        string? englishShortName = null;
+        string? englishDescription = null;
+        string? englishAddress = null;
+        string englishSource = "AUTO";
+        if (englishProvided)
+        {
+            englishName = providedEnglishName;
+            englishShortName = string.IsNullOrWhiteSpace(providedEnglishShortName) ? null : providedEnglishShortName;
+            englishDescription = string.IsNullOrWhiteSpace(providedEnglishDescription) ? null : providedEnglishDescription;
+            englishAddress = string.IsNullOrWhiteSpace(providedEnglishAddress) ? null : providedEnglishAddress;
+            englishSource = "MANUAL";
+        }
+        else
+        {
+            // Best-effort only: a translation-provider hiccup (quota, HTTP 400, config) must never
+            // block creating the partner itself — many callers (e.g. the OCR/guest quick-create
+            // flow) only ever supply a name and never intended to wait on a translation at all.
+            try
+            {
+                var translated = await _translator.TranslateTextAsync(
+                    new List<string> { name, shortName ?? string.Empty, descriptionVal ?? string.Empty, addressVal ?? string.Empty },
+                    NewsConstants.Languages.Default, "en", cancellationToken);
+                var t0 = _sanitizer.Sanitize(translated[0]).Trim();
+                var t1 = _sanitizer.Sanitize(translated[1]).Trim();
+                var t2 = _sanitizer.Sanitize(translated[2]).Trim();
+                var t3 = _sanitizer.Sanitize(translated[3]).Trim();
+                englishName = string.IsNullOrWhiteSpace(t0) ? name : t0;
+                englishShortName = string.IsNullOrWhiteSpace(t1) ? null : t1;
+                englishDescription = string.IsNullOrWhiteSpace(t2) ? null : t2;
+                englishAddress = string.IsNullOrWhiteSpace(t3) ? null : t3;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Auto-translate to English failed for partner \"{Name}\"; saving Vietnamese-only for now.",
+                    name);
+                englishName = null;
+            }
+        }
+
+        var sourceHash = ComputePartnerHash(name, shortName, countryVal, cityVal, descriptionVal, addressVal);
+
         PartnerContact? contact = null;
 
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
@@ -100,6 +176,44 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
         {
             _db.Partners.Add(partner);
             await _db.SaveChangesAsync(cancellationToken); // populates PartnerId
+
+            _db.PartnerTranslations.Add(new PartnerTranslation
+            {
+                PartnerId = partner.PartnerId,
+                LanguageCode = "vi",
+                Name = name,
+                ShortName = shortName,
+                Country = countryVal,
+                City = cityVal,
+                Description = descriptionVal,
+                Address = addressVal,
+                TranslationSource = "LEGACY",
+                TranslationStatus = "READY",
+                SourceHash = sourceHash,
+                TranslatedAt = now,
+                CreatedAt = now,
+                CreatedBy = actorId,
+            });
+            if (englishName is not null)
+            {
+                _db.PartnerTranslations.Add(new PartnerTranslation
+                {
+                    PartnerId = partner.PartnerId,
+                    LanguageCode = "en",
+                    Name = englishName,
+                    ShortName = englishShortName,
+                    Country = countryVal,
+                    City = cityVal,
+                    Description = englishDescription,
+                    Address = englishAddress,
+                    TranslationSource = englishSource,
+                    TranslationStatus = "READY",
+                    SourceHash = sourceHash,
+                    TranslatedAt = now,
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                });
+            }
 
             // The official name doubles as the first ACTIVE alias so future matching hits it.
             _db.PartnerAliases.Add(new PartnerAlias
@@ -198,6 +312,18 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
             ProfileStatus = partner.ProfileStatus,
             OwnerCampusId = partner.OwnerCampusId,
             InitialContactId = contact?.ContactId,
+            EnglishName = englishName,
+            EnglishShortName = englishShortName,
+            EnglishDescription = englishDescription,
+            EnglishAddress = englishAddress,
         };
+    }
+
+    /// <summary>SHA-256 of the Vietnamese source content a translation was derived from.</summary>
+    private static string ComputePartnerHash(params string?[] parts)
+    {
+        var joined = string.Join('\x1f', parts.Select(p => p ?? string.Empty));
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(joined));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

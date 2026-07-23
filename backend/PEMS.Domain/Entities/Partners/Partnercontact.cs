@@ -37,6 +37,9 @@ public class PartnerContact
     [Column("scanned_card_file_id")]
     public ulong? ScannedCardFileId { get; set; }
 
+    [Column("avatar_file_id")]
+    public ulong? AvatarFileId { get; set; }
+
     [Column("ocr_confidence")]
     public decimal? OcrConfidence { get; set; }
 

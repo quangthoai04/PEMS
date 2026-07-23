@@ -18,6 +18,18 @@ internal static class MinuteChildren
             .OrderBy(p => p.DisplayOrder).ThenBy(p => p.MinuteParticipantId)
             .ToListAsync(ct);
 
+        var guestMemberIds = participants
+            .Where(p => p.GuestMemberId.HasValue)
+            .Select(p => p.GuestMemberId!.Value)
+            .Distinct()
+            .ToList();
+        var nationalityByGuestId = guestMemberIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await db.VisitGuestMembers
+                .Where(g => guestMemberIds.Contains(g.GuestMemberId))
+                .Select(g => new { g.GuestMemberId, g.Nationality })
+                .ToDictionaryAsync(g => g.GuestMemberId, g => g.Nationality, ct);
+
         dto.Participants = participants.Select(p => new MinuteParticipantDto
         {
             MinuteParticipantId = p.MinuteParticipantId,
@@ -34,6 +46,9 @@ internal static class MinuteChildren
             CheckedBy = p.CheckedBy,
             DisplayOrder = p.DisplayOrder,
             ParticipantKind = MinuteParticipantDto.KindOf(p.UserId, p.GuestMemberId),
+            GuestNationality = p.GuestMemberId.HasValue
+                ? nationalityByGuestId.GetValueOrDefault(p.GuestMemberId.Value)
+                : null,
         }).ToList();
 
         var actionItems = await db.MinuteActionItems

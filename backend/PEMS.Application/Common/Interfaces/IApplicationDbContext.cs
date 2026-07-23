@@ -31,6 +31,7 @@ public interface IApplicationDbContext
     DbSet<LoginLog> LoginLogs { get; }
     DbSet<SecurityEvent> SecurityEvents { get; }
     DbSet<Partner> Partners { get; }
+    DbSet<PartnerTranslation> PartnerTranslations { get; }
     DbSet<PartnerContact> PartnerContacts { get; }
     DbSet<PartnerAlias> PartnerAliases { get; }
     DbSet<VisitGuestPartnerLink> VisitGuestPartnerLinks { get; }
@@ -75,6 +76,7 @@ public interface IApplicationDbContext
     DbSet<NewsContentSection> NewsContentSections { get; }
     DbSet<NewsSectionFile> NewsSectionFiles { get; }
     DbSet<Faq> Faqs { get; }
+    DbSet<FaqTranslation> FaqTranslations { get; }
     DbSet<GalleryArea> GalleryAreas { get; }
     DbSet<GalleryLocation> GalleryLocations { get; }
     DbSet<GalleryItem> GalleryItems { get; }
@@ -95,10 +97,17 @@ public interface IApplicationDbContext
     DbSet<ApiUsageQuota> ApiUsageQuotas { get; }
     DbSet<ApiRequestLog> ApiRequestLogs { get; }
     DbSet<BusinessCardOcrJob> BusinessCardOcrJobs { get; }
+    DbSet<VisitPhotoFaceScan> VisitPhotoFaceScans { get; }
+    DbSet<VisitPhotoFaceDetection> VisitPhotoFaceDetections { get; }
     DbSet<AgendaTemplate> AgendaTemplates { get; }
     DbSet<AgendaTemplateItem> AgendaTemplateItems { get; }
     DbSet<AgendaTemplateDefault> AgendaTemplateDefaults { get; }
     DbSet<AuditLog> AuditLogs { get; }
+
+    /// <summary>
+    /// Database facade for raw SQL execution, transaction management, and connection access.
+    /// </summary>
+    Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

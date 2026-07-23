@@ -74,6 +74,19 @@
     "IMMUTABLE_REGISTRANT_INFO": "Không thể thay đổi thông tin người đăng ký sau khi đơn đã được gửi.",
     "IMMUTABLE_CONTACT_IDENTITY": "Không thể thay đổi email, tài khoản hoặc quan hệ đầu mối liên hệ trong lần chỉnh sửa này.",
     "IDEMPOTENCY_KEY_REUSED": "Phiên gửi đơn không hợp lệ. Vui lòng đóng form và gửi lại từ đầu.",
-    "DUPLICATE_VISIT_REQUEST": "Một đơn đăng ký với nội dung tương tự vừa được gửi trước đó. Không có đơn mới nào được tạo."
+    "DUPLICATE_VISIT_REQUEST": "Một đơn đăng ký với nội dung tương tự vừa được gửi trước đó. Không có đơn mới nào được tạo.",
+    "FACE_SCAN_FORBIDDEN": "Chỉ Staff phụ trách chuyến thăm mới được quét và gán tên khuôn mặt.",
+    "FACE_SCAN_CONFIG_INACTIVE": "Chức năng quét khuôn mặt đang tắt. Liên hệ quản trị viên để kích hoạt.",
+    "FACE_SCAN_PHOTO_NOT_ACTIVE": "Không thể quét ảnh này (ảnh đã bị xóa hoặc không đọc được).",
+    "FACE_SCAN_IN_PROGRESS": "Ảnh này đang được quét khuôn mặt — vui lòng đợi.",
+    "FACE_SCAN_NOT_CONFIRMABLE": "Chỉ xác nhận được khi lần quét đã hoàn tất thành công.",
+    "FACE_SCAN_ALREADY_CONFIRMED": "Lần quét này đã được xác nhận trước đó.",
+    "FACE_SCAN_ROW_VERSION_MISMATCH": "Dữ liệu lần quét đã thay đổi — vui lòng tải lại trước khi xác nhận.",
+    "FACE_SCAN_INCOMPLETE_FACE_LIST": "Phải xử lý đầy đủ tất cả khuôn mặt của lần quét này (gán khách hoặc bỏ qua).",
+    "FACE_SCAN_DUPLICATE_GUEST": "Một khách không được gán cho hai khuôn mặt trong cùng lần quét.",
+    "FACE_SCAN_GUEST_NOT_IN_INSTANCE": "Một hoặc nhiều khách không thuộc đúng đoàn của chuyến thăm này.",
+    "FACE_SCAN_INVALID_FACE_ITEM": "Mỗi khuôn mặt phải được gán một khách hoặc đánh dấu bỏ qua.",
+    "FACE_SCAN_RATE_LIMITED": "Bạn quét quá nhanh. Vui lòng thử lại sau ít phút.",
+    "FACE_SCAN_QUOTA_EXCEEDED": "Đã hết hạn mức quét khuôn mặt trong tháng."
   }
 }

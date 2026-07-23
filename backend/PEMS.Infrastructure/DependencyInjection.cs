@@ -106,6 +106,13 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.News.Services.INewsTranslationService,
             PEMS.Infrastructure.Translation.GoogleNewsTranslationService>();
 
+        // Visit-photo face detection (Google Cloud Vision FACE_DETECTION) — reuses the same
+        // credential resolution + service-account token pipeline as OCR/Translation on purpose.
+        services.AddScoped<PEMS.Application.Delegations.VisitPhotos.FaceScans.Services.IFaceDetectionProvider,
+            PEMS.Infrastructure.FaceDetection.GoogleVisionFaceDetectionProvider>();
+        services.AddSingleton<PEMS.Application.Delegations.VisitPhotos.FaceScans.Services.IFaceScanThrottle,
+            PEMS.Infrastructure.FaceDetection.InMemoryFaceScanThrottle>();
+
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 

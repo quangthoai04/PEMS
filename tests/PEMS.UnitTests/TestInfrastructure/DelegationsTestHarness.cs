@@ -170,6 +170,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<LoginLog> IApplicationDbContext.LoginLogs => Set<LoginLog>();
     DbSet<SecurityEvent> IApplicationDbContext.SecurityEvents => Set<SecurityEvent>();
     DbSet<Partner> IApplicationDbContext.Partners => Set<Partner>();
+    DbSet<PartnerTranslation> IApplicationDbContext.PartnerTranslations => Set<PartnerTranslation>();
     DbSet<PartnerContact> IApplicationDbContext.PartnerContacts => Set<PartnerContact>();
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
@@ -201,6 +202,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<NewsContentSection> IApplicationDbContext.NewsContentSections => Set<NewsContentSection>();
     DbSet<NewsSectionFile> IApplicationDbContext.NewsSectionFiles => Set<NewsSectionFile>();
     DbSet<Faq> IApplicationDbContext.Faqs => Set<Faq>();
+    DbSet<FaqTranslation> IApplicationDbContext.FaqTranslations => Set<FaqTranslation>();
     DbSet<GalleryArea> IApplicationDbContext.GalleryAreas => Set<GalleryArea>();
     DbSet<GalleryLocation> IApplicationDbContext.GalleryLocations => Set<GalleryLocation>();
     DbSet<GalleryItem> IApplicationDbContext.GalleryItems => Set<GalleryItem>();
@@ -217,6 +219,8 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<ApiUsageQuota> IApplicationDbContext.ApiUsageQuotas => Set<ApiUsageQuota>();
     DbSet<ApiRequestLog> IApplicationDbContext.ApiRequestLogs => Set<ApiRequestLog>();
     DbSet<BusinessCardOcrJob> IApplicationDbContext.BusinessCardOcrJobs => Set<BusinessCardOcrJob>();
+    DbSet<VisitPhotoFaceScan> IApplicationDbContext.VisitPhotoFaceScans => Set<VisitPhotoFaceScan>();
+    DbSet<VisitPhotoFaceDetection> IApplicationDbContext.VisitPhotoFaceDetections => Set<VisitPhotoFaceDetection>();
     DbSet<AgendaTemplate> IApplicationDbContext.AgendaTemplates => Set<AgendaTemplate>();
     DbSet<AgendaTemplateItem> IApplicationDbContext.AgendaTemplateItems => Set<AgendaTemplateItem>();
     DbSet<AgendaTemplateDefault> IApplicationDbContext.AgendaTemplateDefaults => Set<AgendaTemplateDefault>();

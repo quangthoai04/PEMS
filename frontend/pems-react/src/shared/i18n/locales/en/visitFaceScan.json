@@ -1,0 +1,59 @@
+{
+  "title": "Scan and tag faces",
+  "album": {
+    "uploadButton": "Upload a real photo",
+    "uploadHint": "Supports .jpg, .png up to 10MB",
+    "empty": "No photos uploaded yet.",
+    "selectPrompt": "Select a photo from the album or upload a new one to get started."
+  },
+  "scan": {
+    "button": "Scan faces",
+    "rescanButton": "Scan again",
+    "scanning": "Analyzing faces...",
+    "successToast": "Face scan completed successfully.",
+    "errorFallback": "Face scan failed. Please try again.",
+    "startingToast": "Scanning faces...",
+    "noFacesDetected": "No faces were detected in this photo.",
+    "watermarkIdle": "Click Scan faces above to detect faces in this photo",
+    "watermarkDone": "Tip: click each face box to tag the matching guest"
+  },
+  "status": {
+    "PENDING": "Pending",
+    "PROCESSING": "Processing",
+    "SUCCEEDED": "Scan complete",
+    "FAILED": "Scan failed",
+    "CONFIRMED": "Confirmed"
+  },
+  "tag": {
+    "dropdownTitle": "Tag identity",
+    "selectGuestPlaceholder": "Search guests in this delegation...",
+    "notInDelegation": "Not part of the delegation / Ignore",
+    "unassigned": "Not tagged",
+    "ignored": "Ignored",
+    "loadingGuests": "Loading guest list...",
+    "noGuestsFound": "No matching guest found.",
+    "summaryTitle": "Faces tagged in this photo:",
+    "facePosition": "Position #{{index}}"
+  },
+  "confirm": {
+    "button": "Confirm results",
+    "pendingRequired": "Some faces still need to be resolved — tag a guest or mark ignored for every face before confirming.",
+    "successToast": "Face tags confirmed.",
+    "errorFallback": "Could not confirm the face tags. Please try again.",
+    "startingToast": "Confirming..."
+  },
+  "history": {
+    "title": "Scan history",
+    "empty": "No scans yet for this photo.",
+    "time": "Time",
+    "scannedBy": "Scanned by",
+    "status": "Status",
+    "faces": "Faces (detected/confirmed/ignored)",
+    "error": "Error"
+  },
+  "search": {
+    "placeholder": "Search a guest in this delegation...",
+    "filteringFor": "Showing faces tagged to a name containing:",
+    "clear": "Clear filter"
+  }
+}

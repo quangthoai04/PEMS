@@ -74,6 +74,19 @@
     "IMMUTABLE_REGISTRANT_INFO": "Registrant information cannot be changed after the request has been submitted.",
     "IMMUTABLE_CONTACT_IDENTITY": "The contact email, linked account, and contact relationship cannot be changed during this edit.",
     "IDEMPOTENCY_KEY_REUSED": "This submission session is no longer valid. Please close the form and submit again.",
-    "DUPLICATE_VISIT_REQUEST": "A visit request with the same details was submitted recently. No new request has been created."
+    "DUPLICATE_VISIT_REQUEST": "A visit request with the same details was submitted recently. No new request has been created.",
+    "FACE_SCAN_FORBIDDEN": "Only the Staff member assigned to this visit may scan and tag faces.",
+    "FACE_SCAN_CONFIG_INACTIVE": "Face detection is currently disabled. Contact an administrator to enable it.",
+    "FACE_SCAN_PHOTO_NOT_ACTIVE": "This photo cannot be scanned (it was removed or could not be read).",
+    "FACE_SCAN_IN_PROGRESS": "This photo is already being scanned — please wait.",
+    "FACE_SCAN_NOT_CONFIRMABLE": "You can only confirm a scan once it has completed successfully.",
+    "FACE_SCAN_ALREADY_CONFIRMED": "This scan has already been confirmed.",
+    "FACE_SCAN_ROW_VERSION_MISMATCH": "This scan's data has changed — please reload before confirming.",
+    "FACE_SCAN_INCOMPLETE_FACE_LIST": "Every face in this scan must be resolved (tagged to a guest or marked ignored).",
+    "FACE_SCAN_DUPLICATE_GUEST": "A guest cannot be tagged to two faces in the same scan.",
+    "FACE_SCAN_GUEST_NOT_IN_INSTANCE": "One or more guests do not belong to this exact visit's delegation.",
+    "FACE_SCAN_INVALID_FACE_ITEM": "Each face must be tagged to a guest or marked ignored.",
+    "FACE_SCAN_RATE_LIMITED": "You're scanning too quickly. Please try again in a few minutes.",
+    "FACE_SCAN_QUOTA_EXCEEDED": "The monthly face-scan quota has been reached."
   }
 }

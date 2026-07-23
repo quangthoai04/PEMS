@@ -5,26 +5,33 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Partners.Common;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Partners.Queries.GetPublicPartnerDetail;
 
+/// <summary>
+/// Public partner detail — reads pre-translated VI/EN content straight from
+/// <c>partner_translations</c>. Never calls a translation API — same requested-language → 'vi' →
+/// legacy-column fallback rule as <c>GetPublicPartnersQueryHandler</c>.
+/// </summary>
 public sealed class GetPublicPartnerDetailQueryHandler
     : IRequestHandler<GetPublicPartnerDetailQuery, PublicPartnerDto>
 {
     private readonly IApplicationDbContext _db;
-    private readonly IPartnerDescriptionTranslationCache _descriptionTranslator;
 
-    public GetPublicPartnerDetailQueryHandler(
-        IApplicationDbContext db, IPartnerDescriptionTranslationCache descriptionTranslator)
+    public GetPublicPartnerDetailQueryHandler(IApplicationDbContext db)
     {
         _db = db;
-        _descriptionTranslator = descriptionTranslator;
     }
 
     public async Task<PublicPartnerDto> Handle(
         GetPublicPartnerDetailQuery request, CancellationToken cancellationToken)
     {
         var idOrSlug = request.PartnerIdOrSlug.Trim();
+        var requestedLang = string.IsNullOrWhiteSpace(request.LanguageCode)
+            ? NewsConstants.Languages.Default
+            : request.LanguageCode.Trim().ToLowerInvariant();
+
         var query = _db.Partners.AsNoTracking()
             .Where(p => p.ProfileStatus == PartnerProfileStatuses.Approved
                         && p.Visibility == PartnerVisibilities.Public);
@@ -48,26 +55,28 @@ public sealed class GetPublicPartnerDetailQueryHandler
                 p.LogoFileId,
                 p.CoverFileId,
                 p.PublicSlug,
-                p.UpdatedAt,
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Partner", idOrSlug);
 
-        var translated = await _descriptionTranslator.TranslateAsync(
-            new[] { new PartnerDescriptionTranslationSource(row.PartnerId, row.Description, row.UpdatedAt) },
-            request.LanguageCode,
-            cancellationToken);
+        var translations = await _db.PartnerTranslations
+            .AsNoTracking()
+            .Where(t => t.PartnerId == row.PartnerId && (t.LanguageCode == requestedLang || t.LanguageCode == "vi"))
+            .ToListAsync(cancellationToken);
+
+        var chosen = translations.FirstOrDefault(t => t.LanguageCode == requestedLang)
+                   ?? translations.FirstOrDefault(t => t.LanguageCode == "vi");
 
         return new PublicPartnerDto
         {
             PartnerId = row.PartnerId,
-            Name = row.Name,
-            ShortName = row.ShortName,
-            Country = row.Country,
-            City = row.City,
+            Name = chosen?.Name ?? row.Name,
+            ShortName = chosen?.ShortName ?? row.ShortName,
+            Country = chosen?.Country ?? row.Country,
+            City = chosen?.City ?? row.City,
             WebsiteUrl = row.WebsiteUrl,
-            Address = row.Address,
-            Description = translated.TryGetValue(row.PartnerId, out var d) ? d : row.Description,
+            Address = chosen?.Address ?? row.Address,
+            Description = chosen?.Description ?? row.Description,
             PartnerType = row.PartnerType,
             LogoFileId = row.LogoFileId,
             CoverFileId = row.CoverFileId,

@@ -7,6 +7,7 @@ import type {
   ApiRequestLogListResponse,
   UpsertGoogleDocumentAiOcrConfigRequest,
   UpsertGoogleTranslationConfigRequest,
+  UpsertGoogleVisionFaceDetectionConfigRequest,
 } from '../types/apiManagement.types';
 
 /** ADMIN API Integration management — ApiIntegrationsController. Secrets never round-trip. */
@@ -41,6 +42,17 @@ export const apiManagementApi = {
   ): Promise<ApiIntegration> {
     const { data } = await httpClient.post<ApiIntegration>(
       API_ENDPOINTS.apiIntegrations.upsertGoogleTranslation,
+      payload,
+    );
+    return data;
+  },
+
+  /** Create-or-update the single Google Cloud Vision config (Face Detection). */
+  async upsertGoogleVisionFaceDetectionConfig(
+    payload: UpsertGoogleVisionFaceDetectionConfigRequest,
+  ): Promise<ApiIntegration> {
+    const { data } = await httpClient.post<ApiIntegration>(
+      API_ENDPOINTS.apiIntegrations.upsertGoogleVisionFaceDetection,
       payload,
     );
     return data;

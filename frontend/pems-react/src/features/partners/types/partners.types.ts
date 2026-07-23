@@ -72,6 +72,36 @@ export interface PartnerDetail {
   reviewerName?: string | null;
   reviewedAt?: string | null;
   allowedActions: PartnerAction[];
+
+  englishName?: string | null;
+  englishShortName?: string | null;
+  englishDescription?: string | null;
+  englishAddress?: string | null;
+  hasEnglishTranslation?: boolean;
+}
+
+export interface TranslatePartnerDraftRequest {
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  name: string;
+  shortName?: string | null;
+  country?: string | null;
+  city?: string | null;
+  description?: string | null;
+  address?: string | null;
+}
+
+export interface TranslatePartnerDraftResponse {
+  success: boolean;
+  message: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  name: string;
+  shortName?: string | null;
+  country?: string | null;
+  city?: string | null;
+  description?: string | null;
+  address?: string | null;
 }
 
 export interface CreatePartnerContactPayload {
@@ -81,6 +111,7 @@ export interface CreatePartnerContactPayload {
   jobTitle?: string | null;
   departmentName?: string | null;
   note?: string | null;
+  avatarFileId?: number | null;
 }
 
 export interface CreatePartnerRequest {
@@ -98,6 +129,16 @@ export interface CreatePartnerRequest {
   coverFileId?: number | null;
   source?: 'MANUAL' | 'FROM_GUEST' | 'BUSINESS_CARD_OCR';
   initialContact?: CreatePartnerContactPayload | null;
+
+  /**
+   * English content, only sent once the admin has opened the "EN" panel (whether the text is the
+   * untouched machine-translation preview or hand-edited afterward). Omitted when the EN panel
+   * was never opened — the backend then auto-translates once and stores the result.
+   */
+  englishName?: string | null;
+  englishShortName?: string | null;
+  englishDescription?: string | null;
+  englishAddress?: string | null;
 }
 
 export interface CreatePartnerResponse {
@@ -105,6 +146,10 @@ export interface CreatePartnerResponse {
   profileStatus: PartnerProfileStatus;
   ownerCampusId: number;
   initialContactId?: number | null;
+  englishName?: string | null;
+  englishShortName?: string | null;
+  englishDescription?: string | null;
+  englishAddress?: string | null;
 }
 
 export interface UpdatePartnerRequest {
@@ -121,6 +166,16 @@ export interface UpdatePartnerRequest {
   visibility?: PartnerVisibility | null;
   logoFileId?: number | null;
   coverFileId?: number | null;
+
+  /**
+   * English content as currently shown in the EN panel. Omitted when the EN panel was never
+   * opened during this edit — existing EN content (if any) is then left untouched; if no EN
+   * translation exists yet either, the backend auto-translates once and stores it.
+   */
+  englishName?: string | null;
+  englishShortName?: string | null;
+  englishDescription?: string | null;
+  englishAddress?: string | null;
 }
 
 export interface PartnerContact {
@@ -134,6 +189,8 @@ export interface PartnerContact {
   note?: string | null;
   sourceType: 'MANUAL' | 'BUSINESS_CARD_OCR' | 'IMPORT';
   scannedCardFileId?: number | null;
+  avatarFileId?: number | null;
+  avatarUrl?: string | null;
   ocrConfidence?: number | null;
   isPrimary: boolean;
   status: 'ACTIVE' | 'INACTIVE';

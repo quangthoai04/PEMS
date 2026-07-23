@@ -16,6 +16,10 @@ public class GalleryItem
     [Column("title")]
     public string Title { get; set; } = null!;
 
+    /// <summary>Tiêu đề tiếng Anh đã dịch và lưu trong DB.</summary>
+    [Column("title_en")]
+    public string? TitleEn { get; set; }
+
     /// <summary>MEDIA (ảnh/video giới thiệu vị trí) hoặc VISIT_DELEGATION (ảnh/video đoàn khách).</summary>
     [Column("item_type")]
     public string ItemType { get; set; } = "MEDIA";
@@ -28,6 +32,20 @@ public class GalleryItem
 
     [Column("display_order")]
     public uint DisplayOrder { get; set; }
+
+    /// <summary>AUTO | MANUAL.</summary>
+    [Column("translation_source")]
+    public string? TranslationSource { get; set; }
+
+    /// <summary>PENDING | READY | FAILED | OUTDATED.</summary>
+    [Column("translation_status")]
+    public string TranslationStatus { get; set; } = "PENDING";
+
+    [Column("translation_source_hash")]
+    public string? TranslationSourceHash { get; set; }
+
+    [Column("translated_at")]
+    public DateTime? TranslatedAt { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }

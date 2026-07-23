@@ -69,6 +69,13 @@
       "vietnamese": "Tiếng Việt",
       "english": "English"
     },
+    "campusDescriptions": {
+      "hn": "Đại học FPT Hà Nội tọa lạc tại Khu Công nghệ cao Hòa Lạc. Kiến trúc hiện đại, không gian xanh và cơ sở vật chất tiên tiến cho môi trường học tập tối ưu.",
+      "hcm": "Đại học FPT TP. HCM mang đến môi trường học thuật sôi động với công nghệ hiện đại và cộng đồng sinh viên năng động.",
+      "dn": "Tọa lạc tại FPT City Đà Nẵng, môi trường học tập hiện đại hòa mình cùng thiên nhiên.",
+      "ct": "Đại học FPT Cần Thơ — trung tâm công nghệ và giáo dục ở vùng đồng bằng sông Cửu Long.",
+      "qn": "Đại học FPT Quy Nhơn chú trọng AI và toán học, xây dựng tại thành phố biển xinh đẹp."
+    },
     "errors": {
       "narrationFailed": "Không thể phát bản ghi âm.",
       "contentHidden": "Nội dung này hiện không còn được hiển thị.",

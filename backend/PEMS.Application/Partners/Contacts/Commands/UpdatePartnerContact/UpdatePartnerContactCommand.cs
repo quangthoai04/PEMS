@@ -14,4 +14,5 @@ public sealed class UpdatePartnerContactCommand : IRequest<PartnerContactDto>
     public string? JobTitle { get; set; }
     public string? DepartmentName { get; set; }
     public string? Note { get; set; }
+    public ulong? AvatarFileId { get; set; }
 }

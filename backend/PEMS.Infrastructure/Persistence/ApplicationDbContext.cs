@@ -45,6 +45,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     // ── Partners ──────────────────────────────────────────────────────────
     public DbSet<Partner> Partners { get; set; }
+    public DbSet<PartnerTranslation> PartnerTranslations { get; set; }
     public DbSet<PartnerContact> PartnerContacts { get; set; }
     public DbSet<PartnerAlias> PartnerAliases { get; set; }
     public DbSet<VisitGuestPartnerLink> VisitGuestPartnerLinks { get; set; }
@@ -102,6 +103,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     // ── FAQs ──────────────────────────────────────────────────────────────
     // NOTE: no public_contents table in SQL v8.3 — public pages read from news/faqs/galleries/partners.
     public DbSet<Faq> Faqs { get; set; }
+    public DbSet<FaqTranslation> FaqTranslations { get; set; }
 
     // ── Gallery ───────────────────────────────────────────────────────────
     public DbSet<GalleryArea> GalleryAreas { get; set; }
@@ -136,6 +138,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ApiUsageQuota> ApiUsageQuotas { get; set; }
     public DbSet<ApiRequestLog> ApiRequestLogs { get; set; }
     public DbSet<BusinessCardOcrJob> BusinessCardOcrJobs { get; set; }
+    public DbSet<VisitPhotoFaceScan> VisitPhotoFaceScans { get; set; }
+    public DbSet<VisitPhotoFaceDetection> VisitPhotoFaceDetections { get; set; }
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
@@ -498,6 +502,64 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .HasDatabaseName("idx_visit_photos_instance_time");
             b.HasIndex(p => new { p.Status, p.UploadedAt })
                 .HasDatabaseName("idx_visit_photos_status_time");
+            // uq_visit_photos_face_scan_scope — lets visit_photo_face_scans prove (via composite FK)
+            // that a scan belongs to this exact business photo (request + campus instance + file).
+            b.HasAlternateKey(p => new { p.VisitPhotoId, p.VisitRequestId, p.VisitInstanceId, p.FileId });
+        });
+
+        // ── Google Cloud Vision face detection staging (visit_photo_face_scans /
+        // visit_photo_face_detections) — scan state/normalized boxes only; no embedding, no
+        // automatic identity recognition, no emotion data. Confirmed rows link to photo_face_tags.
+        modelBuilder.Entity<VisitPhotoFaceScan>(b =>
+        {
+            b.HasAlternateKey(s => new { s.FaceScanId, s.VisitRequestId, s.VisitInstanceId, s.FileId });
+            b.HasOne(s => s.VisitPhoto).WithMany(p => p.FaceScans)
+                .HasForeignKey(s => new { s.VisitPhotoId, s.VisitRequestId, s.VisitInstanceId, s.FileId })
+                .HasPrincipalKey(p => new { p.VisitPhotoId, p.VisitRequestId, p.VisitInstanceId, p.FileId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(s => s.ApiConfiguration).WithMany()
+                .HasForeignKey(s => s.ApiConfigId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.RequestedByUser).WithMany()
+                .HasForeignKey(s => s.RequestedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.ConfirmedByUser).WithMany()
+                .HasForeignKey(s => s.ConfirmedBy).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(s => new { s.VisitPhotoId, s.CreatedAt }).HasDatabaseName("idx_visit_photo_face_scans_photo_time");
+            b.HasIndex(s => new { s.VisitInstanceId, s.CreatedAt }).HasDatabaseName("idx_visit_photo_face_scans_instance_time");
+            b.HasIndex(s => new { s.Status, s.CreatedAt }).HasDatabaseName("idx_visit_photo_face_scans_status_time");
+        });
+
+        modelBuilder.Entity<VisitPhotoFaceDetection>(b =>
+        {
+            b.HasOne(d => d.FaceScan).WithMany(s => s.Detections)
+                .HasForeignKey(d => new { d.FaceScanId, d.VisitRequestId, d.VisitInstanceId, d.FileId })
+                .HasPrincipalKey(s => new { s.FaceScanId, s.VisitRequestId, s.VisitInstanceId, s.FileId })
+                .OnDelete(DeleteBehavior.Cascade);
+            // Composite FK re-proves the tagged guest belongs to this exact campus instance
+            // (anti cross-instance tagging); MySQL skips the constraint when GuestMemberId is NULL
+            // (DETECTED/IGNORED rows), matching visit_instance_guest_members' composite PK.
+            b.HasOne<VisitInstanceGuestMember>().WithMany()
+                .HasForeignKey(d => new { d.VisitInstanceId, d.GuestMemberId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(d => d.FaceTag).WithOne()
+                .HasForeignKey<VisitPhotoFaceDetection>(d => d.FaceTagId)
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(d => d.ReviewedByUser).WithMany()
+                .HasForeignKey(d => d.ReviewedBy).OnDelete(DeleteBehavior.Restrict);
+            b.Property(d => d.BoundingBoxX).HasPrecision(10, 8);
+            b.Property(d => d.BoundingBoxY).HasPrecision(10, 8);
+            b.Property(d => d.BoundingBoxWidth).HasPrecision(10, 8);
+            b.Property(d => d.BoundingBoxHeight).HasPrecision(10, 8);
+            b.Property(d => d.DetectionConfidence).HasPrecision(6, 5);
+            b.HasIndex(d => new { d.FaceScanId, d.FaceIndex })
+                .IsUnique().HasDatabaseName("uq_visit_photo_face_detection_index");
+            b.HasIndex(d => new { d.FaceScanId, d.GuestMemberId })
+                .IsUnique().HasDatabaseName("uq_visit_photo_face_detection_guest");
+            b.HasIndex(d => d.FaceTagId)
+                .IsUnique().HasDatabaseName("uq_visit_photo_face_detection_tag");
+            b.HasIndex(d => new { d.VisitInstanceId, d.ReviewStatus })
+                .HasDatabaseName("idx_visit_photo_face_detection_instance");
+            b.HasIndex(d => new { d.ReviewStatus, d.CreatedAt })
+                .HasDatabaseName("idx_visit_photo_face_detection_status");
         });
 
         // VisitParticipant → VisitRequestCampus, User, InvitedBy, AssignedBy

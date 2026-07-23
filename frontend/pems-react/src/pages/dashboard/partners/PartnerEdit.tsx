@@ -4,10 +4,13 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, AlertTriangle, Info } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Info, Languages, RotateCw } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { PartnerType } from '../../../features/partners/types/partners.types';
 import { PARTNER_TYPE_LABELS } from '../../../features/partners/types/partners.types';
+import { usePartnerBilingualTranslate } from './usePartnerBilingualTranslate';
+import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
 import {
   getApiErrorMessage,
   showLoadingToast,
@@ -41,6 +44,49 @@ export function PartnerEdit() {
   const [visibility, setVisibility] = useState('INTERNAL');
   const [submitting, setSubmitting] = useState(false);
 
+  // Bilingual editor. `hadEnglishAtEditStart` freezes whether an EN translation already existed
+  // when this page loaded — the EN column is then shown immediately (both translations loaded
+  // from the DB) without auto-translating; `addingEnglish` is only for a partner that has no EN
+  // yet (clicking the toggle then translates once). Either way "Dịch lại" is always available so
+  // a hand-edited EN can be explicitly overwritten on request.
+  const [hadEnglishAtEditStart, setHadEnglishAtEditStart] = useState(false);
+  const [addingEnglish, setAddingEnglish] = useState(false);
+  const showEnglishColumn = hadEnglishAtEditStart || addingEnglish;
+  const [englishName, setEnglishName] = useState('');
+  const [englishShortName, setEnglishShortName] = useState('');
+  const [englishDescription, setEnglishDescription] = useState('');
+  const [englishAddress, setEnglishAddress] = useState('');
+  const [englishNameTouched, setEnglishNameTouched] = useState(false);
+  const [englishShortNameTouched, setEnglishShortNameTouched] = useState(false);
+  const [englishDescriptionTouched, setEnglishDescriptionTouched] = useState(false);
+  const [englishAddressTouched, setEnglishAddressTouched] = useState(false);
+
+  const { translating: translatingPartner, retranslateNow: retranslatePartner } = usePartnerBilingualTranslate({
+    enabled: addingEnglish && !hadEnglishAtEditStart,
+    name,
+    shortName,
+    country,
+    city,
+    description,
+    address,
+    onTranslated: (result) => {
+      if (!englishNameTouched) setEnglishName(result.name);
+      if (!englishShortNameTouched) setEnglishShortName(result.shortName);
+      if (!englishDescriptionTouched) setEnglishDescription(result.description);
+      if (!englishAddressTouched) setEnglishAddress(result.address);
+    },
+  });
+
+  async function handleRetranslatePartner() {
+    setEnglishNameTouched(false);
+    setEnglishShortNameTouched(false);
+    setEnglishDescriptionTouched(false);
+    setEnglishAddressTouched(false);
+    const ok = await retranslatePartner();
+    if (ok) toast.success('Đã dịch lại sang tiếng Anh.');
+    else toast.error('Không thể dịch tự động. Vui lòng thử lại.');
+  }
+
   useEffect(() => {
     if (!id) return;
     (async () => {
@@ -63,6 +109,11 @@ export function PartnerEdit() {
         setVisibility(partner.visibility);
         setWasRejected(partner.profileStatus === 'REJECTED');
         setProfileStatus(partner.profileStatus);
+        setHadEnglishAtEditStart(!!partner.hasEnglishTranslation);
+        setEnglishName(partner.englishName ?? '');
+        setEnglishShortName(partner.englishShortName ?? '');
+        setEnglishDescription(partner.englishDescription ?? '');
+        setEnglishAddress(partner.englishAddress ?? '');
       } catch (e: any) {
         setError(e?.response?.data?.message || 'Không tải được hồ sơ đối tác.');
       } finally {
@@ -93,6 +144,16 @@ export function PartnerEdit() {
         partnerType,
         cooperationStatus,
         visibility: visibility as 'PRIVATE' | 'INTERNAL' | 'PUBLIC',
+        // Omitted entirely when the EN panel was never opened for a partner that has no EN yet —
+        // the backend then auto-translates once and stores the result, same rule as create.
+        ...(showEnglishColumn
+          ? {
+              englishName: englishName.trim() || null,
+              englishShortName: englishShortName.trim() || null,
+              englishDescription: englishDescription.trim() || null,
+              englishAddress: englishAddress.trim() || null,
+            }
+          : {}),
       });
       updateToastSuccess(
         toastId,
@@ -126,12 +187,42 @@ export function PartnerEdit() {
         <span className="text-[#004c91]">Chỉnh sửa đối tác</span>
       </div>
 
-      <div className="border-b border-gray-100 pb-4 mb-6 flex items-center gap-3">
-        <button onClick={() => navigate(`/dashboard/partners/${id}`)}
-          className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-[#004c91] transition-colors cursor-pointer">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-3xl font-bold text-[#004c91]">Chỉnh sửa đối tác</h1>
+      <div className="border-b border-gray-100 pb-4 mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(`/dashboard/partners/${id}`)}
+            className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-[#004c91] transition-colors cursor-pointer">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-3xl font-bold text-[#004c91]">Chỉnh sửa đối tác</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {showEnglishColumn && (
+            <button
+              type="button"
+              onClick={handleRetranslatePartner}
+              disabled={translatingPartner}
+              title="Dịch lại từ tiếng Việt"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${translatingPartner ? 'animate-spin' : ''}`} />
+              {translatingPartner ? 'Đang dịch...' : 'Dịch lại'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { if (!hadEnglishAtEditStart) setAddingEnglish(v => !v); }}
+            title={
+              hadEnglishAtEditStart
+                ? 'Đối tác đã có bản dịch tiếng Anh'
+                : addingEnglish ? 'Tắt soạn song ngữ' : 'Bật soạn song ngữ Việt – Anh'
+            }
+            className={`p-1.5 rounded-lg transition-colors ${
+              showEnglishColumn ? 'bg-[#004c91]/10 text-[#004c91]' : 'text-gray-400 hover:bg-gray-100'
+            } ${hadEnglishAtEditStart ? 'cursor-default' : ''}`}
+          >
+            <Languages className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {wasRejected && (
@@ -150,16 +241,50 @@ export function PartnerEdit() {
       <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="md:col-span-2">
-            <label className={labelCls}>Tên đối tác *</label>
-            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+            <label className={labelCls}>
+              Tên đối tác *{showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+            </label>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={<input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />}
+              right={
+                <div>
+                  <label className={labelCls}>Name <LanguageColumnLabel>EN</LanguageColumnLabel></label>
+                  <input
+                    className={inputCls}
+                    value={englishName}
+                    onChange={(e) => { setEnglishName(e.target.value); setEnglishNameTouched(true); }}
+                    maxLength={200}
+                    placeholder="Partner name (English)..."
+                  />
+                </div>
+              }
+            />
           </div>
           <div>
             <label className={labelCls}>Mã đối tác</label>
             <input className={inputCls} value={partnerCode} onChange={(e) => setPartnerCode(e.target.value)} maxLength={50} />
           </div>
-          <div>
-            <label className={labelCls}>Tên viết tắt</label>
-            <input className={inputCls} value={shortName} onChange={(e) => setShortName(e.target.value)} maxLength={100} />
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
+            <label className={labelCls}>
+              Tên viết tắt{showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+            </label>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={<input className={inputCls} value={shortName} onChange={(e) => setShortName(e.target.value)} maxLength={100} />}
+              right={
+                <div>
+                  <label className={labelCls}>Short name <LanguageColumnLabel>EN</LanguageColumnLabel></label>
+                  <input
+                    className={inputCls}
+                    value={englishShortName}
+                    onChange={(e) => { setEnglishShortName(e.target.value); setEnglishShortNameTouched(true); }}
+                    maxLength={100}
+                    placeholder="Short name (English)..."
+                  />
+                </div>
+              }
+            />
           </div>
           <div>
             <label className={labelCls}>Quốc gia</label>
@@ -182,12 +307,46 @@ export function PartnerEdit() {
             </select>
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls}>Địa chỉ</label>
-            <input className={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />
+            <label className={labelCls}>
+              Địa chỉ{showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+            </label>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={<input className={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />}
+              right={
+                <div>
+                  <label className={labelCls}>Address <LanguageColumnLabel>EN</LanguageColumnLabel></label>
+                  <input
+                    className={inputCls}
+                    value={englishAddress}
+                    onChange={(e) => { setEnglishAddress(e.target.value); setEnglishAddressTouched(true); }}
+                    maxLength={500}
+                    placeholder="Address (English)..."
+                  />
+                </div>
+              }
+            />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls}>Mô tả</label>
-            <textarea className={inputCls} rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+            <label className={labelCls}>
+              Mô tả{showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
+            </label>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={<textarea className={inputCls} rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />}
+              right={
+                <div>
+                  <label className={labelCls}>Description <LanguageColumnLabel>EN</LanguageColumnLabel></label>
+                  <textarea
+                    className={inputCls}
+                    rows={4}
+                    value={englishDescription}
+                    onChange={(e) => { setEnglishDescription(e.target.value); setEnglishDescriptionTouched(true); }}
+                    placeholder="Description (English)..."
+                  />
+                </div>
+              }
+            />
           </div>
           <div>
             <label className={labelCls}>Trạng thái hợp tác</label>

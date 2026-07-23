@@ -62,6 +62,12 @@ public sealed class PartnerDetailDto
     public string? ReviewerName { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public List<string> AllowedActions { get; set; } = new();
+
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public string? EnglishDescription { get; set; }
+    public string? EnglishAddress { get; set; }
+    public bool HasEnglishTranslation { get; set; }
 }
 
 public sealed class PartnerContactDto
@@ -76,6 +82,8 @@ public sealed class PartnerContactDto
     public string? Note { get; set; }
     public string SourceType { get; set; } = "MANUAL";
     public ulong? ScannedCardFileId { get; set; }
+    public ulong? AvatarFileId { get; set; }
+    public string? AvatarUrl { get; set; }
     public decimal? OcrConfidence { get; set; }
     public bool IsPrimary { get; set; }
     public string Status { get; set; } = "ACTIVE";

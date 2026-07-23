@@ -68,6 +68,7 @@ type DraftParticipant = {
   attendanceStatus: string;
   attendanceNote: string;
   participantKind: string; // INTERNAL | GUEST | MANUAL
+  guestNationality: string | null;
 };
 
 type DraftActionItem = {
@@ -230,6 +231,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       attendanceStatus: p.attendanceStatus || 'ABSENT',
       attendanceNote: p.attendanceNote ?? '',
       participantKind: p.participantKind,
+      guestNationality: p.guestNationality,
     })));
     setDraftActionItems((d.actionItems ?? []).map((a) => ({
       _key: `a-${a.actionItemId}`,
@@ -425,6 +427,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       attendanceStatus: 'ABSENT',
       attendanceNote: '',
       participantKind: 'INTERNAL',
+      guestNationality: null,
     }]);
     resetAddForm();
   };
@@ -463,6 +466,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         attendanceStatus: c.attendanceStatus || 'ABSENT',
         attendanceNote: c.attendanceNote ?? '',
         participantKind: c.participantKind,
+        guestNationality: null,
       }))]);
       pushToast('success', 'Đã đồng bộ người tham gia mới.');
     } catch (e: any) {
@@ -489,6 +493,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         attendanceStatus: p.attendanceStatus || 'ABSENT',
         attendanceNote: p.attendanceNote ?? '',
         participantKind: p.participantKind,
+        guestNationality: p.guestNationality,
       }));
   const actionRows: DraftActionItem[] = editing
     ? draftActionItems
@@ -725,6 +730,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                         prefillContactName={p.fullNameSnapshot}
                                         prefillContactEmail={p.emailSnapshot}
                                         prefillJobTitle={p.roleSnapshot}
+                                        prefillNationality={p.guestNationality}
                                         sourceLabel={data?.minutesId ? `biên bản cuộc họp #${data.minutesId}` : 'biên bản cuộc họp'}
                                         onChanged={() => { void loadPartnerLinks(); }}
                                       />

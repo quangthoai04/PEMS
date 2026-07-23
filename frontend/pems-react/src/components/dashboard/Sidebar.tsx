@@ -253,7 +253,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
               <span>Quản lý tiếp khách</span>
             </NavLink>
           )}
-          {roleForSidebar === "STUDENT" && (
+          {(["STUDENT", "STAFF", "HO", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
             <NavLink to="/dashboard/visit-photos" className={navItemClass} onClick={handleLinkClick}>
               <Camera className="w-5 h-5 flex-shrink-0" />
               <span>Quản lý ảnh đoàn khách</span>

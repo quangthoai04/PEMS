@@ -11,6 +11,8 @@ import type {
   PartnerListParams,
   PartnerListResponse,
   PartnerMatchResult,
+  TranslatePartnerDraftRequest,
+  TranslatePartnerDraftResponse,
   UpdatePartnerRequest,
   VisitGuestPartnerLink,
 } from '../types/partners.types';
@@ -73,6 +75,15 @@ export const partnersApi = {
     const { data } = await httpClient.get<PartnerMatchResult>(API_ENDPOINTS.partners.match, {
       params: cleanParams({ organization, email }),
     });
+    return data;
+  },
+
+  /** One-shot VI→EN preview for the "EN" button on the create/edit form; never persists. */
+  async translateDraft(payload: TranslatePartnerDraftRequest): Promise<TranslatePartnerDraftResponse> {
+    const { data } = await httpClient.post<TranslatePartnerDraftResponse>(
+      '/partners/translate-draft',
+      { sourceLanguage: 'vi', targetLanguage: 'en', ...payload },
+    );
     return data;
   },
 

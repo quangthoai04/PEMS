@@ -29,6 +29,20 @@ public class GalleryItemContent
     [Column("audio_en_file_id")]
     public ulong AudioEnFileId { get; set; }
 
+    /// <summary>AUTO | MANUAL.</summary>
+    [Column("translation_source")]
+    public string? TranslationSource { get; set; }
+
+    /// <summary>PENDING | READY | FAILED | OUTDATED.</summary>
+    [Column("translation_status")]
+    public string TranslationStatus { get; set; } = "PENDING";
+
+    [Column("translation_source_hash")]
+    public string? TranslationSourceHash { get; set; }
+
+    [Column("translated_at")]
+    public DateTime? TranslatedAt { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 

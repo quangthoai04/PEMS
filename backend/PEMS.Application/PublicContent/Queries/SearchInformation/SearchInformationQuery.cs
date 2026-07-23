@@ -13,8 +13,8 @@ public sealed class SearchInformationQuery : IRequest<SearchInformationDto>
     public string? Keyword { get; init; }
 
     /// <summary>
-    /// Preferred language for News/FAQ result text — same "prefer requested, fall back to vi"
-    /// convention as ViewNewsQuery/ViewFaqQuery. Partners have no per-language content today.
+    /// Preferred language for News/Partner/FAQ result text — same "prefer requested, fall back to
+    /// vi" convention as ViewNewsQuery/GetPublicPartnersQuery/ViewFaqQuery.
     /// </summary>
     public string? LanguageCode { get; init; }
 

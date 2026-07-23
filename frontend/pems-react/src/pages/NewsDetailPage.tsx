@@ -5,8 +5,8 @@
 
 // Đây là trang hiển thị chi tiết một bài viết tin tức ở giao diện phía người dùng
 import React, { useEffect, useState } from 'react';
-import { Calendar, User, Globe, Image as ImageIcon } from 'lucide-react';
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Calendar, User, Image as ImageIcon } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { publicContentApi } from '../features/public-content/api/publicContentApi';
 import { PublicNewsDetail, PublicNewsSection } from '../features/public-content/types/publicContent.types';
 import { format } from 'date-fns';
@@ -15,33 +15,25 @@ import { sanitizeHtml } from '../shared/security/sanitizeHtml';
 import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
 import { useTranslation } from 'react-i18next';
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  vi: 'Tiếng Việt',
-  en: 'English',
-  ja: '日本語',
-  ko: '한국어',
-  'zh-CN': '中文',
-};
-
 export function NewsDetailPage() {
-  const { t } = useTranslation(['news']);
+  const { t, i18n } = useTranslation(['news']);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const lang = searchParams.get('lang') ?? undefined;
 
   const [article, setArticle] = useState<PublicNewsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  // Follows the site-wide VI/EN switcher in the header — no separate per-article language
+  // buttons; content is re-fetched in the requested language whenever it changes.
   useEffect(() => {
     if (!id) return;
 
     const fetchDetail = async () => {
       try {
         setLoading(true);
-        const data = await publicContentApi.getPublicNewsDetail(id, lang);
+        const data = await publicContentApi.getPublicNewsDetail(id, i18n.language);
         setArticle(data);
       } catch (err) {
         console.error(err);
@@ -52,16 +44,7 @@ export function NewsDetailPage() {
     };
 
     fetchDetail();
-  }, [id, lang]);
-
-  const handleSwitchLanguage = (code: string) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      if (code === 'vi') next.delete('lang');
-      else next.set('lang', code);
-      return next;
-    }, { replace: true });
-  };
+  }, [id, i18n.language]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -150,26 +133,6 @@ export function NewsDetailPage() {
             <div className="flex items-center gap-1.5 text-gray-500 text-[15px]">
               <User className="w-4 h-4" />
               <span>{article.authorName}</span>
-            </div>
-          )}
-
-          {/* Language switch — chỉ hiện khi bài có nhiều bản dịch */}
-          {article.availableLanguages && article.availableLanguages.length > 1 && (
-            <div className="flex items-center gap-1.5 ml-auto">
-              <Globe className="w-4 h-4 text-gray-400" />
-              {article.availableLanguages.map(code => (
-                <button
-                  key={code}
-                  onClick={() => handleSwitchLanguage(code)}
-                  className={`px-2.5 py-1 rounded-full text-[12px] font-bold border transition-colors ${
-                    code === article.languageCode
-                      ? 'bg-[#004c91] text-white border-[#004c91]'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-[#004c91] hover:text-[#004c91]'
-                  }`}
-                >
-                  {LANGUAGE_LABELS[code] ?? code}
-                </button>
-              ))}
             </div>
           )}
         </div>

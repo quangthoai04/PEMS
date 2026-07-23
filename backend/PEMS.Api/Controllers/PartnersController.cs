@@ -7,6 +7,7 @@ using PEMS.Application.Partners.Aliases.Queries.GetPartnerAliases;
 using PEMS.Application.Partners.Commands.ApprovePartner;
 using PEMS.Application.Partners.Commands.CreatePartner;
 using PEMS.Application.Partners.Commands.RejectPartner;
+using PEMS.Application.Partners.Commands.TranslatePartnerDraft;
 using PEMS.Application.Partners.Commands.UpdatePartner;
 using PEMS.Application.Partners.Contacts.Commands.CreatePartnerContact;
 using PEMS.Application.Partners.Contacts.Commands.DeactivatePartnerContact;
@@ -79,6 +80,13 @@ namespace PEMS.Api.Controllers
             command.PartnerId = partnerId;
             return Ok(await _mediator.Send(command, cancellationToken));
         }
+
+        // One-shot VI→EN preview for the "EN" button on the create/edit partner form; never
+        // persists (mirrors POST /api/news/translate-draft).
+        [HttpPost("translate-draft")]
+        public async Task<IActionResult> TranslatePartnerDraft(
+            [FromBody] TranslatePartnerDraftCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
 
         // ── Contacts ────────────────────────────────────────────────────
 

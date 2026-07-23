@@ -26,6 +26,16 @@ public sealed class CreatePartnerCommand : IRequest<CreatePartnerResponse>
     public string? Source { get; set; }
     public InitialContactPayload? InitialContact { get; set; }
 
+    /// <summary>
+    /// English content, only set once the admin has opened the "EN" panel (whether the text is
+    /// the untouched machine-translation preview or hand-edited afterward). Null/omitted when the
+    /// EN panel was never opened — the backend then auto-translates once and stores the result.
+    /// </summary>
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public string? EnglishDescription { get; set; }
+    public string? EnglishAddress { get; set; }
+
     public sealed class InitialContactPayload
     {
         public string FullName { get; set; } = string.Empty;
@@ -43,4 +53,8 @@ public sealed class CreatePartnerResponse
     public string ProfileStatus { get; set; } = string.Empty;
     public ulong OwnerCampusId { get; set; }
     public ulong? InitialContactId { get; set; }
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public string? EnglishDescription { get; set; }
+    public string? EnglishAddress { get; set; }
 }
