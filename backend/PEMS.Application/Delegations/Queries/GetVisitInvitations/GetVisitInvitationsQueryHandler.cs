@@ -73,8 +73,8 @@ public sealed class GetVisitInvitationsQueryHandler
         }
 
         // Lọc theo keyword. Scope-before-keyword: q is already restricted to the actor's own
-        // invitations/instances above. Mixed per-campus v2 rows match on THIS instance's detail name
-        // (never the global projection, never a sibling campus's content).
+        // invitations/instances above. Rows match on THIS instance's own detail name — never a sibling
+        // campus's content, and never a request-level name, which does not exist.
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword.ToLower();

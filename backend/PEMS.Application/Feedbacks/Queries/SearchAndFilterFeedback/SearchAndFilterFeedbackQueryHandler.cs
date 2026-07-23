@@ -84,8 +84,8 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             .Take(request.PageSize)
             .ToListAsync(cancellationToken);
 
-        // Feedback rows are INSTANCE-scoped: a MIXED per-campus v2 visit titles the row with THIS
-        // instance's detail name (v1/non-mixed keep the global projection — byte-identical there).
+        // Feedback rows are INSTANCE-scoped: each row is titled with THAT instance's own detail name.
+        // The visit request itself carries no name, so there is nothing else the title could come from.
         var instanceIds = list.Where(x => x.VisitInstanceId.HasValue)
             .Select(x => x.VisitInstanceId!.Value).Distinct().ToList();
         var visitTitles = await _context.VisitRequestCampuses

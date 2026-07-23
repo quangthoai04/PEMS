@@ -106,8 +106,8 @@ public sealed class InviteVisitParticipantCommandHandler
         var campusName = await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
-        // The invitation is for THIS campus instance → v2 (incl. mixed) sources the delegation name from this
-        // instance's per-campus detail (never the global field, never a sibling); v1 keeps the global value.
+        // The invitation is for THIS campus instance, so the delegation name comes from that instance's own
+        // detail — never a sibling's, and never a request-level value, which does not exist.
         var formContent = await _formReadService.ResolveCampusFormContentAsync(
             instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
         var delegationName = formContent[instance.VisitInstanceId].DelegationName;

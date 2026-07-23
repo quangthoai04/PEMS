@@ -4,8 +4,9 @@ namespace PEMS.Application.Common.DTOs;
 // Per-campus visit form v2 create payload (plan §5). The frontend always sends a
 // FULLY RESOLVED snapshot for every campus — "same for all" is a one-time UI copy,
 // never a backend inheritance. The backend NEVER trusts client-sent visitScope,
-// hasMixedCampusDetails, formSchemaVersion, status/revision, coordinator/approval
-// state or visitorUserId: those are all derived server-side.
+// hasMixedCampusDetails, status/revision, coordinator/approval
+// state or visitorUserId: those are all derived server-side. There is no schema
+// discriminator in the payload — every create is per-campus.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Request-level registrant snapshot (the submitter).</summary>
@@ -61,8 +62,8 @@ public record CampusVisitFormDto(
     CampusProcessingV2Dto? Processing);
 
 /// <summary>
-/// The complete per-campus v2 create payload. <c>visitScope</c> / <c>hasMixedCampusDetails</c> /
-/// <c>formSchemaVersion</c> are NOT accepted from the client — the backend derives them.
+/// The complete per-campus create payload. <c>visitScope</c> and <c>hasMixedCampusDetails</c> are NOT
+/// accepted from the client — the backend derives them from the campus set.
 /// </summary>
 public record VisitRequestFormDataV2(
     string SubmissionId,             // idempotency key; a retry with the same id returns the same request

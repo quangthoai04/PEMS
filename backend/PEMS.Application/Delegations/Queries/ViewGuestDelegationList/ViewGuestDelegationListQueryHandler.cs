@@ -208,8 +208,8 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             // Scope-before-keyword: q is already reduced to the staff actor's own campus/instances above.
-            // Mixed per-campus v2 rows match on THIS instance's detail name — never the global projection,
-            // never a hidden sibling campus's content.
+            // Rows match on THIS instance's own detail name — never a hidden sibling campus's content,
+            // and never a request-level name, which does not exist.
             var keyword = request.Keyword.ToLower();
             q = q.Where(x =>
                 ( x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword)) ||
@@ -529,8 +529,8 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             // Visitor tabs: the actor is the registrant/contact, so EVERY campus of their own request is
-            // in scope — a mixed v2 request matches when ANY of its per-campus details matches (the
-            // global projection is never business content for mixed requests).
+            // in scope — a request matches when ANY of its per-campus details matches, which is the only
+            // place its content lives.
             var kw = request.Keyword.ToLower();
             q = q.Where(vr =>
                 ( vr.CampusInstances.Any(ci => ci.FormDetail != null

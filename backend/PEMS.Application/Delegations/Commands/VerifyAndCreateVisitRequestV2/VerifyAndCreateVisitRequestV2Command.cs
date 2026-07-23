@@ -10,8 +10,8 @@ namespace PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequestV2;
 /// <see cref="CreateVisitRequestV2Command"/>. The OTP challenge is verified against the REGISTRANT email
 /// (<see cref="VisitRequestFormDataV2.Registrant"/>.Email), identified by the opaque <see cref="SessionToken"/>
 /// and bound to <see cref="VisitRequestFormDataV2.SubmissionId"/> (the idempotency key). Gated by BOTH feature
-/// flags exactly like the authenticated create: write OFF → 404 (the v1 public verify flow is byte-identical
-/// because it is a different endpoint); write ON but read OFF → explicit reject.
+/// flags exactly like the authenticated create: write OFF → 404, which makes this endpoint unavailable
+/// rather than falling back to anything; write ON but read OFF → explicit reject.
 ///
 /// Only the registrant account is provisioned here. A different primary contact (contact ≠ registrant) is
 /// NEVER given an account at submit time — it stays PENDING_CONFIRMATION with an INITIAL_CLAIM (Phase D).

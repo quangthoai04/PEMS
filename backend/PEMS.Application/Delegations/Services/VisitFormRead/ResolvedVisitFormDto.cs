@@ -87,7 +87,7 @@ public sealed class ResolvedCampusVisitDto
     public string? DecisionActorRole { get; init; }
     public string? DecisionNote { get; init; }
 
-    // Per-campus form content (v2: from visit_instance_form_details; v1: from the global projection).
+    // This campus's form content, from its own visit_instance_form_details row.
     public string DelegationName { get; init; } = "";
     public string VisitType { get; init; } = "";
     public string? VisitTypeOther { get; init; }

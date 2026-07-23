@@ -210,9 +210,9 @@ public sealed class ApproveCampusInstanceCommandHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"#{instance.CampusId}";
 
-        // Delegation name for the notification text: this whole command acts on ONE campus instance, so v2
-        // (incl. mixed) sources it from THIS instance's per-campus detail — never the global field, never a
-        // sibling. v1 keeps the global projection (byte-identical text). No global fallback for v2.
+        // Delegation name for the notification text: this whole command acts on ONE campus instance, so it
+        // comes from THAT instance's own detail — never a sibling's, and never a request-level value, since
+        // visit_requests carries no delegation name. A missing detail fails loudly rather than going blank.
         var formContent = await _formReadService.ResolveCampusFormContentAsync(
             visit, new[] { instance.VisitInstanceId }, cancellationToken);
         var delegationName = formContent[instance.VisitInstanceId].DelegationName;

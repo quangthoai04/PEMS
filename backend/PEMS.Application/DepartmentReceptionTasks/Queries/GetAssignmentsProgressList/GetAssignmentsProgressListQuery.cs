@@ -155,8 +155,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LatestNote = latestAttempt == null ? null : latestAttempt.ResponseNote,
                 BorrowSigned = borrowSigned,
                 ReturnSigned = returnSigned,
-                // Mixed per-campus v2 rows show THIS instance's detail (no global fallback);
-                // v1/non-mixed keep the projection (byte-identical there).
+                // Every row shows THIS instance's own detail; there is no request-level name to fall
+                // back to, so a missing detail stays null rather than borrowing one.
                 EffectiveDelegationName = inst.FormDetail != null ? inst.FormDetail.DelegationName : null,
             })
             .ToListAsync(cancellationToken);

@@ -217,12 +217,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             var borrowHandover = handovers.FirstOrDefault(h => h.HandoverType == "BORROW");
             var returnHandover = handovers.FirstOrDefault(h => h.HandoverType == "RETURN");
 
-            // ── Per-campus form v2 (INSTANCE-LEVEL: this reception detail is keyed by a logistics item that
-            // belongs to exactly ONE campus instance — camp.VisitInstanceId — so a MIXED request still returns
-            // 200, sourcing the delegation name, the working content/purpose and the operational (contact-person)
-            // fields ONLY from THAT target instance's per-campus detail, never the global fields and never a
-            // sibling campus. Registrant identity fields stay request-level in both versions. v1 keeps the global
-            // projection, so its response is byte-identical. The item is already scoped to one instance. ──
+            // ── INSTANCE-LEVEL: this reception detail is keyed by a logistics item that belongs to exactly
+            // ONE campus instance — camp.VisitInstanceId — so a request whose campuses differ still returns
+            // 200, sourcing the delegation name, the working content/purpose and the operational
+            // (contact-person) fields ONLY from THAT target instance's detail, never a sibling campus and
+            // never the request row, which holds no form content. Registrant identity fields are genuinely
+            // request-level and stay there. The item is already scoped to one instance. ──
             var visit = camp.VisitRequest;
             var content = await _formReadService.ResolveCampusFormContentAsync(
                 visit, new[] { camp.VisitInstanceId }, cancellationToken);
