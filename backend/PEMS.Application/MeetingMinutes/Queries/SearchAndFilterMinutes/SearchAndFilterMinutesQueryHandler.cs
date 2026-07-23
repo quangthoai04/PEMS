@@ -138,35 +138,68 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
         var page = request.Page > 0 ? request.Page : 1;
         var minutesPage = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
 
-        // Map to Dto (loading extra relations)
+        // ── Batch the page's relations. Each row used to issue nine sequential queries of its own
+        //    (instance, campus, host participant, host name, three user names, participants, action
+        //    items), so a ten-row page cost ninety round trips. The set of ids is known once the page
+        //    is materialised, so every lookup below is one query for the whole page. ──
+        var pageInstanceIds = minutesPage.Select(m => m.VisitInstanceId).Distinct().ToList();
+        var pageMinutesIds = minutesPage.Select(m => m.MinutesId).Distinct().ToList();
+
+        // Per-campus v2: each row titles from ITS OWN instance detail — never a sibling's, and never a
+        // request-level name, which does not exist.
+        var instancesById = await _db.VisitRequestCampuses
+            .AsNoTracking()
+            .Include(v => v.FormDetail)
+            .Where(v => pageInstanceIds.Contains(v.VisitInstanceId))
+            .ToDictionaryAsync(v => v.VisitInstanceId, cancellationToken);
+
+        var campusNames = await _db.Campuses.AsNoTracking()
+            .Where(c => instancesById.Values.Select(v => v.CampusId).Contains(c.CampusId))
+            .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
+        var hostByInstance = (await _db.VisitParticipants.AsNoTracking()
+                .Where(p => pageInstanceIds.Contains(p.VisitInstanceId) && p.IsHost)
+                .Select(p => new { p.VisitInstanceId, p.UserId, p.ParticipantId })
+                .ToListAsync(cancellationToken))
+            .GroupBy(p => p.VisitInstanceId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(p => p.ParticipantId).First().UserId);
+
+        var neededUserIds = hostByInstance.Values
+            .Concat(minutesPage.Where(m => m.EditLockedBy.HasValue).Select(m => m.EditLockedBy!.Value))
+            .Concat(minutesPage.Where(m => m.CreatedBy.HasValue).Select(m => m.CreatedBy!.Value))
+            .Concat(minutesPage.Where(m => m.UpdatedBy.HasValue).Select(m => m.UpdatedBy!.Value))
+            .Distinct().ToList();
+        var userNames = await _db.Users.AsNoTracking()
+            .Where(u => neededUserIds.Contains(u.UserId))
+            .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+
+        var participantsByMinutes = (await _db.MinuteParticipants.AsNoTracking()
+                .Where(p => pageMinutesIds.Contains(p.MinutesId)).ToListAsync(cancellationToken))
+            .GroupBy(p => p.MinutesId).ToDictionary(g => g.Key, g => g.ToList());
+        var actionItemsByMinutes = (await _db.MinuteActionItems.AsNoTracking()
+                .Where(ai => pageMinutesIds.Contains(ai.MinutesId)).ToListAsync(cancellationToken))
+            .GroupBy(ai => ai.MinutesId).ToDictionary(g => g.Key, g => g.ToList());
+
+        string? NameOf(ulong? userId)
+            => userId.HasValue && userNames.TryGetValue(userId.Value, out var n) ? n : null;
+
         var items = new List<MinutesListItemDto>();
         foreach (var minute in minutesPage)
         {
-            var vrc = await _db.VisitRequestCampuses
-                .Include(v => v.VisitRequest)
-                .Include(v => v.FormDetail) // per-campus v2: mixed rows title from THIS instance's detail
-                .FirstOrDefaultAsync(v => v.VisitInstanceId == minute.VisitInstanceId, cancellationToken);
-                
-            var campusName = vrc != null ? await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken) : null;
-                
-            var host = await _db.VisitParticipants
-                .Where(p => p.VisitInstanceId == minute.VisitInstanceId && p.IsHost)
-                .FirstOrDefaultAsync(cancellationToken);
-                
-            var hostName = host != null ? await _db.Users.Where(u => u.UserId == host.UserId).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken) : null;
+            instancesById.TryGetValue(minute.VisitInstanceId, out var vrc);
 
-            var lockedByName = minute.EditLockedBy.HasValue 
-                ? await _db.Users.Where(u => u.UserId == minute.EditLockedBy.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
+            var campusName = vrc != null && campusNames.TryGetValue(vrc.CampusId, out var cn) ? cn : null;
+            var hostName = hostByInstance.TryGetValue(minute.VisitInstanceId, out var hostUserId)
+                ? NameOf(hostUserId)
                 : null;
-            var createdByName = minute.CreatedBy.HasValue
-                ? await _db.Users.Where(u => u.UserId == minute.CreatedBy.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
-                : null;
-            var updatedByName = minute.UpdatedBy.HasValue
-                ? await _db.Users.Where(u => u.UserId == minute.UpdatedBy.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
-                : null;
+            var lockedByName = NameOf(minute.EditLockedBy);
+            var createdByName = NameOf(minute.CreatedBy);
+            var updatedByName = NameOf(minute.UpdatedBy);
 
-            var participants = await _db.MinuteParticipants.Where(p => p.MinutesId == minute.MinutesId).ToListAsync(cancellationToken);
-            var actionItems = await _db.MinuteActionItems.Where(ai => ai.MinutesId == minute.MinutesId).ToListAsync(cancellationToken);
+            var participants = participantsByMinutes.TryGetValue(minute.MinutesId, out var ps)
+                ? ps : new List<Domain.Entities.Minutes.MinuteParticipant>();
+            var actionItems = actionItemsByMinutes.TryGetValue(minute.MinutesId, out var ais)
+                ? ais : new List<Domain.Entities.Minutes.MinuteActionItem>();
 
             items.Add(new MinutesListItemDto
             {
