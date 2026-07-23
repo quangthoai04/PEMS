@@ -8,17 +8,29 @@
  * - Tự động chuyển sang chế độ "Bức ảnh trực tiếp" khi người dùng nhập từ khóa tìm kiếm tên khách/đoàn
  * - Mở modal xem/quản lý/quét mặt từng đoàn khách
  */
-import { useCallback, useEffect, useState } from 'react';
-import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, Image as ImageIcon, Calendar, Filter, Sparkles, RefreshCw } from 'lucide-react';
+/**
+ * VisitPhotoManagement — Trang "Quản lý ảnh đoàn khách" dành cho Student, Staff, Host & Staff Leader/Admin.
+ *
+ * Hỗ trợ:
+ * - Lọc theo khoảng thời gian (fromDate - toDate)
+ * - Sắp xếp theo ngày (Mới nhất / Cũ nhất)
+ * - Chuyển đổi linh hoạt giữa 2 chế độ xem: "📁 Thư mục đoàn" và "📷 Danh sách Bức ảnh"
+ * - Tự động chuyển sang chế độ "Bức ảnh trực tiếp" khi người dùng nhập từ khóa tìm kiếm tên khách/đoàn
+ * - Xem ảnh thư mục làm góc nhìn chính (có hiển thị nhãn danh tính khi xem phóng to)
+ * - Nút "Quét mặt" riêng biệt mở modal quét & gán danh tính khuôn mặt
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, Image as ImageIcon, Calendar, Sparkles, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { VisitPhotoPanel } from '../../../features/delegations/components/VisitPhotoPanel';
-import type { MyVisitPhotoFolderItem, MyVisitPhotoFoldersPage } from '../../../features/delegations/types/visitPhotos.types';
+import { FaceScanPanel, type FaceScanPhoto } from '../../../features/delegations/components/FaceScanPanel';
+import type { MyVisitPhotoFolderItem, MyVisitPhotoFoldersPage, VisitInstancePhotos } from '../../../features/delegations/types/visitPhotos.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
-
+import { validateFile } from '../../../shared/utils/fileValidation';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 10;
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
@@ -30,6 +42,130 @@ const INSTANCE_STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Đã hủy',
   REJECTED: 'Từ chối',
 };
+
+const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback;
+
+/** Modal Quét mặt riêng biệt dành cho Staff / Staff Leader */
+function FaceScanModalContent({
+  item,
+  onClose,
+}: {
+  item: MyVisitPhotoFolderItem;
+  onClose: (changed: boolean) => void;
+}) {
+  const [photosData, setPhotosData] = useState<VisitInstancePhotos | null>(null);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadPhotos = useCallback(async () => {
+    setLoadingPhotos(true);
+    try {
+      const res = await visitPhotosApi.byInstance(item.visitInstanceId);
+      setPhotosData(res);
+    } catch {
+      toast.error('Không thể tải danh sách ảnh đoàn khách.');
+    } finally {
+      setLoadingPhotos(false);
+    }
+  }, [item.visitInstanceId]);
+
+  useEffect(() => {
+    loadPhotos();
+  }, [loadPhotos]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files) as File[];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    for (const f of files) {
+      const check = validateFile(f, 'VISIT_REQUEST_PHOTO');
+      if (!check.ok) {
+        toast.error(`${f.name}: ${check.message ?? 'Ảnh không hợp lệ.'}`);
+        return;
+      }
+    }
+
+    const toastId = toast.loading('Đang tải ảnh lên...');
+    try {
+      await visitPhotosApi.upload(item.visitInstanceId, files);
+      toast.success('Đã tải ảnh đoàn khách lên.', { id: toastId });
+      await loadPhotos();
+    } catch (err: any) {
+      toast.error(errMsg(err, 'Không thể tải ảnh lên.'), { id: toastId });
+    }
+  };
+
+  const faceScanPhotos: FaceScanPhoto[] = useMemo(() => {
+    if (!photosData?.photos) return [];
+    return photosData.photos.map((p) => ({
+      visitPhotoId: p.visitPhotoId,
+      url: p.url,
+      name: p.fileName,
+      uploadedByName: p.uploadedByName,
+      uploadedAt: p.uploadedAt,
+    }));
+  }, [photosData]);
+
+  return (
+    <div className="flex flex-col h-full max-h-[92vh]">
+      {/* Modal Header */}
+      <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50 shrink-0">
+        <div className="min-w-0 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 border border-orange-100 shadow-sm">
+            <Sparkles className="w-5 h-5 text-[#f37021]" />
+          </div>
+          <div>
+            <h3 className="text-base font-extrabold text-[#004c91] truncate flex items-center gap-2">
+              Quét mặt & Gán danh tính khuôn mặt
+            </h3>
+            <p className="text-xs text-slate-500 font-medium truncate">
+              {item.delegationName} · {item.campusName}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onClose(true)}
+          className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+          aria-label="Đóng"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Modal Body */}
+      <div className="p-6 overflow-y-auto flex-1 bg-white">
+        {loadingPhotos ? (
+          <div className="py-20 text-center flex flex-col items-center justify-center gap-2">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#004c91]" />
+            <span className="text-xs font-bold text-gray-600">Đang tải công cụ định danh khuôn mặt...</span>
+          </div>
+        ) : (
+          <>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleUpload}
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+            />
+            <FaceScanPanel
+              visitInstanceId={item.visitInstanceId}
+              photos={faceScanPhotos}
+              isReadOnly={false}
+              onUploadClick={() => fileInputRef.current?.click()}
+              folderUrl={photosData?.folderWebViewUrl ?? undefined}
+              onRefreshPhotos={loadPhotos}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function VisitPhotoManagement() {
   const { user } = useAuth();
@@ -47,7 +183,11 @@ export function VisitPhotoManagement() {
   const [data, setData] = useState<MyVisitPhotoFoldersPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [modal, setModal] = useState<{ item: MyVisitPhotoFolderItem; mode: 'view' | 'edit' } | null>(null);
+
+  // Modal xem danh mục ảnh chính (Gallery View)
+  const [photoModalItem, setPhotoModalItem] = useState<MyVisitPhotoFolderItem | null>(null);
+  // Modal quét mặt (Face Scan View)
+  const [faceScanModalItem, setFaceScanModalItem] = useState<MyVisitPhotoFolderItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,7 +210,6 @@ export function VisitPhotoManagement() {
       const trimmed = searchInput.trim();
       setSearch(trimmed);
       setPage(1);
-      // Tự động chuyển sang chế độ Lưới ảnh trực tiếp khi gõ từ khóa tìm kiếm
       if (trimmed) {
         setViewMode('photos');
       } else {
@@ -80,8 +219,13 @@ export function VisitPhotoManagement() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const closeModal = async (changed: boolean) => {
-    setModal(null);
+  const closePhotoModal = async (changed: boolean) => {
+    setPhotoModalItem(null);
+    if (changed) await load();
+  };
+
+  const closeFaceScanModal = async (changed: boolean) => {
+    setFaceScanModalItem(null);
     if (changed) await load();
   };
 
@@ -98,24 +242,34 @@ export function VisitPhotoManagement() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Top Control Bar */}
-        <div className="px-4 sm:px-6 py-5 border-b border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 shadow-sm border border-orange-100">
-              <Camera className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-lg font-black text-[#004c91] flex items-center gap-2">
-                Quản lý ảnh đoàn khách
-              </h1>
-              <p className="text-xs font-semibold text-slate-500">
-                Thư mục ảnh & công cụ định danh khuôn mặt dành cho Student, Staff và Staff Leader.
-              </p>
-            </div>
+        {/* Top Control Bar — Compact Single Row Layout */}
+        <div className="px-4 sm:px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50 flex-wrap lg:flex-nowrap">
+          {/* Camera Icon */}
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 shadow-sm border border-orange-100">
+            <Camera className="w-5 h-5" />
           </div>
 
-          {/* Controls & Filters */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          {/* Search Bar (Bên phải Icon) */}
+          <div className="relative flex-1 min-w-[200px] max-w-[320px]">
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Tìm theo tên khách, tên đoàn..."
+              className="w-full text-xs font-semibold rounded-xl border border-gray-300 pl-8 pr-7 py-2 outline-none focus:border-[#004c91] bg-white shadow-sm"
+            />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Controls & Filters (Cùng 1 hàng với Icon & Search) */}
+          <div className="flex items-center gap-2.5 flex-wrap lg:flex-nowrap shrink-0">
             {/* View Mode Toggle */}
             <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200 shrink-0">
               <button
@@ -134,18 +288,8 @@ export function VisitPhotoManagement() {
               </button>
             </div>
 
-            {/* Sort Direction */}
-            <select
-              value={sortDirection}
-              onChange={(e) => { setSortDirection(e.target.value); setPage(1); }}
-              className="text-xs font-bold rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] bg-white cursor-pointer shadow-sm"
-            >
-              <option value="DESC">Mới nhất trước</option>
-              <option value="ASC">Cũ nhất trước</option>
-            </select>
-
             {/* Date Range Picker */}
-            <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-gray-300 shadow-sm">
+            <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-gray-300 shadow-sm shrink-0">
               <Calendar className="w-3.5 h-3.5 text-gray-400 ml-2" />
               <input
                 type="date"
@@ -173,24 +317,15 @@ export function VisitPhotoManagement() {
               )}
             </div>
 
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Tìm theo tên khách, tên đoàn..."
-                className="w-[240px] max-w-full text-xs font-semibold rounded-xl border border-gray-300 pl-8 pr-7 py-2 outline-none focus:border-[#004c91] bg-white shadow-sm"
-              />
-              {searchInput && (
-                <button
-                  onClick={() => setSearchInput('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+            {/* Sort Direction */}
+            <select
+              value={sortDirection}
+              onChange={(e) => { setSortDirection(e.target.value); setPage(1); }}
+              className="text-xs font-bold rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] bg-white cursor-pointer shadow-sm shrink-0"
+            >
+              <option value="DESC">Mới nhất trước</option>
+              <option value="ASC">Cũ nhất trước</option>
+            </select>
           </div>
         </div>
 
@@ -222,7 +357,7 @@ export function VisitPhotoManagement() {
                   <th className="px-4 py-3.5">Tên đoàn khách / Chuyến thăm</th>
                   <th className="px-4 py-3.5 w-56">Tên thư mục Drive</th>
                   <th className="px-4 py-3.5 w-40 text-center">Số lượng ảnh</th>
-                  <th className="px-5 py-3.5 w-44 text-right">Hành động</th>
+                  <th className="px-5 py-3.5 w-48 text-right">Hành động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -263,21 +398,33 @@ export function VisitPhotoManagement() {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setModal({ item, mode: 'edit' })}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold text-white inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-[0.98] cursor-pointer ${isStudent ? 'bg-[#f37021] hover:bg-[#e0611d]' : 'bg-[#004c91] hover:bg-[#00386b]'}`}
-                        >
-                          {isStudent ? (
-                            <>
-                              <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Xem & Quét mặt
-                            </>
-                          )}
-                        </button>
+                        {isStudent ? (
+                          <button
+                            type="button"
+                            onClick={() => setPhotoModalItem(item)}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold text-white bg-[#f37021] hover:bg-[#e0611d] inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setPhotoModalItem(item)}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold text-white bg-[#004c91] hover:bg-[#00386b] inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Xem ảnh
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFaceScanModalItem(item)}
+                              title="Quét mặt & gán danh tính"
+                              className="px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-orange-50 hover:bg-orange-100 text-[#f37021] border border-orange-200 inline-flex items-center gap-1 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-[#f37021]" /> Quét mặt
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -292,7 +439,7 @@ export function VisitPhotoManagement() {
               {items.map((item) => (
                 <div
                   key={item.visitInstanceId}
-                  onClick={() => setModal({ item, mode: 'edit' })}
+                  onClick={() => setPhotoModalItem(item)}
                   className="bg-white border border-gray-200 hover:border-[#004c91] rounded-2xl p-4 shadow-sm hover:shadow-md transition-all group cursor-pointer flex flex-col justify-between"
                 >
                   <div className="space-y-2">
@@ -313,20 +460,34 @@ export function VisitPhotoManagement() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className={`mt-3 w-full py-1.5 text-white rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${isStudent ? 'bg-[#f37021] hover:bg-[#e0611d]' : 'bg-[#004c91] hover:bg-[#00386b]'}`}
-                  >
+                  <div className="mt-3 flex items-center gap-2">
                     {isStudent ? (
-                      <>
+                      <button
+                        type="button"
+                        className="w-full py-1.5 text-white bg-[#f37021] hover:bg-[#e0611d] rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5"
+                      >
                         <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa (Thêm / Xóa ảnh)
-                      </>
+                      </button>
                     ) : (
                       <>
-                        <Eye className="w-3.5 h-3.5" /> Chi tiết ảnh & Quét mặt
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setPhotoModalItem(item); }}
+                          className="flex-1 py-1.5 text-white bg-[#004c91] hover:bg-[#00386b] rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Xem ảnh
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setFaceScanModalItem(item); }}
+                          title="Quét mặt & gán danh tính"
+                          className="py-1.5 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] border border-orange-200 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1 shrink-0"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-[#f37021]" /> Quét mặt
+                        </button>
                       </>
                     )}
-                  </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -378,40 +539,66 @@ export function VisitPhotoManagement() {
         )}
       </div>
 
-      {/* Modal Xem chi tiết / Quản lý ảnh & Quét mặt */}
-      {modal && (
+      {/* Modal 1: Xem tất cả ảnh (Gallery view, hỗ trợ hiển thị danh tính khi xem full cho Staff) */}
+      {photoModalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50">
-              <div className="min-w-0">
-                <h3 className="text-base font-extrabold text-[#004c91] flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-[#f37021]" /> Quản lý ảnh & Nhận diện khuôn mặt
-                </h3>
-                <p className="text-xs font-bold text-slate-700 truncate">{modal.item.delegationName}</p>
+            <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50 shrink-0">
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 border border-orange-100 shadow-sm">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#004c91] truncate">
+                    {photoModalItem.delegationName}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium truncate">
+                    {photoModalItem.campusName} · {photoModalItem.activePhotoCount} bức ảnh
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => closeModal(modal.mode === 'edit')}
+                onClick={() => closePhotoModal(true)}
                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
                 aria-label="Đóng"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-6 overflow-y-auto flex-1 bg-white">
               <VisitPhotoPanel
-                visitInstanceId={modal.item.visitInstanceId}
-                mode={modal.mode}
+                visitInstanceId={photoModalItem.visitInstanceId}
+                mode="edit"
+                showFaceTags={!isStudent}
+                onOpenFaceScan={!isStudent ? () => {
+                  const target = photoModalItem;
+                  setPhotoModalItem(null);
+                  setFaceScanModalItem(target);
+                } : undefined}
                 onForbidden={() => {
                   toast.error('Bạn không có quyền xem ảnh của đoàn khách này.');
-                  setModal(null);
+                  setPhotoModalItem(null);
                 }}
               />
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal 2: Modal Quét mặt & Gán tên khuôn mặt */}
+      {faceScanModalItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <FaceScanModalContent
+              item={faceScanModalItem}
+              onClose={(changed) => closeFaceScanModal(changed)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
