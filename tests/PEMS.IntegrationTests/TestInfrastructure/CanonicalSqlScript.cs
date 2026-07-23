@@ -139,6 +139,27 @@ public static class CanonicalSqlScript
     }
 
     /// <summary>
+    /// Matches a database-selection statement only where MySQL can actually parse one: at the start of a
+    /// statement, i.e. the start of a line or immediately after a <c>;</c>. This mirrors <see cref="Retarget"/>,
+    /// which rewrites exactly those positions. An unanchored search instead flagged the ordinary English word
+    /// "use" inside string literals and SIGNAL messages ("...must use SELF_SERVICE source"), which no server
+    /// ever executes. MySQL rejects USE mid-statement and inside stored programs, so anchoring loses no real
+    /// reachability.
+    /// </summary>
+    private static readonly Regex DatabaseStatementPattern = new(
+        @"(?im)(?:^|;)[ \t]*(CREATE\s+DATABASE|DROP\s+DATABASE|USE)\b\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?[`'""]?([A-Za-z0-9_$]+)[`'""]?",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Matches the mysql client include directives (<c>SOURCE path</c> and its <c>\.</c> shorthand). The
+    /// argument must look like a path, because a bare SOURCE word also begins a legitimate column definition
+    /// in this schema (<c>source ENUM('MANUAL','OCR',...)</c>).
+    /// </summary>
+    private static readonly Regex ClientIncludePattern = new(
+        @"(?i)^\s*(?:SOURCE\s+|\\\.\s*)\S*(?:[\\/]|\.sql\b)",
+        RegexOptions.Compiled);
+
+    /// <summary>
     /// Post-retarget safety gate. Throws when the script could still touch a protected database or pull in
     /// another file. Comment lines are ignored: the canonical script legitimately mentions pems_db in prose.
     /// </summary>
@@ -154,13 +175,10 @@ public static class CanonicalSqlScript
                 continue;
 
             // Any database-selection statement must name the disposable target.
-            var dbStatement = Regex.Match(
-                line,
-                @"(?i)\b(CREATE\s+DATABASE|DROP\s+DATABASE|USE)\b\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?[`'""]?([A-Za-z0-9_$]+)[`'""]?");
-            if (dbStatement.Success &&
-                !string.Equals(dbStatement.Groups[2].Value, targetDatabase, StringComparison.Ordinal))
+            foreach (Match dbStatement in DatabaseStatementPattern.Matches(line))
             {
-                offenders.Add($"line {i + 1}: database statement targets '{dbStatement.Groups[2].Value}'");
+                if (!string.Equals(dbStatement.Groups[2].Value, targetDatabase, StringComparison.Ordinal))
+                    offenders.Add($"line {i + 1}: database statement targets '{dbStatement.Groups[2].Value}'");
             }
 
             // Qualified references to the forbidden database, e.g. `pems_db`.users
@@ -168,7 +186,7 @@ public static class CanonicalSqlScript
                 offenders.Add($"line {i + 1}: qualified reference to '{ForbiddenTargetDatabase}'");
 
             // Client-side include directives must never appear.
-            if (Regex.IsMatch(line, @"^\s*(SOURCE\s+|\\\.)", RegexOptions.IgnoreCase))
+            if (ClientIncludePattern.IsMatch(line))
                 offenders.Add($"line {i + 1}: client include directive");
         }
 

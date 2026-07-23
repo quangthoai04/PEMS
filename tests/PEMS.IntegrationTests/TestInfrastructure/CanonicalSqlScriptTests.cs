@@ -101,6 +101,41 @@ public sealed class CanonicalSqlScriptTests
     public void Safety_scan_rejects_client_include_directives(string line)
         => Assert.Throws<InvalidOperationException>(() => CanonicalSqlScript.AssertSafeToImport(line, SampleTarget));
 
+    /// <summary>
+    /// The scan must key on statement position, not on the word. These lines are all real content of the
+    /// canonical script that an unanchored search flagged, blocking the import outright.
+    /// </summary>
+    [Theory]
+    // SIGNAL / MESSAGE_TEXT prose inside triggers.
+    [InlineData("      IF NEW.cancellation_source <> 'SELF_SERVICE' THEN")]
+    [InlineData("SET MESSAGE_TEXT = 'HOST cancellation on behalf of visitor must use EXTERNAL_CONFIRMATION source';")]
+    // Seeded English prose inside string literals.
+    [InlineData("  (2, 8, 'x', 'Visitor account attempted to use Internal Portal and was blocked.'),")]
+    [InlineData("<p>You can sign in and use the features assigned to your role.</p>")]
+    [InlineData("  ('...make better use of digital documents.'),")]
+    // A column that happens to be named "source".
+    [InlineData("  source ENUM('MANUAL','OCR','AUTO_MATCH','IMPORT') NOT NULL DEFAULT 'MANUAL',")]
+    public void Safety_scan_allows_the_word_use_inside_statement_bodies(string line)
+        => CanonicalSqlScript.AssertSafeToImport(line, SampleTarget);
+
+    /// <summary>Anchoring must not create an escape hatch: a real statement after a <c>;</c> is still caught.</summary>
+    [Theory]
+    [InlineData("SELECT 1; USE `pems_db`;")]
+    [InlineData("SELECT 1; CREATE DATABASE `pems_db`;")]
+    [InlineData("  DROP DATABASE IF EXISTS `pems_db`;")]
+    public void Safety_scan_still_rejects_a_real_statement_anywhere_on_the_line(string line)
+        => Assert.Throws<InvalidOperationException>(() => CanonicalSqlScript.AssertSafeToImport(line, SampleTarget));
+
+    /// <summary>The whole canonical script, retargeted, must import cleanly — no false offender at all.</summary>
+    [Fact]
+    public void Safety_scan_accepts_the_retargeted_canonical_script()
+    {
+        var target = SampleTarget;
+        var retargeted = CanonicalSqlScript.Retarget(CanonicalSqlScript.ReadVerified(), target);
+
+        CanonicalSqlScript.AssertSafeToImport(retargeted, target);
+    }
+
     [Fact]
     public void Safety_scan_allows_comments_mentioning_the_protected_database()
     {
