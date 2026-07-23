@@ -16,7 +16,7 @@
 --   * Visit photo upload remains restricted to ACTIVE, ACCEPTED STUDENT participants.
 --
 -- Final persistent runtime table count: 81.
--- A temporary seed-only staging table is created and dropped during import.
+-- No seed staging table is created; V2 form details are inserted directly.
 -- IMPORTANT: destructive FRESH-CREATE build for disposable pems_db only.
 -- ============================================================================
 
@@ -38,9 +38,9 @@
 --   * submission_id UNIQUE handles idempotent retries, while business_fingerprint + guard enforce the 15-minute duplicate rule;
 --   * contact/Visitor fail-closed triggers and rollback-safe self-tests remain.
 --
--- A seed-only staging table/view is created temporarily to translate historical static
--- tuples into V2 detail rows, then dropped before final verification. It is not part of
--- the completed schema.
+-- V2 form tuples are inserted directly into visit_instance_form_details.
+-- Later enrichment statements join the canonical V2 tables directly.
+-- No staging table or seed helper view is created.
 --
 -- IMPORTANT: destructive FRESH-CREATE build for disposable pems_db only.
 -- ============================================================================
@@ -72,7 +72,7 @@
 --   * representative multi-campus requests contain genuinely different
 --     per-campus content and therefore has_mixed_campus_details = 1;
 --   * no legacy global-form columns are created on visit_requests;
---   * historical static seed tuples are translated through a short-lived seed staging object;
+--   * historical static seed tuples are inserted directly into visit_instance_form_details;
 --   * the completed schema is V2-only.
 --
 -- Direct local seed import mode:
@@ -332,14 +332,12 @@ SET SESSION SQL_SAFE_UPDATES = 0;
 SELECT CONCAT('PEMS V2 direct seed rebuild target: ', DATABASE()) AS import_target;
 
 SET FOREIGN_KEY_CHECKS = 0;
+-- No seed helper view or staging table is created in this canonical file.
 
-
--- Complete reset coverage generated from every CREATE object below.
--- This prevents Error 1050 when rerunning the full seed over an older PEMS seed.
-DROP VIEW IF EXISTS `pems_seed_visit_requests_v2_compat`;
 -- Reset the duplicate-fingerprint row-lock table before recreation.
 DROP TABLE IF EXISTS `visit_request_fingerprint_guards`;
-DROP TABLE IF EXISTS `pems_seed_visit_request_form_v2`;
+-- No seed staging table or helper view is used in this canonical file.
+
 
 DROP TRIGGER IF EXISTS `trg_departments_one_ic_bi`;
 DROP TRIGGER IF EXISTS `trg_departments_one_ic_bu`;
@@ -4812,51 +4810,13 @@ INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_nam
   (4, 5, 'P-ASEAN-HOSP', 'ASEAN Hospitality Network', 'AHN', 'Thái Lan', 'Bangkok', 'https://asean-hospitality.example.org', 'NGO', 'ACTIVE', 'Mạng lưới khách sạn và du lịch khu vực; phù hợp với campus Quy Nhơn và chương trình hospitality.', NULL, NULL, '88 Sukhumvit Road, Bangkok', 'asean-hospitality-network', 'APPROVED', 'Ưu tiên dùng cho đoàn thăm Quy Nhơn.', 2, '2026-03-04 10:00:00', 'PUBLIC', '2026-03-04 09:30:00', 15, '2026-03-04 10:00:00', 2),
   (5, 1, 'P-MUNICH-AI', 'Munich Applied AI Institute', 'MAAI', 'Đức', 'Munich', NULL, 'UNIVERSITY', 'POTENTIAL', 'Nhóm nghiên cứu AI ứng dụng quan tâm mô hình blended learning và phòng lab tại campus HN.', NULL, NULL, 'Garching Research District, Munich', 'munich-applied-ai-institute', 'DRAFT', NULL, NULL, NULL, 'PRIVATE', '2026-03-05 08:30:00', 4, NULL, NULL),
   (6, 1, 'P-NORDIC-SUS', 'Nordic Sustainability Alliance', 'NSA', 'Phần Lan', 'Helsinki', 'https://nordic-sustainability.example.fi', 'NGO', 'ACTIVE', 'Tổ chức phi lợi nhuận về phát triển bền vững; thường yêu cầu nội dung campus xanh và workshop sinh viên.', NULL, NULL, 'Helsinki Innovation Hub', 'nordic-sustainability-alliance', 'APPROVED', 'Hồ sơ public chỉ hiển thị sau khi bổ sung ảnh hoạt động.', 2, '2026-03-05 11:00:00', 'INTERNAL', '2026-03-05 09:00:00', 2, '2026-03-05 11:00:00', 2);
-
 -- ---------------------------------------------------------------------
 -- 5. Visit requests: single-campus and multi-campus with full status coverage
 -- ---------------------------------------------------------------------
+-- Form data is seeded directly into visit_instance_form_details immediately
+-- after each corresponding visit_request_campuses seed block.
 
--- =====================================================================
--- SEED-ONLY V2 FORM TRANSLATION STAGING
--- This object exists only while historical static tuples are converted into
--- visit_instance_form_details. It is dropped before final verification.
--- =====================================================================
-CREATE TABLE pems_seed_visit_request_form_v2 (
-  visit_request_id BIGINT UNSIGNED NOT NULL,
-  delegation_name VARCHAR(200) NOT NULL,
-  visit_type ENUM('CAMPUS_TOUR','MEETING','WORKSHOP','SIGNING_CEREMONY','EXCHANGE','OTHER') NOT NULL,
-  visit_type_other VARCHAR(255) NULL,
-  purpose TEXT NOT NULL,
-  working_content TEXT NULL,
-  working_language ENUM('VI','EN') NOT NULL,
-  transportation_note TEXT NULL,
-  media_consent_status ENUM('AGREED','DECLINED') NOT NULL,
-  media_consent_note TEXT NULL,
-  note_to_fptu TEXT NULL,
-  PRIMARY KEY (visit_request_id),
-  CONSTRAINT ck_seed_v2_visit_type_other CHECK (
-    visit_type <> 'OTHER' OR (visit_type_other IS NOT NULL AND TRIM(visit_type_other) <> '')
-  )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Transient seed translator only; dropped after per-campus V2 details are materialized.';
 
-CREATE VIEW pems_seed_visit_requests_v2_compat AS
-SELECT
-  vr.*,
-  sf.delegation_name,
-  sf.visit_type,
-  sf.visit_type_other,
-  sf.purpose,
-  sf.working_content,
-  sf.working_language,
-  sf.transportation_note,
-  sf.media_consent_status,
-  sf.media_consent_note,
-  sf.note_to_fptu
-FROM visit_requests vr
-JOIN pems_seed_visit_request_form_v2 sf
-  ON sf.visit_request_id = vr.visit_request_id;
 
 INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   ('ACTIVE', 1001, 'VR-SC-HN-0001', 8, 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'PENDING_APPROVAL', '2026-06-23 08:00:00', '2026-06-23 08:03:12', NULL, NULL, NULL, 0, '2026-06-23 08:00:00', 8, NULL, NULL),
@@ -4879,26 +4839,6 @@ INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, req
   ('ACTIVE', 2009, 'VR-MC-HN-HCM-0009', 21, 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'MULTI_CAMPUS', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'APPROVED', '2026-06-01 09:00:00', '2026-06-01 09:02:00', NULL, NULL, NULL, 5, '2026-06-01 09:00:00', 21, '2026-06-06 09:00:00', 4),
   ('ACTIVE', 2010, 'VR-MC-HN-HCM-0010', 8, 3, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'CANCELLED', '2026-06-04 09:00:00', '2026-06-04 09:03:00', 8, '2026-06-06 08:00:00', 'Visitor tự hủy toàn bộ request liên cơ sở vì đoàn công tác cấp trường chuyển sang họp trực tuyến.', 8, '2026-06-04 09:00:00', 8, '2026-06-06 08:00:00', 8);
 
-INSERT INTO pems_seed_visit_request_form_v2 (visit_request_id, delegation_name, visit_type, visit_type_other, purpose, working_content, working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu) VALUES
-  (1001, 'SeoulTech exploratory tour at FPTU Hanoi', 'CAMPUS_TOUR', NULL, 'Tìm hiểu mô hình campus thông minh, không gian học tập và quy trình hỗ trợ sinh viên quốc tế.', 'Đoàn muốn thăm thư viện, khu lab AI và gặp IC để bàn lộ trình trao đổi sinh viên.', 'EN', 'Khách tự túc phương tiện. Xe riêng của đoàn, đến cổng chính Hòa Lạc.', 'AGREED', 'Đồng ý sử dụng hình ảnh cho bản tin nội bộ và public news nếu được duyệt.', 'Cần hướng dẫn tuyến đường từ trung tâm Hà Nội đến Hòa Lạc.'),
-  (1002, 'Kyoto robotics showcase request', 'WORKSHOP', NULL, 'Đề xuất tổ chức workshop demo robot dịch vụ cho sinh viên ngành AI và IoT.', 'Nội dung yêu cầu cần dùng thiết bị thử nghiệm không đáp ứng được trong tuần dự kiến.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu hỗ trợ xe điện nội khu nếu có.', 'DECLINED', NULL, 'Đoàn có lịch trình gấp, chỉ có thể tham quan trong 90 phút.'),
-  (1003, 'SeoulTech AI curriculum briefing', 'MEETING', NULL, 'Trao đổi với IC và đại diện đào tạo về cấu trúc chương trình AI, tiêu chí trao đổi tín chỉ.', 'Cần meeting room 20 chỗ, máy chiếu và phiên thảo luận với giảng viên.', 'EN', 'Khách tự túc phương tiện. Đoàn tự di chuyển bằng xe 16 chỗ.', 'AGREED', 'Chỉ sử dụng ảnh nhóm sau khi đoàn xác nhận.', 'Ưu tiên lịch buổi sáng vì đoàn bay về trong ngày.'),
-  (1004, 'Green campus preparation visit', 'CAMPUS_TOUR', NULL, 'Khảo sát không gian campus xanh và cách FPTU vận hành xe điện nội khu.', 'Đoàn cần lộ trình tour ngoài trời, điểm dừng tại bãi xe điện và trao đổi với facilities.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ xe điện nội khu cho 6 khách.', 'AGREED', 'Đồng ý ảnh hoạt động ngoài trời.', 'Cần chuẩn bị nước uống vì đoàn có khách lớn tuổi.'),
-  (1005, 'Iberia Mobility Forum campus day', 'EXCHANGE', NULL, 'Tổ chức một ngày giao lưu về mobility, startup và vai trò sinh viên trong dự án xanh.', 'Phiên sáng tham quan, phiên chiều roundtable với sinh viên và IC.', 'EN', 'Phương tiện khác. Đoàn có xe thuê riêng, FPTU hỗ trợ điều phối bãi đỗ.', 'AGREED', 'Đồng ý dùng hình ảnh cho recap sau sự kiện.', 'Cần chuẩn bị khu vực check-in trước 08:45.'),
-  (1006, 'SeoulTech AI lab follow-up discussion', 'MEETING', NULL, 'Làm rõ các đầu việc hợp tác AI lab sau chuyến tham quan đầu tiên.', 'Đoàn tập trung vào biên bản ghi nhớ, action items và đầu mối từng bên.', 'EN', 'Khách tự túc phương tiện. Taxi từ khách sạn đến campus.', 'DECLINED', NULL, 'Đề nghị gửi biên bản sau buổi họp trong vòng 2 ngày.'),
-  (1007, 'Porto AI Hub closed delegation', 'SIGNING_CEREMONY', NULL, 'Ký biên bản hợp tác ngắn hạn về seminar AI ứng dụng và trao đổi lecturer.', 'Sự kiện đã kết thúc, biên bản và báo cáo dịch vụ đã được lưu.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU bố trí xe từ khách sạn và trả đoàn tại sân bay.', 'AGREED', 'Đồng ý public ảnh ký kết sau khi kiểm duyệt.', 'Cần lưu hồ sơ để báo cáo tháng 6.'),
-  (1008, 'Self-cancelled seminar visit', 'WORKSHOP', NULL, 'Seminar ngắn về phương pháp giảng dạy robotics.', 'Đơn đã được duyệt nhưng visitor tự hủy do thay đổi lịch bay.', 'EN', 'Khách tự túc phương tiện. Xe riêng của đoàn.', 'DECLINED', NULL, 'Visitor báo lịch bay thay đổi trước giai đoạn chuẩn bị.'),
-  (1009, 'Host-cancelled campus instance by external confirmation', 'OTHER', 'Robotics mini demo and lab check', 'Tổ chức demo robot nhỏ tại campus HN.', 'Khách xác nhận qua email sẽ không đến; host hủy campus instance theo xác nhận ngoài hệ thống.', 'EN', NULL, 'DECLINED', NULL, 'Host lưu rõ kênh xác nhận trong cancellation_reason của campus instance.'),
-  (2001, 'Multi-campus green mobility assessment', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng triển khai mô hình mobility xanh tại Hà Nội và TP.HCM.', 'Đơn liên cơ sở đã gửi tới từng Staff Leader của các campus được chọn.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Cần hỗ trợ shuttle nội khu tại từng campus.', 'AGREED', 'Cho phép ảnh khuôn viên và phương tiện xanh.', 'Đề nghị lịch trình hai campus cách nhau ít nhất 2 ngày.'),
-  (2002, 'Rejected cross-campus mobility forum', 'EXCHANGE', NULL, 'Đề nghị tổ chức exchange tại Hà Nội và Đà Nẵng trong cùng tuần.', 'Staff Leader campus từ chối vì lịch trình trùng sự kiện tuyển sinh tại campus.', 'EN', 'Phương tiện khác. Đoàn tự thuê xe giữa các địa điểm.', 'AGREED', 'Đồng ý ảnh nội bộ nếu được tổ chức.', 'Cần phản hồi sớm để đoàn điều chỉnh vé máy bay.'),
-  (2003, 'Campus-level pending Staff Leader approval tour', 'CAMPUS_TOUR', NULL, 'Đoàn SeoulTech thăm hai campus để so sánh mô hình support sinh viên.', 'Đơn liên cơ sở đã route tới từng Staff Leader; các campus đang chờ xử lý độc lập.', 'EN', 'Khách tự túc phương tiện. Đoàn tự đặt xe theo từng thành phố.', 'AGREED', 'Cho phép dùng ảnh tour nếu không chụp tài liệu nội bộ.', 'Staff Leader xử lý xong, HN và HCM đang chờ Staff Leader từng campus approve và gán host.'),
-  (2004, 'Assigned cross-campus AI curriculum roadshow', 'WORKSHOP', NULL, 'Tổ chức roadshow chương trình AI tại Hà Nội và Đà Nẵng.', 'Cả hai campus đã có host chính thức và đang chờ tới ngày diễn ra.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ phòng workshop và xe nội khu.', 'AGREED', 'Ảnh workshop được dùng cho recap nếu host duyệt.', NULL),
-  (2005, 'Before-visit mobility preparation', 'MEETING', NULL, 'Chuẩn bị cuộc họp mobility xanh tại Hà Nội và TP.HCM.', 'Các campus đang chuẩn bị phòng họp, xe điện và tài liệu giới thiệu.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu xe điện tại HN và shuttle tại HCM.', 'AGREED', 'Chỉ chụp ảnh khuôn viên, không chụp biển số xe cá nhân.', NULL),
-  (2006, 'During-visit sustainability exchange', 'EXCHANGE', NULL, 'Giao lưu sustainability giữa HN và Cần Thơ.', 'Đoàn đang trong giai đoạn tiếp khách tại các campus theo lịch.', 'EN', 'Phương tiện khác. Đoàn sử dụng xe thuê riêng, cần hỗ trợ check-in nhanh.', 'AGREED', 'Cho phép ảnh hoạt động sinh viên.', NULL),
-  (2007, 'After-visit hospitality and AI follow-up', 'MEETING', NULL, 'Theo dõi sau visit tại HN và Quy Nhơn về AI ứng dụng trong hospitality.', 'Các campus đã tiếp xong, đang hoàn thiện feedback và action items.', 'EN', 'Khách tự túc phương tiện. Tự di chuyển bằng taxi/xe công tác địa phương.', 'DECLINED', NULL, 'Cần gửi bản tổng hợp action items bằng tiếng Anh.'),
-  (2008, 'Closed three-campus partnership tour', 'SIGNING_CEREMONY', NULL, 'Tour ký kết và thảo luận học thuật tại ba campus.', 'Tất cả campus đã đóng đoàn, biên bản và ảnh đã lưu.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ điều phối xe nội khu tại từng campus.', 'AGREED', 'Ảnh ký kết được duyệt cho public news.', NULL),
-  (2009, 'Partial-cancel robotics route', 'WORKSHOP', NULL, 'Workshop robotics tại HN và HCM, trong đó HN bị hủy sau xác nhận ngoài hệ thống.', 'HCM vẫn chuẩn bị bình thường, HN bị host hủy theo email của khách.', 'EN', NULL, 'DECLINED', NULL, 'Cần giữ lịch HCM dù HN không còn tiếp.'),
-  (2010, 'Visitor-cancelled cross-campus mobility visit', 'CAMPUS_TOUR', NULL, 'Chuyến thăm liên cơ sở về mobility xanh đã được Staff Leader xử lý nhưng visitor tự hủy toàn bộ.', 'Đoàn hủy do thay đổi đoàn công tác cấp trường.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU dự kiến hỗ trợ shuttle tại HN và HCM.', 'AGREED', 'Đồng ý ảnh nếu chuyến thăm diễn ra.', 'Visitor tự hủy toàn bộ request sau khi Staff Leader từng campus đã xử lý.');
 
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (3001, 1001, 1, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-06-23 08:00:00', 8, NULL, NULL),
@@ -4931,6 +4871,294 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (3119, 2009, 2, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'BEFORE_VISIT', 9, 2, '2026-06-02 09:06:00', 10, 9, '2026-06-02 10:10:00', 9, '2026-06-02 10:10:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-06-01 09:00:00', 21, '2026-06-06 09:10:00', 10),
   (3120, 2010, 1, CURRENT_DATE + INTERVAL 23 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 23 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'CANCELLED', 3, 2, '2026-06-05 09:05:00', 4, 3, '2026-06-05 10:00:00', 3, '2026-06-05 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 8, '2026-06-06 08:00:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy toàn bộ request nên campus HN cũng được hủy theo SELF_SERVICE.', 6, '2026-06-04 09:00:00', 8, '2026-06-06 08:00:00', 8),
   (3121, 2010, 2, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'CANCELLED', 9, 2, '2026-06-05 09:06:00', 10, 9, '2026-06-05 10:10:00', 9, '2026-06-05 10:10:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 8, '2026-06-06 08:00:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy toàn bộ request nên campus HCM cũng được hủy theo SELF_SERVICE.', 6, '2026-06-04 09:00:00', 8, '2026-06-06 08:00:00', 8);
+-- ---------------------------------------------------------------------
+-- DIRECT CANONICAL V2 FORM SEED — base request batch 1
+-- The form rows are written straight into visit_instance_form_details.
+-- No staging table is created.
+-- ---------------------------------------------------------------------
+INSERT INTO visit_instance_form_details (
+  visit_instance_id,
+  delegation_name,
+  visit_type,
+  visit_type_other,
+  purpose,
+  working_content,
+  operational_contact_full_name,
+  operational_contact_organization,
+  operational_contact_phone,
+  operational_contact_email,
+  working_language,
+  transportation_note,
+  media_consent_status,
+  media_consent_note,
+  note_to_fptu,
+  form_revision,
+  approval_revision,
+  row_version,
+  created_at,
+  created_by
+)
+SELECT
+  vrc.visit_instance_id,
+  sf.delegation_name,
+  sf.visit_type,
+  sf.visit_type_other,
+  sf.purpose,
+  sf.working_content,
+  vr.contact_person_full_name,
+  NULLIF(TRIM(vr.contact_person_organization), ''),
+  vr.contact_person_phone,
+  NULLIF(TRIM(vr.contact_person_email), ''),
+  sf.working_language,
+  sf.transportation_note,
+  sf.media_consent_status,
+  sf.media_consent_note,
+  sf.note_to_fptu,
+  1,
+  1,
+  0,
+  vrc.created_at,
+  COALESCE(vr.created_by, vr.visitor_user_id)
+FROM visit_request_campuses vrc
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+JOIN (
+  SELECT
+    1001 AS visit_request_id,
+    'SeoulTech exploratory tour at FPTU Hanoi' AS delegation_name,
+    'CAMPUS_TOUR' AS visit_type,
+    NULL AS visit_type_other,
+    'Tìm hiểu mô hình campus thông minh, không gian học tập và quy trình hỗ trợ sinh viên quốc tế.' AS purpose,
+    'Đoàn muốn thăm thư viện, khu lab AI và gặp IC để bàn lộ trình trao đổi sinh viên.' AS working_content,
+    'EN' AS working_language,
+    'Khách tự túc phương tiện. Xe riêng của đoàn, đến cổng chính Hòa Lạc.' AS transportation_note,
+    'AGREED' AS media_consent_status,
+    'Đồng ý sử dụng hình ảnh cho bản tin nội bộ và public news nếu được duyệt.' AS media_consent_note,
+    'Cần hướng dẫn tuyến đường từ trung tâm Hà Nội đến Hòa Lạc.' AS note_to_fptu
+    UNION ALL SELECT
+    1002,
+    'Kyoto robotics showcase request',
+    'WORKSHOP',
+    NULL,
+    'Đề xuất tổ chức workshop demo robot dịch vụ cho sinh viên ngành AI và IoT.',
+    'Nội dung yêu cầu cần dùng thiết bị thử nghiệm không đáp ứng được trong tuần dự kiến.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu hỗ trợ xe điện nội khu nếu có.',
+    'DECLINED',
+    NULL,
+    'Đoàn có lịch trình gấp, chỉ có thể tham quan trong 90 phút.'
+    UNION ALL SELECT
+    1003,
+    'SeoulTech AI curriculum briefing',
+    'MEETING',
+    NULL,
+    'Trao đổi với IC và đại diện đào tạo về cấu trúc chương trình AI, tiêu chí trao đổi tín chỉ.',
+    'Cần meeting room 20 chỗ, máy chiếu và phiên thảo luận với giảng viên.',
+    'EN',
+    'Khách tự túc phương tiện. Đoàn tự di chuyển bằng xe 16 chỗ.',
+    'AGREED',
+    'Chỉ sử dụng ảnh nhóm sau khi đoàn xác nhận.',
+    'Ưu tiên lịch buổi sáng vì đoàn bay về trong ngày.'
+    UNION ALL SELECT
+    1004,
+    'Green campus preparation visit',
+    'CAMPUS_TOUR',
+    NULL,
+    'Khảo sát không gian campus xanh và cách FPTU vận hành xe điện nội khu.',
+    'Đoàn cần lộ trình tour ngoài trời, điểm dừng tại bãi xe điện và trao đổi với facilities.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ xe điện nội khu cho 6 khách.',
+    'AGREED',
+    'Đồng ý ảnh hoạt động ngoài trời.',
+    'Cần chuẩn bị nước uống vì đoàn có khách lớn tuổi.'
+    UNION ALL SELECT
+    1005,
+    'Iberia Mobility Forum campus day',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức một ngày giao lưu về mobility, startup và vai trò sinh viên trong dự án xanh.',
+    'Phiên sáng tham quan, phiên chiều roundtable với sinh viên và IC.',
+    'EN',
+    'Phương tiện khác. Đoàn có xe thuê riêng, FPTU hỗ trợ điều phối bãi đỗ.',
+    'AGREED',
+    'Đồng ý dùng hình ảnh cho recap sau sự kiện.',
+    'Cần chuẩn bị khu vực check-in trước 08:45.'
+    UNION ALL SELECT
+    1006,
+    'SeoulTech AI lab follow-up discussion',
+    'MEETING',
+    NULL,
+    'Làm rõ các đầu việc hợp tác AI lab sau chuyến tham quan đầu tiên.',
+    'Đoàn tập trung vào biên bản ghi nhớ, action items và đầu mối từng bên.',
+    'EN',
+    'Khách tự túc phương tiện. Taxi từ khách sạn đến campus.',
+    'DECLINED',
+    NULL,
+    'Đề nghị gửi biên bản sau buổi họp trong vòng 2 ngày.'
+    UNION ALL SELECT
+    1007,
+    'Porto AI Hub closed delegation',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Ký biên bản hợp tác ngắn hạn về seminar AI ứng dụng và trao đổi lecturer.',
+    'Sự kiện đã kết thúc, biên bản và báo cáo dịch vụ đã được lưu.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU bố trí xe từ khách sạn và trả đoàn tại sân bay.',
+    'AGREED',
+    'Đồng ý public ảnh ký kết sau khi kiểm duyệt.',
+    'Cần lưu hồ sơ để báo cáo tháng 6.'
+    UNION ALL SELECT
+    1008,
+    'Self-cancelled seminar visit',
+    'WORKSHOP',
+    NULL,
+    'Seminar ngắn về phương pháp giảng dạy robotics.',
+    'Đơn đã được duyệt nhưng visitor tự hủy do thay đổi lịch bay.',
+    'EN',
+    'Khách tự túc phương tiện. Xe riêng của đoàn.',
+    'DECLINED',
+    NULL,
+    'Visitor báo lịch bay thay đổi trước giai đoạn chuẩn bị.'
+    UNION ALL SELECT
+    1009,
+    'Host-cancelled campus instance by external confirmation',
+    'OTHER',
+    'Robotics mini demo and lab check',
+    'Tổ chức demo robot nhỏ tại campus HN.',
+    'Khách xác nhận qua email sẽ không đến; host hủy campus instance theo xác nhận ngoài hệ thống.',
+    'EN',
+    NULL,
+    'DECLINED',
+    NULL,
+    'Host lưu rõ kênh xác nhận trong cancellation_reason của campus instance.'
+    UNION ALL SELECT
+    2001,
+    'Multi-campus green mobility assessment',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng triển khai mô hình mobility xanh tại Hà Nội và TP.HCM.',
+    'Đơn liên cơ sở đã gửi tới từng Staff Leader của các campus được chọn.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Cần hỗ trợ shuttle nội khu tại từng campus.',
+    'AGREED',
+    'Cho phép ảnh khuôn viên và phương tiện xanh.',
+    'Đề nghị lịch trình hai campus cách nhau ít nhất 2 ngày.'
+    UNION ALL SELECT
+    2002,
+    'Rejected cross-campus mobility forum',
+    'EXCHANGE',
+    NULL,
+    'Đề nghị tổ chức exchange tại Hà Nội và Đà Nẵng trong cùng tuần.',
+    'Staff Leader campus từ chối vì lịch trình trùng sự kiện tuyển sinh tại campus.',
+    'EN',
+    'Phương tiện khác. Đoàn tự thuê xe giữa các địa điểm.',
+    'AGREED',
+    'Đồng ý ảnh nội bộ nếu được tổ chức.',
+    'Cần phản hồi sớm để đoàn điều chỉnh vé máy bay.'
+    UNION ALL SELECT
+    2003,
+    'Campus-level pending Staff Leader approval tour',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đoàn SeoulTech thăm hai campus để so sánh mô hình support sinh viên.',
+    'Đơn liên cơ sở đã route tới từng Staff Leader; các campus đang chờ xử lý độc lập.',
+    'EN',
+    'Khách tự túc phương tiện. Đoàn tự đặt xe theo từng thành phố.',
+    'AGREED',
+    'Cho phép dùng ảnh tour nếu không chụp tài liệu nội bộ.',
+    'Staff Leader xử lý xong, HN và HCM đang chờ Staff Leader từng campus approve và gán host.'
+    UNION ALL SELECT
+    2004,
+    'Assigned cross-campus AI curriculum roadshow',
+    'WORKSHOP',
+    NULL,
+    'Tổ chức roadshow chương trình AI tại Hà Nội và Đà Nẵng.',
+    'Cả hai campus đã có host chính thức và đang chờ tới ngày diễn ra.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ phòng workshop và xe nội khu.',
+    'AGREED',
+    'Ảnh workshop được dùng cho recap nếu host duyệt.',
+    NULL
+    UNION ALL SELECT
+    2005,
+    'Before-visit mobility preparation',
+    'MEETING',
+    NULL,
+    'Chuẩn bị cuộc họp mobility xanh tại Hà Nội và TP.HCM.',
+    'Các campus đang chuẩn bị phòng họp, xe điện và tài liệu giới thiệu.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu xe điện tại HN và shuttle tại HCM.',
+    'AGREED',
+    'Chỉ chụp ảnh khuôn viên, không chụp biển số xe cá nhân.',
+    NULL
+    UNION ALL SELECT
+    2006,
+    'During-visit sustainability exchange',
+    'EXCHANGE',
+    NULL,
+    'Giao lưu sustainability giữa HN và Cần Thơ.',
+    'Đoàn đang trong giai đoạn tiếp khách tại các campus theo lịch.',
+    'EN',
+    'Phương tiện khác. Đoàn sử dụng xe thuê riêng, cần hỗ trợ check-in nhanh.',
+    'AGREED',
+    'Cho phép ảnh hoạt động sinh viên.',
+    NULL
+    UNION ALL SELECT
+    2007,
+    'After-visit hospitality and AI follow-up',
+    'MEETING',
+    NULL,
+    'Theo dõi sau visit tại HN và Quy Nhơn về AI ứng dụng trong hospitality.',
+    'Các campus đã tiếp xong, đang hoàn thiện feedback và action items.',
+    'EN',
+    'Khách tự túc phương tiện. Tự di chuyển bằng taxi/xe công tác địa phương.',
+    'DECLINED',
+    NULL,
+    'Cần gửi bản tổng hợp action items bằng tiếng Anh.'
+    UNION ALL SELECT
+    2008,
+    'Closed three-campus partnership tour',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Tour ký kết và thảo luận học thuật tại ba campus.',
+    'Tất cả campus đã đóng đoàn, biên bản và ảnh đã lưu.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ điều phối xe nội khu tại từng campus.',
+    'AGREED',
+    'Ảnh ký kết được duyệt cho public news.',
+    NULL
+    UNION ALL SELECT
+    2009,
+    'Partial-cancel robotics route',
+    'WORKSHOP',
+    NULL,
+    'Workshop robotics tại HN và HCM, trong đó HN bị hủy sau xác nhận ngoài hệ thống.',
+    'HCM vẫn chuẩn bị bình thường, HN bị host hủy theo email của khách.',
+    'EN',
+    NULL,
+    'DECLINED',
+    NULL,
+    'Cần giữ lịch HCM dù HN không còn tiếp.'
+    UNION ALL SELECT
+    2010,
+    'Visitor-cancelled cross-campus mobility visit',
+    'CAMPUS_TOUR',
+    NULL,
+    'Chuyến thăm liên cơ sở về mobility xanh đã được Staff Leader xử lý nhưng visitor tự hủy toàn bộ.',
+    'Đoàn hủy do thay đổi đoàn công tác cấp trường.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU dự kiến hỗ trợ shuttle tại HN và HCM.',
+    'AGREED',
+    'Đồng ý ảnh nếu chuyến thăm diễn ra.',
+    'Visitor tự hủy toàn bộ request sau khi Staff Leader từng campus đã xử lý.'
+) sf
+  ON sf.visit_request_id = vrc.visit_request_id
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM visit_instance_form_details existing_detail
+  WHERE existing_detail.visit_instance_id = vrc.visit_instance_id
+);
+
 
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by) VALUES
   (1, 1001, 'GUEST', 'Kim Min Jae', 'SeoulTech GEC', 'Director', 'Hàn Quốc', 1, '2026-06-01 08:00:00', NULL, NULL, NULL),
@@ -5643,97 +5871,6 @@ INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, req
   ('ACTIVE', 3089, 'VR2-MC-3089', 8, 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003089', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Andes University Exchange Office', '+84901003089', 'visitor@example.com', 'APPROVED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', NULL, NULL, NULL, 7, '2026-07-09 08:00:00', 8, '2026-07-09 14:20:00', 2),
   ('ACTIVE', 3090, 'VR2-MC-3090', 8, 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003090', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Singapore Applied AI Consortium', '+84901003090', 'visitor@example.com', 'CANCELLED', '2026-07-10 09:00:00', '2026-07-10 09:03:00', 8, '2026-07-11 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-10 09:00:00', 8, '2026-07-10 15:20:00', 2);
 
-INSERT INTO pems_seed_visit_request_form_v2 (visit_request_id, delegation_name, visit_type, visit_type_other, purpose, working_content, working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu) VALUES
-  (3001, 'AI curriculum benchmarking delegation — single pending approval campus 1', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: single pending approval campus 1'),
-  (3002, 'Green campus energy walk — single rejected by Staff Leader campus 1', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single rejected by Staff Leader campus 1'),
-  (3003, 'Robotics classroom demonstration — single approved instance ASSIGNED campus 1', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance ASSIGNED campus 1'),
-  (3004, 'International credit transfer workshop — single approved instance BEFORE_VISIT campus 1', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: single approved instance BEFORE_VISIT campus 1'),
-  (3005, 'Student entrepreneurship roundtable — single approved instance DURING_VISIT campus 1', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance DURING_VISIT campus 1'),
-  (3006, 'Hospitality and tourism showcase — single approved instance AFTER_VISIT campus 1', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance AFTER_VISIT campus 1'),
-  (3007, 'Mekong community engagement visit — single approved instance CLOSED campus 1', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: single approved instance CLOSED campus 1'),
-  (3008, 'Digital art learning studio tour — single campus instance cancelled after approval by host/visitor campus 1', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single campus instance cancelled after approval by host/visitor campus 1'),
-  (3009, 'Industry advisory board meeting — single whole request cancelled by visitor campus 1', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single whole request cancelled by visitor campus 1'),
-  (3010, 'Research collaboration signing day — single pending approval campus 2', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: single pending approval campus 2'),
-  (3011, 'Service learning mobility forum — single rejected by Staff Leader campus 2', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single rejected by Staff Leader campus 2'),
-  (3012, 'Smart library operations briefing — single approved instance ASSIGNED campus 2', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance ASSIGNED campus 2'),
-  (3013, 'Campus safety and visitor service review — single approved instance BEFORE_VISIT campus 2', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: single approved instance BEFORE_VISIT campus 2'),
-  (3014, 'Innovation hub partnership sprint — single approved instance DURING_VISIT campus 2', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance DURING_VISIT campus 2'),
-  (3015, 'Bilingual student buddy observation — single approved instance AFTER_VISIT campus 2', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance AFTER_VISIT campus 2'),
-  (3016, 'Sustainable facilities protocol visit — single approved instance CLOSED campus 2', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: single approved instance CLOSED campus 2'),
-  (3017, 'Edtech product validation session — single campus instance cancelled after approval by host/visitor campus 2', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single campus instance cancelled after approval by host/visitor campus 2'),
-  (3018, 'Outdoor campus tour with accessibility focus — single whole request cancelled by visitor campus 2', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single whole request cancelled by visitor campus 2'),
-  (3019, 'Career services exchange meeting — single pending approval campus 3', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: single pending approval campus 3'),
-  (3020, 'Archive and documentation handover review — single rejected by Staff Leader campus 3', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single rejected by Staff Leader campus 3'),
-  (3021, 'AI curriculum benchmarking delegation — single approved instance ASSIGNED campus 3', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance ASSIGNED campus 3'),
-  (3022, 'Green campus energy walk — single approved instance BEFORE_VISIT campus 3', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: single approved instance BEFORE_VISIT campus 3'),
-  (3023, 'Robotics classroom demonstration — single approved instance DURING_VISIT campus 3', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance DURING_VISIT campus 3'),
-  (3024, 'International credit transfer workshop — single approved instance AFTER_VISIT campus 3', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance AFTER_VISIT campus 3'),
-  (3025, 'Student entrepreneurship roundtable — single approved instance CLOSED campus 3', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: single approved instance CLOSED campus 3'),
-  (3026, 'Hospitality and tourism showcase — single campus instance cancelled after approval by host/visitor campus 3', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single campus instance cancelled after approval by host/visitor campus 3'),
-  (3027, 'Mekong community engagement visit — single whole request cancelled by visitor campus 3', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single whole request cancelled by visitor campus 3'),
-  (3028, 'Digital art learning studio tour — single pending approval campus 4', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: single pending approval campus 4'),
-  (3029, 'Industry advisory board meeting — single rejected by Staff Leader campus 4', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single rejected by Staff Leader campus 4'),
-  (3030, 'Research collaboration signing day — single approved instance ASSIGNED campus 4', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance ASSIGNED campus 4'),
-  (3031, 'Service learning mobility forum — single approved instance BEFORE_VISIT campus 4', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: single approved instance BEFORE_VISIT campus 4'),
-  (3032, 'Smart library operations briefing — single approved instance DURING_VISIT campus 4', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance DURING_VISIT campus 4'),
-  (3033, 'Campus safety and visitor service review — single approved instance AFTER_VISIT campus 4', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance AFTER_VISIT campus 4'),
-  (3034, 'Innovation hub partnership sprint — single approved instance CLOSED campus 4', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: single approved instance CLOSED campus 4'),
-  (3035, 'Bilingual student buddy observation — single campus instance cancelled after approval by host/visitor campus 4', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single campus instance cancelled after approval by host/visitor campus 4'),
-  (3036, 'Sustainable facilities protocol visit — single whole request cancelled by visitor campus 4', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single whole request cancelled by visitor campus 4'),
-  (3037, 'Edtech product validation session — single pending approval campus 5', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: single pending approval campus 5'),
-  (3038, 'Outdoor campus tour with accessibility focus — single rejected by Staff Leader campus 5', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single rejected by Staff Leader campus 5'),
-  (3039, 'Career services exchange meeting — single approved instance ASSIGNED campus 5', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance ASSIGNED campus 5'),
-  (3040, 'Archive and documentation handover review — single approved instance BEFORE_VISIT campus 5', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: single approved instance BEFORE_VISIT campus 5'),
-  (3041, 'AI curriculum benchmarking delegation — single approved instance DURING_VISIT campus 5', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance DURING_VISIT campus 5'),
-  (3042, 'Green campus energy walk — single approved instance AFTER_VISIT campus 5', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single approved instance AFTER_VISIT campus 5'),
-  (3043, 'Robotics classroom demonstration — single approved instance CLOSED campus 5', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: single approved instance CLOSED campus 5'),
-  (3044, 'International credit transfer workshop — single campus instance cancelled after approval by host/visitor campus 5', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single campus instance cancelled after approval by host/visitor campus 5'),
-  (3045, 'Student entrepreneurship roundtable — single whole request cancelled by visitor campus 5', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: single whole request cancelled by visitor campus 5'),
-  (3046, 'Hospitality and tourism showcase — staff-created internal delegation campus 1', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: staff-created internal delegation campus 1'),
-  (3047, 'Mekong community engagement visit — staff-created internal delegation campus 2', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: staff-created internal delegation campus 2'),
-  (3048, 'Digital art learning studio tour — staff-created internal delegation campus 3', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: staff-created internal delegation campus 3'),
-  (3049, 'Industry advisory board meeting — staff-created internal delegation campus 4', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: staff-created internal delegation campus 4'),
-  (3050, 'Research collaboration signing day — staff-created internal delegation campus 5', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: staff-created internal delegation campus 5'),
-  (3051, 'Service learning mobility forum — multi pending campus-level approval set 1', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi pending campus-level approval set 1'),
-  (3052, 'Smart library operations briefing — multi rejected by HO set 1', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: multi rejected by HO set 1'),
-  (3053, 'Campus safety and visitor service review — multi approved waiting host assignment set 1', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi approved waiting host assignment set 1'),
-  (3054, 'Innovation hub partnership sprint — multi mixed operational statuses set 1', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi mixed operational statuses set 1'),
-  (3055, 'Bilingual student buddy observation — multi whole request cancelled by visitor set 1', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: multi whole request cancelled by visitor set 1'),
-  (3056, 'Sustainable facilities protocol visit — multi pending campus-level approval set 2', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi pending campus-level approval set 2'),
-  (3057, 'Edtech product validation session — multi rejected by HO set 2', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi rejected by HO set 2'),
-  (3058, 'Outdoor campus tour with accessibility focus — multi approved waiting host assignment set 2', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: multi approved waiting host assignment set 2'),
-  (3059, 'Career services exchange meeting — multi mixed operational statuses set 2', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi mixed operational statuses set 2'),
-  (3060, 'Archive and documentation handover review — multi whole request cancelled by visitor set 2', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi whole request cancelled by visitor set 2'),
-  (3061, 'AI curriculum benchmarking delegation — multi pending campus-level approval set 3', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: multi pending campus-level approval set 3'),
-  (3062, 'Green campus energy walk — multi rejected by HO set 3', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi rejected by HO set 3'),
-  (3063, 'Robotics classroom demonstration — multi approved waiting host assignment set 3', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi approved waiting host assignment set 3'),
-  (3064, 'International credit transfer workshop — multi mixed operational statuses set 3', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: multi mixed operational statuses set 3'),
-  (3065, 'Student entrepreneurship roundtable — multi whole request cancelled by visitor set 3', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi whole request cancelled by visitor set 3'),
-  (3066, 'Hospitality and tourism showcase — multi pending campus-level approval set 4', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi pending campus-level approval set 4'),
-  (3067, 'Mekong community engagement visit — multi rejected by HO set 4', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: multi rejected by HO set 4'),
-  (3068, 'Digital art learning studio tour — multi approved waiting host assignment set 4', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi approved waiting host assignment set 4'),
-  (3069, 'Industry advisory board meeting — multi mixed operational statuses set 4', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi mixed operational statuses set 4'),
-  (3070, 'Research collaboration signing day — multi whole request cancelled by visitor set 4', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: multi whole request cancelled by visitor set 4'),
-  (3071, 'Service learning mobility forum — multi pending campus-level approval set 5', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi pending campus-level approval set 5'),
-  (3072, 'Smart library operations briefing — multi rejected by HO set 5', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi rejected by HO set 5'),
-  (3073, 'Campus safety and visitor service review — multi approved waiting host assignment set 5', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: multi approved waiting host assignment set 5'),
-  (3074, 'Innovation hub partnership sprint — multi mixed operational statuses set 5', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi mixed operational statuses set 5'),
-  (3075, 'Bilingual student buddy observation — multi whole request cancelled by visitor set 5', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi whole request cancelled by visitor set 5'),
-  (3076, 'Sustainable facilities protocol visit — multi pending campus-level approval set 6', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: multi pending campus-level approval set 6'),
-  (3077, 'Edtech product validation session — multi rejected by HO set 6', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi rejected by HO set 6'),
-  (3078, 'Outdoor campus tour with accessibility focus — multi approved waiting host assignment set 6', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi approved waiting host assignment set 6'),
-  (3079, 'Career services exchange meeting — multi mixed operational statuses set 6', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'DECLINED', NULL, 'Seed coverage: multi mixed operational statuses set 6'),
-  (3080, 'Archive and documentation handover review — multi whole request cancelled by visitor set 6', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi whole request cancelled by visitor set 6'),
-  (3081, 'AI curriculum benchmarking delegation — multi pending campus-level approval set 7', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi pending campus-level approval set 7'),
-  (3082, 'Green campus energy walk — multi rejected by HO set 7', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'DECLINED', NULL, 'Seed coverage: multi rejected by HO set 7'),
-  (3083, 'Robotics classroom demonstration — multi approved waiting host assignment set 7', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi approved waiting host assignment set 7'),
-  (3084, 'International credit transfer workshop — multi mixed operational statuses set 7', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi mixed operational statuses set 7'),
-  (3085, 'Student entrepreneurship roundtable — multi whole request cancelled by visitor set 7', 'CAMPUS_TOUR', NULL, 'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'DECLINED', NULL, 'Seed coverage: multi whole request cancelled by visitor set 7'),
-  (3086, 'Hospitality and tourism showcase — multi pending campus-level approval set 8', 'MEETING', NULL, 'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi pending campus-level approval set 8'),
-  (3087, 'Mekong community engagement visit — multi rejected by HO set 8', 'WORKSHOP', NULL, 'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.', 'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.', 'EN', 'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi rejected by HO set 8'),
-  (3088, 'Digital art learning studio tour — multi approved waiting host assignment set 8', 'SIGNING_CEREMONY', NULL, 'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.', 'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.', 'EN', 'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.', 'DECLINED', NULL, 'Seed coverage: multi approved waiting host assignment set 8'),
-  (3089, 'Industry advisory board meeting — multi mixed operational statuses set 8', 'EXCHANGE', NULL, 'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.', 'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.', 'VI', 'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi mixed operational statuses set 8'),
-  (3090, 'Research collaboration signing day — multi whole request cancelled by visitor set 8', 'OTHER', 'Special protocol rehearsal', 'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.', 'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.', 'AGREED', 'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.', 'Seed coverage: multi whole request cancelled by visitor set 8');
 
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (5001, 3001, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-01 08:30:00', 8, NULL, NULL),
@@ -5896,6 +6033,1146 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5158, 3090, 3, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'CANCELLED', 11, 2, '2026-07-10 15:20:00', 12, 11, '2026-07-11 10:00:00', 11, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 12, '2026-07-12 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 4, '2026-08-04 10:30:00', 8, NULL, NULL),
   (5159, 3090, 4, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'CANCELLED', 13, 2, '2026-07-10 15:20:00', 14, 13, '2026-07-11 10:00:00', 13, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 14, '2026-07-12 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 4, '2026-08-05 11:30:00', 8, NULL, NULL),
   (5160, 3090, 5, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'CANCELLED', 15, 2, '2026-07-10 15:20:00', 16, 15, '2026-07-11 10:00:00', 15, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 16, '2026-07-12 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 4, '2026-08-06 12:30:00', 8, NULL, NULL);
+-- ---------------------------------------------------------------------
+-- DIRECT CANONICAL V2 FORM SEED — base request batch 2
+-- The form rows are written straight into visit_instance_form_details.
+-- No staging table is created.
+-- ---------------------------------------------------------------------
+INSERT INTO visit_instance_form_details (
+  visit_instance_id,
+  delegation_name,
+  visit_type,
+  visit_type_other,
+  purpose,
+  working_content,
+  operational_contact_full_name,
+  operational_contact_organization,
+  operational_contact_phone,
+  operational_contact_email,
+  working_language,
+  transportation_note,
+  media_consent_status,
+  media_consent_note,
+  note_to_fptu,
+  form_revision,
+  approval_revision,
+  row_version,
+  created_at,
+  created_by
+)
+SELECT
+  vrc.visit_instance_id,
+  sf.delegation_name,
+  sf.visit_type,
+  sf.visit_type_other,
+  sf.purpose,
+  sf.working_content,
+  vr.contact_person_full_name,
+  NULLIF(TRIM(vr.contact_person_organization), ''),
+  vr.contact_person_phone,
+  NULLIF(TRIM(vr.contact_person_email), ''),
+  sf.working_language,
+  sf.transportation_note,
+  sf.media_consent_status,
+  sf.media_consent_note,
+  sf.note_to_fptu,
+  1,
+  1,
+  0,
+  vrc.created_at,
+  COALESCE(vr.created_by, vr.visitor_user_id)
+FROM visit_request_campuses vrc
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+JOIN (
+  SELECT
+    3001 AS visit_request_id,
+    'AI curriculum benchmarking delegation — single pending approval campus 1' AS delegation_name,
+    'CAMPUS_TOUR' AS visit_type,
+    NULL AS visit_type_other,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.' AS purpose,
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.' AS working_content,
+    'VI' AS working_language,
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.' AS transportation_note,
+    'DECLINED' AS media_consent_status,
+    NULL AS media_consent_note,
+    'Seed coverage: single pending approval campus 1' AS note_to_fptu
+    UNION ALL SELECT
+    3002,
+    'Green campus energy walk — single rejected by Staff Leader campus 1',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single rejected by Staff Leader campus 1'
+    UNION ALL SELECT
+    3003,
+    'Robotics classroom demonstration — single approved instance ASSIGNED campus 1',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance ASSIGNED campus 1'
+    UNION ALL SELECT
+    3004,
+    'International credit transfer workshop — single approved instance BEFORE_VISIT campus 1',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance BEFORE_VISIT campus 1'
+    UNION ALL SELECT
+    3005,
+    'Student entrepreneurship roundtable — single approved instance DURING_VISIT campus 1',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance DURING_VISIT campus 1'
+    UNION ALL SELECT
+    3006,
+    'Hospitality and tourism showcase — single approved instance AFTER_VISIT campus 1',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance AFTER_VISIT campus 1'
+    UNION ALL SELECT
+    3007,
+    'Mekong community engagement visit — single approved instance CLOSED campus 1',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance CLOSED campus 1'
+    UNION ALL SELECT
+    3008,
+    'Digital art learning studio tour — single campus instance cancelled after approval by host/visitor campus 1',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 1'
+    UNION ALL SELECT
+    3009,
+    'Industry advisory board meeting — single whole request cancelled by visitor campus 1',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single whole request cancelled by visitor campus 1'
+    UNION ALL SELECT
+    3010,
+    'Research collaboration signing day — single pending approval campus 2',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single pending approval campus 2'
+    UNION ALL SELECT
+    3011,
+    'Service learning mobility forum — single rejected by Staff Leader campus 2',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single rejected by Staff Leader campus 2'
+    UNION ALL SELECT
+    3012,
+    'Smart library operations briefing — single approved instance ASSIGNED campus 2',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance ASSIGNED campus 2'
+    UNION ALL SELECT
+    3013,
+    'Campus safety and visitor service review — single approved instance BEFORE_VISIT campus 2',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance BEFORE_VISIT campus 2'
+    UNION ALL SELECT
+    3014,
+    'Innovation hub partnership sprint — single approved instance DURING_VISIT campus 2',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance DURING_VISIT campus 2'
+    UNION ALL SELECT
+    3015,
+    'Bilingual student buddy observation — single approved instance AFTER_VISIT campus 2',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance AFTER_VISIT campus 2'
+    UNION ALL SELECT
+    3016,
+    'Sustainable facilities protocol visit — single approved instance CLOSED campus 2',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance CLOSED campus 2'
+    UNION ALL SELECT
+    3017,
+    'Edtech product validation session — single campus instance cancelled after approval by host/visitor campus 2',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 2'
+    UNION ALL SELECT
+    3018,
+    'Outdoor campus tour with accessibility focus — single whole request cancelled by visitor campus 2',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single whole request cancelled by visitor campus 2'
+    UNION ALL SELECT
+    3019,
+    'Career services exchange meeting — single pending approval campus 3',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single pending approval campus 3'
+    UNION ALL SELECT
+    3020,
+    'Archive and documentation handover review — single rejected by Staff Leader campus 3',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single rejected by Staff Leader campus 3'
+    UNION ALL SELECT
+    3021,
+    'AI curriculum benchmarking delegation — single approved instance ASSIGNED campus 3',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance ASSIGNED campus 3'
+    UNION ALL SELECT
+    3022,
+    'Green campus energy walk — single approved instance BEFORE_VISIT campus 3',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance BEFORE_VISIT campus 3'
+    UNION ALL SELECT
+    3023,
+    'Robotics classroom demonstration — single approved instance DURING_VISIT campus 3',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance DURING_VISIT campus 3'
+    UNION ALL SELECT
+    3024,
+    'International credit transfer workshop — single approved instance AFTER_VISIT campus 3',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance AFTER_VISIT campus 3'
+    UNION ALL SELECT
+    3025,
+    'Student entrepreneurship roundtable — single approved instance CLOSED campus 3',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance CLOSED campus 3'
+    UNION ALL SELECT
+    3026,
+    'Hospitality and tourism showcase — single campus instance cancelled after approval by host/visitor campus 3',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 3'
+    UNION ALL SELECT
+    3027,
+    'Mekong community engagement visit — single whole request cancelled by visitor campus 3',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single whole request cancelled by visitor campus 3'
+    UNION ALL SELECT
+    3028,
+    'Digital art learning studio tour — single pending approval campus 4',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single pending approval campus 4'
+    UNION ALL SELECT
+    3029,
+    'Industry advisory board meeting — single rejected by Staff Leader campus 4',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single rejected by Staff Leader campus 4'
+    UNION ALL SELECT
+    3030,
+    'Research collaboration signing day — single approved instance ASSIGNED campus 4',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance ASSIGNED campus 4'
+    UNION ALL SELECT
+    3031,
+    'Service learning mobility forum — single approved instance BEFORE_VISIT campus 4',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance BEFORE_VISIT campus 4'
+    UNION ALL SELECT
+    3032,
+    'Smart library operations briefing — single approved instance DURING_VISIT campus 4',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance DURING_VISIT campus 4'
+    UNION ALL SELECT
+    3033,
+    'Campus safety and visitor service review — single approved instance AFTER_VISIT campus 4',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance AFTER_VISIT campus 4'
+    UNION ALL SELECT
+    3034,
+    'Innovation hub partnership sprint — single approved instance CLOSED campus 4',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance CLOSED campus 4'
+    UNION ALL SELECT
+    3035,
+    'Bilingual student buddy observation — single campus instance cancelled after approval by host/visitor campus 4',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 4'
+    UNION ALL SELECT
+    3036,
+    'Sustainable facilities protocol visit — single whole request cancelled by visitor campus 4',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single whole request cancelled by visitor campus 4'
+    UNION ALL SELECT
+    3037,
+    'Edtech product validation session — single pending approval campus 5',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single pending approval campus 5'
+    UNION ALL SELECT
+    3038,
+    'Outdoor campus tour with accessibility focus — single rejected by Staff Leader campus 5',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single rejected by Staff Leader campus 5'
+    UNION ALL SELECT
+    3039,
+    'Career services exchange meeting — single approved instance ASSIGNED campus 5',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance ASSIGNED campus 5'
+    UNION ALL SELECT
+    3040,
+    'Archive and documentation handover review — single approved instance BEFORE_VISIT campus 5',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance BEFORE_VISIT campus 5'
+    UNION ALL SELECT
+    3041,
+    'AI curriculum benchmarking delegation — single approved instance DURING_VISIT campus 5',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance DURING_VISIT campus 5'
+    UNION ALL SELECT
+    3042,
+    'Green campus energy walk — single approved instance AFTER_VISIT campus 5',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single approved instance AFTER_VISIT campus 5'
+    UNION ALL SELECT
+    3043,
+    'Robotics classroom demonstration — single approved instance CLOSED campus 5',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: single approved instance CLOSED campus 5'
+    UNION ALL SELECT
+    3044,
+    'International credit transfer workshop — single campus instance cancelled after approval by host/visitor campus 5',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 5'
+    UNION ALL SELECT
+    3045,
+    'Student entrepreneurship roundtable — single whole request cancelled by visitor campus 5',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: single whole request cancelled by visitor campus 5'
+    UNION ALL SELECT
+    3046,
+    'Hospitality and tourism showcase — staff-created internal delegation campus 1',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: staff-created internal delegation campus 1'
+    UNION ALL SELECT
+    3047,
+    'Mekong community engagement visit — staff-created internal delegation campus 2',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: staff-created internal delegation campus 2'
+    UNION ALL SELECT
+    3048,
+    'Digital art learning studio tour — staff-created internal delegation campus 3',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: staff-created internal delegation campus 3'
+    UNION ALL SELECT
+    3049,
+    'Industry advisory board meeting — staff-created internal delegation campus 4',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: staff-created internal delegation campus 4'
+    UNION ALL SELECT
+    3050,
+    'Research collaboration signing day — staff-created internal delegation campus 5',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: staff-created internal delegation campus 5'
+    UNION ALL SELECT
+    3051,
+    'Service learning mobility forum — multi pending campus-level approval set 1',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi pending campus-level approval set 1'
+    UNION ALL SELECT
+    3052,
+    'Smart library operations briefing — multi rejected by HO set 1',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi rejected by HO set 1'
+    UNION ALL SELECT
+    3053,
+    'Campus safety and visitor service review — multi approved waiting host assignment set 1',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi approved waiting host assignment set 1'
+    UNION ALL SELECT
+    3054,
+    'Innovation hub partnership sprint — multi mixed operational statuses set 1',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi mixed operational statuses set 1'
+    UNION ALL SELECT
+    3055,
+    'Bilingual student buddy observation — multi whole request cancelled by visitor set 1',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi whole request cancelled by visitor set 1'
+    UNION ALL SELECT
+    3056,
+    'Sustainable facilities protocol visit — multi pending campus-level approval set 2',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi pending campus-level approval set 2'
+    UNION ALL SELECT
+    3057,
+    'Edtech product validation session — multi rejected by HO set 2',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi rejected by HO set 2'
+    UNION ALL SELECT
+    3058,
+    'Outdoor campus tour with accessibility focus — multi approved waiting host assignment set 2',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi approved waiting host assignment set 2'
+    UNION ALL SELECT
+    3059,
+    'Career services exchange meeting — multi mixed operational statuses set 2',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi mixed operational statuses set 2'
+    UNION ALL SELECT
+    3060,
+    'Archive and documentation handover review — multi whole request cancelled by visitor set 2',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi whole request cancelled by visitor set 2'
+    UNION ALL SELECT
+    3061,
+    'AI curriculum benchmarking delegation — multi pending campus-level approval set 3',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi pending campus-level approval set 3'
+    UNION ALL SELECT
+    3062,
+    'Green campus energy walk — multi rejected by HO set 3',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi rejected by HO set 3'
+    UNION ALL SELECT
+    3063,
+    'Robotics classroom demonstration — multi approved waiting host assignment set 3',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi approved waiting host assignment set 3'
+    UNION ALL SELECT
+    3064,
+    'International credit transfer workshop — multi mixed operational statuses set 3',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi mixed operational statuses set 3'
+    UNION ALL SELECT
+    3065,
+    'Student entrepreneurship roundtable — multi whole request cancelled by visitor set 3',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi whole request cancelled by visitor set 3'
+    UNION ALL SELECT
+    3066,
+    'Hospitality and tourism showcase — multi pending campus-level approval set 4',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi pending campus-level approval set 4'
+    UNION ALL SELECT
+    3067,
+    'Mekong community engagement visit — multi rejected by HO set 4',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi rejected by HO set 4'
+    UNION ALL SELECT
+    3068,
+    'Digital art learning studio tour — multi approved waiting host assignment set 4',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi approved waiting host assignment set 4'
+    UNION ALL SELECT
+    3069,
+    'Industry advisory board meeting — multi mixed operational statuses set 4',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi mixed operational statuses set 4'
+    UNION ALL SELECT
+    3070,
+    'Research collaboration signing day — multi whole request cancelled by visitor set 4',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi whole request cancelled by visitor set 4'
+    UNION ALL SELECT
+    3071,
+    'Service learning mobility forum — multi pending campus-level approval set 5',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi pending campus-level approval set 5'
+    UNION ALL SELECT
+    3072,
+    'Smart library operations briefing — multi rejected by HO set 5',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi rejected by HO set 5'
+    UNION ALL SELECT
+    3073,
+    'Campus safety and visitor service review — multi approved waiting host assignment set 5',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi approved waiting host assignment set 5'
+    UNION ALL SELECT
+    3074,
+    'Innovation hub partnership sprint — multi mixed operational statuses set 5',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi mixed operational statuses set 5'
+    UNION ALL SELECT
+    3075,
+    'Bilingual student buddy observation — multi whole request cancelled by visitor set 5',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi whole request cancelled by visitor set 5'
+    UNION ALL SELECT
+    3076,
+    'Sustainable facilities protocol visit — multi pending campus-level approval set 6',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi pending campus-level approval set 6'
+    UNION ALL SELECT
+    3077,
+    'Edtech product validation session — multi rejected by HO set 6',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi rejected by HO set 6'
+    UNION ALL SELECT
+    3078,
+    'Outdoor campus tour with accessibility focus — multi approved waiting host assignment set 6',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi approved waiting host assignment set 6'
+    UNION ALL SELECT
+    3079,
+    'Career services exchange meeting — multi mixed operational statuses set 6',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi mixed operational statuses set 6'
+    UNION ALL SELECT
+    3080,
+    'Archive and documentation handover review — multi whole request cancelled by visitor set 6',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi whole request cancelled by visitor set 6'
+    UNION ALL SELECT
+    3081,
+    'AI curriculum benchmarking delegation — multi pending campus-level approval set 7',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi pending campus-level approval set 7'
+    UNION ALL SELECT
+    3082,
+    'Green campus energy walk — multi rejected by HO set 7',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi rejected by HO set 7'
+    UNION ALL SELECT
+    3083,
+    'Robotics classroom demonstration — multi approved waiting host assignment set 7',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi approved waiting host assignment set 7'
+    UNION ALL SELECT
+    3084,
+    'International credit transfer workshop — multi mixed operational statuses set 7',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi mixed operational statuses set 7'
+    UNION ALL SELECT
+    3085,
+    'Student entrepreneurship roundtable — multi whole request cancelled by visitor set 7',
+    'CAMPUS_TOUR',
+    NULL,
+    'Đánh giá khả năng trao đổi chương trình học, chuẩn đầu ra và cách tổ chức hỗ trợ sinh viên quốc tế.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi whole request cancelled by visitor set 7'
+    UNION ALL SELECT
+    3086,
+    'Hospitality and tourism showcase — multi pending campus-level approval set 8',
+    'MEETING',
+    NULL,
+    'Khảo sát cách campus vận hành không gian xanh, di chuyển nội khu và tiếp đón đoàn quy mô nhỏ.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi pending campus-level approval set 8'
+    UNION ALL SELECT
+    3087,
+    'Mekong community engagement visit — multi rejected by HO set 8',
+    'WORKSHOP',
+    NULL,
+    'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
+    'Cần host nắm rõ agenda, hỗ trợ phiên dịch nhẹ và ghi nhận câu hỏi sau từng hoạt động.',
+    'EN',
+    'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi rejected by HO set 8'
+    UNION ALL SELECT
+    3088,
+    'Digital art learning studio tour — multi approved waiting host assignment set 8',
+    'SIGNING_CEREMONY',
+    NULL,
+    'Làm việc với IC, phòng đào tạo và đại diện sinh viên để so sánh quy trình credit transfer.',
+    'Có phần trao đổi riêng với department support để kiểm thử task, logistics và feedback.',
+    'EN',
+    'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
+    'DECLINED',
+    NULL,
+    'Seed coverage: multi approved waiting host assignment set 8'
+    UNION ALL SELECT
+    3089,
+    'Industry advisory board meeting — multi mixed operational statuses set 8',
+    'EXCHANGE',
+    NULL,
+    'Tổ chức phiên hỏi đáp chuyên sâu về khởi nghiệp, đổi mới sáng tạo và mentoring xuyên campus.',
+    'Làm việc tại phòng họp chính, tham quan khu học tập, gặp đại diện IC và chốt đầu mối follow-up.',
+    'VI',
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi mixed operational statuses set 8'
+    UNION ALL SELECT
+    3090,
+    'Research collaboration signing day — multi whole request cancelled by visitor set 8',
+    'OTHER',
+    'Special protocol rehearsal',
+    'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
+    'Yêu cầu chuẩn bị route riêng cho đoàn, hạn chế di chuyển quá nhiều và ưu tiên minh họa trực quan.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
+    'AGREED',
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
+    'Seed coverage: multi whole request cancelled by visitor set 8'
+) sf
+  ON sf.visit_request_id = vrc.visit_request_id
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM visit_instance_form_details existing_detail
+  WHERE existing_detail.visit_instance_id = vrc.visit_instance_id
+);
+
 
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by) VALUES
   (6001, 3001, 'GUEST', 'Delegation Lead 3001', 'Organization for AI curriculum benchmarking delegation — si', 'Professor', 'Quốc tế', 1, '2026-07-01 08:00:00', 8, NULL, NULL),
@@ -8030,19 +9307,10 @@ INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, req
   ('ACTIVE', 9007, 'VR7-MC-CT-QN-PARTIAL-VISITOR-CANCEL-07', 212, 4, 'VISITOR_SUBMITTED', 'Fatima Zahra', 'Casablanca Tech Bridge', 'Program Director', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'Morocco', 'MULTI_CAMPUS', 'Fatima Zahra', 'Casablanca Tech Bridge', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, NULL, NULL, NULL, 2, CURRENT_TIMESTAMP - INTERVAL 6 DAY, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR, 2),
   ('ACTIVE', 9008, 'VR7-MC-HN-DN-VISITOR-CANCEL-08', 8, 1, 'VISITOR_SUBMITTED', 'External Visitor Main', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'Visitor tự hủy toàn bộ request vì đối tác đổi đoàn sang lịch tháng sau.', 8, CURRENT_TIMESTAMP - INTERVAL 14 DAY, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8);
 
-INSERT INTO pems_seed_visit_request_form_v2 (visit_request_id, delegation_name, visit_type, visit_type_other, purpose, working_content, working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu) VALUES
-  (9001, 'Milan mobility studio cancelled by visitor at HCM', 'MEETING', NULL, 'Trao đổi về mobility studio, học kỳ trao đổi và khả năng tổ chức mini workshop cho sinh viên HCM.', 'Đoàn ban đầu cần phòng họp, campus walk và phiên làm việc với student service nhưng visitor đã chủ động hủy sau khi được duyệt.', 'EN', 'Khách tự túc phương tiện. Đoàn tự bố trí xe từ trung tâm TP.HCM đến campus.', 'AGREED', 'Chỉ đồng ý dùng ảnh nhóm nếu chuyến đi diễn ra.', 'Case v7: visitor tự hủy toàn bộ request single-campus HCM sau khi Staff Leader đã duyệt.'),
-  (9002, 'UTS robotics classroom visit cancelled by visitor at DN', 'WORKSHOP', NULL, 'Chuẩn bị buổi demo robotics và trao đổi chương trình sinh viên tại Đà Nẵng.', 'Host và student robotics đã được mời, nhưng visitor báo hủy trước ngày đến vì giảng viên phụ trách bị ốm.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị campus hỗ trợ xe điện nội khu và bảng welcome.', 'DECLINED', NULL, 'Case v7: có host/participant/logistics nhưng visitor tự hủy trước chuyến.'),
-  (9003, 'Singapore AI curriculum visit cancelled by visitor at CT', 'EXCHANGE', NULL, 'Trao đổi về AI curriculum và dự án sinh viên tại Cần Thơ.', 'Đoàn cần gặp IC, bộ phận event logistics và sinh viên Mekong, sau đó tự hủy vì đổi hướng hợp tác sang online.', 'EN', 'Phương tiện khác. Đoàn dự kiến kết hợp xe thuê và boat tour nội vùng.', 'AGREED', 'Đồng ý ảnh recap nội bộ nếu có sự kiện.', 'Case v7: visitor hủy đơn sau khi đã có lịch chuẩn bị tại CT.'),
-  (9004, 'Casablanca hospitality pathway cancelled by visitor at QN', 'CAMPUS_TOUR', NULL, 'Khảo sát campus Quy Nhơn cho chương trình hospitality và coastal innovation.', 'Đơn được duyệt sơ bộ nhưng visitor tự hủy trước khi Staff Leader hoàn tất điều phối host.', 'EN', 'Khách tự túc phương tiện. Đoàn tự đặt shuttle từ sân bay Phù Cát.', 'DECLINED', NULL, 'Case v7: visitor hủy sau duyệt nhưng trước khi có host chính thức.'),
-  (9005, 'Paris digital arts multi-campus tour cancelled by visitor', 'CAMPUS_TOUR', NULL, 'Tham quan chuỗi campus HN, HCM, DN để so sánh mô hình digital art learning và student showcase.', 'Staff Leader từng campus đã xử lý và gán coordinator từng campus, nhưng visitor tự hủy toàn bộ form trước khi các Staff Leader gán host.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ điều phối di chuyển giữa các campus nếu lịch được chốt.', 'AGREED', 'Đồng ý dùng ảnh đoàn trong bản tin hợp tác nếu chuyến diễn ra.', 'Case v7: visitor tự hủy toàn bộ multi-campus sau khi campus được xử lý, trước host assignment.'),
-  (9006, 'Singapore AI consortium partial campus cancellation', 'MEETING', NULL, 'Làm việc với HCM, Đà Nẵng và Cần Thơ về AI, lab operation và hoạt động sinh viên.', 'Visitor chỉ hủy chặng HCM, các chặng DN và CT vẫn tiếp tục để test main request APPROVED có một campus CANCELLED.', 'EN', 'Phương tiện khác. Đoàn dùng xe thuê riêng, chỉ đổi lịch bay tại chặng HCM.', 'AGREED', 'Cho phép ảnh nội bộ tại các campus còn tiếp tục.', 'Case v7: visitor tự hủy một campus instance, request tổng vẫn APPROVED.'),
-  (9007, 'Casablanca coastal program partial cancellation', 'OTHER', 'Coastal pathway audit', 'Kiểm thử lịch trình liên cơ sở CT-QN cho hospitality và student experience.', 'Visitor chỉ hủy chặng QN vì lịch bay nội địa thay đổi, chặng CT vẫn chờ Staff Leader approve và gán host.', 'EN', 'Khách tự túc phương tiện. Đoàn tự sắp xếp vé bay và xe shuttle giữa hai thành phố.', 'DECLINED', NULL, 'Case v7: partial visitor cancel với một campus còn WAITING_REQUEST_APPROVAL.'),
-  (9008, 'SeoulTech two-campus AI lab cancellation by visitor', 'WORKSHOP', NULL, 'Chuỗi workshop AI lab tại HN và DN, có host và student support ở cả hai campus.', 'Sau khi Staff Leader xử lý và Staff Leader gán host, visitor tự hủy toàn bộ do đoàn đổi sang kỳ sau.', 'EN', 'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ bảng welcome và xe nội khu tại từng campus.', 'AGREED', 'Cho phép ảnh workshop nếu sự kiện diễn ra.', 'Case v7: visitor@example.com tự hủy toàn bộ multi-campus sau khi các campus đã có host.');
 
--- NOTE: per-campus form v2 seed backfill (detail/link/revision + access status) runs
--- at the END of the seed section, AFTER all visit_requests enrichment UPDATEs, so the
--- per-campus snapshot matches the final global values. See "SEED-TIME BACKFILL" below.
+-- NOTE: canonical per-campus form details for this coverage batch are inserted
+-- immediately after the campus rows below. Later enrichment statements update the
+-- canonical detail rows directly; no seed-time staging/backfill table is used.
 
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (9901, 9001, 2, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 150 MINUTE), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự thao tác hủy chặng HCM trên portal trước ngày planned_start_at; chưa phát sinh host chính thức.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 202, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 202),
@@ -8059,6 +9327,163 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (9912, 9007, 5, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', 15, 2, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 7 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor chỉ hủy chặng QN; CT vẫn chờ Staff Leader approve và gán host.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 212),
   (9913, 9008, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR + INTERVAL 30 MINUTE + INTERVAL 210 MINUTE), 'CANCELLED', 3, 2, CURRENT_TIMESTAMP - INTERVAL 13 DAY - INTERVAL 4 HOUR, 4, 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 20 HOUR, 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 20 HOUR, 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy toàn bộ request sau khi HN đã có host chính thức.', 4, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 8, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 8),
   (9914, 9008, 3, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 10 HOUR + INTERVAL 120 MINUTE), 'CANCELLED', 11, 2, CURRENT_TIMESTAMP - INTERVAL 13 DAY - INTERVAL 4 HOUR, 12, 11, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 18 HOUR, 11, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 18 HOUR, 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy toàn bộ request sau khi DN đã có host chính thức.', 4, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 8, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 8);
+-- ---------------------------------------------------------------------
+-- DIRECT CANONICAL V2 FORM SEED — coverage request batch
+-- The form rows are written straight into visit_instance_form_details.
+-- No staging table is created.
+-- ---------------------------------------------------------------------
+INSERT INTO visit_instance_form_details (
+  visit_instance_id,
+  delegation_name,
+  visit_type,
+  visit_type_other,
+  purpose,
+  working_content,
+  operational_contact_full_name,
+  operational_contact_organization,
+  operational_contact_phone,
+  operational_contact_email,
+  working_language,
+  transportation_note,
+  media_consent_status,
+  media_consent_note,
+  note_to_fptu,
+  form_revision,
+  approval_revision,
+  row_version,
+  created_at,
+  created_by
+)
+SELECT
+  vrc.visit_instance_id,
+  sf.delegation_name,
+  sf.visit_type,
+  sf.visit_type_other,
+  sf.purpose,
+  sf.working_content,
+  vr.contact_person_full_name,
+  NULLIF(TRIM(vr.contact_person_organization), ''),
+  vr.contact_person_phone,
+  NULLIF(TRIM(vr.contact_person_email), ''),
+  sf.working_language,
+  sf.transportation_note,
+  sf.media_consent_status,
+  sf.media_consent_note,
+  sf.note_to_fptu,
+  1,
+  1,
+  0,
+  vrc.created_at,
+  COALESCE(vr.created_by, vr.visitor_user_id)
+FROM visit_request_campuses vrc
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+JOIN (
+  SELECT
+    9001 AS visit_request_id,
+    'Milan mobility studio cancelled by visitor at HCM' AS delegation_name,
+    'MEETING' AS visit_type,
+    NULL AS visit_type_other,
+    'Trao đổi về mobility studio, học kỳ trao đổi và khả năng tổ chức mini workshop cho sinh viên HCM.' AS purpose,
+    'Đoàn ban đầu cần phòng họp, campus walk và phiên làm việc với student service nhưng visitor đã chủ động hủy sau khi được duyệt.' AS working_content,
+    'EN' AS working_language,
+    'Khách tự túc phương tiện. Đoàn tự bố trí xe từ trung tâm TP.HCM đến campus.' AS transportation_note,
+    'AGREED' AS media_consent_status,
+    'Chỉ đồng ý dùng ảnh nhóm nếu chuyến đi diễn ra.' AS media_consent_note,
+    'Case v7: visitor tự hủy toàn bộ request single-campus HCM sau khi Staff Leader đã duyệt.' AS note_to_fptu
+    UNION ALL SELECT
+    9002,
+    'UTS robotics classroom visit cancelled by visitor at DN',
+    'WORKSHOP',
+    NULL,
+    'Chuẩn bị buổi demo robotics và trao đổi chương trình sinh viên tại Đà Nẵng.',
+    'Host và student robotics đã được mời, nhưng visitor báo hủy trước ngày đến vì giảng viên phụ trách bị ốm.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị campus hỗ trợ xe điện nội khu và bảng welcome.',
+    'DECLINED',
+    NULL,
+    'Case v7: có host/participant/logistics nhưng visitor tự hủy trước chuyến.'
+    UNION ALL SELECT
+    9003,
+    'Singapore AI curriculum visit cancelled by visitor at CT',
+    'EXCHANGE',
+    NULL,
+    'Trao đổi về AI curriculum và dự án sinh viên tại Cần Thơ.',
+    'Đoàn cần gặp IC, bộ phận event logistics và sinh viên Mekong, sau đó tự hủy vì đổi hướng hợp tác sang online.',
+    'EN',
+    'Phương tiện khác. Đoàn dự kiến kết hợp xe thuê và boat tour nội vùng.',
+    'AGREED',
+    'Đồng ý ảnh recap nội bộ nếu có sự kiện.',
+    'Case v7: visitor hủy đơn sau khi đã có lịch chuẩn bị tại CT.'
+    UNION ALL SELECT
+    9004,
+    'Casablanca hospitality pathway cancelled by visitor at QN',
+    'CAMPUS_TOUR',
+    NULL,
+    'Khảo sát campus Quy Nhơn cho chương trình hospitality và coastal innovation.',
+    'Đơn được duyệt sơ bộ nhưng visitor tự hủy trước khi Staff Leader hoàn tất điều phối host.',
+    'EN',
+    'Khách tự túc phương tiện. Đoàn tự đặt shuttle từ sân bay Phù Cát.',
+    'DECLINED',
+    NULL,
+    'Case v7: visitor hủy sau duyệt nhưng trước khi có host chính thức.'
+    UNION ALL SELECT
+    9005,
+    'Paris digital arts multi-campus tour cancelled by visitor',
+    'CAMPUS_TOUR',
+    NULL,
+    'Tham quan chuỗi campus HN, HCM, DN để so sánh mô hình digital art learning và student showcase.',
+    'Staff Leader từng campus đã xử lý và gán coordinator từng campus, nhưng visitor tự hủy toàn bộ form trước khi các Staff Leader gán host.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ điều phối di chuyển giữa các campus nếu lịch được chốt.',
+    'AGREED',
+    'Đồng ý dùng ảnh đoàn trong bản tin hợp tác nếu chuyến diễn ra.',
+    'Case v7: visitor tự hủy toàn bộ multi-campus sau khi campus được xử lý, trước host assignment.'
+    UNION ALL SELECT
+    9006,
+    'Singapore AI consortium partial campus cancellation',
+    'MEETING',
+    NULL,
+    'Làm việc với HCM, Đà Nẵng và Cần Thơ về AI, lab operation và hoạt động sinh viên.',
+    'Visitor chỉ hủy chặng HCM, các chặng DN và CT vẫn tiếp tục để test main request APPROVED có một campus CANCELLED.',
+    'EN',
+    'Phương tiện khác. Đoàn dùng xe thuê riêng, chỉ đổi lịch bay tại chặng HCM.',
+    'AGREED',
+    'Cho phép ảnh nội bộ tại các campus còn tiếp tục.',
+    'Case v7: visitor tự hủy một campus instance, request tổng vẫn APPROVED.'
+    UNION ALL SELECT
+    9007,
+    'Casablanca coastal program partial cancellation',
+    'OTHER',
+    'Coastal pathway audit',
+    'Kiểm thử lịch trình liên cơ sở CT-QN cho hospitality và student experience.',
+    'Visitor chỉ hủy chặng QN vì lịch bay nội địa thay đổi, chặng CT vẫn chờ Staff Leader approve và gán host.',
+    'EN',
+    'Khách tự túc phương tiện. Đoàn tự sắp xếp vé bay và xe shuttle giữa hai thành phố.',
+    'DECLINED',
+    NULL,
+    'Case v7: partial visitor cancel với một campus còn WAITING_REQUEST_APPROVAL.'
+    UNION ALL SELECT
+    9008,
+    'SeoulTech two-campus AI lab cancellation by visitor',
+    'WORKSHOP',
+    NULL,
+    'Chuỗi workshop AI lab tại HN và DN, có host và student support ở cả hai campus.',
+    'Sau khi Staff Leader xử lý và Staff Leader gán host, visitor tự hủy toàn bộ do đoàn đổi sang kỳ sau.',
+    'EN',
+    'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ bảng welcome và xe nội khu tại từng campus.',
+    'AGREED',
+    'Cho phép ảnh workshop nếu sự kiện diễn ra.',
+    'Case v7: visitor@example.com tự hủy toàn bộ multi-campus sau khi các campus đã có host.'
+) sf
+  ON sf.visit_request_id = vrc.visit_request_id
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM visit_instance_form_details existing_detail
+  WHERE existing_detail.visit_instance_id = vrc.visit_instance_id
+);
+
+
 
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by) VALUES
   (99001, 9001, 'GUEST', 'Sofia Bianchi Guest Delegate', 'Politecnico di Milano Mobility Lab', 'Faculty Representative', 'Ý', 1, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL),
@@ -8938,8 +10363,8 @@ SELECT
     COALESCE(vrc.closed_at, CURRENT_TIMESTAMP) - INTERVAL 30 MINUTE AS updated_at,
     COALESCE(vrc.host_assigned_by, vrc.coordinator_user_id, vrc.current_host_user_id) AS updated_by
 FROM visit_request_campuses vrc
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 WHERE visitor.email = 'visitor@example.com'
@@ -8967,16 +10392,16 @@ INSERT INTO news_translations (
 SELECT
     n.news_id,
     'vi' AS language_code,
-    CONCAT('Bản tin chuyến thăm: ', vr.delegation_name) AS title,
+    CONCAT('Bản tin chuyến thăm: ', seed_detail.delegation_name) AS title,
     CONCAT('visitor-closed-visit-', vrc.visit_instance_id) AS slug,
     CONCAT(
-        'Tổng kết chuyến thăm của ', vr.delegation_name,
+        'Tổng kết chuyến thăm của ', seed_detail.delegation_name,
         ' tại ', c.name,
         ', ghi nhận các hoạt động nổi bật và định hướng hợp tác sau buổi làm việc.'
     ) AS summary,
-    CONCAT('Bản tin chuyến thăm ', vr.delegation_name) AS seo_title,
+    CONCAT('Bản tin chuyến thăm ', seed_detail.delegation_name) AS seo_title,
     CONCAT(
-        'Bản tin public về chuyến thăm của ', vr.delegation_name,
+        'Bản tin public về chuyến thăm của ', seed_detail.delegation_name,
         ' tại ', c.name, '.'
     ) AS seo_description,
     COALESCE(n.created_at, CURRENT_TIMESTAMP) AS created_at,
@@ -8984,8 +10409,8 @@ SELECT
 FROM news n
 JOIN visit_request_campuses vrc
     ON vrc.visit_instance_id = n.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 JOIN campuses c
@@ -9016,12 +10441,12 @@ SELECT
     1 AS section_order,
     'Tổng quan chuyến thăm' AS section_title,
     CONCAT(
-        '<p>Đoàn <strong>', vr.delegation_name,
+        '<p>Đoàn <strong>', seed_detail.delegation_name,
         '</strong> đã hoàn tất chuyến thăm tại <strong>', c.name,
         '</strong>. Chương trình giúp hai bên trao đổi về môi trường học tập, hoạt động hợp tác quốc tế và các định hướng phối hợp trong thời gian tới.</p>'
     ) AS section_body_html,
     CONCAT(
-        'Đoàn ', vr.delegation_name,
+        'Đoàn ', seed_detail.delegation_name,
         ' đã hoàn tất chuyến thăm tại ', c.name,
         '. Chương trình giúp hai bên trao đổi về môi trường học tập, hoạt động hợp tác quốc tế và các định hướng phối hợp trong thời gian tới.'
     ) AS section_body_text,
@@ -9032,8 +10457,8 @@ JOIN news n
     ON n.news_id = nt.news_id
 JOIN visit_request_campuses vrc
     ON vrc.visit_instance_id = n.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 JOIN campuses c
@@ -9073,8 +10498,8 @@ JOIN news n
     ON n.news_id = nt.news_id
 JOIN visit_request_campuses vrc
     ON vrc.visit_instance_id = n.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 WHERE visitor.email = 'visitor@example.com'
@@ -9126,8 +10551,8 @@ SELECT
     ) AS comment,
     COALESCE(vrc.closed_at, CURRENT_TIMESTAMP) + INTERVAL 30 MINUTE AS submitted_at
 FROM visit_request_campuses vrc
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 JOIN users host
@@ -9163,8 +10588,8 @@ SELECT
 FROM feedbacks f
 JOIN visit_request_campuses vrc
     ON vrc.visit_instance_id = f.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 JOIN (
@@ -9554,13 +10979,13 @@ SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES;
 SELECT
     vrc.visit_instance_id,
     vr.request_code,
-    vr.delegation_name,
+    seed_detail.delegation_name,
     vrc.status AS campus_status,
     COUNT(DISTINCT n.news_id) AS published_news_count,
     COUNT(DISTINCT f.feedback_id) AS visitor_feedback_count
 FROM visit_request_campuses vrc
-JOIN pems_seed_visit_requests_v2_compat vr
-    ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
     ON visitor.user_id = vr.visitor_user_id
 LEFT JOIN news n
@@ -9575,7 +11000,7 @@ WHERE visitor.email = 'visitor@example.com'
 GROUP BY
     vrc.visit_instance_id,
     vr.request_code,
-    vr.delegation_name,
+    seed_detail.delegation_name,
     vrc.status
 ORDER BY vrc.visit_instance_id;
 
@@ -9673,8 +11098,11 @@ WHERE partner_id IN (101,102,103,104,105,106,107,108,109,110,120,121,122,123,124
 -- ---------------------------------------------------------------------
 -- 2) Visit requests: each visible request now has its own business story.
 -- ---------------------------------------------------------------------
-UPDATE pems_seed_visit_request_form_v2 SET
-  delegation_name = CASE visit_request_id
+UPDATE visit_instance_form_details d
+JOIN visit_request_campuses vrc
+  ON vrc.visit_instance_id = d.visit_instance_id
+SET
+  d.delegation_name = CASE vrc.visit_request_id
     WHEN 1001 THEN 'SeoulTech smart campus discovery visit'
     WHEN 1002 THEN 'Kyoto service robotics lab showcase request'
     WHEN 1003 THEN 'SeoulTech AI curriculum articulation briefing'
@@ -9693,8 +11121,8 @@ UPDATE pems_seed_visit_request_form_v2 SET
     WHEN 9004 THEN 'Multi-campus approved but pending host assignment across campuses'
     WHEN 9005 THEN 'Multi-campus active reception with split campus responsibilities'
     WHEN 9006 THEN 'Closed multi-campus visit with media follow-up and feedback'
-    ELSE delegation_name END,
-  purpose = CASE visit_request_id
+    ELSE d.delegation_name END,
+  d.purpose = CASE vrc.visit_request_id
     WHEN 1001 THEN 'Khảo sát không gian học tập thông minh, phương án hỗ trợ sinh viên quốc tế và cách FPTU tổ chức tour học thuật cho đối tác công nghệ.'
     WHEN 1002 THEN 'Đề xuất một phiên demo robot dịch vụ cho sinh viên, kiểm tra mức sẵn sàng của phòng lab và quy trình an toàn thiết bị trước khi chốt workshop chính thức.'
     WHEN 1003 THEN 'Làm việc với IC và đại diện đào tạo để đối chiếu cấu trúc chương trình AI, chuẩn tín chỉ và điều kiện trao đổi học kỳ ngắn.'
@@ -9713,8 +11141,8 @@ UPDATE pems_seed_visit_request_form_v2 SET
     WHEN 9004 THEN 'Staff Leader từng campus đã xử lý request tổng, các campus đang chờ Staff Leader approve và gán host và chuẩn bị agenda riêng.'
     WHEN 9005 THEN 'Đoàn đang triển khai reception ở nhiều campus với trách nhiệm host, department support và logistics tách theo từng instance.'
     WHEN 9006 THEN 'Đoàn đã kết thúc, dùng để test đóng hồ sơ, feedback, news published và file public sau tiếp khách.'
-    ELSE purpose END,
-  working_content = CASE visit_request_id
+    ELSE d.purpose END,
+  d.working_content = CASE vrc.visit_request_id
     WHEN 1001 THEN 'Tour thư viện, phòng lab AI, khu trải nghiệm sinh viên; meeting ngắn với IC về quy trình tiếp nhận đoàn và trao đổi follow-up bằng email.'
     WHEN 1002 THEN 'Cần phòng lab có khu vực an toàn, bàn demo, nguồn điện dự phòng và người phụ trách kỹ thuật; nếu không đáp ứng thì nên từ chối sớm.'
     WHEN 1003 THEN 'Trao đổi syllabus, mapping tín chỉ, tiêu chí chọn sinh viên, yêu cầu tiếng Anh và mốc thời gian mở đợt trao đổi đầu tiên.'
@@ -9733,8 +11161,8 @@ UPDATE pems_seed_visit_request_form_v2 SET
     WHEN 9004 THEN 'Staff Leader từng campus cần gán host, xác nhận phòng họp và gửi lời mời department support trước hạn 5 ngày.'
     WHEN 9005 THEN 'Campus HN đang tiếp đoàn, campus HCM chuẩn bị phiên sau; logistics và minutes được theo dõi riêng từng instance.'
     WHEN 9006 THEN 'Host đã chốt minutes, thu feedback, xuất bản news và lưu file ảnh chuyến thăm qua Drive metadata.'
-    ELSE working_content END,
-  note_to_fptu = CASE visit_request_id
+    ELSE d.working_content END,
+  d.note_to_fptu = CASE vrc.visit_request_id
     WHEN 1001 THEN 'Đoàn cần bản đồ vào campus và số điện thoại host trực trong ngày.'
     WHEN 1002 THEN 'Nếu không có phòng lab phù hợp, mong FPTU đề xuất ngày khác thay vì tiếp nhận gấp.'
     WHEN 1003 THEN 'Ưu tiên phòng họp yên tĩnh để trao đổi syllabus chi tiết.'
@@ -9753,19 +11181,21 @@ UPDATE pems_seed_visit_request_form_v2 SET
     WHEN 9004 THEN 'Sau khi gán host, cần gửi email logistics summary cho từng campus.'
     WHEN 9005 THEN 'Host cần cập nhật tiến độ ngay sau từng phiên để campus sau chuẩn bị kịp.'
     WHEN 9006 THEN 'Dữ liệu dùng kiểm thử public news, feedback và close delegation.'
-    ELSE note_to_fptu END
-WHERE visit_request_id IN (1001,1002,1003,3001,3002,3003,3004,3005,3006,3007,3008,3009,9001,9002,9003,9004,9005,9006);
+    ELSE d.note_to_fptu END,
+  d.updated_at = NULL
+WHERE vrc.visit_request_id IN (1001,1002,1003,3001,3002,3003,3004,3005,3006,3007,3008,3009,9001,9002,9003,9004,9005,9006);
 
 -- ---------------------------------------------------------------------
 -- 3) Campus instances: add realistic preparation/close/cancel notes.
 -- ---------------------------------------------------------------------
 UPDATE visit_request_campuses vrc
-JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN campuses c ON c.campus_id = vrc.campus_id
 SET vrc.preparation_note = CASE vrc.status
-    WHEN 'WAITING_REQUEST_APPROVAL' THEN CONCAT('Chưa chuẩn bị onsite tại ', c.campus_code, '. Staff Leader ', c.campus_code, ' sẽ đánh giá request và chọn host ngay nếu duyệt: ', LEFT(vr.delegation_name, 120), '.')
+    WHEN 'WAITING_REQUEST_APPROVAL' THEN CONCAT('Chưa chuẩn bị onsite tại ', c.campus_code, '. Staff Leader ', c.campus_code, ' sẽ đánh giá request và chọn host ngay nếu duyệt: ', LEFT(seed_detail.delegation_name, 120), '.')
     WHEN 'REJECTED' THEN CONCAT('Campus ', c.campus_code, ' đã từ chối tiếp nhận request; không chuẩn bị onsite, chỉ lưu lý do từ chối và thông tin follow-up.')
-    WHEN 'ASSIGNED' THEN CONCAT('Host đã được gán tại ', c.campus_code, '; cần gửi briefing cho người tham gia, kiểm tra bảng tên, nước uống và route theo mục tiêu: ', LEFT(vr.purpose, 120), '.')
+    WHEN 'ASSIGNED' THEN CONCAT('Host đã được gán tại ', c.campus_code, '; cần gửi briefing cho người tham gia, kiểm tra bảng tên, nước uống và route theo mục tiêu: ', LEFT(seed_detail.purpose, 120), '.')
     WHEN 'BEFORE_VISIT' THEN CONCAT('Checklist trước visit tại ', c.campus_code, ': xác nhận khách, mở phòng họp, chuẩn bị màn hình, in agenda và test link trình chiếu.')
     WHEN 'DURING_VISIT' THEN CONCAT('Đang tiếp đoàn tại ', c.campus_code, '; host cần cập nhật attendance, ghi minutes và chụp tối thiểu một ảnh nếu media consent cho phép.')
     WHEN 'AFTER_VISIT' THEN CONCAT('Sau visit tại ', c.campus_code, ': rà soát action item, thu feedback, chuẩn bị news hoặc xác nhận không cần news trước khi đóng hồ sơ.')
@@ -9785,25 +11215,26 @@ SET vrc.preparation_note = CASE vrc.status
 -- ---------------------------------------------------------------------
 UPDATE visit_agendas va
 JOIN visit_request_campuses vrc ON vrc.visit_instance_id = va.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN campuses c ON c.campus_id = vrc.campus_id
 SET va.title = CASE va.sequence_order
     WHEN 1 THEN CONCAT('Đón đoàn và xác nhận mục tiêu tại ', c.campus_code)
-    WHEN 2 THEN CASE vr.visit_type
-      WHEN 'CAMPUS_TOUR' THEN CONCAT('Campus tour theo chủ đề: ', LEFT(vr.delegation_name, 90))
-      WHEN 'MEETING' THEN CONCAT('Phiên làm việc chuyên sâu: ', LEFT(vr.delegation_name, 90))
-      WHEN 'WORKSHOP' THEN CONCAT('Workshop/ demo thực hành: ', LEFT(vr.delegation_name, 90))
+    WHEN 2 THEN CASE seed_detail.visit_type
+      WHEN 'CAMPUS_TOUR' THEN CONCAT('Campus tour theo chủ đề: ', LEFT(seed_detail.delegation_name, 90))
+      WHEN 'MEETING' THEN CONCAT('Phiên làm việc chuyên sâu: ', LEFT(seed_detail.delegation_name, 90))
+      WHEN 'WORKSHOP' THEN CONCAT('Workshop/ demo thực hành: ', LEFT(seed_detail.delegation_name, 90))
       WHEN 'SIGNING_CEREMONY' THEN CONCAT('Làm việc về thỏa thuận và quy trình ký kết: ', c.campus_code)
       WHEN 'EXCHANGE' THEN CONCAT('Giao lưu sinh viên và đối tác: ', c.campus_code)
-      ELSE CONCAT('Hoạt động chuyên đề với đoàn: ', LEFT(vr.delegation_name, 90)) END
+      ELSE CONCAT('Hoạt động chuyên đề với đoàn: ', LEFT(seed_detail.delegation_name, 90)) END
     ELSE CONCAT('Tổng kết, action item và đầu mối follow-up tại ', c.campus_code) END,
   va.description = CASE va.sequence_order
     WHEN 1 THEN CONCAT('Host kiểm tra danh sách khách, media consent, ngôn ngữ làm việc và nhắc lịch trình riêng của campus ', c.campus_code, '.')
-    WHEN 2 THEN CONCAT('Nội dung chính: ', LEFT(vr.working_content, 500))
-    ELSE CONCAT('Chốt người phụ trách, tài liệu cần gửi sau visit và thời hạn phản hồi cho mục tiêu: ', LEFT(vr.purpose, 300)) END,
+    WHEN 2 THEN CONCAT('Nội dung chính: ', LEFT(seed_detail.working_content, 500))
+    ELSE CONCAT('Chốt người phụ trách, tài liệu cần gửi sau visit và thời hạn phản hồi cho mục tiêu: ', LEFT(seed_detail.purpose, 300)) END,
   va.location = CASE va.sequence_order
     WHEN 1 THEN CONCAT(c.campus_code, ' main lobby / reception desk')
-    WHEN 2 THEN CASE vr.visit_type
+    WHEN 2 THEN CASE seed_detail.visit_type
       WHEN 'CAMPUS_TOUR' THEN CONCAT(c.campus_code, ' library - lab - student hub route')
       WHEN 'WORKSHOP' THEN CONCAT(c.campus_code, ' innovation lab / workshop room')
       WHEN 'SIGNING_CEREMONY' THEN CONCAT(c.campus_code, ' conference room and signing table')
@@ -9816,18 +11247,19 @@ WHERE va.agenda_id >= 8001;
 -- ---------------------------------------------------------------------
 UPDATE visit_logistics_items vli
 JOIN visit_request_campuses vrc ON vrc.visit_instance_id = vli.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN campuses c ON c.campus_id = vrc.campus_id
 SET vli.title = CASE vli.item_type
-    WHEN 'ROOM' THEN CONCAT('Phòng họp ', c.campus_code, ' cho ', LEFT(vr.delegation_name, 70))
-    WHEN 'EQUIPMENT' THEN CONCAT('Thiết bị trình chiếu/demo cho ', LEFT(vr.delegation_name, 70))
+    WHEN 'ROOM' THEN CONCAT('Phòng họp ', c.campus_code, ' cho ', LEFT(seed_detail.delegation_name, 70))
+    WHEN 'EQUIPMENT' THEN CONCAT('Thiết bị trình chiếu/demo cho ', LEFT(seed_detail.delegation_name, 70))
     WHEN 'TRANSPORT' THEN CONCAT('Điều phối di chuyển nội khu ', c.campus_code)
     WHEN 'TEABREAK' THEN CONCAT('Teabreak theo lịch làm việc ', c.campus_code)
-    WHEN 'DOCUMENT' THEN CONCAT('Bộ tài liệu tiếp khách cho ', LEFT(vr.delegation_name, 70))
-    ELSE CONCAT('Hậu cần khác cho ', LEFT(vr.delegation_name, 70)) END,
+    WHEN 'DOCUMENT' THEN CONCAT('Bộ tài liệu tiếp khách cho ', LEFT(seed_detail.delegation_name, 70))
+    ELSE CONCAT('Hậu cần khác cho ', LEFT(seed_detail.delegation_name, 70)) END,
   vli.description = CONCAT(
     'Yêu cầu hậu cần phục vụ request ', vr.request_code, ' tại ', c.name, '. ',
-    'Mục tiêu nghiệp vụ: ', LEFT(vr.purpose, 260), ' ',
+    'Mục tiêu nghiệp vụ: ', LEFT(seed_detail.purpose, 260), ' ',
     'Ghi chú xử lý: ',
     CASE vli.status
       WHEN 'REQUESTED' THEN 'đang chờ department tiếp nhận và phản hồi khả năng chuẩn bị.'
@@ -9844,7 +11276,7 @@ SET vli.title = CASE vli.item_type
     WHEN vli.status IN ('REJECTED','CANCELLED','DECLINED') THEN CONCAT('Seed đa dạng: quyết định dựa trên năng lực chuẩn bị tại ', c.campus_code, ', không phải placeholder.')
     ELSE vli.decision_note END,
   vli.proposal_note = CASE
-    WHEN vli.status = 'CHANGE_PROPOSED' THEN CONCAT('Đề xuất đổi phương án để khớp lịch ', LEFT(vr.delegation_name, 80), ': giảm rủi ro thiếu phòng hoặc trùng thiết bị.')
+    WHEN vli.status = 'CHANGE_PROPOSED' THEN CONCAT('Đề xuất đổi phương án để khớp lịch ', LEFT(seed_detail.delegation_name, 80), ': giảm rủi ro thiếu phòng hoặc trùng thiết bị.')
     ELSE vli.proposal_note END
 WHERE vli.logistics_item_id >= 9001 OR vli.logistics_item_id BETWEEN 1 AND 99;
 
@@ -9853,11 +11285,12 @@ WHERE vli.logistics_item_id >= 9001 OR vli.logistics_item_id BETWEEN 1 AND 99;
 -- ---------------------------------------------------------------------
 UPDATE minutes m
 JOIN visit_request_campuses vrc ON vrc.visit_instance_id = m.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN campuses c ON c.campus_id = vrc.campus_id
-SET m.title = CONCAT('Biên bản ', c.campus_code, ' - ', LEFT(vr.delegation_name, 110)),
+SET m.title = CONCAT('Biên bản ', c.campus_code, ' - ', LEFT(seed_detail.delegation_name, 110)),
     m.content = CONCAT(
-      '<h2>Tóm tắt buổi làm việc</h2><p>Đoàn <strong>', vr.delegation_name, '</strong> làm việc tại ', c.name, ' với mục tiêu: ', LEFT(vr.purpose, 350), '</p>',
+      '<h2>Tóm tắt buổi làm việc</h2><p>Đoàn <strong>', seed_detail.delegation_name, '</strong> làm việc tại ', c.name, ' với mục tiêu: ', LEFT(seed_detail.purpose, 350), '</p>',
       '<h3>Nội dung đã thống nhất</h3><ul><li>IC là đầu mối tổng hợp tài liệu và gửi follow-up.</li><li>Department phụ trách trả lời các câu hỏi chuyên môn trong 5 ngày làm việc.</li><li>Host cập nhật action item, feedback và trạng thái news trước khi đóng hồ sơ.</li></ul>',
       '<blockquote>Ghi chú seed: nội dung này khác nhau theo request/campus, phục vụ test rich text và màn hình minutes.</blockquote>')
 WHERE m.minutes_id >= 10001 OR m.minutes_id IN (1,2,3,4);
@@ -9865,8 +11298,9 @@ WHERE m.minutes_id >= 10001 OR m.minutes_id IN (1,2,3,4);
 UPDATE minute_action_items mai
 JOIN minutes m ON m.minutes_id = mai.minutes_id
 JOIN visit_request_campuses vrc ON vrc.visit_instance_id = m.visit_instance_id
-JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
-SET mai.title = CONCAT('Gửi gói follow-up cho ', LEFT(vr.delegation_name, 80)),
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
+SET mai.title = CONCAT('Gửi gói follow-up cho ', LEFT(seed_detail.delegation_name, 80)),
     mai.note = CONCAT('Bao gồm minutes PDF, ảnh đã được phép dùng, đầu mối department và các tài liệu đã hứa trong buổi làm việc. Ưu tiên gửi trước hạn due_date để tránh trễ đóng hồ sơ.')
 WHERE mai.action_item_id IS NOT NULL;
 
@@ -9981,30 +11415,32 @@ WHERE gl.location_id BETWEEN 1 AND 36;
 -- ---------------------------------------------------------------------
 UPDATE notifications n
 LEFT JOIN visit_request_campuses vrc ON n.related_type IN ('VISIT_INSTANCE','VISIT') AND n.related_id = vrc.visit_instance_id
-LEFT JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 SET n.title = CASE
-    WHEN n.related_type IN ('VISIT_INSTANCE','VISIT') AND vr.visit_request_id IS NOT NULL THEN CONCAT('Cập nhật visit: ', LEFT(vr.delegation_name, 90))
+    WHEN n.related_type IN ('VISIT_INSTANCE','VISIT') AND vr.visit_request_id IS NOT NULL THEN CONCAT('Cập nhật visit: ', LEFT(seed_detail.delegation_name, 90))
     WHEN n.notification_type LIKE '%NEWS%' THEN 'Cập nhật duyệt bài news'
     WHEN n.notification_type LIKE '%EMAIL%' THEN 'Trạng thái email hành động'
     ELSE CONCAT('Thông báo nghiệp vụ PEMS #', n.notification_id) END,
   n.message = CASE
-    WHEN n.related_type IN ('VISIT_INSTANCE','VISIT') AND vr.visit_request_id IS NOT NULL THEN CONCAT('Request ', vr.request_code, ' có thay đổi cần theo dõi. Nội dung chính: ', LEFT(vr.purpose, 260))
+    WHEN n.related_type IN ('VISIT_INSTANCE','VISIT') AND vr.visit_request_id IS NOT NULL THEN CONCAT('Request ', vr.request_code, ' có thay đổi cần theo dõi. Nội dung chính: ', LEFT(seed_detail.purpose, 260))
     WHEN n.notification_type LIKE '%NEWS%' THEN 'Bài viết cần được kiểm tra trạng thái PUBLISHED/HIDDEN và ngôn ngữ hiển thị trước khi xuất hiện ngoài public.'
     WHEN n.notification_type LIKE '%EMAIL%' THEN 'Người nhận có thể phản hồi bằng token trong email; nếu đã phản hồi, hệ thống không cập nhật nghiệp vụ lần hai.'
     ELSE CONCAT('Seed thông báo dùng để test unread/read, related_type/related_id và thứ tự thời gian trong dashboard. Mã thông báo: ', n.notification_id) END;
 
 UPDATE calendar_events ce
 LEFT JOIN visit_request_campuses vrc ON ce.visit_instance_id = vrc.visit_instance_id
-LEFT JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 LEFT JOIN campuses c ON c.campus_id = ce.campus_id
 LEFT JOIN visit_logistics_items vli ON vli.logistics_item_id = ce.logistics_item_id
 SET ce.title = CASE ce.source_type
-    WHEN 'VISIT' THEN CONCAT('Lịch tiếp đoàn: ', LEFT(COALESCE(vr.delegation_name, 'visit'), 100))
+    WHEN 'VISIT' THEN CONCAT('Lịch tiếp đoàn: ', LEFT(COALESCE(seed_detail.delegation_name, 'visit'), 100))
     WHEN 'LOGISTICS' THEN CONCAT('Deadline hậu cần: ', LEFT(COALESCE(vli.title, 'logistics item'), 100))
-    WHEN 'DEADLINE' THEN CONCAT('Mốc cần xử lý: ', LEFT(COALESCE(vr.delegation_name, ce.title), 100))
+    WHEN 'DEADLINE' THEN CONCAT('Mốc cần xử lý: ', LEFT(COALESCE(seed_detail.delegation_name, ce.title), 100))
     ELSE ce.title END,
   ce.description = CASE ce.source_type
-    WHEN 'VISIT' THEN CONCAT('Sự kiện lịch gắn với campus ', COALESCE(c.campus_code,'N/A'), '. Host dùng để kiểm tra xung đột khi gán người phụ trách. Mục tiêu: ', LEFT(COALESCE(vr.purpose,''), 250))
+    WHEN 'VISIT' THEN CONCAT('Sự kiện lịch gắn với campus ', COALESCE(c.campus_code,'N/A'), '. Host dùng để kiểm tra xung đột khi gán người phụ trách. Mục tiêu: ', LEFT(COALESCE(seed_detail.purpose,''), 250))
     WHEN 'LOGISTICS' THEN CONCAT('Nhắc deadline cho logistics item: ', COALESCE(vli.title,'N/A'), '. Trạng thái hiện tại cần kiểm tra trước giờ đoàn tới.')
     WHEN 'DEADLINE' THEN CONCAT('Mốc hệ thống dùng cho reminder/notification, không phải sự kiện cá nhân tự do. Liên quan: ', COALESCE(vr.request_code, ce.title))
     ELSE ce.description END,
@@ -10035,12 +11471,13 @@ UPDATE email_templates SET
 
 UPDATE sent_emails se
 LEFT JOIN visit_request_campuses vrc ON se.related_type IN ('VISIT_INSTANCE','VISIT') AND se.related_id = vrc.visit_instance_id
-LEFT JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 SET se.subject = CASE
-    WHEN vr.visit_request_id IS NOT NULL THEN CONCAT('[PEMS] ', vr.request_code, ' - ', LEFT(vr.delegation_name, 120))
+    WHEN vr.visit_request_id IS NOT NULL THEN CONCAT('[PEMS] ', vr.request_code, ' - ', LEFT(seed_detail.delegation_name, 120))
     ELSE se.subject END,
   se.body_snapshot = CASE
-    WHEN vr.visit_request_id IS NOT NULL THEN CONCAT('Email snapshot gửi cho workflow visit. Request: ', vr.request_code, '. Đoàn: ', vr.delegation_name, '. Nội dung chính: ', LEFT(vr.working_content, 500), ' Người nhận phản hồi bằng token nếu email có action button.')
+    WHEN vr.visit_request_id IS NOT NULL THEN CONCAT('Email snapshot gửi cho workflow visit. Request: ', vr.request_code, '. Đoàn: ', seed_detail.delegation_name, '. Nội dung chính: ', LEFT(seed_detail.working_content, 500), ' Người nhận phản hồi bằng token nếu email có action button.')
     ELSE se.body_snapshot END;
 
 -- ---------------------------------------------------------------------
@@ -10074,16 +11511,22 @@ SELECT 'seed_placeholder_terms_remaining' AS check_name,
        SUM(issue_count) AS issue_count
 FROM (
   SELECT COUNT(*) AS issue_count FROM partners WHERE description LIKE '%kịch bản seed coverage%' OR review_note LIKE '%kịch bản seed coverage%'
-  UNION ALL SELECT COUNT(*) FROM pems_seed_visit_requests_v2_compat WHERE purpose LIKE '%Seed coverage:%' OR note_to_fptu LIKE '%Seed coverage:%'
+  UNION ALL SELECT COUNT(*) FROM visit_instance_form_details WHERE purpose LIKE '%Seed coverage:%' OR note_to_fptu LIKE '%Seed coverage:%'
   UNION ALL SELECT COUNT(*) FROM visit_agendas WHERE title IN ('Arrival and reception briefing','Working session and campus walkthrough')
   UNION ALL SELECT COUNT(*) FROM visit_logistics_items WHERE description LIKE '%Seed coverage:%'
   UNION ALL SELECT COUNT(*) FROM news_content_sections WHERE section_body_html LIKE '%data:image%'
 ) x;
-
 SELECT 'visit_request_core_text_empty' AS check_name,
        COUNT(*) AS issue_count
-FROM pems_seed_visit_requests_v2_compat
-WHERE TRIM(delegation_name) = '' OR TRIM(purpose) = '' OR TRIM(registrant_full_name) = '';
+FROM visit_request_campuses vrc
+JOIN visit_instance_form_details d
+  ON d.visit_instance_id = vrc.visit_instance_id
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+WHERE TRIM(d.delegation_name) = ''
+   OR TRIM(d.purpose) = ''
+   OR TRIM(vr.registrant_full_name) = '';
+
 
 SELECT 'agenda_generic_title_remaining' AS check_name,
        COUNT(*) AS issue_count
@@ -10242,8 +11685,10 @@ JOIN users registrant
     WHEN 3049 THEN 13
     WHEN 3050 THEN 16
   END
-JOIN pems_seed_visit_request_form_v2 sf
-  ON sf.visit_request_id = vr.visit_request_id
+JOIN visit_request_campuses seed_vrc
+  ON seed_vrc.visit_request_id = vr.visit_request_id
+JOIN visit_instance_form_details sf
+  ON sf.visit_instance_id = seed_vrc.visit_instance_id
 SET vr.registrant_user_id = registrant.user_id,
     vr.registrant_full_name = registrant.full_name,
     vr.registrant_organization = CASE vr.visit_request_id
@@ -10262,6 +11707,7 @@ SET vr.registrant_user_id = registrant.user_id,
     vr.registrant_nationality = 'Việt Nam',
     vr.created_source = 'STAFF_CREATED',
     vr.created_by = registrant.user_id,
+    sf.created_by = registrant.user_id,
     vr.primary_contact_access_status = 'ACTIVE',
     vr.primary_contact_verified_at = CASE vr.visit_request_id
       WHEN 3046 THEN '2026-07-06 13:08:00'
@@ -10274,7 +11720,8 @@ SET vr.registrant_user_id = registrant.user_id,
       COALESCE(NULLIF(TRIM(sf.note_to_fptu), ''), 'Internal request seed.'),
       '\nRelation coverage: registered by ', registrant.email,
       '; verified VISITOR primary contact = ', vr.contact_person_email, '.'
-    )
+    ),
+    sf.updated_at = NULL
 WHERE vr.visit_request_id IN (3046, 3047, 3048, 3049, 3050)
   AND registrant.status = 'ACTIVE';
 
@@ -10464,8 +11911,10 @@ VALUES
 -- revision/audit rows are preserved; only the canonical request relation is aligned.
 UPDATE visit_requests vr
 JOIN users registrant ON registrant.user_id = 8
-JOIN pems_seed_visit_request_form_v2 sf
-  ON sf.visit_request_id = vr.visit_request_id
+JOIN visit_request_campuses seed_vrc
+  ON seed_vrc.visit_request_id = vr.visit_request_id
+JOIN visit_instance_form_details sf
+  ON sf.visit_instance_id = seed_vrc.visit_instance_id
 SET vr.registrant_user_id = registrant.user_id,
     vr.registrant_full_name = registrant.full_name,
     vr.registrant_organization = 'SeoulTech Global Engagement Center',
@@ -10475,6 +11924,7 @@ SET vr.registrant_user_id = registrant.user_id,
     vr.registrant_nationality = COALESCE(registrant.nationality, 'Hàn Quốc'),
     vr.created_source = 'VISITOR_SUBMITTED',
     vr.created_by = registrant.user_id,
+    sf.created_by = registrant.user_id,
     vr.visitor_user_id = 21,
     vr.primary_contact_access_status = 'ACTIVE',
     vr.primary_contact_verified_at = '2026-06-10 08:34:00',
@@ -10482,7 +11932,8 @@ SET vr.registrant_user_id = registrant.user_id,
       COALESCE(NULLIF(TRIM(sf.note_to_fptu), ''), 'Visitor-submitted relation seed.'),
       '
 Contact guard coverage: Visitor A user_id=8 registered; Visitor B user_id=21 is the confirmed primary contact.'
-    )
+    ),
+    sf.updated_at = NULL
 WHERE vr.visit_request_id = 1002;
 
 DELETE FROM visit_request_identity_change_events
@@ -10520,8 +11971,10 @@ VALUES
 -- Seed cases 8.5 and 8.6: internal registrants with unclaimed contacts.
 -- Approval may proceed per campus, but no account relation is granted before claim APPLIED.
 UPDATE visit_requests vr
-JOIN pems_seed_visit_request_form_v2 sf
-  ON sf.visit_request_id = vr.visit_request_id
+JOIN visit_request_campuses seed_vrc
+  ON seed_vrc.visit_request_id = vr.visit_request_id
+JOIN visit_instance_form_details sf
+  ON sf.visit_instance_id = seed_vrc.visit_instance_id
 SET vr.visitor_user_id = NULL,
     vr.primary_contact_access_status = 'PENDING_CONFIRMATION',
     vr.primary_contact_verified_at = NULL,
@@ -10529,7 +11982,8 @@ SET vr.visitor_user_id = NULL,
       COALESCE(NULLIF(TRIM(sf.note_to_fptu), ''), 'Internal request seed.'),
       '
 Contact guard coverage: INITIAL_CLAIM is still PENDING; visitor_user_id intentionally remains NULL.'
-    )
+    ),
+    sf.updated_at = NULL
 WHERE vr.visit_request_id IN (3048, 3049);
 
 UPDATE visit_request_identity_changes
@@ -10578,33 +12032,12 @@ SET vr.status = CASE
   ELSE vr.status
 END
 WHERE vr.status <> 'CANCELLED';
-
 -- =====================================================================
--- PER-CAMPUS FORM V2 — COMPLETE FRESH-SEED FINALIZATION
--- Runs after every request/campus/member enrichment and before campus aggregate
--- triggers. The statements are deterministic and re-runnable on this fresh seed.
+-- PER-CAMPUS FORM V2 — DIRECT SEED COMPLETED
+-- visit_instance_form_details was populated directly after each campus seed.
+-- No staging/backfill materialization is required here.
 -- =====================================================================
 
--- 1) One canonical V2 detail snapshot per campus instance.
-INSERT INTO visit_instance_form_details (
-  visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content,
-  operational_contact_full_name, operational_contact_organization,
-  operational_contact_phone, operational_contact_email,
-  working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu,
-  form_revision, approval_revision, row_version, created_at, created_by)
-SELECT
-  vrc.visit_instance_id, vr.delegation_name, vr.visit_type, vr.visit_type_other, vr.purpose, vr.working_content,
-  vr.contact_person_full_name, NULLIF(TRIM(vr.contact_person_organization), ''),
-  vr.contact_person_phone, NULLIF(TRIM(vr.contact_person_email), ''),
-  vr.working_language, vr.transportation_note, vr.media_consent_status, vr.media_consent_note, vr.note_to_fptu,
-  1, 1, 0, vrc.created_at, COALESCE(vr.created_by, vr.visitor_user_id)
-FROM visit_request_campuses vrc
-JOIN pems_seed_visit_requests_v2_compat vr ON vr.visit_request_id = vrc.visit_request_id
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM visit_instance_form_details d
-  WHERE d.visit_instance_id = vrc.visit_instance_id
-);
 
 -- Operational contact remains a campus snapshot. Reusing a Staff email is valid and
 -- does not grant request ownership or create a user relation.
@@ -10617,9 +12050,8 @@ SET operational_contact_full_name = 'IC Staff Hà Nội',
     updated_by = 4
 WHERE visit_instance_id = 5046;
 
--- Seed translation is complete; remove non-canonical helper objects now.
-DROP VIEW IF EXISTS pems_seed_visit_requests_v2_compat;
-DROP TABLE IF EXISTS pems_seed_visit_request_form_v2;
+
+
 
 
 -- 2) Preserve V1 shared-member semantics as independent V2 instance links.
@@ -13348,9 +14780,9 @@ BEGIN
   SELECT COUNT(*) INTO v_issue_count
   FROM information_schema.tables
   WHERE table_schema = DATABASE()
-    AND table_name = 'pems_seed_visit_request_form_v2';
+    AND LEFT(table_name, 10) = 'pems_seed_';
   IF v_issue_count <> 0 THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PURE_V2_REFUSED_NONCANONICAL_TABLE_PRESENT';
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PURE_V2_REFUSED_SEED_HELPER_OBJECT_PRESENT';
   END IF;
 END$$
 DELIMITER ;
@@ -13391,10 +14823,10 @@ FROM visit_request_campuses vrc
 LEFT JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
 WHERE d.visit_instance_id IS NULL;
 
-SELECT 'pure_v2_noncanonical_tables' AS check_name, COUNT(*) AS issue_count
+SELECT 'pure_v2_seed_helper_objects' AS check_name, COUNT(*) AS issue_count
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
-  AND table_name = 'pems_seed_visit_request_form_v2';
+  AND LEFT(table_name, 10) = 'pems_seed_';
 
 -- Restore the session setting that existed before this full seed started.
 SET SESSION SQL_SAFE_UPDATES = @pems_previous_sql_safe_updates;
