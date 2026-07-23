@@ -2706,7 +2706,9 @@ CREATE TABLE gallery_areas (
   campus_id BIGINT UNSIGNED NOT NULL,
 
   area_name VARCHAR(150) NOT NULL,
-  area_name_en VARCHAR(150) NULL COMMENT 'Tên tiếng Anh đã dịch và lưu trong DB',
+  -- 255 (not 150): the auto-translated English name can be longer than the Vietnamese source
+  -- and must NEVER be truncated (translation is marked FAILED instead of cutting the string).
+  area_name_en VARCHAR(255) NULL COMMENT 'Tên tiếng Anh đã dịch và lưu trong DB',
   area_key VARCHAR(180) NOT NULL,
   cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện khu vực/tòa/khu lớn',
 
@@ -2749,7 +2751,9 @@ CREATE TABLE gallery_locations (
   area_id BIGINT UNSIGNED NOT NULL,
 
   location_name VARCHAR(150) NOT NULL,
-  location_name_en VARCHAR(150) NULL COMMENT 'Tên tiếng Anh đã dịch và lưu trong DB',
+  -- 255 (not 150): the auto-translated English name can be longer than the Vietnamese source
+  -- and must NEVER be truncated (translation is marked FAILED instead of cutting the string).
+  location_name_en VARCHAR(255) NULL COMMENT 'Tên tiếng Anh đã dịch và lưu trong DB',
   location_key VARCHAR(180) NOT NULL,
   cover_file_id BIGINT UNSIGNED NULL COMMENT 'Ảnh đại diện vị trí cụ thể',
 
@@ -2792,7 +2796,9 @@ CREATE TABLE gallery_items (
   location_id BIGINT UNSIGNED NOT NULL,
 
   title VARCHAR(255) NOT NULL,
-  title_en VARCHAR(255) NULL COMMENT 'Tiêu đề tiếng Anh đã dịch và lưu trong DB',
+  -- 500 (not 255): the auto-translated English title can be longer than the Vietnamese source
+  -- and must NEVER be truncated (translation is marked FAILED instead of cutting the string).
+  title_en VARCHAR(500) NULL COMMENT 'Tiêu đề tiếng Anh đã dịch và lưu trong DB',
   -- Bilingual descriptions live in gallery_item_contents (1:1); the legacy single `description`
   -- column was removed when the manual bilingual audio mechanism replaced EverAI TTS.
   item_type ENUM('MEDIA','VISIT_DELEGATION') NOT NULL DEFAULT 'MEDIA'
