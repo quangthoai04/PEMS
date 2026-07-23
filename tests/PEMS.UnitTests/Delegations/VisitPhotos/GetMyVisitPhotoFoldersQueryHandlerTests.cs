@@ -100,13 +100,34 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
         Assert.DoesNotContain(page.Items, i => i.DelegationName == "Đoàn khách kiểm thử");
     }
 
+    /// <summary>
+    /// READING the folder list is deliberately broader than UPLOADING. The face-scan / photo-tagging
+    /// workflow needs the Host (Staff) to open the đoàn's folder, so a Staff host sees the instances they
+    /// host. Uploading stays Student-only — that stricter rule is enforced by
+    /// <c>VisitPhotoStudentScope</c> and by the DB trigger, and is covered in
+    /// <c>UploadVisitInstancePhotosCommandHandlerTests</c>.
+    /// </summary>
     [Fact]
-    public async Task NonStudentRole_IsForbidden()
+    public async Task StaffHost_SeesHostedInstances()
     {
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db);
         var handler = new GetMyVisitPhotoFoldersQueryHandler(
             db, new FakeDelegationsCurrentUser(), Mock.Of<IVisitFormReadService>());
+
+        var page = await handler.Handle(new GetMyVisitPhotoFoldersQuery(), default);
+
+        Assert.All(page.Items, i => Assert.Equal(DelegationsTestData.VisitInstanceId, i.VisitInstanceId));
+    }
+
+    [Fact]
+    public async Task UnauthenticatedCaller_IsForbidden()
+    {
+        var db = DelegationsTestDbContext.Create();
+        DelegationsTestData.SeedBase(db);
+        var handler = new GetMyVisitPhotoFoldersQueryHandler(
+            db, new FakeDelegationsCurrentUser { IsAuthenticated = false, UserId = null },
+            Mock.Of<IVisitFormReadService>());
 
         await Assert.ThrowsAsync<ForbiddenException>(
             () => handler.Handle(new GetMyVisitPhotoFoldersQuery(), default));
