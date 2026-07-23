@@ -89,6 +89,25 @@ Không mở lại. Trạng thái áp dụng:
 
 **Runtime binding:** cả 4 secret đọc qua `IConfiguration` section → env var override (`JwtSettings__SecretKey`, `Smtp__Password`, `GoogleDrive__ClientSecret`, `GoogleDrive__RefreshToken`) hoạt động không cần sửa consumer.
 
+#### Hậu quả phát sinh và bản sửa (`5371aaaf`)
+
+Bỏ JWT key khỏi `appsettings.json` để lại giá trị là **chuỗi rỗng**, không phải `null` — nên hai guard `?? throw` sẵn có **không kích hoạt**. Hệ quả đo được bằng cách chạy API thật và gọi `/api/auth/login`:
+
+```
+STATUS 500 — IDX10703: Cannot create a 'SymmetricSecurityKey', key length is zero.
+```
+
+App vẫn khởi động, nhưng mọi request chạm authentication đều 500. Đúng kiểu "âm thầm dùng giá trị yếu" mà validator lẽ ra phải chặn.
+
+**Đã sửa:**
+- Ngoài Production: sinh key ngẫu nhiên 32 byte cho tiến trình khi chưa cấu hình + log warning (token không sống qua restart).
+- Chèn **ngay sau `CreateBuilder`**, trước mọi đăng ký service — `AddJwtAuthentication` chụp giá trị lúc registration, đặt muộn hơn thì handler vẫn giữ chuỗi rỗng (đây chính là lỗi ở lần sửa đầu).
+- Production: vẫn từ chối khởi động khi thiếu key, **và** khi key ngắn hơn 32 byte (HS256 ném IDX10653 dưới 128 bit).
+
+**Xác minh lại bằng chạy thật:** `IDX10703` biến mất; sai mật khẩu → `401 INVALID_CREDENTIALS`; đúng mật khẩu → đi tiếp tới business rule. Test: 9 → **13**.
+
+> ⚠️ `Smtp:Enabled` giờ mặc định `false`. Trước đây là `true` kèm password thật → dev/test có thể gửi email thật. Muốn bật lại: `Smtp__Enabled=true` + `Smtp__Password=...`.
+
 **Test:** `SecretConfigurationValidatorTests` — **9 test**, gồm test chứng minh thông báo lỗi **không echo giá trị**.
 
 > ⛔ **BLOCKER:** Rotation là thao tác ngoài repository. Chủ dự án phải tự rotate Gmail app password, JWT secret, Google OAuth client secret + refresh token. Audit đã xác định credential nằm trong **16 revision lịch sử** trên **5 remote branch** → **history rewrite KHÔNG cứu được**; rotate là bắt buộc. Không tự rotate, không tự sinh secret mới vào repo, không rewrite history (§5).
