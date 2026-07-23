@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -34,6 +33,7 @@ public sealed class UpdateGalleryItemCommandHandler
     private readonly IFileUploadService _fileUpload;
     private readonly IGalleryExternalMediaService _externalMedia;
     private readonly IGoogleDriveStorageService _drive;
+    private readonly IGalleryTranslationCoordinator _translator;
     private readonly IDateTimeService _clock;
     private readonly ILogger<UpdateGalleryItemCommandHandler> _logger;
 
@@ -43,6 +43,7 @@ public sealed class UpdateGalleryItemCommandHandler
         IFileUploadService fileUpload,
         IGalleryExternalMediaService externalMedia,
         IGoogleDriveStorageService drive,
+        IGalleryTranslationCoordinator translator,
         IDateTimeService clock,
         ILogger<UpdateGalleryItemCommandHandler> logger)
     {
@@ -51,6 +52,7 @@ public sealed class UpdateGalleryItemCommandHandler
         _fileUpload = fileUpload;
         _externalMedia = externalMedia;
         _drive = drive;
+        _translator = translator;
         _clock = clock;
         _logger = logger;
     }
@@ -103,6 +105,43 @@ public sealed class UpdateGalleryItemCommandHandler
             YouTubeUrlParser.Parse(url);
 
         var now = _clock.VietnamNow;
+
+        // Title translation decision (§15). A previewed (AUTO_PREVIEW + matching hash) or manual EN is
+        // reused as-is — the provider is NOT called again; a stale preview throws PREVIEW_STALE here,
+        // BEFORE any upload. With no usable client EN the provider runs ONLY when the normalized
+        // Vietnamese title actually changed (BR §6.4) — media/audio/description/location/type edits
+        // never hit the provider. Called before the upload block; the coordinator never throws for
+        // provider errors, so a translation failure can never trip the compensation path — the update
+        // still saves with EN = NULL / FAILED.
+        var newTitle = TranslationSourceNormalizer.Normalize(request.Title);
+        var titleChanged = !string.Equals(
+            TranslationSourceNormalizer.Normalize(item.Title), newTitle, StringComparison.Ordinal);
+        var resolvedTitle = GalleryPreviewedTranslation.TryResolve(
+            newTitle, request.TitleEn, request.TitleTranslationOrigin,
+            request.TitleTranslationSourceHash, GalleryTranslationLimits.TitleEnMaxLength);
+        GalleryTranslationResult? titleTranslation = null;
+        var titleSource = GalleryTranslationSources.Auto;
+        if (resolvedTitle is not null)
+        {
+            // Apply only when something actually differs — an untouched VI + identical READY EN keeps
+            // its stored metadata exactly (§15: "VI và EN không đổi → không sửa translation metadata").
+            var enUnchanged = !titleChanged
+                && item.TranslationStatus == GalleryTranslationStatuses.Ready
+                && string.Equals(item.TitleEn, resolvedTitle.Result.TranslatedText, StringComparison.Ordinal);
+            if (!enUnchanged)
+            {
+                titleTranslation = resolvedTitle.Result;
+                titleSource = resolvedTitle.TranslationSource;
+            }
+        }
+        else if (titleChanged)
+        {
+            var titleTranslations = await _translator.TranslateAsync(
+                new[] { new GalleryTranslationRequest(newTitle, GalleryTranslationLimits.TitleEnMaxLength) },
+                cancellationToken);
+            titleTranslation = titleTranslations[0];
+        }
+
         var keepSet = new HashSet<ulong>((request.KeepMediaIds ?? Array.Empty<long>()).Select(id => (ulong)id));
 
         var liveMedia = item.Media.Where(m => m.DeletedAt == null).ToList();
@@ -257,7 +296,12 @@ public sealed class UpdateGalleryItemCommandHandler
                 item.Content.UpdatedBy = actorId;
             }
 
-            item.Title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
+            item.Title = newTitle;
+            // A changed title must never keep the old English translation (stale meaning) — apply the
+            // fresh/previewed/manual result (READY) or clear EN + mark FAILED. An unchanged title with
+            // no EN edit keeps ALL metadata.
+            if (titleTranslation is not null)
+                GalleryTranslationApplier.Apply(item, titleTranslation, now, titleSource);
             item.LocationId = (ulong)request.LocationId;
             item.ItemType = itemType;
             item.MediaKind = mediaKind;
@@ -279,6 +323,9 @@ public sealed class UpdateGalleryItemCommandHandler
                         NewValueText = JsonSerializer.Serialize(new
                         {
                             title = item.Title, locationId = request.LocationId, itemType, mediaKind,
+                            titleChanged,
+                            translationStatus = titleTranslation is not null ? item.TranslationStatus : null,
+                            hasEnglishTitle = item.TitleEn != null,
                             descriptionViChanged, descriptionEnChanged,
                             oldAudioViFileId, newAudioViFileId = audioViFileId,
                             oldAudioEnFileId, newAudioEnFileId = audioEnFileId,
@@ -303,7 +350,8 @@ public sealed class UpdateGalleryItemCommandHandler
         await GalleryFileCleanup.RemoveUploadedFilesAsync(_db, _drive, _logger, replacedAudioFileIds, cancellationToken);
 
         return await GalleryDetailBuilder.BuildAsync(
-            _db, item.GalleryItemId, cancellationToken, "Đã cập nhật Gallery Item.");
+            _db, item.GalleryItemId, cancellationToken, "Đã cập nhật Gallery Item.",
+            titleTranslation is { Success: false } ? GalleryTranslationMessages.TranslationFailedWarning : null);
     }
 
     /// <summary>Uploads one bilingual audio recording, mapping upload-policy rejections to a language-specific code.</summary>

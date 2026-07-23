@@ -84,6 +84,12 @@ export const API_ENDPOINTS = {
     locationCreate: '/galleries/creategallerylocation',
     locationUpdate: '/galleries/updategallerylocation',
     locationChangeStatus: '/galleries/changegallerylocationstatus',
+    // Authoritative single-location detail for the edit modal (bilingual names + covers).
+    locationDetail: '/galleries/gallerylocationdetails',
+    // "Dịch sang EN" preview — one Google call, nothing persisted.
+    locationPreviewTranslation: '/galleries/previewlocationtranslation',
+    // "Dịch sang EN" preview for the gallery item title — DB reuse when unchanged, nothing persisted.
+    itemPreviewTranslation: '/galleries/previewitemtranslation',
   },
   files: {
     download: (id: string | number) => `/files/${id}/download`,

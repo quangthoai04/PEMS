@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -33,6 +32,7 @@ public sealed class AddGalleryItemCommandHandler
     private readonly IFileUploadService _fileUpload;
     private readonly IGalleryExternalMediaService _externalMedia;
     private readonly IGoogleDriveStorageService _drive;
+    private readonly IGalleryTranslationCoordinator _translator;
     private readonly IDateTimeService _clock;
     private readonly ILogger<AddGalleryItemCommandHandler> _logger;
 
@@ -42,6 +42,7 @@ public sealed class AddGalleryItemCommandHandler
         IFileUploadService fileUpload,
         IGalleryExternalMediaService externalMedia,
         IGoogleDriveStorageService drive,
+        IGalleryTranslationCoordinator translator,
         IDateTimeService clock,
         ILogger<AddGalleryItemCommandHandler> logger)
     {
@@ -50,6 +51,7 @@ public sealed class AddGalleryItemCommandHandler
         _fileUpload = fileUpload;
         _externalMedia = externalMedia;
         _drive = drive;
+        _translator = translator;
         _clock = clock;
         _logger = logger;
     }
@@ -88,7 +90,32 @@ public sealed class AddGalleryItemCommandHandler
         await GalleryLocationGuard.LoadActiveLocationInCurrentCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
 
-        var title = Regex.Replace(request.Title?.Trim() ?? string.Empty, @"\s+", " ");
+        var title = TranslationSourceNormalizer.Normalize(request.Title);
+
+        // A previewed (AUTO_PREVIEW + matching hash) or manual EN title is reused as-is — the provider
+        // is NOT called again (§11: preview + save = ONE Google call total). A stale preview throws
+        // PREVIEW_STALE here, BEFORE any upload. No usable client EN → legacy AUTO_ON_SAVE below.
+        var resolvedTitle = GalleryPreviewedTranslation.TryResolve(
+            title, request.TitleEn, request.TitleTranslationOrigin,
+            request.TitleTranslationSourceHash, GalleryTranslationLimits.TitleEnMaxLength);
+
+        // Auto-translate ONLY the title (never descriptions/captions/audio — those stay manual). Called
+        // BEFORE any upload; the coordinator never throws for provider errors, so a translation failure
+        // can never trip the compensation path below — the item is still created with EN = NULL / FAILED.
+        GalleryTranslationResult titleTranslation;
+        var titleSource = GalleryTranslationSources.Auto;
+        if (resolvedTitle is not null)
+        {
+            titleTranslation = resolvedTitle.Result;
+            titleSource = resolvedTitle.TranslationSource;
+        }
+        else
+        {
+            var titleTranslations = await _translator.TranslateAsync(
+                new[] { new GalleryTranslationRequest(title, GalleryTranslationLimits.TitleEnMaxLength) },
+                cancellationToken);
+            titleTranslation = titleTranslations[0];
+        }
 
         // Track every Drive-backed / metadata files row created in this request so we can compensate
         // (delete Drive object + files row) if a later DB step fails.
@@ -146,6 +173,7 @@ public sealed class AddGalleryItemCommandHandler
                     CreatedBy = actorId,
                 },
             };
+            GalleryTranslationApplier.Apply(item, titleTranslation, now, titleSource);
 
             uint order = 1;
             for (var i = 0; i < media.Count; i++)
@@ -188,6 +216,8 @@ public sealed class AddGalleryItemCommandHandler
                             hasVietnameseContent = true, hasEnglishContent = true,
                             audioViFileId, audioEnFileId,
                             mediaCount = media.Count, uploadCount = files.Count, youtubeCount = youtubeUrls.Count,
+                            translationStatus = item.TranslationStatus,
+                            hasEnglishTitle = item.TitleEn != null,
                         }),
                     },
                 },
@@ -196,7 +226,8 @@ public sealed class AddGalleryItemCommandHandler
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GalleryDetailBuilder.BuildAsync(
-                _db, item.GalleryItemId, cancellationToken, "Đã tạo Gallery Item với đầy đủ nội dung song ngữ.");
+                _db, item.GalleryItemId, cancellationToken, "Đã tạo Gallery Item với đầy đủ nội dung song ngữ.",
+                titleTranslation.Success ? null : GalleryTranslationMessages.TranslationFailedWarning);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

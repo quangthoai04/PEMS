@@ -16,7 +16,8 @@ namespace PEMS.Application.Galleries.Common;
 internal static class GalleryLocationDetailBuilder
 {
     public static async Task<GalleryLocationDetailDto> BuildAsync(
-        IApplicationDbContext db, ulong locationId, CancellationToken ct, string? message = null)
+        IApplicationDbContext db, ulong locationId, CancellationToken ct, string? message = null,
+        string? translationWarning = null)
     {
         var head = await db.GalleryLocations.AsNoTracking()
             .Where(l => l.LocationId == locationId)
@@ -25,8 +26,11 @@ internal static class GalleryLocationDetailBuilder
                 l.LocationId,
                 l.AreaId,
                 AreaName = l.Area.AreaName,
+                AreaNameEn = l.Area.AreaNameEn,
+                AreaStatus = l.Area.Status,
                 AreaCoverFileId = l.Area.CoverFileId,
                 l.LocationName,
+                l.LocationNameEn,
                 LocationCoverFileId = l.CoverFileId,
                 l.Status,
                 l.CreatedAt,
@@ -73,6 +77,21 @@ internal static class GalleryLocationDetailBuilder
             MediaCount = items.Count(i => i.ItemType == GalleryItemTypes.Media),
             VisitDelegationCount = items.Count(i => i.ItemType == GalleryItemTypes.VisitDelegation),
             Message = message,
+            TranslationWarning = translationWarning,
+            Area = new GalleryAreaSummaryDto
+            {
+                AreaId = head.AreaId,
+                AreaName = head.AreaName,
+                AreaNameEn = head.AreaNameEn,
+                Status = head.AreaStatus,
+            },
+            Location = new GalleryLocationSummaryDto
+            {
+                LocationId = head.LocationId,
+                LocationName = head.LocationName,
+                LocationNameEn = head.LocationNameEn,
+                Status = head.Status,
+            },
         };
     }
 }

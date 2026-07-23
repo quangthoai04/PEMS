@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { galleryManagementApi } from '../api/galleryManagementApi';
 import { getGalleryErrorMessage } from '../api/galleryError';
 import type {
+  GalleryAreaOption,
+  GalleryFilterArea,
   GalleryFilterOptions,
   GalleryListItem,
   GalleryListQueryParams,
@@ -64,33 +66,65 @@ export function useGalleryList(
   };
 }
 
+export interface UseGalleryFilterOptionsResult {
+  options: GalleryFilterOptions | null;
+  areas: GalleryAreaOption[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
+  upsertArea: (area: GalleryFilterArea) => void;
+}
+
 /**
- * Loads the area + location reference data for the caller's campus once (filters + upload picker).
+ * Loads the area + location reference data for the caller's campus (filters + upload picker).
+ * Exposes `refetch` so a freshly created/renamed area shows up in the dropdowns WITHOUT an F5, and
+ * `upsertArea` for an optimistic insert/update straight from a create/update response.
+ * Stale responses are dropped (last request wins); a failed refresh keeps the current data.
  */
-export function useGalleryFilterOptions(enabled = true) {
+export function useGalleryFilterOptions(enabled = true): UseGalleryFilterOptionsResult {
   const [options, setOptions] = useState<GalleryFilterOptions | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const requestIdRef = useRef(0);
+
+  const refetch = useCallback(async () => {
     if (!enabled) return;
-    let cancelled = false;
+    const requestId = ++requestIdRef.current;
     setLoading(true);
-    (async () => {
-      try {
-        const result = await galleryManagementApi.getFilterOptions();
-        if (!cancelled) setOptions(result);
-      } catch {
-        if (!cancelled) setOptions(null);
-      } finally {
-        if (!cancelled) setLoading(false);
+    setError(null);
+
+    try {
+      const result = await galleryManagementApi.getFilterOptions();
+      if (requestId === requestIdRef.current) setOptions(result);
+    } catch (err) {
+      // Keep whatever we already have — an options refresh failure must not blank the dropdowns.
+      if (requestId === requestIdRef.current) {
+        setError(getGalleryErrorMessage(err, 'Không tải được danh sách khu vực. Vui lòng thử lại.'));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
   }, [enabled]);
 
-  return { options, areas: options?.areas ?? [], loading };
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  /** Inserts or updates one area (matched by areaId) without waiting for the next refetch. */
+  const upsertArea = useCallback((area: GalleryFilterArea) => {
+    setOptions((prev) => {
+      const areas: GalleryAreaOption[] = prev?.areas ?? [];
+      const exists = areas.some((a) => a.areaId === area.areaId);
+      const next = exists
+        // Merge so fields the summary payload doesn't carry (cover, locations) are preserved.
+        ? areas.map((a) => (a.areaId === area.areaId ? { ...a, ...area } : a))
+        : [...areas, { ...area, locations: [] }];
+      return { ...(prev ?? {}), areas: next };
+    });
+  }, []);
+
+  return { options, areas: options?.areas ?? [], loading, error, refetch, upsertArea };
 }
 
 interface UseLocationListResult {

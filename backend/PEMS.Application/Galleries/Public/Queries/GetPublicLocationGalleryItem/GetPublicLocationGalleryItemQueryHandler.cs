@@ -49,12 +49,19 @@ public sealed class GetPublicLocationGalleryItemsQueryHandler
                 City = i.Location.Area.Campus.City,
                 AreaId = i.Location.AreaId,
                 AreaName = i.Location.Area.AreaName,
+                AreaNameEn = i.Location.Area.AreaNameEn,
+                AreaTranslationStatus = i.Location.Area.TranslationStatus,
                 LocationId = i.LocationId,
                 LocationName = i.Location.LocationName,
+                LocationNameEn = i.Location.LocationNameEn,
+                LocationTranslationStatus = i.Location.TranslationStatus,
                 i.GalleryItemId,
                 i.Title,
-                // Public grid preview is the Vietnamese description (public default language).
+                i.TitleEn,
+                ItemTranslationStatus = i.TranslationStatus,
+                // Grid preview: VI description (default) + manually entered EN description for EN mode.
                 Description = i.Content != null ? i.Content.DescriptionVi : string.Empty,
+                DescriptionEn = i.Content != null ? i.Content.DescriptionEn : string.Empty,
                 i.MediaKind,
             })
             .ToListAsync(cancellationToken);
@@ -110,7 +117,12 @@ public sealed class GetPublicLocationGalleryItemsQueryHandler
             {
                 GalleryItemId = i.GalleryItemId,
                 Title = i.Title,
+                TitleEn = PublicGalleryTranslation.EnOrNull(i.ItemTranslationStatus, i.TitleEn),
                 DescriptionPreview = BuildPreview(i.Description),
+                // Same preview-cut logic on the manual EN description; null when the EN text is blank.
+                DescriptionPreviewEn = string.IsNullOrWhiteSpace(i.DescriptionEn)
+                    ? null
+                    : BuildPreview(i.DescriptionEn),
                 MediaKind = i.MediaKind,
                 PrimaryMedia = primaryByItem.TryGetValue(i.GalleryItemId, out var pm) ? pm : null,
             })
@@ -130,8 +142,18 @@ public sealed class GetPublicLocationGalleryItemsQueryHandler
                 CampusName = head.CampusName,
                 City = head.City,
             },
-            Area = new PublicGalleryAreaSummaryDto { AreaId = head.AreaId, AreaName = head.AreaName },
-            Location = new PublicGalleryLocationSummaryDto { LocationId = head.LocationId, LocationName = head.LocationName },
+            Area = new PublicGalleryAreaSummaryDto
+            {
+                AreaId = head.AreaId,
+                AreaName = head.AreaName,
+                AreaNameEn = PublicGalleryTranslation.EnOrNull(head.AreaTranslationStatus, head.AreaNameEn),
+            },
+            Location = new PublicGalleryLocationSummaryDto
+            {
+                LocationId = head.LocationId,
+                LocationName = head.LocationName,
+                LocationNameEn = PublicGalleryTranslation.EnOrNull(head.LocationTranslationStatus, head.LocationNameEn),
+            },
             Items = gridItems,
         };
     }

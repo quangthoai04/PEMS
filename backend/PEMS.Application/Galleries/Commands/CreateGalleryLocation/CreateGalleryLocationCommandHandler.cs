@@ -20,6 +20,11 @@ namespace PEMS.Application.Galleries.Commands.CreateGalleryLocation;
 /// Names are normalized to keys so near-duplicates ("TÒA DELTA" vs "toa delta") are rejected (HTTP 409).
 /// A location always requires a cover image; a brand-new area requires its own cover image too. New
 /// areas/locations default to ACTIVE; no gallery item is created.
+/// Translation: an EN carried by the payload (a "Dịch sang EN" preview with a matching source hash, or a
+/// MANUAL edit) is persisted WITHOUT calling the provider again; a stale preview fails with
+/// GALLERY_TRANSLATION_PREVIEW_STALE. Names with no usable EN are auto-translated in ONE batch (new area
+/// + location = one provider request); a provider failure never blocks the create — the entity is saved
+/// with EN = NULL / FAILED and the response carries a translation warning.
 /// </summary>
 public sealed class CreateGalleryLocationCommandHandler
     : IRequestHandler<CreateGalleryLocationCommand, GalleryLocationDetailDto>
@@ -27,17 +32,20 @@ public sealed class CreateGalleryLocationCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IFileUploadService _fileUpload;
+    private readonly IGalleryTranslationCoordinator _translator;
     private readonly IDateTimeService _clock;
 
     public CreateGalleryLocationCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IFileUploadService fileUpload,
+        IGalleryTranslationCoordinator translator,
         IDateTimeService clock)
     {
         _db = db;
         _currentUser = currentUser;
         _fileUpload = fileUpload;
+        _translator = translator;
         _clock = clock;
     }
 
@@ -62,6 +70,14 @@ public sealed class CreateGalleryLocationCommandHandler
         ulong areaId;
         string? auditNewArea = null;
         ulong? auditAreaCoverFileId = null;
+        var translationFailed = false;
+        string? auditTranslationStatus = null;
+
+        // A previewed (AUTO_PREVIEW + matching hash) or manual EN is reused as-is — the provider is
+        // NOT called again for that field. A stale preview throws PREVIEW_STALE before any upload.
+        var resolvedLocation = GalleryPreviewedTranslation.TryResolve(
+            locationName, request.LocationNameEn, request.LocationTranslationOrigin,
+            request.LocationTranslationSourceHash, GalleryTranslationLimits.NameEnMaxLength);
 
         if (mode == GalleryLocationModes.ExistingArea)
         {
@@ -78,7 +94,17 @@ public sealed class CreateGalleryLocationCommandHandler
             var locationCoverId = await GalleryCoverImage.UploadAsync(
                 _fileUpload, request.LocationCoverImage, isArea: false, actorId, cancellationToken);
 
-            _db.GalleryLocations.Add(new GalleryLocation
+            // Translate ONLY the new location name (never re-translate the existing area) — and only
+            // when no previewed/manual EN was supplied. The coordinator never throws for provider
+            // errors — a failure saves VI with EN = NULL / FAILED.
+            var locationTranslation = resolvedLocation?.Result
+                ?? (await _translator.TranslateAsync(
+                    new[] { new GalleryTranslationRequest(locationName, GalleryTranslationLimits.NameEnMaxLength) },
+                    cancellationToken))[0];
+            translationFailed = !locationTranslation.Success;
+            auditTranslationStatus = locationTranslation.Status;
+
+            var newLocation = new GalleryLocation
             {
                 AreaId = areaId,
                 LocationName = locationName,
@@ -88,7 +114,10 @@ public sealed class CreateGalleryLocationCommandHandler
                 DisplayOrder = 0,
                 CreatedAt = now,
                 CreatedBy = actorId,
-            });
+            };
+            GalleryTranslationApplier.Apply(newLocation, locationTranslation, now,
+                resolvedLocation?.TranslationSource ?? GalleryTranslationSources.Auto);
+            _db.GalleryLocations.Add(newLocation);
             await _db.SaveChangesAsync(cancellationToken);
         }
         else if (mode == GalleryLocationModes.NewArea)
@@ -107,11 +136,33 @@ public sealed class CreateGalleryLocationCommandHandler
             // Reject a duplicate area key BEFORE uploading so the common case never orphans a Drive file.
             await GalleryLocationWriteGuard.EnsureAreaKeyFreeAsync(_db, campusId, areaKey, cancellationToken);
 
+            // Resolve the previewed/manual area EN BEFORE uploading (a stale preview must fail fast).
+            var resolvedArea = GalleryPreviewedTranslation.TryResolve(
+                areaName, request.NewAreaNameEn, request.AreaTranslationOrigin,
+                request.AreaTranslationSourceHash, GalleryTranslationLimits.NameEnMaxLength);
+
             var areaCoverId = await GalleryAreaCoverVideo.UploadAsync(
                 _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
             auditAreaCoverFileId = areaCoverId;
             var locationCoverId = await GalleryCoverImage.UploadAsync(
                 _fileUpload, request.LocationCoverImage, isArea: false, actorId, cancellationToken);
+
+            // Names with no usable previewed/manual EN → ONE batched provider request (deduplicated
+            // when equal). Failure never rolls anything back — FAILED metadata is saved.
+            var providerRequests = new List<GalleryTranslationRequest>();
+            if (resolvedArea is null)
+                providerRequests.Add(new GalleryTranslationRequest(areaName, GalleryTranslationLimits.NameEnMaxLength));
+            if (resolvedLocation is null)
+                providerRequests.Add(new GalleryTranslationRequest(locationName, GalleryTranslationLimits.NameEnMaxLength));
+            var providerResults = providerRequests.Count > 0
+                ? await _translator.TranslateAsync(providerRequests, cancellationToken)
+                : System.Array.Empty<GalleryTranslationResult>();
+            var providerIndex = 0;
+            var areaTranslation = resolvedArea?.Result ?? providerResults[providerIndex++];
+            var locationTranslation = resolvedLocation?.Result ?? providerResults[providerIndex];
+            translationFailed = !areaTranslation.Success || !locationTranslation.Success;
+            auditTranslationStatus = translationFailed
+                ? GalleryTranslationStatuses.Failed : GalleryTranslationStatuses.Ready;
 
             // Area + first location must commit together (UC §19.4).
             await using var tx = await _db.BeginTransactionAsync(cancellationToken);
@@ -130,10 +181,12 @@ public sealed class CreateGalleryLocationCommandHandler
                     CreatedAt = now,
                     CreatedBy = actorId,
                 };
+                GalleryTranslationApplier.Apply(area, areaTranslation, now,
+                    resolvedArea?.TranslationSource ?? GalleryTranslationSources.Auto);
                 _db.GalleryAreas.Add(area);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                _db.GalleryLocations.Add(new GalleryLocation
+                var newLocation = new GalleryLocation
                 {
                     AreaId = area.AreaId,
                     LocationName = locationName,
@@ -143,7 +196,10 @@ public sealed class CreateGalleryLocationCommandHandler
                     DisplayOrder = 0,
                     CreatedAt = now,
                     CreatedBy = actorId,
-                });
+                };
+                GalleryTranslationApplier.Apply(newLocation, locationTranslation, now,
+                    resolvedLocation?.TranslationSource ?? GalleryTranslationSources.Auto);
+                _db.GalleryLocations.Add(newLocation);
                 await _db.SaveChangesAsync(cancellationToken);
 
                 await tx.CommitAsync(cancellationToken);
@@ -187,6 +243,7 @@ public sealed class CreateGalleryLocationCommandHandler
                         areaCoverFileId = auditAreaCoverFileId,
                         areaCoverMediaType = auditAreaCoverFileId is null ? null : GalleryCoverMediaType.Video,
                         areaCoverFilePurpose = auditAreaCoverFileId is null ? null : FilePurposeDbValues.GalleryAreaCoverVideo,
+                        translationStatus = auditTranslationStatus,
                     }),
                 },
             },
@@ -195,6 +252,7 @@ public sealed class CreateGalleryLocationCommandHandler
         await _db.SaveChangesAsync(cancellationToken);
 
         return await GalleryLocationDetailBuilder.BuildAsync(
-            _db, created, cancellationToken, "Đã tạo vị trí mới.");
+            _db, created, cancellationToken, "Đã tạo vị trí mới.",
+            translationFailed ? GalleryTranslationMessages.TranslationFailedWarning : null);
     }
 }

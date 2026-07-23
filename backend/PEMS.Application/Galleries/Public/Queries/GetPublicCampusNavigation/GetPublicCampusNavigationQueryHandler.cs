@@ -58,16 +58,22 @@ public sealed class GetPublicCampusNavigationQueryHandler
             {
                 AreaId = i.Location.AreaId,
                 AreaName = i.Location.Area.AreaName,
+                AreaNameEn = i.Location.Area.AreaNameEn,
+                AreaTranslationStatus = i.Location.Area.TranslationStatus,
                 AreaDisplayOrder = i.Location.Area.DisplayOrder,
                 AreaCoverFileId = i.Location.Area.CoverFileId,
                 LocationId = i.LocationId,
                 LocationName = i.Location.LocationName,
+                LocationNameEn = i.Location.LocationNameEn,
+                LocationTranslationStatus = i.Location.TranslationStatus,
                 LocationDisplayOrder = i.Location.DisplayOrder,
                 LocationCoverFileId = i.Location.CoverFileId,
                 GalleryItemId = i.GalleryItemId,
                 ItemDisplayOrder = i.DisplayOrder,
                 CreatedAt = i.CreatedAt,
                 Title = i.Title,
+                TitleEn = i.TitleEn,
+                ItemTranslationStatus = i.TranslationStatus,
                 MediaKind = i.MediaKind,
             })
             .ToListAsync(cancellationToken);
@@ -112,13 +118,19 @@ public sealed class GetPublicCampusNavigationQueryHandler
                       .First());
 
         var areas = rows
-            .GroupBy(r => new { r.AreaId, r.AreaName, r.AreaDisplayOrder, r.AreaCoverFileId })
+            .GroupBy(r => new
+            {
+                r.AreaId, r.AreaName, r.AreaNameEn, r.AreaTranslationStatus,
+                r.AreaDisplayOrder, r.AreaCoverFileId,
+            })
             // Add-order: earliest-created area first, latest last (by auto-increment id).
             .OrderBy(g => g.Key.AreaId)
             .Select(g => new PublicGalleryAreaDto
             {
                 AreaId = g.Key.AreaId,
                 AreaName = g.Key.AreaName,
+                // EN only when READY + non-blank; otherwise null → frontend falls back to VI.
+                AreaNameEn = PublicGalleryTranslation.EnOrNull(g.Key.AreaTranslationStatus, g.Key.AreaNameEn),
                 DisplayOrder = (int)g.Key.AreaDisplayOrder,
                 AreaCoverFileId = g.Key.AreaCoverFileId,
                 AreaCoverUrl = PublicGalleryFileUrls.ContentOrNull(g.Key.AreaCoverFileId),
@@ -127,7 +139,11 @@ public sealed class GetPublicCampusNavigationQueryHandler
                 // represented by its lead item (the earliest-added item), and carry the total count so the
                 // UI can hint at a slider. Locations themselves are in add-order. Full list loads on click.
                 Locations = g
-                    .GroupBy(r => new { r.LocationId, r.LocationName, r.LocationDisplayOrder, r.LocationCoverFileId })
+                    .GroupBy(r => new
+                    {
+                        r.LocationId, r.LocationName, r.LocationNameEn, r.LocationTranslationStatus,
+                        r.LocationDisplayOrder, r.LocationCoverFileId,
+                    })
                     .OrderBy(lg => lg.Key.LocationId)
                     .Select(lg =>
                     {
@@ -138,11 +154,14 @@ public sealed class GetPublicCampusNavigationQueryHandler
                         {
                             LocationId = lg.Key.LocationId,
                             LocationName = lg.Key.LocationName,
+                            LocationNameEn = PublicGalleryTranslation.EnOrNull(
+                                lg.Key.LocationTranslationStatus, lg.Key.LocationNameEn),
                             DisplayOrder = (int)lg.Key.LocationDisplayOrder,
                             LocationCoverFileId = lg.Key.LocationCoverFileId,
                             LocationCoverUrl = PublicGalleryFileUrls.ContentOrNull(lg.Key.LocationCoverFileId),
                             GalleryItemId = lead.GalleryItemId,
                             Title = lead.Title,
+                            TitleEn = PublicGalleryTranslation.EnOrNull(lead.ItemTranslationStatus, lead.TitleEn),
                             MediaKind = lead.MediaKind,
                             PublicGalleryItemCount = lg.Count(),
                             // YouTube primary → its direct YouTube thumbnail (no content proxy); else the proxy.
@@ -164,16 +183,22 @@ public sealed class GetPublicCampusNavigationQueryHandler
     {
         public ulong AreaId { get; init; }
         public string AreaName { get; init; } = string.Empty;
+        public string? AreaNameEn { get; init; }
+        public string? AreaTranslationStatus { get; init; }
         public uint AreaDisplayOrder { get; init; }
         public ulong? AreaCoverFileId { get; init; }
         public ulong LocationId { get; init; }
         public string LocationName { get; init; } = string.Empty;
+        public string? LocationNameEn { get; init; }
+        public string? LocationTranslationStatus { get; init; }
         public uint LocationDisplayOrder { get; init; }
         public ulong? LocationCoverFileId { get; init; }
         public ulong GalleryItemId { get; init; }
         public uint ItemDisplayOrder { get; init; }
         public System.DateTime CreatedAt { get; init; }
         public string Title { get; init; } = string.Empty;
+        public string? TitleEn { get; init; }
+        public string? ItemTranslationStatus { get; init; }
         public string MediaKind { get; init; } = string.Empty;
     }
 
