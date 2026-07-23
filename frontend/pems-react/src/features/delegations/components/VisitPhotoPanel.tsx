@@ -368,9 +368,15 @@ export function VisitPhotoPanel({
                   className="max-w-full max-h-[88vh] object-contain rounded-lg shadow-2xl"
                 />
                 {showFaceTags && previewFaceDetections.length > 0 && (
-                  previewFaceDetections.map((detection) => {
+                  previewFaceDetections.map((detection, idx) => {
                     const name = detection.guestFullName;
-                    const ignored = detection.reviewStatus === 'IGNORED';
+                    // Bỏ hoàn toàn nhãn cho khuôn mặt chưa được gán tên
+                    if (!name) return null;
+
+                    const isTopEdge = detection.boundingBoxY < 0.2;
+                    // Stem height 24px, 44px, 64px vươn cao hẳn lên khỏi vị trí mặt người đằng sau
+                    const stemHeight = 24 + (idx % 3) * 20;
+
                     return (
                       <div
                         key={detection.faceDetectionId}
@@ -380,19 +386,29 @@ export function VisitPhotoPanel({
                           width: `${detection.boundingBoxWidth * 100}%`,
                           height: `${detection.boundingBoxHeight * 100}%`,
                         }}
-                        className={`absolute border-2 pointer-events-none rounded-md z-20 ${
-                          ignored
-                            ? 'border-gray-400 bg-gray-400/20'
-                            : name
-                              ? 'border-emerald-500 bg-emerald-500/20'
-                              : 'border-orange-500 bg-orange-500/20'
-                        }`}
+                        className="absolute border-[1.5px] border-emerald-400 bg-emerald-400/10 pointer-events-none rounded-sm z-20"
                       >
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 whitespace-nowrap z-30">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shadow-md text-white ${
-                            ignored ? 'bg-gray-600' : name ? 'bg-emerald-600' : 'bg-orange-600'
-                          }`}>
-                            {ignored ? 'Đã bỏ qua' : name || 'Chưa gán'}
+                        {/* Chấm ghim ở viền khung mặt */}
+                        <div className={`absolute left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400 ${isTopEdge ? '-bottom-0.5' : '-top-0.5'}`} />
+
+                        {/* Đường kẻ nối siêu mảnh 1px vươn cao */}
+                        <div
+                          style={{ height: `${stemHeight}px` }}
+                          className={`absolute left-1/2 -translate-x-1/2 w-[1px] bg-emerald-400/90 pointer-events-none ${
+                            isTopEdge ? 'top-full' : 'bottom-full'
+                          }`}
+                        />
+
+                        {/* Thẻ tên siêu nhỏ gọn, phong cách pill tối màu mỏng nhẹ */}
+                        <div
+                          style={isTopEdge ? { top: `calc(100% + ${stemHeight}px)` } : { bottom: `calc(100% + ${stemHeight}px)` }}
+                          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30"
+                        >
+                          <span
+                            className="px-1.5 py-0.5 rounded-full text-[7px] sm:text-[8px] font-semibold leading-none tracking-tight block max-w-[80px] sm:max-w-[95px] truncate bg-emerald-950/90 text-emerald-200 border border-emerald-400/50 shadow-md backdrop-blur-xs"
+                            title={name}
+                          >
+                            {name}
                           </span>
                         </div>
                       </div>
