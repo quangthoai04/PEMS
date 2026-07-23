@@ -15,7 +15,6 @@ namespace PEMS.Application.Delegations.Queries.ExportScheduleReport;
 /// </summary>
 public static class ScheduleReportDataBuilder
 {
-    private const string ExternalSupport = "EXTERNAL_SUPPORT";
     private const string DefaultLocation = "FPT University";
 
     public static async Task<ScheduleReportDto> BuildAsync(

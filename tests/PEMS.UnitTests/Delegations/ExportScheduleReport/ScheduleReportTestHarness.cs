@@ -444,6 +444,55 @@ public static class ScheduleReportTestData
         db.SaveChanges();
         return (instance, host);
     }
+
+    /// <summary>
+    /// One MIXED request spanning three campuses, each with its own delegation name, purpose,
+    /// operational contact and guest. Nothing is shared between them, so a report that borrows from a
+    /// sibling — or from the request row — produces a value that provably belongs to another campus.
+    ///
+    /// Returns the three instances ordered A, B, C.
+    /// </summary>
+    public static IReadOnlyList<VisitRequestCampus> SeedMixedThreeCampuses(ScheduleReportTestDbContext db)
+    {
+        db.Campuses.AddRange(CreateCampus(1), CreateCampus(2), CreateCampus(3));
+        db.Roles.AddRange(
+            CreateRole(StaffRoleId, RoleCodes.Staff),
+            CreateRole(DepartmentRoleId, RoleCodes.Department),
+            CreateRole(VisitorRoleId, RoleCodes.Visitor),
+            CreateRole(HoRoleId, RoleCodes.Ho));
+
+        var icDept = CreateDepartment(900);
+        db.Departments.Add(icDept);
+        db.Users.Add(CreateUser(HostUserId, StaffRoleId, UserSubRoles.Staff, icDept.DepartmentId));
+
+        var request = CreateVisitRequest();
+        request.HasMixedCampusDetails = true;
+        db.VisitRequests.Add(request);
+
+        var tags = new[] { "A", "B", "C" };
+        var instances = new List<VisitRequestCampus>();
+        for (var i = 0; i < tags.Length; i++)
+        {
+            var tag = tags[i];
+            var instance = CreateVisitInstance(
+                visitInstanceId: (ulong)(10 + i),
+                campusId: (ulong)(i + 1),
+                delegationName: $"Đoàn {tag}",
+                purpose: $"Mục đích {tag}");
+            instance.FormDetail!.OperationalContactFullName = $"Đầu mối {tag}";
+            instances.Add(instance);
+            db.VisitRequestCampuses.Add(instance);
+
+            // One guest per campus, linked ONLY to that campus.
+            var guestId = (ulong)(i + 1);
+            db.VisitGuestMembers.Add(CreateGuestMember(guestId, $"Khách {tag}"));
+            db.VisitInstanceGuestMembers.Add(
+                CreateInstanceGuestLink(guestId, visitInstanceId: instance.VisitInstanceId));
+        }
+
+        db.SaveChanges();
+        return instances;
+    }
 }
 
 /// <summary>Mutable current-user stub defaulting to the instance host of the fixtures.</summary>
