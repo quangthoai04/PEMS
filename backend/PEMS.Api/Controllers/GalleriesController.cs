@@ -7,13 +7,18 @@ using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Galleries.Commands.AddGalleryItem;
+using PEMS.Application.Galleries.Commands.BackfillGalleryTranslations;
 using PEMS.Application.Galleries.Commands.ChangeGalleryItemStatus;
 using PEMS.Application.Galleries.Commands.ChangeGalleryLocationStatus;
 using PEMS.Application.Galleries.Commands.CreateGalleryLocation;
+using PEMS.Application.Galleries.Commands.PreviewGalleryItemTranslation;
+using PEMS.Application.Galleries.Commands.PreviewGalleryLocationTranslation;
+using PEMS.Application.Galleries.Commands.RetryGalleryTranslation;
 using PEMS.Application.Galleries.Commands.UpdateGalleryItem;
 using PEMS.Application.Galleries.Commands.UpdateGalleryLocation;
 using PEMS.Application.Galleries.Common;
 using PEMS.Application.Galleries.Queries.GetGalleryFilterOptions;
+using PEMS.Application.Galleries.Queries.GetGalleryLocationDetail;
 using PEMS.Application.Galleries.Queries.SearchGalleryItems;
 using PEMS.Application.Galleries.Queries.ViewGalleryItemDetails;
 using PEMS.Application.Galleries.Queries.ViewGalleryItemList;
@@ -64,6 +69,9 @@ namespace PEMS.Api.Controllers
         [RequestFormLimits(MultipartBodyLengthLimit = GalleryUploadByteLimit)]
         public async Task<IActionResult> AddGalleryItem(
             [FromForm] string title,
+            [FromForm] string? titleEn,
+            [FromForm] string? titleTranslationOrigin,
+            [FromForm] string? titleTranslationSourceHash,
             [FromForm] string descriptionVi,
             [FromForm] string descriptionEn,
             [FromForm] long locationId,
@@ -79,6 +87,9 @@ namespace PEMS.Api.Controllers
             var buffered = await BufferFilesAsync(files, cancellationToken);
             var command = new AddGalleryItemCommand(
                 title,
+                titleEn,
+                titleTranslationOrigin,
+                titleTranslationSourceHash,
                 descriptionVi,
                 await BufferOneAsync(audioVi, cancellationToken),
                 descriptionEn,
@@ -96,6 +107,9 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> UpdateGalleryItem(
             [FromForm] long galleryItemId,
             [FromForm] string title,
+            [FromForm] string? titleEn,
+            [FromForm] string? titleTranslationOrigin,
+            [FromForm] string? titleTranslationSourceHash,
             [FromForm] string descriptionVi,
             [FromForm] string descriptionEn,
             [FromForm] long locationId,
@@ -113,6 +127,9 @@ namespace PEMS.Api.Controllers
             var command = new UpdateGalleryItemCommand(
                 galleryItemId,
                 title,
+                titleEn,
+                titleTranslationOrigin,
+                titleTranslationSourceHash,
                 descriptionVi,
                 descriptionEn,
                 await BufferOneAsync(newAudioVi, cancellationToken),
@@ -149,7 +166,13 @@ namespace PEMS.Api.Controllers
             [FromForm] string mode,
             [FromForm] long? areaId,
             [FromForm] string? newAreaName,
+            [FromForm] string? newAreaNameEn,
+            [FromForm] string? areaTranslationOrigin,
+            [FromForm] string? areaTranslationSourceHash,
             [FromForm] string locationName,
+            [FromForm] string? locationNameEn,
+            [FromForm] string? locationTranslationOrigin,
+            [FromForm] string? locationTranslationSourceHash,
             IFormFile? areaCoverVideo,
             IFormFile? locationCoverImage,
             CancellationToken cancellationToken)
@@ -158,44 +181,88 @@ namespace PEMS.Api.Controllers
                 mode,
                 areaId,
                 newAreaName,
+                newAreaNameEn,
+                areaTranslationOrigin,
+                areaTranslationSourceHash,
                 locationName,
+                locationNameEn,
+                locationTranslationOrigin,
+                locationTranslationSourceHash,
                 await BufferOneAsync(areaCoverVideo, cancellationToken),
                 await BufferOneAsync(locationCoverImage, cancellationToken));
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
-        // UC-LOC-06 Edit (existing area) / UC-LOC-07 Edit (new area). Multipart — the location cover is
-        // optional here (kept when omitted); a new area still requires its own cover VIDEO. On an existing
-        // area a supplied area cover video replaces that area's cover (image → video allowed).
+        // "Chỉnh sửa khu vực và vị trí" — direct in-place edit of the location AND its current area
+        // (no mode, no move, no new area; both ids stay unchanged). Multipart — both covers optional
+        // (kept when omitted; the area cover must be an MP4 video when supplied).
         [HttpPost("updategallerylocation")]
         [Consumes("multipart/form-data")]
         [RequestSizeLimit(GalleryUploadByteLimit)]
         [RequestFormLimits(MultipartBodyLengthLimit = GalleryUploadByteLimit)]
         public async Task<IActionResult> UpdateGalleryLocation(
             [FromForm] long locationId,
-            [FromForm] string mode,
-            [FromForm] long? areaId,
-            [FromForm] string? newAreaName,
+            [FromForm] string areaName,
+            [FromForm] string? areaNameEn,
+            [FromForm] string? areaTranslationOrigin,
+            [FromForm] string? areaTranslationSourceHash,
             [FromForm] string locationName,
+            [FromForm] string? locationNameEn,
+            [FromForm] string? locationTranslationOrigin,
+            [FromForm] string? locationTranslationSourceHash,
             IFormFile? areaCoverVideo,
             IFormFile? locationCoverImage,
             CancellationToken cancellationToken)
         {
             var command = new UpdateGalleryLocationCommand(
                 locationId,
-                mode,
-                areaId,
-                newAreaName,
+                areaName,
+                areaNameEn,
+                areaTranslationOrigin,
+                areaTranslationSourceHash,
                 locationName,
+                locationNameEn,
+                locationTranslationOrigin,
+                locationTranslationSourceHash,
                 await BufferOneAsync(areaCoverVideo, cancellationToken),
                 await BufferOneAsync(locationCoverImage, cancellationToken));
             return Ok(await _mediator.Send(command, cancellationToken));
         }
 
+        // Authoritative single-location detail for the edit modal (bilingual names + covers).
+        [HttpGet("gallerylocationdetails")]
+        public async Task<IActionResult> GetGalleryLocationDetail(
+            [FromQuery] long locationId, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new GetGalleryLocationDetailQuery(locationId), cancellationToken));
+
+        // "Dịch sang EN" preview for the gallery item create/edit modals (title) — at most ONE provider
+        // request (an unchanged READY title is served from the DB), writes nothing.
+        [HttpPost("previewitemtranslation")]
+        public async Task<IActionResult> PreviewGalleryItemTranslation(
+            [FromBody] PreviewGalleryItemTranslationCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        // "Dịch sang EN" preview for the create/edit modals — ONE provider request, writes nothing.
+        [HttpPost("previewlocationtranslation")]
+        public async Task<IActionResult> PreviewGalleryLocationTranslation(
+            [FromBody] PreviewGalleryLocationTranslationCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
         // UC-LOC-08 Enable / UC-LOC-09 Disable.
         [HttpPost("changegallerylocationstatus")]
         public async Task<IActionResult> ChangeGalleryLocationStatus([FromBody] ChangeGalleryLocationStatusCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
+
+        // "Dịch lại" — re-run VI → EN auto-translation for one area/location/item (Staff Leader, campus-scoped).
+        [HttpPost("retrytranslation")]
+        public async Task<IActionResult> RetryGalleryTranslation([FromBody] RetryGalleryTranslationCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        // Deliberate one-off backfill of missing/outdated gallery translations for the caller's campus.
+        // Never runs automatically (no startup hook) and inherits the Staff Leader campus scope guard.
+        [HttpPost("backfilltranslations")]
+        public async Task<IActionResult> BackfillGalleryTranslations(CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new BackfillGalleryTranslationsCommand(), cancellationToken));
 
         /// <summary>Buffers each uploaded file's bytes so the handler can sniff its type and hand it to
         /// the shared upload service in one pass.</summary>

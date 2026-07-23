@@ -19,9 +19,17 @@ namespace PEMS.Application.Galleries.Commands.UpdateGalleryItem;
 /// <see cref="PrimaryMediaId"/> (a kept media id) is used for backward compatibility; failing both, the
 /// first active media is primary.
 /// </param>
+/// <param name="TitleEn">Previewed/manual English title. Empty → kept/auto-translated server-side.</param>
+/// <param name="TitleTranslationOrigin">Where <paramref name="TitleEn"/> came from
+/// (<see cref="GalleryTranslationOrigins"/>) — decides whether the save may reuse it.</param>
+/// <param name="TitleTranslationSourceHash">Preview source hash — AUTO_PREVIEW is only reusable while
+/// it still matches the current Vietnamese title.</param>
 public sealed record UpdateGalleryItemCommand(
     long GalleryItemId,
     string Title,
+    string? TitleEn,
+    string? TitleTranslationOrigin,
+    string? TitleTranslationSourceHash,
     string DescriptionVi,
     string DescriptionEn,
     GalleryUploadFileCommandDto? NewAudioVi,

@@ -16,8 +16,16 @@ namespace PEMS.Application.Galleries.Commands.AddGalleryItem;
 /// Which media becomes primary: <c>upload:{index}</c> (into <see cref="Files"/>) or
 /// <c>youtube:{index}</c> (into <see cref="YoutubeUrls"/>). Null → the first media is primary.
 /// </param>
+/// <param name="TitleEn">Previewed/manual English title. Empty → backend auto-translates on save.</param>
+/// <param name="TitleTranslationOrigin">Where <paramref name="TitleEn"/> came from
+/// (<see cref="GalleryTranslationOrigins"/>) — decides whether the save may reuse it.</param>
+/// <param name="TitleTranslationSourceHash">Preview source hash — AUTO_PREVIEW is only reusable while
+/// it still matches the current Vietnamese title.</param>
 public sealed record AddGalleryItemCommand(
     string Title,
+    string? TitleEn,
+    string? TitleTranslationOrigin,
+    string? TitleTranslationSourceHash,
     string DescriptionVi,
     GalleryUploadFileCommandDto? AudioVi,
     string DescriptionEn,

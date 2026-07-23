@@ -12,6 +12,10 @@ public sealed class GalleryItemDetailDto
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
 
+    /// <summary>English title — set ONLY when its translation is READY and non-blank (a FAILED/stale EN
+    /// is never exposed). Rendered under the Vietnamese title in the detail modal; prefills the edit form.</summary>
+    public string? TitleEn { get; init; }
+
     /// <summary>Bilingual descriptions + audio recordings (VI/EN). Always present for a valid item.</summary>
     public GalleryItemContentDto Content { get; init; } = new();
 
@@ -32,6 +36,12 @@ public sealed class GalleryItemDetailDto
     public IReadOnlyList<GalleryMediaDto> Media { get; init; } = Array.Empty<GalleryMediaDto>();
 
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Set ONLY when the create/update succeeded but the VI → EN title auto-translation failed — the
+    /// frontend shows it as a warning toast (never as an error). Null on full success (backward compatible).
+    /// </summary>
+    public string? TranslationWarning { get; init; }
 }
 
 /// <summary>The item's bilingual content for the management detail/edit screens.</summary>

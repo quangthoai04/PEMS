@@ -18,6 +18,10 @@ public sealed class UpdateGalleryItemCommandValidator : AbstractValidator<Update
             .NotEmpty().WithMessage("Vui lòng nhập tiêu đề.")
             .MaximumLength(255).WithMessage("Tiêu đề tối đa 255 ký tự.");
 
+        // Optional previewed/manual EN — never truncated, so an over-cap value is a client error.
+        RuleFor(x => x.TitleEn)
+            .MaximumLength(500).WithMessage("Tiêu đề tiếng Anh tối đa 500 ký tự.");
+
         RuleFor(x => x.LocationId)
             .GreaterThan(0).WithMessage("Vui lòng chọn vị trí.");
 
