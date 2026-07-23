@@ -40,8 +40,12 @@ public sealed class GetPublicLocationShowcaseQueryHandler
             {
                 l.LocationId,
                 l.LocationName,
+                l.LocationNameEn,
+                LocationTranslationStatus = l.TranslationStatus,
                 AreaId = l.AreaId,
                 AreaName = l.Area.AreaName,
+                AreaNameEn = l.Area.AreaNameEn,
+                AreaTranslationStatus = l.Area.TranslationStatus,
                 CampusId = l.Area.CampusId,
                 CampusCode = l.Area.Campus.CampusCode,
                 CampusName = l.Area.Campus.Name,
@@ -67,6 +71,8 @@ public sealed class GetPublicLocationShowcaseQueryHandler
             {
                 GalleryItemId = i.GalleryItemId,
                 Title = i.Title,
+                TitleEn = i.TitleEn,
+                ItemTranslationStatus = i.TranslationStatus,
                 ItemType = i.ItemType,
                 MediaKind = i.MediaKind,
                 DisplayOrder = i.DisplayOrder,
@@ -81,8 +87,19 @@ public sealed class GetPublicLocationShowcaseQueryHandler
             CampusName = location.CampusName,
             City = location.City,
         };
-        var area = new PublicGalleryAreaSummaryDto { AreaId = location.AreaId, AreaName = location.AreaName };
-        var loc = new PublicGalleryLocationSummaryDto { LocationId = location.LocationId, LocationName = location.LocationName };
+        var area = new PublicGalleryAreaSummaryDto
+        {
+            AreaId = location.AreaId,
+            AreaName = location.AreaName,
+            AreaNameEn = PublicGalleryTranslation.EnOrNull(location.AreaTranslationStatus, location.AreaNameEn),
+        };
+        var loc = new PublicGalleryLocationSummaryDto
+        {
+            LocationId = location.LocationId,
+            LocationName = location.LocationName,
+            LocationNameEn = PublicGalleryTranslation.EnOrNull(
+                location.LocationTranslationStatus, location.LocationNameEn),
+        };
 
         if (items.Count == 0)
         {
@@ -143,6 +160,7 @@ public sealed class GetPublicLocationShowcaseQueryHandler
             {
                 GalleryItemId = i.GalleryItemId,
                 Title = i.Title,
+                TitleEn = PublicGalleryTranslation.EnOrNull(i.ItemTranslationStatus, i.TitleEn),
                 ItemType = i.ItemType,
                 MediaKind = i.MediaKind,
                 PrimaryMedia = primaryByItem.TryGetValue(i.GalleryItemId, out var pm) ? pm : null,
@@ -165,6 +183,8 @@ public sealed class GetPublicLocationShowcaseQueryHandler
     {
         public ulong GalleryItemId { get; init; }
         public string Title { get; init; } = string.Empty;
+        public string? TitleEn { get; init; }
+        public string? ItemTranslationStatus { get; init; }
         public string ItemType { get; init; } = string.Empty;
         public string MediaKind { get; init; } = string.Empty;
         public uint DisplayOrder { get; init; }

@@ -44,10 +44,16 @@ public sealed class GetPublicGalleryItemDetailQueryHandler
                 City = i.Location.Area.Campus.City,
                 AreaId = i.Location.AreaId,
                 AreaName = i.Location.Area.AreaName,
+                AreaNameEn = i.Location.Area.AreaNameEn,
+                AreaTranslationStatus = i.Location.Area.TranslationStatus,
                 LocationId = i.LocationId,
                 LocationName = i.Location.LocationName,
+                LocationNameEn = i.Location.LocationNameEn,
+                LocationTranslationStatus = i.Location.TranslationStatus,
                 i.GalleryItemId,
                 i.Title,
+                i.TitleEn,
+                ItemTranslationStatus = i.TranslationStatus,
                 DescriptionVi = i.Content != null ? i.Content.DescriptionVi : string.Empty,
                 DescriptionEn = i.Content != null ? i.Content.DescriptionEn : string.Empty,
                 AudioViFileId = i.Content != null ? (ulong?)i.Content.AudioViFileId : null,
@@ -97,12 +103,23 @@ public sealed class GetPublicGalleryItemDetailQueryHandler
                 CampusName = head.CampusName,
                 City = head.City,
             },
-            Area = new PublicGalleryAreaSummaryDto { AreaId = head.AreaId, AreaName = head.AreaName },
-            Location = new PublicGalleryLocationSummaryDto { LocationId = head.LocationId, LocationName = head.LocationName },
+            Area = new PublicGalleryAreaSummaryDto
+            {
+                AreaId = head.AreaId,
+                AreaName = head.AreaName,
+                AreaNameEn = PublicGalleryTranslation.EnOrNull(head.AreaTranslationStatus, head.AreaNameEn),
+            },
+            Location = new PublicGalleryLocationSummaryDto
+            {
+                LocationId = head.LocationId,
+                LocationName = head.LocationName,
+                LocationNameEn = PublicGalleryTranslation.EnOrNull(head.LocationTranslationStatus, head.LocationNameEn),
+            },
             GalleryItem = new PublicGalleryItemSummaryDto
             {
                 GalleryItemId = head.GalleryItemId,
                 Title = head.Title,
+                TitleEn = PublicGalleryTranslation.EnOrNull(head.ItemTranslationStatus, head.TitleEn),
                 Content = new PublicGalleryItemContentDto
                 {
                     Vi = new PublicGalleryLanguageContentDto
