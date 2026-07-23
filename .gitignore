@@ -51,8 +51,14 @@ pnpm-debug.log*
 !.env.example
 appsettings.Local.json
 appsettings.Testing.json
+appsettings.Development.Local.json
 *.Secrets.json
 [Ee]nv.json
+
+## Build output accidentally produced inside the project folder.
+## It embeds a copy of appsettings*.json (including any locally-supplied secret),
+## so it must never be tracked.
+.tmp-build/
 
 ## Thư mục sinh ra bởi công cụ kiểm thử (Test Results)
 [Tt]est[Rr]esult*/

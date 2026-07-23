@@ -142,6 +142,12 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
+// ── Fail-closed secret validation ────────────────────────────────────────────
+// Real credentials never live in tracked appsettings files; they arrive from the environment.
+// Validate BEFORE the host starts so a missing secret is a loud start-up failure rather than a
+// weak default (e.g. tokens signed with an empty key) discovered in production.
+PEMS.Api.Extensions.SecretConfigurationValidator.ValidateSecrets(builder.Configuration, builder.Environment);
+
 var app = builder.Build();
 
 // ── HTTP pipeline ────────────────────────────────────────────────────────────
