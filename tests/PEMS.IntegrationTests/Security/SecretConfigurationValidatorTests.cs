@@ -120,6 +120,55 @@ public sealed class SecretConfigurationValidatorTests
         Assert.DoesNotContain(secretish, ex.Message);
     }
 
+    [Fact]
+    public void Production_rejects_a_jwt_secret_that_is_too_short_to_sign_with()
+    {
+        // HS256 throws IDX10653 below 128 bits; refusing to start beats a 500 on the first login.
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SecretConfigurationValidator.ValidateSecrets(
+                Config(("JwtSettings:SecretKey", "too-short")), Env("Production")));
+
+        Assert.Contains("JwtSettings:SecretKey", ex.Message);
+        Assert.Contains("too short", ex.Message);
+    }
+
+    [Fact]
+    public void Development_without_jwt_secret_gets_a_generated_key_long_enough_to_sign()
+    {
+        var builder = new ConfigurationBuilder();
+        var initial = Config(("JwtSettings:SecretKey", ""));
+
+        var generated = SecretConfigurationValidator.TryProvideDevelopmentJwtSecret(builder, initial, Env("Development"));
+
+        Assert.True(generated);
+        var key = builder.Build()["JwtSettings:SecretKey"];
+        Assert.False(string.IsNullOrWhiteSpace(key));
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(key!) >= SecretConfigurationValidator.MinimumJwtSecretBytes);
+    }
+
+    [Fact]
+    public void Production_never_gets_a_generated_key()
+    {
+        var builder = new ConfigurationBuilder();
+
+        var generated = SecretConfigurationValidator.TryProvideDevelopmentJwtSecret(
+            builder, Config(("JwtSettings:SecretKey", "")), Env("Production"));
+
+        Assert.False(generated);
+        Assert.Null(builder.Build()["JwtSettings:SecretKey"]);
+    }
+
+    [Fact]
+    public void A_supplied_key_is_never_overwritten()
+    {
+        var builder = new ConfigurationBuilder();
+
+        var generated = SecretConfigurationValidator.TryProvideDevelopmentJwtSecret(
+            builder, Config(("JwtSettings:SecretKey", "an-explicitly-supplied-development-key-value")), Env("Development"));
+
+        Assert.False(generated);
+    }
+
     [Theory]
     [InlineData(null, false)]
     [InlineData("", false)]
