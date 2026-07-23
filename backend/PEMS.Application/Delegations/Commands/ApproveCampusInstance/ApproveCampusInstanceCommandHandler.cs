@@ -193,12 +193,21 @@ public sealed class ApproveCampusInstanceCommandHandler
             ? "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST_WITH_SCHEDULE_WARNING" 
             : "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST";
 
+        // The decision belongs to ONE campus instance, so it is filed under that instance's own audit
+        // context. audit_logs indexes campus_id / visit_request_id / visit_instance_id precisely for this,
+        // and the admin audit surface filters by campus — leaving them null hid every per-campus decision
+        // from exactly the query that is scoped the way Pure V2 is scoped.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
             Action = auditAction,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = visit.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            SourceType = CampusDecisionAudit.SourceType,
+            Reason = $"decision=ASSIGNED;host={request.HostUserId}",
             CreatedAt = now
         });
 

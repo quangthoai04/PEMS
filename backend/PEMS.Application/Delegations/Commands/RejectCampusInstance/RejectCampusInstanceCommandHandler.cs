@@ -96,12 +96,20 @@ public sealed class RejectCampusInstanceCommandHandler
         visit.UpdatedBy = actorId;
         visit.RowVersion += 1;
 
+        // Same per-campus audit context as the approve decision — see CampusDecisionAudit. The free-text
+        // reason is NOT copied here: it already lives on the instance, and this column is a short
+        // structured summary, not a second copy of staff-authored prose.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
             Action = "REJECT_CAMPUS_INSTANCE",
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = visit.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            SourceType = CampusDecisionAudit.SourceType,
+            Reason = "decision=REJECTED",
             CreatedAt = now
         });
 
