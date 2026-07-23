@@ -350,8 +350,10 @@ Phát hiện được vì Phase 0B làm unit test **chạy lại lần đầu**:
 |---|---|
 | `dotnet build PEMS.slnx` | ✅ **0 Error(s)** |
 | `dotnet test tests/PEMS.ArchitectureTests` | ✅ **14/14 passed** |
-| `dotnet test tests/PEMS.UnitTests` | ✅ **926/926 passed** |
+| `dotnet test tests/PEMS.UnitTests` | ✅ **951/951 passed** (926 + 17 test Dev + 8 test per-campus mới) |
 | `dotnet test tests/PEMS.IntegrationTests` | ✅ **517/517 passed**, 45s — bao gồm 5 schema contract test |
+
+**Một lần chạy IntegrationTests báo 22 fail, không tái hiện được.** Chạy lại 4 lần liên tiếp (kể cả lặp đúng chuỗi lệnh đã gây lỗi): 517/517. Sau đó: 0 database `pems_test_run_*` còn sót, `Max_used_connections` 13/151, `Aborted_connects` 0. **Nguyên nhân chưa xác định** — tôi không lưu log của lần chạy đó nên bằng chứng đã mất; đây là thiếu sót về quy trình của tôi, không phải kết luận rằng lỗi vô hại. Nếu tái xuất hiện, phải giữ log trước khi chạy lại.
 | SQL import disposable | ✅ chạy thật mỗi lần chạy integration; 81 bảng, 32 trigger, 0 `pems_seed_*`, cleanup để lại **0** DB rác |
 | Frontend `lint` / `test:unit` / `build` | ⏳ chưa chạy lại (Phase 4 chưa bắt đầu; phiên audit trước: lint 0 error, 389/389, build OK) |
 | E2E real-stack | ⏳ chưa chạy (Phase 5) |
@@ -377,6 +379,33 @@ An toàn khi chạy đã được kiểm tra trước, không suy đoán:
 
 ---
 
+
+## 8bis. MERGE DEV → CANH-ITER1: QUY TRÌNH BẮT BUỘC
+
+**Đã xảy ra thật (2026-07-23).** Merge `Dev` (`4667ada9`) không hề conflict — Git merge sạch vì hai nhánh sửa **file khác nhau** — nhưng solution phát sinh **3 lỗi biên dịch**. Commit Dev `d7e342e5` thêm feature `ExportScheduleReport` viết theo schema V1, đọc `VisitRequest.DelegationName`, `.Purpose`, `.FormSchemaVersion` — ba property Pure V2 đã xóa.
+
+Đây là **semantic conflict**: code mới dùng API mà nhánh kia vừa gỡ bỏ. Git không phát hiện được loại này; chỉ compiler mới thấy. Nhánh đã bị push ở trạng thái không build được cho tới khi sửa.
+
+### Sau MỌI lần merge Dev vào `Canh-Iter1`, chạy NGAY trước khi commit tiếp hoặc push
+
+```bash
+dotnet build PEMS.slnx
+```
+
+Nếu build fail:
+
+1. **Không push.**
+2. Kiểm tra code mới từ Dev có dùng schema V1 không (`.FormSchemaVersion`, `VisitRequest.DelegationName/.Purpose/.WorkingContent/.WorkingLanguage/.MediaConsent*`, compatibility projection, dual-read, fallback request-level).
+3. Sửa theo Pure V2: đọc từ `VisitInstanceFormDetail` của **đúng** campus instance; guest lấy qua `VisitInstanceGuestMember` của chính campus đó.
+4. Kiểm tra harness test: nếu test dựng **service thật**, harness không được `Ignore<VisitInstanceFormDetail>()` hay `Ignore<VisitInstanceGuestMember>()`, và phải seed 1 detail cho mỗi instance.
+5. Chạy full UnitTests **và** IntegrationTests.
+6. Chỉ tiếp tục khi toàn bộ gate xanh.
+
+### Giới hạn của SchemaContractTests
+
+`SchemaContractTests` bảo vệ **schema ↔ EF mapping** (cột không tồn tại, nullability, FK delete rule). Nó **không** thay thế compiler gate: truy cập một property C# đã bị xóa chỉ bị bắt khi build. Hai lớp bảo vệ này không thay thế nhau.
+
+---
 
 ## 9. SQL CANONICAL
 
