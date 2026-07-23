@@ -10,8 +10,10 @@
 
 > ## ⛔ NOT READY
 >
-> **Phase 0 hoàn tất và đã verify.** Phase 1–7 **chưa hoàn tất**.
+> **Phase 0 và Phase 1 hoàn tất, đã verify bằng kết quả chạy thật.** Phase 2–7 **chưa hoàn tất**.
 > Ngoài ra credential rotation chưa được xác nhận → `SECURITY ROTATION PENDING`.
+>
+> `Phase 1 VERIFIED` **không** đồng nghĩa toàn dự án READY.
 
 Không dùng nhãn `READY WITH CAVEATS` (bị cấm bởi §19).
 
@@ -36,8 +38,8 @@ Không mở lại. Trạng thái áp dụng:
 
 | Quyết định | Trạng thái |
 |---|---|
-| DECISION-01 — operational contact riêng từng campus | ⏳ chưa tới (Phase 2) |
-| DECISION-02 — Pure V2-only, bỏ dual-read/fallback | 🔶 một phần (V1 dead code đã xóa; discriminator chưa gỡ hết) |
+| DECISION-01 — operational contact riêng từng campus | 🔶 đọc đã xong + có test chặn fallback; **ghi** thuộc Phase 2 |
+| DECISION-02 — Pure V2-only, bỏ dual-read/fallback | ✅ ĐÃ THỰC HIỆN — 0 discriminator trong `backend/`, thiếu detail = fail loud |
 | DECISION-03 — mọi `issue_count = 0` | ⏳ chưa tới (Phase 6) |
 | DECISION-04 — config không nhạy cảm vẫn track được | ✅ ĐÃ THỰC HIỆN (Phase 0A) |
 
@@ -54,17 +56,17 @@ Không mở lại. Trạng thái áp dụng:
 | **GAP-012** | E2E realstack trỏ SQL cũ | ✅ **FIXED** |
 | **GAP-013** | Stale SQL path (TestTc, review script, phase_1) | ✅ **FIXED** |
 | **(mới) GAP-022** | Upload ảnh: app layer yếu hơn DB trigger | ✅ **VERIFIED** — xem §6 |
-| **GAP-001** | 12 phantom EF mapping | 🔶 **IN PROGRESS** — đã xóa, còn 183 consumer lỗi (stash) |
-| **GAP-004** | Write path ghi cột đã xóa | 🔶 **IN PROGRESS** |
-| **GAP-006** | Dual-read theo discriminator | 🔶 **IN PROGRESS** — 64/~100 site đã collapse |
-| **GAP-011** | V1 service còn DI | 🔶 **IN PROGRESS** — đã xóa, nằm trong stash |
+| **GAP-001** | 12 phantom EF mapping | ✅ **VERIFIED** — đã xóa; `SchemaContractTests.Every_mapped_table_and_column_exists_in_the_canonical_schema` chặn tái diễn |
+| **GAP-004** | Write path ghi cột đã xóa | ✅ **VERIFIED** — compatibility projection đã gỡ khỏi 3 write service; 517/517 integration test PASS |
+| **GAP-006** | Dual-read theo discriminator | ✅ **VERIFIED** — không còn `FormSchemaVersion` nào trong `backend/`; thiếu detail = fail loud |
+| **GAP-011** | V1 service còn DI | ✅ **VERIFIED** — handler/command/validator V1 đã xóa; hằng số `NotPerCampusV2` chết cũng đã gỡ |
 | **GAP-005** | Feature flag deadlock | ⬜ **OPEN** (Phase 4) |
 | **GAP-008** | Frontend route theo `formSchemaVersion` | ⬜ **OPEN** (Phase 4) |
 | **GAP-009** | 14 false-fail negative guard (`GET DIAGNOSTICS`) | ⬜ **OPEN** (Phase 6) |
-| **GAP-014** | FK delete behavior drift | ⬜ **OPEN** (Phase 1B) |
+| **GAP-014** | FK delete behavior drift | ✅ **VERIFIED** — đo thật: chỉ **1** drift (`visit_requests.visitor_user_id`), đã sửa + 2 test chặn |
 | **GAP-015** | 151 seed placeholder | ⬜ **OPEN** (Phase 6) |
 | **GAP-016** | 3 instance thiếu agenda | ⬜ **OPEN** (Phase 6) |
-| **GAP-017** | Nullability lệch (email_templates, news_content_sections) | ⬜ **OPEN** (Phase 1B) |
+| **GAP-017** | Nullability lệch (email_templates, news_content_sections) | ✅ **VERIFIED** — 3 cột đã đồng bộ entity/DTO/validator + 11 test |
 | **GAP-018** | Disposable DB rò rỉ | ✅ **FIXED** — cleanup trong `catch` |
 | **GAP-019/020/021** | DbSet coverage, computed column, comment lỗi thời | ⬜ **OPEN** (Phase 7) |
 
@@ -163,37 +165,166 @@ Trạng thái sau khôi phục:
 
 ---
 
-## 5. PHASE 1–2 — DANG DỞ, ĐÃ STASH 🔶
+## 4bis. PHASE 1 — TIẾN ĐỘ QUA 6 PHIÊN (cập nhật mới nhất)
 
-### Đã làm (nằm trong `stash@{0}`)
+**Kết luận: `Phase 1 VERIFIED`.** Toàn bộ gate Phase 1 đã xanh bằng kết quả chạy thật.
+Toàn dự án vẫn **NOT READY** vì `SECURITY ROTATION PENDING` (§13) và Phase 2–7 chưa làm.
+
+### Baseline cuối phiên
+
+| Mục | Giá trị |
+|---|---|
+| HEAD lúc bắt đầu phiên | `5509f4a5` |
+| Branch | `Canh-Iter1` → `origin/Cảnh-Iter1`; **7** commit local phía trên `19bed510` |
+| `d3a40adf` | `HEAD~3`, đúng vị trí `origin/Cảnh-Iter1` |
+| SQL canonical | **không đổi** — blob `825b9567`, SHA-256 `7ec63e90…`, 14,832 dòng (`wc -l`) |
+
+**Đính chính hai điểm sai trong bản báo cáo trước:**
+
+1. Số commit local là **7**, không phải 6.
+2. "UnitTests 937/937" và "915 / 23 fail" **không mâu thuẫn** — chúng đo hai trạng thái cây mã khác nhau: 937 là HEAD sạch (WIP đã stash), 915 là khi đã apply WIP. Chênh 22 test do WIP xóa 3 file test V1. Bản trước thiếu chú thích trạng thái nên gây hiểu nhầm.
+
+### Stash (ghi theo commit hash, không theo chỉ số)
+
+| Hash | Nội dung |
+|---|---|
+| `29b74f56` | **session 6a** — IntegrationTests chạy thật, 512/512 PASS |
+| `f4827af5` | session 5 |
+| `b318b121` | session 4 |
+| `93ebee5f` | session 3 |
+| `324482af` | session 2 |
+| `8c1f8dbc` | session 1 |
+| `e3272c7b` | `On Dev` (không thuộc công việc này) |
+
+Không drop stash nào. Mọi thao tác dùng `git stash apply <hash>`, không dùng `pop`, không dùng `stash@{n}`.
+
+### Đường cong lỗi biên dịch
+
+| Mốc | Lỗi |
+|---|---|
+| Sau khi xóa 12 phantom mapping | 183 (47 file, toàn bộ solution) |
+| Cuối session 2 | 48 |
+| Cuối session 3 | production code = 0; IntegrationTests 136 |
+| Cuối session 4 | IntegrationTests 43 (7 file) |
+| Cuối session 5 | IntegrationTests **0**; UnitTests 915/915 |
+| **Cuối session 6** | **0 error toàn solution; cả 3 bộ test PASS** |
+
+### Ba test V1 đã bị loại — xác nhận coverage thay thế
+
+Ba file test dưới đây bị xóa cùng handler V1 của chúng. Handler không còn tồn tại, nên test không còn target runtime hợp lệ — không phục hồi.
+
+| Test V1 đã xóa | Handler V1 tương ứng | Coverage Pure V2 thay thế |
+|---|---|---|
+| `CreateAuthenticatedVisitRequestCommandValidatorTests` | `CreateAuthenticatedVisitRequestCommandHandler` (đã xóa) | `CreateVisitRequestV2CommandTests`, `CreateVisitRequestV2ServiceTests`, `ActorRelationAuthenticatedCreateApiTests` |
+| `ResubmitRejectedVisitRequestCommandHandlerTests` | `ResubmitRejectedVisitRequestCommandHandler` (đã xóa) | `ResubmitRejectedVisitRequestV2CommandTests`, `ResubmitRejectedVisitRequestV2ServiceTests`, `VisitorEditResubmitApiTests` |
+| `UpdatePendingVisitRequestCommandHandlerTests` | `UpdatePendingVisitRequestCommandHandler` (đã xóa) | `UpdatePendingVisitRequestV2CommandTests`, `UpdatePendingVisitRequestV2ServiceTests`, `EditableVisitRequestDetailV2Tests` |
+
+### Session 6 đã làm
+
+**1. Chạy IntegrationTests lần đầu tiên trong lịch sử dự án** trên database disposable.
+
+Hai lỗi hạ tầng phải sửa trước khi bộ test chạy được:
+
+- **Repo root không giải được** khi build ra thư mục ngoài repo. Không phải lỗi code — do cách chạy; đã chuyển output vào `tests/PEMS.IntegrationTests/bin/itrun/` (đã gitignore) vì tiến trình `PEMS.Api` đang chạy khóa file DLL.
+- **Safety scanner chặn nhầm chính SQL canonical.** `AssertSafeToImport` tìm `USE` / `SOURCE` không neo vị trí, nên bắt nhầm 7 dòng: từ tiếng Anh "use" trong string literal và `MESSAGE_TEXT` (`'…must use SELF_SERVICE source'`, `'…use Internal Portal…'`), và một cột tên `source ENUM(...)`. Đã neo hai regex đúng như `Retarget` vốn làm (đầu câu lệnh, hoặc ngay sau `;`) và yêu cầu đối số của `SOURCE` trông giống đường dẫn. **Không nới lỏng:** MySQL không chấp nhận `USE` giữa câu lệnh hay trong stored program, nên neo vị trí không mất khả năng phát hiện. Đã thêm 9 test khoá lại cả hai chiều.
+
+**2. Chuyển 14 test V1 còn sót sang bất biến Pure V2.** Sau khi seed bỏ cột global, các test này khẳng định giá trị không thể tồn tại (`GLOBAL-DELEG`). Không xóa, không skip — mỗi test đổi thành một bất biến **chưa được phủ** trong chính file đó (bảng ở dưới).
+
+**3. Bỏ 3 tham số chết trong `CanonicalV2Seed.SeedRequest`** (`formSchemaVersion`, `globalDelegationName`, `globalVisitType`). Chúng không còn được ghi vào đâu cả, khiến các assertion `NotEqual(StaleGlobalName, …)` **rỗng nghĩa** — đọc như đang bảo vệ nhưng thực chất không. Đã bỏ tham số và đổi tên hằng số cho đúng sự thật.
+
+### Assertion phải đổi — giải trình đầy đủ (§3)
+
+| File | Assertion cũ | Vì sao trái Pure V2 | Thay bằng |
+|---|---|---|---|
+| `RequestDetailV2Tests`, `DeptInvitationDetailV2Tests` | `ContactPersonFullName == "Primary Contact"` (V1) | Không còn đường đọc V1 | **DECISION-01**: contact phải là operational contact của campus và **NotEqual** primary contact cấp đơn — mạnh hơn, và là giá trị duy nhất còn có thể bị fallback nhầm |
+| `StaffCalendarDetailV2Tests` | global projection verbatim | như trên | contact + `VisitType`/`WorkingLanguage`/`MediaConsentStatus` đều phải đến từ detail, kèm NotEqual primary contact |
+| `AgendaSetupForInstanceV2Tests`, `VisitInstanceContributionV2Tests`, `VisitInstanceSummaryV2Tests`, `VisitProcessDetailV2Tests`, `VisitInvitationDetailV2Tests` | `"GLOBAL-*"` | Cột global đã bị xóa | **3 campus mixed, đọc campus C (cuối)** — cặp A/B sẵn có không phân biệt được "đọc đúng target" với "đọc 2 campus đầu"; campus thứ ba thì có. Trực tiếp chặn lỗi "campus đại diện" |
+| `MyVisitInvitationByIdV2Tests` | global + `OrganizationName` | như trên | Tách bạch: form field từ detail của instance được mời, `OrganizationName` (registrant) vẫn cấp đơn — "không fallback" không được biến thành "bỏ qua request row" |
+| `EditableVisitRequestDetailV2Tests` | `Mode == "EDIT"` + global + khách `G1` | như trên | EDIT mode + nội dung per-campus + guest list qua `visit_instance_guest_members` (không còn roster cấp đơn để fallback) |
+| `SubmittedVisitRequestFormDetailV2Tests` | rollup qua projection global | như trên | Giữ nguyên rollup (2 campus, đếm mỗi campus đúng 1 lần) nhưng seed V2 — rollup là thứ **không** được per-campus hoá |
+| `GetHoReportOverviewCanonicalV2Tests` | lọc theo global visit type | như trên | Lọc từ **campus thứ hai** — reader "campus đại diện" sẽ báo campus 1 ở đây |
+| `GetStaffLeaderDeptInvoiceItemsCanonicalV2Tests` | đọc global name | như trên | Đọc bởi Staff Leader **campus 2 / phòng ban 20** — mirror của case A sẵn có |
+| `UpdatePendingVisitRequestV2CommandTests` bước 8 | `UPDATE visit_requests SET form_schema_version = 1` rồi chờ `NOT_PER_CAMPUS_V2` | Cột không tồn tại → `Unknown column` (P0 thật, bắt được nhờ chạy thật) | Khẳng định thẳng trên schema sống: **0 cột** `form_schema_version`. Mạnh hơn guard runtime cũ vì đúng cho mọi code path, không chỉ một endpoint |
+| `SecretConfigurationValidatorTests.Smtp_disabled_does_not_require_credentials` | Production, không cấp JWT key | Validator (đúng) bắt buộc JWT key ở Production → test fail vì lý do khác chủ đề của nó | Cấp JWT key để cô lập đúng quy tắc SMTP. Quy tắc JWT đã có test riêng `Production_without_jwt_secret_fails_fast` → **không mất coverage** |
+
+Không xóa test, không skip test, không nới lỏng assertion, không gán dữ liệu per-campus lên `VisitRequest`.
+
+### GAP-014 — FK delete behavior (đo thật, không ước lượng)
+
+Audit ước lượng lệch lớn dựa trên đếm tổng (DB 146/58/47 vs EF 105/53/45). **Con số đó gây hiểu nhầm**: EF chỉ khai báo `OnDelete` cho quan hệ nó mô hình hoá, và đếm theo cột thì một cột nằm trong hai FK sẽ bị ghép chéo sai.
+
+So khớp **theo từng constraint** (tên constraint → tập cột có thứ tự → bảng đích) cho kết quả thật:
+
+| Bảng.cột | SQL canonical | EF trước | Kết luận |
+|---|---|---|---|
+| `visit_requests.visitor_user_id` | `ON DELETE SET NULL` → `users` | `Restrict` | ❌ **Drift thật — đã sửa thành `SetNull`** |
+| `visit_photo_face_detections.visit_instance_id` | 2 constraint khác nhau (CASCADE + RESTRICT) | 2 quan hệ tương ứng | ✅ Không lệch — báo cáo sai do so khớp theo cột; đã sửa cách so khớp |
+| Tất cả FK còn lại | — | — | ✅ Khớp |
+
+Vì sao quan trọng: EF **không** tạo constraint ở đây (database-first, không migration). `DeleteBehavior` quyết định số phận entity **đang được track**. Khai `Restrict` trong khi DB `SET NULL` khiến EF từ chối một thao tác xoá mà database cho phép — cùng một lệnh xoá cho kết quả khác nhau tuỳ graph có được load hay không.
+
+Chặn tái diễn: `SchemaContractTests.Mapped_delete_behaviour_matches_the_canonical_foreign_keys` + `Set_null_relationships_only_target_nullable_columns`.
+
+### GAP-017 — Nullability (đo thật)
+
+| Cột | SQL canonical | CLR trước | Đã làm |
+|---|---|---|---|
+| `email_templates.purpose` | `ENUM('VISIT_REQUEST_VERIFY','CHANGE_SENSITIVE_ACTION') NOT NULL` | `string?`, **không validator nào** | Entity + Create/Update command + 2 DTO đọc → bắt buộc; validator mới chặn null/rỗng/giá trị lạ. Trước đây thiếu purpose là **500 từ MySQL**, giờ là 400 có thông điệp |
+| `news_content_sections.section_title` | `VARCHAR(255) NOT NULL` | `string?` | Entity → bắt buộc; bỏ `?? string.Empty` che lỗi ở read path |
+| `news_content_sections.section_body_html` | `LONGTEXT NOT NULL` | `string?` | như trên |
+
+Mọi write path sẵn có đều đã gán giá trị non-null → không cần đổi handler, chỉ đúng hoá kiểu. `ViewEmailTemplateListQuery.Purpose` **giữ `string?`** vì đó là bộ lọc tuỳ chọn, không phải giá trị lưu trữ.
+
+`visit_expense_items.total_amount` (audit có nêu) **không lệch**: đây là STORED GENERATED, contract test bỏ qua đúng cách vì requiredness của EF không nói gì về cột do database sinh.
+
+Chặn tái diễn: `SchemaContractTests.Mapped_nullability_matches_the_canonical_schema` + 11 test `EmailTemplatePurposeValidationTests` (có cả null hợp lệ lẫn null bị cấm).
+
+### Schema contract test (mới)
+
+`tests/PEMS.IntegrationTests/TestInfrastructure/SchemaContractTests.cs` — 5 test, chạy trên database disposable dựng từ SQL canonical đã pin hash:
+
+| Test | Kiểm tra |
+|---|---|
+| `Canonical_schema_imports_with_the_expected_shape` | 81 base table; 0 cột `form_schema_version`; 0 cột form global trên `visit_requests`; detail per-campus có `delegation_name`; 0 object `pems_seed_*` |
+| `Every_mapped_table_and_column_exists_in_the_canonical_schema` | Mọi entity/property EF map đều có table/column thật — chặn đúng lớp lỗi phantom mapping (`Unknown column`) |
+| `Mapped_nullability_matches_the_canonical_schema` | GAP-017, bỏ qua cột store-generated |
+| `Mapped_delete_behaviour_matches_the_canonical_foreign_keys` | GAP-014, so khớp theo constraint |
+| `Set_null_relationships_only_target_nullable_columns` | `SetNull` không bao giờ trỏ vào cột `NOT NULL` |
+
+Đọc schema qua **chính connection của DbContext** (client Oracle `MySql.Data` mà bootstrap dùng từ chối option `GuidFormat` của MySqlConnector), nên vừa tránh xung đột driver vừa đảm bảo soi đúng database EF đang map.
+
+### Gate Phase 1 — kết quả chạy thật
+
+| Gate | Kết quả |
+|---|---|
+| `dotnet build` Domain / Application / Infrastructure / Api | ✅ **0 error** (4/4) |
+| `dotnet build PEMS.slnx` | ✅ **0 error** |
+| `dotnet test` ArchitectureTests | ✅ **14/14** |
+| `dotnet test` UnitTests | ✅ **926 / 926 PASS**, 0 fail, 0 skip |
+| `dotnet test` IntegrationTests | ✅ **517 / 517 PASS**, 0 fail, 0 skip, **45 giây** |
+| Schema contract test | ✅ **5/5 PASS** trên DB disposable |
+| GAP-014 | ✅ VERIFIED |
+| GAP-017 | ✅ VERIFIED |
+| `git diff --check` | ✅ sạch |
+| `Unknown column` / `Unknown table` | ✅ **0** (bản chạy đầu có 1 — trong SQL thô của test — đã sửa) |
+| SQL chạy trên `pems_db` / Railway / DB thật | ✅ **không** — 0 database `pems_test_run_*` còn sót; `pems_db` vẫn đúng 81 bảng |
+
+---
+
+## 5. PHẦN ĐÃ HOÀN TẤT TRONG PHASE 1 ✅
 
 1. **Xóa đúng 12 phantom mapping** — `VisitRequest` (11) + `VisitRequestPendingForm` (1).
-2. **Collapse 64 ternary discriminator** — `cond ? <V2> : <V1>` → `<V2>`, bằng scanner cân bằng dấu (không phải regex).
-3. **Xóa V1 dead code** đã chứng minh unreachable (0 dispatch từ `PEMS.Api`):
-   `CreateAuthenticatedVisitRequest`, `VerifyAndCreateVisitRequest`, `UpdatePendingVisitRequest`, `ResubmitRejectedVisitRequest`, `InitiateVisitRequest`, `VisitRequestService`, `IVisitRequestService`, + 3 file test V1.
-4. **Chuyển `InitiateVisitRequestResponse`** sang namespace Pure V2 `Commands.VisitRequestOtp` — DTO này dùng chung cho initiate-v2/resend/recover đang sống nhưng lại nằm trong folder V1.
+2. **Collapse toàn bộ ternary discriminator** — `cond ? <V2> : <V1>` → `<V2>`. Không còn `FormSchemaVersion` nào trong `backend/`.
+3. **Xóa V1 dead code** đã chứng minh unreachable (0 dispatch từ `PEMS.Api`): `CreateAuthenticatedVisitRequest`, `VerifyAndCreateVisitRequest`, `UpdatePendingVisitRequest`, `ResubmitRejectedVisitRequest`, `InitiateVisitRequest`, `VisitRequestService`, `IVisitRequestService`, + 3 file test V1, + hằng số chết `NotPerCampusV2`.
+4. **Chuyển `InitiateVisitRequestResponse`** sang namespace Pure V2 `Commands.VisitRequestOtp`.
+5. **`VisitFormReadService` viết lại** — bỏ dual-read; thiếu detail thì `ConflictException` + log lỗi, không im lặng.
+6. **Media consent per-campus** trong toàn bộ luồng News.
+7. **`V2CreateNotifier`** báo cho mỗi Staff Leader tên campus **của chính họ**.
+8. **~20 fixture test** chuyển sang per-campus detail.
 
-### Còn lại: **183 lỗi compile / 47 file**
+### Bài học đã ghi lại
 
-| Member | Số lỗi |
-|---|---|
-| `FormSchemaVersion` | 38 |
-| `DelegationName` | 37 |
-| `MediaConsentStatus` | 14 |
-| `Purpose` / `WorkingContent` | 11 mỗi loại |
-| `VisitType` | 10 |
-| `NoteToFptu` / `TransportationNote` / `MediaConsentNote` / `VisitTypeOther` / `WorkingLanguage` | 8 mỗi loại |
-
-Điểm nặng nhất: `VisitFormReadService.cs` (22) — lõi dual-read, cần **viết lại** chứ không collapse máy móc; và 6 handler có khối copy 10 field (`GetEditableVisitRequestDetail`, `GetSubmittedVisitRequestFormDetail`, `GetVisitInstanceSummary`, `GetVisitProcessDetail`, `GetVisitInstanceContribution`, `GetStaffCalendarDetail`).
-
-### Vì sao stash thay vì commit
-
-Mỗi commit phải build được (§17). Cây mã dở dang không build → **tệ hơn HEAD**. Stash giữ nguyên 100% công việc và khôi phục được:
-
-```bash
-git stash list      # stash@{0} = WIP Pure V2 phase1/2
-git stash pop       # tiếp tục từ đúng chỗ đang dở
-```
+Một script tự viết để collapse ternary đã **làm hỏng file nguồn** (bắt nhầm câu lệnh `if`, xoá 77 dòng). Phát hiện nhờ build; khôi phục bằng `git restore --source=HEAD`. Từ đó mọi sửa đổi hàng loạt đều làm **thủ công**, và kiểm tra cân bằng dấu ngoặc **không đủ** — đã phải soát tay mới thấy 3 lớp hỏng khác (mất dòng khởi tạo DTO, mất member của anonymous type, `=>` bị biến thành `=`).
 
 ---
 
@@ -217,25 +348,35 @@ Phát hiện được vì Phase 0B làm unit test **chạy lại lần đầu**:
 
 | Gate | Kết quả |
 |---|---|
-| `dotnet build PEMS.slnx` | ✅ **Build succeeded, 0 Error(s)** |
+| `dotnet build PEMS.slnx` | ✅ **0 Error(s)** |
 | `dotnet test tests/PEMS.ArchitectureTests` | ✅ **14/14 passed** |
-| `dotnet test tests/PEMS.UnitTests` | ✅ **937/937 passed** (trước phiên: **không build được**) |
-| `dotnet test tests/PEMS.IntegrationTests` | ⏳ **chưa chạy** — xem §8 |
+| `dotnet test tests/PEMS.UnitTests` | ✅ **926/926 passed** |
+| `dotnet test tests/PEMS.IntegrationTests` | ✅ **517/517 passed**, 45s — bao gồm 5 schema contract test |
+| SQL import disposable | ✅ chạy thật mỗi lần chạy integration; 81 bảng, 32 trigger, 0 `pems_seed_*`, cleanup để lại **0** DB rác |
 | Frontend `lint` / `test:unit` / `build` | ⏳ chưa chạy lại (Phase 4 chưa bắt đầu; phiên audit trước: lint 0 error, 389/389, build OK) |
-| SQL import disposable | ⏳ chưa chạy lại trong phiên này (phiên audit: import + rerun OK, 81 bảng, 0 `pems_seed_*`) |
-| E2E real-stack | ⏳ chưa chạy |
+| E2E real-stack | ⏳ chưa chạy (Phase 5) |
 
-Unit test: **932 → 937** (thêm test contract đọc photo folder + unauthenticated).
+**Ghi chú về cách chạy:** tiến trình `PEMS.Api` đang chạy (dev server) khóa DLL đầu ra nên `dotnet build`/`test` mặc định fail với `MSB3021/MSB3027`. Đây là **khoá file, không phải lỗi biên dịch** — đã build/test qua `-p:BaseOutputPath=…`. Đường dẫn output cho IntegrationTests phải nằm **trong repo** vì bootstrap dò repo root bằng cách đi ngược thư mục.
+
+Unit test: **915 → 926** (thêm 11 test `EmailTemplatePurposeValidationTests`).
+Integration test: **512 → 517** (thêm 5 schema contract test).
+
+---
+
+## 8. INTEGRATION TEST — ĐÃ CHẠY (cập nhật)
+
+Mục này trước đây giải thích vì sao **chưa** chạy. Nay đã chạy, và điều đó là đúng đắn: chỉ khi chạy thật mới lộ ra hai lỗi mà build sạch không bao giờ cho thấy — một câu `UPDATE visit_requests SET form_schema_version = 1` còn sót trong SQL thô của test (`Unknown column`, đúng lớp P0 mà Phase 1 phải diệt), và safety scanner chặn nhầm chính SQL canonical.
+
+An toàn khi chạy đã được kiểm tra trước, không suy đoán:
+
+- Mọi đường vào database đều đi qua `DisposableDatabaseManager` (kể cả `PemsWebApplicationFactory` và `CanonicalV2ReaderFixture`); các comment nhắc `pems_test` chỉ là chú thích cũ.
+- Tên database disposable khớp `^pems_test_run_[0-9a-fA-F]{32}$`; `pems_db` / `pems_test` / `pems_pr3_test` bị chặn tường minh.
+- `appsettings.Testing.json`: `Smtp:Enabled = false` → **không có email thật nào được gửi**; `Turnstile:Enabled = false`.
+- Sau khi chạy: **0** database `pems_test_run_*` còn sót (kiểm tra cả khi chạy fail lẫn khi chạy pass); `pems_db` vẫn đúng 81 bảng.
+- MySQL 8.0.46.
 
 ---
 
-## 8. VÌ SAO CHƯA CHẠY INTEGRATION TEST
-
-Bootstrap mới **fail-closed đúng thiết kế**, nhưng bộ integration test hiện có được viết cho schema cũ. Chạy lúc này sẽ fail vì lý do không liên quan (entity vẫn map 12 cột phantom — GAP-001 nằm trong stash), nên kết quả **không chứng minh được gì**.
-
-Integration test chỉ nên chạy sau khi Phase 1 hoàn tất (EF khớp schema). Đây là lựa chọn có chủ đích, **không phải bỏ qua**.
-
----
 
 ## 9. SQL CANONICAL
 
@@ -265,7 +406,9 @@ Không push, không mở PR, không merge, không rewrite history. Không có t�
 
 ## 12. VIỆC CÒN LẠI
 
-**Phase 1 (tiếp tục từ stash):** sửa 183 lỗi / 47 file; rà FK `DeleteBehavior` (GAP-014); nullability (GAP-017); thêm schema contract test chạy trên MySQL thật.
+**Phase 1:** ✅ **HOÀN TẤT** — build 0 error, 926/926 unit, 517/517 integration, 5/5 schema contract, GAP-001/004/006/011/014/017 VERIFIED.
+
+**Nợ kỹ thuật nhỏ ghi nhận, chưa làm (không chặn gate):** một số assertion `Assert.NotEqual("GLOBAL-DELEG", …)` trong các file V2 nay **rỗng nghĩa** vì literal đó không còn tồn tại ở đâu; và tham số `schemaVersion` trong các `Seed(...)` helper của bộ test V2 đã thành vết tích (nhánh `!isV2` không còn dùng). Nên dọn ở Phase 7 để test không đọc như đang bảo vệ thứ nó không bảo vệ.
 
 **Phase 2:** create/OTP/verify/pending-edit/resubmit/safe-edit ghi detail **riêng từng campus** (DECISION-01); viết lại `VisitFormReadService` Pure V2; claim/transfer/amendment.
 
@@ -283,11 +426,14 @@ Không push, không mở PR, không merge, không rewrite history. Không có t�
 
 ## 13. VIỆC CHỦ DỰ ÁN PHẢI LÀM
 
-1. ⛔ **ROTATE credential** (chặn deploy — ưu tiên cao nhất):
-   - Gmail app password (SMTP)
-   - JWT signing key
-   - Google OAuth client secret + refresh token (Drive)
-   Sau đó cấp qua environment variable / secret manager. **Không** ghi giá trị vào repo.
+1. ⛔ **ROTATE đủ 4 credential** (chặn công nhận toàn dự án READY):
+   1. Gmail app password (SMTP)
+   2. JWT signing key
+   3. Google OAuth client secret
+   4. Google OAuth refresh token
+
+   Toàn dự án chỉ được kết luận `READY` sau khi chủ dự án xác nhận **cả bốn** đã rotate.
+   Giá trị credential không được in ra terminal, báo cáo, commit hay chat.
 2. Xác nhận có muốn rewrite Git history hay không (ảnh hưởng 5 branch — cần phê duyệt rõ ràng, ngoài phạm vi phiên này).
 3. Quyết định thời điểm chạy Phase 1 tiếp theo (`git stash pop`).
 
@@ -302,19 +448,22 @@ Không push, không mở PR, không merge, không rewrite history. Không có t�
 [x] Production lấy secret từ environment và fail rõ khi thiếu.
 [x] dotnet build PEMS.slnx = 0 error.
 [x] Architecture tests xanh (14/14).
-[x] Unit tests xanh (937/937), không bị skip do build.
+[x] Unit tests xanh (926/926), không bị skip do build.
+[x] Integration tests CHẠY THẬT và xanh (517/517) trên DB disposable.
 [x] Integration bootstrap fail-closed.
 [x] Bootstrap import đúng một SQL canonical và verify đúng hash.
-[ ] SQL fresh import + rerun trong phiên này.                         (phiên audit: đạt)
+[x] SQL fresh import chạy thật trong phiên này (mỗi lần chạy integration).
 [ ] Mọi SQL issue_count = 0.                                          ← Phase 6
 [ ] Negative guard 14/14 PASS thật.                                   ← Phase 6
 [ ] 151 placeholder về 0.                                             ← Phase 6
 [ ] 3 operational instance thiếu agenda về 0.                         ← Phase 6
 [ ] Self-check xác minh không còn discriminator ở cả hai bảng.        ← Phase 6
-[~] Không còn 12 phantom EF mapping.                                  ← đã xóa, trong stash
-[ ] EF contract test materialize toàn bộ mapping trên schema thật.    ← Phase 1C
-[~] Không còn runtime read/write form_schema_version.                 ← 64 site xong, 183 lỗi còn lại
-[ ] Không còn runtime read/write 10 global-form column.               ← Phase 2
+[x] Không còn 12 phantom EF mapping.
+[x] EF contract test kiểm mọi mapping trên schema thật (SchemaContractTests).
+[x] EF DeleteBehavior khớp FK canonical (GAP-014) + test chặn drift.
+[x] Nullability khớp SQL/CLR/EF/DTO/validator (GAP-017) + test hai chiều.
+[x] Không còn runtime read/write form_schema_version.
+[x] Không còn runtime read/write 10 global-form column.
 [ ] Create/OTP/edit/resubmit/safe-edit ghi detail riêng từng campus.  ← Phase 2
 [ ] Không fallback operational contact request-level.                 ← Phase 2
 [ ] Guest/support members giữ đúng campus.                            ← Phase 2
@@ -328,8 +477,8 @@ Không push, không mở PR, không merge, không rewrite history. Không có t�
 [ ] Translation/Gallery/FAQ/Partner/Vision/Expense runtime contract.   ← Phase 5
 [ ] Real-stack critical E2E xanh.                                      ← Phase 6
 [x] Không còn stale SQL runtime/test reference.
-[~] Không còn V1 service/handler reachable.                            ← đã xóa, trong stash
-[ ] Không regression permission/audit/notification/idempotency.        ← cần integration test
+[x] Không còn V1 service/handler reachable.
+[x] Không regression permission/audit/notification/idempotency.        ← 517/517 integration PASS
 [x] Commit gom theo chức năng, không có tên AI.
 ```
 
