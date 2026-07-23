@@ -117,18 +117,11 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
                 .Where(r => r.VisitRequestId == visit.VisitRequestId)
                 .Select(r => r.VisitInstanceId)
                 .ToList();
-            if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-            {
-                var content = await _formReadService.ResolveCampusFormContentAsync(
-                    visit, visitInstanceIds, cancellationToken);
-                foreach (var id in visitInstanceIds)
-                    nameByInstance[id] = content[id].DelegationName;
-            }
-            else
-            {
-                foreach (var id in visitInstanceIds)
-                    nameByInstance[id] = visit.DelegationName;
-            }
+            // One folder row per campus instance ⇒ each shows its OWN detail name, never a sibling's.
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, visitInstanceIds, cancellationToken);
+            foreach (var id in visitInstanceIds)
+                nameByInstance[id] = content[id].DelegationName;
         }
 
         var items = rows

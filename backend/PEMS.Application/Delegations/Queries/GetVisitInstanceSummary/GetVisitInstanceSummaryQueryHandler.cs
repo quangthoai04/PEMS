@@ -78,36 +78,22 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             hostName = await _db.Users.Where(u => u.UserId == instance.CurrentHostUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken);
         }
 
-        // ── Per-campus form v2 (INSTANCE-LEVEL: keyed by visit_instance_id → a MIXED request still
-        // returns 200; source ONLY the TARGET instance's form content + member links, never global,
-        // never a sibling campus). v1 keeps the global projection. ──
-        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-        string delegationName = visit.DelegationName;
-        string? visitType = visit.VisitType, visitTypeOther = visit.VisitTypeOther;
-        string? purpose = visit.Purpose, workingContent = visit.WorkingContent;
-        string? workingLanguage = visit.WorkingLanguage;
-        string? mediaConsentStatus = visit.MediaConsentStatus, mediaConsentNote = visit.MediaConsentNote;
-        string? transportationNote = visit.TransportationNote, noteToFptu = visit.NoteToFptu;
-        var guestMembers = visit.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-        var externalSupportMembers = visit.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-        if (isV2)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            var d = content[instance.VisitInstanceId];
-            delegationName = d.DelegationName;
-            visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
-            purpose = d.Purpose; workingContent = d.WorkingContent;
-            workingLanguage = d.WorkingLanguage;
-            mediaConsentStatus = d.MediaConsentStatus; mediaConsentNote = d.MediaConsentNote;
-            transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
-            guestMembers = d.Visitors.Select(MapRow).ToList();
-            externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
-        }
+        // ── INSTANCE-LEVEL form content (keyed by visit_instance_id → a MIXED request still returns 200).
+        // Pure V2: source ONLY the TARGET instance's detail + its own member links — never a sibling
+        // campus, and there is no request-level snapshot to fall back to. A missing detail throws inside
+        // the read service rather than silently degrading here. ──
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var detail = content[instance.VisitInstanceId];
+
+        string delegationName = detail.DelegationName;
+        string? visitType = detail.VisitType, visitTypeOther = detail.VisitTypeOther;
+        string? purpose = detail.Purpose, workingContent = detail.WorkingContent;
+        string? workingLanguage = detail.WorkingLanguage;
+        string? mediaConsentStatus = detail.MediaConsentStatus, mediaConsentNote = detail.MediaConsentNote;
+        string? transportationNote = detail.TransportationNote, noteToFptu = detail.NoteToFptu;
+        var guestMembers = detail.Visitors.Select(MapRow).ToList();
+        var externalSupportMembers = detail.SupportMembers.Select(MapRow).ToList();
 
         // Mapping RequestSummary
         var requestCampusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();

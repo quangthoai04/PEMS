@@ -73,7 +73,16 @@ public sealed class HoUnprocessedCampusAlertHostedService : BackgroundService
             where c.Status == VisitInstanceStatus.WaitingRequestApproval
                   && r.VisitScope == VisitScopes.MultiCampus
                   && c.PlannedStartAt <= threshold
-            select new { c.VisitInstanceId, c.CampusId, c.PlannedStartAt, r.VisitRequestId, r.RequestCode, r.DelegationName })
+            // The alert is about ONE unprocessed campus instance → name it from that instance's detail.
+            select new
+            {
+                c.VisitInstanceId,
+                c.CampusId,
+                c.PlannedStartAt,
+                r.VisitRequestId,
+                r.RequestCode,
+                DelegationName = c.FormDetail != null ? c.FormDetail.DelegationName : null
+            })
             .Take(100)
             .ToListAsync(ct);
 

@@ -88,27 +88,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
             // sibling campus. Registrant identity fields stay request-level in both versions. v1 keeps the
             // global projection, byte-identical. The participant is already scoped to one instance. ──
             var visit = camp.VisitRequest;
-            var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-            string delegationName, purpose, workingContent, contactPersonFullName, contactPersonPhone;
-            if (isV2)
-            {
-                var content = await _formReadService.ResolveCampusFormContentAsync(
-                    visit, new[] { camp.VisitInstanceId }, cancellationToken);
-                var d = content[camp.VisitInstanceId];
-                delegationName = d.DelegationName;
-                purpose = d.Purpose ?? "";
-                workingContent = d.WorkingContent ?? "";
-                contactPersonFullName = d.OperationalContact.FullName ?? "";
-                contactPersonPhone = d.OperationalContact.Phone ?? "";
-            }
-            else
-            {
-                delegationName = visit.DelegationName;
-                purpose = visit.Purpose ?? "";
-                workingContent = visit.WorkingContent ?? "";
-                contactPersonFullName = visit.ContactPersonFullName ?? "";
-                contactPersonPhone = visit.ContactPersonPhone ?? "";
-            }
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { camp.VisitInstanceId }, cancellationToken);
+            var d = content[camp.VisitInstanceId];
+            string delegationName = d.DelegationName;
+            string purpose = d.Purpose ?? "";
+            string workingContent = d.WorkingContent ?? "";
+            // OPERATIONAL contact of this campus — deliberately NOT the request-level primary contact.
+            string contactPersonFullName = d.OperationalContact.FullName ?? "";
+            string contactPersonPhone = d.OperationalContact.Phone ?? "";
 
             return new InvitationDetailDto
             {

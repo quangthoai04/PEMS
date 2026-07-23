@@ -185,10 +185,7 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
                 CreatedByName = createdByName,
                 UpdatedAt = minute.UpdatedAt.HasValue ? DateTime.SpecifyKind(minute.UpdatedAt.Value, DateTimeKind.Utc).ToString("O") : null,
                 UpdatedByName = updatedByName,
-                VisitTitle = vrc?.VisitRequest is { } vvr
-                             && vvr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? vrc.FormDetail?.DelegationName
-                    : vrc?.VisitRequest?.DelegationName,
+                VisitTitle = vrc?.FormDetail?.DelegationName,
                 VisitRequestId = vrc?.VisitRequestId,
                 CampusName = campusName,
                 HostName = hostName,

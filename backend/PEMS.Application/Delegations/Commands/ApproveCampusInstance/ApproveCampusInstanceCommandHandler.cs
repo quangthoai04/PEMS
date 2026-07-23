@@ -213,13 +213,9 @@ public sealed class ApproveCampusInstanceCommandHandler
         // Delegation name for the notification text: this whole command acts on ONE campus instance, so v2
         // (incl. mixed) sources it from THIS instance's per-campus detail — never the global field, never a
         // sibling. v1 keeps the global projection (byte-identical text). No global fallback for v2.
-        var delegationName = visit.DelegationName;
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var formContent = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            delegationName = formContent[instance.VisitInstanceId].DelegationName;
-        }
+        var formContent = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var delegationName = formContent[instance.VisitInstanceId].DelegationName;
 
         var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var visitProcessUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";

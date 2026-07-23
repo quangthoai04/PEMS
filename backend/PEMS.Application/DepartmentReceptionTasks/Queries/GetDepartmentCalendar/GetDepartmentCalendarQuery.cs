@@ -103,10 +103,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                    select new
                                    {
                                        p, u, r, c, vr,
-                                       EffectiveDelegationName =
-                                           vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                                               ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
-                                               : vr.DelegationName,
+                                       EffectiveDelegationName = c.FormDetail != null ? c.FormDetail.DelegationName : null,
                                    };
             var invitationsList = await invitationsQuery.ToListAsync(cancellationToken);
             var senderIds = invitationsList.Where(x => x.p.InvitedBy != null).Select(x => x.p.InvitedBy).Distinct().ToList();
@@ -192,10 +189,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                  select new
                                  {
                                      l, c, vr, startAt, latestAttemptStatus, borrowSigned, returnSigned,
-                                     EffectiveDelegationName =
-                                         vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                                             ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
-                                             : vr.DelegationName,
+                                     EffectiveDelegationName = c.FormDetail != null ? c.FormDetail.DelegationName : null,
                                  };
             
             var logisticsList = await logisticsQuery.ToListAsync(cancellationToken);

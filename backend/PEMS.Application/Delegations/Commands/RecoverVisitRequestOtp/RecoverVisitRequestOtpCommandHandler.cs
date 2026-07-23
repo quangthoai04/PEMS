@@ -1,7 +1,7 @@
 using MediatR;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
-using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
+using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Commands.RecoverVisitRequestOtp;

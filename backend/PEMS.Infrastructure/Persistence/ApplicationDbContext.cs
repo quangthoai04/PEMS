@@ -300,9 +300,13 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitRequest>()
             .HasOne(v => v.Partner).WithMany()
             .HasForeignKey(v => v.PartnerId).OnDelete(DeleteBehavior.SetNull);
+        // SET NULL, matching fk_visit_requests_visitor_user in the canonical schema: deleting the visitor
+        // account detaches the request rather than blocking the delete, and the request survives as a
+        // historical record. Declaring Restrict here made EF refuse deletes the database would have allowed,
+        // so the same operation succeeded or failed depending on whether the graph happened to be tracked.
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
-            .HasForeignKey(v => v.VisitorUserId).OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(v => v.VisitorUserId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
             .HasForeignKey(v => v.RegistrantUserId).OnDelete(DeleteBehavior.SetNull);

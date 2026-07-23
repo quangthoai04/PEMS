@@ -78,10 +78,9 @@ public sealed class GetVisitInvitationsQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword.ToLower();
+            // Keyword matches the delegation name of THIS invitation's own campus instance.
             q = q.Where(x =>
-                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-                    ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
-                    : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
+                (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword)) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)));
         }
 
@@ -121,9 +120,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 x.c.VisitRequestId,
                 x.c.CampusId,
                 x.vr.RequestCode,
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
-                    : x.vr.DelegationName,
+                DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 x.vr.VisitScope,
                 x.c.PlannedStartAt,
                 x.c.PlannedEndAt,

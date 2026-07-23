@@ -112,11 +112,13 @@ public sealed class VisitReminderDispatchHostedService : BackgroundService
     {
         var instance = await db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
+            .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == reminder.VisitInstanceId, ct);
         if (instance == null)
             throw new InvalidOperationException($"Visit instance {reminder.VisitInstanceId} not found.");
 
-        var delegationName = instance.VisitRequest?.DelegationName ?? "FPT University";
+        // The reminder targets ONE campus instance → its own per-campus delegation name.
+        var delegationName = instance.FormDetail?.DelegationName ?? "FPT University";
         var campusName = await db.Campuses
             .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
             .FirstOrDefaultAsync(ct) ?? "FPT University";

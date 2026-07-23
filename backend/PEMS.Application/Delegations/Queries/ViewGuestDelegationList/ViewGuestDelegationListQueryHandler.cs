@@ -212,9 +212,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             // never a hidden sibling campus's content.
             var keyword = request.Keyword.ToLower();
             q = q.Where(x =>
-                (x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
-                    : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
+                ( x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword)) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)) ||
                 (x.vr.RegistrantOrganization != null && x.vr.RegistrantOrganization.ToLower().Contains(keyword)) ||
                 (x.vr.RegistrantFullName != null && x.vr.RegistrantFullName.ToLower().Contains(keyword)) ||
@@ -343,11 +341,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CampusCancellationSource = x.c.CancellationSource,
                 CampusCancelledBy = x.c.CancelledBy,
                 x.vr.RequestCode,
-                x.vr.FormSchemaVersion,
                 x.vr.HasMixedCampusDetails,
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
-                    : x.vr.DelegationName,
+                // Instance row: always THIS campus's own detail, never a sibling's.
+                DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 x.vr.PartnerId,
                 x.vr.RegistrantOrganization,
                 RequestStatus = x.vr.Status,
@@ -430,7 +426,6 @@ public sealed class ViewGuestDelegationListQueryHandler
             // ── Match contexts (instance-level): the authorized campus IS this single row instance, so a
             // sibling campus can never appear. Fields mirror the instance-level keyword predicate exactly;
             // the RAW partner name (not the RegistrantOrganization fallback) is tested for PARTNER. ──
-            bool isV2Row = r.FormSchemaVersion >= FormSchemaVersions.PerCampus;
             string? rawPartnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var rpn) ? rpn : null;
             var reqMatchFields = new List<VisitSearchMatchContextBuilder.Field>
             {
@@ -439,13 +434,14 @@ public sealed class ViewGuestDelegationListQueryHandler
                 new(VisitSearchFieldCodes.Partner, rawPartnerName),
                 new(VisitSearchFieldCodes.PrimaryContact, visitorName),
             };
-            if (!isV2Row) reqMatchFields.Add(new(VisitSearchFieldCodes.DelegationName, r.DelegationName));
             var campusMatchFields = new List<VisitSearchMatchContextBuilder.Field>
             {
                 new(VisitSearchFieldCodes.Campus, campusName),
                 new(VisitSearchFieldCodes.Host, hostName),
+                // Pure V2: the delegation name belongs to the CAMPUS scope (it is per-campus), never to the
+                // request-level field list. r.DelegationName here is this row's own instance detail.
+                new(VisitSearchFieldCodes.DelegationName, r.DelegationName),
             };
-            if (isV2Row) campusMatchFields.Add(new(VisitSearchFieldCodes.DelegationName, r.DelegationName));
             var matchedContexts = VisitSearchMatchContextBuilder.Build(
                 request.Keyword, reqMatchFields,
                 new[] { new VisitSearchMatchContextBuilder.CampusScope(r.VisitInstanceId, r.CampusId, campusName, campusMatchFields) });
@@ -461,7 +457,6 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestStatus = r.RequestStatus,
                 CampusStatus = r.CampusStatus,
                 VisitScope = r.VisitScope,
-                FormSchemaVersion = r.FormSchemaVersion,
                 HasMixedCampusDetails = r.HasMixedCampusDetails,
                 CampusId = r.CampusId,
                 CampusName = campusName,
@@ -538,10 +533,8 @@ public sealed class ViewGuestDelegationListQueryHandler
             // global projection is never business content for mixed requests).
             var kw = request.Keyword.ToLower();
             q = q.Where(vr =>
-                (vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? vr.CampusInstances.Any(ci => ci.FormDetail != null
-                        && ci.FormDetail.DelegationName.ToLower().Contains(kw))
-                    : (vr.DelegationName != null && vr.DelegationName.ToLower().Contains(kw))) ||
+                ( vr.CampusInstances.Any(ci => ci.FormDetail != null
+                        && ci.FormDetail.DelegationName.ToLower().Contains(kw))) ||
                 (vr.RequestCode != null && vr.RequestCode.ToLower().Contains(kw)) ||
                 (vr.RegistrantOrganization != null && vr.RegistrantOrganization.ToLower().Contains(kw)) ||
                 (vr.RegistrantFullName != null && vr.RegistrantFullName.ToLower().Contains(kw)) ||
@@ -787,26 +780,23 @@ public sealed class ViewGuestDelegationListQueryHandler
 
             // ── Match contexts (request-level): Visitor owner / HO / registrant see EVERY campus of their
             // own request, so iterating all instances leaks nothing. Fields mirror the request-level keyword
-            // predicate exactly (delegation/code/reg-org/partner — NO campus/host/owner name). For v2 the
-            // delegation is per-campus (from FormDetail); for v1 it is the request-level global field. ──
-            bool isV2Req = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+            // predicate exactly (code/reg-org/partner — NO campus/host/owner name). Pure V2: the delegation
+            // name is per-campus, so it is reported under each campus scope, never as a request-level field. ──
             var reqMatchFields = new List<VisitSearchMatchContextBuilder.Field>
             {
                 new(VisitSearchFieldCodes.RequestCode, vr.RequestCode),
                 new(VisitSearchFieldCodes.RegistrantOrganization, vr.RegistrantOrganization),
                 new(VisitSearchFieldCodes.Partner, vr.Partner?.Name),
             };
-            if (!isV2Req) reqMatchFields.Add(new(VisitSearchFieldCodes.DelegationName, vr.DelegationName));
-            var campusMatchScopes = isV2Req
-                ? instances.Select(i => new VisitSearchMatchContextBuilder.CampusScope(
-                        i.VisitInstanceId, i.CampusId,
-                        campusNames.TryGetValue(i.CampusId, out var cnm3) ? cnm3 : null,
-                        new List<VisitSearchMatchContextBuilder.Field>
-                        {
-                            new(VisitSearchFieldCodes.DelegationName, i.FormDetail != null ? i.FormDetail.DelegationName : null),
-                        }))
-                    .ToList()
-                : new List<VisitSearchMatchContextBuilder.CampusScope>();
+            var campusMatchScopes = instances
+                .Select(i => new VisitSearchMatchContextBuilder.CampusScope(
+                    i.VisitInstanceId, i.CampusId,
+                    campusNames.TryGetValue(i.CampusId, out var cnm3) ? cnm3 : null,
+                    new List<VisitSearchMatchContextBuilder.Field>
+                    {
+                        new(VisitSearchFieldCodes.DelegationName, i.FormDetail != null ? i.FormDetail.DelegationName : null),
+                    }))
+                .ToList();
             var matchedContexts = VisitSearchMatchContextBuilder.Build(request.Keyword, reqMatchFields, campusMatchScopes);
 
             return new VisitRequestManagementItemDto
@@ -818,16 +808,15 @@ public sealed class ViewGuestDelegationListQueryHandler
                 // A request-level row cannot represent a MIXED v2 request with one name — the projection
                 // (smallest campus) is never shown as business content; the row is explicitly labeled and
                 // the per-campus names live in the campus progress items/detail view (plan §8.3).
-                DelegationName = vr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (vr.HasMixedCampusDetails
-                        ? "Khác nhau theo cơ sở"
-                        : (instances.FirstOrDefault()?.FormDetail != null ? instances.FirstOrDefault()!.FormDetail!.DelegationName : vr.DelegationName))
-                    : vr.DelegationName,
+                // Not mixed ⇒ every instance carries identical content, so any instance's detail is THE
+                // request-level value (deterministic, not "whichever campus happened to be first").
+                DelegationName = vr.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : instances.FirstOrDefault()?.FormDetail?.DelegationName,
                 PartnerName = vr.Partner != null ? vr.Partner.Name : vr.RegistrantOrganization,
                 RequestStatus = vr.Status,
                 CampusStatus = single?.Status,
                 VisitScope = vr.VisitScope,
-                FormSchemaVersion = vr.FormSchemaVersion,
                 HasMixedCampusDetails = vr.HasMixedCampusDetails,
                 CampusId = single?.CampusId,
                 CampusName = campusName,

@@ -103,7 +103,8 @@ public static class CampusStatusImpactCalculator
                 VisitInstanceId = instance.VisitInstanceId,
                 RequestId = instance.VisitRequestId,
                 RequestCode = request.RequestCode,
-                DelegationName = request.DelegationName,
+                // Each example row IS one campus instance, so it shows that instance's own name.
+                DelegationName = instance.FormDetail != null ? instance.FormDetail.DelegationName : null,
                 Status = instance.Status,
                 PlannedStartAt = instance.PlannedStartAt,
                 PlannedEndAt = instance.PlannedEndAt,

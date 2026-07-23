@@ -79,9 +79,7 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
                 select new
                 {
                     ci.VisitRequest.RequestCode,
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     ci.PlannedStartAt,
                     ci.PlannedEndAt,
                     p.Status,
@@ -98,9 +96,7 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
                 select new
                 {
                     ci.VisitRequest.RequestCode,
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     PlannedStartAt = startAt,
                     PlannedEndAt = li.UsageEndAt ?? ci.PlannedEndAt,
                     li.Status,

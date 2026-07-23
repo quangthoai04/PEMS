@@ -44,9 +44,7 @@ public sealed class GetPendingFeedbackNotificationsQueryHandler
                 i.VisitInstanceId,
                 r.VisitRequestId,
                 // Mixed per-campus v2 rows show THIS instance's detail name (no global fallback).
-                DelegationName = r.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (i.FormDetail != null ? i.FormDetail.DelegationName : null)
-                    : r.DelegationName,
+                DelegationName = i.FormDetail != null ? i.FormDetail.DelegationName : null,
                 CampusName = c.Name,
                 i.Status,
                 i.PlannedStartAt,

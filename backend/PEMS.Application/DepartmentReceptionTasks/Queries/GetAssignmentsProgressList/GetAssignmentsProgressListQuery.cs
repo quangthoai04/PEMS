@@ -157,10 +157,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 ReturnSigned = returnSigned,
                 // Mixed per-campus v2 rows show THIS instance's detail (no global fallback);
                 // v1/non-mixed keep the projection (byte-identical there).
-                EffectiveDelegationName =
-                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                        ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
-                        : vr.DelegationName,
+                EffectiveDelegationName = inst.FormDetail != null ? inst.FormDetail.DelegationName : null,
             })
             .ToListAsync(cancellationToken);
 
@@ -280,14 +277,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
             select new
             {
                 p, u, inst, vr,
-                EffectiveDelegationName =
-                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                        ? (inst.FormDetail != null ? inst.FormDetail.DelegationName : null)
-                        : vr.DelegationName,
-                EffectiveWorkingContent =
-                    vr.FormSchemaVersion >= Domain.Constants.FormSchemaVersions.PerCampus
-                        ? (inst.FormDetail != null ? inst.FormDetail.WorkingContent : null)
-                        : vr.WorkingContent,
+                EffectiveDelegationName = inst.FormDetail != null ? inst.FormDetail.DelegationName : null,
+                EffectiveWorkingContent = inst.FormDetail != null ? inst.FormDetail.WorkingContent : null,
             })
             .ToListAsync(cancellationToken);
 

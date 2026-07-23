@@ -91,7 +91,8 @@ public sealed class SendStaffLeaderDepartmentReportCommandHandler
                     li.LogisticsItemId,
                     li.Title,
                     li.Status,
-                    DelegationName = ci.VisitRequest.DelegationName,
+                    // Instance-scoped row → THIS campus instance's own detail name.
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     StartAt = li.UsageStartAt ?? ci.PlannedStartAt,
                 })
             .ToListAsync(cancellationToken);
@@ -106,7 +107,8 @@ public sealed class SendStaffLeaderDepartmentReportCommandHandler
                 {
                     ci.VisitInstanceId,
                     p.Status,
-                    DelegationName = ci.VisitRequest.DelegationName,
+                    // Instance-scoped row → THIS campus instance's own detail name.
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     ci.PlannedStartAt,
                 })
             .ToListAsync(cancellationToken);

@@ -268,12 +268,17 @@ public sealed class CreateVisitRequestV2CommandHandler
         if (notifyAssignedHostId is { } assignedHostId)
         {
             var assignedInstance = created.CampusInstances.First(c => c.CurrentHostUserId == assignedHostId);
+            // The host is assigned to ONE campus, so name the delegation from THAT instance's own detail.
+            var assignedDelegationName = await _db.VisitInstanceFormDetails.AsNoTracking()
+                .Where(d => d.VisitInstanceId == assignedInstance.VisitInstanceId)
+                .Select(d => d.DelegationName)
+                .FirstOrDefaultAsync(cancellationToken) ?? created.RequestCode;
             await _notificationService.CreateManyAsync(new[]
             {
                 new CreateNotificationRequest(
                     RecipientUserId: assignedHostId,
                     Title: "Bạn được gán phụ trách đoàn khách",
-                    Message: $"Bạn được phân công làm host chính cho đoàn {created.DelegationName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
+                    Message: $"Bạn được phân công làm host chính cho đoàn {assignedDelegationName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
                     RelatedId: assignedInstance.VisitInstanceId,
@@ -295,7 +300,7 @@ public sealed class CreateVisitRequestV2CommandHandler
         string submissionId, CancellationToken ct)
     {
         var row = await _db.VisitRequests.AsNoTracking()
-            .Where(v => v.SubmissionId == submissionId && v.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+            .Where(v => v.SubmissionId == submissionId)
             .Select(v => new { v.VisitRequestId, v.RequestCode })
             .FirstOrDefaultAsync(ct);
         return row is null ? null : (row.VisitRequestId, row.RequestCode ?? string.Empty);

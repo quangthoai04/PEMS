@@ -86,11 +86,9 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
                         {
                             // Mixed v2 titles from the owning instance's detail; a request-level document
                             // on a mixed request gets the explicit label (plan §8.3).
-                            VisitTitle = visitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                ? (visitRequest.HasMixedCampusDetails
-                                    ? "Khác nhau theo cơ sở"
-                                    : (visitInstance?.FormDetail?.DelegationName ?? visitRequest.DelegationName))
-                                : visitRequest.DelegationName,
+                            VisitTitle = visitRequest.HasMixedCampusDetails
+                                ? "Khác nhau theo cơ sở"
+                                : visitInstance?.FormDetail?.DelegationName,
                             VisitRequestId = visitRequest.VisitRequestId,
                             ExpectedStartDate = visitInstance?.PlannedStartAt,
                             ExpectedEndDate = visitInstance?.PlannedEndAt,
@@ -139,9 +137,7 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
                             MinuteId = minute.MinutesId,
                             MinuteTitle = minute.Title,
                             Status = minute.Status,
-                            VisitTitle = mInst?.VisitRequest is { } mvr && mvr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                ? (mInst.FormDetail?.DelegationName ?? mvr.DelegationName)
-                                : mInst?.VisitRequest?.DelegationName,
+                            VisitTitle = mInst?.FormDetail?.DelegationName,
                             VisitRequestId = mInst?.VisitRequestId
                         };
                     }

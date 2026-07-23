@@ -64,11 +64,9 @@ public sealed class GetVisitInvitationByIdQueryHandler
                 PlannedStartAt = c.PlannedStartAt,
                 PlannedEndAt = c.PlannedEndAt,
                 RequestCode = vr.RequestCode,
-                DelegationName = vr.DelegationName,
                 OrganizationName = vr.RegistrantOrganization,
-                Purpose = vr.Purpose,
-                WorkingContent = vr.WorkingContent,
-                FormSchemaVersion = vr.FormSchemaVersion,
+                // Delegation name / purpose / working content are per-campus and are filled in below from
+                // THIS invitation's own instance detail.
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("VisitInvitation", request.ParticipantId);
@@ -78,18 +76,15 @@ public sealed class GetVisitInvitationByIdQueryHandler
         // from the TARGET instance's per-campus detail, never the global fields and never a sibling campus.
         // OrganizationName is the registrant organisation (request-level identity) and is unchanged. Missing
         // detail → 409 VISIT_FORM_DETAIL_MISSING, no global fallback. Ownership was enforced in the query
-        // above, before this projection. v1 keeps the global projection, so its response is byte-identical. ──
-        if (flat.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var visit = await _db.VisitRequests.AsNoTracking()
-                .FirstAsync(v => v.VisitRequestId == flat.VisitRequestId, cancellationToken);
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { flat.VisitInstanceId }, cancellationToken);
-            var d = content[flat.VisitInstanceId];
-            flat.DelegationName = d.DelegationName;
-            flat.Purpose = d.Purpose;
-            flat.WorkingContent = d.WorkingContent;
-        }
+        // above, before this projection. ──
+        var visit = await _db.VisitRequests.AsNoTracking()
+            .FirstAsync(v => v.VisitRequestId == flat.VisitRequestId, cancellationToken);
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { flat.VisitInstanceId }, cancellationToken);
+        var instanceDetail = content[flat.VisitInstanceId];
+        flat.DelegationName = instanceDetail.DelegationName;
+        flat.Purpose = instanceDetail.Purpose;
+        flat.WorkingContent = instanceDetail.WorkingContent;
 
         var dto = VisitInvitationProjection.ToDto(flat);
         var list = new List<VisitInvitationDto> { dto };

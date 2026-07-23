@@ -216,10 +216,6 @@ internal static class TransferGuards
             .FirstOrDefaultAsync(v => v.VisitRequestId == visitRequestId, ct)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", visitRequestId);
 
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus)
-            throw new BusinessRuleException(
-                "Đơn này không dùng biểu mẫu theo cơ sở (v2).",
-                VisitFormV2ErrorCodes.FormVersionUpgradeRequired);
         if (visit.RegistrantUserId != actorId && visit.VisitorUserId != actorId)
             throw new ForbiddenException(
                 "Chỉ người đăng ký hoặc đầu mối liên hệ hiện tại mới được quản lý chuyển giao đầu mối.");

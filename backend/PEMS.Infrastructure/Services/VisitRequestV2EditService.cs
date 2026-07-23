@@ -310,24 +310,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
             registrantEmailNorm, contactEmailNorm, scope, finalContents);
 
-        // Compatibility projection = the smallest-campus_id campus of the FINAL set (transition only).
-        var projection = edit.CampusVisits
-            .OrderBy(cv => campusIdsByCode[cv.CampusId.Trim().ToUpperInvariant()])
-            .First();
-
+        // Pure V2: each campus's content was already written to its own visit_instance_form_details.
+        // The request row keeps identity, scope and lifecycle only — no compatibility projection.
         request.VisitScope = scope;
         request.HasMixedCampusDetails = hasMixed;
         request.BusinessFingerprint = fingerprint;
-        request.DelegationName = projection.DelegationName;
-        request.VisitType = projection.VisitType;
-        request.VisitTypeOther = projection.VisitType == "OTHER" ? projection.VisitTypeOther : null;
-        request.Purpose = projection.Purpose;
-        request.WorkingContent = projection.WorkingContent;
-        request.WorkingLanguage = projection.WorkingLanguage;
-        request.TransportationNote = VisitRequestV2EditOps.Clean(projection.TransportationNote);
-        request.MediaConsentStatus = projection.MediaConsentStatus;
-        request.MediaConsentNote = projection.MediaConsentNote;
-        request.NoteToFptu = projection.Notes;
         request.RowVersion += 1;
         request.UpdatedAt = now;
         request.UpdatedBy = actorId;
@@ -551,16 +538,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         request.VisitScope = scope;
         request.HasMixedCampusDetails = hasMixed;
         request.BusinessFingerprint = fingerprint;
-        request.DelegationName = projection.DelegationName;
-        request.VisitType = projection.VisitType;
-        request.VisitTypeOther = projection.VisitType == "OTHER" ? projection.VisitTypeOther : null;
-        request.Purpose = projection.Purpose;
-        request.WorkingContent = projection.WorkingContent;
-        request.WorkingLanguage = projection.WorkingLanguage;
-        request.TransportationNote = VisitRequestV2EditOps.Clean(projection.TransportationNote);
-        request.MediaConsentStatus = projection.MediaConsentStatus;
-        request.MediaConsentNote = projection.MediaConsentNote;
-        request.NoteToFptu = projection.Notes;
+        // Pure V2: resubmitted content was written per campus; the request row carries no form content.
         request.Status = VisitRequestStatuses.PendingApproval;
         request.ResubmissionCount = oldCount + 1;
         request.LastResubmittedAt = now;

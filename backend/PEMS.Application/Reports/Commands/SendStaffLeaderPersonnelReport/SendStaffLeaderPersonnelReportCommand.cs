@@ -90,9 +90,7 @@ public sealed class SendStaffLeaderPersonnelReportCommandHandler
                     {
                         ci.VisitInstanceId,
                         ci.VisitRequest.RequestCode,
-                        DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                            ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                            : ci.VisitRequest.DelegationName,
+                        DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                         ci.PlannedStartAt,
                         ci.PlannedEndAt,
                         ci.Status,
@@ -115,9 +113,7 @@ public sealed class SendStaffLeaderPersonnelReportCommandHandler
                     .Select(ci => new
                     {
                         ci.VisitRequest.RequestCode,
-                        DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                            ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                            : ci.VisitRequest.DelegationName,
+                        DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                         ci.PlannedStartAt,
                         ci.PlannedEndAt,
                         ci.Status,

@@ -76,7 +76,8 @@ public sealed class CreateNewsCommandHandler
                     vrc.Status,
                     vrc.CurrentHostUserId,
                     vrc.NewsNotRequired,
-                    MediaConsentStatus = vrc.VisitRequest.MediaConsentStatus
+                    // Per-campus consent: THIS instance's detail, not a request-wide value.
+                    MediaConsentStatus = vrc.FormDetail != null ? vrc.FormDetail.MediaConsentStatus : null
                 })
                 .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new NotFoundException("Chuyến tiếp khách", visitInstanceId);

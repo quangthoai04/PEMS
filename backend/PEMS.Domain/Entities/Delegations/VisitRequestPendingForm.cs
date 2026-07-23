@@ -27,8 +27,6 @@ public class VisitRequestPendingForm
     [Column("registrant_email")]
     public string RegistrantEmail { get; set; } = null!;
 
-    [Column("form_schema_version")]
-    public short FormSchemaVersion { get; set; }
 
     /// <summary>v2 canonical fingerprint (<c>VisitRequestFingerprintBuilder.BuildV2</c>) for the defence-in-depth
     /// verify-time compare. A mismatch means the client changed core identity after initiate.</summary>

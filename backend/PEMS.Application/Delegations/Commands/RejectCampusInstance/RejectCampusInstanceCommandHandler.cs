@@ -116,13 +116,9 @@ public sealed class RejectCampusInstanceCommandHandler
         // This command acts on ONE campus instance → v2 (incl. mixed) sources the delegation name from THIS
         // instance's per-campus detail (never the global field, never a sibling); v1 keeps the global value
         // (byte-identical). No global fallback for v2.
-        var delegationName = visit.DelegationName;
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var formContent = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            delegationName = formContent[instance.VisitInstanceId].DelegationName;
-        }
+        var formContent = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var delegationName = formContent[instance.VisitInstanceId].DelegationName;
 
         var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
 

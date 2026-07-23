@@ -66,11 +66,6 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus)
-            throw new ConflictException(
-                "Đơn này dùng biểu mẫu phiên bản cũ. Vui lòng dùng chức năng gửi lại đơn hiện tại.",
-                VisitRequestErrorCodes.NotPerCampusV2);
-
         // ── Editor policy — same as pending-edit v2 (registrant OR ACTIVE primary contact). ──
         var isRegistrant = visit.RegistrantUserId == actorId;
         var isActiveContact = visit.VisitorUserId == actorId
@@ -122,7 +117,8 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
                 leaders.Select(id => new CreateNotificationRequest(
                     RecipientUserId: id,
                     Title: "Visitor đã gửi lại đơn bị từ chối",
-                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({(visit.FormSchemaVersion >= FormSchemaVersions.PerCampus ? (visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : visit.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName) : visit.DelegationName)}). Vui lòng xử lý lại tại cơ sở của bạn.",
+                    // Request-level message: a mixed request has no single business name.
+                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({(visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : visit.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName)}). Vui lòng xử lý lại tại cơ sở của bạn.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                     RelatedId: visit.VisitRequestId,

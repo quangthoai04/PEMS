@@ -9,7 +9,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
-using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
+using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 
@@ -135,7 +135,6 @@ public sealed class InitiateVisitRequestV2CommandHandler
             {
                 SubmissionId = form.SubmissionId,
                 RegistrantEmail = email,
-                FormSchemaVersion = (short)FormSchemaVersions.PerCampus,
                 FingerprintV2 = fingerprint,
                 SnapshotJson = snapshot,
                 CreatedAt = now,

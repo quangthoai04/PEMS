@@ -59,9 +59,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                     ci.PlannedEndAt,
                     ci.VisitRequest.RequestCode,
                     // Instance row: mixed v2 shows THIS instance's detail name.
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                 })
             .ToListAsync(cancellationToken);
 
@@ -83,9 +81,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                     PlannedEndAt = endAt,
                     ci.VisitRequest.RequestCode,
                     // Instance row: mixed v2 shows THIS instance's detail name.
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                 })
             .ToListAsync(cancellationToken);
 

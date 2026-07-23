@@ -62,7 +62,14 @@ public sealed class GetVisitContactTransferInfoQueryHandler
 
         var head = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == transfer.VisitRequestId)
-            .Select(v => new { v.RequestCode, v.DelegationName })
+            // A transfer covers the WHOLE request, so a mixed request has no single business name.
+            .Select(v => new
+            {
+                v.RequestCode,
+                DelegationName = v.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : v.CampusInstances.Select(c => c.FormDetail!.DelegationName).FirstOrDefault()
+            })
             .FirstOrDefaultAsync(cancellationToken);
         var requesterName = await _db.Users.AsNoTracking()
             .Where(u => u.UserId == transfer.RequestedBy)

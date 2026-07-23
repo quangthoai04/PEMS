@@ -79,9 +79,7 @@ public class GetHODashboardOverviewQueryHandler
             {
                 Id = r.VisitRequestId.ToString(),
                 // Request-level row: a MIXED v2 request has no single business name (plan §8.3).
-                Name = r.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName)
-                    : r.DelegationName,
+                Name = r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName,
                 Campus = "Nhiều cơ sở"
             })
             .ToListAsync(cancellationToken);
@@ -94,9 +92,7 @@ public class GetHODashboardOverviewQueryHandler
                               select new
                               {
                                   // Instance row: a MIXED v2 visit shows THIS campus's detail name.
-                                  Name = c.VisitRequest!.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                      ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
-                                      : c.VisitRequest.DelegationName,
+                                  Name = c.FormDetail != null ? c.FormDetail.DelegationName : null,
                                   Campus = cp.Name,
                                   Date = c.PlannedStartAt
                               })

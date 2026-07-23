@@ -1,5 +1,5 @@
 using MediatR;
-using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
+using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 
 namespace PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
 

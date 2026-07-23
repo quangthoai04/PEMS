@@ -56,17 +56,9 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
         // keyed by one visit_instance_id, so a MIXED request still returns 200 with THIS instance's visit type,
         // never the global field and never a sibling). Resolved AFTER the authorization check above; missing v2
         // detail → 409 VISIT_FORM_DETAIL_MISSING (no global fallback). v1 keeps the global value, byte-identical.
-        string visitType;
-        if (instance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
-            visitType = content[instance.VisitInstanceId].VisitType!;
-        }
-        else
-        {
-            visitType = instance.VisitRequest.VisitType;
-        }
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
+        string visitType = content[instance.VisitInstanceId].VisitType!;
 
         bool isLive = instance.Status != VisitInstanceStatus.Cancelled && instance.Status != VisitInstanceStatus.Closed;
         // Applying/editing the agenda is the host's job during the preparation window only.

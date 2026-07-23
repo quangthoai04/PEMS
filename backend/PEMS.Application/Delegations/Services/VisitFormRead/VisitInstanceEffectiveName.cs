@@ -28,16 +28,12 @@ public static class VisitInstanceEffectiveName
             .Select(c => new
             {
                 c.VisitInstanceId,
-                Name = c.VisitRequest!.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
-                    : c.VisitRequest.DelegationName,
+                Name = c.FormDetail != null ? c.FormDetail.DelegationName : null,
             })
             .ToDictionaryAsync(x => x.VisitInstanceId, x => (string?)x.Name, ct);
     }
 
-    /// <summary>In-memory variant for a loaded pair (the caller must have included the detail for v2).</summary>
+    /// <summary>In-memory variant for a loaded pair (the caller must have included the instance detail).</summary>
     public static string? Of(VisitRequest request, VisitInstanceFormDetail? instanceDetail)
-        => request.FormSchemaVersion >= FormSchemaVersions.PerCampus
-            ? instanceDetail?.DelegationName
-            : request.DelegationName;
+        => instanceDetail?.DelegationName;
 }

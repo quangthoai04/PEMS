@@ -19,13 +19,7 @@ public sealed class VisitRequestManagementItemDto
     // ── Form version (per-campus v2 routing) ──
     /// <summary>
     /// Form schema version of the underlying request: 1 = legacy global form, 2 = per-campus (v2).
-    /// The frontend routes detail/edit/resubmit on THIS value (from the database) — never guessed from
-    /// the mixed flag or campus count — so a v2 request always opens the v2 UI without waiting for a
-    /// v1 endpoint to reply 409 FORM_VERSION_UPGRADE_REQUIRED.
-    /// </summary>
-    public byte FormSchemaVersion { get; set; } = 1;
-
-    /// <summary>True when a v2 request stores different content per campus (drives the "Khác nhau theo cơ sở" label).</summary>
+    /// <summary>True when the request stores different content per campus (drives the "Khác nhau theo cơ sở" label).</summary>
     public bool HasMixedCampusDetails { get; set; }
 
     public ulong? CampusId { get; set; }

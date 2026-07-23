@@ -1,13 +1,9 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PEMS.Application.Delegations.Commands.CreateAuthenticatedVisitRequest;
-using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
+using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 using PEMS.Application.Delegations.Commands.RecoverVisitRequestOtp;
 using PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
-using PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequest;
-using PEMS.Application.Delegations.Commands.UpdatePendingVisitRequest;
-using PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequest;
 using PEMS.Application.Delegations.Queries.GetCreateHostCandidates;
 using PEMS.Application.Delegations.Queries.GetEditableVisitRequestDetail;
 using PEMS.Application.Delegations.Queries.GetVisitRequestFormV2;

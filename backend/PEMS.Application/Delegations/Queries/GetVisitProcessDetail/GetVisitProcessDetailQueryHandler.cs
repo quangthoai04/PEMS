@@ -176,47 +176,22 @@ public sealed class GetVisitProcessDetailQueryHandler
             }
         }
 
-        // ── Per-campus form v2 (INSTANCE-LEVEL: this screen is keyed by visit_instance_id, so a
-        // MIXED request still returns 200 — we source ONLY the TARGET instance's form content + member
-        // links, never the global fields and never a sibling campus). v1 keeps the global projection. ──
-        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-        string delegationName;
-        string? visitType, visitTypeOther, purpose, workingContent, workingLanguage;
-        string? mediaConsentStatus, mediaConsentNote, transportationNote, noteToFptu;
-        List<VisitProcessGuestMemberDto> guestMembers;
-        List<VisitProcessGuestMemberDto> externalSupportMembers;
+        // ── INSTANCE-LEVEL form content (this screen is keyed by visit_instance_id, so a MIXED request
+        // still returns 200). Pure V2: source ONLY the TARGET instance's detail + its own member links,
+        // never a sibling campus — there is no global snapshot left to fall back to. ──
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        if (!content.TryGetValue(instance.VisitInstanceId, out var d))
+            throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
 
-        if (isV2)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            if (!content.TryGetValue(instance.VisitInstanceId, out var d))
-                throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
-
-            delegationName = d.DelegationName;
-            visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
-            purpose = d.Purpose; workingContent = d.WorkingContent;
-            workingLanguage = d.WorkingLanguage;
-            mediaConsentStatus = d.MediaConsentStatus; mediaConsentNote = d.MediaConsentNote;
-            transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
-            guestMembers = d.Visitors.Select(MapRow).ToList();
-            externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
-        }
-        else
-        {
-            delegationName = visit.DelegationName;
-            visitType = visit.VisitType; visitTypeOther = visit.VisitTypeOther;
-            purpose = visit.Purpose; workingContent = visit.WorkingContent;
-            workingLanguage = visit.WorkingLanguage;
-            mediaConsentStatus = visit.MediaConsentStatus; mediaConsentNote = visit.MediaConsentNote;
-            transportationNote = visit.TransportationNote; noteToFptu = visit.NoteToFptu;
-            guestMembers = visit.GuestMembers
-                .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-            externalSupportMembers = visit.GuestMembers
-                .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-                .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-        }
+        string delegationName = d.DelegationName;
+        string? visitType = d.VisitType, visitTypeOther = d.VisitTypeOther;
+        string? purpose = d.Purpose, workingContent = d.WorkingContent;
+        string? workingLanguage = d.WorkingLanguage;
+        string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
+        string? transportationNote = d.TransportationNote, noteToFptu = d.NoteToFptu;
+        List<VisitProcessGuestMemberDto> guestMembers = d.Visitors.Select(MapRow).ToList();
+        List<VisitProcessGuestMemberDto> externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
 
         // ── Request summary (read-only mirror of the guest's original form) ──
         // Campus names for every campus instance of the request (multi-campus aware).

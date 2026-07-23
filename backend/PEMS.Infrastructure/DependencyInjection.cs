@@ -70,8 +70,8 @@ public static class DependencyInjection
         services.AddScoped<IFileStorageFolderResolver,
             PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveFolderResolver>();
 
-        // Visit request flow services (UC-17)
-        services.AddScoped<IVisitRequestService, VisitRequestService>();
+        // Visit request flow services (UC-17). Pure V2 only — the V1 create service was removed with
+        // its unreachable handlers; the retired V1 endpoints answer 410 without touching a service.
         services.AddScoped<IVisitRequestV2CreateService, VisitRequestV2CreateService>();
         services.AddScoped<IVisitRequestV2EditService, VisitRequestV2EditService>();
         services.AddScoped<IUserProvisionService, UserProvisionService>();

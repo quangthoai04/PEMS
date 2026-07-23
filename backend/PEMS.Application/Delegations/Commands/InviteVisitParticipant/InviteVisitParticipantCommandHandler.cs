@@ -108,13 +108,9 @@ public sealed class InviteVisitParticipantCommandHandler
             .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
         // The invitation is for THIS campus instance → v2 (incl. mixed) sources the delegation name from this
         // instance's per-campus detail (never the global field, never a sibling); v1 keeps the global value.
-        var delegationName = instance.VisitRequest.DelegationName;
-        if (instance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var formContent = await _formReadService.ResolveCampusFormContentAsync(
-                instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
-            delegationName = formContent[instance.VisitInstanceId].DelegationName;
-        }
+        var formContent = await _formReadService.ResolveCampusFormContentAsync(
+            instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
+        var delegationName = formContent[instance.VisitInstanceId].DelegationName;
 
         var now = _clock.VietnamNow;
 

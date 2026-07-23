@@ -101,8 +101,6 @@ public sealed class SubmitVisitAmendmentCommandHandler
             .Include(v => v.GuestMembers)
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus)
-            throw new ConflictException("Đơn này dùng biểu mẫu phiên bản cũ.", VisitRequestErrorCodes.NotPerCampusV2);
         AmendmentGuards.EnsureRequesterSide(visit, actorId);
 
         var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == request.VisitInstanceId)

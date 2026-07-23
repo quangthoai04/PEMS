@@ -62,7 +62,9 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
                        && (vrc.Status == VisitInstanceStatuses.AfterVisit
                            || vrc.Status == VisitInstanceStatuses.Closed)
                        && !vrc.NewsNotRequired
-                       && vrc.VisitRequest.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed)
+                       // Per-campus consent: only campuses the guest agreed to are eligible.
+                       && vrc.FormDetail != null
+                       && vrc.FormDetail.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed)
             .Select(vrc => new
             {
                 vrc.VisitInstanceId,

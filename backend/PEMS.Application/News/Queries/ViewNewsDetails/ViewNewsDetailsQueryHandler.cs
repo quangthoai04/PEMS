@@ -178,8 +178,8 @@ public sealed class ViewNewsDetailsQueryHandler
             {
                 SectionId       = s.SectionId,
                 SectionOrder    = s.SectionOrder,
-                SectionTitle    = s.SectionTitle ?? string.Empty,
-                SectionBodyHtml = s.SectionBodyHtml ?? string.Empty,
+                SectionTitle    = s.SectionTitle,
+                SectionBodyHtml = s.SectionBodyHtml,
                 SectionBodyText = s.SectionBodyText,
                 Files = filesBySectionId.TryGetValue(s.SectionId, out var files)
                     ? files.OrderBy(f => f.DisplayOrder).Select(f => new NewsSectionFileDto

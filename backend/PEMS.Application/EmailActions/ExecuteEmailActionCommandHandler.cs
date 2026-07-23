@@ -38,7 +38,6 @@ public sealed class ExecuteEmailActionCommandHandler
     {
         var visit = instance?.VisitRequest;
         if (visit is null) return null;
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus) return visit.DelegationName;
         var content = await _formReadService.ResolveCampusFormContentAsync(
             visit, new[] { instance!.VisitInstanceId }, ct);
         return content[instance.VisitInstanceId].DelegationName;

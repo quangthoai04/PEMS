@@ -99,9 +99,7 @@ public sealed class SendDeptLeaderInvoiceToStaffLeaderCommandHandler
                     li.Title,
                     li.Quantity,
                     // Instance row: mixed v2 shows THIS instance's detail name.
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     StartAt = li.UsageStartAt ?? ci.PlannedStartAt,
                 })
             .ToListAsync(cancellationToken);

@@ -93,9 +93,7 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             .Select(c => new
             {
                 c.VisitInstanceId,
-                Title = c.VisitRequest!.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (c.FormDetail != null ? c.FormDetail.DelegationName : null)
-                    : c.VisitRequest.DelegationName,
+                Title = c.FormDetail != null ? c.FormDetail.DelegationName : null,
             })
             .ToDictionaryAsync(c => c.VisitInstanceId, c => c.Title, cancellationToken);
 

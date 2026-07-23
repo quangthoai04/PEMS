@@ -255,7 +255,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         string submissionId, string? currentFingerprint, CancellationToken cancellationToken)
     {
         var existing = await _db.VisitRequests.AsNoTracking()
-            .Where(v => v.SubmissionId == submissionId && v.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+            .Where(v => v.SubmissionId == submissionId)
             .Select(v => new { v.VisitRequestId, v.BusinessFingerprint })
             .FirstOrDefaultAsync(cancellationToken);
         if (existing is null)
