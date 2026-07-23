@@ -106,7 +106,26 @@ App vẫn khởi động, nhưng mọi request chạm authentication đều 500.
 
 **Xác minh lại bằng chạy thật:** `IDX10703` biến mất; sai mật khẩu → `401 INVALID_CREDENTIALS`; đúng mật khẩu → đi tiếp tới business rule. Test: 9 → **13**.
 
-> ⚠️ `Smtp:Enabled` giờ mặc định `false`. Trước đây là `true` kèm password thật → dev/test có thể gửi email thật. Muốn bật lại: `Smtp__Enabled=true` + `Smtp__Password=...`.
+#### Quyết định của chủ dự án: giữ credential trong config được track
+
+Sau khi cân nhắc đánh đổi, **chủ dự án quyết định khôi phục 4 giá trị vào file được track** để đồng đội pull về là chạy được ngay, không cần cấu hình thủ công. Đã thực hiện bằng `git checkout 19bed510 -- <2 file appsettings>`.
+
+Trạng thái sau khôi phục:
+
+| Thành phần | Trạng thái |
+|---|---|
+| `JwtSettings:SecretKey` | có giá trị → không sinh key ngẫu nhiên nữa (đã xác minh: warning biến mất) |
+| `Smtp:Password` + `Smtp:Enabled=true` | gửi email hoạt động trở lại |
+| `GoogleDrive:ClientSecret` + `RefreshToken` | upload Drive hoạt động trở lại |
+| Đăng nhập | ✅ xác minh thật: `Admin@123` qua xác thực, tới business rule `CAMPUS_REQUIRED` |
+
+**Vẫn giữ lại từ `fc647d89`** (không ảnh hưởng việc chạy, vẫn có giá trị):
+- `SecretConfigurationValidator` — Production vẫn từ chối khởi động khi thiếu/ngắn secret; dev vẫn có fallback key ngẫu nhiên nếu ai đó tự xóa giá trị.
+- `.tmp-build/` bỏ track — build output trùng lặp, không có lý do commit.
+- `TestTc/` đã xóa — trỏ file SQL không tồn tại, không nằm trong solution.
+- `appsettings.Local.example.json` — cho ai muốn override bằng file local.
+
+> ⚠️ **Rủi ro còn lại (chủ dự án đã biết và chấp nhận):** 4 credential này nằm trong repo và trong **16 revision lịch sử trên 5 remote branch**. Chấp nhận được với repo private trong nhóm đồ án. Nếu repo chuyển sang public hoặc nộp/công khai, **phải rotate trước**.
 
 **Test:** `SecretConfigurationValidatorTests` — **9 test**, gồm test chứng minh thông báo lỗi **không echo giá trị**.
 
