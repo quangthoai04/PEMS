@@ -259,8 +259,12 @@ export function GalleryDetailModal({
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black text-gray-900 mb-2 leading-tight">{detail.title}</h3>
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 border-b border-slate-100 pb-4">
+                <h3 className="text-2xl font-black text-gray-900 leading-tight">{detail.title}</h3>
+                {/* EN title (when READY): one size smaller, gray, right under the VI title (§12). */}
+                {detail.titleEn?.trim() && (
+                  <p className="mt-1 text-base font-semibold text-slate-400 leading-snug">{detail.titleEn}</p>
+                )}
+                <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-600 border-b border-slate-100 pb-4">
                   <span className="text-[#004c91]">{detail.area.areaName}</span>
                   <ChevronRight className="w-4 h-4 text-slate-300" />
                   <span>{detail.location.locationName}</span>

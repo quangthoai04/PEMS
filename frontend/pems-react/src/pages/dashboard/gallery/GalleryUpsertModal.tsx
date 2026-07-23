@@ -11,6 +11,14 @@ import { validateFile } from '../../../shared/utils/fileValidation';
 import { parseYouTubeVideoId, youtubeWatchUrl, youtubeEmbedUrl, youtubeThumbnailUrl } from '../../../shared/utils/youtube';
 import { galleryManagementApi } from '../../../features/gallery-management/api/galleryManagementApi';
 import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
+import {
+  EnFieldHint,
+  TranslateButton,
+  fieldBlockingError,
+  fieldPayload,
+  normalizeVi,
+  useBilingualField,
+} from './locationModalShared';
 import type {
   GalleryAreaOption,
   GalleryAudioInfo,
@@ -281,13 +289,24 @@ export function GalleryUpsertModal({
   areas: GalleryAreaOption[];
   existing?: GalleryItemDetail;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (translationWarning?: string | null) => void;
   onUpdated: (updated: GalleryItemDetail) => void;
   onError: (message: string) => void;
 }) {
   const activeAreas = useMemo(() => areas.filter((a) => a.status === 'ACTIVE' || a.areaId === existing?.area.areaId), [areas, existing]);
 
-  const [title, setTitle] = useState(existing?.title ?? '');
+  // Bilingual title (§4/§13 of the title-preview plan): VI + previewed/manual EN with stale tracking.
+  // Google is NEVER called from here — "Dịch sang EN" goes through the backend preview endpoint.
+  const titleField = useBilingualField(existing?.title ?? '', existing?.titleEn ?? '');
+  // Create starts with ONLY the VI input; the EN block appears after the first translate attempt.
+  // Edit always shows both (§13).
+  const [titleEnRevealed, setTitleEnRevealed] = useState(mode === 'edit');
+  const [translatingTitle, setTranslatingTitle] = useState(false);
+  const titlePreviewRequestIdRef = useRef(0);
+  // Mirror of the CURRENT VI so a late preview response is only applied when it still matches (§9).
+  const titleViRef = useRef(titleField.vi);
+  titleViRef.current = titleField.vi;
+
   const [activeLang, setActiveLang] = useState<Lang>('vi');
   const [descriptionVi, setDescriptionVi] = useState(existing?.content?.descriptionVi ?? '');
   const [descriptionEn, setDescriptionEn] = useState(existing?.content?.descriptionEn ?? '');
@@ -435,8 +454,47 @@ export function GalleryUpsertModal({
     setter(file);
   };
 
+  /** "Dịch sang EN" for the title — ONE backend request; the save later reuses the result (§7–§9). */
+  const handleTranslateTitle = async () => {
+    const vi = normalizeVi(titleField.vi);
+    if (!vi) {
+      flagError('Vui lòng nhập tiêu đề trước khi dịch.');
+      return;
+    }
+    const requestId = ++titlePreviewRequestIdRef.current;
+    setTranslatingTitle(true);
+    titleField.beginTranslating();
+    setTitleEnRevealed(true);
+    try {
+      const res = await galleryManagementApi.previewItemTranslation({
+        entityType: 'GALLERY_ITEM',
+        field: 'TITLE',
+        entityId: mode === 'edit' ? existing?.galleryItemId ?? null : null,
+        sourceText: vi,
+      });
+      if (requestId !== titlePreviewRequestIdRef.current) return; // an older response — never apply
+      // Apply only while the VI is still the one that was translated; otherwise the EN is stale (§9).
+      if (normalizeVi(titleViRef.current) === res.sourceText) {
+        titleField.applyPreview(res.translatedText, res.sourceHash);
+      } else {
+        titleField.markStale();
+      }
+    } catch (err) {
+      if (requestId !== titlePreviewRequestIdRef.current) return;
+      titleField.markFailed();
+      const msg = getGalleryErrorMessage(err);
+      setFormError(msg);
+      onError(msg);
+    } finally {
+      if (requestId === titlePreviewRequestIdRef.current) setTranslatingTitle(false);
+    }
+  };
+
   const validate = (): string | null => {
-    if (!title.trim()) return 'Vui lòng nhập tiêu đề.';
+    if (!titleField.vi.trim()) return 'Vui lòng nhập tiêu đề.';
+    // An auto-previewed EN whose VI changed afterwards must be re-translated or hand-edited (§6.1).
+    const titleStale = fieldBlockingError(titleField, 'Tiêu đề');
+    if (titleStale) return titleStale;
     if (!descriptionVi.trim()) return 'Vui lòng nhập mô tả tiếng Việt.';
     if (!descriptionEn.trim()) return 'Vui lòng nhập mô tả tiếng Anh.';
     // Audio: create requires both files; edit requires each to be kept (existing) or replaced (new).
@@ -459,10 +517,16 @@ export function GalleryUpsertModal({
     }
     setFormError(null);
     setSubmitting(true);
+    // What the save carries for the EN title: AUTO_PREVIEW + hash (reused preview, 0 extra Google
+    // calls), MANUAL (hand-typed), or NONE (backend keeps/auto-translates).
+    const titlePayload = fieldPayload(titleField);
     try {
       if (mode === 'create') {
-        await galleryManagementApi.createGalleryItem({
-          title: title.trim(),
+        const created = await galleryManagementApi.createGalleryItem({
+          title: titleField.vi.trim(),
+          titleEn: titlePayload.en,
+          titleTranslationOrigin: titlePayload.origin,
+          titleTranslationSourceHash: titlePayload.sourceHash,
           descriptionVi: descriptionVi.trim(),
           descriptionEn: descriptionEn.trim(),
           audioVi: audioVi!,
@@ -474,11 +538,14 @@ export function GalleryUpsertModal({
           youtubeUrls: youtubeEntries.map((y) => y.url),
           primaryMediaKey: primaryMediaKey(),
         });
-        onCreated();
+        onCreated(created.translationWarning);
       } else if (existing) {
         const updated = await galleryManagementApi.updateGalleryItem({
           galleryItemId: existing.galleryItemId,
-          title: title.trim(),
+          title: titleField.vi.trim(),
+          titleEn: titlePayload.en,
+          titleTranslationOrigin: titlePayload.origin,
+          titleTranslationSourceHash: titlePayload.sourceHash,
           descriptionVi: descriptionVi.trim(),
           descriptionEn: descriptionEn.trim(),
           newAudioVi: audioVi,
@@ -646,16 +713,46 @@ export function GalleryUpsertModal({
             )}
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Tiêu đề <span className="text-red-500">*</span></label>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Tiêu đề (VI) <span className="text-red-500">*</span></label>
               <input
                 type="text"
-                value={title}
+                value={titleField.vi}
                 maxLength={255}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => titleField.setVi(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all"
                 placeholder="Nhập tiêu đề..."
               />
+              <div>
+                <TranslateButton
+                  onClick={handleTranslateTitle}
+                  disabled={!titleField.vi.trim() || submitting}
+                  translating={translatingTitle}
+                  label={titleField.en.trim() ? 'Dịch lại sang tiếng Anh' : 'Dịch sang tiếng Anh'}
+                />
+              </div>
             </div>
+
+            {/* EN title: hidden on create until the first translate attempt; always shown on edit (§13). */}
+            {titleEnRevealed && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+                  <span>Tiêu đề (EN)</span>
+                  {titleField.state === 'STALE' && !titleField.manuallyEdited && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-bold normal-case">Cần dịch lại</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={titleField.en}
+                  maxLength={500}
+                  onChange={(e) => titleField.setEnManual(e.target.value)}
+                  disabled={translatingTitle}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all disabled:opacity-60"
+                  placeholder="English title..."
+                />
+                <EnFieldHint field={titleField} />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-1.5">

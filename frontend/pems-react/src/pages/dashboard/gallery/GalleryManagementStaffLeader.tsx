@@ -121,7 +121,8 @@ function KindBadge({ kind }: { kind: GalleryMediaKind }) {
 }
 
 interface ToastState {
-  type: 'success' | 'error';
+  /** warning = the save SUCCEEDED but the EN auto-translation failed (never rendered as an error). */
+  type: 'success' | 'error' | 'warning';
   message: string;
 }
 
@@ -222,9 +223,12 @@ export function GalleryManagementStaffLeader() {
     }
   };
 
-  const onCreated = () => {
+  const onCreated = (translationWarning?: string | null) => {
     setIsCreateOpen(false);
-    setToast({ type: 'success', message: 'Đã tạo Gallery Item với đầy đủ nội dung song ngữ.' });
+    // Translation failure is a WARNING on top of a successful save — never shown as an error.
+    setToast(translationWarning
+      ? { type: 'warning', message: translationWarning }
+      : { type: 'success', message: 'Đã tạo Gallery Item với đầy đủ nội dung song ngữ.' });
     setPage(1);
     refetch();
   };
@@ -232,7 +236,9 @@ export function GalleryManagementStaffLeader() {
   const onUpdated = (updated: GalleryItemDetail) => {
     setIsEditOpen(false);
     setDetail(updated);
-    setToast({ type: 'success', message: 'Đã cập nhật Gallery Item.' });
+    setToast(updated.translationWarning
+      ? { type: 'warning', message: updated.translationWarning }
+      : { type: 'success', message: 'Đã cập nhật Gallery Item.' });
     refetch();
   };
 
@@ -536,7 +542,9 @@ export function GalleryManagementStaffLeader() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold text-white ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}
+            className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold text-white ${
+              toast.type === 'success' ? 'bg-green-600' : toast.type === 'warning' ? 'bg-amber-500' : 'bg-red-600'
+            }`}
           >
             {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             {toast.message}
