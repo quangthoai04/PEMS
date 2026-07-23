@@ -15,9 +15,13 @@ namespace PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 /// STILL revalidates every DB/clock-dependent rule (campus existence/ACTIVE, Staff-Leader routing,
 /// not-in-the-past, partner, min-duration) inside the transaction; the validator never replaces it.
 ///
-/// System-derived fields (visitScope, hasMixedCampusDetails, formSchemaVersion, status/revision,
-/// coordinator/approval state, visitorUserId) are NOT part of <see cref="VisitRequestFormDataV2"/>, so
-/// "the client cannot send them" is enforced by the DTO shape itself — there is nothing to reject here.
+/// Every create carries a per-campus payload: one entry per campus, each with its own form content, which
+/// the service turns into that campus's detail row. There is no schema discriminator and no alternative
+/// request-level shape to choose between.
+///
+/// System-derived fields (visitScope, hasMixedCampusDetails, status/revision, coordinator/approval state,
+/// visitorUserId) are NOT part of <see cref="VisitRequestFormDataV2"/>, so "the client cannot send them"
+/// is enforced by the DTO shape itself — there is nothing to reject here.
 /// </summary>
 public sealed class CreateVisitRequestV2CommandValidator : AbstractValidator<CreateVisitRequestV2Command>
 {

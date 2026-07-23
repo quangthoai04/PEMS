@@ -805,9 +805,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 VisitInstanceId = single?.VisitInstanceId,
                 RequestCode = vr.RequestCode,
                 MatchedContexts = matchedContexts,
-                // A request-level row cannot represent a MIXED v2 request with one name — the projection
-                // (smallest campus) is never shown as business content; the row is explicitly labeled and
-                // the per-campus names live in the campus progress items/detail view (plan §8.3).
+                // A request-level row cannot represent a MIXED request with one name, and there is no
+                // request-level name to borrow — so the row is explicitly labeled instead, and the
+                // per-campus names live in the campus progress items/detail view (plan §8.3).
                 // Not mixed ⇒ every instance carries identical content, so any instance's detail is THE
                 // request-level value (deterministic, not "whichever campus happened to be first").
                 DelegationName = vr.HasMixedCampusDetails

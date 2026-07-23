@@ -10,11 +10,15 @@ using PEMS.Domain.Entities.Delegations;
 namespace PEMS.Application.Delegations.Services.VisitFormRead;
 
 /// <summary>
-/// Phase-F helper: the EFFECTIVE per-instance delegation name for list/report/notification surfaces.
-/// A MIXED per-campus v2 request's business content comes from THIS instance's detail — never the
-/// global projection (smallest campus), never a sibling. v1 and non-mixed v2 keep the global field,
-/// where it is byte-identical to every instance's detail by construction. A mixed v2 row whose detail
-/// is missing yields null (no silent global fallback).
+/// The EFFECTIVE per-instance delegation name for list/report/notification surfaces.
+///
+/// The name always comes from THIS instance's own detail row — never from a sibling campus, and never
+/// from the request, which carries no delegation name at all. That holds whether or not the request's
+/// campuses agree: when they do agree the value is identical everywhere by construction, so reading the
+/// target instance is simply the correct read rather than a special case.
+///
+/// An instance with no detail row yields null. There is nothing to fall back to, and inventing a name
+/// would hide the inconsistency from the surface that displays it.
 /// </summary>
 public static class VisitInstanceEffectiveName
 {

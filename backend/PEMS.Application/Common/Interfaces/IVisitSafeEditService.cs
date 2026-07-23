@@ -12,7 +12,9 @@ namespace PEMS.Application.Common.Interfaces;
 /// re-validates every data-facing rule: FOR-UPDATE row-version guard, per-instance versions, the SAFE
 /// allowlist via <c>VisitFieldClassifier</c> (fail closed), the 24h cutoff (privacy-urgent media
 /// withdrawal exempt), then applies target-only, bumps form/request revisions + row versions, recomputes
-/// the canonical scope/mixed/fingerprint/projection and writes field-level audit — all in one commit.
+/// the canonical scope, mixed-campus indicator and fingerprint — facts ABOUT the campus set; no
+/// request-level form projection is produced, campus content stays in each instance's detail — and
+/// writes field-level audit, all in one commit.
 /// Never touches an amendment, a sibling instance without changes, or any approval state.
 /// </summary>
 public interface IVisitSafeEditService
