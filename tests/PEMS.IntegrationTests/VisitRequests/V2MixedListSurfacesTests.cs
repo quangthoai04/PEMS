@@ -303,7 +303,8 @@ public sealed class V2MixedListSurfacesTests
                     CancellationToken.None);
 
                 var row = result.Items.Single(i => i.VisitRequestId == requestId);
-                Assert.Equal(FormSchemaVersions.PerCampus, row.FormSchemaVersion); // 2
+                // Pure V2: there is no form-version discriminator to assert. What matters is that the row
+                // is flagged mixed and shows the safe label instead of one campus's content.
                 Assert.True(row.HasMixedCampusDetails);
                 Assert.Equal("Khác nhau theo cơ sở", row.DelegationName);          // mixed request-level label
             }

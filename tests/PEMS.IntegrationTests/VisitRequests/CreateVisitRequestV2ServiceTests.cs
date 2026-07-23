@@ -112,7 +112,9 @@ public sealed class CreateVisitRequestV2ServiceTests
         var req = await Svc(db).CreateV2Async(
             Form("registrant@example.com", Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
-        Assert.Equal(FormSchemaVersions.PerCampus, req.FormSchemaVersion);
+        // Pure V2: there is no discriminator to assert. What proves the shape is that the single campus
+        // instance owns its OWN form detail — content never lives on the request row.
+        Assert.All(req.CampusInstances, c => Assert.NotNull(c.FormDetail));
         Assert.Equal(VisitScopes.SingleCampus, req.VisitScope);
         Assert.False(req.HasMixedCampusDetails);
         Assert.NotNull(req.BusinessFingerprint);
@@ -250,7 +252,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var tx2 = await db2.Database.BeginTransactionAsync();
         var ok = await Svc(db2).CreateV2Async(
             Form("registrant@example.com", Campus("HN", durationMin: 30)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
-        Assert.Equal(FormSchemaVersions.PerCampus, ok.FormSchemaVersion);
+        Assert.All(ok.CampusInstances, c => Assert.NotNull(c.FormDetail));
         await tx2.RollbackAsync();
         await tx.RollbackAsync();
     }
@@ -290,7 +292,11 @@ public sealed class CreateVisitRequestV2ServiceTests
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         Assert.True(req.HasMixedCampusDetails);
-        Assert.Equal("Đoàn HN", req.DelegationName); // smallest campus_id (HN=1) snapshot
+        // Pure V2: no smallest-campus snapshot on the request. Each campus keeps its OWN name, and the
+        // two must differ — that is exactly what "mixed" means.
+        var byCampus = req.CampusInstances.ToDictionary(c => c.CampusId, c => c.FormDetail!.DelegationName);
+        Assert.Equal("Đoàn HN", byCampus[1UL]);
+        Assert.Equal("Đoàn HCM", byCampus[2UL]);
         await tx.RollbackAsync();
     }
 }

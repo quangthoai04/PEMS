@@ -52,32 +52,32 @@ public sealed class GetStaffLeaderDeptInvoiceItemsCanonicalV2Tests : IDisposable
     {
         // has_mixed_campus_details = false is exactly the case the old gate mishandled.
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 100, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 100,
             hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[] { (101UL, 1UL, 10UL, (string?)CanonicalV2Seed.CanonicalNameA, (string?)null) });
 
         var rows = await RunAsync();
 
         var row = Assert.Single(rows);
         Assert.Equal(CanonicalV2Seed.CanonicalNameA, row.DelegationName);
-        Assert.DoesNotContain(rows, r => r.DelegationName == CanonicalV2Seed.StaleGlobalName);
+        Assert.DoesNotContain(rows, r => r.DelegationName == CanonicalV2Seed.AbsentDelegationName);
     }
 
-    [Fact]
-    public async Task Mixed_v2_returns_only_the_targeted_campus_detail_and_never_a_sibling()
-    {
+    /// <summary>Campus 1 (department 10) holds name A, campus 2 (department 20) holds name B.</summary>
+    private void SeedMixedTwoCampusRequest() =>
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 200, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 200,
             hasMixedCampusDetails: true,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[]
             {
                 (201UL, 1UL, 10UL, (string?)CanonicalV2Seed.CanonicalNameA, (string?)null),
                 (202UL, 2UL, 20UL, (string?)CanonicalV2Seed.CanonicalNameB, (string?)null),
             });
+
+    [Fact]
+    public async Task Mixed_v2_returns_only_the_targeted_campus_detail_and_never_a_sibling()
+    {
+        SeedMixedTwoCampusRequest();
 
         var rows = await RunAsync();
 
@@ -88,47 +88,46 @@ public sealed class GetStaffLeaderDeptInvoiceItemsCanonicalV2Tests : IDisposable
     }
 
     [Fact]
-    public async Task Missing_v2_detail_does_not_fall_back_to_the_projection()
+    public async Task Missing_v2_detail_does_not_fall_back_to_any_request_level_value()
     {
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 300, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 300,
             hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[] { (301UL, 1UL, 10UL, (string?)null, (string?)null) });
 
         var rows = await RunAsync();
 
         var row = Assert.Single(rows);
-        // The DTO coalesces a null canonical name to "" — the point is that it is NOT the projection.
-        Assert.NotEqual(CanonicalV2Seed.StaleGlobalName, row.DelegationName);
+        // The DTO coalesces a missing canonical name to "" — the point is that it invents nothing.
+        Assert.NotEqual(CanonicalV2Seed.AbsentDelegationName, row.DelegationName);
         Assert.Equal(string.Empty, row.DelegationName);
     }
 
+    /// <summary>
+    /// Mirror of the mixed test, read by the campus-2 Staff Leader over department 20.
+    ///
+    /// Replaces the former V1 test: there is no global name column left to read, so the live risk is a
+    /// reader that treats one campus as representative of the request. The A-side test alone cannot see
+    /// that — a first-campus reader returns name A here, where only name B is correct.
+    /// </summary>
     [Fact]
-    public async Task V1_still_reads_the_global_name_unchanged()
+    public async Task Mixed_v2_read_from_the_second_campus_returns_that_campus_detail()
     {
-        CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 400, formSchemaVersion: FormSchemaVersions.Legacy,
-            hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.V1GlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
-            campusDetails: new[] { (401UL, 1UL, 10UL, (string?)null, (string?)null) });
+        SeedMixedTwoCampusRequest();
 
-        var rows = await RunAsync();
+        var rows = await RunAsync(departmentId: 20, campusId: 2);
 
         var row = Assert.Single(rows);
-        Assert.Equal(CanonicalV2Seed.V1GlobalName, row.DelegationName);
+        Assert.Equal(CanonicalV2Seed.CanonicalNameB, row.DelegationName);
+        Assert.DoesNotContain(rows, r => r.DelegationName == CanonicalV2Seed.CanonicalNameA);
     }
 
     [Fact]
     public async Task Department_in_another_campus_is_still_rejected()
     {
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 500, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 500,
             hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[] { (501UL, 2UL, 20UL, (string?)CanonicalV2Seed.CanonicalNameB, (string?)null) });
 
         // Department 20 belongs to campus 2; the caller is the campus-1 Staff Leader.

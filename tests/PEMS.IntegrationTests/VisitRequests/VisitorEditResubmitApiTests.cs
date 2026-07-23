@@ -8,8 +8,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Security;
-using PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequest;
-using PEMS.Application.Delegations.Commands.UpdatePendingVisitRequest;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
@@ -75,7 +73,6 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visit = new VisitRequest
         {
             RequestCode = $"UT-RESUBMIT-{Guid.NewGuid().ToString()[..4]}",
-            FormSchemaVersion = PEMS.Domain.Constants.FormSchemaVersions.PerCampus,
             VisitorUserId = _visitorId,
             RegistrantUserId = _visitorId,
             PrimaryContactAccessStatus = "ACTIVE",
@@ -85,10 +82,8 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             RegistrantJobTitle = "Staff",
             RegistrantPhone = "0999999999",
             RegistrantEmail = _visitorEmail,
-            DelegationName = "Integration Delegation",
             VisitScope = "SINGLE_CAMPUS",
-            VisitType = "CAMPUS_TOUR",
-            Purpose = "Test Purpose",
+            // Pure V2: delegation name / visit type / purpose live in the campus FormDetail below.
             ContactPersonFullName = "Integration Contact",
             ContactPersonOrganization = "Contact Org",
             ContactPersonPhone = "0888888888",
@@ -209,9 +204,12 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
 
-        Assert.Equal("Edited Delegation Name", visit.DelegationName);
+        // Pure V2: the edited name lands on the campus instance's own detail, not on the request row.
+        Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
         Assert.Equal("Integration Contact", visit.ContactPersonFullName);
         Assert.Equal(1u, visit.ResubmissionCount);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
@@ -233,11 +231,13 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
 
         // Assert no changes made
         Assert.Equal("Integration Registrant", visit.RegistrantFullName);
-        Assert.Equal("Integration Delegation", visit.DelegationName);
+        Assert.Equal("Integration Delegation", visit.CampusInstances.Single().FormDetail!.DelegationName);
         Assert.Equal(0u, visit.ResubmissionCount);
         Assert.Equal(VisitRequestStatuses.Rejected, visit.Status);
     }
@@ -249,7 +249,9 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
         
         // Make the registrant a different visitor account, but leave contact (VisitorUserId) as _visitorId
         var visitorRoleId = await db.Roles.Where(r => r.RoleCode == "VISITOR").Select(r => r.RoleId).FirstAsync();
@@ -388,9 +390,12 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
 
-        Assert.Equal("Edited Delegation Name", visit.DelegationName);
+        // Pure V2: the edited name lands on the campus instance's own detail, not on the request row.
+        Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
         Assert.Equal("Integration Contact", visit.ContactPersonFullName);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
@@ -409,11 +414,13 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
 
         // Assert no changes made
         Assert.Equal("Integration Registrant", visit.RegistrantFullName);
-        Assert.Equal("Integration Delegation", visit.DelegationName);
+        Assert.Equal("Integration Delegation", visit.CampusInstances.Single().FormDetail!.DelegationName);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
     [Fact]
@@ -432,7 +439,9 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
 
         Assert.Equal("contact.integration@example.com", visit.ContactPersonEmail);
         Assert.Equal(0u, visit.ResubmissionCount);
@@ -454,10 +463,12 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+        var visit = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .FirstAsync(v => v.VisitRequestId == visitId);
 
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
-        Assert.Equal("Integration Delegation", visit.DelegationName);
+        Assert.Equal("Integration Delegation", visit.CampusInstances.Single().FormDetail!.DelegationName);
     }
 }
 

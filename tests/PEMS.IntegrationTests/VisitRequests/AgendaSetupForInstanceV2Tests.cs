@@ -81,17 +81,26 @@ public sealed class AgendaSetupForInstanceV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Three mixed campuses, targeting the LAST one.
+    ///
+    /// Replaces the former V1 test: the global visit type column is gone, so the live risk is a reader that
+    /// picks a representative campus. The existing A/B cases cannot distinguish "reads the target" from
+    /// "reads the first two"; targeting C, whose type is unique to it, can.
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_visit_type_byte_identical()
+    public async Task Mixed_three_campus_target_C_reads_only_C()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (_, inst) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false);
-        var dto = await Run(db, Ho(), inst[0]);
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2, Campus3 }, mixed: true);
+        var dto = await Run(db, Ho(), inst[2]); // campus C
 
-        Assert.Equal(GlobalType, dto.VisitType);
+        Assert.Equal(TypeByTag[2], dto.VisitType);   // EXCHANGE
+        Assert.NotEqual(TypeByTag[0], dto.VisitType); // not the first campus
+        Assert.NotEqual(TypeByTag[1], dto.VisitType);
         await tx.RollbackAsync();
     }
 
@@ -226,15 +235,14 @@ public sealed class AgendaSetupForInstanceV2Tests
         VisitorUserId = 8,
         RegistrantUserId = 8,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = GlobalType,
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

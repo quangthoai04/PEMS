@@ -60,7 +60,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitLogisticsItemHandover>();
         modelBuilder.Ignore<VisitLogisticsAssignmentAttempt>();
         modelBuilder.Ignore<VisitInstanceReminderSetting>();
-        modelBuilder.Ignore<VisitInstanceFormDetail>();
+        // Pure V2: blocker examples read the delegation name from the per-campus detail, so map it.
         modelBuilder.Ignore<VisitInstanceGuestMember>();
         modelBuilder.Ignore<VisitRequestIdentityChange>();
         modelBuilder.Ignore<VisitRequestIdentityChangeEvent>();
@@ -301,8 +301,7 @@ public static class CampusUcTestData
         RegistrantJobTitle = "Giám đốc",
         RegistrantPhone = "0912345678",
         RegistrantEmail = "registrant@test.local",
-        DelegationName = delegationName,
-        Purpose = "Tham quan",
+        // Pure V2: delegation name / purpose live in the per-campus detail, not on the request row.
         ContactPersonFullName = "Đầu mối",
         ContactPersonOrganization = "Tổ chức Test",
         ContactPersonPhone = "0912345678",
@@ -313,7 +312,8 @@ public static class CampusUcTestData
     };
 
     public static VisitRequestCampus CreateVisitInstance(
-        ulong visitInstanceId, ulong visitRequestId, ulong campusId, string status) => new()
+        ulong visitInstanceId, ulong visitRequestId, ulong campusId, string status,
+        string delegationName = "Đoàn khách kiểm thử") => new()
     {
         VisitInstanceId = visitInstanceId,
         VisitRequestId = visitRequestId,
@@ -322,6 +322,22 @@ public static class CampusUcTestData
         PlannedEndAt = new DateTime(2026, 8, 1, 11, 0, 0),
         Status = status,
         CreatedAt = new DateTime(2026, 6, 1),
+        // Pure V2: every campus instance owns exactly one form detail — blocker examples read the
+        // delegation name from here, never from the request row.
+        FormDetail = new VisitInstanceFormDetail
+        {
+            VisitInstanceId = visitInstanceId,
+            DelegationName = delegationName,
+            VisitType = "MEETING",
+            Purpose = "Tham quan",
+            OperationalContactFullName = "Đầu mối cơ sở",
+            OperationalContactPhone = "0900000002",
+            WorkingLanguage = "EN",
+            MediaConsentStatus = "AGREED",
+            FormRevision = 1,
+            ApprovalRevision = 1,
+            CreatedAt = new DateTime(2026, 6, 1),
+        },
     };
 
     /// <summary>DEPARTMENT + Staff user of a general department in the given campus.</summary>

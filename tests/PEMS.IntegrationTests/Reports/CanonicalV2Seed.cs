@@ -16,19 +16,21 @@ namespace PEMS.IntegrationTests.Reports;
 /// whatever rows a shared database happens to contain. Each test scenario gets its own campus,
 /// department and request ids so the assertions stay independent even though the schema is shared.
 ///
-/// The literals used for the two competing values are deliberately unmistakable:
-/// <c>STALE_GLOBAL_*</c> only ever exists on <c>visit_requests</c> (the v2 compatibility
-/// projection), and <c>CANONICAL_*</c> only ever exists on <c>visit_instance_form_details</c>.
-/// A v2 read that returns a STALE value has therefore provably read the projection.
+/// Pure V2: <c>visit_requests</c> has no delegation name / visit type at all, so this seed writes
+/// business content ONLY to <c>visit_instance_form_details</c>. <see cref="AbsentDelegationName"/> is a
+/// literal deliberately written to no row anywhere — a reader that returns it has invented a value or
+/// reached a source that must not exist.
 /// </summary>
 internal static class CanonicalV2Seed
 {
-    public const string StaleGlobalName = "STALE_GLOBAL_DELEGATION";
+    /// <summary>Never written to any row. Any read that surfaces it is a defect by construction.</summary>
+    public const string AbsentDelegationName = "ABSENT_DELEGATION_NAME";
+
     public const string CanonicalNameA = "CANONICAL_CAMPUS_A";
     public const string CanonicalNameB = "CANONICAL_CAMPUS_B";
-    public const string V1GlobalName = "V1_GLOBAL_DELEGATION";
 
-    public const string StaleGlobalVisitType = "CAMPUS_TOUR";
+    /// <summary>A second real visit type, used to prove a sibling campus never leaks into a filter.</summary>
+    public const string SiblingVisitType = "CAMPUS_TOUR";
     public const string CanonicalVisitType = "MOU_SIGNING";
 
     /// <summary>Fixed so period filters are deterministic regardless of when the suite runs.</summary>
@@ -116,17 +118,13 @@ internal static class CanonicalV2Seed
     public static void SeedRequest(
         ApplicationDbContext db,
         ulong requestId,
-        byte formSchemaVersion,
         bool hasMixedCampusDetails,
-        string globalDelegationName,
-        string globalVisitType,
         IReadOnlyList<(ulong InstanceId, ulong CampusId, ulong DepartmentId, string? CanonicalName, string? CanonicalVisitType)> campusDetails)
     {
         db.VisitRequests.Add(new VisitRequest
         {
             VisitRequestId = requestId,
             RequestCode = $"REQ-{requestId:D4}",
-            FormSchemaVersion = formSchemaVersion,
             HasMixedCampusDetails = hasMixedCampusDetails,
             RegistrantFullName = "Registrant",
             RegistrantNationality = "VN",
@@ -134,16 +132,14 @@ internal static class CanonicalV2Seed
             RegistrantJobTitle = "Manager",
             RegistrantPhone = "0900000000",
             RegistrantEmail = $"registrant{requestId}@example.test",
-            DelegationName = globalDelegationName,
             VisitScope = campusDetails.Count > 1 ? "MULTI_CAMPUS" : "SINGLE_CAMPUS",
-            VisitType = globalVisitType,
-            Purpose = "Purpose",
+            // Pure V2: delegation name / visit type / purpose / language / media consent are per campus and
+            // live in visit_instance_form_details below. The request row keeps only the PRIMARY contact,
+            // which is a request-level relation and NOT a campus operational contact.
             ContactPersonFullName = "Contact",
             ContactPersonOrganization = "Contact Org",
             ContactPersonPhone = "0900000001",
             ContactPersonEmail = $"contact{requestId}@example.test",
-            WorkingLanguage = "EN",
-            MediaConsentStatus = "DECLINED",
             Status = VisitRequestStatus.Approved,
             SubmittedAt = PeriodStart.AddDays(1),
             CreatedAt = PeriodStart,

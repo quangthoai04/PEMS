@@ -14,13 +14,37 @@ namespace PEMS.UnitTests.Delegations.VisitPhotos;
 /// </summary>
 public class GetMyVisitPhotoFoldersQueryHandlerTests
 {
+    /// <summary>Resolver stub that answers for every requested instance (Pure V2 always resolves).</summary>
+    private static IVisitFormReadService StubFormRead()
+    {
+        var mock = new Mock<IVisitFormReadService>();
+        mock.Setup(f => f.ResolveCampusFormContentAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequest>(),
+                It.IsAny<IReadOnlyList<ulong>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PEMS.Domain.Entities.Delegations.VisitRequest _, IReadOnlyList<ulong> ids, CancellationToken _) =>
+                ids.ToDictionary(id => id, _ => new VisitCampusFormContent { DelegationName = "Đoàn khách kiểm thử" })
+                   as IReadOnlyDictionary<ulong, VisitCampusFormContent>);
+        return mock.Object;
+    }
+
     private static (DelegationsTestDbContext Db, GetMyVisitPhotoFoldersQueryHandler Handler,
         Mock<IVisitFormReadService> FormRead) CreateSut()
     {
         var db = DelegationsTestDbContext.Create();
         VisitPhotoTestSeed.SeedAcceptedStudent(db);
 
+        // Pure V2: the handler ALWAYS resolves each folder row's own instance detail, so the resolver
+        // must answer for every requested instance. Mixed tests override this with per-campus names.
         var formRead = new Mock<IVisitFormReadService>();
+        formRead
+            .Setup(f => f.ResolveCampusFormContentAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequest>(),
+                It.IsAny<IReadOnlyList<ulong>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PEMS.Domain.Entities.Delegations.VisitRequest _, IReadOnlyList<ulong> ids, CancellationToken _) =>
+                ids.ToDictionary(id => id, _ => new VisitCampusFormContent { DelegationName = "Đoàn khách kiểm thử" })
+                   as IReadOnlyDictionary<ulong, VisitCampusFormContent>);
         var handler = new GetMyVisitPhotoFoldersQueryHandler(
             db, VisitPhotoTestSeed.StudentCurrentUser(), formRead.Object);
         return (db, handler, formRead);
@@ -69,7 +93,6 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
     {
         var (db, handler, formRead) = CreateSut();
         var visit = db.VisitRequests.Single();
-        visit.FormSchemaVersion = FormSchemaVersions.PerCampus;
 
         var second = DelegationsTestData.CreateVisitInstance(visitInstanceId: 11, campusId: DelegationsTestData.OtherCampusId);
         db.VisitRequestCampuses.Add(second);
@@ -113,7 +136,7 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db);
         var handler = new GetMyVisitPhotoFoldersQueryHandler(
-            db, new FakeDelegationsCurrentUser(), Mock.Of<IVisitFormReadService>());
+            db, new FakeDelegationsCurrentUser(), StubFormRead());
 
         var page = await handler.Handle(new GetMyVisitPhotoFoldersQuery(), default);
 

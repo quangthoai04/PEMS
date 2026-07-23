@@ -150,8 +150,9 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             Assert.True(r.HasMixedCampusDetails);
             Assert.NotEqual(fingerprintBefore, r.BusinessFingerprint);
             Assert.Equal(1, r.RowVersion);
-            // Projection = smallest campus_id (HN=1) → follows HN's new content.
-            Assert.Equal("Đoàn HN mới", r.DelegationName);
+            // Pure V2: the edited content lands on HN's OWN detail. The request row carries no form
+            // content at all, so there is no smallest-campus projection to follow any more.
+            Assert.Equal("Đoàn HN mới", hn.FormDetail!.DelegationName);
 
             // Audit row with correlation id exists.
             Assert.True(await db.AuditLogs.AnyAsync(a =>

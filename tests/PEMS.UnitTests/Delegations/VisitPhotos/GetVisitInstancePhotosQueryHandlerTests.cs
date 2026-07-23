@@ -23,7 +23,17 @@ public class GetVisitInstancePhotosQueryHandlerTests
             VisitPhotoTestSeed.OtherStudentUserId, DelegationsTestData.StudentRoleId, null, null));
         db.SaveChanges();
 
+        // Pure V2: the handler ALWAYS resolves the target instance's own detail, so the resolver must
+        // answer for every requested instance. Individual tests override this with per-campus names.
         var formRead = new Mock<IVisitFormReadService>();
+        formRead
+            .Setup(f => f.ResolveCampusFormContentAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequest>(),
+                It.IsAny<IReadOnlyList<ulong>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PEMS.Domain.Entities.Delegations.VisitRequest _, IReadOnlyList<ulong> ids, CancellationToken _) =>
+                ids.ToDictionary(id => id, _ => new VisitCampusFormContent { DelegationName = "Đoàn khách kiểm thử" })
+                   as IReadOnlyDictionary<ulong, VisitCampusFormContent>);
         var handler = new GetVisitInstancePhotosQueryHandler(
             db, VisitPhotoTestSeed.StudentCurrentUser(), formRead.Object);
         return (db, handler, formRead);
@@ -79,7 +89,6 @@ public class GetVisitInstancePhotosQueryHandlerTests
     {
         var (db, handler, formRead) = CreateSut();
         var visit = db.VisitRequests.Single();
-        visit.FormSchemaVersion = FormSchemaVersions.PerCampus;
         db.SaveChanges();
 
         formRead

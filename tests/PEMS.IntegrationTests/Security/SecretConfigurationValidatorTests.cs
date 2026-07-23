@@ -79,11 +79,20 @@ public sealed class SecretConfigurationValidatorTests
         Assert.Contains("Smtp:Password", ex.Message);
     }
 
+    /// <summary>
+    /// Isolates the SMTP rule. The JWT key is supplied because Production requires it unconditionally —
+    /// that rule has its own test in <see cref="Production_without_jwt_secret_fails_fast"/>, and leaving it
+    /// unset here would make this test pass or fail for the wrong reason.
+    /// </summary>
     [Fact]
     public void Smtp_disabled_does_not_require_credentials()
     {
         SecretConfigurationValidator.ValidateSecrets(
-            Config(("Smtp:Enabled", "false"), ("Smtp:Password", "")), Env("Production"));
+            Config(
+                ("JwtSettings:SecretKey", "a-value-injected-by-the-environment"),
+                ("Smtp:Enabled", "false"),
+                ("Smtp:Password", "")),
+            Env("Production"));
     }
 
     [Fact]

@@ -49,13 +49,11 @@ public sealed class GetHoReportOverviewCanonicalV2Tests : IDisposable
             CancellationToken.None);
     }
 
-    /// <summary>Uniform v2 whose projection says CAMPUS_TOUR but whose canonical detail says MOU_SIGNING.</summary>
-    private void SeedUniformV2WithDivergentVisitType() =>
+    /// <summary>A uniform (non-mixed) request whose single campus detail carries MOU_SIGNING.</summary>
+    private void SeedUniformV2() =>
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 100, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 100,
             hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[]
             {
                 (101UL, 1UL, 10UL, (string?)CanonicalV2Seed.CanonicalNameA, (string?)CanonicalV2Seed.CanonicalVisitType),
@@ -64,7 +62,7 @@ public sealed class GetHoReportOverviewCanonicalV2Tests : IDisposable
     [Fact]
     public async Task Uniform_v2_matches_the_filter_on_its_canonical_visit_type()
     {
-        SeedUniformV2WithDivergentVisitType();
+        SeedUniformV2();
 
         var report = await RunAsync(visitType: CanonicalV2Seed.CanonicalVisitType);
 
@@ -73,30 +71,36 @@ public sealed class GetHoReportOverviewCanonicalV2Tests : IDisposable
     }
 
     [Fact]
-    public async Task Uniform_v2_does_not_match_the_filter_on_its_stale_projection_visit_type()
+    public async Task Uniform_v2_does_not_match_a_visit_type_its_detail_does_not_carry()
     {
-        SeedUniformV2WithDivergentVisitType();
+        SeedUniformV2();
 
-        var report = await RunAsync(visitType: CanonicalV2Seed.StaleGlobalVisitType);
+        var report = await RunAsync(visitType: CanonicalV2Seed.SiblingVisitType);
 
-        // Filtering by the projection value must find nothing: for v2 that column is not business content.
+        // The detail carries MOU_SIGNING only, and no request-level visit type exists to widen the
+        // match. Filtering on any other value must therefore find nothing.
         Assert.Equal(0, report.Kpis.TotalRequests);
         Assert.Equal(0, report.LifecyclePipeline.Sum(p => p.Count));
     }
 
-    [Fact]
-    public async Task Mixed_v2_matches_at_request_level_but_only_the_matching_instance_at_instance_level()
-    {
+    /// <summary>
+    /// Campus 1 carries MOU_SIGNING, campus 2 carries CAMPUS_TOUR. Neither value exists anywhere else,
+    /// so a filter on either one can only be satisfied by that campus's own detail row.
+    /// </summary>
+    private void SeedMixedTwoCampusRequest() =>
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 200, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 200,
             hasMixedCampusDetails: true,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[]
             {
                 (201UL, 1UL, 10UL, (string?)CanonicalV2Seed.CanonicalNameA, (string?)CanonicalV2Seed.CanonicalVisitType),
-                (202UL, 2UL, 20UL, (string?)CanonicalV2Seed.CanonicalNameB, (string?)"CAMPUS_TOUR"),
+                (202UL, 2UL, 20UL, (string?)CanonicalV2Seed.CanonicalNameB, (string?)CanonicalV2Seed.SiblingVisitType),
             });
+
+    [Fact]
+    public async Task Mixed_v2_matches_at_request_level_but_only_the_matching_instance_at_instance_level()
+    {
+        SeedMixedTwoCampusRequest();
 
         var report = await RunAsync(visitType: CanonicalV2Seed.CanonicalVisitType);
 
@@ -109,32 +113,38 @@ public sealed class GetHoReportOverviewCanonicalV2Tests : IDisposable
         Assert.Equal(0, report.CampusPerformance.Single(c => c.CampusId == 2).TotalInstances);
     }
 
+    /// <summary>
+    /// Mirror of the test above, filtering on the SECOND campus's visit type.
+    ///
+    /// Replaces the former V1 test: with the global visit type column gone there is no "V1 request" to
+    /// filter on, and the risk that matters now is a reader treating one campus (the first, the smallest
+    /// id, the one that happens to join first) as representative of the request. Running the same filter
+    /// from the B side catches exactly that — a representative-campus reader would report campus 1 here.
+    /// </summary>
     [Fact]
-    public async Task V1_still_filters_on_the_global_visit_type()
+    public async Task Mixed_v2_filtered_from_the_second_campus_counts_only_that_campus()
     {
-        CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 300, formSchemaVersion: FormSchemaVersions.Legacy,
-            hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.V1GlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
-            campusDetails: new[] { (301UL, 1UL, 10UL, (string?)null, (string?)null) });
+        SeedMixedTwoCampusRequest();
 
-        Assert.Equal(1, (await RunAsync(visitType: CanonicalV2Seed.StaleGlobalVisitType)).Kpis.TotalRequests);
-        Assert.Equal(0, (await RunAsync(visitType: CanonicalV2Seed.CanonicalVisitType)).Kpis.TotalRequests);
+        var report = await RunAsync(visitType: CanonicalV2Seed.SiblingVisitType);
+
+        Assert.Equal(1, report.Kpis.TotalRequests);
+        Assert.Equal(1, report.LifecyclePipeline.Sum(p => p.Count));
+        Assert.Equal(0, report.CampusPerformance.Single(c => c.CampusId == 1).TotalInstances);
+        Assert.Equal(1, report.CampusPerformance.Single(c => c.CampusId == 2).TotalInstances);
     }
 
     [Fact]
-    public async Task Missing_v2_detail_never_matches_via_the_projection()
+    public async Task Missing_v2_detail_never_matches_any_filter()
     {
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 400, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 400,
             hasMixedCampusDetails: false,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[] { (401UL, 1UL, 10UL, (string?)null, (string?)null) });
 
-        // No canonical detail exists, so no v2 filter value exists — the projection must not stand in.
-        Assert.Equal(0, (await RunAsync(visitType: CanonicalV2Seed.StaleGlobalVisitType)).Kpis.TotalRequests);
+        // The instance has no detail row, so it owns no visit type — and there is no request-level
+        // column left to stand in for one. Every filter value must therefore find nothing.
+        Assert.Equal(0, (await RunAsync(visitType: CanonicalV2Seed.SiblingVisitType)).Kpis.TotalRequests);
         Assert.Equal(0, (await RunAsync(visitType: CanonicalV2Seed.CanonicalVisitType)).Kpis.TotalRequests);
     }
 
@@ -142,10 +152,8 @@ public sealed class GetHoReportOverviewCanonicalV2Tests : IDisposable
     public async Task Campus_filter_does_not_surface_a_hidden_sibling_campus()
     {
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 500, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 500,
             hasMixedCampusDetails: true,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[]
             {
                 (501UL, 1UL, 10UL, (string?)CanonicalV2Seed.CanonicalNameA, (string?)CanonicalV2Seed.CanonicalVisitType),
@@ -163,10 +171,8 @@ public sealed class GetHoReportOverviewCanonicalV2Tests : IDisposable
     public async Task Unfiltered_report_does_not_double_count_a_multi_campus_request()
     {
         CanonicalV2Seed.SeedRequest(
-            _fx.Db, requestId: 600, formSchemaVersion: FormSchemaVersions.PerCampus,
+            _fx.Db, requestId: 600,
             hasMixedCampusDetails: true,
-            globalDelegationName: CanonicalV2Seed.StaleGlobalName,
-            globalVisitType: CanonicalV2Seed.StaleGlobalVisitType,
             campusDetails: new[]
             {
                 (601UL, 1UL, 10UL, (string?)CanonicalV2Seed.CanonicalNameA, (string?)CanonicalV2Seed.CanonicalVisitType),

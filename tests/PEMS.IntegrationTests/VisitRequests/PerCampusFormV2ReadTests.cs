@@ -65,15 +65,14 @@ public sealed class PerCampusFormV2ReadTests
         VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };
@@ -216,37 +215,42 @@ public sealed class PerCampusFormV2ReadTests
     // ── 2. Dual-read v1 ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task V1_single_campus_resolves_from_global_projection()
+    /// <summary>
+    /// Pure V2 replaces the old "V1 resolves from the global projection" case. There is no global
+    /// projection left, so an instance WITHOUT its own detail row is a data error: the resolver must fail
+    /// loudly instead of quietly rendering empty or borrowed content.
+    /// </summary>
+    public async Task Instance_without_detail_fails_loudly_instead_of_falling_back()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, _) = await SeedV1Async(db, new[] { Campus1 });
-        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var (req, _) = await SeedV1Async(db, new[] { Campus1 }); // seeds an instance with NO form detail
+        var ex = await Assert.ThrowsAsync<PEMS.Application.Common.Exceptions.ConflictException>(
+            () => Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
 
-        Assert.Equal(FormSchemaVersions.Legacy, dto.FormSchemaVersion);
-        var c = Assert.Single(dto.CampusVisits);
-        Assert.Equal("GLOBAL-DELEG", c.DelegationName);
-        Assert.Equal("GLOBAL-PURPOSE", c.Purpose);
-        Assert.Equal("contact@example.com", c.OperationalContact.Email); // v1: primary contact projected
-        Assert.Contains(c.Visitors, m => m.FullName == "G1"); // request-level member
+        Assert.Equal(VisitFormV2ErrorCodes.VisitFormDetailMissing, ex.ErrorCode);
         await tx.RollbackAsync();
     }
 
     [Fact]
-    public async Task V1_multi_campus_gives_every_campus_the_same_snapshot()
+    /// <summary>
+    /// Pure V2 replaces the old "every campus shares one global snapshot" case: sharing content across
+    /// campuses is exactly what the schema abolished. A multi-campus request missing its details must
+    /// fail rather than hand every campus the same borrowed values.
+    /// </summary>
+    public async Task Multi_campus_without_details_fails_instead_of_sharing_one_snapshot()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, _) = await SeedV1Async(db, new[] { Campus1, Campus2 });
-        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var (req, _) = await SeedV1Async(db, new[] { Campus1, Campus2 }); // instances with NO form details
+        var ex = await Assert.ThrowsAsync<PEMS.Application.Common.Exceptions.ConflictException>(
+            () => Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
 
-        Assert.Equal(2, dto.CampusVisits.Count);
-        Assert.All(dto.CampusVisits, c => Assert.Equal("GLOBAL-DELEG", c.DelegationName));
-        Assert.All(dto.CampusVisits, c => Assert.Equal("GLOBAL-PURPOSE", c.Purpose));
+        Assert.Equal(VisitFormV2ErrorCodes.VisitFormDetailMissing, ex.ErrorCode);
         await tx.RollbackAsync();
     }
 
@@ -262,7 +266,7 @@ public sealed class PerCampusFormV2ReadTests
         var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
         var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
 
-        Assert.Equal(FormSchemaVersions.PerCampus, dto.FormSchemaVersion);
+        Assert.False(dto.HasMixedCampusDetails);
         var c = Assert.Single(dto.CampusVisits);
         Assert.Equal("DELEG-A", c.DelegationName);
         Assert.Equal("PURPOSE-A", c.Purpose);

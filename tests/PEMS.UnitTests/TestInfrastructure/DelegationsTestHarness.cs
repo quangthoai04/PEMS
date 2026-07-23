@@ -72,7 +72,8 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<PartnerAlias>();
         modelBuilder.Ignore<VisitGuestPartnerLink>();
         modelBuilder.Ignore<VisitGuestMember>();
-        modelBuilder.Ignore<VisitInstanceFormDetail>();
+        // Pure V2: form content lives here, so the slice MUST map it — pruning it would make every
+        // handler read a null detail and silently lose the delegation name / purpose.
         modelBuilder.Ignore<VisitInstanceGuestMember>();
         modelBuilder.Ignore<VisitRequestIdentityChange>();
         modelBuilder.Ignore<VisitRequestIdentityChangeEvent>();
@@ -303,8 +304,7 @@ public static class DelegationsTestData
         RegistrantJobTitle = "Trưởng đoàn",
         RegistrantPhone = "0900000000",
         RegistrantEmail = "guest@test.local",
-        DelegationName = "Đoàn khách kiểm thử",
-        Purpose = "Tham quan",
+        // Pure V2: delegation name / purpose live in the per-campus detail, not on the request row.
         ContactPersonFullName = "Đầu mối",
         ContactPersonOrganization = "Đối tác",
         ContactPersonPhone = "0900000001",
@@ -329,6 +329,25 @@ public static class DelegationsTestData
         Status = status,
         CurrentHostUserId = currentHostUserId,
         CreatedAt = new DateTime(2026, 6, 1),
+        // Pure V2: every campus instance owns exactly one form detail. Seeding it here keeps the
+        // invariant true for every handler under test, and gives each instance its OWN content.
+        FormDetail = new VisitInstanceFormDetail
+        {
+            VisitInstanceId = visitInstanceId,
+            DelegationName = "Đoàn khách kiểm thử",
+            VisitType = "MEETING",
+            Purpose = "Tham quan",
+            WorkingContent = "Nội dung kiểm thử",
+            OperationalContactFullName = "Đầu mối cơ sở",
+            OperationalContactOrganization = "Đối tác",
+            OperationalContactPhone = "0900000002",
+            OperationalContactEmail = "op@test.local",
+            WorkingLanguage = "EN",
+            MediaConsentStatus = "AGREED",
+            FormRevision = 1,
+            ApprovalRevision = 1,
+            CreatedAt = new DateTime(2026, 6, 1),
+        },
     };
 
     public static VisitParticipant CreateParticipant(

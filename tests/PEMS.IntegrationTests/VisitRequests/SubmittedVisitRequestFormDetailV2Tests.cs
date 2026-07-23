@@ -75,15 +75,14 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
         VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };
@@ -146,43 +145,48 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
     private static FakeUser Host(ulong userId, ulong campusId) => new()
         { UserId = userId, RoleCode = RoleCodes.Staff, SubRole = UserSubRoles.Staff, PrimaryCampusId = campusId };
 
-    // ── 1. v1 compatibility — the flat global projection is unchanged ─────────
+    // ── 1. Pure V2 — a missing per-campus detail must fail, never fall back ───
 
+    /// <summary>
+    /// Replaces the old "V1 returns the global flat snapshot" case: the global fields no longer exist,
+    /// so an instance without its own detail row must raise the coded error instead of returning a
+    /// half-empty DTO.
+    /// </summary>
     [Fact]
-    public async Task V1_single_campus_returns_global_flat_snapshot()
+    public async Task Single_campus_without_detail_fails_instead_of_returning_a_flat_snapshot()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var req = await SeedV1(db, new[] { Campus1 });
-        var dto = await Run(db, Owner(), req.VisitRequestId);
+        var req = await SeedV1(db, new[] { Campus1 }); // instance with NO form detail
+        await Assert.ThrowsAnyAsync<Exception>(() => Run(db, Owner(), req.VisitRequestId));
 
-        Assert.Equal(1, dto.FormSchemaVersion); // exposed so a shared detail surface stays on v1 UI
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("GLOBAL-PURPOSE", dto.Purpose);
-        Assert.Equal("GLOBAL-CONTENT", dto.WorkingContent);
-        Assert.Contains(dto.GuestMembers, m => m.FullName == "G1");
-        Assert.Contains(dto.ExternalSupportMembers, m => m.FullName == "S1");
-        var c = Assert.Single(dto.Campuses);
-        Assert.Equal((long)Campus1, c.CampusId);
-        Assert.Equal(1, dto.CampusDecisionSummary.Total);
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// The campus rollup is request-level by nature and is the one thing that must NOT become per-campus:
+    /// every campus of the request is listed and counted exactly once, whatever its own detail says.
+    ///
+    /// Replaces the former V1 test, which asserted the same rollup through the deleted global projection.
+    /// A uniform multi-campus request is used because this flat surface rejects MIXED content outright
+    /// (see the upgrade-required test); the counts still bite, since a reader that had narrowed to one
+    /// campus detail would report 1 here.
+    /// </summary>
     [Fact]
-    public async Task V1_multi_campus_summary_counts_all_campuses_unchanged()
+    public async Task Multi_campus_summary_counts_every_campus_once()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var req = await SeedV1(db, new[] { Campus1, Campus2 });
+        var (req, _) = await SeedV2(db, new[] { Campus1, Campus2 }, mixed: false);
         var dto = await Run(db, Owner(), req.VisitRequestId);
 
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
+        Assert.False(dto.HasMixedCampusDetails);
         Assert.Equal(2, dto.Campuses.Count);
-        Assert.Equal(2, dto.CampusDecisionSummary.Total); // v1 rollup over the whole request (unchanged)
+        Assert.Equal(2, dto.CampusDecisionSummary.Total);
         await tx.RollbackAsync();
     }
 
@@ -198,10 +202,10 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
         var (req, _) = await SeedV2(db, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, Owner(), req.VisitRequestId);
 
-        // A uniform v2 request LOOKS flat but must drive the v2 UI — the version says so, not the scope.
-        Assert.Equal(2, dto.FormSchemaVersion);
+        // A uniform request LOOKS flat, but every value still comes from the per-campus detail.
+        Assert.False(dto.HasMixedCampusDetails);
         Assert.Equal("V2-DELEG", dto.DelegationName);      // per-campus detail
-        Assert.NotEqual("GLOBAL-DELEG", dto.DelegationName); // never the global field
+        Assert.NotEqual("GLOBAL-DELEG", dto.DelegationName); // never a request-level value
         Assert.Equal("V2-PURPOSE", dto.Purpose);
         Assert.Contains(dto.GuestMembers, m => m.FullName == "A-guest0"); // per-campus link, not request-level
         await tx.RollbackAsync();
