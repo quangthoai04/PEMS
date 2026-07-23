@@ -144,6 +144,26 @@ export const delegationsApi = {
     return data;
   },
 
+  /** "Báo cáo Lịch trình" PDF (giai đoạn Trước tiếp khách) — backend generates + returns the file. */
+  async exportScheduleReportPdf(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+  ): Promise<{ blob: Blob; fileName: string }> {
+    const response = await httpClient.get(
+      API_ENDPOINTS.delegations.scheduleReportPdf(visitRequestId, visitInstanceId),
+      { responseType: 'blob' },
+    );
+    const disposition: string = response.headers?.['content-disposition'] ?? '';
+    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const fileName = utf8Match
+      ? decodeURIComponent(utf8Match[1])
+      : plainMatch
+        ? plainMatch[1]
+        : `BaoCaoLichTrinh-${visitInstanceId}.pdf`;
+    return { blob: response.data as Blob, fileName };
+  },
+
   /** VisitProcess "Thành phần tham gia": the instance's host snapshot + invited supporters. */
   async getInstanceParticipants(visitInstanceId: number | string): Promise<VisitParticipantListItem[]> {
     const { data } = await httpClient.get<VisitParticipantListItem[]>(

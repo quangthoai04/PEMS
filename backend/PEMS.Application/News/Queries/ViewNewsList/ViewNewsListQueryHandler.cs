@@ -92,7 +92,9 @@ public sealed class ViewNewsListQueryHandler
                 )
                 || matchingUserIds.Contains(n.AuthorUserId)
                 || (n.ReviewedBy != null && matchingUserIds.Contains(n.ReviewedBy.Value))
-                || (n.VisitInstanceId != null && (matchingGuestRequests.Contains(n.VisitInstance.VisitRequestId) || taggedInstanceIds.Contains(n.VisitInstanceId.Value)))
+                || (n.VisitInstanceId != null && (
+                    _dbContext.VisitRequestCampuses.Any(vrc => vrc.VisitInstanceId == n.VisitInstanceId.Value && matchingGuestRequests.Contains(vrc.VisitRequestId))
+                    || taggedInstanceIds.Contains(n.VisitInstanceId.Value)))
                 || (n.CoverFileId != null && taggedFileIds.Contains(n.CoverFileId.Value))
             );
         }

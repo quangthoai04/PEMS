@@ -19,7 +19,8 @@ import {
   Lock,
   Loader2,
   ArrowRightCircle,
-  Wand2
+  Wand2,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
@@ -234,6 +235,29 @@ export function VisitProcess() {
       if (e?.response?.status === 409) { await loadPermissions(); }
     } finally {
       setStageSubmitting(false);
+    }
+  };
+
+  // "Báo cáo Lịch trình" PDF — backend generates from real data (agenda, participants, form);
+  // pure export, does not touch the stage/lock state above.
+  const [isExportingScheduleReport, setIsExportingScheduleReport] = useState(false);
+  const exportScheduleReport = async () => {
+    if (!perm || isExportingScheduleReport) return;
+    setIsExportingScheduleReport(true);
+    try {
+      const { blob, fileName } = await delegationsApi.exportScheduleReportPdf(perm.visitRequestId, perm.visitInstanceId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      pushToast('error', apiErrorMessage(e, 'Không thể tải báo cáo lịch trình. Vui lòng thử lại sau.'));
+    } finally {
+      setIsExportingScheduleReport(false);
     }
   };
 
@@ -1349,6 +1373,20 @@ export function VisitProcess() {
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+      )}
+
+      {perm && (
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            disabled={isExportingScheduleReport}
+            onClick={exportScheduleReport}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#004c91] bg-white px-6 py-2.5 text-sm font-bold text-[#004c91] shadow-sm outline-none transition-colors hover:bg-[#004c91]/5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            {isExportingScheduleReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {isExportingScheduleReport ? 'Đang tạo báo cáo...' : 'Báo cáo Lịch trình'}
+          </button>
         </div>
       )}
 
