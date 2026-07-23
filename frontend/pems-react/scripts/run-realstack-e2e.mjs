@@ -18,7 +18,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,20 @@ import process from 'node:process';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..', '..');            // …/PEMS
 const API_PROJ = join(REPO, 'backend', 'PEMS.Api', 'PEMS.Api.csproj');
-const MASTER = join(REPO, 'docs', 'database', 'scripts', 'PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql');
+// Resolve the ONE canonical schema script instead of hard-coding a filename: the previously hard-coded
+// name was renamed away, leaving this orchestrator pointing at a file that no longer existed. Fail closed
+// when it is missing or ambiguous rather than importing "whatever is there".
+const SCRIPTS_DIR = join(REPO, 'docs', 'database', 'scripts');
+const resolveMaster = () => {
+  const candidates = readdirSync(SCRIPTS_DIR).filter((f) => /^PEMS_FULL_.*\.sql$/.test(f));
+  if (candidates.length !== 1) {
+    throw new Error(
+      `Expected exactly one canonical PEMS_FULL_*.sql in ${SCRIPTS_DIR}, found ${candidates.length}` +
+      `${candidates.length ? `: ${candidates.join(', ')}` : ''}.`);
+  }
+  return join(SCRIPTS_DIR, candidates[0]);
+};
+const MASTER = resolveMaster();
 
 const DB = process.env.PEMS_E2E_DB ?? 'pems_e2e_realstack';
 const API_PORT = process.env.PEMS_E2E_API_PORT ?? '5299';

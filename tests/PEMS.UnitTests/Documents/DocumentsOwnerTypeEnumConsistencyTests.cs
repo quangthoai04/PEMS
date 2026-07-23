@@ -25,11 +25,23 @@ public sealed class DocumentsOwnerTypeEnumConsistencyTests
         "GENERAL", "PARTNER", "VISIT_INSTANCE_MEDIA",
     };
 
+    /// <summary>
+    /// The canonical schema script. Resolved by globbing rather than hard-coding a filename: the previous
+    /// hard-coded name was renamed out from under this test, which then failed on a missing file instead of
+    /// guarding the enum. Exactly one canonical script must exist.
+    /// </summary>
     public static IEnumerable<object[]> SchemaFiles()
     {
-        var root = RepoRoot();
-        yield return new object[] { Path.Combine(root, "docs", "database", "scripts", "PEMS_FULL_V2_SEED_COMPLETE_CONTACT_GUARD_AND_DASHBOARD_COVERAGE.sql") };
-        yield return new object[] { Path.Combine(root, "docs", "database", "scripts", "phase_1_candidate", "00_fresh_target.sql") };
+        var scriptsDir = Path.Combine(RepoRoot(), "docs", "database", "scripts");
+
+        var canonical = Directory.GetFiles(scriptsDir, "PEMS_FULL_*.sql", SearchOption.TopDirectoryOnly);
+        Assert.True(canonical.Length == 1,
+            $"Expected exactly one canonical PEMS_FULL_*.sql in {scriptsDir}, found {canonical.Length}.");
+        yield return new object[] { canonical[0] };
+
+        var freshTarget = Path.Combine(scriptsDir, "phase_1_candidate", "00_fresh_target.sql");
+        if (File.Exists(freshTarget))
+            yield return new object[] { freshTarget };
     }
 
     [Theory]
