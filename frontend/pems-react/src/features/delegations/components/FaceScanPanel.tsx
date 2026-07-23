@@ -395,7 +395,7 @@ export function FaceScanPanel({
                 )}
 
                 {currentScan?.status === 'SUCCEEDED' || currentScan?.status === 'CONFIRMED' ? (
-                  detections.map((detection) => {
+                  detections.map((detection, idx) => {
                     const { name, ignored } = resolveDisplayName(detection);
                     const isHighlightedBySearch = searchGuestKeyword
                       ? (name ?? '').toLowerCase().includes(searchGuestKeyword.toLowerCase())
@@ -409,6 +409,15 @@ export function FaceScanPanel({
                     const isActive = activeFaceId === detection.faceDetectionId;
                     const isLowerHalf = detection.boundingBoxY >= 0.5;
 
+                    const isTopEdge = detection.boundingBoxY < 0.2;
+                    const stemHeight = 24 + (idx % 3) * 20; // Stem heights: 24px, 44px, 64px elevated high above background heads
+                    const badgeBgClass = name
+                      ? 'bg-emerald-950/90 text-emerald-200 border-emerald-400/50'
+                      : 'bg-orange-950/90 text-orange-200 border-orange-400/50';
+                    const stemColor = name ? 'bg-emerald-400/90' : 'bg-orange-400/90';
+
+                    const hasBadge = Boolean(name || isActive);
+
                     return (
                       <div
                         key={detection.faceDetectionId}
@@ -418,25 +427,48 @@ export function FaceScanPanel({
                           width: `${detection.boundingBoxWidth * 100}%`,
                           height: `${detection.boundingBoxHeight * 100}%`,
                         }}
-                        className={`absolute border-2 ${canEdit ? 'cursor-pointer' : 'cursor-default'} transition-all rounded-md group/box ${
+                        className={`absolute border-[1.5px] ${canEdit ? 'cursor-pointer' : 'cursor-default'} transition-all rounded-sm group/box ${
                           isActive ? 'z-50 ring-2 ring-[#004c91]' : 'z-10'
                         } ${
                           ignored
-                            ? 'border-gray-400 bg-gray-400/10'
+                            ? 'border-gray-400/40 bg-gray-400/5'
                             : name
-                              ? 'border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20'
-                              : 'border-orange-500 bg-orange-500/10 hover:bg-orange-600/30'
+                              ? 'border-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20'
+                              : 'border-orange-400/80 bg-orange-400/5 hover:bg-orange-400/20'
                         }`}
                         onClick={() => {
                           if (!canEdit) return;
                           setActiveFaceId((prev) => (prev === detection.faceDetectionId ? null : detection.faceDetectionId));
                         }}
                       >
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap z-20">
-                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold shadow-md text-white ${ignored ? 'bg-gray-500' : name ? 'bg-emerald-600' : 'bg-orange-600'}`}>
-                            {ignored ? t('tag.ignored') : name || t('tag.unassigned')}
-                          </span>
-                        </div>
+                        {/* Hiển thị thẻ tên + đường kẻ nối CHỈ KHI khuôn mặt đã được gán tên hoặc đang click chọn */}
+                        {hasBadge && (
+                          <>
+                            {/* Chấm ghim ở viền khung mặt */}
+                            <div className={`absolute left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${name ? 'bg-emerald-400' : 'bg-orange-400'} ${isTopEdge ? '-bottom-0.5' : '-top-0.5'}`} />
+
+                            {/* Leader line / Stem vươn cao khỏi đầu người đằng sau */}
+                            <div
+                              style={{ height: `${stemHeight}px` }}
+                              className={`absolute left-1/2 -translate-x-1/2 w-[1px] pointer-events-none ${stemColor} ${
+                                isTopEdge ? 'top-full' : 'bottom-full'
+                              }`}
+                            />
+
+                            {/* Floating compact pill badge */}
+                            <div
+                              style={isTopEdge ? { top: `calc(100% + ${stemHeight}px)` } : { bottom: `calc(100% + ${stemHeight}px)` }}
+                              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-20 pointer-events-auto"
+                            >
+                              <span
+                                className={`px-1.5 py-0.5 rounded-full text-[7px] sm:text-[8px] font-semibold leading-none tracking-tight block max-w-[80px] sm:max-w-[95px] truncate border shadow-md backdrop-blur-xs ${badgeBgClass}`}
+                                title={name || t('tag.unassigned')}
+                              >
+                                {name || t('tag.unassigned')}
+                              </span>
+                            </div>
+                          </>
+                        )}
 
                         {isActive && (
                           <div
@@ -539,32 +571,49 @@ export function FaceScanPanel({
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {detections.map((d, idx) => {
-                    const { name, ignored } = resolveDisplayName(d);
+                {(() => {
+                  const identifiedDetections = detections
+                    .map((d, idx) => ({ d, originalIndex: idx + 1, ...resolveDisplayName(d) }))
+                    .filter((item) => Boolean(item.name));
+
+                  if (identifiedDetections.length === 0) {
                     return (
-                      <div
-                        key={d.faceDetectionId}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition-colors ${name ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : ignored ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}
-                      >
-                        <User className="w-3.5 h-3.5" />
-                        <span>
-                          {t('tag.facePosition', { index: idx + 1 })}: {name || (ignored ? t('tag.ignored') : t('tag.unassigned'))}
-                        </span>
-                        {name && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); void handleCropAvatar(d); }}
-                            className="p-1 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-100 rounded-md transition-colors ml-1"
-                            title="Cắt khuôn mặt này làm Avatar Người liên hệ đối tác"
-                          >
-                            <Crop className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-xs font-semibold text-gray-400 italic py-1">
+                        Chưa có khuôn mặt nào được định danh trong hình này. Nhấp chọn từng khuôn mặt trên hình để gán tên tương ứng.
+                      </p>
                     );
-                  })}
-                </div>
+                  }
+
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {identifiedDetections.map(({ d, originalIndex, name, ignored }) => (
+                        <div
+                          key={d.faceDetectionId}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition-colors ${
+                            name
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm'
+                              : 'bg-gray-100 text-gray-600 border-gray-200'
+                          }`}
+                        >
+                          <User className="w-3.5 h-3.5" />
+                          <span>
+                            Vị trí #{originalIndex}: {name || t('tag.ignored')}
+                          </span>
+                          {name && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); void handleCropAvatar(d); }}
+                              className="p-1 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-100 rounded-md transition-colors ml-1"
+                              title="Cắt khuôn mặt này làm Avatar Người liên hệ đối tác"
+                            >
+                              <Crop className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

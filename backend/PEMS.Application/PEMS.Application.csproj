@@ -27,4 +27,8 @@
     <ProjectReference Include="..\PEMS.Domain\PEMS.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Common\Assets\fpt-logo.png" />
+  </ItemGroup>
+
 </Project>

@@ -209,6 +209,9 @@ export const API_ENDPOINTS = {
     // VisitProcess "Trước tiếp khách": real setup detail + agenda upsert.
     processDetail: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process-detail`,
+    // "Báo cáo Lịch trình" PDF — same scope as processDetail (403 in the handler otherwise).
+    scheduleReportPdf: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/schedule-report/pdf`,
     saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
     // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).

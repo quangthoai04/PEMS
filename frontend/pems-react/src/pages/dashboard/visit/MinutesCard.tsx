@@ -12,25 +12,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
-  Trash2, UserPlus, RefreshCw, Search, Calendar, Building2, Mail, CheckCircle2, AlertCircle, Info,
+  Trash2, UserPlus, RefreshCw, Calendar, Building2, CheckCircle2, AlertCircle, Info,
   CheckSquare, Square,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type {
-  VisitMinute, MinuteUserSearchItem,
-  SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
+  VisitMinute, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
 } from '../../../features/delegations/types/delegations.types';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
 import { ParticipantPartnerCell } from '../../../features/partners/components/ParticipantPartnerCell';
+import { RichTextEditor } from '../../../shared/components/RichTextEditor';
 import { formatVietnamDateTime, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 const formatDateTime = (value?: string | null) =>
   value ? formatVietnamDateTime(value) : '-';
-
-// Action-item deadline is a business wall-clock value (stored as MySQL DATETIME, no timezone). The
-// backend returns it WITHOUT a 'Z', so new Date() parses it as local — the round-trip stays WYSIWYG.
-const pad2 = (n: number) => String(n).padStart(2, '0');
 // ISO/DB value ("+07:00" hoặc chuỗi trần VN) → "yyyy-MM-ddTHH:mm" cho <input type="datetime-local">,
 // luôn theo giờ Việt Nam — không drift khi browser ở timezone khác.
 const toDateTimeLocalValue = (value?: string | null): string => toVietnamDateTimeLocalInput(value);
@@ -83,7 +79,7 @@ type DraftActionItem = {
 const KIND_META: Record<string, { label: string; cls: string }> = {
   INTERNAL: { label: 'Nội bộ', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   GUEST: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  MANUAL: { label: 'Thêm thủ công', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  MANUAL: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
 };
 // Điểm danh giờ là tick nhanh (không còn dropdown/badge trạng thái). Ánh xạ checkbox ↔ enum backend:
 //   ticked   → PRESENT
@@ -118,7 +114,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const [titleError, setTitleError] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [participantErrors, setParticipantErrors] = useState<Record<string, string>>({});
-  const [addUserError, setAddUserError] = useState<string | null>(null);
   const clearActionError = (key: string) =>
     setActionErrors((prev) => {
       if (!prev[key]) return prev;
@@ -139,17 +134,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const expiresRef = useRef<string | null>(null);
   const keyRef = useRef(0);
   const [remainingMs, setRemainingMs] = useState<number>(0);
-
-  // Manual add-participant form.
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [addName, setAddName] = useState('');
-  const [addRole, setAddRole] = useState('');
-  const [addOrg, setAddOrg] = useState('');
-  const [addEmail, setAddEmail] = useState('');
-  const [addUserId, setAddUserId] = useState<number | null>(null);
-  const [userQuery, setUserQuery] = useState('');
-  const [userResults, setUserResults] = useState<MinuteUserSearchItem[]>([]);
-  const [userSearching, setUserSearching] = useState(false);
 
   const nextKey = (prefix: string) => `${prefix}-new-${++keyRef.current}`;
 
@@ -195,23 +179,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     return () => clearInterval(t);
   }, [editing, load]);
 
-  // Debounced user search for the manual-add form.
-  useEffect(() => {
-    if (!showAddForm) return;
-    const q = userQuery.trim();
-    if (q.length < 2) { setUserResults([]); return; }
-    let active = true;
-    setUserSearching(true);
-    const t = setTimeout(async () => {
-      try {
-        const res = await delegationsApi.minutes.searchUsers(visitInstanceId, q);
-        if (active) setUserResults(res);
-      } catch { if (active) setUserResults([]); }
-      finally { if (active) setUserSearching(false); }
-    }, 300);
-    return () => { active = false; clearTimeout(t); };
-  }, [userQuery, showAddForm, visitInstanceId]);
-
   const enterEditing = (d: VisitMinute) => {
     tokenRef.current = d.editLockToken ?? null;
     minutesIdRef.current = d.minutesId ?? null;
@@ -247,14 +214,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     setTitleError(null);
     setActionErrors({});
     setParticipantErrors({});
-    resetAddForm();
-  };
-
-  const resetAddForm = () => {
-    setShowAddForm(false);
-    setAddName(''); setAddRole(''); setAddOrg(''); setAddEmail('');
-    setAddUserId(null); setUserQuery(''); setUserResults([]);
-    setAddUserError(null);
   };
 
   const handleCreate = async () => {
@@ -313,7 +272,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     for (const p of draftParticipants) {
       const isNew = p.minuteParticipantId <= 0;
       const isExternal = p.userId == null && p.guestMemberId == null;
-      if (isNew && isExternal) continue; // never create free-text/external participants
+      if (isNew && isExternal && !p.fullNameSnapshot.trim()) continue; // skip blank empty manual rows
       if (p.userId != null) {
         if (seenUser.has(p.userId)) continue;
         seenUser.add(p.userId);
@@ -353,7 +312,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       });
       setEditing(false);
       tokenRef.current = null;
-      resetAddForm();
       setData(d);
       setLoadError(null);
       pushToast('success', 'Đã lưu biên bản cuộc họp.');
@@ -379,7 +337,6 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     const id = minutesIdRef.current, token = tokenRef.current;
     setEditing(false);
     tokenRef.current = null;
-    resetAddForm();
     if (id && token) {
       try { await delegationsApi.minutes.releaseLock(id, token); } catch { /* lock will expire anyway */ }
     }
@@ -403,43 +360,21 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const removeActionItem = (key: string) =>
     setDraftActionItems((prev) => prev.filter((a) => a._key !== key));
 
-  const handleAddParticipant = () => {
-    // Chỉ cho phép thêm người tham gia là user có sẵn trong hệ thống (không hỗ trợ free-text).
-    if (!addUserId) {
-      setAddUserError('Vui lòng chọn một người dùng trong hệ thống.');
-      pushToast('error', 'Không hỗ trợ thêm người tham gia ngoài hệ thống. Vui lòng chọn một người dùng có sẵn.');
-      return;
-    }
-    if (draftParticipants.some((p) => p.userId === addUserId)) {
-      setAddUserError('Người dùng này đã có trong danh sách.');
-      pushToast('info', 'Người dùng này đã có trong danh sách điểm danh.');
-      return;
-    }
+  const handleAddParticipantRow = () => {
     setDraftParticipants((prev) => [...prev, {
       _key: nextKey('p'),
       minuteParticipantId: 0,
-      userId: addUserId,
+      userId: null,
       guestMemberId: null,
-      fullNameSnapshot: addName,
-      roleSnapshot: addRole,
-      organizationSnapshot: addOrg,
-      emailSnapshot: addEmail,
+      fullNameSnapshot: '',
+      roleSnapshot: '',
+      organizationSnapshot: '',
+      emailSnapshot: '',
       attendanceStatus: 'ABSENT',
       attendanceNote: '',
-      participantKind: 'INTERNAL',
+      participantKind: 'GUEST',
       guestNationality: null,
     }]);
-    resetAddForm();
-  };
-
-  const handlePickUser = (u: MinuteUserSearchItem) => {
-    setAddUserId(u.userId);
-    setAddName(u.fullName);
-    setAddEmail(u.email ?? '');
-    setAddOrg(u.organization ?? '');
-    setUserQuery(u.fullName);
-    setUserResults([]);
-    setAddUserError(null);
   };
 
   const handleSyncNew = async () => {
@@ -622,14 +557,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-sm min-w-[1080px]">
+                        <table className="w-full text-left border-collapse text-sm min-w-[900px]">
                           <thead className="bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold">
                             <tr className="border-b border-gray-200">
-                              <th className="px-4 py-3 w-28 whitespace-nowrap">Điểm danh</th>
-                              <th className="px-4 py-3 w-44">Họ tên</th>
-                              <th className="px-4 py-3 w-40">Vai trò / chức danh</th>
+                              <th className="px-4 py-3 w-16 text-center whitespace-nowrap">Điểm danh</th>
+                              <th className="px-4 py-3 w-48">Họ tên</th>
+                              <th className="px-4 py-3 w-44">Vai trò / chức danh</th>
                               <th className="px-4 py-3 w-56">Đơn vị</th>
-                              <th className="px-4 py-3 w-60">Email</th>
                               <th className="px-4 py-3 w-28">Loại nguồn</th>
                               {!editing && <th className="px-4 py-3 w-44">Đối tác</th>}
                               <th className="px-4 py-3 w-52">Ghi chú</th>
@@ -637,37 +571,38 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {participantRows.map((p) => {
-                              const kind = KIND_META[p.participantKind] ?? KIND_META.MANUAL;
-                              const isManual = !p.userId && !p.guestMemberId;
+                             {participantRows.map((p) => {
+                              const selectedKind = p.participantKind === 'INTERNAL' ? 'INTERNAL' : 'GUEST';
+                              const kind = KIND_META[selectedKind];
+                              const isNewRow = p.minuteParticipantId <= 0;
                               const rowError = participantErrors[p._key];
                               const isPresent = isPresentStatus(p.attendanceStatus);
                               return (
                                 <tr key={p._key} className={`transition-colors align-top ${rowError ? 'bg-red-50/70' : 'hover:bg-gray-50/55'}`}>
-                                  <td className="px-4 py-3">
-                                    {/* Điểm danh = tick nhanh. Tick → PRESENT, bỏ tick → ABSENT. Ngoài phiên
-                                        chỉnh sửa thì chỉ hiển thị (disabled), không có dropdown/lý do vắng. */}
+                                  <td className="px-4 py-3 text-center">
+                                    {/* Điểm danh = chỉ hiển thị ô tích checkbox, KHÔNG kèm chữ */}
                                     <button
                                       type="button"
                                       disabled={!editing}
                                       onClick={() => updateParticipant(p._key, { attendanceStatus: isPresent ? 'ABSENT' : 'PRESENT' })}
                                       aria-pressed={isPresent}
                                       aria-label={isPresent ? 'Bỏ đánh dấu có mặt' : 'Đánh dấu có mặt'}
-                                      title={isPresent ? 'Có mặt' : 'Chưa có mặt'}
-                                      className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors disabled:cursor-default enabled:hover:bg-slate-100"
+                                      title={isPresent ? 'Có mặt' : 'Vắng mặt'}
+                                      className="inline-flex items-center justify-center rounded-lg p-1 transition-colors disabled:cursor-default enabled:hover:bg-slate-100"
                                     >
                                       {isPresent
                                         ? <CheckSquare className="h-5 w-5 shrink-0 text-emerald-600" />
                                         : <Square className="h-5 w-5 shrink-0 text-slate-400" />}
-                                      <span className={`text-xs font-bold ${isPresent ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                        {isPresent ? 'Có mặt' : 'Chưa có mặt'}
-                                      </span>
                                     </button>
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isManual ? (
-                                      <input value={p.fullNameSnapshot} onChange={(e) => updateParticipant(p._key, { fullNameSnapshot: e.target.value })}
-                                        className="w-full text-sm font-semibold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                    {editing && isNewRow ? (
+                                      <input
+                                        value={p.fullNameSnapshot}
+                                        onChange={(e) => updateParticipant(p._key, { fullNameSnapshot: e.target.value })}
+                                        placeholder="Nhập họ tên..."
+                                        className="w-full text-sm font-semibold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]"
+                                      />
                                     ) : (
                                       <span className="font-semibold text-gray-900">{p.fullNameSnapshot || '-'}</span>
                                     )}
@@ -676,19 +611,25 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isManual ? (
-                                      <input value={p.roleSnapshot} onChange={(e) => updateParticipant(p._key, { roleSnapshot: e.target.value })}
+                                    {editing && isNewRow ? (
+                                      <input
+                                        value={p.roleSnapshot}
+                                        onChange={(e) => updateParticipant(p._key, { roleSnapshot: e.target.value })}
                                         placeholder="Vai trò..."
-                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]"
+                                      />
                                     ) : (
                                       <span className="text-gray-700">{p.roleSnapshot || '-'}</span>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isManual ? (
-                                      <input value={p.organizationSnapshot} onChange={(e) => updateParticipant(p._key, { organizationSnapshot: e.target.value })}
+                                    {editing && isNewRow ? (
+                                      <input
+                                        value={p.organizationSnapshot}
+                                        onChange={(e) => updateParticipant(p._key, { organizationSnapshot: e.target.value })}
                                         placeholder="Đơn vị..."
-                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]"
+                                      />
                                     ) : (
                                       <span className="inline-flex items-center gap-1.5 text-gray-700">
                                         <Building2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />{p.organizationSnapshot || '-'}
@@ -696,26 +637,18 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isManual ? (
-                                      <input value={p.emailSnapshot} onChange={(e) => updateParticipant(p._key, { emailSnapshot: e.target.value })}
-                                        placeholder="Email..."
-                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
-                                    ) : p.emailSnapshot ? (
-                                      // Email 1 dòng: truncate + tooltip full email. KHÔNG dùng break-all
-                                      // (nguyên nhân trước đây email bị vỡ thành từng ký tự).
-                                      <div className="flex items-center gap-1.5 min-w-0 max-w-[220px]">
-                                        <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                        <a href={`mailto:${p.emailSnapshot}`} title={p.emailSnapshot}
-                                          className="block min-w-0 truncate text-sm font-medium text-slate-700 hover:text-[#004c91] hover:underline">
-                                          {p.emailSnapshot}
-                                        </a>
-                                      </div>
+                                    {editing ? (
+                                      <select
+                                        value={selectedKind}
+                                        onChange={(e) => updateParticipant(p._key, { participantKind: e.target.value })}
+                                        className="text-xs font-bold rounded-lg border border-gray-300 px-2 py-1.5 outline-none bg-white focus:border-[#004c91] shadow-xs cursor-pointer"
+                                      >
+                                        <option value="INTERNAL">Nội bộ</option>
+                                        <option value="GUEST">Khách</option>
+                                      </select>
                                     ) : (
-                                      <span className="text-slate-400">—</span>
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
                                     )}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
                                   </td>
                                   {!editing && (
                                     <td className="px-4 py-3">
@@ -738,9 +671,12 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   )}
                                   <td className="px-4 py-3">
                                     {editing ? (
-                                      <input value={p.attendanceNote} onChange={(e) => updateParticipant(p._key, { attendanceNote: e.target.value })}
+                                      <input
+                                        value={p.attendanceNote}
+                                        onChange={(e) => updateParticipant(p._key, { attendanceNote: e.target.value })}
                                         placeholder="Ghi chú điểm danh..."
-                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]" />
+                                        className="w-full text-sm rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]"
+                                      />
                                     ) : (
                                       <div title={p.attendanceNote || ''} className="max-w-[200px] line-clamp-2 text-xs text-gray-500">
                                         {p.attendanceNote || '—'}
@@ -749,8 +685,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   </td>
                                   {editing && (
                                     <td className="px-4 py-3 text-center">
-                                      <button type="button" onClick={() => removeParticipant(p._key)}
-                                        className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                                      <button
+                                        type="button"
+                                        onClick={() => removeParticipant(p._key)}
+                                        className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                      >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
                                     </td>
@@ -759,7 +698,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                               );
                             })}
                             {editing && participantRows.length === 0 && (
-                              <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400 italic">Chưa có người tham gia. Dùng các nút bên dưới để thêm.</td></tr>
+                              <tr><td colSpan={7} className="px-5 py-6 text-center text-sm text-slate-400 italic">Chưa có người tham gia. Dùng nút bên dưới để thêm người mới.</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -770,77 +709,22 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                     {editing && (
                       <div className="px-5 py-3 border-t border-gray-200 bg-gray-50/40 space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <button type="button" onClick={() => { setShowAddForm((s) => !s); setAddUserError(null); }}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg shadow-sm transition-colors">
+                          <button
+                            type="button"
+                            onClick={handleAddParticipantRow}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg shadow-sm transition-colors"
+                          >
                             <UserPlus className="w-4 h-4" /> Thêm người tham gia
                           </button>
-                          <button type="button" onClick={handleSyncNew} disabled={busy}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-white border border-[#004c91]/30 text-[#004c91] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50">
+                          <button
+                            type="button"
+                            onClick={handleSyncNew}
+                            disabled={busy}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-white border border-[#004c91]/30 text-[#004c91] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                          >
                             <RefreshCw className="w-4 h-4" /> Đồng bộ người mới
                           </button>
                         </div>
-
-                        {showAddForm && (
-                          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
-                            <div className="relative">
-                              <label className="block text-xs font-bold text-gray-600 mb-1">Tìm người dùng trong hệ thống <span className="text-red-500">*</span></label>
-                              <div className="relative">
-                                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                <input value={userQuery}
-                                  onChange={(e) => { setUserQuery(e.target.value); setAddUserId(null); setAddUserError(null); }}
-                                  placeholder="Nhập tên hoặc email để tìm..."
-                                  className={`w-full text-sm rounded-lg border pl-9 pr-3 py-2 outline-none ${addUserError ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'}`} />
-                              </div>
-                              {addUserError && (
-                                <p className="mt-1.5 text-xs font-semibold text-red-600">{addUserError}</p>
-                              )}
-                              {userQuery.trim().length >= 2 && (userSearching || userResults.length > 0) && (
-                                <div className="absolute z-20 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                                  {userSearching ? (
-                                    <div className="px-3 py-2 text-xs text-gray-400">Đang tìm...</div>
-                                  ) : userResults.map((u) => (
-                                    <button type="button" key={u.userId} onClick={() => handlePickUser(u)}
-                                      className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors">
-                                      <div className="text-sm font-semibold text-gray-800">{u.fullName}</div>
-                                      <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
-                                        {u.email && <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" />{u.email}</span>}
-                                        {u.organization && <span className="inline-flex items-center gap-1"><Building2 className="w-3 h-3" />{u.organization}</span>}
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {addUserId ? (
-                              <div className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 flex flex-col gap-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span>Đã chọn: <b>{addName}</b></span>
-                                  <button type="button" onClick={() => { setAddUserId(null); setUserQuery(''); }} className="text-blue-500 hover:text-blue-800"><X className="w-3.5 h-3.5" /></button>
-                                </div>
-                                {(addOrg || addEmail) && (
-                                  <div className="text-[10px] text-blue-600 flex items-center gap-2 opacity-80">
-                                    {addOrg && <span>{addOrg}</span>}
-                                    {addOrg && addEmail && <span>•</span>}
-                                    {addEmail && <span>{addEmail}</span>}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <p className="text-[11px] text-gray-400 italic">Bắt buộc chọn người dùng hệ thống để thêm vào biên bản.</p>
-                            )}
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={handleAddParticipant}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#f37021] hover:bg-[#e0611d] text-white rounded-lg shadow-sm transition-colors">
-                                <Plus className="w-4 h-4" /> Thêm vào danh sách
-                              </button>
-                              <button type="button" onClick={resetAddForm}
-                                className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors">
-                                Hủy
-                              </button>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -852,15 +736,19 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                         Ghi chú / Nội dung biên bản
                       </h3>
                       {editing ? (
-                        <textarea
+                        <RichTextEditor
                           value={draftContent}
-                          onChange={(e) => setDraftContent(e.target.value)}
+                          onChange={setDraftContent}
                           placeholder="Nhập ghi chú hoặc nội dung biên bản cuộc họp..."
-                          className="w-full bg-gray-50/50 border border-gray-200 rounded-xl p-4 text-sm font-medium text-gray-800 min-h-[160px] focus:bg-white focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all outline-none resize-y"
+                        />
+                      ) : data.content?.trim() ? (
+                        <div
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50/60 p-4 min-h-[120px] text-sm text-gray-800 prose max-w-none"
+                          dangerouslySetInnerHTML={{ __html: data.content }}
                         />
                       ) : (
-                        <div className="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3 min-h-[120px] whitespace-pre-wrap text-sm text-gray-800">
-                          {data.content?.trim() ? data.content : <span className="text-slate-400 italic">Chưa có nội dung.</span>}
+                        <div className="w-full rounded-xl border border-gray-200 bg-gray-50/60 p-4 min-h-[120px] text-sm text-slate-400 italic">
+                          Chưa có nội dung.
                         </div>
                       )}
                     </div>

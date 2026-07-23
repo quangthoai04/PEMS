@@ -177,6 +177,17 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // "Báo cáo Lịch trình" PDF (đặc tả Prompt_AI_Bao_Cao_Lich_Trinh): same scope rule as
+        // process-detail above (403 in the handler otherwise).
+        [HttpGet("{visitRequestId}/campuses/{visitInstanceId}/schedule-report/pdf")]
+        public async Task<IActionResult> ExportScheduleReportPdf(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var fileBytes = await _mediator.Send(
+                new PEMS.Application.Delegations.Queries.ExportScheduleReport.ExportScheduleReportPdfQuery(visitRequestId, visitInstanceId),
+                cancellationToken);
+            return File(fileBytes, "application/pdf", $"BaoCaoLichTrinh-{visitInstanceId}.pdf");
+        }
+
         // Valid "Người phụ trách" candidates for the agenda editor: the active host + ACCEPTED
         // supporting participants of THIS instance only (never the whole-system user list). Scope
         // enforced in the handler (403 if the caller has no relation to the instance).

@@ -1,17 +1,8 @@
-/**
- * VisitPhotoPanel — khối "Ảnh đoàn khách" của Student (visit_photos, độc lập Gallery).
- *
- * Dùng CHUNG cho trang Đóng góp kết quả (phần Ảnh / Media) và tab "Quản lý ảnh đoàn khách"
- * (modal Xem chi tiết / Chỉnh sửa) để không nhân đôi logic upload/xóa. Backend là nguồn quyền
- * duy nhất (ACTIVE Student + ACCEPTED participant, chống IDOR): panel chỉ ẩn/hiện nút theo cờ
- * canUpload/canRemove trả về; 403/404 → gọi onForbidden (nơi nhúng tự quyết định ẩn khối).
- * Ảnh hiển thị qua proxy /api/files/{fileId}/content (JWT header — cần fetch blob).
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, Image as ImageIcon, Video, Loader2, Trash2, UploadCloud, X } from 'lucide-react';
+import { ExternalLink, Image as ImageIcon, Video, Loader2, Trash2, UploadCloud, X, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { visitPhotosApi } from '../api/visitPhotosApi';
-import type { VisitInstancePhotoItem, VisitInstancePhotos } from '../types/visitPhotos.types';
+import type { VisitInstancePhotoItem, VisitInstancePhotos, VisitPhotoFaceDetection } from '../types/visitPhotos.types';
 import { validateFile } from '../../../shared/utils/fileValidation';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
@@ -71,6 +62,10 @@ interface Props {
   onForbidden?: () => void;
   columns?: 4 | 6;
   maxInitialItems?: number;
+  /** Nếu true (dành cho Staff/Staff Leader), khi click xem ảnh full sẽ tự động tải & hiển thị danh tính đã gán */
+  showFaceTags?: boolean;
+  /** Nút mở modal quét mặt (nếu được truyền vào) */
+  onOpenFaceScan?: () => void;
 }
 
 export function VisitPhotoPanel({ 
@@ -78,7 +73,9 @@ export function VisitPhotoPanel({
   mode = 'edit', 
   onForbidden,
   columns = 4,
-  maxInitialItems = 24
+  maxInitialItems = 24,
+  showFaceTags = false,
+  onOpenFaceScan,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showAll, setShowAll] = useState(false);
@@ -91,8 +88,31 @@ export function VisitPhotoPanel({
   const [removing, setRemoving] = useState(false);
   const [previewData, setPreviewData] = useState<{ photo: VisitInstancePhotoItem, url: string | null } | null>(null);
 
-  // Giữ callback qua ref để một inline arrow từ cha không làm `load` đổi identity mỗi render
-  // (tránh useEffect refetch vô hạn).
+  const [previewFaceDetections, setPreviewFaceDetections] = useState<VisitPhotoFaceDetection[]>([]);
+
+  // Tải thông tin gán khuôn mặt khi mở ảnh xem full nếu showFaceTags = true
+  useEffect(() => {
+    if (!previewData || !showFaceTags) {
+      setPreviewFaceDetections([]);
+      return;
+    }
+    let cancelled = false;
+    visitPhotosApi.getFaceScans(previewData.photo.visitPhotoId)
+      .then((scans) => {
+        if (cancelled) return;
+        const latest = scans[0];
+        if (latest && (latest.status === 'SUCCEEDED' || latest.status === 'CONFIRMED')) {
+          setPreviewFaceDetections(latest.detections ?? []);
+        } else {
+          setPreviewFaceDetections([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewFaceDetections([]);
+      });
+    return () => { cancelled = true; };
+  }, [previewData, showFaceTags]);
+
   const onForbiddenRef = useRef(onForbidden);
   onForbiddenRef.current = onForbidden;
 
@@ -133,8 +153,6 @@ export function VisitPhotoPanel({
     const toastId = toast.loading('Đang tải lên...');
     try {
       await visitPhotosApi.upload(visitInstanceId, files);
-      // Upload is image-only (accept + backend purpose policy). The video element below is kept
-      // for historical files that predate that policy — it is a renderer, not an upload path.
       toast.success('Đã tải ảnh đoàn khách lên.', { id: toastId });
       await load();
     } catch (e: any) {
@@ -191,12 +209,23 @@ export function VisitPhotoPanel({
             ? <>Thư mục: <span className="text-slate-700">{data.folderName}</span> · {data.photos.length} ảnh</>
             : <>{data.photos.length} ảnh</>}
         </p>
-        {data.folderWebViewUrl && (
-          <a href={data.folderWebViewUrl} target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#004c91] hover:underline">
-            <ExternalLink className="w-3.5 h-3.5" /> Mở thư mục Drive
-          </a>
-        )}
+        <div className="flex items-center gap-3">
+          {onOpenFaceScan && (
+            <button
+              type="button"
+              onClick={onOpenFaceScan}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-[#f37021] border border-orange-200 rounded-xl text-xs font-extrabold transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Quét mặt
+            </button>
+          )}
+          {data.folderWebViewUrl && (
+            <a href={data.folderWebViewUrl} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#004c91] hover:underline">
+              <ExternalLink className="w-3.5 h-3.5" /> Mở thư mục Drive
+            </a>
+          )}
+        </div>
       </div>
 
       {data.photos.length === 0 ? (
@@ -310,7 +339,7 @@ export function VisitPhotoPanel({
         </div>
       )}
 
-      {/* Popup xem ảnh phóng to */}
+      {/* Popup xem ảnh phóng to (Có hiển thị nhãn danh tính nếu showFaceTags = true) */}
       {previewData && (
         <div 
           className="fixed inset-0 bg-black/90 flex items-center justify-center z-[130] p-4 sm:p-8"
@@ -332,12 +361,61 @@ export function VisitPhotoPanel({
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <img 
-                src={previewData.url} 
-                alt={previewData.photo.fileName} 
-                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              />
+              <div className="relative max-w-full max-h-[88vh] flex items-center justify-center select-none" onClick={(e) => e.stopPropagation()}>
+                <img 
+                  src={previewData.url} 
+                  alt={previewData.photo.fileName} 
+                  className="max-w-full max-h-[88vh] object-contain rounded-lg shadow-2xl"
+                />
+                {showFaceTags && previewFaceDetections.length > 0 && (
+                  previewFaceDetections.map((detection, idx) => {
+                    const name = detection.guestFullName;
+                    // Bỏ hoàn toàn nhãn cho khuôn mặt chưa được gán tên
+                    if (!name) return null;
+
+                    const isTopEdge = detection.boundingBoxY < 0.2;
+                    // Stem height 24px, 44px, 64px vươn cao hẳn lên khỏi vị trí mặt người đằng sau
+                    const stemHeight = 24 + (idx % 3) * 20;
+
+                    return (
+                      <div
+                        key={detection.faceDetectionId}
+                        style={{
+                          left: `${detection.boundingBoxX * 100}%`,
+                          top: `${detection.boundingBoxY * 100}%`,
+                          width: `${detection.boundingBoxWidth * 100}%`,
+                          height: `${detection.boundingBoxHeight * 100}%`,
+                        }}
+                        className="absolute border-[1.5px] border-emerald-400 bg-emerald-400/10 pointer-events-none rounded-sm z-20"
+                      >
+                        {/* Chấm ghim ở viền khung mặt */}
+                        <div className={`absolute left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400 ${isTopEdge ? '-bottom-0.5' : '-top-0.5'}`} />
+
+                        {/* Đường kẻ nối siêu mảnh 1px vươn cao */}
+                        <div
+                          style={{ height: `${stemHeight}px` }}
+                          className={`absolute left-1/2 -translate-x-1/2 w-[1px] bg-emerald-400/90 pointer-events-none ${
+                            isTopEdge ? 'top-full' : 'bottom-full'
+                          }`}
+                        />
+
+                        {/* Thẻ tên siêu nhỏ gọn, phong cách pill tối màu mỏng nhẹ */}
+                        <div
+                          style={isTopEdge ? { top: `calc(100% + ${stemHeight}px)` } : { bottom: `calc(100% + ${stemHeight}px)` }}
+                          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30"
+                        >
+                          <span
+                            className="px-1.5 py-0.5 rounded-full text-[7px] sm:text-[8px] font-semibold leading-none tracking-tight block max-w-[80px] sm:max-w-[95px] truncate bg-emerald-950/90 text-emerald-200 border border-emerald-400/50 shadow-md backdrop-blur-xs"
+                            title={name}
+                          >
+                            {name}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             )
           ) : (
             <div className="flex flex-col items-center text-white/70" onClick={(e) => e.stopPropagation()}>
@@ -350,3 +428,4 @@ export function VisitPhotoPanel({
     </div>
   );
 }
+
