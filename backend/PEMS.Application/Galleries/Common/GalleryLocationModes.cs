@@ -9,3 +9,10 @@ internal static class GalleryLocationModes
     public const string ExistingArea = "EXISTING_AREA";
     public const string NewArea = "NEW_AREA";
 }
+
+/// <summary>Extra mode accepted ONLY by the translation-preview endpoint (the edit modal's "Dịch sang
+/// EN" — per-field include flags decide what gets translated).</summary>
+internal static class GalleryTranslationPreviewModes
+{
+    public const string Edit = "EDIT";
+}

@@ -106,6 +106,11 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.News.Services.INewsTranslationService,
             PEMS.Infrastructure.Translation.GoogleNewsTranslationService>();
 
+        // Shared content-translation abstraction (Gallery names/titles). Same single Google provider —
+        // registered against the same implementation so credential/quota logic is never duplicated.
+        services.AddScoped<PEMS.Application.Translation.IContentTranslationService,
+            PEMS.Infrastructure.Translation.GoogleNewsTranslationService>();
+
         // Visit-photo face detection (Google Cloud Vision FACE_DETECTION) — reuses the same
         // credential resolution + service-account token pipeline as OCR/Translation on purpose.
         services.AddScoped<PEMS.Application.Delegations.VisitPhotos.FaceScans.Services.IFaceDetectionProvider,

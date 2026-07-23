@@ -17,5 +17,13 @@ public sealed class CreateGalleryLocationCommandValidator : AbstractValidator<Cr
         RuleFor(x => x.NewAreaName)
             .MaximumLength(150).WithMessage("Tên khu vực tối đa 150 ký tự.")
             .When(x => !string.IsNullOrWhiteSpace(x.NewAreaName));
+
+        RuleFor(x => x.NewAreaNameEn)
+            .MaximumLength(255).WithMessage("Tên khu vực tiếng Anh tối đa 255 ký tự.")
+            .When(x => !string.IsNullOrWhiteSpace(x.NewAreaNameEn));
+
+        RuleFor(x => x.LocationNameEn)
+            .MaximumLength(255).WithMessage("Vị trí tiếng Anh tối đa 255 ký tự.")
+            .When(x => !string.IsNullOrWhiteSpace(x.LocationNameEn));
     }
 }

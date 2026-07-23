@@ -159,6 +159,21 @@ public static class GalleryErrorCodes
     /// <summary>The item/audio is not public-visible (hidden item / inactive location, area or campus). → 404.</summary>
     public const string AudioNotPublicVisible = "GALLERY_AUDIO_NOT_PUBLIC_VISIBLE";
 
+    // ── Translation preview phase (Dịch sang EN trước khi lưu) ──
+
+    /// <summary>The provider could not produce a translation for the preview. → 422 (retryable).</summary>
+    public const string TranslationPreviewFailed = "GALLERY_TRANSLATION_PREVIEW_FAILED";
+
+    /// <summary>The save carried an AUTO_PREVIEW EN whose source hash no longer matches the current
+    /// Vietnamese name — the client must re-translate (never silently re-translate). → 422.</summary>
+    public const string TranslationPreviewStale = "GALLERY_TRANSLATION_PREVIEW_STALE";
+
+    /// <summary>A preview request included no field to translate. → 422.</summary>
+    public const string TranslationPreviewEmpty = "GALLERY_TRANSLATION_PREVIEW_EMPTY";
+
+    /// <summary>The area's Vietnamese name is required (direct edit / NEW_AREA preview). → 422.</summary>
+    public const string AreaNameRequired = "GALLERY_AREA_NAME_REQUIRED";
+
     // ── YouTube external video phase ──
 
     /// <summary>A YouTube URL was empty/blank. → 422.</summary>

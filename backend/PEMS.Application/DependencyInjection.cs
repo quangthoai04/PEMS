@@ -31,6 +31,10 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Galleries.Common.IGalleryExternalMediaService,
             PEMS.Application.Galleries.Common.GalleryExternalMediaService>();
 
+        // Gallery auto-translation coordinator (VI → EN, batch + dedupe, never throws for provider errors).
+        services.AddScoped<PEMS.Application.Galleries.Common.IGalleryTranslationCoordinator,
+            PEMS.Application.Galleries.Common.GalleryTranslationCoordinator>();
+
         services.AddScoped<PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer, PEMS.Application.Emails.Utils.EmailImageLayoutNormalizer>();
 
         services.AddScoped<PEMS.Application.Notifications.Common.INotificationService, PEMS.Application.Notifications.Common.NotificationService>();

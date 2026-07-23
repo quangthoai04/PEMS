@@ -92,6 +92,8 @@ export interface GalleryItemContent {
 export interface GalleryItemDetail {
   galleryItemId: number;
   title: string;
+  /** English title — present ONLY when its translation is READY and non-blank. */
+  titleEn?: string | null;
   content: GalleryItemContent;
   itemType: GalleryItemType;
   itemTypeLabel: string;
@@ -106,6 +108,8 @@ export interface GalleryItemDetail {
   updatedByName?: string | null;
   media: GalleryMedia[];
   message?: string | null;
+  /** Set when the save succeeded but the VI → EN auto-translation failed — show as a WARNING toast. */
+  translationWarning?: string | null;
 }
 
 export interface GalleryLocationOption {
@@ -117,12 +121,22 @@ export interface GalleryLocationOption {
 export interface GalleryAreaOption {
   areaId: number;
   areaName: string;
+  areaNameEn?: string | null;
   status: 'ACTIVE' | 'INACTIVE';
   coverFileId?: number | null;
   coverUrl?: string | null;
   /** IMAGE (legacy areas) or VIDEO (MP4 cover) — lets the edit modal preview the right element. */
   coverMediaType?: AreaCoverMediaType;
   locations: GalleryLocationOption[];
+}
+
+/** Summary of one area as returned inside a create/update response — used for the optimistic
+ *  dropdown upsert (no cover/locations payload). */
+export interface GalleryFilterArea {
+  areaId: number;
+  areaName: string;
+  areaNameEn?: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
 }
 
 export interface GalleryFilterOptions {
@@ -144,6 +158,10 @@ export interface GalleryListQueryParams {
 
 export interface CreateGalleryItemInput {
   title: string;
+  /** Previewed/manual English title. Empty → backend auto-translates on save. */
+  titleEn?: string | null;
+  titleTranslationOrigin?: TranslationOrigin;
+  titleTranslationSourceHash?: string | null;
   /** All four bilingual fields are mandatory. */
   descriptionVi: string;
   audioVi: File;
@@ -162,6 +180,10 @@ export interface CreateGalleryItemInput {
 export interface UpdateGalleryItemInput {
   galleryItemId: number;
   title: string;
+  /** Previewed/manual English title. Empty → kept/auto-translated server-side. */
+  titleEn?: string | null;
+  titleTranslationOrigin?: TranslationOrigin;
+  titleTranslationSourceHash?: string | null;
   descriptionVi: string;
   descriptionEn: string;
   /** Replacement audio; omit to keep the current recording. Audio can never be removed. */
@@ -215,6 +237,81 @@ export interface GalleryLocationDetail extends GalleryLocationListItem {
   mediaCount?: number;
   visitDelegationCount?: number;
   message?: string | null;
+  /** Set when the save succeeded but the VI → EN auto-translation failed — show as a WARNING toast. */
+  translationWarning?: string | null;
+  /** Summary of the (possibly renamed) area — used for the optimistic dropdown upsert. */
+  area?: GalleryFilterArea | null;
+  /** Summary of the saved location. */
+  location?: {
+    locationId: number;
+    locationName: string;
+    locationNameEn?: string | null;
+    status: GalleryLocationStatus;
+  } | null;
+}
+
+// ── VI → EN translation preview (Dịch sang EN trước khi lưu) ──
+
+export type TranslationStatus = 'PENDING' | 'READY' | 'FAILED' | 'OUTDATED';
+
+/** Where the EN value in the save payload came from. */
+export type TranslationOrigin = 'NONE' | 'AUTO_PREVIEW' | 'MANUAL' | 'AUTO_ON_SAVE';
+
+export type TranslationPreviewMode = 'EXISTING_AREA' | 'NEW_AREA' | 'EDIT';
+
+export interface TranslationPreviewField {
+  sourceText: string;
+  sourceHash: string;
+  translatedText: string;
+}
+
+export interface PreviewLocationTranslationInput {
+  mode: TranslationPreviewMode;
+  areaNameVi?: string | null;
+  locationNameVi?: string | null;
+  /** EDIT mode only — which fields actually need translating. */
+  includeArea?: boolean;
+  includeLocation?: boolean;
+}
+
+export interface GalleryLocationTranslationPreview {
+  area?: TranslationPreviewField | null;
+  location?: TranslationPreviewField | null;
+}
+
+/** Preview request for the gallery item title ("Dịch sang EN" in the item create/edit modals). */
+export interface PreviewItemTranslationInput {
+  entityType: 'GALLERY_ITEM';
+  field: 'TITLE';
+  /** Set by the EDIT modal so an unchanged READY title is served from the DB (0 Google calls). */
+  entityId?: number | null;
+  sourceText: string;
+}
+
+/** Preview response: normalized VI source + hash + the EN, and where it was served from. */
+export interface GalleryItemTranslationPreview extends TranslationPreviewField {
+  servedFrom: 'GOOGLE' | 'DATABASE';
+}
+
+/** Authoritative detail of one location + its area, loaded when opening the edit modal. */
+export interface GalleryLocationEditDetail {
+  locationId: number;
+  areaId: number;
+
+  areaName: string;
+  areaNameEn?: string | null;
+  areaTranslationStatus: TranslationStatus;
+  areaCoverFileId?: number | null;
+  areaCoverUrl?: string | null;
+  areaCoverMediaType?: AreaCoverMediaType | null;
+
+  locationName: string;
+  locationNameEn?: string | null;
+  locationTranslationStatus: TranslationStatus;
+  locationCoverFileId?: number | null;
+  locationCoverUrl?: string | null;
+
+  updatedAt?: string | null;
 }
 
 export interface GalleryLocationListQueryParams {
@@ -231,15 +328,36 @@ export interface CreateGalleryLocationInput {
   mode: GalleryLocationMode;
   areaId?: number | null;
   newAreaName?: string | null;
+  /** Previewed/manual EN of the NEW area name (NEW_AREA mode only). */
+  newAreaNameEn?: string | null;
+  areaTranslationOrigin?: TranslationOrigin;
+  areaTranslationSourceHash?: string | null;
   locationName: string;
-  /** MP4 area cover video. Required when mode = NEW_AREA; optional on edit of an existing area (replaces it). */
+  /** Previewed/manual EN of the location name. Empty → backend auto-translates on save. */
+  locationNameEn?: string | null;
+  locationTranslationOrigin?: TranslationOrigin;
+  locationTranslationSourceHash?: string | null;
+  /** MP4 area cover video. Required when mode = NEW_AREA. */
   areaCoverVideo?: File | null;
-  /** Required on create; optional on edit (kept when omitted). */
+  /** Required on create. */
   locationCoverImage?: File | null;
 }
 
-export interface UpdateGalleryLocationInput extends CreateGalleryLocationInput {
+/** Direct edit of the CURRENT area + location (no mode, no move, no new area). */
+export interface UpdateGalleryLocationInput {
   locationId: number;
+  areaName: string;
+  areaNameEn?: string | null;
+  areaTranslationOrigin?: TranslationOrigin;
+  areaTranslationSourceHash?: string | null;
+  locationName: string;
+  locationNameEn?: string | null;
+  locationTranslationOrigin?: TranslationOrigin;
+  locationTranslationSourceHash?: string | null;
+  /** Optional replacement MP4 for the area cover (kept when omitted). */
+  areaCoverVideo?: File | null;
+  /** Optional replacement image for the location cover (kept when omitted). */
+  locationCoverImage?: File | null;
 }
 
 export interface ChangeGalleryLocationStatusInput {

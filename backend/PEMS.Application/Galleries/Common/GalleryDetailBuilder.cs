@@ -18,7 +18,8 @@ namespace PEMS.Application.Galleries.Common;
 internal static class GalleryDetailBuilder
 {
     public static async Task<GalleryItemDetailDto> BuildAsync(
-        IApplicationDbContext db, ulong galleryItemId, CancellationToken ct, string? message = null)
+        IApplicationDbContext db, ulong galleryItemId, CancellationToken ct, string? message = null,
+        string? translationWarning = null)
     {
         var head = await db.GalleryItems.AsNoTracking()
             .Where(i => i.GalleryItemId == galleryItemId)
@@ -26,6 +27,8 @@ internal static class GalleryDetailBuilder
             {
                 i.GalleryItemId,
                 i.Title,
+                i.TitleEn,
+                i.TranslationStatus,
                 i.ItemType,
                 i.Status,
                 i.MediaKind,
@@ -147,6 +150,11 @@ internal static class GalleryDetailBuilder
         {
             GalleryItemId = head.GalleryItemId,
             Title = head.Title,
+            // EN only when READY + non-blank — a FAILED/stale English title is never exposed (§12).
+            TitleEn = head.TranslationStatus == GalleryTranslationStatuses.Ready
+                      && !string.IsNullOrWhiteSpace(head.TitleEn)
+                ? head.TitleEn
+                : null,
             Content = contentDto,
             ItemType = head.ItemType,
             ItemTypeLabel = GalleryItemTypes.Label(head.ItemType),
@@ -166,6 +174,7 @@ internal static class GalleryDetailBuilder
             UpdatedByName = head.UpdatedBy.HasValue && names.TryGetValue(head.UpdatedBy.Value, out var un) ? un : null,
             Media = media,
             Message = message,
+            TranslationWarning = translationWarning,
         };
     }
 }

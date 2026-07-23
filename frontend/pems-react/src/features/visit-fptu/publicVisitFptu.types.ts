@@ -13,6 +13,8 @@ export interface PublicCampus {
 export interface PublicGalleryLocation {
   locationId: number;
   locationName: string;
+  /** Persisted English name; null/absent unless translation is READY — fall back to VI. */
+  locationNameEn?: string | null;
   displayOrder: number;
   /** Location cover image (gallery_locations.cover_file_id) — the Area Showcase thumbnail rail. */
   locationCoverFileId?: number | null;
@@ -20,6 +22,8 @@ export interface PublicGalleryLocation {
   /** Lead item shown as the location's nav thumbnail (a location may hold many items). */
   galleryItemId: number;
   title: string;
+  /** Persisted English title of the lead item; null/absent unless translation is READY. */
+  titleEn?: string | null;
   mediaKind: string;
   /** How many public-visible items this location carries (>= 1). */
   publicGalleryItemCount: number;
@@ -32,6 +36,8 @@ export type PublicAreaCoverMediaType = 'IMAGE' | 'VIDEO';
 export interface PublicGalleryArea {
   areaId: number;
   areaName: string;
+  /** Persisted English name; null/absent unless translation is READY — fall back to VI. */
+  areaNameEn?: string | null;
   displayOrder: number;
   /** Area cover file (gallery_areas.cover_file_id) — the Area Showcase fullscreen background. */
   areaCoverFileId?: number | null;
@@ -80,6 +86,8 @@ export interface PublicGalleryItemContent {
 export interface PublicGalleryItemSummary {
   galleryItemId: number;
   title: string;
+  /** Persisted English title; null/absent unless translation is READY — fall back to VI. */
+  titleEn?: string | null;
   content: PublicGalleryItemContent;
   mediaKind: string;
   status: string;
@@ -90,7 +98,11 @@ export interface PublicGalleryItemSummary {
 export interface PublicGalleryGridItem {
   galleryItemId: number;
   title: string;
+  /** Persisted English title; null/absent unless translation is READY — fall back to VI. */
+  titleEn?: string | null;
   descriptionPreview: string;
+  /** Preview cut from the manually entered EN description; null/absent when it is blank. */
+  descriptionPreviewEn?: string | null;
   mediaKind: string;
   primaryMedia: PublicGalleryMedia | null;
 }
@@ -98,8 +110,8 @@ export interface PublicGalleryGridItem {
 /** The album grid of one location: every public-visible item by its primary media. */
 export interface PublicLocationGalleryGrid {
   campus: { campusId: number; campusCode: string; campusName: string; city?: string | null };
-  area: { areaId: number; areaName: string };
-  location: { locationId: number; locationName: string };
+  area: { areaId: number; areaName: string; areaNameEn?: string | null };
+  location: { locationId: number; locationName: string; locationNameEn?: string | null };
   items: PublicGalleryGridItem[];
 }
 
@@ -108,6 +120,8 @@ export interface PublicLocationGalleryGrid {
 export interface PublicGalleryShowcaseItem {
   galleryItemId: number;
   title: string;
+  /** Persisted English title; null/absent unless translation is READY — fall back to VI. */
+  titleEn?: string | null;
   itemType: 'MEDIA' | 'VISIT_DELEGATION' | string;
   mediaKind: string;
   primaryMedia: PublicGalleryMedia | null;
@@ -116,8 +130,8 @@ export interface PublicGalleryShowcaseItem {
 /** The Location Showcase payload: the location's MEDIA items (column) + VISIT_DELEGATION items (row). */
 export interface PublicLocationShowcase {
   campus: { campusId: number; campusCode: string; campusName: string; city?: string | null };
-  area: { areaId: number; areaName: string };
-  location: { locationId: number; locationName: string };
+  area: { areaId: number; areaName: string; areaNameEn?: string | null };
+  location: { locationId: number; locationName: string; locationNameEn?: string | null };
   mediaItems: PublicGalleryShowcaseItem[];
   visitDelegationItems: PublicGalleryShowcaseItem[];
 }
@@ -126,8 +140,8 @@ export interface PublicLocationShowcase {
 /** One gallery item with its full ordered media list (the detail screen). */
 export interface PublicGalleryItemDetail {
   campus: { campusId: number; campusCode: string; campusName: string; city?: string | null };
-  area: { areaId: number; areaName: string };
-  location: { locationId: number; locationName: string };
+  area: { areaId: number; areaName: string; areaNameEn?: string | null };
+  location: { locationId: number; locationName: string; locationNameEn?: string | null };
   galleryItem: PublicGalleryItemSummary;
   media: PublicGalleryMedia[];
 }

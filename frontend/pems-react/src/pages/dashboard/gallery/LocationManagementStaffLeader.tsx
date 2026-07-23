@@ -1,19 +1,17 @@
-/**
+﻿/**
  * LocationManagementStaffLeader
  * Server-driven "Quản lý khu vực" (area/location management) for Staff Leader (role STAFF, sub_role LEADER).
  * Implements UC-LOC-01..09 (list / search / filter / add / edit / enable / disable), all scoped to the
  * caller's campus by the backend. Kept separate so the legacy mock page (other roles) stays untouched.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Plus, Edit, Search, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft,
-  Loader2, AlertCircle, CheckCircle2, MapPin, Upload, ImageOff, Film, Trash2,
+  Plus, Edit, Search, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft,
+  Loader2, AlertCircle, CheckCircle2, MapPin,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuthenticatedMedia } from '../../../shared/hooks/useAuthenticatedImage';
-import { validateFile } from '../../../shared/utils/fileValidation';
 import { galleryManagementApi } from '../../../features/gallery-management/api/galleryManagementApi';
 import { getGalleryErrorMessage } from '../../../features/gallery-management/api/galleryError';
 import {
@@ -21,11 +19,13 @@ import {
   useGalleryLocationList,
 } from '../../../features/gallery-management/hooks/useGalleryManagement';
 import type {
+  GalleryLocationDetail,
   GalleryLocationListItem,
-  GalleryLocationMode,
   GalleryLocationStatus,
 } from '../../../features/gallery-management/types/galleryManagement.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
+import { LocationCreateModal } from './LocationCreateModal';
+import { LocationEditModal } from './LocationEditModal';
 
 function formatDate(iso: string): string {
   if (!iso) return '';
@@ -33,15 +33,15 @@ function formatDate(iso: string): string {
 }
 
 interface ToastState {
-  type: 'success' | 'error';
+  /** warning = the save SUCCEEDED but the EN auto-translation failed (never rendered as an error). */
+  type: 'success' | 'error' | 'warning';
   message: string;
 }
 
-interface ModalState {
-  mode: 'create' | 'edit';
-  /** The row being edited (edit mode only). */
-  target: GalleryLocationListItem | null;
-}
+type ModalState =
+  | { mode: 'create' }
+  /** Edit loads its own authoritative detail from the backend — only the id is passed. */
+  | { mode: 'edit'; locationId: number };
 
 export function LocationManagementStaffLeader() {
   const navigate = useNavigate();
@@ -65,7 +65,12 @@ export function LocationManagementStaffLeader() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const { areas, loading: optionsLoading } = useGalleryFilterOptions();
+  const {
+    areas,
+    loading: optionsLoading,
+    refetch: refetchFilterOptions,
+    upsertArea,
+  } = useGalleryFilterOptions();
   const activeAreas = useMemo(() => areas.filter((a) => a.status === 'ACTIVE'), [areas]);
 
   const params = useMemo(
@@ -113,10 +118,16 @@ export function LocationManagementStaffLeader() {
   // ── Create / Edit modal ──
   const [modal, setModal] = useState<ModalState | null>(null);
 
-  const onSaved = (message: string) => {
+  const onSaved = (res: GalleryLocationDetail) => {
     setModal(null);
-    setToast({ type: 'success', message });
-    refetch();
+    // Translation failure is a WARNING on top of a successful save — never shown as an error.
+    setToast(res.translationWarning
+      ? { type: 'warning', message: res.translationWarning }
+      : { type: 'success', message: res.message || 'Đã lưu khu vực và vị trí.' });
+    // Optimistic dropdown update, then refresh BOTH the table and the area options so a brand-new /
+    // renamed area shows up immediately in every dropdown — no F5 needed (§4.3).
+    if (res.area) upsertArea(res.area);
+    void Promise.all([refetch(), refetchFilterOptions()]);
   };
 
   return (
@@ -144,7 +155,7 @@ export function LocationManagementStaffLeader() {
           </div>
         </div>
         <button
-          onClick={() => setModal({ mode: 'create', target: null })}
+          onClick={() => setModal({ mode: 'create' })}
           className="flex items-center gap-2 bg-[#f37021] hover:bg-[#e85c0d] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all hover:shadow-md outline-none"
         >
           <Plus className="w-5 h-5" /> Thêm khu vực mới
@@ -261,7 +272,7 @@ export function LocationManagementStaffLeader() {
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => setModal({ mode: 'edit', target: item })}
+                          onClick={() => setModal({ mode: 'edit', locationId: item.locationId })}
                           className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-orange-500 hover:bg-orange-50 flex items-center justify-center transition-colors outline-none"
                           title="Chỉnh sửa"
                         >
@@ -338,14 +349,20 @@ export function LocationManagementStaffLeader() {
         )}
       </div>
 
-      {/* Create / Edit modal (UC-LOC-04..07) */}
+      {/* Create modal (UC-LOC-04/05) + direct edit modal — both with VI → EN translation preview. */}
       <AnimatePresence>
-        {modal && (
-          <LocationUpsertModal
-            mode={modal.mode}
-            target={modal.target}
+        {modal?.mode === 'create' && (
+          <LocationCreateModal
             activeAreas={activeAreas.map((a) => ({ areaId: a.areaId, areaName: a.areaName, coverUrl: a.coverUrl, coverMediaType: a.coverMediaType }))}
             areasLoading={optionsLoading}
+            onClose={() => setModal(null)}
+            onSaved={onSaved}
+            onError={(m) => setToast({ type: 'error', message: m })}
+          />
+        )}
+        {modal?.mode === 'edit' && (
+          <LocationEditModal
+            locationId={modal.locationId}
             onClose={() => setModal(null)}
             onSaved={onSaved}
             onError={(m) => setToast({ type: 'error', message: m })}
@@ -360,440 +377,15 @@ export function LocationManagementStaffLeader() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold text-white ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}
+            className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold text-white ${
+              toast.type === 'success' ? 'bg-green-600' : toast.type === 'warning' ? 'bg-amber-500' : 'bg-red-600'
+            }`}
           >
             {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             {toast.message}
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-interface AreaOption {
-  areaId: number;
-  areaName: string;
-  coverUrl?: string | null;
-  coverMediaType?: 'IMAGE' | 'VIDEO';
-}
-
-// ── Area cover VIDEO rules (mirrors the backend FileValidationPolicy; duration is frontend-only) ──
-const MAX_AREA_VIDEO_BYTES = 100 * 1024 * 1024;
-const MAX_AREA_VIDEO_DURATION_SECONDS = 120;
-
-/** Reads a video file's duration (seconds) via an off-DOM <video>. Rejects on a broken/undecodable file. */
-function readVideoDuration(file: File): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    const url = URL.createObjectURL(file);
-    video.preload = 'metadata';
-
-    const cleanup = () => {
-      video.removeAttribute('src');
-      video.load();
-      URL.revokeObjectURL(url);
-    };
-
-    video.onloadedmetadata = () => {
-      const duration = video.duration;
-      cleanup();
-      if (!Number.isFinite(duration) || duration <= 0) {
-        reject(new Error('File video không hợp lệ hoặc đã bị hỏng.'));
-        return;
-      }
-      resolve(duration);
-    };
-    video.onerror = () => {
-      cleanup();
-      reject(new Error('File video không hợp lệ hoặc đã bị hỏng.'));
-    };
-    video.src = url;
-  });
-}
-
-/** Validates one MP4 area cover video (≤100MB, ≤120s). Returns a VN error message, or null when valid. */
-async function validateAreaVideo(file: File): Promise<string | null> {
-  const name = file.name.toLowerCase();
-  if (file.size <= 0) return 'File video không hợp lệ hoặc đã bị hỏng.';
-  const mime = (file.type || '').toLowerCase();
-  if (!name.endsWith('.mp4') || (mime && mime !== 'video/mp4'))
-    return 'Video đại diện khu vực chỉ hỗ trợ định dạng MP4.';
-  if (file.size > MAX_AREA_VIDEO_BYTES) return 'Video đại diện khu vực không được vượt quá 100 MB.';
-  let duration: number;
-  try {
-    duration = await readVideoDuration(file);
-  } catch {
-    return 'File video không hợp lệ hoặc đã bị hỏng.';
-  }
-  if (duration > MAX_AREA_VIDEO_DURATION_SECONDS + 0.5)
-    return 'Video đại diện khu vực không được dài quá 120 giây (2 phút).';
-  return null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
-}
-
-/**
- * Area cover VIDEO picker (MP4). Shows an inline muted/looping preview of the picked clip, or the
- * existing cover (video or legacy image) when editing. The object URL is revoked on change/unmount.
- */
-function CoverVideoField({
-  label,
-  required,
-  file,
-  onPick,
-  existingUrl,
-  existingMediaType,
-  hint,
-}: {
-  label: string;
-  required?: boolean;
-  file: File | null;
-  onPick: (f: File | null) => void;
-  existingUrl?: string | null;
-  existingMediaType?: 'IMAGE' | 'VIDEO';
-  hint?: string;
-}) {
-  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-  // Only fetch the stored cover when no new file has been picked.
-  const existing = useAuthenticatedMedia(!file && existingUrl ? existingUrl : null);
-
-  return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-        {label} {required && <span className="text-red-500">*</span>}
-      </label>
-      <div className="flex items-start gap-3">
-        <div className="w-28 h-20 rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex items-center justify-center shrink-0">
-          {preview ? (
-            <video src={preview} autoPlay muted loop playsInline className="w-full h-full object-cover" />
-          ) : existing.url ? (
-            existingMediaType === 'IMAGE' ? (
-              <img src={existing.url} className="w-full h-full object-cover" alt="" />
-            ) : (
-              <video src={existing.url} autoPlay muted loop playsInline className="w-full h-full object-cover" />
-            )
-          ) : (
-            <Film className="w-5 h-5 text-slate-400" />
-          )}
-        </div>
-        <div className="flex-1 space-y-1.5">
-          <label className="cursor-pointer border-2 border-dashed border-[#004c91]/30 rounded-xl px-4 py-3 flex items-center gap-2 text-sm font-bold text-[#004c91] hover:bg-blue-50/50 transition-colors">
-            <Upload className="w-4 h-4" />
-            {file ? 'Đổi video' : 'Chọn 1 video MP4'}
-            <input
-              type="file"
-              accept="video/mp4"
-              className="hidden"
-              onChange={(e) => { onPick(e.target.files?.[0] ?? null); e.target.value = ''; }}
-            />
-          </label>
-          {file && (
-            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
-              <span className="truncate" title={file.name}>{file.name} · {formatBytes(file.size)}</span>
-              <button
-                type="button"
-                onClick={() => onPick(null)}
-                className="inline-flex items-center gap-1 text-red-500 hover:text-red-600 font-semibold shrink-0"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Xóa
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      <p className="text-[11px] text-slate-400">{hint ?? 'Chỉ chấp nhận MP4, tối đa 100 MB và tối đa 120 giây (2 phút). Khuyến nghị video ngang, H.264, Full HD hoặc thấp hơn.'}</p>
-    </div>
-  );
-}
-
-/** Single mandatory cover-image picker: preview of the picked file, or the existing (authenticated) cover. */
-function CoverImageField({
-  label,
-  required,
-  file,
-  onPick,
-  existingUrl,
-  hint,
-}: {
-  label: string;
-  required?: boolean;
-  file: File | null;
-  onPick: (f: File | null) => void;
-  existingUrl?: string | null;
-  hint?: string;
-}) {
-  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-  // Only fetch the stored cover when no new file has been picked.
-  const existing = useAuthenticatedMedia(!file && existingUrl ? existingUrl : null);
-  const shown = preview ?? existing.url;
-
-  return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-        {label} {required && <span className="text-red-500">*</span>}
-      </label>
-      <div className="flex items-center gap-3">
-        <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-          {shown
-            ? <img src={shown} className="w-full h-full object-cover" alt="" />
-            : <ImageOff className="w-5 h-5 text-slate-300" />}
-        </div>
-        <label className="flex-1 cursor-pointer border-2 border-dashed border-[#004c91]/30 rounded-xl px-4 py-3 flex items-center gap-2 text-sm font-bold text-[#004c91] hover:bg-blue-50/50 transition-colors">
-          <Upload className="w-4 h-4" />
-          {file ? 'Đổi ảnh' : 'Chọn 1 ảnh'}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(e) => { onPick(e.target.files?.[0] ?? null); e.target.value = ''; }}
-          />
-        </label>
-      </div>
-      <p className="text-[11px] text-slate-400">{hint ?? 'Chỉ upload 1 ảnh (JPG/PNG/WEBP ≤5MB).'}</p>
-    </div>
-  );
-}
-
-/** Create/edit "khu vực" modal — radio between an existing area and a brand-new one (UC §28.4/28.5). */
-function LocationUpsertModal({
-  mode,
-  target,
-  activeAreas,
-  areasLoading,
-  onClose,
-  onSaved,
-  onError,
-}: {
-  mode: 'create' | 'edit';
-  target: GalleryLocationListItem | null;
-  activeAreas: AreaOption[];
-  areasLoading: boolean;
-  onClose: () => void;
-  onSaved: (message: string) => void;
-  onError: (message: string) => void;
-}) {
-  // On edit, default to the existing area (if it is still ACTIVE / present in the list); otherwise the first.
-  const initialAreaId = useMemo(() => {
-    if (mode === 'edit' && target && activeAreas.some((a) => a.areaId === target.areaId)) return target.areaId;
-    return activeAreas[0]?.areaId ?? '';
-  }, [mode, target, activeAreas]);
-
-  const [areaMode, setAreaMode] = useState<GalleryLocationMode>('EXISTING_AREA');
-  const [areaId, setAreaId] = useState<number | ''>(initialAreaId);
-  const [newAreaName, setNewAreaName] = useState('');
-  const [locationName, setLocationName] = useState(target?.locationName ?? '');
-  const [areaCover, setAreaCover] = useState<File | null>(null);
-  const [locationCover, setLocationCover] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    setAreaId(initialAreaId);
-  }, [initialAreaId]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedLocation = locationName.trim();
-    if (!trimmedLocation) {
-      onError('Vui lòng nhập vị trí cụ thể.');
-      return;
-    }
-    if (areaMode === 'EXISTING_AREA' && areaId === '') {
-      onError('Vui lòng chọn khu vực/tòa.');
-      return;
-    }
-    if (areaMode === 'NEW_AREA' && !newAreaName.trim()) {
-      onError('Vui lòng nhập tên khu vực/tòa mới.');
-      return;
-    }
-    // A new area always needs its own MP4 cover VIDEO.
-    if (areaMode === 'NEW_AREA' && !areaCover) {
-      onError('Vui lòng chọn một video đại diện cho khu vực.');
-      return;
-    }
-    // Location cover: mandatory on create, optional on edit (kept when omitted).
-    if (mode === 'create' && !locationCover) {
-      onError('Vui lòng upload ảnh đại diện vị trí.');
-      return;
-    }
-    // Client-side sanity check for the location cover IMAGE (backend re-validates).
-    if (locationCover && !validateFile(locationCover, 'GALLERY_IMAGE').ok) {
-      onError('Ảnh đại diện vị trí không đúng định dạng.');
-      return;
-    }
-    // Client-side area cover VIDEO check (mp4 / ≤100 MB / ≤120 s) — the backend re-validates format & size.
-    if (areaCover) {
-      const videoError = await validateAreaVideo(areaCover);
-      if (videoError) {
-        onError(videoError);
-        return;
-      }
-    }
-
-    const payload = {
-      mode: areaMode,
-      areaId: areaMode === 'EXISTING_AREA' ? Number(areaId) : null,
-      newAreaName: areaMode === 'NEW_AREA' ? newAreaName.trim() : null,
-      locationName: trimmedLocation,
-      // NEW_AREA: required area cover video. EXISTING_AREA + edit: optional replacement of that area's cover.
-      areaCoverVideo: areaCover,
-      locationCoverImage: locationCover,
-    };
-
-    setSubmitting(true);
-    try {
-      if (mode === 'create') {
-        await galleryManagementApi.createLocation(payload);
-        onSaved('Đã tạo vị trí mới.');
-      } else {
-        await galleryManagementApi.updateLocation({ ...payload, locationId: target!.locationId });
-        onSaved('Đã cập nhật vị trí.');
-      }
-    } catch (err) {
-      onError(getGalleryErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl relative"
-      >
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h3 className="text-xl font-black text-[#004c91]">
-            {mode === 'edit' ? 'Chỉnh sửa khu vực' : 'Thêm khu vực mới'}
-          </h3>
-          <button onClick={onClose} className="w-8 h-8 bg-white border border-slate-200 text-slate-500 rounded-full flex items-center justify-center hover:text-red-500 outline-none">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2 block">Tên Khu Vực / Tòa <span className="text-red-500">*</span></label>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
-                  <input
-                    type="radio"
-                    name="areaMode"
-                    value="EXISTING_AREA"
-                    checked={areaMode === 'EXISTING_AREA'}
-                    onChange={() => setAreaMode('EXISTING_AREA')}
-                    className="w-4 h-4 text-[#004c91] border-gray-300 focus:ring-[#004c91]"
-                  />
-                  Khu vực có sẵn
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
-                  <input
-                    type="radio"
-                    name="areaMode"
-                    value="NEW_AREA"
-                    checked={areaMode === 'NEW_AREA'}
-                    onChange={() => setAreaMode('NEW_AREA')}
-                    className="w-4 h-4 text-[#004c91] border-gray-300 focus:ring-[#004c91]"
-                  />
-                  Khu vực mới
-                </label>
-              </div>
-
-              {areaMode === 'EXISTING_AREA' ? (
-                <div className="relative">
-                  <select
-                    value={areaId === '' ? '' : String(areaId)}
-                    onChange={(e) => setAreaId(e.target.value === '' ? '' : Number(e.target.value))}
-                    disabled={areasLoading || activeAreas.length === 0}
-                    className="w-full px-4 py-2.5 pr-10 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    {activeAreas.length === 0 ? (
-                      <option value="">Chưa có khu vực hoạt động</option>
-                    ) : (
-                      activeAreas.map((a) => (
-                        <option key={a.areaId} value={a.areaId}>{a.areaName}</option>
-                      ))
-                    )}
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={newAreaName}
-                  onChange={(e) => setNewAreaName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium"
-                  placeholder="Nhập tên khu vực mới (VD: TÒA DELTA)"
-                />
-              )}
-
-              {areaMode === 'NEW_AREA' ? (
-                <CoverVideoField
-                  label="Video đại diện khu vực"
-                  required
-                  file={areaCover}
-                  onPick={setAreaCover}
-                  hint="Chỉ chấp nhận MP4, tối đa 100 MB và tối đa 120 giây (2 phút). Khuyến nghị video ngang, H.264, Full HD hoặc thấp hơn."
-                />
-              ) : mode === 'edit' ? (
-                <CoverVideoField
-                  label="Video đại diện khu vực"
-                  file={areaCover}
-                  onPick={setAreaCover}
-                  existingUrl={activeAreas.find((a) => a.areaId === areaId)?.coverUrl}
-                  existingMediaType={activeAreas.find((a) => a.areaId === areaId)?.coverMediaType}
-                  hint="Để trống nếu muốn giữ video/ảnh khu vực hiện tại. Chỉ MP4, tối đa 100 MB và 120 giây (2 phút)."
-                />
-              ) : null}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Vị trí cụ thể <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={locationName}
-                onChange={(e) => setLocationName(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium"
-                placeholder="VD: Sảnh chính"
-              />
-            </div>
-
-            <CoverImageField
-              label="Ảnh đại diện vị trí"
-              required={mode === 'create'}
-              file={locationCover}
-              onPick={setLocationCover}
-              existingUrl={target?.locationCoverUrl}
-              hint={mode === 'edit'
-                ? 'Để trống nếu muốn giữ ảnh hiện tại. Chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB).'
-                : 'Ảnh mặt trước/không gian vị trí — chỉ 1 ảnh (JPG/PNG/WEBP ≤5MB).'}
-            />
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-4">
-              <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 outline-none">
-                Hủy
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-[#f37021] hover:bg-[#e85c0d] disabled:opacity-60 flex items-center gap-2 outline-none"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {mode === 'edit' ? 'Cập nhật' : 'Tạo mới'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </motion.div>
     </div>
   );
 }

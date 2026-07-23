@@ -40,14 +40,18 @@ internal static class GalleryLocationWriteGuard
         return location;
     }
 
-    /// <summary>Rejects a duplicate normalized area key within the campus (HTTP 409).</summary>
+    /// <summary>Rejects a duplicate normalized area key within the campus (HTTP 409), optionally ignoring
+    /// one row (the area being renamed in place).</summary>
     public static async Task EnsureAreaKeyFreeAsync(
-        IApplicationDbContext db, ulong campusId, string areaKey, CancellationToken ct)
+        IApplicationDbContext db, ulong campusId, string areaKey, CancellationToken ct,
+        ulong? excludeAreaId = null)
     {
-        var exists = await db.GalleryAreas.AnyAsync(a => a.CampusId == campusId && a.AreaKey == areaKey, ct);
+        var exists = await db.GalleryAreas.AnyAsync(
+            a => a.CampusId == campusId && a.AreaKey == areaKey
+                 && (excludeAreaId == null || a.AreaId != excludeAreaId), ct);
         if (exists)
             throw new ConflictException(
-                "Khu vực này đã tồn tại. Vui lòng chọn từ danh sách khu vực có sẵn.", GalleryErrorCodes.AreaDuplicate);
+                "Khu vực/tòa này đã tồn tại trong cơ sở.", GalleryErrorCodes.AreaDuplicate);
     }
 
     /// <summary>Rejects a duplicate normalized location key within the area (HTTP 409), optionally ignoring one row.</summary>

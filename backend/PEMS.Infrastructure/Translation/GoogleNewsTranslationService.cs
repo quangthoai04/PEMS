@@ -18,14 +18,18 @@ using PEMS.Infrastructure.Ocr;
 namespace PEMS.Infrastructure.Translation;
 
 /// <summary>
-/// Google Cloud Translation v3 (REST) provider for News auto-translation.
+/// Google Cloud Translation v3 (REST) provider — the project's single Google translation pipeline.
+/// Implements both the News-scoped <see cref="INewsTranslationService"/> facade and the shared
+/// <see cref="PEMS.Application.Translation.IContentTranslationService"/> abstraction (used by the
+/// Gallery auto-translation), so credential/quota logic is never duplicated.
 /// Configuration comes from the api_configurations row with api_code
 /// <see cref="NewsTranslationConstants.ApiCode"/> (settings_json: projectId/location,
 /// credentials via encrypted column → secret_ref env → GOOGLE_APPLICATION_CREDENTIALS),
 /// falling back to the GOOGLE_TRANSLATION_PROJECT_ID env var when no row exists.
 /// Never logs payloads or credentials.
 /// </summary>
-public sealed class GoogleNewsTranslationService : INewsTranslationService
+public sealed class GoogleNewsTranslationService
+    : INewsTranslationService, PEMS.Application.Translation.IContentTranslationService
 {
     private const string TranslateEndpoint = "https://translation.googleapis.com/v3";
 

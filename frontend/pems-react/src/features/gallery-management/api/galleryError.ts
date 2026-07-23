@@ -32,10 +32,17 @@ export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
   GALLERY_AREA_REQUIRED: 'Vui lòng chọn khu vực/tòa.',
   GALLERY_NEW_AREA_NAME_REQUIRED: 'Vui lòng nhập tên khu vực/tòa mới.',
   GALLERY_LOCATION_NAME_REQUIRED: 'Vui lòng nhập vị trí cụ thể.',
-  GALLERY_AREA_DUPLICATE: 'Khu vực này đã tồn tại. Vui lòng chọn từ danh sách khu vực có sẵn.',
-  GALLERY_LOCATION_DUPLICATE: 'Vị trí này đã tồn tại trong khu vực đã chọn.',
+  GALLERY_AREA_DUPLICATE: 'Khu vực/tòa này đã tồn tại trong cơ sở.',
+  GALLERY_LOCATION_DUPLICATE: 'Vị trí này đã tồn tại trong khu vực.',
   GALLERY_AREA_INACTIVE: 'Khu vực này đang ngừng hoạt động.',
   GALLERY_INVALID_MODE: 'Chế độ thao tác không hợp lệ.',
+  // Translation preview (Dịch sang EN trước khi lưu).
+  GALLERY_AREA_NAME_REQUIRED: 'Vui lòng nhập tên khu vực/tòa.',
+  GALLERY_TRANSLATION_PREVIEW_FAILED:
+    'Không thể dịch sang tiếng Anh lúc này. Vui lòng thử lại hoặc tự nhập bản tiếng Anh.',
+  GALLERY_TRANSLATION_PREVIEW_STALE:
+    'Nội dung tiếng Việt đã thay đổi sau khi dịch. Vui lòng dịch lại trước khi lưu.',
+  GALLERY_TRANSLATION_PREVIEW_EMPTY: 'Không có nội dung nào cần dịch.',
   GALLERY_ITEM_PUBLISH_BLOCKED_LOCATION_INACTIVE: 'Không thể hiển thị bài đăng vì vị trí đang ngừng hoạt động.',
   GALLERY_ITEM_PUBLISH_BLOCKED_AREA_INACTIVE: 'Không thể hiển thị bài đăng vì khu vực đang ngừng hoạt động.',
   // Area/location cover image + gallery item type.
@@ -63,6 +70,12 @@ export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
   FILE_MAGIC_BYTES_MISMATCH: 'Nội dung tệp không khớp định dạng (ảnh giả mạo / SVG).',
   GOOGLE_DRIVE_FOLDER_NOT_CONFIGURED: 'Hệ thống lưu trữ chưa được cấu hình. Vui lòng liên hệ quản trị.',
 };
+
+/** Returns the machine-readable errorCode of a gallery API error (null when absent). */
+export function getGalleryErrorCode(error: unknown): string | null {
+  const axiosError = error as AxiosError<ApiErrorBody>;
+  return axiosError?.response?.data?.errorCode ?? null;
+}
 
 /** Extracts a safe, user-facing Vietnamese message from a gallery API error. */
 export function getGalleryErrorMessage(

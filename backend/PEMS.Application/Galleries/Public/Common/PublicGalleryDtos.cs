@@ -35,6 +35,8 @@ public sealed class PublicGalleryAreaDto
 {
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
+    /// <summary>Persisted English name; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? AreaNameEn { get; init; }
     public int DisplayOrder { get; init; }
     /// <summary>Area cover file (gallery_areas.cover_file_id) — the Area Showcase fullscreen background.</summary>
     public ulong? AreaCoverFileId { get; init; }
@@ -48,6 +50,8 @@ public sealed class PublicGalleryLocationDto
 {
     public ulong LocationId { get; init; }
     public string LocationName { get; init; } = string.Empty;
+    /// <summary>Persisted English name; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? LocationNameEn { get; init; }
     public int DisplayOrder { get; init; }
     /// <summary>Location cover image (gallery_locations.cover_file_id) — the Area Showcase thumbnail rail.</summary>
     public ulong? LocationCoverFileId { get; init; }
@@ -55,6 +59,8 @@ public sealed class PublicGalleryLocationDto
     /// <summary>The lead item shown as the location's nav thumbnail (a location may hold many items).</summary>
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
+    /// <summary>Persisted English title of the lead item; null unless translation is READY.</summary>
+    public string? TitleEn { get; init; }
     public string MediaKind { get; init; } = string.Empty;
     /// <summary>How many public-visible items this location carries (≥ 1).</summary>
     public int PublicGalleryItemCount { get; init; }
@@ -80,7 +86,11 @@ public sealed class PublicGalleryGridItemDto
 {
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
+    /// <summary>Persisted English title; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? TitleEn { get; init; }
     public string DescriptionPreview { get; init; } = string.Empty;
+    /// <summary>Preview cut from the manually entered description_en; null when it is blank.</summary>
+    public string? DescriptionPreviewEn { get; init; }
     public string MediaKind { get; init; } = string.Empty;
     public PublicGalleryMediaDto? PrimaryMedia { get; init; }
 }
@@ -95,6 +105,8 @@ public sealed class PublicGalleryShowcaseItemDto
 {
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
+    /// <summary>Persisted English title; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? TitleEn { get; init; }
     public string ItemType { get; init; } = string.Empty;
     public string MediaKind { get; init; } = string.Empty;
     public PublicGalleryMediaDto? PrimaryMedia { get; init; }
@@ -130,18 +142,24 @@ public sealed class PublicGalleryAreaSummaryDto
 {
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
+    /// <summary>Persisted English name; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? AreaNameEn { get; init; }
 }
 
 public sealed class PublicGalleryLocationSummaryDto
 {
     public ulong LocationId { get; init; }
     public string LocationName { get; init; } = string.Empty;
+    /// <summary>Persisted English name; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? LocationNameEn { get; init; }
 }
 
 public sealed class PublicGalleryItemSummaryDto
 {
     public ulong GalleryItemId { get; init; }
     public string Title { get; init; } = string.Empty;
+    /// <summary>Persisted English title; null unless translation is READY (frontend falls back to VI).</summary>
+    public string? TitleEn { get; init; }
     /// <summary>Bilingual descriptions + audio URLs (VI default). The public page toggles between the two.</summary>
     public PublicGalleryItemContentDto Content { get; init; } = new();
     public string MediaKind { get; init; } = string.Empty;

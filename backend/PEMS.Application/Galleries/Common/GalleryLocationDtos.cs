@@ -58,4 +58,35 @@ public sealed class GalleryLocationDetailDto
     public int VisitDelegationCount { get; init; }
 
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Set ONLY when the create/update succeeded but the VI → EN auto-translation failed — the frontend
+    /// shows it as a warning toast (never as an error). Null on full success (backward compatible).
+    /// </summary>
+    public string? TranslationWarning { get; init; }
+
+    /// <summary>Summary of the (possibly renamed) area — lets the frontend upsert the area dropdown
+    /// optimistically without a full options refetch. Additive (older clients ignore it).</summary>
+    public GalleryAreaSummaryDto? Area { get; init; }
+
+    /// <summary>Summary of the saved location (same optimistic-update purpose).</summary>
+    public GalleryLocationSummaryDto? Location { get; init; }
+}
+
+/// <summary>Compact area payload inside a create/update response (§4.4 of the preview plan).</summary>
+public sealed class GalleryAreaSummaryDto
+{
+    public ulong AreaId { get; init; }
+    public string AreaName { get; init; } = string.Empty;
+    public string? AreaNameEn { get; init; }
+    public string Status { get; init; } = string.Empty;
+}
+
+/// <summary>Compact location payload inside a create/update response.</summary>
+public sealed class GalleryLocationSummaryDto
+{
+    public ulong LocationId { get; init; }
+    public string LocationName { get; init; } = string.Empty;
+    public string? LocationNameEn { get; init; }
+    public string Status { get; init; } = string.Empty;
 }
