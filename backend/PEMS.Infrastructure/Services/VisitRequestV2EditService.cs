@@ -17,13 +17,15 @@ using PEMS.Shared;
 namespace PEMS.Infrastructure.Services;
 
 /// <summary>
-/// Per-campus form v2 pending-edit aggregate service (plan §6.4). Runs inside the caller's open transaction on
+/// Per-campus form pending-edit aggregate service (plan §6.4). Runs inside the caller's open transaction on
 /// a TRACKED <see cref="VisitRequest"/> loaded with CampusInstances(+FormDetail,+GuestMemberLinks) and
 /// GuestMembers; the caller re-checked authorization and lifecycle before calling and owns the commit.
 /// Everything here re-validates the data-facing rules in-transaction: explicit optimistic row-version checks
 /// (plain int columns — EF has no concurrency token on them), campus resolution/availability, schedule,
 /// immutable account-binding fields, per-instance change detection, copy-on-write member replacement, campus
-/// add/remove, canonical recompute (scope/mixed/fingerprint/projection) and immutable revision history + audit.
+/// add/remove, canonical recompute (request scope, mixed-campus indicator and request fingerprint — facts
+/// ABOUT the campus set; no request-level form projection is produced, form content stays on each campus
+/// instance) and immutable revision history + audit.
 /// </summary>
 public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 {
@@ -532,7 +534,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail),
             VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail),
             scope, finalContents);
-        var projection = pairs.OrderBy(p => p.Instance.CampusId).First().Content;
 
         var commonChanged = ApplyCommonFields(request, edit, audit, now);
         request.VisitScope = scope;
