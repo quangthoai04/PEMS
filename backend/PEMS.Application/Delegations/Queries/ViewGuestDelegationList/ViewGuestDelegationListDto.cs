@@ -16,9 +16,6 @@ public sealed class VisitRequestManagementItemDto
 
     public string? VisitScope { get; set; }
 
-    // ── Form version (per-campus v2 routing) ──
-    /// <summary>
-    /// Form schema version of the underlying request: 1 = legacy global form, 2 = per-campus (v2).
     /// <summary>True when the request stores different content per campus (drives the "Khác nhau theo cơ sở" label).</summary>
     public bool HasMixedCampusDetails { get; set; }
 

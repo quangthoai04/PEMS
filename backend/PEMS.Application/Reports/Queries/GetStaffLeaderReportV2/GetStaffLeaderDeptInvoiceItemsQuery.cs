@@ -98,10 +98,9 @@ public sealed class GetStaffLeaderDeptInvoiceItemsQueryHandler
                     li.Quantity,
                     li.Status,
                     ci.VisitRequest.RequestCode,
-                    // Instance row: for EVERY v2 request (uniform or mixed) the canonical source is
-                    // THIS instance's per-campus detail. Gating on HasMixedCampusDetails would let a
-                    // uniform v2 row fall back to the compatibility projection on visit_requests,
-                    // which v2 business/report output must never source (and which blocks Phase I).
+                    // Instance row: the source is THIS instance's own per-campus detail, whether or not
+                    // the request's campuses agree. Gating on HasMixedCampusDetails would leave uniform
+                    // rows reaching for a request-level name that no longer exists.
                     DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     StartAt = startAt,
                     EndAt = li.UsageEndAt ?? ci.PlannedEndAt,

@@ -134,9 +134,10 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// PR-3 reference read path — returns the fully per-campus resolved form via the central
-    /// dual-read <c>IVisitFormReadService</c> (v1 or v2, correctly scoped to the caller). Gated by
-    /// the <c>PerCampusFormV2</c> feature flag: 404 when the flag is OFF. v1 endpoints are unchanged.
+    /// Reference read path — returns the fully per-campus resolved form via the central
+    /// <c>IVisitFormReadService</c>, scoped to the caller. Gated by the <c>PerCampusFormV2</c>
+    /// availability switch: 404 when it is off, which makes this endpoint unavailable rather than
+    /// serving an older shape — there is no other form representation to serve.
     /// </summary>
     [HttpGet("/api/v2/visit-requests/{visitRequestId}")]
     [Authorize]

@@ -105,8 +105,8 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
                 .ToListAsync(cancellationToken))
             .ToDictionary(x => x.Key, x => x.Count);
 
-        // Delegation names via the central dual-read path: a v2 (per-campus/MIXED) request must show
-        // each instance's OWN name, never the request-level compatibility projection.
+        // Delegation names via the central resolver: each instance must show its OWN name, never a
+        // sibling campus's and never a request-level value (visit_requests holds no delegation name).
         var requests = await _db.VisitRequests
             .Where(v => requestIds.Contains(v.VisitRequestId))
             .ToListAsync(cancellationToken);
@@ -137,7 +137,7 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
             })
             .ToList();
 
-        // Search on the RESOLVED name (v2-aware) — must run after the dual-read, so in-memory.
+        // Search on the RESOLVED name — must run after the per-campus resolve, so in-memory.
         var search = request.Search?.Trim();
         if (!string.IsNullOrEmpty(search))
             items = items

@@ -19,7 +19,8 @@ namespace PEMS.Application.Dashboard.Queries.GetStaffCalendarDetail;
 ///   • Staff Leader — instance thuộc campus mình; đơn liên cơ sở chỉ sau khi HO duyệt.
 ///   • Staff thường — instance thuộc campus mình (xem lịch văn phòng) hoặc mình là host.
 /// Chỉ đọc: visit_requests / visit_request_campuses / visit_guest_members / visit_participants
-/// (+ visit_instance_form_details / visit_instance_guest_members của instance đích khi form_schema_version = 2).
+/// (+ visit_instance_form_details / visit_instance_guest_members của ĐÚNG instance đích — nội dung form
+/// luôn thuộc về campus, visit_requests không giữ nội dung nào để lấy thay).
 /// </summary>
 public sealed class GetStaffCalendarDetailQueryHandler
     : IRequestHandler<GetStaffCalendarDetailQuery, StaffCalendarDetailDto>

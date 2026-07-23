@@ -1,8 +1,8 @@
 namespace PEMS.Application.Delegations.Services.VisitFormRead;
 
 /// <summary>
-/// Per-campus form v2 read model. The <see cref="IVisitFormReadService"/> returns this shape for both
-/// v1 (dual-read from the global compatibility projection) and v2 (per-campus detail) requests. It only
+/// Per-campus form read model returned by <see cref="IVisitFormReadService"/>. Every campus carries its
+/// own content, resolved from that campus's detail row. It only
 /// ever contains the campus instances the caller is authorized to see — hidden campuses never appear,
 /// and their count/detail never leaks. Sensitive fields (raw tokens, pending-snapshot JSON, full
 /// amendment JSON, audit IP/UA) are intentionally excluded.

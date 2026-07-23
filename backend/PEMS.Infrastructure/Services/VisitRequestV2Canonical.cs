@@ -8,16 +8,16 @@ using PEMS.Domain.Constants;
 namespace PEMS.Infrastructure.Services;
 
 /// <summary>
-/// Shared backend derivations for per-campus form v2 (create, pending-edit, resubmit). These are the values a
+/// Shared backend derivations for the per-campus form (create, pending-edit, resubmit). These are the values a
 /// client must NEVER send — they are always recomputed here from the full, normalized per-campus snapshot:
 /// <list type="bullet">
 ///   <item><c>visit_scope</c> — SINGLE vs MULTI from the campus count;</item>
 ///   <item><c>has_mixed_campus_details</c> — whether any campus differs in normalized COPYABLE content OR member
 ///         set (ignores campus_id and schedule);</item>
-///   <item>the v2 canonical business fingerprint (version-tagged);</item>
-///   <item>the smallest-<c>campus_id</c> compatibility projection (transition only).</item>
+///   <item>the canonical business fingerprint (version-tagged).</item>
 /// </list>
-/// The single source of truth so create and every edit stay byte-for-byte consistent.
+/// All three are ABOUT the campus set; none of them copies campus content onto the request row, which holds
+/// no form content. The single source of truth so create and every edit stay byte-for-byte consistent.
 /// </summary>
 public static class VisitRequestV2Canonical
 {

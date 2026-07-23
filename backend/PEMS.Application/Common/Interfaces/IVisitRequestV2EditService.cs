@@ -9,11 +9,12 @@ namespace PEMS.Application.Common.Interfaces;
 public sealed record V2EditResult(string VisitScope, bool HasMixed, int RequestRowVersion);
 
 /// <summary>
-/// Per-campus form v2 EDIT aggregate service (plan §6.4). Applies a full, resolved per-campus snapshot to an
+/// Per-campus form EDIT aggregate service (plan §6.4). Applies a full, resolved per-campus snapshot to an
 /// already-loaded, tracked <see cref="VisitRequest"/> inside the caller's open transaction, resolving DB-
-/// generated ids for new members/instances via a mid-flush; the caller owns commit. Keeps members per-campus
-/// independent (copy-on-write), recomputes scope / has_mixed / fingerprint / compatibility projection, and
-/// writes immutable revision history. Flows share the primitives:
+/// generated ids for new members/instances via a mid-flush; the caller owns commit. Each edit lands on the
+/// instance it targets; members stay per-campus independent (copy-on-write) and campus content is never
+/// copied up onto the request row. Recomputes scope / has_mixed / fingerprint — facts about the campus set,
+/// not content — and writes immutable revision history. Flows share the primitives:
 /// <list type="bullet">
 ///   <item><see cref="ApplyPendingEditAsync"/> — a still-fully-pending request (campus set may change);</item>
 ///   <item><see cref="ApplyResubmitAsync"/> — a fully-REJECTED request: campus set fixed, instance ids KEPT

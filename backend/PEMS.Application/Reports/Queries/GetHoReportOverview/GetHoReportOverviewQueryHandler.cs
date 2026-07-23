@@ -79,9 +79,9 @@ public sealed class GetHoReportOverviewQueryHandler
         var requests = _db.VisitRequests.AsNoTracking()
             .Where(r => r.SubmittedAt >= fromVn && r.SubmittedAt < toVnExclusive);
         if (visitScope != null) requests = requests.Where(r => r.VisitScope == visitScope);
-        // visit_type filter, v2-aware: EVERY v2 request (uniform or mixed) matches when ANY of its
-        // campus details matches. The compatibility projection on visit_requests is never business
-        // content for v2 — gating on HasMixedCampusDetails would let uniform v2 fall back to it.
+        // visit_type filter: a request matches when ANY of its campus details matches, whether or not
+        // its campuses agree. visit_requests carries no visit type, so there is nothing else to match
+        // on — and gating this on HasMixedCampusDetails would silently drop uniform requests.
         if (visitType != null) requests = requests.Where(r => r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType));
         if (requestStatus != null) requests = requests.Where(r => r.Status == requestStatus);
         if (campusId != null) requests = requests.Where(r => r.CampusInstances.Any(ci => ci.CampusId == campusId));
@@ -317,8 +317,8 @@ public sealed class GetHoReportOverviewQueryHandler
                 ci.VisitInstanceId,
                 ci.VisitRequestId,
                 ci.VisitRequest.RequestCode,
-                // Instance row: EVERY v2 instance (uniform or mixed) titles from THIS instance's
-                // canonical detail; the compatibility projection is never v2 business content.
+                // Instance row: every instance titles from ITS OWN detail, whether or not the request's
+                // campuses agree — a sibling campus is never a stand-in for this one.
                 DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                 ci.CampusId,
                 ci.PlannedEndAt,

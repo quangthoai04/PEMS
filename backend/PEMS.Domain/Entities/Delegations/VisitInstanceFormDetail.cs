@@ -4,11 +4,11 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace PEMS.Domain.Entities.Delegations;
 
 /// <summary>
-/// One full, independent form snapshot PER campus instance (per-campus form v2).
-/// The ACTIVE source of truth for a <c>form_schema_version = 2</c> request's delegation name,
-/// visit type, purpose, working content, operational contact, language, media consent and notes.
+/// One full, independent form snapshot PER campus instance.
+/// The ONLY source of truth for a request's delegation name, visit type, purpose, working content,
+/// operational contact, language, media consent and notes — <see cref="VisitRequest"/> holds none of
+/// them, so a missing row here has nothing to fall back to and is a consistency error.
 /// One-to-one with <see cref="VisitRequestCampus"/> (shared PK <c>visit_instance_id</c>).
-/// v1 requests keep this data on <see cref="VisitRequest"/> as a compatibility projection.
 /// </summary>
 [Table("visit_instance_form_details")]
 public class VisitInstanceFormDetail
