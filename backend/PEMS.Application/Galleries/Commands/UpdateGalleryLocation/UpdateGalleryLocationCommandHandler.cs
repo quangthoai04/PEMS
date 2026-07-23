@@ -1,23 +1,27 @@
+using System;
 using System.Collections.Generic;
-using System.Text.Json;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Galleries.Common;
-using PEMS.Domain.Constants;
-using PEMS.Domain.Entities.Galleries;
 using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Application.Galleries.Commands.UpdateGalleryLocation;
 
 /// <summary>
-/// UC-LOC-06 / UC-LOC-07 handler. Renames a location and/or moves it to another area in the same campus,
-/// either an existing ACTIVE area or a brand-new area created in the same transaction. Never touches the
-/// location's status or its gallery item. The location cover is replaced only when a new image is
-/// supplied (otherwise kept); creating a new area always requires an area cover image.
+/// "Chỉnh sửa khu vực và vị trí" — direct in-place UPDATE of the location and its CURRENT area. This
+/// handler never inserts a new area and never reassigns <c>location.AreaId</c>; renaming the area from
+/// one row therefore renames it for every location that shares it. Status and gallery items are never
+/// touched. Covers are replaced only when a new file is supplied (upload first, swap the FK only after
+/// success; a DB failure cleans up the freshly uploaded files and keeps the old covers).
+/// Translation: an EN carried by the payload (preview AUTO_PREVIEW with a matching source hash, or a
+/// MANUAL edit) is persisted WITHOUT calling the provider; a stale preview fails with
+/// GALLERY_TRANSLATION_PREVIEW_STALE; names that changed with no usable EN go through the legacy
+/// translate-during-save path in ONE batched provider request. Cover-only edits never hit the provider.
 /// </summary>
 public sealed class UpdateGalleryLocationCommandHandler
     : IRequestHandler<UpdateGalleryLocationCommand, GalleryLocationDetailDto>
@@ -25,18 +29,27 @@ public sealed class UpdateGalleryLocationCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IFileUploadService _fileUpload;
+    private readonly IGoogleDriveStorageService _drive;
+    private readonly IGalleryTranslationCoordinator _translator;
     private readonly IDateTimeService _clock;
+    private readonly ILogger<UpdateGalleryLocationCommandHandler> _logger;
 
     public UpdateGalleryLocationCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IFileUploadService fileUpload,
-        IDateTimeService clock)
+        IGoogleDriveStorageService drive,
+        IGalleryTranslationCoordinator translator,
+        IDateTimeService clock,
+        ILogger<UpdateGalleryLocationCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _fileUpload = fileUpload;
+        _drive = drive;
+        _translator = translator;
         _clock = clock;
+        _logger = logger;
     }
 
     public async Task<GalleryLocationDetailDto> Handle(
@@ -46,160 +59,239 @@ public sealed class UpdateGalleryLocationCommandHandler
         var actorId = _currentUser.UserId!.Value;
         var now = _clock.VietnamNow;
 
-        var mode = (request.Mode ?? string.Empty).Trim().ToUpperInvariant();
+        var areaName = GalleryKeyNormalizer.CleanName(request.AreaName);
+        if (areaName.Length == 0)
+            throw new BusinessRuleException("Vui lòng nhập tên khu vực/tòa.", GalleryErrorCodes.AreaNameRequired);
         var locationName = GalleryKeyNormalizer.CleanName(request.LocationName);
         if (locationName.Length == 0)
             throw new BusinessRuleException("Vui lòng nhập vị trí cụ thể.", GalleryErrorCodes.LocationNameRequired);
-        var locationKey = GalleryKeyNormalizer.ToKey(locationName);
 
         var location = await GalleryLocationWriteGuard.LoadLocationInCampusAsync(
             _db, (ulong)request.LocationId, campusId, cancellationToken);
+        var area = location.Area!;
 
-        var oldAreaId = location.AreaId;
-        var oldName = location.LocationName;
-        ulong? auditOldAreaCoverFileId = null;
-        ulong? auditNewAreaCoverFileId = null;
+        var oldAreaName = area.AreaName;
+        var oldLocationName = location.LocationName;
 
-        // A new cover is optional on edit — kept when omitted (BR-LOCATION-COVER-04).
-        ulong? newLocationCoverId = request.LocationCoverImage is null
-            ? null
-            : await GalleryCoverImage.UploadAsync(
-                _fileUpload, request.LocationCoverImage, isArea: false, actorId, cancellationToken);
+        var areaNameChanged = !string.Equals(
+            TranslationSourceNormalizer.Normalize(oldAreaName), areaName, StringComparison.Ordinal);
+        var locationNameChanged = !string.Equals(
+            TranslationSourceNormalizer.Normalize(oldLocationName), locationName, StringComparison.Ordinal);
 
-        if (mode == GalleryLocationModes.ExistingArea)
+        // Duplicate checks BEFORE any upload (the common failure never orphans a Drive file). The row
+        // being renamed is excluded — saving an unchanged name must never conflict with itself.
+        var areaKey = GalleryKeyNormalizer.ToKey(areaName);
+        var locationKey = GalleryKeyNormalizer.ToKey(locationName);
+        if (areaNameChanged)
+            await GalleryLocationWriteGuard.EnsureAreaKeyFreeAsync(
+                _db, campusId, areaKey, cancellationToken, excludeAreaId: area.AreaId);
+        await GalleryLocationWriteGuard.EnsureLocationKeyFreeAsync(
+            _db, area.AreaId, locationKey, location.LocationId, cancellationToken);
+
+        // Resolve the client-supplied EN (preview reuse / manual) BEFORE uploads: a stale preview must
+        // fail fast. Only a name that actually changed re-translates; an unchanged name keeps its stored
+        // EN + metadata — with ONE exception: a MANUAL EN fix on an unchanged name is applied as-is.
+        var resolvedArea = areaNameChanged || IsManualEnEdit(request.AreaTranslationOrigin, request.AreaNameEn, area.AreaNameEn)
+            ? GalleryPreviewedTranslation.TryResolve(
+                areaName, request.AreaNameEn, request.AreaTranslationOrigin,
+                request.AreaTranslationSourceHash, GalleryTranslationLimits.NameEnMaxLength)
+            : null;
+        var resolvedLocation = locationNameChanged || IsManualEnEdit(request.LocationTranslationOrigin, request.LocationNameEn, location.LocationNameEn)
+            ? GalleryPreviewedTranslation.TryResolve(
+                locationName, request.LocationNameEn, request.LocationTranslationOrigin,
+                request.LocationTranslationSourceHash, GalleryTranslationLimits.NameEnMaxLength)
+            : null;
+
+        // Names that changed but carry no usable EN → ONE batched provider request (never per keystroke,
+        // never re-translating a reused preview). Failure never blocks the save (FAILED metadata + warning).
+        var providerRequests = new List<GalleryTranslationRequest>();
+        var areaNeedsProvider = areaNameChanged && resolvedArea is null;
+        var locationNeedsProvider = locationNameChanged && resolvedLocation is null;
+        if (areaNeedsProvider)
+            providerRequests.Add(new GalleryTranslationRequest(areaName, GalleryTranslationLimits.NameEnMaxLength));
+        if (locationNeedsProvider)
+            providerRequests.Add(new GalleryTranslationRequest(locationName, GalleryTranslationLimits.NameEnMaxLength));
+        var providerResults = providerRequests.Count > 0
+            ? await _translator.TranslateAsync(providerRequests, cancellationToken)
+            : Array.Empty<GalleryTranslationResult>();
+        var providerIndex = 0;
+        var areaProviderResult = areaNeedsProvider ? providerResults[providerIndex++] : null;
+        var locationProviderResult = locationNeedsProvider ? providerResults[providerIndex] : null;
+        var translationFailed = (areaProviderResult is { Success: false })
+                                || (locationProviderResult is { Success: false });
+
+        // Optional cover replacements — upload the new files first, swap the FKs only after success.
+        var uploadedFileIds = new List<ulong>();
+        ulong? oldAreaCoverFileId = null, newAreaCoverFileId = null;
+        ulong? oldLocationCoverFileId = null, newLocationCoverFileId = null;
+        if (request.AreaCoverVideo is not null)
         {
-            if (request.AreaId is not { } rawAreaId || rawAreaId <= 0)
-                throw new BusinessRuleException("Vui lòng chọn khu vực/tòa.", GalleryErrorCodes.AreaRequired);
+            oldAreaCoverFileId = area.CoverFileId;
+            newAreaCoverFileId = await GalleryAreaCoverVideo.UploadAsync(
+                _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
+            uploadedFileIds.Add(newAreaCoverFileId.Value);
+        }
+        if (request.LocationCoverImage is not null)
+        {
+            oldLocationCoverFileId = location.CoverFileId;
+            newLocationCoverFileId = await GalleryCoverImage.UploadAsync(
+                _fileUpload, request.LocationCoverImage, isArea: false, actorId, cancellationToken);
+            uploadedFileIds.Add(newLocationCoverFileId.Value);
+        }
 
-            var targetArea = await GalleryLocationWriteGuard.LoadAreaInCampusAsync(
-                _db, (ulong)rawAreaId, campusId, cancellationToken);
-            if (targetArea.Status != EntityStatuses.Active)
-                throw new BusinessRuleException("Khu vực này đang ngừng hoạt động.", GalleryErrorCodes.AreaInactive);
-
-            await GalleryLocationWriteGuard.EnsureLocationKeyFreeAsync(
-                _db, targetArea.AreaId, locationKey, location.LocationId, cancellationToken);
-
-            // Optionally replace the existing area's cover with a NEW MP4 video (kept when omitted). This
-            // lets a legacy image-cover area be switched to a video. targetArea is tracked by
-            // LoadAreaInCampusAsync, so the change is persisted by SaveChangesAsync below. We only swap the
-            // CoverFileId AFTER a successful upload, so a failed upload leaves the old cover intact.
-            if (request.AreaCoverVideo is not null)
+        try
+        {
+            // ── Area: update the EXISTING row (AreaId untouched — every sibling location follows). ──
+            var areaChanged = false;
+            if (areaNameChanged)
             {
-                auditOldAreaCoverFileId = targetArea.CoverFileId;
-                targetArea.CoverFileId = await GalleryAreaCoverVideo.UploadAsync(
-                    _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
-                auditNewAreaCoverFileId = targetArea.CoverFileId;
-                targetArea.UpdatedAt = now;
-                targetArea.UpdatedBy = actorId;
+                area.AreaName = areaName;
+                area.AreaKey = areaKey;
+                if (resolvedArea is not null)
+                    GalleryTranslationApplier.Apply(area, resolvedArea.Result, now, resolvedArea.TranslationSource);
+                else
+                    GalleryTranslationApplier.Apply(area, areaProviderResult!, now);
+                areaChanged = true;
+            }
+            else if (resolvedArea is not null)
+            {
+                // MANUAL EN fix while the VI stayed the same.
+                GalleryTranslationApplier.Apply(area, resolvedArea.Result, now, resolvedArea.TranslationSource);
+                areaChanged = true;
+            }
+            if (newAreaCoverFileId is { } areaCover)
+            {
+                area.CoverFileId = areaCover; // cover-only swap: translation metadata untouched
+                areaChanged = true;
+            }
+            if (areaChanged)
+            {
+                area.UpdatedAt = now;
+                area.UpdatedBy = actorId;
             }
 
-            location.AreaId = targetArea.AreaId;
-            location.LocationName = locationName;
-            location.LocationKey = locationKey;
-            if (newLocationCoverId is { } lc) location.CoverFileId = lc;
-            location.UpdatedAt = now;
-            location.UpdatedBy = actorId;
-            await _db.SaveChangesAsync(cancellationToken);
-        }
-        else if (mode == GalleryLocationModes.NewArea)
-        {
-            var areaName = GalleryKeyNormalizer.CleanName(request.NewAreaName);
-            if (areaName.Length == 0)
-                throw new BusinessRuleException("Vui lòng nhập tên khu vực/tòa mới.", GalleryErrorCodes.NewAreaNameRequired);
-            var areaKey = GalleryKeyNormalizer.ToKey(areaName);
-
-            // Creating a new area during edit requires an MP4 area cover video (the Area Showcase background).
-            if (request.AreaCoverVideo is null)
-                throw new BusinessRuleException(
-                    "Vui lòng chọn một video đại diện cho khu vực.", GalleryErrorCodes.AreaCoverVideoRequired);
-
-            await GalleryLocationWriteGuard.EnsureAreaKeyFreeAsync(_db, campusId, areaKey, cancellationToken);
-
-            var areaCoverId = await GalleryAreaCoverVideo.UploadAsync(
-                _fileUpload, request.AreaCoverVideo, actorId, cancellationToken);
-            auditNewAreaCoverFileId = areaCoverId;
-
-            // Create the area and move the location together (UC §21.4).
-            await using var tx = await _db.BeginTransactionAsync(cancellationToken);
-            try
+            // ── Location: update the EXISTING row (LocationId + AreaId untouched). ──
+            var locationChanged = false;
+            if (locationNameChanged)
             {
-                await GalleryLocationWriteGuard.EnsureAreaKeyFreeAsync(_db, campusId, areaKey, cancellationToken);
-
-                var area = new GalleryArea
-                {
-                    CampusId = campusId,
-                    AreaName = areaName,
-                    AreaKey = areaKey,
-                    CoverFileId = areaCoverId,
-                    Status = EntityStatuses.Active,
-                    DisplayOrder = 0,
-                    CreatedAt = now,
-                    CreatedBy = actorId,
-                };
-                _db.GalleryAreas.Add(area);
-                await _db.SaveChangesAsync(cancellationToken);
-
-                location.AreaId = area.AreaId;
                 location.LocationName = locationName;
                 location.LocationKey = locationKey;
-                if (newLocationCoverId is { } lc) location.CoverFileId = lc;
+                if (resolvedLocation is not null)
+                    GalleryTranslationApplier.Apply(location, resolvedLocation.Result, now, resolvedLocation.TranslationSource);
+                else
+                    GalleryTranslationApplier.Apply(location, locationProviderResult!, now);
+                locationChanged = true;
+            }
+            else if (resolvedLocation is not null)
+            {
+                GalleryTranslationApplier.Apply(location, resolvedLocation.Result, now, resolvedLocation.TranslationSource);
+                locationChanged = true;
+            }
+            if (newLocationCoverFileId is { } locationCover)
+            {
+                location.CoverFileId = locationCover;
+                locationChanged = true;
+            }
+            if (locationChanged)
+            {
                 location.UpdatedAt = now;
                 location.UpdatedBy = actorId;
-                await _db.SaveChangesAsync(cancellationToken);
-
-                await tx.CommitAsync(cancellationToken);
             }
-            catch
+
+            // Audit — one row per entity that actually changed (no area audit when the area is untouched).
+            if (areaChanged)
             {
-                await tx.RollbackAsync(cancellationToken);
-                throw;
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ActorUserId = actorId,
+                    CampusId = campusId,
+                    Action = "UPDATE_GALLERY_AREA",
+                    EntityType = "GalleryArea",
+                    EntityId = area.AreaId,
+                    Changes = BuildAreaAuditChanges(
+                        oldAreaName, areaName, areaNameChanged, oldAreaCoverFileId, newAreaCoverFileId,
+                        areaNameChanged || resolvedArea is not null ? area.TranslationStatus : null),
+                    CreatedAt = now,
+                });
             }
-        }
-        else
-        {
-            throw new BusinessRuleException("Chế độ cập nhật không hợp lệ.", GalleryErrorCodes.InvalidMode);
-        }
+            if (locationChanged)
+            {
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ActorUserId = actorId,
+                    CampusId = campusId,
+                    Action = "UPDATE_GALLERY_LOCATION",
+                    EntityType = "GalleryLocation",
+                    EntityId = location.LocationId,
+                    Changes = BuildLocationAuditChanges(
+                        oldLocationName, locationName, locationNameChanged,
+                        oldLocationCoverFileId, newLocationCoverFileId,
+                        locationNameChanged || resolvedLocation is not null ? location.TranslationStatus : null),
+                    CreatedAt = now,
+                });
+            }
 
-        _db.AuditLogs.Add(new AuditLog
+            // Entities + audit commit atomically (one SaveChanges = one DB transaction).
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ActorUserId = actorId,
-            CampusId = campusId,
-            Action = "UPDATE_GALLERY_LOCATION",
-            EntityType = "GalleryLocation",
-            EntityId = location.LocationId,
-            Changes = BuildAuditChanges(
-                oldName, locationName, oldAreaId, location.AreaId,
-                auditOldAreaCoverFileId, auditNewAreaCoverFileId),
-            CreatedAt = now,
-        });
-        await _db.SaveChangesAsync(cancellationToken);
+            // Compensation: the DB kept the old covers, so drop the freshly uploaded Drive files.
+            await GalleryFileCleanup.RemoveUploadedFilesAsync(_db, _drive, _logger, uploadedFileIds, cancellationToken);
+            throw;
+        }
 
         return await GalleryLocationDetailBuilder.BuildAsync(
-            _db, location.LocationId, cancellationToken, "Đã cập nhật vị trí.");
+            _db, location.LocationId, cancellationToken, "Đã cập nhật khu vực và vị trí.",
+            translationFailed ? GalleryTranslationMessages.TranslationFailedWarning : null);
     }
 
-    /// <summary>Builds the audit change rows; the area-cover-video swap row is only added when it changed.</summary>
-    private static List<AuditLogChange> BuildAuditChanges(
-        string oldName, string newName, ulong oldAreaId, ulong newAreaId,
-        ulong? oldAreaCoverFileId, ulong? newAreaCoverFileId)
+    /// <summary>True when the payload carries a MANUAL EN that differs from the stored EN — the only
+    /// case where an unchanged Vietnamese name still updates the translation fields.</summary>
+    private static bool IsManualEnEdit(string? origin, string? requestEn, string? storedEn)
     {
-        var changes = new List<AuditLogChange>
-        {
-            new AuditLogChange { FieldName = "LocationName", OldValueText = oldName, NewValueText = newName },
-            new AuditLogChange { FieldName = "AreaId", OldValueText = oldAreaId.ToString(), NewValueText = newAreaId.ToString() },
-        };
+        if (!string.Equals((origin ?? string.Empty).Trim(), GalleryTranslationOrigins.Manual,
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        var en = requestEn?.Trim();
+        return !string.IsNullOrEmpty(en) && !string.Equals(en, storedEn, StringComparison.Ordinal);
+    }
 
-        // Only recorded when a new MP4 area cover was uploaded (UPDATE_GALLERY_AREA_COVER, new type = VIDEO).
-        if (newAreaCoverFileId is not null)
-        {
+    private static List<AuditLogChange> BuildAreaAuditChanges(
+        string oldName, string newName, bool nameChanged,
+        ulong? oldCoverFileId, ulong? newCoverFileId, string? translationStatus)
+    {
+        var changes = new List<AuditLogChange>();
+        if (nameChanged)
+            changes.Add(new AuditLogChange { FieldName = "AreaName", OldValueText = oldName, NewValueText = newName });
+        if (newCoverFileId is not null)
             changes.Add(new AuditLogChange
             {
                 FieldName = "AreaCoverFileId",
-                OldValueText = oldAreaCoverFileId?.ToString(),
-                NewValueText = newAreaCoverFileId.ToString(),
+                OldValueText = oldCoverFileId?.ToString(),
+                NewValueText = newCoverFileId.ToString(),
             });
-        }
+        if (translationStatus is not null)
+            changes.Add(new AuditLogChange { FieldName = "TranslationStatus", NewValueText = translationStatus });
+        return changes;
+    }
 
+    private static List<AuditLogChange> BuildLocationAuditChanges(
+        string oldName, string newName, bool nameChanged,
+        ulong? oldCoverFileId, ulong? newCoverFileId, string? translationStatus)
+    {
+        var changes = new List<AuditLogChange>();
+        if (nameChanged)
+            changes.Add(new AuditLogChange { FieldName = "LocationName", OldValueText = oldName, NewValueText = newName });
+        if (newCoverFileId is not null)
+            changes.Add(new AuditLogChange
+            {
+                FieldName = "LocationCoverFileId",
+                OldValueText = oldCoverFileId?.ToString(),
+                NewValueText = newCoverFileId.ToString(),
+            });
+        if (translationStatus is not null)
+            changes.Add(new AuditLogChange { FieldName = "TranslationStatus", NewValueText = translationStatus });
         return changes;
     }
 }

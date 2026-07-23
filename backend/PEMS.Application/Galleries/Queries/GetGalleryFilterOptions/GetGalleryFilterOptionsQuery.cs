@@ -21,6 +21,7 @@ public sealed class GalleryAreaOptionDto
 {
     public ulong AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
+    public string? AreaNameEn { get; init; }
     public string Status { get; init; } = string.Empty;
     public ulong? CoverFileId { get; init; }
     public string? CoverUrl { get; init; }

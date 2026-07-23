@@ -4,17 +4,23 @@ using PEMS.Application.Galleries.Common;
 namespace PEMS.Application.Galleries.Commands.UpdateGalleryLocation;
 
 /// <summary>
-/// UC-LOC-06 (rename / move location to an existing area) / UC-LOC-07 (move into a freshly created area).
-/// Editing never changes the location's status or its gallery item's status. The location cover image is
-/// optional on edit — when omitted the existing cover is kept; when supplied it replaces it. Creating a
-/// new area (NEW_AREA mode) always requires an area cover video; on EXISTING_AREA the area cover video is
-/// optional (kept when omitted) and lets a legacy image-cover area be switched to a video.
+/// Direct edit of a location AND its current area ("Chỉnh sửa khu vực và vị trí"). The handler UPDATEs
+/// the existing rows in place — it never creates a new area and never moves the location to another area
+/// (both ids stay unchanged). Editing never touches the location's status or its gallery items. Covers
+/// are optional: omitted → kept; supplied → replaced (area cover must be an MP4 video).
+/// The EN names may come from the translation preview (AUTO_PREVIEW + source hash) or a manual edit
+/// (MANUAL) — in both cases the provider is NOT called again; when a Vietnamese name changed and no
+/// usable EN was supplied, the legacy translate-during-save path runs (one batched provider request).
 /// </summary>
 public sealed record UpdateGalleryLocationCommand(
     long LocationId,
-    string Mode,
-    long? AreaId,
-    string? NewAreaName,
+    string AreaName,
+    string? AreaNameEn,
+    string? AreaTranslationOrigin,
+    string? AreaTranslationSourceHash,
     string LocationName,
+    string? LocationNameEn,
+    string? LocationTranslationOrigin,
+    string? LocationTranslationSourceHash,
     GalleryUploadFileCommandDto? AreaCoverVideo,
     GalleryUploadFileCommandDto? LocationCoverImage) : IRequest<GalleryLocationDetailDto>;
