@@ -71,6 +71,20 @@ public sealed class ViewNewsListQueryHandler
                 .Where(u => EF.Functions.Like(u.FullName, pattern))
                 .Select(u => u.UserId);
 
+            // Guests matched by name or organization
+            var matchingGuestRequests = _dbContext.VisitGuestMembers
+                .Where(g => EF.Functions.Like(g.FullName, pattern) || (g.Organization != null && EF.Functions.Like(g.Organization, pattern)))
+                .Select(g => g.VisitRequestId);
+
+            // Face detections tagged with matching guest names or files
+            var taggedFileIds = _dbContext.VisitPhotoFaceDetections
+                .Where(fd => fd.GuestMemberId != null && _dbContext.VisitGuestMembers.Any(g => g.GuestMemberId == fd.GuestMemberId && (EF.Functions.Like(g.FullName, pattern) || (g.Organization != null && EF.Functions.Like(g.Organization, pattern)))))
+                .Select(fd => fd.FileId);
+
+            var taggedInstanceIds = _dbContext.VisitPhotoFaceDetections
+                .Where(fd => fd.GuestMemberId != null && _dbContext.VisitGuestMembers.Any(g => g.GuestMemberId == fd.GuestMemberId && (EF.Functions.Like(g.FullName, pattern) || (g.Organization != null && EF.Functions.Like(g.Organization, pattern)))))
+                .Select(fd => fd.VisitInstanceId);
+
             query = query.Where(n =>
                 n.Translations.Any(t =>
                     EF.Functions.Like(t.Title, pattern) ||
@@ -78,6 +92,8 @@ public sealed class ViewNewsListQueryHandler
                 )
                 || matchingUserIds.Contains(n.AuthorUserId)
                 || (n.ReviewedBy != null && matchingUserIds.Contains(n.ReviewedBy.Value))
+                || (n.VisitInstanceId != null && (matchingGuestRequests.Contains(n.VisitInstance.VisitRequestId) || taggedInstanceIds.Contains(n.VisitInstanceId.Value)))
+                || (n.CoverFileId != null && taggedFileIds.Contains(n.CoverFileId.Value))
             );
         }
 

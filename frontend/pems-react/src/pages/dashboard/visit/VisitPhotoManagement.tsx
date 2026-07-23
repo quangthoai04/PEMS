@@ -20,8 +20,10 @@
  * - Nút "Quét mặt" riêng biệt mở modal quét & gán danh tính khuôn mặt
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, Image as ImageIcon, Calendar, Sparkles, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, Image as ImageIcon, Calendar, Sparkles, RefreshCw, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
+import httpClient from '../../../shared/api/httpClient';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { VisitPhotoPanel } from '../../../features/delegations/components/VisitPhotoPanel';
 import { FaceScanPanel, type FaceScanPhoto } from '../../../features/delegations/components/FaceScanPanel';
@@ -167,7 +169,20 @@ function FaceScanModalContent({
   );
 }
 
+interface RelatedNewsItem {
+  newsId: number;
+  title: string;
+  description?: string;
+  coverImageUrl?: string;
+  campusName?: string;
+  authorName: string;
+  createdAt: string;
+  status: string;
+  statusLabel: string;
+}
+
 export function VisitPhotoManagement() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isStudent = user?.roleCode?.toUpperCase() === 'STUDENT';
 
@@ -179,6 +194,9 @@ export function VisitPhotoManagement() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [viewMode, setViewMode] = useState<'folders' | 'photos'>('folders');
+
+  const [relatedNews, setRelatedNews] = useState<RelatedNewsItem[]>([]);
+  const [loadingNews, setLoadingNews] = useState(false);
 
   const [data, setData] = useState<MyVisitPhotoFoldersPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -218,6 +236,27 @@ export function VisitPhotoManagement() {
     }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Fetch related news articles matching the search term (tagged partner/guest photos or news content)
+  useEffect(() => {
+    if (!search) {
+      setRelatedNews([]);
+      return;
+    }
+    let active = true;
+    setLoadingNews(true);
+    httpClient.get<{ items: RelatedNewsItem[] }>('/news', { params: { keyword: search, pageSize: 6 } })
+      .then((res) => {
+        if (active) setRelatedNews(res.data.items || []);
+      })
+      .catch(() => {
+        if (active) setRelatedNews([]);
+      })
+      .finally(() => {
+        if (active) setLoadingNews(false);
+      });
+    return () => { active = false; };
+  }, [search]);
 
   const closePhotoModal = async (changed: boolean) => {
     setPhotoModalItem(null);
@@ -328,6 +367,75 @@ export function VisitPhotoManagement() {
             </select>
           </div>
         </div>
+
+        {/* Related News Section when searching */}
+        {search && (
+          <div className="mx-4 sm:mx-6 my-4 p-4 sm:p-5 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/60 to-indigo-50/40 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#004c91] text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+                  <FileText className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-[#004c91] text-sm flex items-center gap-2">
+                    Bài viết tin tức liên quan đến từ khóa "{search}"
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Các bài tin tức có sử dụng ảnh hoặc liên quan đến đối tác/khách được gán tên
+                  </p>
+                </div>
+              </div>
+              {loadingNews && (
+                <span className="text-xs text-[#004c91] font-semibold flex items-center gap-1.5 bg-white/80 px-2.5 py-1 rounded-lg border border-blue-100">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang tìm bài viết...
+                </span>
+              )}
+            </div>
+
+            {relatedNews.length === 0 && !loadingNews ? (
+              <p className="text-xs text-slate-500 italic bg-white/70 p-3 rounded-xl border border-blue-100">
+                Không tìm thấy bài viết tin tức nào sử dụng ảnh của từ khóa "{search}".
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                {relatedNews.map((news) => (
+                  <div
+                    key={news.newsId}
+                    onClick={() => navigate(`/dashboard/news/detail/${news.newsId}`)}
+                    className="bg-white border border-slate-200 hover:border-[#004c91] hover:shadow-md rounded-xl p-3.5 transition-all cursor-pointer flex flex-col justify-between group"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-[#004c91] border border-blue-100">
+                          {news.statusLabel || news.status}
+                        </span>
+                        {news.campusName && (
+                          <span className="text-[10px] text-slate-500 font-semibold truncate">
+                            {news.campusName}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-bold text-slate-800 text-xs line-clamp-2 group-hover:text-[#004c91] transition-colors">
+                        {news.title}
+                      </h4>
+                      {news.description && (
+                        <p className="text-[11px] text-slate-500 line-clamp-2 font-medium">
+                          {news.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                      <span>Tác giả: {news.authorName}</span>
+                      <span className="text-[#004c91] font-bold flex items-center gap-1 group-hover:underline">
+                        Xem bài viết →
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Content Body */}
         {loading ? (
