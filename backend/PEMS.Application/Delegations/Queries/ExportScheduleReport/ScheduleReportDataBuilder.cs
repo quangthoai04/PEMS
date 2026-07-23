@@ -26,34 +26,21 @@ public static class ScheduleReportDataBuilder
     {
         var visit = instance.VisitRequest;
 
-        // ── Delegation name / purpose / guest composition (v1 global vs v2 per-campus) ──
-        string delegationName = visit.DelegationName;
-        string? purpose = visit.Purpose;
-        var guestRows = visit.GuestMembers.Where(m => m.MemberType != ExternalSupport)
-            .OrderBy(m => m.DisplayOrder).ToList();
-        var supportRows = visit.GuestMembers.Where(m => m.MemberType == ExternalSupport)
-            .OrderBy(m => m.DisplayOrder).ToList();
+        // ── Delegation name / purpose / guest composition — always this campus's own detail ──
+        // The report is per campus instance, so the content must be the one that campus owns. A request
+        // row carries no form content at all now, and no sibling campus may stand in for this one.
+        var content = await formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var detail = content[instance.VisitInstanceId];
+
+        var delegationName = detail.DelegationName;
+        var purpose = detail.Purpose;
 
         var guestSide = new List<ScheduleReportPersonDto>();
-
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var content = await formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            var d = content[instance.VisitInstanceId];
-            delegationName = d.DelegationName;
-            purpose = d.Purpose;
-
-            guestSide.AddRange(d.Visitors.OrderBy(v => v.DisplayOrder)
-                .Select(v => MapGuestPerson(v.FullName, v.Organization, "Khách mời")));
-            guestSide.AddRange(d.SupportMembers.OrderBy(v => v.DisplayOrder)
-                .Select(v => MapGuestPerson(v.FullName, v.Organization, "Nhân sự hỗ trợ")));
-        }
-        else
-        {
-            guestSide.AddRange(guestRows.Select(m => MapGuestPerson(m.FullName, m.Organization, "Khách mời")));
-            guestSide.AddRange(supportRows.Select(m => MapGuestPerson(m.FullName, m.Organization, "Nhân sự hỗ trợ")));
-        }
+        guestSide.AddRange(detail.Visitors.OrderBy(v => v.DisplayOrder)
+            .Select(v => MapGuestPerson(v.FullName, v.Organization, "Khách mời")));
+        guestSide.AddRange(detail.SupportMembers.OrderBy(v => v.DisplayOrder)
+            .Select(v => MapGuestPerson(v.FullName, v.Organization, "Nhân sự hỗ trợ")));
 
         // ── FPT side: Host + accepted (non-host) participants — same rule as MinuteAutoFill ──
         var fptSide = new List<ScheduleReportPersonDto>();

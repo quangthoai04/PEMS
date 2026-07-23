@@ -49,6 +49,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitParticipant> VisitParticipants => Set<VisitParticipant>();
     public DbSet<VisitAgenda> VisitAgendas => Set<VisitAgenda>();
     public DbSet<VisitGuestMember> VisitGuestMembers => Set<VisitGuestMember>();
+    public DbSet<VisitInstanceGuestMember> VisitInstanceGuestMembers => Set<VisitInstanceGuestMember>();
     public DbSet<Partner> Partners => Set<Partner>();
     public DbSet<UploadedFile> Files => Set<UploadedFile>();
 
@@ -59,8 +60,10 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<PartnerContact>();
         modelBuilder.Ignore<PartnerAlias>();
         modelBuilder.Ignore<VisitGuestPartnerLink>();
-        modelBuilder.Ignore<VisitInstanceFormDetail>();
-        modelBuilder.Ignore<VisitInstanceGuestMember>();
+        // Mapped, not ignored: these tests use the REAL VisitFormReadService, which resolves the report's
+        // delegation name and purpose from the campus detail. Ignoring it made the service see no row.
+        // Mapped, not ignored: under Pure V2 a guest belongs to the request but is attached to a CAMPUS
+        // through this link table, and that is what the real read service enumerates for the report.
         modelBuilder.Ignore<VisitRequestIdentityChange>();
         modelBuilder.Ignore<VisitRequestIdentityChangeEvent>();
         modelBuilder.Ignore<VisitInstanceAmendment>();
@@ -110,6 +113,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<AgendaTemplateItem>();
         modelBuilder.Ignore<AgendaTemplateDefault>();
         modelBuilder.Ignore<VisitRequestPendingForm>();
+        modelBuilder.Ignore<VisitRequestFingerprintGuard>();
 
         modelBuilder.Entity<Campus>()
             .HasOne(c => c.IcHeadUser).WithMany().HasForeignKey(c => c.IcHeadUserId);
@@ -135,6 +139,8 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitGuestMember>()
             .HasOne(g => g.VisitRequest).WithMany(v => v.GuestMembers)
             .HasForeignKey(g => g.VisitRequestId);
+        modelBuilder.Entity<VisitInstanceGuestMember>()
+            .HasKey(l => new { l.VisitInstanceId, l.GuestMemberId });
         modelBuilder.Entity<VisitRequest>()
             .HasOne(v => v.Partner).WithMany().HasForeignKey(v => v.PartnerId);
         modelBuilder.Entity<Partner>()
@@ -155,7 +161,6 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
     DbSet<Document> IApplicationDbContext.Documents => Set<Document>();
     DbSet<VisitInstanceFormDetail> IApplicationDbContext.VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
-    DbSet<VisitInstanceGuestMember> IApplicationDbContext.VisitInstanceGuestMembers => Set<VisitInstanceGuestMember>();
     DbSet<VisitRequestIdentityChange> IApplicationDbContext.VisitRequestIdentityChanges => Set<VisitRequestIdentityChange>();
     DbSet<VisitRequestIdentityChangeEvent> IApplicationDbContext.VisitRequestIdentityChangeEvents => Set<VisitRequestIdentityChangeEvent>();
     DbSet<VisitInstanceAmendment> IApplicationDbContext.VisitInstanceAmendments => Set<VisitInstanceAmendment>();
@@ -163,6 +168,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitInstanceFormRevisionHistory> IApplicationDbContext.VisitInstanceFormRevisionHistories => Set<VisitInstanceFormRevisionHistory>();
     DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
     DbSet<VisitRequestPendingForm> IApplicationDbContext.VisitRequestPendingForms => Set<VisitRequestPendingForm>();
+    DbSet<VisitRequestFingerprintGuard> IApplicationDbContext.VisitRequestFingerprintGuards => Set<VisitRequestFingerprintGuard>();
     DbSet<VisitLogisticsItem> IApplicationDbContext.VisitLogisticsItems => Set<VisitLogisticsItem>();
     DbSet<VisitLogisticsItemHandover> IApplicationDbContext.VisitLogisticsItemHandovers => Set<VisitLogisticsItemHandover>();
     DbSet<VisitLogisticsAssignmentAttempt> IApplicationDbContext.VisitLogisticsAssignmentAttempts => Set<VisitLogisticsAssignmentAttempt>();
@@ -282,8 +288,10 @@ public static class ScheduleReportTestData
         RegistrantJobTitle = "Trưởng đoàn",
         RegistrantPhone = "0900000000",
         RegistrantEmail = "guest@test.local",
-        DelegationName = "Đoàn khách kiểm thử",
-        Purpose = "Tham quan và ký kết hợp tác",
+        // Pure V2: delegation name and purpose are per campus and live on VisitInstanceFormDetail (see
+        // CreateVisitInstance). The request row keeps only the PRIMARY contact — a request-level relation,
+        // distinct from each campus's operational contact.
+        HasMixedCampusDetails = false,
         ContactPersonFullName = "Đầu mối",
         ContactPersonOrganization = "Đối tác",
         ContactPersonPhone = "0900000001",
@@ -291,17 +299,23 @@ public static class ScheduleReportTestData
         Status = "APPROVED",
         PartnerId = partnerId,
         VisitorUserId = visitorUserId,
-        FormSchemaVersion = 1,
         SubmittedAt = new DateTime(2026, 6, 1),
         CreatedAt = new DateTime(2026, 6, 1),
     };
 
+    /// <summary>
+    /// Every instance owns exactly one form detail — that is where the schedule report reads its
+    /// delegation name and purpose from. <paramref name="delegationName"/> and <paramref name="purpose"/>
+    /// are per campus so a multi-campus test can prove the report never borrows a sibling's content.
+    /// </summary>
     public static VisitRequestCampus CreateVisitInstance(
         ulong visitInstanceId = VisitInstanceId,
         string status = VisitInstanceStatus.BeforeVisit,
         ulong campusId = CampusId,
         ulong? currentHostUserId = HostUserId,
-        ulong visitRequestId = VisitRequestId) => new()
+        ulong visitRequestId = VisitRequestId,
+        string delegationName = "Đoàn khách kiểm thử",
+        string purpose = "Tham quan và ký kết hợp tác") => new()
     {
         VisitInstanceId = visitInstanceId,
         VisitRequestId = visitRequestId,
@@ -311,6 +325,18 @@ public static class ScheduleReportTestData
         Status = status,
         CurrentHostUserId = currentHostUserId,
         CreatedAt = new DateTime(2026, 6, 1),
+        FormDetail = new VisitInstanceFormDetail
+        {
+            VisitInstanceId = visitInstanceId,
+            DelegationName = delegationName,
+            VisitType = "MEETING",
+            Purpose = purpose,
+            OperationalContactFullName = "Đầu mối cơ sở",
+            OperationalContactPhone = "0900000002",
+            WorkingLanguage = "VI",
+            MediaConsentStatus = "AGREED",
+            CreatedAt = new DateTime(2026, 6, 1),
+        },
     };
 
     public static VisitParticipant CreateParticipant(
@@ -352,6 +378,21 @@ public static class ScheduleReportTestData
         Organization = "Guest Org",
         JobTitle = "Member",
         Nationality = "VN",
+        CreatedAt = new DateTime(2026, 6, 1),
+    };
+
+    /// <summary>
+    /// Attaches a guest to a campus instance. Pure V2 reads the roster through this link, so a guest with
+    /// no link belongs to no campus and correctly appears on no report.
+    /// </summary>
+    public static VisitInstanceGuestMember CreateInstanceGuestLink(
+        ulong guestMemberId, uint displayOrder = 0,
+        ulong visitInstanceId = VisitInstanceId, ulong visitRequestId = VisitRequestId) => new()
+    {
+        VisitRequestId = visitRequestId,
+        VisitInstanceId = visitInstanceId,
+        GuestMemberId = guestMemberId,
+        DisplayOrder = displayOrder,
         CreatedAt = new DateTime(2026, 6, 1),
     };
 
