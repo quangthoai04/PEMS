@@ -279,7 +279,13 @@ public sealed class SaveMinutesCommandHandler
             }
             else
             {
-                throw new BusinessRuleException("Không hỗ trợ thêm người tham gia ngoài hệ thống. Vui lòng chọn một người dùng có sẵn.");
+                var fullName = (input.FullNameSnapshot ?? string.Empty).Trim();
+                if (fullName.Length == 0)
+                    throw new BusinessRuleException("Họ tên người tham gia không được để trống.");
+                newRow.FullNameSnapshot = fullName;
+                newRow.RoleSnapshot = Clean(input.RoleSnapshot);
+                newRow.OrganizationSnapshot = Clean(input.OrganizationSnapshot);
+                newRow.EmailSnapshot = Clean(input.EmailSnapshot);
             }
 
             _db.MinuteParticipants.Add(newRow);
