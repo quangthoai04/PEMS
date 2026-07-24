@@ -555,16 +555,30 @@ Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / 
 | 5B Expense | Save report (write) | Host của instance (GENERAL); dept (LOGISTICS) | — | items; `total_amount` generated | **`VisitExpenseScopeV2Tests`** | VERIFIED (host sibling bị chặn; generated total = Σ qty×price qua add/update/delete; app không ghi total) |
 | 5C Minutes | List + search + export | non-HO→campus scope | per-instance detail | — | `MinutesListScopeAndShapeV2Tests` (3) + `MinutesExportPerCampusV2Tests` (2) (Phase 3) | VERIFIED |
 | 5C Documents | Owner context + search | Staff Leader→campus doc | instance→own; request→span | — | `DocumentVisitOwnerContextV2Tests` (3) + `DocumentSearchScopeV2Tests` (2) (Phase 3) | VERIFIED |
-| 5D News | Eligibility + contribution consent | accepted-participant ∪ host; per-campus consent | per-instance | news.visit_instance_id | `NewsEligibilityScopeV2Tests` (2) | VERIFIED (eligibility); contribution-create consent còn CODE-OK/TEST-MISSING |
-| 5C Minutes | Create/edit mutation | Host/participant | — | minutes theo instance | — | CODE-OK / TEST-MISSING |
-| 5E Agenda | Save agenda mutation | Host của instance | — | agenda theo instance | — | CODE-OK / TEST-MISSING |
-| 5E Logistics | Create/assign/handover/cancel | Host/department | — | logistics theo instance | — | CODE-OK / TEST-MISSING |
+| 5D News | Eligibility + contribution consent | accepted-participant ∪ host; per-campus consent | per-instance | news.visit_instance_id | `NewsEligibilityScopeV2Tests` (2) + **`NewsContributionConsentV2Tests` (2)** | VERIFIED (eligibility + per-campus consent: DECLINED campus refuse, Student phải chọn visit, backend recheck scope) |
+| 5C Minutes | Create/edit mutation | Host/participant | — | minutes theo instance | **`MinutesMutationScopeV2Tests` (2)** | VERIFIED (sibling host không open/save được; action item đúng minutes/instance) |
+| 5E Agenda | Save agenda mutation | Host của instance | — | agenda theo instance | **`VisitAgendaScopeV2Tests` (3)** | FIXED/TESTED (thêm audit campus/request/instance context; host-only; ordering; responsible phải thuộc instance) |
+| 5E Logistics | Cancel item | Host của instance | — | logistics theo instance | **`LogisticsCancelScopeV2Tests` (2)** | VERIFIED (item+instance-scoped lookup; sibling NotFound/Forbidden; blank reason chặn; idempotent) |
+| Owner-WIP | Pending feedback notification | host ∪ visitor owner | per-instance detail (LEFT JOIN) | — | **`PendingFeedbackNotificationsV2Tests` (2)** | FIXED/TESTED (nav-prop → explicit LEFT JOIN Pomelo-safe; 1:1 no dup; missing detail → null; no sibling) |
 
 ### Defect thật đã sửa trong Phase 5
 
 - **P5-EXP-1 (cross-campus expense read leak).** `GET /api/visit-expenses/general/{id}` (`GetOrCreateGeneralExpenseReport` get-branch) và `GET /api/visit-expenses/summary/{id}` (`GetVisitInstanceExpenseSummary`) đều `[Authorize]`-only, handler trả toàn bộ item chi phí cho bất kỳ user đăng nhập nào → user Campus A đọc được chi phí Campus B theo instance id. Thêm `VisitExpenseAccessScope.EnsureCanViewAsync` (HO/Admin, host, Staff Leader đúng campus, dept có logistics report). Write path vốn đã host-scoped.
 
-**Còn lại để tuyên bố Phase 5 VERIFIED:** runtime test cho minutes create/edit mutation (5C), save-agenda mutation (5E), logistics mutation + handover + cancel-cascade (5E), news contribution-create consent (5D). Các surface đọc (list/detail/search/report/export) đã VERIFIED từ Phase 3.
+### Gate Phase 5 (đo bằng cách chạy thật)
+
+- Contract matrix: **0 UNREVIEWED, 0 CODE-OK/TEST-MISSING trọng yếu.**
+- Photo/Vision ownership per-instance (anti-IDOR); media consent enforced (5A + 5D); cross-campus media leakage = 0.
+- Expense total generated đúng + scope đúng (P5-EXP-1 fixed).
+- Minutes/agenda/logistics mutation host-and-instance scoped; sibling isolation chứng minh runtime.
+- News eligibility + per-campus consent đúng backend scope; Student scope re-checked.
+- Representative-campus fallback = 0; request-level form read = 0; production FormSchemaVersion = 0.
+- build 0 · Architecture 14/14 · Unit **958/958** · Integration **569/569** · `git diff --check` sạch · `pems_db` 81 · 0 DB rác.
+
+**Phase 5 VERIFIED.**
+
+### Ghi chú phạm vi (theo master prompt thu hẹp)
+Chỉ đóng surface gắn trực tiếp visit/campus-instance. Không mở rộng sang Translation/FAQ/Partner/Gallery-public chung. Logistics: đã đóng **cancel** (contract Pure V2 rõ nhất); create/assign/accept/reject/handover-signature còn nằm ở coverage rộng hơn — nếu chủ dự án muốn siết thêm, mở slice Phase 5E-bis. Owner-WIP feedback-notification stash (`stash@{0}`) **chưa drop** theo yêu cầu.
 
 ---
 
