@@ -1,36 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  FileText, Calendar, Building2, Users, Newspaper, PieChart, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  FileText, Calendar, Building2, Users, Newspaper, PieChart,
   AlertTriangle, AlertCircle, MessageSquare, ChevronRight,
-  Bell, FileCheck, Loader2
+  Bell, FileCheck
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import httpClient from '../../../shared/api/httpClient';
+import { LoadingState, ErrorState } from '../../../shared/components/state';
 
 export function HODashboardView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // A failed overview load must land in an error state with retry — NEVER an infinite spinner.
+  // (Previously the catch only console.error'd, so `!data` kept rendering the loading branch forever.)
+  const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => {
-    const fetchOverview = async () => {
-      try {
-        const response = await httpClient.get('/dashboard/ho-overview');
-        setData(response.data);
-      } catch (error) {
-        console.error('Failed to fetch HO dashboard overview:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchOverview();
+  const fetchOverview = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await httpClient.get('/dashboard/ho-overview');
+      setData(response.data);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (loading || !data) {
+  useEffect(() => { void fetchOverview(); }, [fetchOverview]);
+
+  if (loading) {
+    return <LoadingState className="h-64" />;
+  }
+
+  if (error) {
     return (
-      <div className="flex items-center justify-center h-64 text-[#004c91]">
-        <Loader2 className="w-8 h-8 animate-spin" />
+      <div className="flex items-center justify-center h-64">
+        <ErrorState error={error} onRetry={() => { void fetchOverview(); }} />
       </div>
     );
+  }
+
+  if (!data) {
+    return <LoadingState className="h-64" />;
   }
 
   const {
