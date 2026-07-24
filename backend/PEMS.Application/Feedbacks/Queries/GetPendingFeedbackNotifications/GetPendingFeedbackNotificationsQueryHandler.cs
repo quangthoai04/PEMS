@@ -36,6 +36,8 @@ public sealed class GetPendingFeedbackNotificationsQueryHandler
             from i in _db.VisitRequestCampuses.AsNoTracking()
             join r in _db.VisitRequests.AsNoTracking() on i.VisitRequestId equals r.VisitRequestId
             join c in _db.Campuses.AsNoTracking() on i.CampusId equals c.CampusId
+            join fd in _db.VisitInstanceFormDetails.AsNoTracking() on i.VisitInstanceId equals fd.VisitInstanceId into fdGroup
+            from fd in fdGroup.DefaultIfEmpty()
             where eligibleStatuses.Contains(i.Status)
                   && (i.CurrentHostUserId == userId || r.VisitorUserId == userId)
             orderby i.PlannedStartAt descending
@@ -44,7 +46,7 @@ public sealed class GetPendingFeedbackNotificationsQueryHandler
                 i.VisitInstanceId,
                 r.VisitRequestId,
                 // Mixed per-campus v2 rows show THIS instance's detail name (no global fallback).
-                DelegationName = i.FormDetail != null ? i.FormDetail.DelegationName : null,
+                DelegationName = fd != null ? fd.DelegationName : null,
                 CampusName = c.Name,
                 i.Status,
                 i.PlannedStartAt,
