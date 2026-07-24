@@ -31,7 +31,7 @@ import { MinutesCard } from './MinutesCard';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 import { businessCardOcrApi } from '../../../features/business-card-ocr/api/businessCardOcrApi';
-import { showLoadingToast, updateToastSuccess, updateToastError } from '../../../shared/utils/toast';
+import { showLoadingToast, updateToastSuccess, updateToastError, showMessageErrorToast } from '../../../shared/utils/toast';
 import type { VisitProcessGuestMember } from '../../../features/delegations/types/delegations.types';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import { filesApi } from '../../../shared/api/filesApi';
@@ -205,7 +205,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
   const [isSavingContact, setIsSavingContact] = useState(false);
   const handleSaveContactToPartner = async () => {
     if (!selectedPartnerForContact) {
-      alert("Vui lòng chọn đối tác để lưu thông tin liên hệ!");
+      showMessageErrorToast('Vui lòng chọn đối tác để lưu thông tin liên hệ.');
       return;
     }
     setIsSavingContact(true);
