@@ -98,14 +98,14 @@ public sealed class EmailService : IEmailService
 
         if (!enabled)
         {
-            var bodyPreview = message.Body;
-            if (string.IsNullOrEmpty(bodyPreview) && message.AlternateViews.Count > 0)
-                bodyPreview = "[HTML alternate view]";
+            // SMTP disabled: log METADATA ONLY. The body may contain OTP codes, action tokens, confirmation
+            // URLs or other secrets, so it must never reach the logs — and the recipient is reduced to its
+            // domain so no address local-part is persisted either. The caller is responsible for reporting
+            // this as a NON-sent outcome (never "SENT") — see the truthful-status contract.
             _logger.LogInformation(
-                "[EmailService-DEV] To:{To} Subject:{Subject} Attachments:{Att} Inline:{Inline}\n{Body}",
-                to, message.Subject, message.Attachments.Count,
-                message.AlternateViews.Count > 0 ? message.AlternateViews[0].LinkedResources.Count : 0,
-                bodyPreview);
+                "[EmailService] SMTP disabled — email NOT sent. To:{ToDomain} Subject:{Subject} Attachments:{Att} Inline:{Inline}",
+                MaskEmail(to), message.Subject, message.Attachments.Count,
+                message.AlternateViews.Count > 0 ? message.AlternateViews[0].LinkedResources.Count : 0);
             return;
         }
 
@@ -300,4 +300,15 @@ public sealed class EmailService : IEmailService
 
     /// <summary>HTML-encode a value for safe inclusion in email body.</summary>
     private static string HE(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    /// <summary>
+    /// Reduce an address to a non-PII <c>***@domain</c> form for safe metadata logging, so the local-part
+    /// (which may identify a person) is never persisted to logs.
+    /// </summary>
+    private static string MaskEmail(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address) || address == "(none)") return "(none)";
+        var at = address.LastIndexOf('@');
+        return at > 0 ? "***@" + address[(at + 1)..] : "***";
+    }
 }
