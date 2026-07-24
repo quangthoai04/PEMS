@@ -32,7 +32,7 @@ import {
   Download
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { notificationsApi } from '../../../features/notifications/api/notificationsApi';
@@ -1571,8 +1571,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   return (
     <div className="space-y-6">
-      <Toaster position="top-right" />
-
       {assigningTaskItem && (
         <div className="fixed inset-0 z-[80] bg-slate-900/35 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">

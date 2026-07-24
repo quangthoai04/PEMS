@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { departmentManagementApi } from '../../../features/department-management/api/departmentManagementApi';
 import { departmentLeaderDashboardApi } from '../../../features/dashboard/api/departmentLeaderDashboardApi';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ChevronLeft,
@@ -307,7 +307,6 @@ export function DepartmentDetailDashboard() {
 
   return (
     <div className="w-full pb-12 relative">
-      <Toaster position="top-right" />
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button

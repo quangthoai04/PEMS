@@ -85,7 +85,7 @@ export function InternalLoginForm({ onSuccess }: { onSuccess?: () => void }) {
     setSubmitting(true);
     try {
       const user = await login(email.trim(), password, 'INTERNAL', selectedCampusId ? Number(selectedCampusId) : undefined);
-      showSuccessToast(t('toast:auth.loginSuccess'));
+      showSuccessToast(t('toast:auth.loginSuccess'), 'auth-status', 2000);
       if (onSuccess) onSuccess();
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
@@ -304,7 +304,7 @@ export function VisitorLoginForm({ onSuccess }: { onSuccess?: () => void }) {
     setSubmitting(true);
     try {
       const user = await login(email.trim(), password, 'VISITOR');
-      showSuccessToast(t('toast:auth.loginSuccess'));
+      showSuccessToast(t('toast:auth.loginSuccess'), 'auth-status', 2000);
       if (onSuccess) onSuccess();
       if (user.mustChangePassword || user.mustSetPassword) {
         navigate('/change-password', { replace: true });
@@ -449,7 +449,7 @@ export function GoogleSignInButton({
 
       try {
         const user = await loginWithGoogle(response.credential, portal, selectedCampusId);
-        showSuccessToast(t('toast:auth.loginSuccess'));
+        showSuccessToast(t('toast:auth.loginSuccess'), 'auth-status', 2000);
         if (onSuccess) onSuccess();
         if (user.mustChangePassword || user.mustSetPassword) navigate('/change-password', { replace: true });
         else navigate('/', { replace: true });

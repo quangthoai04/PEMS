@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, ClipboardList } from 'lucide-react';
-import { Toaster } from 'react-hot-toast';
 import { StaffCalendarTab } from './StaffCalendarTab';
 import { StaffTasksTab } from './StaffTasksTab';
 import { useDeptStaffData, DEFAULT_FILTER } from './useDeptStaffData';
@@ -68,8 +67,6 @@ export function DeptStaffDashboard() {
 
   return (
     <div className="space-y-5">
-      <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
-
       {/* Tab switcher + content */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {/* Tab bar */}

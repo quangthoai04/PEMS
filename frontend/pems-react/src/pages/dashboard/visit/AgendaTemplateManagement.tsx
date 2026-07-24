@@ -12,7 +12,7 @@ import {
   Plus, Trash2, Edit2, Save, X, Settings2, Clock, MapPin, User, FileText,
   Star, Globe, Building2, Loader2, AlertCircle,
 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import agendaTemplatesApi from '../../../features/agenda-templates/api/agendaTemplatesApi';
@@ -324,9 +324,6 @@ export function AgendaTemplateManagement() {
 
   return (
     <div className="flex-1 w-full bg-[#f8fbff] min-h-[calc(100vh-64px)]">
-      {/* This page renders its own toasts — without a Toaster mounted here, every toast.success /
-          toast.error (save, validation, errors) is silently swallowed = "no feedback". */}
-      <Toaster position="top-right" />
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500 px-4 md:px-8 mt-4">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
         <span className="mx-2">/</span>

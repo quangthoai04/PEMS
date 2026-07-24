@@ -131,10 +131,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await authenticationApi.logout(authStorage.getRefreshToken());
-      showSuccessToast(t('toast:auth.logoutSuccess'));
+      showSuccessToast(t('toast:auth.logoutSuccess'), 'auth-status', 2000);
     } catch {
       // Ignore network/expired errors — we always clear locally.
-      showSuccessToast(t('toast:auth.logoutSuccess'));
+      showSuccessToast(t('toast:auth.logoutSuccess'), 'auth-status', 2000);
     } finally {
       clearSession();
     }

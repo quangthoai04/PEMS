@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Eye, ChevronLeft, ChevronRight, X, Loader2, Languages, RotateCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { useFaqBilingualTranslate } from './useFaqBilingualTranslate';
 import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
@@ -255,7 +255,6 @@ export function FAQManagement() {
 
   return (
     <div className="p-4 md:p-8 space-y-6 bg-gray-50/50 min-h-screen">
-      <Toaster position="top-right" />
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <span className="hover:text-[#004c91] cursor-pointer transition-colors" onClick={() => navigate('/dashboard')}>Dashboard</span>

@@ -18,7 +18,7 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown,
   Loader2, AlertCircle, RefreshCw, Briefcase, User as UserIcon, X, Plus,
 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import {
   staffCalendarApi,
   type StaffCalendarItem,
@@ -467,8 +467,6 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
 
   return (
     <div className="space-y-4">
-      <Toaster position="top-right" />
-
       {/* ── Toolbar ── */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
         <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2 mr-1">

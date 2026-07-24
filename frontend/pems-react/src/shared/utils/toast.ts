@@ -130,9 +130,9 @@ export function getApiErrorMessage(error: unknown, fallback?: string): string {
   return fallback ?? tr('common.defaultError');
 }
 
-/** Toast thành công (id tuỳ chọn để dedupe/cập nhật). */
-export function showSuccessToast(message: string, id?: string): string {
-  return toast.success(message, id ? { id, duration: 3000 } : { duration: 3000 });
+/** Toast thành công (id tuỳ chọn để dedupe/cập nhật; duration mặc định 3s). */
+export function showSuccessToast(message: string, id?: string, duration = 3000): string {
+  return toast.success(message, id ? { id, duration } : { duration });
 }
 
 /** Toast lỗi từ một error bất kỳ (đã trích + mask message). */

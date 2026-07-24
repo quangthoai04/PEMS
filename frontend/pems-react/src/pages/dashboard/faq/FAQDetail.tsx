@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { useFaqBilingualTranslate } from './useFaqBilingualTranslate';
@@ -207,7 +207,6 @@ export function FAQDetail() {
         <h1 className="text-3xl font-bold text-[#004c91]">Chi tiết FAQ</h1>
       </div>
 
-      <Toaster position="top-right" />
       {saveError && (
         <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 font-medium text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
