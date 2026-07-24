@@ -45,7 +45,16 @@ public sealed class VisitContactClaimService : IVisitContactClaimService
 
         var request = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == claim.VisitRequestId)
-            .Select(v => new { v.RequestCode, v.DelegationName, v.RegistrantFullName, v.ContactPersonFullName })
+            // A claim covers the WHOLE request → mixed content has no single business name.
+            .Select(v => new
+            {
+                v.RequestCode,
+                DelegationName = v.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : v.CampusInstances.Select(c => c.FormDetail!.DelegationName).FirstOrDefault(),
+                v.RegistrantFullName,
+                v.ContactPersonFullName
+            })
             .FirstOrDefaultAsync(cancellationToken);
         if (request is null)
             return null;
@@ -112,7 +121,15 @@ bạn có thể từ chối trong trang trên hoặc bỏ qua email (lời mời
 
         var request = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == claim.VisitRequestId)
-            .Select(v => new { v.RequestCode, v.DelegationName, v.ContactPersonFullName })
+            // A claim covers the WHOLE request → mixed content has no single business name.
+            .Select(v => new
+            {
+                v.RequestCode,
+                DelegationName = v.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : v.CampusInstances.Select(c => c.FormDetail!.DelegationName).FirstOrDefault(),
+                v.ContactPersonFullName
+            })
             .FirstOrDefaultAsync(cancellationToken);
         if (request is null)
             return null;

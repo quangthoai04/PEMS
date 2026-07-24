@@ -48,11 +48,8 @@ public class VisitRequest
     [Column("created_source")]
     public string CreatedSource { get; set; } = "VISITOR_SUBMITTED";
 
-    // Per-campus form v2. FormSchemaVersion: 1 = legacy global form, 2 = per-campus detail
-    // (active data in VisitInstanceFormDetail). HasMixedCampusDetails is backend-derived only.
-    [Column("form_schema_version")]
-    public byte FormSchemaVersion { get; set; } = 1;
-
+    // Pure V2: there is no form-version discriminator column. Every request is per-campus and its form
+    // content lives in VisitInstanceFormDetail. HasMixedCampusDetails is backend-derived only.
     [Column("has_mixed_campus_details")]
     public bool HasMixedCampusDetails { get; set; }
 
@@ -74,29 +71,13 @@ public class VisitRequest
     [Column("registrant_email")]
     public string RegistrantEmail { get; set; } = null!;
 
-    // ── COMPATIBILITY PROJECTION (per-campus form v2) ──────────────────────────
-    // For FormSchemaVersion = 2 the ACTIVE source of truth for delegation name, visit type,
-    // purpose, working content, contact, language, transportation, media consent and note-to-FPTU
-    // is per campus in VisitInstanceFormDetail. These global columns are kept only for v1
-    // compatibility; when HasMixedCampusDetails is true they hold the smallest-campus_id snapshot
-    // and MUST NOT be read as the shared value. Read v2 form content through IVisitFormReadService.
-    [Column("delegation_name")]
-    public string DelegationName { get; set; } = null!;
-
+    // ── PURE V2 ────────────────────────────────────────────────────────────────
+    // Delegation name, visit type, purpose, working content, operational contact, language,
+    // transportation, media consent and note-to-FPTU are per campus and live ONLY in
+    // VisitInstanceFormDetail. The 10 global-form columns no longer exist in the schema; read form
+    // content through IVisitFormReadService, never from the request row.
     [Column("visit_scope")]
     public string VisitScope { get; set; } = "SINGLE_CAMPUS";
-
-    [Column("visit_type")]
-    public string VisitType { get; set; } = "CAMPUS_TOUR";
-
-    [Column("visit_type_other")]
-    public string? VisitTypeOther { get; set; }
-    [Column("purpose")]
-    public string Purpose { get; set; } = null!;
-
-    [Column("working_content")]
-    public string? WorkingContent { get; set; }
-
 
     // PRIMARY CONTACT snapshot (đầu mối chính) at REQUEST level — the email used to link/claim the
     // VISITOR account (see VisitorUserId + PrimaryContactAccessStatus). This is NOT a campus
@@ -112,24 +93,6 @@ public class VisitRequest
 
     [Column("contact_person_email")]
     public string ContactPersonEmail { get; set; } = null!;
-
-    [Column("working_language")]
-    public string WorkingLanguage { get; set; } = "EN";
-
-
-    // Free text the guest enters to describe/identify the transportation to FPTU
-    // (replaces the old transportation_type enum + transportation_detail).
-    [Column("transportation_note")]
-    public string? TransportationNote { get; set; }
-
-    [Column("media_consent_status")]
-    public string MediaConsentStatus { get; set; } = "DECLINED";
-
-    [Column("media_consent_note")]
-    public string? MediaConsentNote { get; set; }
-
-    [Column("note_to_fptu")]
-    public string? NoteToFptu { get; set; }
 
     // Primary-contact claim state (per-campus form v2). PENDING_CONFIRMATION = contact B has not
     // claimed the request yet; ACTIVE = contact owner confirmed. Backfilled ACTIVE where

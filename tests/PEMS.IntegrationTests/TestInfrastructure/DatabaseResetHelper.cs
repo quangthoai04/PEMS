@@ -41,6 +41,15 @@ public static class DatabaseResetHelper
     public const string ViewDepartmentListNamePrefix = "[IT-UC104-VIEW-DEPARTMENT-LIST] ";
     public const string ViewDepartmentDetailsNamePrefix = "[IT-UC105-VIEW-DEPARTMENT-DETAILS] ";
 
+    /// <summary>
+    /// Common opening of every per-class prefix above, so "was this row created by a test?" can be asked
+    /// without knowing which test owns it. Seed rows never start with it.
+    ///
+    /// Test-created rows are transient — the class that made them deletes them again — so a shared helper
+    /// must never bind long-lived data to one. This is how such a row is recognised.
+    /// </summary>
+    public const string TestDataNamePrefix = "[IT-";
+
     private const string TestUserEmailDomain = "@it-uc63.pems.local";
     private const string InactiveCampusTestCode = "IT-UC101-INACTIVE";
     private const string IcProtectionTestCampusCode = "IT-UC102-IC-TEST";
@@ -124,28 +133,27 @@ public static class DatabaseResetHelper
         // GENERAL (regardless of sub_role STAFF/LEADER). Look up an existing active department
         // of the right type on the same campus from the seed data — never hard-code a
         // department_id.
+        //
+        // The department MUST be a seed one. Test users are long-lived (this method is "ensure": it reuses
+        // the same row across classes and runs), while test departments are transient — the class that
+        // created them deletes them in its own DisposeAsync. Binding a surviving user to a disappearing
+        // department is what made UpdateDepartmentApiTests fail intermittently: it seeds ACTIVE GENERAL
+        // departments under its own prefix, and an unordered FirstOrDefault over that same campus/type
+        // sometimes returned one of them, so its cleanup then hit fk_users_department (ON DELETE RESTRICT)
+        // and every test in the class failed. Excluding test rows removes the collision; ordering by id
+        // makes the choice deterministic instead of dependent on physical row order.
         ulong? departmentId = null;
         if (effectiveRole is EffectiveRole.Staff or EffectiveRole.StaffLeader)
         {
-            departmentId = (await db.Departments.AsNoTracking()
-                .Where(d => d.CampusId == primaryCampusId
-                            && d.DepartmentType == "IC"
-                            && d.Status == EntityStatuses.Active)
-                .Select(d => (ulong?)d.DepartmentId)
-                .FirstOrDefaultAsync(cancellationToken))
+            departmentId = await FindSeedDepartmentIdAsync(db, primaryCampusId, "IC", cancellationToken)
                 ?? throw new InvalidOperationException(
-                    "No active IC department found in pems_test for the selected campus to attach a STAFF test user to.");
+                    "No active seed IC department found for the selected campus to attach a STAFF test user to.");
         }
         else if (effectiveRole is EffectiveRole.DepartmentLead or EffectiveRole.Department)
         {
-            departmentId = (await db.Departments.AsNoTracking()
-                .Where(d => d.CampusId == primaryCampusId
-                            && d.DepartmentType == "GENERAL"
-                            && d.Status == EntityStatuses.Active)
-                .Select(d => (ulong?)d.DepartmentId)
-                .FirstOrDefaultAsync(cancellationToken))
+            departmentId = await FindSeedDepartmentIdAsync(db, primaryCampusId, "GENERAL", cancellationToken)
                 ?? throw new InvalidOperationException(
-                    "No active GENERAL department found in pems_test for the selected campus to attach a DEPARTMENT test user to.");
+                    "No active seed GENERAL department found for the selected campus to attach a DEPARTMENT test user to.");
         }
         // EffectiveRole.Student falls through with departmentId = null: trg_users_validate_bi/bu's
         // ELSE branch (any role other than VISITOR/STAFF/DEPARTMENT) requires sub_role and
@@ -326,11 +334,32 @@ public static class DatabaseResetHelper
     }
 
     /// <summary>
-    /// Removes every Department row whose name starts with <paramref name="prefix"/>. Callers
-    /// must pass their own dedicated prefix (e.g. <see cref="AddDepartmentNamePrefix"/>) — never a
-    /// prefix shared with another test class. Safe only because test departments created via
-    /// <see cref="CreateTestDepartmentAsync"/> or the Add New Department API never get a user
-    /// attached (fk_users_department is ON DELETE RESTRICT).
+    /// The lowest active department of the given type on a campus that the test suite did NOT create.
+    /// Ordered by id so repeated calls agree; unordered FirstOrDefault would let physical row order decide.
+    /// </summary>
+    private static Task<ulong?> FindSeedDepartmentIdAsync(
+        ApplicationDbContext db, ulong? campusId, string departmentType, CancellationToken cancellationToken)
+        => db.Departments.AsNoTracking()
+            .Where(d => d.CampusId == campusId
+                        && d.DepartmentType == departmentType
+                        && d.Status == EntityStatuses.Active
+                        && !d.Name.StartsWith(TestDataNamePrefix))
+            .OrderBy(d => d.DepartmentId)
+            .Select(d => (ulong?)d.DepartmentId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// Removes every Department row whose name starts with <paramref name="prefix"/>. Callers must pass
+    /// their own dedicated prefix (e.g. <see cref="AddDepartmentNamePrefix"/>) — never one shared with
+    /// another test class.
+    ///
+    /// fk_users_department is ON DELETE RESTRICT, so any user still pointing at a department being removed
+    /// blocks the delete. Rather than assume no user is attached — an assumption that silently broke and
+    /// failed a whole class — detach them first, in FK order: users are moved to a seed department of the
+    /// SAME campus and type (which trg_users_validate_bi/bu requires), then the departments are deleted.
+    ///
+    /// Only users pointing INTO this prefix's departments are touched; users of other classes and their
+    /// departments are left exactly as they were, and no FK check is ever disabled.
     /// </summary>
     public static async Task DeleteTestDepartmentsAsync(ApplicationDbContext db, string prefix, CancellationToken cancellationToken = default)
     {
@@ -340,6 +369,24 @@ public static class DatabaseResetHelper
 
         if (testDepartments.Count == 0)
             return;
+
+        var departmentIds = testDepartments.Select(d => d.DepartmentId).ToList();
+        var attachedUsers = await db.Users
+            .Where(u => u.DepartmentId != null && departmentIds.Contains(u.DepartmentId.Value))
+            .ToListAsync(cancellationToken);
+
+        foreach (var user in attachedUsers)
+        {
+            var current = testDepartments.First(d => d.DepartmentId == user.DepartmentId!.Value);
+            user.DepartmentId = await FindSeedDepartmentIdAsync(db, current.CampusId, current.DepartmentType, cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Cannot clean up '{prefix}' departments: user {user.UserId} is attached to test department " +
+                    $"{current.DepartmentId}, and campus {current.CampusId} has no active seed " +
+                    $"{current.DepartmentType} department to move it to.");
+        }
+
+        if (attachedUsers.Count > 0)
+            await db.SaveChangesAsync(cancellationToken);
 
         db.Departments.RemoveRange(testDepartments);
         await db.SaveChangesAsync(cancellationToken);

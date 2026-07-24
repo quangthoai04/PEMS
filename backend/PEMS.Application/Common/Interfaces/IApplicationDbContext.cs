@@ -66,6 +66,7 @@ public interface IApplicationDbContext
     DbSet<VisitInstanceFormRevisionHistory> VisitInstanceFormRevisionHistories { get; }
     DbSet<VisitRequestRevisionHistory> VisitRequestRevisionHistories { get; }
     DbSet<VisitRequestPendingForm> VisitRequestPendingForms { get; }
+    DbSet<VisitRequestFingerprintGuard> VisitRequestFingerprintGuards { get; }
     DbSet<Minute> Minutes { get; }
     DbSet<MinuteActionItem> MinuteActionItems { get; }
     DbSet<MinuteParticipant> MinuteParticipants { get; }

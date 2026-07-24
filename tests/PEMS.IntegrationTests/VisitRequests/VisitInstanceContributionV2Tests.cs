@@ -46,7 +46,7 @@ public sealed class VisitInstanceContributionV2Tests
         if (_dbUp is null)
         {
             try { using var db = NewContext(); _dbUp = db.Database.CanConnect(); }
-            catch { _dbUp = false; }
+            catch (Exception e) { throw new Exception("DB INIT FAILED: " + e.ToString()); }
         }
         Assert.True(_dbUp!.Value, "pems_pr3_test is not reachable — import the PR-2 master into it to run these tests.");
     }
@@ -78,19 +78,29 @@ public sealed class VisitInstanceContributionV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Three mixed campuses, targeting the LAST one.
+    ///
+    /// Replaces the former V1 test: the global form columns are gone, so the live risk is a reader that
+    /// treats one campus as representative of the request. A two-campus A/B pair cannot separate "reads the
+    /// target" from "reads the first two"; a third campus can.
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_form()
+    public async Task Mixed_three_campus_target_C_reads_only_C()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (_, inst) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
-        var dto = await Run(db, Ho(), inst[0].VisitInstanceId);
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2, Campus3 },
+            mixed: true, host0: IcStaffC1);
+        var dto = await Run(db, Ho(), inst[2].VisitInstanceId);
 
-        Assert.Equal("GLOBAL-DELEG", dto.Summary.DelegationName);
-        Assert.Equal("GLOBAL-DELEG", dto.Summary.Request.DelegationName);
-        Assert.Contains(dto.Summary.Request.GuestMembers, m => m.FullName == "G1");
+        Assert.Equal("DELEG-C", dto.Summary.DelegationName);
+        Assert.Equal("DELEG-C", dto.Summary.Request.DelegationName);
+        Assert.Contains(dto.Summary.Request.GuestMembers, m => m.FullName == "C-guest");
+        Assert.DoesNotContain(dto.Summary.Request.GuestMembers, m => m.FullName == "A-guest");
+        Assert.DoesNotContain(dto.Summary.Request.GuestMembers, m => m.FullName == "B-guest");
         Assert.Equal(1, dto.Summary.GuestCount);
         await tx.RollbackAsync();
     }
@@ -226,15 +236,14 @@ public sealed class VisitInstanceContributionV2Tests
         VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "APPROVED", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

@@ -36,6 +36,11 @@ public class ScheduleReportDataBuilderTests
             ScheduleReportTestData.CreateGuestMember(1, "Trưởng đoàn khách", "GUEST", 0),
             ScheduleReportTestData.CreateGuestMember(2, "Thành viên đoàn", "GUEST", 1),
             ScheduleReportTestData.CreateGuestMember(3, "Phiên dịch hỗ trợ", "EXTERNAL_SUPPORT", 0));
+        // Pure V2: a guest reaches the report through its CAMPUS link, not through the request.
+        db.VisitInstanceGuestMembers.AddRange(
+            ScheduleReportTestData.CreateInstanceGuestLink(1, 0),
+            ScheduleReportTestData.CreateInstanceGuestLink(2, 1),
+            ScheduleReportTestData.CreateInstanceGuestLink(3, 0));
         db.SaveChanges();
         var currentUser = new FakeScheduleReportCurrentUser();
 

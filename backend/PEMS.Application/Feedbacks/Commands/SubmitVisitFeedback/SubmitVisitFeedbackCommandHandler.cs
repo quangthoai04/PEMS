@@ -76,11 +76,11 @@ public sealed class SubmitVisitFeedbackCommandHandler
 
         var lookups = await LoadTargetLookupsAsync(request.Items, instance.VisitInstanceId, visitRequest.VisitRequestId, cancellationToken);
 
-        // Mixed per-campus v2: the feedback is INSTANCE-scoped → THIS instance's detail name for
-        // target snapshots and notifications (v1/non-mixed keep the global projection).
+        // Feedback is INSTANCE-scoped → THIS instance's own detail name for target snapshots and
+        // notifications. There is no request-level name to fall back to.
         var effectiveDelegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
             .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
-            .GetValueOrDefault(instance.VisitInstanceId) ?? visitRequest.DelegationName;
+            .GetValueOrDefault(instance.VisitInstanceId) ?? visitRequest.RequestCode;
 
         var now = _clock.VietnamNow;
         var toAdd = new List<Feedback>();

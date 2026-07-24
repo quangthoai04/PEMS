@@ -51,18 +51,14 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
 
         var relation = isHost ? "HOST" : isStaffLeaderOfCampus ? "STAFF_LEADER" : "HO";
 
-        // visit_type comes from the submitted form, never from visit_request_campuses. v1 → the global
-        // projection on visit_requests; v2 → the TARGET instance's per-campus detail (this setup screen is
-        // keyed by one visit_instance_id, so a MIXED request still returns 200 with THIS instance's visit type,
-        // never the global field and never a sibling). Resolved AFTER the authorization check above; missing v2
-        // detail → 409 VISIT_FORM_DETAIL_MISSING (no global fallback). v1 keeps the global value, byte-identical.
-        string visitType = instance.VisitRequest.VisitType;
-        if (instance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
-            visitType = content[instance.VisitInstanceId].VisitType!;
-        }
+        // visit_type comes from the submitted form, never from visit_request_campuses, and the form lives in
+        // the TARGET instance's per-campus detail. This screen is keyed by one visit_instance_id, so a request
+        // whose campuses differ still returns 200 with THIS instance's visit type — never a sibling's, and
+        // never a request-level value, since visit_requests holds none. Resolved AFTER the authorization
+        // check above; a missing detail is 409 VISIT_FORM_DETAIL_MISSING, as there is nothing to fall back to.
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            instance.VisitRequest, new[] { instance.VisitInstanceId }, cancellationToken);
+        string visitType = content[instance.VisitInstanceId].VisitType!;
 
         bool isLive = instance.Status != VisitInstanceStatus.Cancelled && instance.Status != VisitInstanceStatus.Closed;
         // Applying/editing the agenda is the host's job during the preparation window only.

@@ -31,15 +31,10 @@ public sealed class GetVisitInstancePhotosQueryHandler
         var instance = scope.Instance;
         var visit = instance.VisitRequest;
 
-        // Delegation name via the central dual-read path — a v2 (per-campus) request must show the
-        // TARGET instance's own name, never the global compatibility projection.
-        var delegationName = visit.DelegationName;
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            delegationName = content[instance.VisitInstanceId].DelegationName;
-        }
+        // The folder belongs to ONE campus instance, so it shows THAT instance's own name.
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var delegationName = content[instance.VisitInstanceId].DelegationName;
 
         var campusName = await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId)

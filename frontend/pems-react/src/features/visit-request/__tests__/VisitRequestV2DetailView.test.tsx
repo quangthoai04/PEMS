@@ -34,7 +34,6 @@ const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitF
   visitRequestId: 1,
   requestCode: 'VR-2026-001',
   rowVersion: 0,
-  formSchemaVersion: 2,
   hasMixedCampusDetails: false,
   visitScope: 'SINGLE_CAMPUS',
   requestStatus: 'PENDING_APPROVAL',

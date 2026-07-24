@@ -122,9 +122,10 @@ public static class VisitRequestErrorCodes
     // The acting Staff does not qualify for direct self-host (not ACTIVE IC staff of that campus).
     public const string SelfHostNotEligible = "SELF_HOST_NOT_ELIGIBLE";
 
-    // ── Per-campus form v2 edit / resubmit (plan §6.4) ──
-    // The v2 edit endpoints only accept form_schema_version >= 2 requests (v1 keeps its own endpoints).
-    public const string NotPerCampusV2 = "VISIT_REQUEST_NOT_PER_CAMPUS_V2";
+    // ── Per-campus form edit / resubmit (plan §6.4) ──
+    // VISIT_REQUEST_NOT_PER_CAMPUS_V2 lived here to reject a v1 request from the v2 edit endpoints. Pure V2
+    // dropped form_schema_version, so there is no longer a request that could be rejected for that reason
+    // and no code path could raise it. The schema contract test asserts the column is really gone.
     // Optimistic concurrency: the payload's expected request row_version is stale — reload and retry.
     public const string RequestVersionConflict = "VISIT_REQUEST_VERSION_CONFLICT";
     // Optimistic concurrency: an edited campus instance's expected row_version is stale.

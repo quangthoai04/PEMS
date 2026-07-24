@@ -96,12 +96,20 @@ public sealed class RejectCampusInstanceCommandHandler
         visit.UpdatedBy = actorId;
         visit.RowVersion += 1;
 
+        // Same per-campus audit context as the approve decision — see CampusDecisionAudit. The free-text
+        // reason is NOT copied here: it already lives on the instance, and this column is a short
+        // structured summary, not a second copy of staff-authored prose.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
             Action = "REJECT_CAMPUS_INSTANCE",
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = visit.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            SourceType = CampusDecisionAudit.SourceType,
+            Reason = "decision=REJECTED",
             CreatedAt = now
         });
 
@@ -113,16 +121,12 @@ public sealed class RejectCampusInstanceCommandHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"#{instance.CampusId}";
 
-        // This command acts on ONE campus instance → v2 (incl. mixed) sources the delegation name from THIS
-        // instance's per-campus detail (never the global field, never a sibling); v1 keeps the global value
-        // (byte-identical). No global fallback for v2.
-        var delegationName = visit.DelegationName;
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var formContent = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            delegationName = formContent[instance.VisitInstanceId].DelegationName;
-        }
+        // This command acts on ONE campus instance, so the delegation name comes from THAT instance's own
+        // detail — never a sibling's, and never a request-level value, which does not exist. A missing
+        // detail fails loudly rather than going blank.
+        var formContent = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var delegationName = formContent[instance.VisitInstanceId].DelegationName;
 
         var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
 

@@ -75,7 +75,9 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var requestIds = await db.VisitRequests
-                .Where(v => v.DelegationName.StartsWith(DelegationPrefix))
+                // Pure V2: the delegation name lives on each campus instance's detail, so a request is
+                // matched through any of its instances.
+                .Where(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName.StartsWith(DelegationPrefix)))
                 .Select(v => v.VisitRequestId)
                 .ToListAsync();
 
@@ -198,8 +200,8 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
-        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name)));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.FormDetail!.DelegationName == name));
         Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
@@ -217,7 +219,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
-            .FirstAsync(v => v.DelegationName == name);
+            .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
         Assert.Equal(_visitorId, vr.RegistrantUserId);
         Assert.Equal(_visitorEmail, vr.RegistrantEmail);
@@ -255,7 +257,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
-            .FirstAsync(v => v.DelegationName == name);
+            .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
         Assert.InRange(vr.SubmittedAt, before, after);
         Assert.InRange(vr.CreatedAt, before, after);
@@ -281,7 +283,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
-            .FirstAsync(v => v.DelegationName == name);
+            .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
         Assert.Equal(VisitRequestStatuses.Approved, vr.Status);
         Assert.Equal(_staffId, vr.RegistrantUserId);
@@ -319,7 +321,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
-            .FirstAsync(v => v.DelegationName == name);
+            .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
         Assert.Equal(VisitRequestStatuses.PartiallyApproved, vr.Status);
         var own = vr.CampusInstances.First(i => i.CampusId == _campus1Id);
@@ -342,8 +344,8 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
-        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name)));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.FormDetail!.DelegationName == name));
         Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
@@ -360,8 +362,8 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
-        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name)));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.FormDetail!.DelegationName == name));
         Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
@@ -379,8 +381,8 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
-        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name)));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.FormDetail!.DelegationName == name));
         Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
@@ -398,8 +400,8 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
-        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name)));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.FormDetail!.DelegationName == name));
         Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
@@ -420,7 +422,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
-            .FirstAsync(v => v.DelegationName == name);
+            .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
         var instance = Assert.Single(vr.CampusInstances);
         Assert.Equal("ASSIGNED", instance.Status);
@@ -445,8 +447,8 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.VisitRequests.AnyAsync(v => v.DelegationName == name));
-        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitRequest.DelegationName == name));
+        Assert.False(await db.VisitRequests.AnyAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name)));
+        Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.FormDetail!.DelegationName == name));
         Assert.False(await db.Notifications.AnyAsync(n => n.Message.Contains(name)));
     }
 
@@ -468,7 +470,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            requestId = await db.VisitRequests.Where(v => v.DelegationName == name)
+            requestId = await db.VisitRequests.Where(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name))
                 .Select(v => v.VisitRequestId).FirstAsync();
         }
 

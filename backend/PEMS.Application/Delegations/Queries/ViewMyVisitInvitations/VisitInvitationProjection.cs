@@ -29,11 +29,6 @@ public sealed class VisitInvitationFlat
     public string? OrganizationName { get; set; }
     public string? Purpose { get; set; }
     public string? WorkingContent { get; set; }
-
-    /// <summary>Only the single-invitation detail query populates this (to apply the per-campus form v2
-    /// dual-read). The list query leaves it 0 (Legacy) — it is Class-C and stays on the global projection
-    /// until PR-8, gated by the write flag staying OFF.</summary>
-    public byte FormSchemaVersion { get; set; }
 }
 
 /// <summary>Shared mapping + batched enrichment for invitation DTOs (list and detail).</summary>

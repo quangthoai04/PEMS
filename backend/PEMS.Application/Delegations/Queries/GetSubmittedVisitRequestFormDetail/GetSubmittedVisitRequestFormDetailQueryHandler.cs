@@ -203,70 +203,45 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     ? visitRequest.CampusInstances.Where(c => departmentStaffAssignedInstanceIds.Contains(c.VisitInstanceId)).ToList()
                     : visitRequest.CampusInstances.ToList();
 
-        // ── Dual-read (per-campus form v2) — scope is already applied above, so this never reads a
-        // hidden campus. Decision / schedule / cancellation metadata below is version-agnostic (it lives
-        // on the instance/request rows in v1 AND v2); only the FORM CONTENT is version-specific. ──
-        var isV2 = visitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+        // ── Pure V2 — scope is already applied above, so this never reads a hidden campus. Decision /
+        // schedule / cancellation metadata below lives on the instance/request rows; only the FORM
+        // CONTENT comes from the per-campus detail. ──
 
-        // A v2 request whose campuses hold DIFFERENT form content cannot be represented by this flat,
-        // single-snapshot DTO. The client must switch to the per-campus v2 detail endpoint. Returned
+        // A request whose campuses hold DIFFERENT form content cannot be represented by this flat,
+        // single-snapshot DTO. The client must switch to the per-campus detail endpoint. Returned
         // only after authorization so mixed-ness is never revealed to someone who may not see the request.
-        if (isV2 && visitRequest.HasMixedCampusDetails)
+        if (visitRequest.HasMixedCampusDetails)
         {
             throw new ConflictException(
                 "Đơn này có nội dung khác nhau theo từng cơ sở; vui lòng dùng màn hình chi tiết theo cơ sở.",
                 VisitFormV2ErrorCodes.FormVersionUpgradeRequired);
         }
 
-        // Form-content locals default to the v1 global compatibility projection. For a (non-mixed) v2
-        // request they are re-sourced from the per-campus detail + instance-member links via the central
-        // resolver — NEVER the global fields; a missing detail throws VISIT_FORM_DETAIL_MISSING (no fallback).
-        string delegationName = visitRequest.DelegationName;
-        string? visitType = visitRequest.VisitType;
-        string? visitTypeOther = visitRequest.VisitTypeOther;
-        string? purpose = visitRequest.Purpose;
-        string? workingContent = visitRequest.WorkingContent;
-        string? workingLanguage = visitRequest.WorkingLanguage;
-        string? mediaConsentStatus = visitRequest.MediaConsentStatus;
-        string? mediaConsentNote = visitRequest.MediaConsentNote;
-        string? transportationNote = visitRequest.TransportationNote;
-        string? noteToFptu = visitRequest.NoteToFptu;
-        var guestMembers = visitRequest.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
-        var externalSupportMembers = visitRequest.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
+        // Not mixed (guarded above) ⇒ every VISIBLE campus holds identical content, so a representative
+        // visible instance's detail IS the flat value — scope was applied above, so this can never pick a
+        // campus the caller may not see. A missing detail throws VISIT_FORM_DETAIL_MISSING (no fallback).
+        var visibleIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visitRequest, visibleIds, cancellationToken);
+        if (!content.TryGetValue(visibleInstances[0].VisitInstanceId, out var rep))
+            throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
 
-        if (isV2)
-        {
-            // Non-mixed v2: every visible campus shares the same content — source it from a
-            // representative visible instance's per-campus detail (scope already applied above).
-            var visibleIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visitRequest, visibleIds, cancellationToken);
-            var rep = content[visibleInstances[0].VisitInstanceId];
-            delegationName = rep.DelegationName;
-            visitType = rep.VisitType;
-            visitTypeOther = rep.VisitTypeOther;
-            purpose = rep.Purpose;
-            workingContent = rep.WorkingContent;
-            workingLanguage = rep.WorkingLanguage;
-            mediaConsentStatus = rep.MediaConsentStatus;
-            mediaConsentNote = rep.MediaConsentNote;
-            transportationNote = rep.TransportationNote;
-            noteToFptu = rep.NoteToFptu;
-            guestMembers = rep.Visitors.Select(MapMemberRow).ToList();
-            externalSupportMembers = rep.SupportMembers.Select(MapMemberRow).ToList();
-        }
+        string delegationName = rep.DelegationName;
+        string? visitType = rep.VisitType;
+        string? visitTypeOther = rep.VisitTypeOther;
+        string? purpose = rep.Purpose;
+        string? workingContent = rep.WorkingContent;
+        string? workingLanguage = rep.WorkingLanguage;
+        string? mediaConsentStatus = rep.MediaConsentStatus;
+        string? mediaConsentNote = rep.MediaConsentNote;
+        string? transportationNote = rep.TransportationNote;
+        string? noteToFptu = rep.NoteToFptu;
+        List<SubmittedGuestMemberDto> guestMembers = rep.Visitors.Select(MapMemberRow).ToList();
+        List<SubmittedGuestMemberDto> externalSupportMembers = rep.SupportMembers.Select(MapMemberRow).ToList();
 
-        // Decision counters: over the VISIBLE campuses for v2 (no hidden-campus aggregate leak). v1 keeps
-        // its historical whole-request rollup unchanged.
-        var summarySource = isV2 ? visibleInstances : visitRequest.CampusInstances.ToList();
+        // Decision counters: over the VISIBLE campuses only, so an aggregate can never leak the existence
+        // or decisions of a campus the caller is not scoped to.
+        var summarySource = visibleInstances;
 
         // Resolve every "who decided / who cancelled" name in one round-trip (per-instance
         // decision actors, request-level canceller, and each visible campus-instance canceller).
@@ -372,7 +347,6 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             EmailVerifiedAt = visitRequest.EmailVerifiedAt,
             RequestStatus = status,
             VisitScope = visitRequest.VisitScope,
-            FormSchemaVersion = visitRequest.FormSchemaVersion,
             HasMixedCampusDetails = visitRequest.HasMixedCampusDetails,
 
             DelegationName = delegationName,

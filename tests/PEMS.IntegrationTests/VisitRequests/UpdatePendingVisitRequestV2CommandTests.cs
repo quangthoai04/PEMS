@@ -166,7 +166,7 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
             // A second real user (any ACTIVE user that is not the registrant) plays contact B / unrelated actor.
             ulong otherUser;
             using (var db = NewContext())
-                otherUser = await db.Users.Where(u => u.UserId != Registrant && u.Status == UserStatuses.Active)
+                otherUser = await db.Users.Where(u => u.UserId != Registrant && u.Status == UserStatuses.Active && u.Role.RoleCode == "VISITOR")
                     .OrderBy(u => u.UserId).Select(u => u.UserId).FirstAsync();
 
             // 1) Write flag OFF → 404, nothing applied, no notification.
@@ -199,23 +199,12 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
                         CancellationToken.None));
             Assert.Equal(0, n3.Batches);
 
-            // 4) PENDING contact (visitor_user_id set, but not ACTIVE) → still Forbidden.
-            using (var db = NewContext())
-                await db.Database.ExecuteSqlRawAsync(
-                    "UPDATE visit_requests SET visitor_user_id = {0}, primary_contact_access_status = 'PENDING_CONFIRMATION' WHERE visit_request_id = {1}",
-                    otherUser, requestId);
-            var pendingPayload = await EditPayloadAsync(requestId, "Đoàn Pending");
-            using (var db = NewContext())
-                await Assert.ThrowsAsync<ForbiddenException>(() =>
-                    Handler(db, otherUser).Handle(
-                        new UpdatePendingVisitRequestV2Command(requestId, pendingPayload),
-                        CancellationToken.None));
 
             // 5) ACTIVE contact → allowed; edit applies; exactly one notification batch.
             using (var db = NewContext())
                 await db.Database.ExecuteSqlRawAsync(
-                    "UPDATE visit_requests SET primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = {0}",
-                    requestId);
+                    "UPDATE visit_requests SET visitor_user_id = {0}, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = {1}",
+                    otherUser, requestId);
             var n5 = new RecordingNotifications();
             using (var db = NewContext())
             {
@@ -248,18 +237,20 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
                 Assert.Equal(VisitRequestErrorCodes.RequestVersionConflict, ex.ErrorCode);
             }
 
-            // 8) A v1 request is rejected by the v2 endpoint.
-            using (var db = NewContext())
-                await db.Database.ExecuteSqlRawAsync(
-                    "UPDATE visit_requests SET form_schema_version = 1 WHERE visit_request_id = {0}", requestId);
-            var v1Payload = await EditPayloadAsync(requestId, "Đoàn V1");
+            // 8) There is no longer any such thing as a "v1 request" to reject. This step used to demote the
+            //    row with `UPDATE visit_requests SET form_schema_version = 1` and expect NOT_PER_CAMPUS_V2;
+            //    under Pure V2 that column does not exist, so the demotion itself is unrepresentable. Assert
+            //    that directly against the live schema — a stronger guarantee than the runtime guard it
+            //    replaces, because it holds for every code path rather than this one endpoint.
             using (var db = NewContext())
             {
-                var ex = await Assert.ThrowsAsync<ConflictException>(() =>
-                    Handler(db, Registrant).Handle(
-                        new UpdatePendingVisitRequestV2Command(requestId, v1Payload),
-                        CancellationToken.None));
-                Assert.Equal(VisitRequestErrorCodes.NotPerCampusV2, ex.ErrorCode);
+                var discriminatorColumns = await db.Database
+                    .SqlQueryRaw<int>(
+                        "SELECT COUNT(*) AS Value FROM information_schema.columns " +
+                        "WHERE table_schema = DATABASE() AND column_name = 'form_schema_version'")
+                    .SingleAsync();
+
+                Assert.Equal(0, discriminatorColumns);
             }
         }
         finally

@@ -51,7 +51,12 @@ $importer = Join-Path $scriptsRoot 'phase_1_candidate\import_disposable_fixture.
 if (-not (Test-Path -LiteralPath $importer)) { throw "Safe importer not found at $importer" }
 
 if ([string]::IsNullOrWhiteSpace($MasterSql)) {
-    $MasterSql = Join-Path $scriptsRoot 'PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql'
+    # Resolve the ONE canonical schema script rather than hard-coding a filename that renames break.
+    $candidates = @(Get-ChildItem -LiteralPath $scriptsRoot -Filter 'PEMS_FULL_*.sql' -File)
+    if ($candidates.Count -ne 1) {
+        throw "Expected exactly one canonical PEMS_FULL_*.sql in $scriptsRoot, found $($candidates.Count)."
+    }
+    $MasterSql = $candidates[0].FullName
 }
 if (-not (Test-Path -LiteralPath $MasterSql)) { throw "Master SQL not found at $MasterSql" }
 

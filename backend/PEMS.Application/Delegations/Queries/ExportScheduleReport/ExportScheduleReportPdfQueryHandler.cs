@@ -41,8 +41,10 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
         var roleCode = _currentUser.RoleCode;
         var subRole = _currentUser.SubRole;
 
+        // The request's full guest roster is deliberately NOT loaded: the report's guest side comes from
+        // this campus's own visit_instance_guest_members links, and having the request-level list in
+        // memory only invites reading it.
         var instance = await _db.VisitRequestCampuses
-            .Include(c => c.VisitRequest).ThenInclude(v => v.GuestMembers)
             .Include(c => c.VisitRequest).ThenInclude(v => v.Partner)
             .Include(c => c.Agendas)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId

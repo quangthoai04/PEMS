@@ -92,16 +92,14 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             select new
             {
                 vr.VisitRequestId,
-                vr.DelegationName,
-                vr.FormSchemaVersion,
                 inst.PlannedStartAt,
                 inst.PlannedEndAt
             }).FirstOrDefaultAsync(cancellationToken);
 
-        // The assignment email is for THIS campus instance → v2 (incl. mixed) sources the delegation name from
-        // this instance's per-campus detail (never global, never a sibling); v1 keeps the global value.
-        var delegationName = instanceInfo?.DelegationName ?? "đoàn khách";
-        if (instanceInfo != null && instanceInfo.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+        // The assignment email is for THIS campus instance, so the delegation name comes from this
+        // instance's own per-campus detail — never a sibling campus.
+        var delegationName = "đoàn khách";
+        if (instanceInfo != null)
         {
             var visit = await _db.VisitRequests.AsNoTracking()
                 .FirstAsync(v => v.VisitRequestId == instanceInfo.VisitRequestId, cancellationToken);

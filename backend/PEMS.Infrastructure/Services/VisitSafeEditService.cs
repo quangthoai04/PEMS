@@ -281,20 +281,12 @@ internal static class V2CanonicalRefresh
             VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail),
             scope, contents);
 
-        var projection = request.CampusInstances.OrderBy(c => c.CampusId).First().FormDetail!;
+        // Pure V2: form content lives ONLY in each campus's visit_instance_form_details. The request row
+        // keeps identity, scope and lifecycle — it no longer mirrors one campus's content, so a mixed
+        // request can never leak the smallest campus's values as if they were request-wide.
         request.VisitScope = scope;
         request.HasMixedCampusDetails = hasMixed;
         request.BusinessFingerprint = fingerprint;
-        request.DelegationName = projection.DelegationName;
-        request.VisitType = projection.VisitType!;
-        request.VisitTypeOther = projection.VisitTypeOther;
-        request.Purpose = projection.Purpose;
-        request.WorkingContent = projection.WorkingContent;
-        request.WorkingLanguage = projection.WorkingLanguage;
-        request.TransportationNote = projection.TransportationNote;
-        request.MediaConsentStatus = projection.MediaConsentStatus!;
-        request.MediaConsentNote = projection.MediaConsentNote;
-        request.NoteToFptu = projection.NoteToFptu;
     }
 
     public static List<VisitGuestMember> MembersOf(VisitRequest request, VisitRequestCampus instance)

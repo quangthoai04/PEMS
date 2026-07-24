@@ -17,13 +17,15 @@ using PEMS.Shared;
 namespace PEMS.Infrastructure.Services;
 
 /// <summary>
-/// Per-campus form v2 pending-edit aggregate service (plan §6.4). Runs inside the caller's open transaction on
+/// Per-campus form pending-edit aggregate service (plan §6.4). Runs inside the caller's open transaction on
 /// a TRACKED <see cref="VisitRequest"/> loaded with CampusInstances(+FormDetail,+GuestMemberLinks) and
 /// GuestMembers; the caller re-checked authorization and lifecycle before calling and owns the commit.
 /// Everything here re-validates the data-facing rules in-transaction: explicit optimistic row-version checks
 /// (plain int columns — EF has no concurrency token on them), campus resolution/availability, schedule,
 /// immutable account-binding fields, per-instance change detection, copy-on-write member replacement, campus
-/// add/remove, canonical recompute (scope/mixed/fingerprint/projection) and immutable revision history + audit.
+/// add/remove, canonical recompute (request scope, mixed-campus indicator and request fingerprint — facts
+/// ABOUT the campus set; no request-level form projection is produced, form content stays on each campus
+/// instance) and immutable revision history + audit.
 /// </summary>
 public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 {
@@ -310,24 +312,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
             registrantEmailNorm, contactEmailNorm, scope, finalContents);
 
-        // Compatibility projection = the smallest-campus_id campus of the FINAL set (transition only).
-        var projection = edit.CampusVisits
-            .OrderBy(cv => campusIdsByCode[cv.CampusId.Trim().ToUpperInvariant()])
-            .First();
-
+        // Pure V2: each campus's content was already written to its own visit_instance_form_details.
+        // The request row keeps identity, scope and lifecycle only — no compatibility projection.
         request.VisitScope = scope;
         request.HasMixedCampusDetails = hasMixed;
         request.BusinessFingerprint = fingerprint;
-        request.DelegationName = projection.DelegationName;
-        request.VisitType = projection.VisitType;
-        request.VisitTypeOther = projection.VisitType == "OTHER" ? projection.VisitTypeOther : null;
-        request.Purpose = projection.Purpose;
-        request.WorkingContent = projection.WorkingContent;
-        request.WorkingLanguage = projection.WorkingLanguage;
-        request.TransportationNote = VisitRequestV2EditOps.Clean(projection.TransportationNote);
-        request.MediaConsentStatus = projection.MediaConsentStatus;
-        request.MediaConsentNote = projection.MediaConsentNote;
-        request.NoteToFptu = projection.Notes;
         request.RowVersion += 1;
         request.UpdatedAt = now;
         request.UpdatedBy = actorId;
@@ -545,22 +534,12 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail),
             VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail),
             scope, finalContents);
-        var projection = pairs.OrderBy(p => p.Instance.CampusId).First().Content;
 
         var commonChanged = ApplyCommonFields(request, edit, audit, now);
         request.VisitScope = scope;
         request.HasMixedCampusDetails = hasMixed;
         request.BusinessFingerprint = fingerprint;
-        request.DelegationName = projection.DelegationName;
-        request.VisitType = projection.VisitType;
-        request.VisitTypeOther = projection.VisitType == "OTHER" ? projection.VisitTypeOther : null;
-        request.Purpose = projection.Purpose;
-        request.WorkingContent = projection.WorkingContent;
-        request.WorkingLanguage = projection.WorkingLanguage;
-        request.TransportationNote = VisitRequestV2EditOps.Clean(projection.TransportationNote);
-        request.MediaConsentStatus = projection.MediaConsentStatus;
-        request.MediaConsentNote = projection.MediaConsentNote;
-        request.NoteToFptu = projection.Notes;
+        // Pure V2: resubmitted content was written per campus; the request row carries no form content.
         request.Status = VisitRequestStatuses.PendingApproval;
         request.ResubmissionCount = oldCount + 1;
         request.LastResubmittedAt = now;

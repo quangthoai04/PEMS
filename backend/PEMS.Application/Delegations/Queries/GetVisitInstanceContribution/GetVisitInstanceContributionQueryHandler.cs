@@ -189,36 +189,21 @@ public sealed class GetVisitInstanceContributionQueryHandler
             }
         }
 
-        // ── Per-campus form v2 (INSTANCE-LEVEL: keyed by visit_instance_id → a MIXED request still
-        // returns 200; source ONLY the TARGET instance's form content + member links, never global,
-        // never a sibling campus). v1 keeps the global projection. ──
-        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-        string delegationName = visit.DelegationName;
-        string? visitType = visit.VisitType, visitTypeOther = visit.VisitTypeOther;
-        string? purpose = visit.Purpose, workingContent = visit.WorkingContent;
-        string? workingLanguage = visit.WorkingLanguage;
-        string? mediaConsentStatus = visit.MediaConsentStatus, mediaConsentNote = visit.MediaConsentNote;
-        string? transportationNote = visit.TransportationNote, noteToFptu = visit.NoteToFptu;
-        var guestMembers = visit.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-        var externalSupportMembers = visit.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder).Select(MapGuestMember).ToList();
-        if (isV2)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            var d = content[instance.VisitInstanceId];
-            delegationName = d.DelegationName;
-            visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
-            purpose = d.Purpose; workingContent = d.WorkingContent;
-            workingLanguage = d.WorkingLanguage;
-            mediaConsentStatus = d.MediaConsentStatus; mediaConsentNote = d.MediaConsentNote;
-            transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
-            guestMembers = d.Visitors.Select(MapRow).ToList();
-            externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
-        }
+        // ── INSTANCE-LEVEL form content (keyed by visit_instance_id → a MIXED request still returns 200).
+        // Pure V2: source ONLY the TARGET instance's detail + its own member links, never a sibling
+        // campus. A missing detail throws inside the read service instead of degrading silently. ──
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var d = content[instance.VisitInstanceId];
+
+        string delegationName = d.DelegationName;
+        string? visitType = d.VisitType, visitTypeOther = d.VisitTypeOther;
+        string? purpose = d.Purpose, workingContent = d.WorkingContent;
+        string? workingLanguage = d.WorkingLanguage;
+        string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
+        string? transportationNote = d.TransportationNote, noteToFptu = d.NoteToFptu;
+        var guestMembers = d.Visitors.Select(MapRow).ToList();
+        var externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
 
         // Request summary (read-only mirror of the guest's original form).
         var requestCampusIds = visit.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
@@ -409,7 +394,8 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 // HO: không trả rejectionReason nội bộ.
                 RejectionReason = isHo ? null : news?.ReviewNote,
                 NewsNotRequired = instance.NewsNotRequired,
-                MediaConsentAllowed = visit.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed,
+                // Per-campus consent: THIS instance's detail (already resolved above), not request-wide.
+                MediaConsentAllowed = mediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed,
                 CanCurrentUserCreate = permissions.CanCreateNews,
                 CanCurrentUserEdit = permissions.CanEditNews
             }

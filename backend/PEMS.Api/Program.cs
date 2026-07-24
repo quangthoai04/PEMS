@@ -11,6 +11,15 @@ using PEMS.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ── Secrets ──────────────────────────────────────────────────────────────────
+// Real credentials never live in tracked appsettings files; they arrive from the environment.
+// Outside Production, mint a random per-process JWT key when none is supplied so `dotnet run` works
+// with no setup. This MUST happen before any service reads the key (AddJwtAuthentication captures it
+// at registration time), and Production still refuses to start without a real one.
+var generatedDevJwtKey = PEMS.Api.Extensions.SecretConfigurationValidator.TryProvideDevelopmentJwtSecret(
+    builder.Configuration, builder.Configuration, builder.Environment);
+PEMS.Api.Extensions.SecretConfigurationValidator.ValidateSecrets(builder.Configuration, builder.Environment);
+
 // ── Application / Infrastructure services ────────────────────────────────────
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -143,6 +152,15 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+if (generatedDevJwtKey)
+{
+    app.Logger.LogWarning(
+        "JwtSettings:SecretKey was not configured — a RANDOM key was generated for this process. " +
+        "Tokens and refresh sessions will stop validating when the app restarts. " +
+        "Set the JwtSettings__SecretKey environment variable (or appsettings.Local.json) for a stable key. " +
+        "Production refuses to start without one.");
+}
 
 // ── HTTP pipeline ────────────────────────────────────────────────────────────
 // Exception handler is outermost so it catches everything; it does not clear

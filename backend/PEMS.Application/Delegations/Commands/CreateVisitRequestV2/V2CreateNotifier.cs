@@ -35,16 +35,23 @@ internal static class V2CreateNotifier
             // ONLY campuses still awaiting a decision get the actionable "please review" notification.
             // A campus the authenticated creator already processed directly (self-host / leader-assign) is
             // not pending for anyone, so raising an action there would be a fake task.
-            var leaderIds = created.CampusInstances
+            var pendingInstances = created.CampusInstances
                 .Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval && c.CoordinatorUserId.HasValue)
-                .Select(c => c.CoordinatorUserId!.Value)
-                .Distinct()
                 .ToList();
 
-            var notifications = leaderIds.Select(id => new CreateNotificationRequest(
-                RecipientUserId: id,
+            // Per-campus names: each Staff Leader is told about THEIR OWN campus's delegation, so a mixed
+            // request never shows one campus's content to another campus's reviewer.
+            var pendingInstanceIds = pendingInstances.Select(c => c.VisitInstanceId).ToList();
+            var nameByInstance = pendingInstanceIds.Count == 0
+                ? new Dictionary<ulong, string>()
+                : await db.VisitInstanceFormDetails.AsNoTracking()
+                    .Where(d => pendingInstanceIds.Contains(d.VisitInstanceId))
+                    .ToDictionaryAsync(d => d.VisitInstanceId, d => d.DelegationName, cancellationToken);
+
+            var notifications = pendingInstances.Select(c => new CreateNotificationRequest(
+                RecipientUserId: c.CoordinatorUserId!.Value,
                 Title: "Có yêu cầu tiếp khách mới",
-                Message: $"{created.DelegationName} đang chờ xử lý tại cơ sở của bạn. Vui lòng xem chi tiết, duyệt/từ chối và chọn host nếu duyệt.",
+                Message: $"{(nameByInstance.TryGetValue(c.VisitInstanceId, out var nm) ? nm : created.RequestCode)} đang chờ xử lý tại cơ sở của bạn. Vui lòng xem chi tiết, duyệt/từ chối và chọn host nếu duyệt.",
                 NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
                 RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                 RelatedId: created.VisitRequestId,
@@ -63,7 +70,8 @@ internal static class V2CreateNotifier
                 notifications.AddRange(hoUsers.Select(id => new CreateNotificationRequest(
                     RecipientUserId: id,
                     Title: "Có đơn liên cơ sở mới",
-                    Message: $"{created.DelegationName} vừa gửi đơn liên cơ sở, đang chờ các cơ sở xử lý.",
+                    // Request-level message: a mixed request has no single business name.
+                    Message: $"{(created.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : nameByInstance.Values.FirstOrDefault() ?? created.RequestCode)} vừa gửi đơn liên cơ sở, đang chờ các cơ sở xử lý.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                     RelatedId: created.VisitRequestId,

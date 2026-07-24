@@ -86,6 +86,7 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
         modelBuilder.Ignore<VisitRequestPendingForm>();
+        modelBuilder.Ignore<VisitRequestFingerprintGuard>();
         modelBuilder.Ignore<Minute>();
         modelBuilder.Ignore<MinuteActionItem>();
         modelBuilder.Ignore<MinuteParticipant>();
@@ -161,6 +162,7 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitInstanceFormRevisionHistory> IApplicationDbContext.VisitInstanceFormRevisionHistories => Set<VisitInstanceFormRevisionHistory>();
     DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
     DbSet<VisitRequestPendingForm> IApplicationDbContext.VisitRequestPendingForms => Set<VisitRequestPendingForm>();
+    DbSet<VisitRequestFingerprintGuard> IApplicationDbContext.VisitRequestFingerprintGuards => Set<VisitRequestFingerprintGuard>();
     DbSet<Minute> IApplicationDbContext.Minutes => Set<Minute>();
     DbSet<MinuteActionItem> IApplicationDbContext.MinuteActionItems => Set<MinuteActionItem>();
     DbSet<MinuteParticipant> IApplicationDbContext.MinuteParticipants => Set<MinuteParticipant>();

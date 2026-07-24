@@ -79,19 +79,29 @@ public sealed class VisitProcessDetailV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Three mixed campuses, targeting the LAST one.
+    ///
+    /// Replaces the former V1 test: the global form columns are gone, so the live risk is a reader that
+    /// treats one campus as representative of the request. A two-campus A/B pair cannot separate "reads the
+    /// target" from "reads the first two"; a third campus can. Both the top-level name and the nested
+    /// summary are asserted, because they are produced separately and could disagree.
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_form()
+    public async Task Mixed_three_campus_target_C_reads_only_C()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, inst) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false);
-        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2, Campus3 }, mixed: true);
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[2].VisitInstanceId);
 
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("GLOBAL-DELEG", dto.RequestSummary.DelegationName);
-        Assert.Contains(dto.RequestSummary.GuestMembers, m => m.FullName == "G1");
+        Assert.Equal("DELEG-C", dto.DelegationName);
+        Assert.Equal("DELEG-C", dto.RequestSummary.DelegationName);
+        Assert.Contains(dto.RequestSummary.GuestMembers, m => m.FullName == "C-guest");
+        Assert.DoesNotContain(dto.RequestSummary.GuestMembers, m => m.FullName == "A-guest");
+        Assert.DoesNotContain(dto.RequestSummary.GuestMembers, m => m.FullName == "B-guest");
         await tx.RollbackAsync();
     }
 
@@ -228,15 +238,14 @@ public sealed class VisitProcessDetailV2Tests
         VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

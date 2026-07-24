@@ -131,10 +131,7 @@ public sealed class GetStaffLeaderExpenseVisitsQueryHandler
                 ci.VisitInstanceId,
                 ci.VisitRequest.RequestCode,
                 // Mixed per-campus v2: tên đoàn theo detail của CHÍNH instance này.
-                DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && ci.VisitRequest.HasMixedCampusDetails
-                    ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                    : ci.VisitRequest.DelegationName,
+                DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                 ci.PlannedStartAt,
             })
             .ToListAsync(cancellationToken);

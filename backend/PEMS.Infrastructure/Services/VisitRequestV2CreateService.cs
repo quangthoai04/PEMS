@@ -109,11 +109,6 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits);
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(form.CampusVisits);
 
-        // Compatibility projection = the smallest-campus_id campus (transition only; real data is per-instance).
-        var projection = form.CampusVisits
-            .OrderBy(cv => campusByCode[cv.CampusId.Trim().ToUpperInvariant()].CampusId)
-            .First();
-
         // ── Identity (plan §16.4): same normalized email → one ACTIVE account; different → request is created
         //    now but the contact stays PENDING_CONFIRMATION with an INITIAL_CLAIM (72h). ──
         var registrantEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(form.Registrant.Email);
@@ -132,7 +127,6 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             RegistrantUserId = registrantUserId,
             PartnerId = form.PartnerId,
             CreatedSource = createdSource,
-            FormSchemaVersion = FormSchemaVersions.PerCampus,
             HasMixedCampusDetails = hasMixed,
             PrimaryContactAccessStatus = contactIsRegistrant ? AccessActive : AccessPending,
             PrimaryContactVerifiedAt = contactIsRegistrant ? vietnamNow : null,
@@ -143,21 +137,13 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             RegistrantPhone = PhoneNumber.NormalizeOrOriginal(form.Registrant.Phone),
             RegistrantEmail = form.Registrant.Email,
             VisitScope = scope,
-            // Compatibility projection (smallest-campus snapshot) — read paths use the per-instance detail.
-            DelegationName = projection.DelegationName,
-            VisitType = projection.VisitType,
-            VisitTypeOther = projection.VisitTypeOther,
-            Purpose = projection.Purpose,
-            WorkingContent = projection.WorkingContent,
+            // Pure V2: form content is written per campus into visit_instance_form_details. The request row
+            // holds only identity, the PRIMARY contact (a request-level relation, NOT a campus operational
+            // contact), scope and lifecycle.
             ContactPersonFullName = form.PrimaryContact.FullName,
             ContactPersonOrganization = form.PrimaryContact.Organization,
             ContactPersonPhone = PhoneNumber.NormalizeOrOriginal(form.PrimaryContact.Phone),
             ContactPersonEmail = form.PrimaryContact.Email,
-            WorkingLanguage = projection.WorkingLanguage,
-            TransportationNote = Clean(projection.TransportationNote),
-            MediaConsentStatus = projection.MediaConsentStatus,
-            MediaConsentNote = projection.MediaConsentNote,
-            NoteToFptu = projection.Notes,
             Status = VisitRequestStatuses.PendingApproval,
             SubmittedAt = vietnamNow,
             RowVersion = 0,

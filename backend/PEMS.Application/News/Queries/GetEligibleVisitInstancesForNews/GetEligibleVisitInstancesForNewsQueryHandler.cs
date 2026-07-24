@@ -62,7 +62,9 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
                        && (vrc.Status == VisitInstanceStatuses.AfterVisit
                            || vrc.Status == VisitInstanceStatuses.Closed)
                        && !vrc.NewsNotRequired
-                       && vrc.VisitRequest.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed)
+                       // Per-campus consent: only campuses the guest agreed to are eligible.
+                       && vrc.FormDetail != null
+                       && vrc.FormDetail.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed)
             .Select(vrc => new
             {
                 vrc.VisitInstanceId,
@@ -82,8 +84,8 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
         var requestIds  = eligibleInstances.Select(v => v.VisitRequestId).Distinct().ToList();
         var campusIds   = eligibleInstances.Select(v => v.CampusId).Distinct().ToList();
 
-        // Step 3: Batch fetch EFFECTIVE per-instance delegation names (mixed per-campus v2 rows use
-        // THIS instance's detail; v1/non-mixed keep the global projection — byte-identical there).
+        // Step 3: Batch fetch EFFECTIVE per-instance delegation names — each instance answers from its own
+        // detail, since the request row carries no name to share between them.
         var delegationNames = await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
             .ForInstancesAsync(_dbContext, instanceIds, cancellationToken);
 

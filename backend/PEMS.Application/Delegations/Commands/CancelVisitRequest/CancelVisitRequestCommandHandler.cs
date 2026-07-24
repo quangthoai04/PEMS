@@ -381,12 +381,19 @@ public sealed class CancelVisitRequestCommandHandler
             item.RowVersion += 1;
         }
 
+        // Same audit context the PENDING_APPROVAL branch above already files. A per-campus cancel also
+        // records which instance it hit, so a campus-scoped audit query finds it; a request-wide cancel
+        // leaves visit_instance_id null because it belongs to no single campus.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
             Action = "CANCEL_VISIT_REQUEST",
             EntityType = "VisitRequest",
             EntityId = visit.VisitRequestId,
+            VisitRequestId = visit.VisitRequestId,
+            VisitInstanceId = request.VisitInstanceId,
+            CampusId = request.VisitInstanceId is null ? null : (ulong?)targets[0].CampusId,
+            Reason = $"actor={actorType};source={source};campuses={targets.Count}",
             CreatedAt = now
         });
 

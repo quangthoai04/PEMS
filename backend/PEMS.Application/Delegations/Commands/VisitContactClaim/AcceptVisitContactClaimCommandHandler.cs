@@ -197,8 +197,7 @@ public sealed class AcceptVisitContactClaimCommandHandler
         var visit = await db.VisitRequests
             .FirstOrDefaultAsync(v => v.VisitRequestId == claim.VisitRequestId, ct)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", claim.VisitRequestId);
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus
-            || visit.Status == VisitRequestStatuses.Cancelled
+        if (visit.Status == VisitRequestStatuses.Cancelled
             || visit.VisitorUserId is not null)
             throw new ConflictException(
                 "Lời mời không còn hiệu lực cho đơn này.",

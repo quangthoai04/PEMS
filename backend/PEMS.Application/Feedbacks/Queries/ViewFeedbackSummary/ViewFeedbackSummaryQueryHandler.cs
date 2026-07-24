@@ -63,9 +63,7 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
             // projection is never business content for mixed requests.
             var q = request.Q;
             var matchingRequestIds = _context.VisitRequests
-                .Where(r => (r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails)
-                    ? r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.DelegationName.Contains(q))
-                    : r.DelegationName.Contains(q))
+                .Where(r => r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.DelegationName.Contains(q)))
                 .Select(r => r.VisitRequestId);
             query = query.Where(x =>
                 matchingRequestIds.Contains(x.VisitRequestId) ||
@@ -108,9 +106,7 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
         // Request-level fallback title: a MIXED v2 request has no single business name (plan §8.3).
         var visitTitles = await _context.VisitRequests.Where(r => requestIds.Contains(r.VisitRequestId))
             .ToDictionaryAsync(r => r.VisitRequestId,
-                r => r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
-                    ? "Khác nhau theo cơ sở"
-                    : r.DelegationName,
+                r => r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName,
                 cancellationToken);
 
         var instanceIds = projections.Where(x => x.VisitInstanceId.HasValue).Select(x => x.VisitInstanceId!.Value).ToList();

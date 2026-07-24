@@ -55,13 +55,9 @@ public sealed class GetVisitInvitationDetailQueryHandler
         // participant, so a MIXED request still returns 200; the only form field this DTO exposes —
         // DelegationName — is sourced ONLY from the invited instance's detail, never global, never a
         // sibling campus. Auth is already applied above (p.UserId == current user). ──
-        string delegationName = data.vr.DelegationName;
-        if (data.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                data.vr, new[] { data.p.VisitInstanceId }, cancellationToken);
-            delegationName = content[data.p.VisitInstanceId].DelegationName;
-        }
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            data.vr, new[] { data.p.VisitInstanceId }, cancellationToken);
+        string delegationName = content[data.p.VisitInstanceId].DelegationName;
 
         var campusName = await _context.Campuses
             .Where(x => x.CampusId == data.c.CampusId)

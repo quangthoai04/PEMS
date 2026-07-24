@@ -75,17 +75,27 @@ public sealed class VisitInvitationDetailV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Three mixed campuses, read by the participant on the LAST one.
+    ///
+    /// Replaces the former V1 test: the global delegation name column is gone, so the live risk is a reader
+    /// that treats one campus as representative of the request. The existing A/B case cannot separate
+    /// "reads the invited instance" from "reads the first two"; a third campus can.
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_delegation_name()
+    public async Task Mixed_three_campus_participant_on_C_reads_only_C()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (_, _, parts) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false, InvitedUserId);
-        var dto = await Run(db, AsUser(InvitedUserId), parts[0]);
+        var (_, _, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2, Campus3 },
+            mixed: true, InvitedUserId);
+        var dto = await Run(db, AsUser(InvitedUserId), parts[2]);
 
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
+        Assert.Equal("DELEG-C", dto.DelegationName);
+        Assert.NotEqual("DELEG-A", dto.DelegationName);
+        Assert.NotEqual("DELEG-B", dto.DelegationName);
         await tx.RollbackAsync();
     }
 
@@ -195,15 +205,14 @@ public sealed class VisitInvitationDetailV2Tests
         VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

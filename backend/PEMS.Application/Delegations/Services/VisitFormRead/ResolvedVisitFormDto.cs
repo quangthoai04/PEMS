@@ -1,8 +1,8 @@
 namespace PEMS.Application.Delegations.Services.VisitFormRead;
 
 /// <summary>
-/// Per-campus form v2 read model. The <see cref="IVisitFormReadService"/> returns this shape for both
-/// v1 (dual-read from the global compatibility projection) and v2 (per-campus detail) requests. It only
+/// Per-campus form read model returned by <see cref="IVisitFormReadService"/>. Every campus carries its
+/// own content, resolved from that campus's detail row. It only
 /// ever contains the campus instances the caller is authorized to see — hidden campuses never appear,
 /// and their count/detail never leaks. Sensitive fields (raw tokens, pending-snapshot JSON, full
 /// amendment JSON, audit IP/UA) are intentionally excluded.
@@ -14,7 +14,6 @@ public sealed class ResolvedVisitFormDto
     /// <summary>Request-level optimistic-concurrency token — the edit/resubmit v2 payload echoes it back as
     /// <c>ExpectedRequestRowVersion</c> so a stale editor gets a stable 409 instead of clobbering a concurrent change.</summary>
     public int RowVersion { get; init; }
-    public byte FormSchemaVersion { get; init; }
     public bool HasMixedCampusDetails { get; init; }
     public string VisitScope { get; init; } = "";
     public string RequestStatus { get; init; } = "";
@@ -88,7 +87,7 @@ public sealed class ResolvedCampusVisitDto
     public string? DecisionActorRole { get; init; }
     public string? DecisionNote { get; init; }
 
-    // Per-campus form content (v2: from visit_instance_form_details; v1: from the global projection).
+    // This campus's form content, from its own visit_instance_form_details row.
     public string DelegationName { get; init; } = "";
     public string VisitType { get; init; } = "";
     public string? VisitTypeOther { get; init; }

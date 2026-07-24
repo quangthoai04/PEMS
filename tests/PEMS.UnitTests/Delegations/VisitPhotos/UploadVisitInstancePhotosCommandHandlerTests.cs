@@ -229,6 +229,36 @@ public class UploadVisitInstancePhotosCommandHandlerTests
         sut.FolderService.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task VideoFile_IsRejected_ImagesOnly()
+    {
+        // The canonical visit-photo contract is images only — a video must never be accepted, even with
+        // a genuine video content type. Fails on the extension allowlist before any Drive work.
+        var sut = CreateSut();
+        var video = new UploadVisitInstancePhotoFile(VisitPhotoTestSeed.JpegBytes(), "clip.mp4", "video/mp4");
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => sut.Handler.Handle(Command(video), default));
+
+        Assert.Equal("FILE_INVALID_EXTENSION", ex.ErrorCode);
+        sut.FolderService.VerifyNoOtherCalls();
+        Assert.Empty(sut.Db.VisitPhotos);
+    }
+
+    [Fact]
+    public async Task PdfFile_IsRejected_ImagesOnly()
+    {
+        var sut = CreateSut();
+        var pdf = new UploadVisitInstancePhotoFile(VisitPhotoTestSeed.JpegBytes(), "doc.pdf", "application/pdf");
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => sut.Handler.Handle(Command(pdf), default));
+
+        Assert.Equal("FILE_INVALID_EXTENSION", ex.ErrorCode);
+        sut.FolderService.VerifyNoOtherCalls();
+        Assert.Empty(sut.Db.VisitPhotos);
+    }
+
     /// <summary>Throws the relational duplicate-key failure the InMemory provider cannot produce
     /// (it only enforces primary/alternate keys, not unique indexes like uq_visit_photos_file).</summary>
     private sealed class FailingVisitPhotoSaveContext : DelegationsTestDbContext

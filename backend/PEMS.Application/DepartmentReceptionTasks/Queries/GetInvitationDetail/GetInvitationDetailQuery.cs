@@ -81,30 +81,22 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
             var camp = p.VisitInstance;
             var unifiedStatus = NormalizeStatus(p.Status, p.AssignedBy != null, camp.Status, camp.PlannedStartAt, camp.PlannedEndAt);
 
-            // ── Per-campus form v2 (INSTANCE-LEVEL: this invitation detail is keyed by a participant bound to
-            // exactly ONE campus instance — camp.VisitInstanceId — so a MIXED request still returns 200,
-            // sourcing the delegation name, the working content/purpose and the operational (contact-person)
-            // fields ONLY from THAT target instance's per-campus detail, never the global fields and never a
-            // sibling campus. Registrant identity fields stay request-level in both versions. v1 keeps the
-            // global projection, byte-identical. The participant is already scoped to one instance. ──
+            // ── INSTANCE-LEVEL: this invitation detail is keyed by a participant bound to exactly ONE campus
+            // instance — camp.VisitInstanceId — so a request whose campuses differ still returns 200, sourcing
+            // the delegation name, the working content/purpose and the operational (contact-person) fields
+            // ONLY from THAT target instance's detail, never a sibling campus and never the request row, which
+            // holds no form content. Registrant identity fields are genuinely request-level and stay there.
+            // The participant is already scoped to one instance. ──
             var visit = camp.VisitRequest;
-            var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-            string delegationName = visit.DelegationName;
-            string purpose = visit.Purpose ?? "";
-            string workingContent = visit.WorkingContent ?? "";
-            string contactPersonFullName = visit.ContactPersonFullName ?? "";
-            string contactPersonPhone = visit.ContactPersonPhone ?? "";
-            if (isV2)
-            {
-                var content = await _formReadService.ResolveCampusFormContentAsync(
-                    visit, new[] { camp.VisitInstanceId }, cancellationToken);
-                var d = content[camp.VisitInstanceId];
-                delegationName = d.DelegationName;
-                purpose = d.Purpose ?? "";
-                workingContent = d.WorkingContent ?? "";
-                contactPersonFullName = d.OperationalContact.FullName ?? "";
-                contactPersonPhone = d.OperationalContact.Phone ?? "";
-            }
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, new[] { camp.VisitInstanceId }, cancellationToken);
+            var d = content[camp.VisitInstanceId];
+            string delegationName = d.DelegationName;
+            string purpose = d.Purpose ?? "";
+            string workingContent = d.WorkingContent ?? "";
+            // OPERATIONAL contact of this campus — deliberately NOT the request-level primary contact.
+            string contactPersonFullName = d.OperationalContact.FullName ?? "";
+            string contactPersonPhone = d.OperationalContact.Phone ?? "";
 
             return new InvitationDetailDto
             {

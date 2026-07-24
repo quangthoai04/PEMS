@@ -193,12 +193,21 @@ public sealed class ApproveCampusInstanceCommandHandler
             ? "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST_WITH_SCHEDULE_WARNING" 
             : "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST";
 
+        // The decision belongs to ONE campus instance, so it is filed under that instance's own audit
+        // context. audit_logs indexes campus_id / visit_request_id / visit_instance_id precisely for this,
+        // and the admin audit surface filters by campus — leaving them null hid every per-campus decision
+        // from exactly the query that is scoped the way Pure V2 is scoped.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
             Action = auditAction,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = visit.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            SourceType = CampusDecisionAudit.SourceType,
+            Reason = $"decision=ASSIGNED;host={request.HostUserId}",
             CreatedAt = now
         });
 
@@ -210,16 +219,12 @@ public sealed class ApproveCampusInstanceCommandHandler
             .Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? $"#{instance.CampusId}";
 
-        // Delegation name for the notification text: this whole command acts on ONE campus instance, so v2
-        // (incl. mixed) sources it from THIS instance's per-campus detail — never the global field, never a
-        // sibling. v1 keeps the global projection (byte-identical text). No global fallback for v2.
-        var delegationName = visit.DelegationName;
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var formContent = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            delegationName = formContent[instance.VisitInstanceId].DelegationName;
-        }
+        // Delegation name for the notification text: this whole command acts on ONE campus instance, so it
+        // comes from THAT instance's own detail — never a sibling's, and never a request-level value, since
+        // visit_requests carries no delegation name. A missing detail fails loudly rather than going blank.
+        var formContent = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var delegationName = formContent[instance.VisitInstanceId].DelegationName;
 
         var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var visitProcessUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";

@@ -98,7 +98,7 @@
   },
   "submit": {
     "public": "Gửi yêu cầu & nhận mã OTP",
-    "authenticated": "Gửi yêu cầu"
+    "authenticated": "Tạo đoàn khách"
   },
   "modal": {
     "title": "Đăng ký tham quan trường",

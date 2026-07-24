@@ -66,12 +66,6 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        // v2 endpoint only serves v2 requests — a v1 request keeps using its own pending-edit endpoint.
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus)
-            throw new ConflictException(
-                "Đơn này dùng biểu mẫu phiên bản cũ. Vui lòng dùng chức năng sửa đơn hiện tại.",
-                VisitRequestErrorCodes.NotPerCampusV2);
-
         // ── Editor policy (plan §6.4): the registrant, or the primary contact once ACTIVE. A contact still
         //    PENDING_CONFIRMATION has not accepted the request yet and cannot edit it; any other account
         //    (unrelated visitor, staff, host) is rejected — staff-side changes go through amendments. ──
@@ -110,9 +104,7 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
         // ── Post-commit notifications (best-effort; a rolled-back edit never notifies) ──
         // Mixed v2: the projection is not business content — the generic notification names the request
         // by code with the explicit mixed label (leaders read their own campus's content in the detail).
-        var notifyName = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus && visit.HasMixedCampusDetails
-            ? "Khác nhau theo cơ sở"
-            : visit.DelegationName;
+        var notifyName = visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : visit.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName;
         await NotifyLeadersAfterCommitAsync(visit.VisitRequestId, visit.RequestCode, notifyName,
             campusIdsBefore.Concat(visit.CampusInstances.Select(c => c.CampusId)).Distinct().ToList(),
             actorId, cancellationToken);

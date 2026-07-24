@@ -70,9 +70,6 @@ public sealed class SubmitVisitSafeEditCommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus)
-            throw new ConflictException(
-                "Đơn này dùng biểu mẫu phiên bản cũ.", VisitRequestErrorCodes.NotPerCampusV2);
         if (visit.Status == VisitRequestStatuses.Cancelled)
             throw new BusinessRuleException(
                 "Đơn đã bị hủy nên không thể sửa.", VisitRequestErrorCodes.VisitRequestNotEditable);

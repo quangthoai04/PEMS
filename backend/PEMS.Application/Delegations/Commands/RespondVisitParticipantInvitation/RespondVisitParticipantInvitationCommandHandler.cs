@@ -89,12 +89,18 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         participant.UpdatedAt = now;
         participant.UpdatedBy = userId;
 
+        // Invite and remove already file the participant's campus; the invitee's own response was the
+        // one participant event a campus-filtered audit could not see. It is scoped to a single
+        // instance, so it records that instance too.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = userId,
+            CampusId = participant.VisitInstance?.CampusId,
             Action = request.Accept ? "ACCEPT_VISIT_INVITATION" : "DECLINE_VISIT_INVITATION",
             EntityType = "VisitParticipant",
             EntityId = participant.ParticipantId,
+            VisitRequestId = participant.VisitInstance?.VisitRequestId,
+            VisitInstanceId = participant.VisitInstanceId,
             CreatedAt = now
         });
 

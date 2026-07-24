@@ -143,12 +143,18 @@ public sealed class SaveVisitAgendaCommandHandler
             saved.Add(entity);
         }
 
+        // Filed under this instance's own campus/request/instance context so a campus-scoped audit
+        // query finds it — the agenda belongs to exactly one campus instance.
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = actorId,
             Action = "SAVE_VISIT_AGENDA",
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = instance.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            Reason = $"items={incoming.Count}",
             CreatedAt = now,
         });
 

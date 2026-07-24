@@ -38,6 +38,7 @@ public sealed class ApplyAgendaTemplateCommandHandler
 
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
+            .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
@@ -65,7 +66,8 @@ public sealed class ApplyAgendaTemplateCommandHandler
             throw new ConflictException("Mẫu agenda không có mục lịch trình nào để áp dụng.", "AGENDA_TEMPLATE_EMPTY");
 
         // The host may deliberately apply a template of a different visit_type — allowed, but surfaced.
-        var requestVisitType = instance.VisitRequest.VisitType;
+        // Visit type is per campus, so compare against THIS instance's own detail.
+        var requestVisitType = instance.FormDetail?.VisitType;
         bool visitTypeMismatch = template.VisitType != requestVisitType;
 
         var existing = await _db.VisitAgendas

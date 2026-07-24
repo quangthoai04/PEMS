@@ -105,8 +105,8 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
                 .ToListAsync(cancellationToken))
             .ToDictionary(x => x.Key, x => x.Count);
 
-        // Delegation names via the central dual-read path: a v2 (per-campus/MIXED) request must show
-        // each instance's OWN name, never the request-level compatibility projection.
+        // Delegation names via the central resolver: each instance must show its OWN name, never a
+        // sibling campus's and never a request-level value (visit_requests holds no delegation name).
         var requests = await _db.VisitRequests
             .Where(v => requestIds.Contains(v.VisitRequestId))
             .ToListAsync(cancellationToken);
@@ -117,18 +117,11 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
                 .Where(r => r.VisitRequestId == visit.VisitRequestId)
                 .Select(r => r.VisitInstanceId)
                 .ToList();
-            if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-            {
-                var content = await _formReadService.ResolveCampusFormContentAsync(
-                    visit, visitInstanceIds, cancellationToken);
-                foreach (var id in visitInstanceIds)
-                    nameByInstance[id] = content[id].DelegationName;
-            }
-            else
-            {
-                foreach (var id in visitInstanceIds)
-                    nameByInstance[id] = visit.DelegationName;
-            }
+            // One folder row per campus instance ⇒ each shows its OWN detail name, never a sibling's.
+            var content = await _formReadService.ResolveCampusFormContentAsync(
+                visit, visitInstanceIds, cancellationToken);
+            foreach (var id in visitInstanceIds)
+                nameByInstance[id] = content[id].DelegationName;
         }
 
         var items = rows
@@ -144,7 +137,7 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
             })
             .ToList();
 
-        // Search on the RESOLVED name (v2-aware) — must run after the dual-read, so in-memory.
+        // Search on the RESOLVED name — must run after the per-campus resolve, so in-memory.
         var search = request.Search?.Trim();
         if (!string.IsNullOrEmpty(search))
             items = items

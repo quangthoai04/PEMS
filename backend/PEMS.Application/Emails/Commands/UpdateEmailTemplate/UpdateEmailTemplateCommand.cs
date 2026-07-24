@@ -7,7 +7,8 @@ public class UpdateEmailTemplateCommand : IRequest<UpdateEmailTemplateResponse>
 {
     public ulong EmailTemplateId { get; set; }
     public string Name { get; set; } = null!;
-    public string? Purpose { get; set; }
+    /// <summary>Mandatory: the column is a NOT NULL ENUM of two values (see the validator).</summary>
+    public string Purpose { get; set; } = null!;
     public ulong? CampusId { get; set; }
     public string? Description { get; set; }
     public string? SubjectVi { get; set; }

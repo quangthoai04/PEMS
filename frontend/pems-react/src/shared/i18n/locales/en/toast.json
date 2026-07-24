@@ -8,7 +8,8 @@
     "saveFailed": "Unable to save. Please try again.",
     "loadFailed": "Unable to load data. Please try again.",
     "defaultError": "Something went wrong. Please try again.",
-    "networkError": "Unable to reach the server. Please check your network connection."
+    "networkError": "Unable to reach the server. Please check your network connection.",
+    "timeoutError": "The request took too long. Please try again."
   },
   "http": {
     "400": "Invalid data. Please check your input.",

@@ -106,64 +106,41 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             }
         }
 
-        // ── Dual-read (per-campus form v2). This is a Visitor-owner-only, single-form editor, so the
-        // owner sees every campus; the FORM CONTENT is version-specific (v1 = global projection,
-        // v2 = per-campus detail) while Registrant / primary Contact / Partner stay request-level. ──
-        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
+        // ── Pure V2. This is a Visitor-owner-only, single-form editor, so the owner sees every campus;
+        // FORM CONTENT comes from the per-campus detail, while Registrant / primary Contact / Partner
+        // stay request-level relations. ──
 
-        // The flat single-form editor cannot represent a v2 request whose campuses hold DIFFERENT
-        // content — that needs the per-campus v2 editor. Guard it with a stable coded 409.
-        if (isV2 && visit.HasMixedCampusDetails)
+        // The flat single-form editor cannot represent a request whose campuses hold DIFFERENT content —
+        // that needs the per-campus editor. Guard it with a stable coded 409.
+        if (visit.HasMixedCampusDetails)
         {
             throw new ConflictException(
                 "Đơn này có nội dung khác nhau theo từng cơ sở; vui lòng dùng màn hình chỉnh sửa theo cơ sở.",
                 VisitFormV2ErrorCodes.FormVersionUpgradeRequired);
         }
 
-        // Form-content locals default to the v1 global projection; for a (non-mixed) v2 request they are
-        // re-sourced from the per-campus detail + instance member links (never the global fields).
-        string delegationName = visit.DelegationName;
-        string? visitType = visit.VisitType;
-        string? visitTypeOther = visit.VisitTypeOther;
-        string? purpose = visit.Purpose;
-        string? workingContent = visit.WorkingContent;
-        string? workingLanguage = visit.WorkingLanguage;
-        string? transportationNote = visit.TransportationNote;
-        string? mediaConsentStatus = visit.MediaConsentStatus;
-        string? mediaConsentNote = visit.MediaConsentNote;
-        string? noteToFptu = visit.NoteToFptu;
         var orderedInstances = instances.OrderBy(i => i.PlannedStartAt).ToList();
-        var visitorMembers = visit.GuestMembers
-            .Where(m => m.MemberType != "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
-        var supportMembers = visit.GuestMembers
-            .Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-            .OrderBy(m => m.DisplayOrder)
-            .Select(MapMember)
-            .ToList();
 
-        if (isV2)
-        {
-            // Non-mixed v2: every campus shares the same content — source it from a representative
-            // instance's per-campus detail (owner is authorized for all instances).
-            var allInstanceIds = orderedInstances.Select(i => i.VisitInstanceId).ToList();
-            var content = await _formReadService.ResolveCampusFormContentAsync(visit, allInstanceIds, cancellationToken);
-            var rep = content[orderedInstances[0].VisitInstanceId];
-            delegationName = rep.DelegationName;
-            visitType = rep.VisitType;
-            visitTypeOther = rep.VisitTypeOther;
-            purpose = rep.Purpose;
-            workingContent = rep.WorkingContent;
-            workingLanguage = rep.WorkingLanguage;
-            transportationNote = rep.TransportationNote;
-            mediaConsentStatus = rep.MediaConsentStatus;
-            mediaConsentNote = rep.MediaConsentNote;
-            noteToFptu = rep.NoteToFptu;
-            visitorMembers = rep.Visitors.Select(MapRow).ToList();
-            supportMembers = rep.SupportMembers.Select(MapRow).ToList();
-        }
+        // Not mixed (guarded above) ⇒ every campus holds identical content, so a representative
+        // instance's per-campus detail IS the single-form value. The owner is authorized for all
+        // instances. A missing detail is a hard data error, never a fall back to request-level fields.
+        var allInstanceIds = orderedInstances.Select(i => i.VisitInstanceId).ToList();
+        var content = await _formReadService.ResolveCampusFormContentAsync(visit, allInstanceIds, cancellationToken);
+        if (!content.TryGetValue(orderedInstances[0].VisitInstanceId, out var rep))
+            throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
+
+        string delegationName = rep.DelegationName;
+        string? visitType = rep.VisitType;
+        string? visitTypeOther = rep.VisitTypeOther;
+        string? purpose = rep.Purpose;
+        string? workingContent = rep.WorkingContent;
+        string? workingLanguage = rep.WorkingLanguage;
+        string? transportationNote = rep.TransportationNote;
+        string? mediaConsentStatus = rep.MediaConsentStatus;
+        string? mediaConsentNote = rep.MediaConsentNote;
+        string? noteToFptu = rep.NoteToFptu;
+        List<EditableGuestMemberDto> visitorMembers = rep.Visitors.Select(MapRow).ToList();
+        List<EditableGuestMemberDto> supportMembers = rep.SupportMembers.Select(MapRow).ToList();
 
         return new EditableVisitRequestDetailDto
         {

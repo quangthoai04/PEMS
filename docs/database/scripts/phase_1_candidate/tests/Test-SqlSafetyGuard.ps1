@@ -378,8 +378,10 @@ if (Test-Path -LiteralPath $runner) {
 Write-Host ''
 Write-Host '=== K. The real master dump must be rejected by the raw guard ==='
 
-$master = Join-Path $PSScriptRoot '..\..\PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql'
-if (Test-Path -LiteralPath $master) {
+# Resolve the ONE canonical schema script instead of a hard-coded (renameable) filename.
+$masterCandidates = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\..') -Filter 'PEMS_FULL_*.sql' -File -ErrorAction SilentlyContinue)
+$master = if ($masterCandidates.Count -eq 1) { $masterCandidates[0].FullName } else { $null }
+if ($master -and (Test-Path -LiteralPath $master)) {
     $mv = Test-SqlFileSafety -Path $master
     Assert-True 'K1 authoritative master is NOT safe for direct import' (-not $mv.IsSafe) 'master scanned as safe'
     $kinds = @($mv.Findings | ForEach-Object { $_.Kind } | Sort-Object -Unique)

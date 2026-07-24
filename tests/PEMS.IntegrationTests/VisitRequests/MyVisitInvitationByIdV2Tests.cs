@@ -79,19 +79,26 @@ public sealed class MyVisitInvitationByIdV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The request/campus split, asserted on a MIXED request so the two sources cannot coincide.
+    ///
+    /// Replaces the former V1 test, which was the only one here asserting the request-level side at all:
+    /// every form field must come from the invited instance's own detail, while the registrant's
+    /// organisation stays request-level. "No fallback" must not degrade into "ignore the request row".
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_form_byte_identical()
+    public async Task Form_fields_come_from_the_instance_detail_while_registrant_stays_request_level()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (_, parts) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false);
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
         var dto = await Run(db, parts[0]);
 
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("GLOBAL-PURPOSE", dto.Purpose);
-        Assert.Equal("GLOBAL-CONTENT", dto.WorkingContent);
+        Assert.Equal("DELEG-A", dto.DelegationName);
+        Assert.Equal("PURPOSE-A", dto.Purpose);
+        Assert.Equal("CONTENT-A", dto.WorkingContent);
         Assert.Equal("Org", dto.OrganizationName); // registrant organisation, request-level identity
         await tx.RollbackAsync();
     }
@@ -230,15 +237,14 @@ public sealed class MyVisitInvitationByIdV2Tests
         VisitorUserId = Owner,
         RegistrantUserId = Owner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

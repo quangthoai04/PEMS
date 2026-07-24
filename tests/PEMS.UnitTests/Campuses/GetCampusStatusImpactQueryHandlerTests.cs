@@ -46,9 +46,10 @@ public class GetCampusStatusImpactQueryHandlerTests
     {
         using var db = CreateContext();
         db.VisitRequests.Add(CampusUcTestData.CreateVisitRequest(50, "Đoàn A"));
-        db.VisitRequestCampuses.Add(CampusUcTestData.CreateVisitInstance(51, 50, CampusId, VisitInstanceStatuses.WaitingRequestApproval));
-        db.VisitRequestCampuses.Add(CampusUcTestData.CreateVisitInstance(52, 50, CampusId, VisitInstanceStatuses.Assigned));
-        db.VisitRequestCampuses.Add(CampusUcTestData.CreateVisitInstance(53, 50, CampusId, VisitInstanceStatuses.Closed)); // terminal: not counted
+        // Pure V2: the blocker example shows the CAMPUS INSTANCE's own delegation name.
+        db.VisitRequestCampuses.Add(CampusUcTestData.CreateVisitInstance(51, 50, CampusId, VisitInstanceStatuses.WaitingRequestApproval, "Đoàn A"));
+        db.VisitRequestCampuses.Add(CampusUcTestData.CreateVisitInstance(52, 50, CampusId, VisitInstanceStatuses.Assigned, "Đoàn A"));
+        db.VisitRequestCampuses.Add(CampusUcTestData.CreateVisitInstance(53, 50, CampusId, VisitInstanceStatuses.Closed, "Đoàn A")); // terminal: not counted
         db.SaveChanges();
         var handler = CreateHandler(db);
 

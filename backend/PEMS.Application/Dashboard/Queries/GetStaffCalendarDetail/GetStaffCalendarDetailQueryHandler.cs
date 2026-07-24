@@ -19,7 +19,8 @@ namespace PEMS.Application.Dashboard.Queries.GetStaffCalendarDetail;
 ///   • Staff Leader — instance thuộc campus mình; đơn liên cơ sở chỉ sau khi HO duyệt.
 ///   • Staff thường — instance thuộc campus mình (xem lịch văn phòng) hoặc mình là host.
 /// Chỉ đọc: visit_requests / visit_request_campuses / visit_guest_members / visit_participants
-/// (+ visit_instance_form_details / visit_instance_guest_members của instance đích khi form_schema_version = 2).
+/// (+ visit_instance_form_details / visit_instance_guest_members của ĐÚNG instance đích — nội dung form
+/// luôn thuộc về campus, visit_requests không giữ nội dung nào để lấy thay).
 /// </summary>
 public sealed class GetStaffCalendarDetailQueryHandler
     : IRequestHandler<GetStaffCalendarDetailQuery, StaffCalendarDetailDto>
@@ -125,38 +126,26 @@ public sealed class GetStaffCalendarDetailQueryHandler
         var guestCount = await _db.VisitGuestMembers
             .CountAsync(g => g.VisitRequestId == visit.VisitRequestId, cancellationToken);
 
-        // ── Per-campus form v2 (INSTANCE-LEVEL: this modal is keyed by visit_instance_id, so a MIXED
-        // request still returns 200 — we source the form fields, the operational (contact-person)
-        // fields and the guest count ONLY from the TARGET instance's per-campus detail + member links,
-        // never the global fields and never a sibling campus). v1 keeps the global projection, so its
-        // response is byte-identical. Scope/quyền đã được kiểm tra ở trên, trước projection này. ──
-        var isV2 = visit.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-        string? delegationName = visit.DelegationName;
-        string? contactFullName = visit.ContactPersonFullName;
-        string? contactPhone = visit.ContactPersonPhone;
-        string? contactEmail = visit.ContactPersonEmail;
-        string? purpose = visit.Purpose, workingContent = visit.WorkingContent;
-        string? visitType = visit.VisitType, visitTypeOther = visit.VisitTypeOther;
-        string? workingLanguage = visit.WorkingLanguage;
-        string? mediaConsentStatus = visit.MediaConsentStatus, mediaConsentNote = visit.MediaConsentNote;
-        string? transportationNote = visit.TransportationNote, noteToFptu = visit.NoteToFptu;
-        if (isV2)
-        {
-            var content = await _formReadService.ResolveCampusFormContentAsync(
-                visit, new[] { instance.VisitInstanceId }, cancellationToken);
-            var d = content[instance.VisitInstanceId];
-            delegationName = d.DelegationName;
-            contactFullName = d.OperationalContact.FullName;
-            contactPhone = d.OperationalContact.Phone;
-            contactEmail = d.OperationalContact.Email;
-            purpose = d.Purpose; workingContent = d.WorkingContent;
-            visitType = d.VisitType; visitTypeOther = d.VisitTypeOther;
-            workingLanguage = d.WorkingLanguage;
-            mediaConsentStatus = d.MediaConsentStatus; mediaConsentNote = d.MediaConsentNote;
-            transportationNote = d.TransportationNote; noteToFptu = d.NoteToFptu;
-            // Guest count for v2 is the TARGET instance's linked members only (never the request-wide total).
-            guestCount = d.Visitors.Count + d.SupportMembers.Count;
-        }
+        // ── INSTANCE-LEVEL form content (this modal is keyed by visit_instance_id, so a MIXED request
+        // still returns 200). Pure V2: the form fields, the OPERATIONAL contact and the guest count all
+        // come from the TARGET instance's own detail + member links — never a sibling campus, and never
+        // the request-level primary contact, which is a different relation entirely.
+        // Scope/quyền đã được kiểm tra ở trên, trước projection này. ──
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visit, new[] { instance.VisitInstanceId }, cancellationToken);
+        var d = content[instance.VisitInstanceId];
+
+        string? delegationName = d.DelegationName;
+        string? contactFullName = d.OperationalContact.FullName;
+        string? contactPhone = d.OperationalContact.Phone;
+        string? contactEmail = d.OperationalContact.Email;
+        string? purpose = d.Purpose, workingContent = d.WorkingContent;
+        string? visitType = d.VisitType, visitTypeOther = d.VisitTypeOther;
+        string? workingLanguage = d.WorkingLanguage;
+        string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
+        string? transportationNote = d.TransportationNote, noteToFptu = d.NoteToFptu;
+        // Guest count is the TARGET instance's linked members only (never the request-wide total).
+        guestCount = d.Visitors.Count + d.SupportMembers.Count;
 
         // Phản hồi của thành phần hỗ trợ (đã nhận / đã từ chối / đã gán) — hiển thị lịch sử phản hồi.
         var participantResponses = await (

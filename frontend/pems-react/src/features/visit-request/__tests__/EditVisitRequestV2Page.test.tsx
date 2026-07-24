@@ -46,7 +46,7 @@ const campus = (id: number, code: string, name: string, rowVersion: number, dele
 });
 
 const form = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => ({
-  visitRequestId: 5, requestCode: 'VR-5', rowVersion: 7, formSchemaVersion: 2,
+  visitRequestId: 5, requestCode: 'VR-5', rowVersion: 7,
   hasMixedCampusDetails: false, visitScope: 'SINGLE_CAMPUS', requestStatus: 'PENDING_APPROVAL',
   createdSource: 'PUBLIC', submittedAt: '2026-07-15T08:00:00', partnerId: null,
   registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN' },

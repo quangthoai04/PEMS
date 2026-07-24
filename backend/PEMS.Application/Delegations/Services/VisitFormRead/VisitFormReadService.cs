@@ -67,7 +67,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
 
         var visibleInstances = instances.Where(c => scope.AuthorizedInstanceIds.Contains(c.VisitInstanceId)).ToList();
         var visibleInstanceIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
-        var isV2 = request.FormSchemaVersion >= FormSchemaVersions.PerCampus;
 
         // Action computation (viewer.allowedActions + per-instance allowedActions). These MIRROR the
         // authorization each command handler enforces — the handlers still re-authorize independently.
@@ -85,7 +84,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
         List<string> InstanceActions(VisitRequestCampus c, bool hasPendingAmendment)
         {
             var actions = new List<string>();
-            if (!isV2) return actions;
             if (requesterSide)
             {
                 var amendable = c.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit;
@@ -125,7 +123,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
 
         // Per-campus member links (v2 only). One batched query joined to member rows, grouped by instance.
         var membersByInstance = new Dictionary<ulong, List<(VisitGuestMember Member, uint LinkOrder)>>();
-        if (isV2 && visibleInstanceIds.Count > 0)
+        if (visibleInstanceIds.Count > 0)
         {
             var links = await _db.VisitInstanceGuestMembers.AsNoTracking()
                 .Where(l => visibleInstanceIds.Contains(l.VisitInstanceId))
@@ -140,7 +138,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
 
         // Active (PENDING_APPROVAL) amendment summary per visible instance (v2). Summary only — no JSON.
         var activeAmendmentByInstance = new Dictionary<ulong, ResolvedActiveAmendmentDto>();
-        if (isV2 && visibleInstanceIds.Count > 0)
+        if (visibleInstanceIds.Count > 0)
         {
             var amendments = await _db.VisitInstanceAmendments.AsNoTracking()
                 .Where(a => visibleInstanceIds.Contains(a.VisitInstanceId)
@@ -165,13 +163,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             });
         }
 
-        // Request-level members (v1 shared list), split by member type.
-        var v1Visitors = requestMembers.Where(m => m.MemberType != ExternalSupport)
-            .OrderBy(m => m.DisplayOrder).Select(MapMember).ToList();
-        var v1Support = requestMembers.Where(m => m.MemberType == ExternalSupport)
-            .OrderBy(m => m.DisplayOrder).Select(MapMember).ToList();
-
-        // 4. Project each visible campus from the correct source (never mixing v1/v2).
+        // 4. Project each visible campus from ITS OWN per-campus detail.
         var campusVisits = new List<ResolvedCampusVisitDto>();
         foreach (var c in visibleInstances)
         {
@@ -185,15 +177,16 @@ public sealed class VisitFormReadService : IVisitFormReadService
             uint formRevision, approvalRevision;
             int rowVersion;
 
-            if (isV2)
             {
                 var d = c.FormDetail;
                 if (d is null)
                 {
-                    // §6.B: a v2 instance MUST have a detail row. Never fall back to the global fields.
+                    // Pure V2: every campus instance MUST have exactly one detail row. There is no global
+                    // snapshot left to fall back to, so a missing detail is a hard data error — surface it
+                    // rather than silently rendering an empty or borrowed campus.
                     _logger.LogError(
-                        "PerCampusFormV2 consistency error: visit_instance {InstanceId} of request {RequestId} " +
-                        "(form_schema_version=2) has no visit_instance_form_details row.",
+                        "Pure V2 consistency error: visit_instance {InstanceId} of request {RequestId} " +
+                        "has no visit_instance_form_details row.",
                         c.VisitInstanceId, request.VisitRequestId);
                     throw new ConflictException(
                         "Dữ liệu chuyến thăm theo cơ sở đang thiếu, không thể hiển thị.",
@@ -233,32 +226,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     .OrderBy(x => x.LinkOrder).Select(x => MapMember(x.Member)).ToList();
                 support = linked.Where(x => x.Member.MemberType == ExternalSupport)
                     .OrderBy(x => x.LinkOrder).Select(x => MapMember(x.Member)).ToList();
-            }
-            else
-            {
-                // v1 compatibility projection: same global snapshot for every visible campus.
-                delegationName = request.DelegationName;
-                visitType = request.VisitType;
-                visitTypeOther = request.VisitTypeOther;
-                purpose = request.Purpose;
-                workingContent = request.WorkingContent;
-                workingLanguage = request.WorkingLanguage;
-                transportationNote = request.TransportationNote;
-                mediaStatus = request.MediaConsentStatus;
-                mediaNote = request.MediaConsentNote;
-                noteToFptu = request.NoteToFptu;
-                opContact = new ResolvedOperationalContactDto
-                {
-                    FullName = request.ContactPersonFullName,
-                    Organization = request.ContactPersonOrganization,
-                    Phone = request.ContactPersonPhone,
-                    Email = request.ContactPersonEmail
-                };
-                formRevision = 1;
-                approvalRevision = 1;
-                rowVersion = 0;
-                visitors = v1Visitors;
-                support = v1Support;
             }
 
             campusVisits.Add(new ResolvedCampusVisitDto
@@ -311,7 +278,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 actions.Add(VisitFormActions.EditPendingRequest);
             if (request.Status == VisitRequestStatuses.Rejected)
                 actions.Add(VisitFormActions.ResubmitRejectedRequest);
-            if (isV2 && request.Status != VisitRequestStatuses.Cancelled)
+            if (request.Status != VisitRequestStatuses.Cancelled)
                 actions.Add(VisitFormActions.SubmitSafeEdit);
             return actions;
         }
@@ -321,7 +288,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
             VisitRequestId = (long)request.VisitRequestId,
             RequestCode = request.RequestCode,
             RowVersion = request.RowVersion,
-            FormSchemaVersion = request.FormSchemaVersion,
             HasMixedCampusDetails = request.HasMixedCampusDetails,
             VisitScope = request.VisitScope,
             RequestStatus = request.Status,
@@ -365,50 +331,10 @@ public sealed class VisitFormReadService : IVisitFormReadService
         if (visibleInstanceIds.Count == 0)
             return result;
 
-        var isV2 = request.FormSchemaVersion >= FormSchemaVersions.PerCampus;
-
-        if (!isV2)
-        {
-            // v1 compatibility projection: one global content object shared by every visible instance;
-            // members come from the request-level list (same for all campuses).
-            var members = await _db.VisitGuestMembers.AsNoTracking()
-                .Where(m => m.VisitRequestId == request.VisitRequestId)
-                .ToListAsync(cancellationToken);
-
-            var global = new VisitCampusFormContent
-            {
-                DelegationName = request.DelegationName,
-                VisitType = request.VisitType,
-                VisitTypeOther = request.VisitTypeOther,
-                Purpose = request.Purpose,
-                WorkingContent = request.WorkingContent,
-                WorkingLanguage = request.WorkingLanguage,
-                MediaConsentStatus = request.MediaConsentStatus,
-                MediaConsentNote = request.MediaConsentNote,
-                TransportationNote = request.TransportationNote,
-                NoteToFptu = request.NoteToFptu,
-                OperationalContact = new VisitFormOperationalContact
-                {
-                    FullName = request.ContactPersonFullName,
-                    Organization = request.ContactPersonOrganization,
-                    Phone = request.ContactPersonPhone,
-                    Email = request.ContactPersonEmail
-                },
-                Visitors = members.Where(m => m.MemberType != ExternalSupport)
-                    .OrderBy(m => m.DisplayOrder).Select(ToRow).ToList(),
-                SupportMembers = members.Where(m => m.MemberType == ExternalSupport)
-                    .OrderBy(m => m.DisplayOrder).Select(ToRow).ToList(),
-                FormRevision = 1,
-                ApprovalRevision = 1,
-                RowVersion = 0
-            };
-            foreach (var id in visibleInstanceIds)
-                result[id] = global;
-            return result;
-        }
-
-        // v2: read ONLY the per-campus detail + instance-member links, and ONLY for the visible
+        // Pure V2: read ONLY the per-campus detail + instance-member links, and ONLY for the visible
         // instances. Two batched queries irrespective of campus/member count (no per-campus N+1).
+        // Each instance keeps its OWN operational contact and its OWN member links — there is no
+        // request-level content to share across campuses any more.
         var details = await _db.VisitInstanceFormDetails.AsNoTracking()
             .Where(d => visibleInstanceIds.Contains(d.VisitInstanceId))
             .ToListAsync(cancellationToken);
@@ -428,10 +354,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
         {
             if (!detailByInstance.TryGetValue(instanceId, out var d))
             {
-                // §6.B: a v2 instance MUST have a detail row. Never fall back to the global fields.
+                // Pure V2: every campus instance MUST have exactly one detail row, and there is no global
+                // snapshot left to fall back to — fail loudly instead of returning borrowed content.
                 _logger.LogError(
-                    "PerCampusFormV2 consistency error: visit_instance {InstanceId} of request {RequestId} " +
-                    "(form_schema_version=2) has no visit_instance_form_details row.",
+                    "Pure V2 consistency error: visit_instance {InstanceId} of request {RequestId} " +
+                    "has no visit_instance_form_details row.",
                     instanceId, request.VisitRequestId);
                 throw new ConflictException(
                     "Dữ liệu chuyến thăm theo cơ sở đang thiếu, không thể hiển thị.",

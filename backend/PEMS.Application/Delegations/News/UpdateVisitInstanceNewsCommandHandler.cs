@@ -44,6 +44,7 @@ public sealed class UpdateVisitInstanceNewsCommandHandler
 
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
+            .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == news.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", news.VisitInstanceId.Value);
 
@@ -60,7 +61,8 @@ public sealed class UpdateVisitInstanceNewsCommandHandler
         if (instance.NewsNotRequired)
             throw new ForbiddenException("Chuyến thăm này không yêu cầu bài tin tức.");
 
-        if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
+        // Media consent is per campus — gate on THIS instance's own detail.
+        if (instance.FormDetail?.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
             throw new ForbiddenException("Khách không đồng ý truyền thông, không thể cập nhật bài tin.");
 
         bool isCancelled = instance.Status == VisitInstanceStatus.Cancelled

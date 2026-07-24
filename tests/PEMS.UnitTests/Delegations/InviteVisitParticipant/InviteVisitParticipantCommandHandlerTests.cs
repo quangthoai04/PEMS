@@ -28,9 +28,22 @@ public class InviteVisitParticipantCommandHandlerTests
 
         var user = new FakeDelegationsCurrentUser();
         var mocks = new DelegationsHandlerMocks();
-        // v1 test data (FormSchemaVersion = Legacy) never enters the v2 branch, so the form-read resolver
-        // is never invoked — a bare mock is sufficient.
+        // Pure V2: the invitation ALWAYS names the delegation from the invited instance's own detail,
+        // so the resolver must answer for the requested instance.
         var formRead = new Mock<PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService>();
+        formRead
+            .Setup(f => f.ResolveCampusFormContentAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequest>(),
+                It.IsAny<IReadOnlyList<ulong>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PEMS.Domain.Entities.Delegations.VisitRequest _, IReadOnlyList<ulong> ids, CancellationToken _) =>
+                ids.ToDictionary(
+                        id => id,
+                        _ => new PEMS.Application.Delegations.Services.VisitFormRead.VisitCampusFormContent
+                        {
+                            DelegationName = "Đoàn khách kiểm thử",
+                        })
+                   as IReadOnlyDictionary<ulong, PEMS.Application.Delegations.Services.VisitFormRead.VisitCampusFormContent>);
         var handler = new InviteVisitParticipantCommandHandler(
             db, user, mocks.Clock, mocks.Email.Object, mocks.Tokens.Object, mocks.Sanitizer.Object,
             mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object);

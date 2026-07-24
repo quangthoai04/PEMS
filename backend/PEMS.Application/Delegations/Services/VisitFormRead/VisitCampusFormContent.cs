@@ -4,13 +4,12 @@ using System.Collections.Generic;
 namespace PEMS.Application.Delegations.Services.VisitFormRead;
 
 /// <summary>
-/// The version-resolved FORM CONTENT of a single visit campus instance — the half of a read model that
-/// differs between form_schema_version 1 and 2. A handler owns its own scope / decision / schedule /
-/// cancellation metadata (those columns live on visit_requests / visit_request_campuses in BOTH
-/// versions) and calls <see cref="IVisitFormReadService.ResolveCampusFormContentAsync"/> for this part,
-/// so the dual-read rule is applied in exactly one place:
-///   v1 → the global compatibility projection on visit_requests (identical for every instance);
-///   v2 → ONLY visit_instance_form_details + visit_instance_guest_members (never the global fields).
+/// The FORM CONTENT of a single visit campus instance — the half of a read model that belongs to the
+/// campus rather than to the request. A handler owns its own scope / decision / schedule / cancellation
+/// metadata (those columns live on visit_requests / visit_request_campuses) and calls
+/// <see cref="IVisitFormReadService.ResolveCampusFormContentAsync"/> for this part, so the per-campus
+/// rule is applied in exactly one place: content comes from that instance's own
+/// visit_instance_form_details row and visit_instance_guest_members links, and from nowhere else.
 /// </summary>
 public sealed class VisitCampusFormContent
 {
@@ -25,7 +24,10 @@ public sealed class VisitCampusFormContent
     public string? TransportationNote { get; init; }
     public string? NoteToFptu { get; init; }
 
-    /// <summary>v1 → request-level primary contact projection; v2 → the per-campus operational contact.</summary>
+    /// <summary>
+    /// This campus's OPERATIONAL contact. Distinct from the request's primary contact, which is a
+    /// request-level relation and must never be substituted here.
+    /// </summary>
     public VisitFormOperationalContact OperationalContact { get; init; } = new();
 
     public IReadOnlyList<VisitFormMemberRow> Visitors { get; init; } = Array.Empty<VisitFormMemberRow>();

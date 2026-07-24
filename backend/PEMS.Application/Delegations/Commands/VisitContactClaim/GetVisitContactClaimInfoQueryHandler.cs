@@ -61,7 +61,15 @@ public sealed class GetVisitContactClaimInfoQueryHandler
 
         var head = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == claim.VisitRequestId)
-            .Select(v => new { v.RequestCode, v.DelegationName, v.RegistrantFullName })
+            // A claim covers the WHOLE request, so a mixed request has no single business name.
+            .Select(v => new
+            {
+                v.RequestCode,
+                DelegationName = v.HasMixedCampusDetails
+                    ? "Khác nhau theo cơ sở"
+                    : v.CampusInstances.Select(c => c.FormDetail!.DelegationName).FirstOrDefault(),
+                v.RegistrantFullName
+            })
             .FirstOrDefaultAsync(cancellationToken);
 
         var now = _clock.VietnamNow;

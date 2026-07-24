@@ -53,6 +53,7 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitParticipant> VisitParticipants => Set<VisitParticipant>();
     public DbSet<VisitLogisticsItem> VisitLogisticsItems => Set<VisitLogisticsItem>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<VisitRequestFingerprintGuard> VisitRequestFingerprintGuards => Set<VisitRequestFingerprintGuard>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

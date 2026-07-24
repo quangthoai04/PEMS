@@ -112,10 +112,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 ParticipantId = null,
                 VisitInstanceId = li.VisitInstanceId,
                 VisitRequestId = li.VisitInstance.VisitRequestId,
-                DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
-                    ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
-                    : li.VisitInstance.VisitRequest.DelegationName,
+                DelegationName = li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null,
                 TaskTitle = li.Title,
                 DueAt = (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt).ToString("O"),
                 Status = li.Status,
@@ -139,10 +136,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 ParticipantId = x.p.ParticipantId,
                 VisitInstanceId = x.c.VisitInstanceId,
                 VisitRequestId = x.c.VisitRequestId,
-                DelegationName = x.c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && x.c.VisitRequest.HasMixedCampusDetails
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
-                    : x.c.VisitRequest.DelegationName,
+                DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 TaskTitle = "Thu moi tham gia don tiep",
                 DueAt = x.c.PlannedStartAt.ToString("O"),
                 Status = x.p.Status,
@@ -167,10 +161,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 ParticipantId = null,
                 VisitInstanceId = li.VisitInstanceId,
                 VisitRequestId = li.VisitInstance.VisitRequestId,
-                DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
-                    ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
-                    : li.VisitInstance.VisitRequest.DelegationName,
+                DelegationName = li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null,
                 OrganizationName = li.VisitInstance.VisitRequest.RegistrantOrganization,
                 PlannedStartAt = (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt).ToString("O"),
                 PlannedEndAt = (li.UsageEndAt ?? li.VisitInstance.PlannedEndAt).ToString("O"),
@@ -191,10 +182,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 ParticipantId = x.p.ParticipantId,
                 VisitInstanceId = x.c.VisitInstanceId,
                 VisitRequestId = x.c.VisitRequestId,
-                DelegationName = x.c.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && x.c.VisitRequest.HasMixedCampusDetails
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
-                    : x.c.VisitRequest.DelegationName,
+                DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 OrganizationName = x.c.VisitRequest.RegistrantOrganization,
                 PlannedStartAt = x.c.PlannedStartAt.ToString("O"),
                 PlannedEndAt = x.c.PlannedEndAt.ToString("O"),

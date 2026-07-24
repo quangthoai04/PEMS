@@ -353,12 +353,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   // Modals
   const [requestForm, setRequestForm] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
-  // Version-aware detail: a v2 request (mixed or not) opens the per-campus v2 detail route; the flat
-  // modal (which cannot represent mixed per-campus content) is used only for legacy v1 requests.
+  // Pure V2: every request opens the per-campus v2 detail route. The flat modal cannot represent
+  // per-campus content and has no runtime left, so it is never the target here.
   const openRequestForm = (row: Row) => {
-    const routes = resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion);
-    if (routes.detailRoute) { navTo(routes.detailRoute); return; }
-    setRequestForm({ open: true, row });
+    navTo(resolveVisitRowRoutes(row.visitRequestId).detailRoute);
   };
   // "Xem đơn đăng ký tham quan trước khi duyệt" — read-only review of a PENDING_APPROVAL row.
   const [review, setReview] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
@@ -1172,10 +1170,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             onClick={(e) => { e.stopPropagation(); setAssign({ open: true, row, mode: 'approve' }); }} />
         ) : can('EDIT_PENDING_REQUEST') ? (
           <ActionIconButton title="Sửa đơn đăng ký tham quan" tone="blue" icon={<PencilLine className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); navTo(resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion).edit); }} />
+            onClick={(e) => { e.stopPropagation(); navTo(resolveVisitRowRoutes(row.visitRequestId).edit); }} />
         ) : can('RESUBMIT_REJECTED_REQUEST') ? (
           <ActionIconButton title="Sửa & gửi lại đơn" tone="orange" icon={<RefreshCw className="h-5 w-5" />}
-            onClick={(e) => { e.stopPropagation(); navTo(resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion).resubmit); }} />
+            onClick={(e) => { e.stopPropagation(); navTo(resolveVisitRowRoutes(row.visitRequestId).resubmit); }} />
         ) : can('ACCEPT_INVITATION') ? (
           <ActionIconButton title="Xác nhận tham gia" tone="green" icon={<Check className="h-5 w-5" />}
             onClick={(e) => { e.stopPropagation(); submitAcceptInvitation(row); }} />
@@ -1217,17 +1215,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   // ── Multi-campus accordion (Phương án A): per-campus progress + actions ──
-  const openCampusRequestForm = (row: Row, item?: CampusProgressItem) => {
-    // v2 (mixed or not): the flat modal cannot represent per-campus content — open the scoped v2 detail.
-    const routes = resolveVisitRowRoutes(row.visitRequestId, row.formSchemaVersion);
-    if (routes.detailRoute) { navTo(routes.detailRoute); return; }
-    const campusRow = {
-      ...row,
-      campus: item?.campusName || row.campus || '-',
-      campusStatus: item?.instanceStatus || row.campusStatus,
-      visitInstanceId: item?.visitInstanceId || row.visitInstanceId,
-    } as Row;
-    setRequestForm({ open: true, row: campusRow });
+  const openCampusRequestForm = (row: Row, _item?: CampusProgressItem) => {
+    // Pure V2: the flat modal cannot represent per-campus content — always open the scoped v2 detail.
+    navTo(resolveVisitRowRoutes(row.visitRequestId).detailRoute);
   };
 
   const openCampusDetail = (row: Row, item: CampusProgressItem) => {

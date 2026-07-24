@@ -2,7 +2,7 @@ using System.Linq;
 using System.Text.Json;
 using MediatR;
 using PEMS.Application.Common.DTOs;
-using PEMS.Application.Delegations.Commands.InitiateVisitRequest;
+using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 

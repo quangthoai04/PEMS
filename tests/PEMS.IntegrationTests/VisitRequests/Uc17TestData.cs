@@ -115,7 +115,6 @@ public static class Uc17TestData
             {
                 SubmissionId = submissionId,
                 RegistrantEmail = email.Trim().ToLowerInvariant(),
-                FormSchemaVersion = 2,
                 FingerprintV2 = fingerprint,
                 SnapshotJson = snapshot,
                 CreatedAt = now,

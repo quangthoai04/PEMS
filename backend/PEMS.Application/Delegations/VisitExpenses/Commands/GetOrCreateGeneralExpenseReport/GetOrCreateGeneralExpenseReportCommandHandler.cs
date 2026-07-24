@@ -35,6 +35,10 @@ public class GetOrCreateGeneralExpenseReportCommandHandler : IRequestHandler<Get
         if (instance == null)
             throw new NotFoundException(nameof(VisitRequestCampus), request.VisitInstanceId);
 
+        // Read scope: the get-branch below returns an existing report, so a caller from another campus
+        // must not reach it. Creation still additionally requires the Host (checked below).
+        await VisitExpenseAccessScope.EnsureCanViewAsync(_context, _currentUserService, request.VisitInstanceId, cancellationToken);
+
         // Security: Host ownership
         bool isHost = instance.CurrentHostUserId == currentUserId;
         bool isReadOnly = instance.Status == PEMS.Shared.VisitInstanceStatus.Closed;

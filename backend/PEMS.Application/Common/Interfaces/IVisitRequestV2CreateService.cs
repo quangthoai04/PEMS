@@ -4,9 +4,10 @@ using PEMS.Domain.Entities.Delegations;
 namespace PEMS.Application.Common.Interfaces;
 
 /// <summary>
-/// Builds a per-campus form v2 <see cref="VisitRequest"/> aggregate in the caller's open transaction:
-/// request (form_schema_version = 2, backend-derived scope + has_mixed + fingerprint + compatibility
-/// projection) + N campus instances (each routed to its campus Staff Leader coordinator) + N
+/// Builds a per-campus form <see cref="VisitRequest"/> aggregate in the caller's open transaction:
+/// request (identity, lifecycle, primary contact, plus backend-derived scope + has_mixed + fingerprint —
+/// facts about the campus set, never campus content) + N campus instances (each routed to its campus
+/// Staff Leader coordinator) + N
 /// <see cref="VisitInstanceFormDetail"/> + per-campus independent guest/support members + composite links +
 /// baseline instance/request revisions + create audit + a primary-contact INITIAL_CLAIM identity record when
 /// the contact email differs from the registrant email.

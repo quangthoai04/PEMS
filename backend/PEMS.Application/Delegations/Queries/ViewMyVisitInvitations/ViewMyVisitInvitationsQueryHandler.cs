@@ -74,19 +74,12 @@ public sealed class ViewMyVisitInvitationsQueryHandler
                 PlannedStartAt = x.c.PlannedStartAt,
                 PlannedEndAt = x.c.PlannedEndAt,
                 RequestCode = x.vr.RequestCode,
-                // Mixed per-campus v2 invitations show THIS instance's detail (no global fallback);
-                // v1/non-mixed keep the projection (byte-identical there).
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
-                    : x.vr.DelegationName,
+                // An invitation is bound to ONE campus instance, so it always shows THAT instance's own
+                // detail — never a sibling campus, never a request-level value.
+                DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 OrganizationName = x.vr.RegistrantOrganization,
-                Purpose = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.Purpose : null)
-                    : x.vr.Purpose,
-                WorkingContent = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.WorkingContent : null)
-                    : x.vr.WorkingContent,
-                FormSchemaVersion = x.vr.FormSchemaVersion,
+                Purpose = x.c.FormDetail != null ? x.c.FormDetail.Purpose : null,
+                WorkingContent = x.c.FormDetail != null ? x.c.FormDetail.WorkingContent : null,
             })
             .ToListAsync(cancellationToken);
 

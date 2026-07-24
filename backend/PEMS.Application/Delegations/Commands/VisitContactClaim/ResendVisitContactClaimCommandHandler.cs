@@ -146,10 +146,6 @@ internal static class RegistrantClaimGuard
 
         if (visit.RegistrantUserId != actorId)
             throw new ForbiddenException("Chỉ người đăng ký đơn mới được quản lý lời mời đầu mối.");
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus)
-            throw new BusinessRuleException(
-                "Đơn này không dùng biểu mẫu theo cơ sở (v2).",
-                VisitFormV2ErrorCodes.FormVersionUpgradeRequired);
         if (visit.Status == VisitRequestStatuses.Cancelled)
             throw new BusinessRuleException(
                 "Đơn đã bị hủy nên không thể quản lý lời mời đầu mối.",

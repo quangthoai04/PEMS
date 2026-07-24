@@ -13,10 +13,12 @@ namespace PEMS.Application.Delegations.VisitExpenses.Queries.GetVisitInstanceExp
 public class GetVisitInstanceExpenseSummaryCommandHandler : IRequestHandler<GetVisitInstanceExpenseSummaryQuery, VisitInstanceExpenseSummaryDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUserService;
 
-    public GetVisitInstanceExpenseSummaryCommandHandler(IApplicationDbContext context)
+    public GetVisitInstanceExpenseSummaryCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
     {
         _context = context;
+        _currentUserService = currentUserService;
     }
 
     public async Task<VisitInstanceExpenseSummaryDto> Handle(GetVisitInstanceExpenseSummaryQuery request, CancellationToken cancellationToken)
@@ -26,6 +28,10 @@ public class GetVisitInstanceExpenseSummaryCommandHandler : IRequestHandler<GetV
 
         if (instance == null)
             throw new NotFoundException(nameof(VisitRequestCampus), request.VisitInstanceId);
+
+        // The itemized costs of an instance are readable only within its campus scope — a caller from
+        // another campus (or an unrelated role) must not pull them by instance id.
+        await VisitExpenseAccessScope.EnsureCanViewAsync(_context, _currentUserService, request.VisitInstanceId, cancellationToken);
 
         var reports = await _context.VisitExpenseReports
             .Include(r => r.Items)

@@ -79,13 +79,10 @@ public sealed class GetHoReportOverviewQueryHandler
         var requests = _db.VisitRequests.AsNoTracking()
             .Where(r => r.SubmittedAt >= fromVn && r.SubmittedAt < toVnExclusive);
         if (visitScope != null) requests = requests.Where(r => r.VisitScope == visitScope);
-        // visit_type filter, v2-aware: EVERY v2 request (uniform or mixed) matches when ANY of its
-        // campus details matches. The compatibility projection on visit_requests is never business
-        // content for v2 — gating on HasMixedCampusDetails would let uniform v2 fall back to it.
-        if (visitType != null) requests = requests.Where(r =>
-            r.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                ? r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType)
-                : r.VisitType == visitType);
+        // visit_type filter: a request matches when ANY of its campus details matches, whether or not
+        // its campuses agree. visit_requests carries no visit type, so there is nothing else to match
+        // on — and gating this on HasMixedCampusDetails would silently drop uniform requests.
+        if (visitType != null) requests = requests.Where(r => r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType));
         if (requestStatus != null) requests = requests.Where(r => r.Status == requestStatus);
         if (campusId != null) requests = requests.Where(r => r.CampusInstances.Any(ci => ci.CampusId == campusId));
 
@@ -95,10 +92,7 @@ public sealed class GetHoReportOverviewQueryHandler
         if (campusId != null) instances = instances.Where(ci => ci.CampusId == campusId);
         if (visitScope != null) instances = instances.Where(ci => ci.VisitRequest.VisitScope == visitScope);
         // Instance-scoped: any v2 instance is filtered by ITS OWN campus detail, never the projection.
-        if (visitType != null) instances = instances.Where(ci =>
-            ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                ? (ci.FormDetail != null && ci.FormDetail.VisitType == visitType)
-                : ci.VisitRequest.VisitType == visitType);
+        if (visitType != null) instances = instances.Where(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType);
         if (requestStatus != null) instances = instances.Where(ci => ci.VisitRequest.Status == requestStatus);
         if (instanceStatus != null) instances = instances.Where(ci => ci.Status == instanceStatus);
 
@@ -106,10 +100,7 @@ public sealed class GetHoReportOverviewQueryHandler
         var opInstances = _db.VisitRequestCampuses.AsNoTracking().AsQueryable();
         if (campusId != null) opInstances = opInstances.Where(ci => ci.CampusId == campusId);
         if (visitScope != null) opInstances = opInstances.Where(ci => ci.VisitRequest.VisitScope == visitScope);
-        if (visitType != null) opInstances = opInstances.Where(ci =>
-            ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                ? (ci.FormDetail != null && ci.FormDetail.VisitType == visitType)
-                : ci.VisitRequest.VisitType == visitType);
+        if (visitType != null) opInstances = opInstances.Where(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType);
 
         // HO monitor-only (campus-independent approval): multi-campus requests that still have
         // at least one campus instance waiting for its Staff Leader's decision.
@@ -117,10 +108,7 @@ public sealed class GetHoReportOverviewQueryHandler
             .Where(r => r.VisitScope == "MULTI_CAMPUS"
                         && r.Status != VisitRequestStatus.Cancelled
                         && r.CampusInstances.Any(ci => ci.Status == VisitInstanceStatus.WaitingRequestApproval));
-        if (visitType != null) pendingMultiCampus = pendingMultiCampus.Where(r =>
-            r.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                ? r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType)
-                : r.VisitType == visitType);
+        if (visitType != null) pendingMultiCampus = pendingMultiCampus.Where(r => r.CampusInstances.Any(ci => ci.FormDetail != null && ci.FormDetail.VisitType == visitType));
         if (campusId != null) pendingMultiCampus = pendingMultiCampus.Where(r => r.CampusInstances.Any(ci => ci.CampusId == campusId));
 
         // ---- Request status counts + guests + decision time. ----
@@ -288,9 +276,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 r.VisitRequestId,
                 r.RequestCode,
                 // Request-level row: a MIXED v2 request has no single business name (plan §8.3).
-                DelegationName = r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
-                    ? "Khác nhau theo cơ sở"
-                    : r.DelegationName,
+                DelegationName = r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName,
                 r.RegistrantOrganization,
                 r.SubmittedAt,
                 PlannedStartAt = r.CampusInstances.Min(ci => (DateTime?)ci.PlannedStartAt),
@@ -331,11 +317,9 @@ public sealed class GetHoReportOverviewQueryHandler
                 ci.VisitInstanceId,
                 ci.VisitRequestId,
                 ci.VisitRequest.RequestCode,
-                // Instance row: EVERY v2 instance (uniform or mixed) titles from THIS instance's
-                // canonical detail; the compatibility projection is never v2 business content.
-                DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                    ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                    : ci.VisitRequest.DelegationName,
+                // Instance row: every instance titles from ITS OWN detail, whether or not the request's
+                // campuses agree — a sibling campus is never a stand-in for this one.
+                DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                 ci.CampusId,
                 ci.PlannedEndAt,
                 ci.CurrentHostUserId,
@@ -423,9 +407,7 @@ public sealed class GetHoReportOverviewQueryHandler
                 {
                     ci.VisitInstanceId,
                     // Instance group: EVERY v2 instance titles from THIS instance's canonical detail.
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     ci.CampusId,
                     ci.PlannedStartAt,
                 } into g

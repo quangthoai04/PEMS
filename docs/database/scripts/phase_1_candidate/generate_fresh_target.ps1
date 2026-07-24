@@ -1,4 +1,10 @@
-$sourcePath = "docs\database\scripts\PEMS_FULL_V11_REMOVED_TTS_19_07_26.sql"
+# Resolve the ONE canonical schema script; a hard-coded filename silently rots when the script is renamed.
+$scriptsDir = "docs\database\scripts"
+$candidates = @(Get-ChildItem -LiteralPath $scriptsDir -Filter 'PEMS_FULL_*.sql' -File)
+if ($candidates.Count -ne 1) {
+    throw "Expected exactly one canonical PEMS_FULL_*.sql in $scriptsDir, found $($candidates.Count)."
+}
+$sourcePath = $candidates[0].FullName
 $targetPath = "docs\database\scripts\phase_1_candidate\00_fresh_target.sql"
 
 $content = Get-Content $sourcePath -Raw

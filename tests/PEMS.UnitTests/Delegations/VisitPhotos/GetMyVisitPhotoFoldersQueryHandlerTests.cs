@@ -14,13 +14,37 @@ namespace PEMS.UnitTests.Delegations.VisitPhotos;
 /// </summary>
 public class GetMyVisitPhotoFoldersQueryHandlerTests
 {
+    /// <summary>Resolver stub that answers for every requested instance (Pure V2 always resolves).</summary>
+    private static IVisitFormReadService StubFormRead()
+    {
+        var mock = new Mock<IVisitFormReadService>();
+        mock.Setup(f => f.ResolveCampusFormContentAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequest>(),
+                It.IsAny<IReadOnlyList<ulong>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PEMS.Domain.Entities.Delegations.VisitRequest _, IReadOnlyList<ulong> ids, CancellationToken _) =>
+                ids.ToDictionary(id => id, _ => new VisitCampusFormContent { DelegationName = "Đoàn khách kiểm thử" })
+                   as IReadOnlyDictionary<ulong, VisitCampusFormContent>);
+        return mock.Object;
+    }
+
     private static (DelegationsTestDbContext Db, GetMyVisitPhotoFoldersQueryHandler Handler,
         Mock<IVisitFormReadService> FormRead) CreateSut()
     {
         var db = DelegationsTestDbContext.Create();
         VisitPhotoTestSeed.SeedAcceptedStudent(db);
 
+        // Pure V2: the handler ALWAYS resolves each folder row's own instance detail, so the resolver
+        // must answer for every requested instance. Mixed tests override this with per-campus names.
         var formRead = new Mock<IVisitFormReadService>();
+        formRead
+            .Setup(f => f.ResolveCampusFormContentAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequest>(),
+                It.IsAny<IReadOnlyList<ulong>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PEMS.Domain.Entities.Delegations.VisitRequest _, IReadOnlyList<ulong> ids, CancellationToken _) =>
+                ids.ToDictionary(id => id, _ => new VisitCampusFormContent { DelegationName = "Đoàn khách kiểm thử" })
+                   as IReadOnlyDictionary<ulong, VisitCampusFormContent>);
         var handler = new GetMyVisitPhotoFoldersQueryHandler(
             db, VisitPhotoTestSeed.StudentCurrentUser(), formRead.Object);
         return (db, handler, formRead);
@@ -69,7 +93,6 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
     {
         var (db, handler, formRead) = CreateSut();
         var visit = db.VisitRequests.Single();
-        visit.FormSchemaVersion = FormSchemaVersions.PerCampus;
 
         var second = DelegationsTestData.CreateVisitInstance(visitInstanceId: 11, campusId: DelegationsTestData.OtherCampusId);
         db.VisitRequestCampuses.Add(second);
@@ -100,13 +123,34 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
         Assert.DoesNotContain(page.Items, i => i.DelegationName == "Đoàn khách kiểm thử");
     }
 
+    /// <summary>
+    /// READING the folder list is deliberately broader than UPLOADING. The face-scan / photo-tagging
+    /// workflow needs the Host (Staff) to open the đoàn's folder, so a Staff host sees the instances they
+    /// host. Uploading stays Student-only — that stricter rule is enforced by
+    /// <c>VisitPhotoStudentScope</c> and by the DB trigger, and is covered in
+    /// <c>UploadVisitInstancePhotosCommandHandlerTests</c>.
+    /// </summary>
     [Fact]
-    public async Task NonStudentRole_IsForbidden()
+    public async Task StaffHost_SeesHostedInstances()
     {
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db);
         var handler = new GetMyVisitPhotoFoldersQueryHandler(
-            db, new FakeDelegationsCurrentUser(), Mock.Of<IVisitFormReadService>());
+            db, new FakeDelegationsCurrentUser(), StubFormRead());
+
+        var page = await handler.Handle(new GetMyVisitPhotoFoldersQuery(), default);
+
+        Assert.All(page.Items, i => Assert.Equal(DelegationsTestData.VisitInstanceId, i.VisitInstanceId));
+    }
+
+    [Fact]
+    public async Task UnauthenticatedCaller_IsForbidden()
+    {
+        var db = DelegationsTestDbContext.Create();
+        DelegationsTestData.SeedBase(db);
+        var handler = new GetMyVisitPhotoFoldersQueryHandler(
+            db, new FakeDelegationsCurrentUser { IsAuthenticated = false, UserId = null },
+            Mock.Of<IVisitFormReadService>());
 
         await Assert.ThrowsAsync<ForbiddenException>(
             () => handler.Handle(new GetMyVisitPhotoFoldersQuery(), default));

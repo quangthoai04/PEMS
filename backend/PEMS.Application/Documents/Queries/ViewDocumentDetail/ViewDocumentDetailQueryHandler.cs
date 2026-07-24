@@ -71,8 +71,10 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
             switch (document.OwnerType)
             {
                 case "VISIT":
-                    var visitRequest = await _context.VisitRequests.Include(v => v.CampusInstances).AsNoTracking().FirstOrDefaultAsync(v => v.VisitRequestId == document.OwnerId, cancellationToken);
-                    var visitInstance = visitRequest?.CampusInstances.FirstOrDefault();
+                    // owner_id is a VISIT REQUEST id, or (fallback below) a campus INSTANCE id. Which one
+                    // it is decides what the schedule may say, so the two are kept apart.
+                    var visitRequest = await _context.VisitRequests.Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail).AsNoTracking().FirstOrDefaultAsync(v => v.VisitRequestId == document.OwnerId, cancellationToken);
+                    PEMS.Domain.Entities.Delegations.VisitRequestCampus? visitInstance = null;
 
                     if (visitRequest == null)
                     {
@@ -82,17 +84,31 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
 
                     if (visitRequest != null)
                     {
+                        // A document owned by ONE instance reports that instance's own schedule. A document
+                        // owned by the whole request has no single campus schedule to report — every campus
+                        // has its own, and has_mixed_campus_details compares form content and members only,
+                        // never the schedule, so the dates differ per campus even when it is false. Reading
+                        // an unordered CampusInstances.FirstOrDefault() there showed an arbitrary campus's
+                        // dates as if they were the request's; the request-level answer is the span.
+                        var scheduleSource = visitInstance is not null
+                            ? new[] { visitInstance }
+                            : visitRequest.CampusInstances.ToArray();
+
                         ownerContext = new
                         {
                             // Mixed v2 titles from the owning instance's detail; a request-level document
                             // on a mixed request gets the explicit label (plan §8.3).
-                            VisitTitle = visitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                         && visitRequest.HasMixedCampusDetails
-                                ? (visitInstance?.FormDetail?.DelegationName ?? "Khác nhau theo cơ sở")
-                                : visitRequest.DelegationName,
+                            VisitTitle = visitRequest.HasMixedCampusDetails
+                                ? "Khác nhau theo cơ sở"
+                                : (visitInstance ?? visitRequest.CampusInstances.OrderBy(c => c.CampusId).FirstOrDefault())
+                                    ?.FormDetail?.DelegationName,
                             VisitRequestId = visitRequest.VisitRequestId,
-                            ExpectedStartDate = visitInstance?.PlannedStartAt,
-                            ExpectedEndDate = visitInstance?.PlannedEndAt,
+                            ExpectedStartDate = scheduleSource.Length == 0
+                                ? (DateTime?)null
+                                : scheduleSource.Min(c => c.PlannedStartAt),
+                            ExpectedEndDate = scheduleSource.Length == 0
+                                ? (DateTime?)null
+                                : scheduleSource.Max(c => c.PlannedEndAt),
                             RequestStatus = visitRequest.Status,
                             HostName = "N/A"
                         };
@@ -138,11 +154,7 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
                             MinuteId = minute.MinutesId,
                             MinuteTitle = minute.Title,
                             Status = minute.Status,
-                            VisitTitle = mInst?.VisitRequest is { } mvr
-                                         && mvr.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                         && mvr.HasMixedCampusDetails
-                                ? mInst.FormDetail?.DelegationName
-                                : mInst?.VisitRequest?.DelegationName,
+                            VisitTitle = mInst?.FormDetail?.DelegationName,
                             VisitRequestId = mInst?.VisitRequestId
                         };
                     }

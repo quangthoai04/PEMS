@@ -17,8 +17,12 @@ public class EmailTemplate
     [Column("name")]
     public string Name { get; set; } = null!;
 
+    /// <summary>
+    /// SQL: purpose ENUM('VISIT_REQUEST_VERIFY','CHANGE_SENSITIVE_ACTION') NOT NULL. Mandatory, and only
+    /// those two values are storable — see <see cref="PEMS.Shared.OtpPurpose"/>.
+    /// </summary>
     [Column("purpose")]
-    public string? Purpose { get; set; }
+    public string Purpose { get; set; } = null!;
 
     [Column("campus_id")]
     public ulong? CampusId { get; set; }

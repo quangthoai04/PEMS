@@ -36,6 +36,7 @@ public sealed class CreateVisitInstanceNewsCommandHandler
 
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
+            .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
@@ -54,7 +55,9 @@ public sealed class CreateVisitInstanceNewsCommandHandler
         if (instance.NewsNotRequired)
             throw new ForbiddenException("Chuyến thăm này không yêu cầu bài tin tức.");
 
-        if (instance.VisitRequest.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
+        // Media consent is per campus: a guest may agree for one campus and refuse for another, so gate
+        // on THIS instance's own detail rather than a request-wide value.
+        if (instance.FormDetail?.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
             throw new ForbiddenException("Khách không đồng ý truyền thông, không thể tạo bài tin.");
 
         var now = _clock.VietnamNow;

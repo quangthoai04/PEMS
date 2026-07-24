@@ -184,7 +184,7 @@ export const useVisitRequestFormV2 = (
   const form = useForm<VisitRequestV2Schema>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(schema) as any,
-    mode: 'onBlur',
+    mode: 'onSubmit',
     reValidateMode: 'onChange',
     defaultValues: DEFAULT_VISIT_REQUEST_V2_VALUES(),
   });

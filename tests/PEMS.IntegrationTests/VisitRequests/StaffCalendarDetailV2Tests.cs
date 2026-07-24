@@ -84,26 +84,35 @@ public sealed class StaffCalendarDetailV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// DECISION-01. The request row still carries a PRIMARY contact — a request-level relation — and each
+    /// campus detail carries its own OPERATIONAL contact. This surface must show the operational one and
+    /// must never reach past a detail to the primary contact.
+    ///
+    /// Replaces the former V1 test: with the global form columns dropped there is no V1 read path left,
+    /// and the primary contact is now the only request-level value a contact field could wrongly fall back
+    /// to. The secondary form fields are asserted here too, because they were the other half of the old
+    /// global projection and must now come from the detail as well.
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_form_byte_identical()
+    public async Task Contact_and_form_fields_come_from_the_detail_never_the_request_row()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (_, inst) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false);
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, StaffLeader(StaffC1, Campus1), inst[0].VisitInstanceId);
 
-        // Global compatibility projection is surfaced verbatim.
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("GLOBAL-PURPOSE", dto.Purpose);
-        Assert.Equal("GLOBAL-CONTENT", dto.WorkingContent);
+        Assert.Equal("Op-A", dto.ContactPersonFullName);
+        Assert.Equal("op-a@example.com", dto.ContactPersonEmail);
+        Assert.NotEqual("Primary Contact", dto.ContactPersonFullName);
+        Assert.NotEqual("contact@example.com", dto.ContactPersonEmail);
+
+        // Everything the old global projection used to supply now comes from the campus detail.
         Assert.Equal("MEETING", dto.VisitType);
         Assert.Equal("EN", dto.WorkingLanguage);
-        Assert.Equal("DECLINED", dto.MediaConsentStatus);
-        Assert.Equal("Primary Contact", dto.ContactPersonFullName);
-        Assert.Equal("contact@example.com", dto.ContactPersonEmail);
-        Assert.Equal(2, dto.GuestCount); // request-level G1 + S1
+        Assert.Equal("AGREED", dto.MediaConsentStatus);
         await tx.RollbackAsync();
     }
 
@@ -271,15 +280,14 @@ public sealed class StaffCalendarDetailV2Tests
         VisitorUserId = 8,
         RegistrantUserId = 8,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

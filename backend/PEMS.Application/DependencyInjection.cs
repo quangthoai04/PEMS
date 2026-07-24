@@ -42,7 +42,7 @@ public static class DependencyInjection
         // visit_requests.status aggregate (campus-independent approval) — mirrors the DB triggers.
         services.AddScoped<PEMS.Application.Delegations.Services.IVisitRequestAggregateStatusService, PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService>();
 
-        // Per-campus form v2 central dual-read resolver (PR-3).
+        // Central per-campus form content resolver — the one place campus scope and detail lookup live.
         services.AddScoped<PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService, PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService>();
 
         // Student visit photo Drive-folder provisioning (VR-{request}/{campus} tree, one row per request).

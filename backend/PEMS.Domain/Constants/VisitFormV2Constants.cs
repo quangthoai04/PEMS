@@ -1,12 +1,20 @@
 namespace PEMS.Domain.Constants;
 
-// Per-campus form v2 constants. Values MUST match the PR-2 SQL enums/columns exactly
-// (docs/database/scripts/percampus_v2_migration).
+// Per-campus form constants. Values MUST match the canonical SQL enums/columns exactly.
 
+/// <summary>
+/// Historical form-schema numbers. The <c>form_schema_version</c> column they described no longer
+/// exists on any table, and no runtime code branches on them — form content lives in
+/// visit_instance_form_details for every request, with no other shape to distinguish.
+///
+/// Kept only because test fixtures still pass these values as an inert seed argument. Nothing here
+/// selects a read or write path, and adding a branch on them would reintroduce the discriminator the
+/// schema deliberately dropped.
+/// </summary>
 public static class FormSchemaVersions
 {
-    public const byte Legacy = 1; // global form on visit_requests (compatibility projection)
-    public const byte PerCampus = 2; // active data in visit_instance_form_details
+    public const byte Legacy = 1;
+    public const byte PerCampus = 2;
 }
 
 public static class PrimaryContactAccessStatuses

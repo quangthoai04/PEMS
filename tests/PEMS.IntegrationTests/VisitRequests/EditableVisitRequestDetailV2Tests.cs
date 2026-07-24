@@ -86,20 +86,27 @@ public sealed class EditableVisitRequestDetailV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Replaces the former V1 test, which was the only one asserting the edit MODE and the guest list on a
+    /// single-campus request. Under Pure V2 the guest list is reached through
+    /// <c>visit_instance_guest_members</c> for that one campus — there is no request-level roster to fall
+    /// back to, so an editable payload that still produced one would be reading something that must not exist.
+    /// </summary>
     [Fact]
-    public async Task V1_editable_returns_global_form()
+    public async Task Single_campus_editable_payload_is_edit_mode_with_the_campus_guest_list()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, _) = await SeedEditable(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false);
+        var (req, _) = await SeedEditable(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, Owner(), req.VisitRequestId);
 
         Assert.Equal("EDIT", dto.Mode);
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("GLOBAL-PURPOSE", dto.Purpose);
-        Assert.Contains(dto.Visitors, m => m.FullName == "G1");
+        Assert.Equal("V2-DELEG", dto.DelegationName);
+        Assert.Equal("V2-PURPOSE", dto.Purpose);
+        Assert.Contains(dto.Visitors, m => m.FullName == "A-guest");
+        Assert.Single(dto.CampusVisits);
         await tx.RollbackAsync();
     }
 
@@ -174,15 +181,14 @@ public sealed class EditableVisitRequestDetailV2Tests
         VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

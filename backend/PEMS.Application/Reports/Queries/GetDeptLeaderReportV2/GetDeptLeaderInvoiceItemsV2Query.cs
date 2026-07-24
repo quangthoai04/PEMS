@@ -94,10 +94,7 @@ public sealed class GetDeptLeaderInvoiceItemsV2QueryHandler
                     li.Status,
                     ci.VisitRequest.RequestCode,
                     // Instance row: mixed v2 shows THIS instance's detail name.
-                    DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                     && ci.VisitRequest.HasMixedCampusDetails
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName,
+                    DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                     StartAt = startAt,
                     EndAt = li.UsageEndAt ?? ci.PlannedEndAt,
                     HostId = ci.CurrentHostUserId,

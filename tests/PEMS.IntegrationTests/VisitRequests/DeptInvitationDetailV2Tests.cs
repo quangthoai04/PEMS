@@ -76,21 +76,31 @@ public sealed class DeptInvitationDetailV2Tests
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// DECISION-01. The request row still carries a PRIMARY contact — a request-level relation — and each
+    /// campus detail carries its own OPERATIONAL contact. This surface must show the operational one and
+    /// must never reach past a detail to the primary contact.
+    ///
+    /// Replaces the former V1 test: with the global form columns dropped there is no V1 read path left,
+    /// and the primary contact is now the only request-level value a contact field could wrongly fall back
+    /// to. Seeding the two with different literals is what makes such a fallback visible.
+    /// </summary>
     [Fact]
-    public async Task V1_returns_global_form_byte_identical()
+    public async Task Contact_is_the_campus_operational_contact_never_the_request_primary_contact()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (_, parts) = await Seed(db, FormSchemaVersions.Legacy, new[] { Campus1 }, mixed: false);
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, parts[0]);
 
-        Assert.Equal("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("GLOBAL-PURPOSE", dto.Purpose);
-        Assert.Equal("GLOBAL-CONTENT", dto.WorkingContent);
-        Assert.Equal("Primary Contact", dto.ContactPersonFullName);
-        Assert.Equal("+8491", dto.ContactPersonPhone);
+        Assert.Equal("Op-A", dto.ContactPersonFullName);
+        Assert.Equal("+8410", dto.ContactPersonPhone);
+        Assert.NotEqual("Primary Contact", dto.ContactPersonFullName);
+        Assert.NotEqual("+8491", dto.ContactPersonPhone);
+
+        // Registrant identity is genuinely request-level and must still come through unchanged.
         Assert.Equal("Reg", dto.RegistrantFullName);
         await tx.RollbackAsync();
     }
@@ -219,15 +229,14 @@ public sealed class DeptInvitationDetailV2Tests
         VisitorUserId = ParticipantUser,
         RegistrantUserId = ParticipantUser,
         CreatedSource = "VISITOR_SUBMITTED",
-        FormSchemaVersion = schemaVersion,
         HasMixedCampusDetails = mixed,
         RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
         RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
-        DelegationName = "GLOBAL-DELEG", VisitScope = scope, VisitType = "MEETING",
-        Purpose = "GLOBAL-PURPOSE", WorkingContent = "GLOBAL-CONTENT",
+        VisitScope = scope,
+        // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
+        // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
         ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
         ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        WorkingLanguage = "EN", MediaConsentStatus = "DECLINED",
         PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };

@@ -1,15 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 
 // The v2 detail view and the flat info panel are replaced with markers so the test asserts ONLY which
-// branch the modal chose (v1 flat vs v2 per-campus), never their internals.
+// branch the modal chose (flat vs per-campus v2), never their internals.
 vi.mock('../../../features/visit-request/components/v2/VisitRequestV2DetailView', () => ({
   default: ({ visitRequestId }: { visitRequestId: number }) => (
     <div data-testid="v2-detail">v2:{visitRequestId}</div>
   ),
 }));
 vi.mock('../../../features/delegations/components/SubmittedVisitRequestInfoPanel', () => ({
-  SubmittedVisitRequestInfoPanel: () => <div data-testid="v1-panel">v1 flat</div>,
+  SubmittedVisitRequestInfoPanel: () => <div data-testid="v1-panel">flat</div>,
 }));
 vi.mock('../../../features/delegations/api/delegationsApi', () => ({
   delegationsApi: { getSubmittedVisitRequestFormDetail: vi.fn() },
@@ -30,31 +30,20 @@ const flat = (overrides: Partial<SubmittedVisitRequestFormDetail> = {}): Submitt
 
 const mockFetch = vi.mocked(delegationsApi.getSubmittedVisitRequestFormDetail);
 
-describe('SubmittedVisitRequestDetailModal — version-aware branch', () => {
+// Pure V2: the modal chooses its shape from the backend's answer alone — a flat projection for a
+// uniform request, or a stable upgrade-required 409 for a mixed one. There is no form-version field
+// and no version prop; a mixed request cannot be represented flat, so the backend signals it by status.
+describe('SubmittedVisitRequestDetailModal', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('renders the flat v1 panel for a v1 request', async () => {
-    mockFetch.mockResolvedValue(flat({ formSchemaVersion: 1 }));
+  it('renders the flat panel when the backend returns a flat projection (uniform request)', async () => {
+    mockFetch.mockResolvedValue(flat());
     render(<SubmittedVisitRequestDetailModal isOpen visitRequestId={7} onClose={() => {}} />);
     expect(await screen.findByTestId('v1-panel')).toBeInTheDocument();
     expect(screen.queryByTestId('v2-detail')).toBeNull();
   });
 
-  it('renders the v2 detail for a UNIFORM v2 request (flat-looking, version=2)', async () => {
-    mockFetch.mockResolvedValue(flat({ formSchemaVersion: 2 }));
-    render(<SubmittedVisitRequestDetailModal isOpen visitRequestId={7} onClose={() => {}} />);
-    expect(await screen.findByTestId('v2-detail')).toBeInTheDocument();
-    expect(screen.queryByTestId('v1-panel')).toBeNull();
-  });
-
-  it('treats a missing version as legacy v1 (fail-safe)', async () => {
-    mockFetch.mockResolvedValue(flat({ formSchemaVersion: undefined }));
-    render(<SubmittedVisitRequestDetailModal isOpen visitRequestId={7} onClose={() => {}} />);
-    expect(await screen.findByTestId('v1-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('v2-detail')).toBeNull();
-  });
-
-  it('routes a v1 upgrade-required 409 to the v2 detail (mixed v2), not a raw error', async () => {
+  it('renders the per-campus v2 detail on a stable upgrade-required 409 (mixed request)', async () => {
     const err = Object.assign(new Error('conflict'), {
       isAxiosError: true,
       response: { status: 409, data: { errorCode: 'FORM_VERSION_UPGRADE_REQUIRED' } },
@@ -63,11 +52,5 @@ describe('SubmittedVisitRequestDetailModal — version-aware branch', () => {
     render(<SubmittedVisitRequestDetailModal isOpen visitRequestId={7} onClose={() => {}} />);
     expect(await screen.findByTestId('v2-detail')).toBeInTheDocument();
     expect(screen.queryByTestId('v1-panel')).toBeNull();
-  });
-
-  it('opens the v2 detail immediately when the caller passes formSchemaVersion=2 (no flat fetch)', async () => {
-    render(<SubmittedVisitRequestDetailModal isOpen visitRequestId={7} formSchemaVersion={2} onClose={() => {}} />);
-    expect(await screen.findByTestId('v2-detail')).toBeInTheDocument();
-    await waitFor(() => expect(mockFetch).not.toHaveBeenCalled());
   });
 });

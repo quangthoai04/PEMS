@@ -31,14 +31,13 @@ public sealed class ExecuteEmailActionCommandHandler
         _formReadService = formReadService;
     }
 
-    // The action is bound to ONE campus instance (token → participant/logistics item → instance), so v2 (incl.
-    // mixed) shows THIS instance's per-campus delegation name — never the global field, never a sibling. v1
-    // keeps the global value. No global fallback for v2.
+    // The action is bound to ONE campus instance (token → participant/logistics item → instance), so it shows
+    // THAT instance's own delegation name — never a sibling's, and never a request-level value, which does
+    // not exist. A missing detail is not papered over.
     private async Task<string?> ResolveDelegationNameAsync(VisitRequestCampus? instance, CancellationToken ct)
     {
         var visit = instance?.VisitRequest;
         if (visit is null) return null;
-        if (visit.FormSchemaVersion < FormSchemaVersions.PerCampus) return visit.DelegationName;
         var content = await _formReadService.ResolveCampusFormContentAsync(
             visit, new[] { instance!.VisitInstanceId }, ct);
         return content[instance.VisitInstanceId].DelegationName;

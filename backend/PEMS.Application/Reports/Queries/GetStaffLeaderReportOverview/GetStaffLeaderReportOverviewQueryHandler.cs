@@ -230,10 +230,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 x.f.FeedbackId,
                 VisitInstanceId = x.ci.VisitInstanceId,
                 // Instance row: mixed v2 shows THIS instance's detail name.
-                DelegationName = x.ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && x.ci.VisitRequest.HasMixedCampusDetails
-                    ? (x.ci.FormDetail != null ? x.ci.FormDetail.DelegationName : null)
-                    : x.ci.VisitRequest.DelegationName,
+                DelegationName = x.ci.FormDetail != null ? x.ci.FormDetail.DelegationName : null,
                 x.ci.CurrentHostUserId,
                 x.f.Rating,
                 x.f.Comment,
@@ -251,10 +248,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 x.f.FeedbackId,
                 VisitInstanceId = x.ci.VisitInstanceId,
                 // Instance row: mixed v2 shows THIS instance's detail name.
-                DelegationName = x.ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && x.ci.VisitRequest.HasMixedCampusDetails
-                    ? (x.ci.FormDetail != null ? x.ci.FormDetail.DelegationName : null)
-                    : x.ci.VisitRequest.DelegationName,
+                DelegationName = x.ci.FormDetail != null ? x.ci.FormDetail.DelegationName : null,
                 x.ci.CurrentHostUserId,
                 x.f.Rating,
                 x.f.Comment,
@@ -332,19 +326,15 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 r.RequestCode,
                 // The Staff Leader's view of a mixed v2 request = THEIR OWN campus's detail (never the
                 // projection, never a sibling campus's content).
-                DelegationName = r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
-                    ? r.CampusInstances
+                DelegationName = r.CampusInstances
                         .Where(ci => ci.CampusId == campusId && ci.FormDetail != null)
                         .Select(ci => ci.FormDetail!.DelegationName)
-                        .FirstOrDefault()
-                    : r.DelegationName,
+                        .FirstOrDefault(),
                 r.RegistrantOrganization,
-                VisitType = r.FormSchemaVersion >= FormSchemaVersions.PerCampus && r.HasMixedCampusDetails
-                    ? r.CampusInstances
+                VisitType = r.CampusInstances
                         .Where(ci => ci.CampusId == campusId && ci.FormDetail != null)
                         .Select(ci => ci.FormDetail!.VisitType)
-                        .FirstOrDefault()
-                    : r.VisitType,
+                        .FirstOrDefault(),
                 r.Status,
                 r.SubmittedAt,
                 VisitInstanceId = r.CampusInstances
@@ -395,10 +385,7 @@ public sealed class GetStaffLeaderReportOverviewQueryHandler
                 ci.VisitInstanceId,
                 ci.VisitRequest.RequestCode,
                 // Instance row: mixed v2 shows THIS instance's detail name.
-                DelegationName = ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && ci.VisitRequest.HasMixedCampusDetails
-                    ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                    : ci.VisitRequest.DelegationName,
+                DelegationName = ci.FormDetail != null ? ci.FormDetail.DelegationName : null,
                 ci.PlannedEndAt,
                 ci.CurrentHostUserId,
                 ci.NewsNotRequired,

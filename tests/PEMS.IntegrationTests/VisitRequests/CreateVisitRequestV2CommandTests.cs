@@ -136,12 +136,12 @@ public sealed class CreateVisitRequestV2CommandTests
     {
         RequireDb();
         using var db = NewContext();
-        var before = await db.VisitRequests.CountAsync(v => v.FormSchemaVersion >= FormSchemaVersions.PerCampus);
+        var before = await db.VisitRequests.CountAsync();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             Handler(db, read: true, write: false).Handle(new CreateVisitRequestV2Command(Form(Guid.NewGuid().ToString("N"))), CancellationToken.None));
 
-        var after = await db.VisitRequests.CountAsync(v => v.FormSchemaVersion >= FormSchemaVersions.PerCampus);
+        var after = await db.VisitRequests.CountAsync();
         Assert.Equal(before, after); // nothing created
     }
 
@@ -150,13 +150,13 @@ public sealed class CreateVisitRequestV2CommandTests
     {
         RequireDb();
         using var db = NewContext();
-        var before = await db.VisitRequests.CountAsync(v => v.FormSchemaVersion >= FormSchemaVersions.PerCampus);
+        var before = await db.VisitRequests.CountAsync();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() =>
             Handler(db, read: false, write: true).Handle(new CreateVisitRequestV2Command(Form(Guid.NewGuid().ToString("N"))), CancellationToken.None));
         Assert.Equal(CreateVisitRequestV2ErrorCodes.ReadRequired, ex.ErrorCode);
 
-        var after = await db.VisitRequests.CountAsync(v => v.FormSchemaVersion >= FormSchemaVersions.PerCampus);
+        var after = await db.VisitRequests.CountAsync();
         Assert.Equal(before, after);
     }
 

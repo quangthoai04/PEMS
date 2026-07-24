@@ -73,15 +73,14 @@ public sealed class GetVisitInvitationsQueryHandler
         }
 
         // Lọc theo keyword. Scope-before-keyword: q is already restricted to the actor's own
-        // invitations/instances above. Mixed per-campus v2 rows match on THIS instance's detail name
-        // (never the global projection, never a sibling campus's content).
+        // invitations/instances above. Rows match on THIS instance's own detail name — never a sibling
+        // campus's content, and never a request-level name, which does not exist.
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword.ToLower();
+            // Keyword matches the delegation name of THIS invitation's own campus instance.
             q = q.Where(x =>
-                ((x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails)
-                    ? (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword))
-                    : (x.vr.DelegationName != null && x.vr.DelegationName.ToLower().Contains(keyword))) ||
+                (x.c.FormDetail != null && x.c.FormDetail.DelegationName.ToLower().Contains(keyword)) ||
                 (x.vr.RequestCode != null && x.vr.RequestCode.ToLower().Contains(keyword)));
         }
 
@@ -121,9 +120,7 @@ public sealed class GetVisitInvitationsQueryHandler
                 x.c.VisitRequestId,
                 x.c.CampusId,
                 x.vr.RequestCode,
-                DelegationName = x.vr.FormSchemaVersion >= FormSchemaVersions.PerCampus && x.vr.HasMixedCampusDetails
-                    ? (x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null)
-                    : x.vr.DelegationName,
+                DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 x.vr.VisitScope,
                 x.c.PlannedStartAt,
                 x.c.PlannedEndAt,

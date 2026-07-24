@@ -8,7 +8,8 @@
     "saveFailed": "Không thể lưu dữ liệu. Vui lòng thử lại.",
     "loadFailed": "Không thể tải dữ liệu. Vui lòng thử lại.",
     "defaultError": "Đã xảy ra lỗi. Vui lòng thử lại.",
-    "networkError": "Không thể kết nối tới máy chủ. Vui lòng kiểm tra kết nối mạng."
+    "networkError": "Không thể kết nối tới máy chủ. Vui lòng kiểm tra kết nối mạng.",
+    "timeoutError": "Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại."
   },
   "http": {
     "400": "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",

@@ -257,10 +257,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.VisitInstanceId,
                 li.VisitInstance.VisitRequest.RequestCode,
                 // Instance row: mixed v2 shows THIS instance's detail name.
-                DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
-                    ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
-                    : li.VisitInstance.VisitRequest.DelegationName,
+                DelegationName = li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null,
                 li.Title,
                 li.ItemType,
                 li.Quantity,
@@ -301,10 +298,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.Quantity,
                 li.VisitInstance.VisitRequest.RequestCode,
                 // Instance row: mixed v2 shows THIS instance's detail name.
-                DelegationName = li.VisitInstance.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                 && li.VisitInstance.VisitRequest.HasMixedCampusDetails
-                    ? (li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null)
-                    : li.VisitInstance.VisitRequest.DelegationName,
+                DelegationName = li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null,
                 h.HandoverType,
                 h.BorrowerSignedAt,
                 h.ProviderSignedAt,
@@ -655,10 +649,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 f.SubmittedAt,
                 DelegationName = _db.VisitRequestCampuses
                     .Where(ci => (ulong?)ci.VisitInstanceId == f.VisitInstanceId)
-                    .Select(ci => ci.VisitRequest.FormSchemaVersion >= FormSchemaVersions.PerCampus
-                                  && ci.VisitRequest.HasMixedCampusDetails
-                        ? (ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
-                        : ci.VisitRequest.DelegationName)
+                    .Select(ci => ci.FormDetail != null ? ci.FormDetail.DelegationName : null)
                     .FirstOrDefault(),
             })
             .ToListAsync(cancellationToken);

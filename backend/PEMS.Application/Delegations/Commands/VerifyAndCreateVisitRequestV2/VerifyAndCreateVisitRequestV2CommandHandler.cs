@@ -164,6 +164,16 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
                 boundForm.CampusVisits.Select(cv => (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther)));
 
             var duplicateWindowStart = now.AddMinutes(-15);
+
+            // Row-level lock the fingerprint so concurrent requests sequence on the duplicate check.
+            var dbContext = (DbContext)_db;
+            await dbContext.Database.ExecuteSqlRawAsync(
+                "INSERT IGNORE INTO visit_request_fingerprint_guards (fingerprint, created_at, updated_at) VALUES ({0}, {1}, {1})",
+                fingerprint, now);
+            await dbContext.Set<VisitRequestFingerprintGuard>()
+                .FromSqlRaw("SELECT * FROM visit_request_fingerprint_guards WHERE fingerprint = {0} FOR UPDATE", fingerprint)
+                .FirstOrDefaultAsync(cancellationToken);
+
             var duplicate = await _db.VisitRequests.AsNoTracking()
                 .Where(r => r.BusinessFingerprint == fingerprint
                             && r.SubmittedAt >= duplicateWindowStart
@@ -245,7 +255,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         string submissionId, string? currentFingerprint, CancellationToken cancellationToken)
     {
         var existing = await _db.VisitRequests.AsNoTracking()
-            .Where(v => v.SubmissionId == submissionId && v.FormSchemaVersion >= FormSchemaVersions.PerCampus)
+            .Where(v => v.SubmissionId == submissionId)
             .Select(v => new { v.VisitRequestId, v.BusinessFingerprint })
             .FirstOrDefaultAsync(cancellationToken);
         if (existing is null)

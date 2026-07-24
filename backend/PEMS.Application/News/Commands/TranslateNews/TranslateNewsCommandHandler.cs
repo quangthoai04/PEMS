@@ -101,9 +101,9 @@ public sealed class TranslateNewsCommandHandler
 
         // Plain-text batch: [title, summary, section titles…]; HTML batch: section bodies.
         var plainInputs = new List<string> { source.Title, source.Summary ?? string.Empty };
-        plainInputs.AddRange(sourceSections.Select(s => s.SectionTitle ?? string.Empty));
+        plainInputs.AddRange(sourceSections.Select(s => s.SectionTitle));
 
-        var htmlInputs = sourceSections.Select(s => s.SectionBodyHtml ?? string.Empty).ToList();
+        var htmlInputs = sourceSections.Select(s => s.SectionBodyHtml).ToList();
 
         var plainResults = await _translator.TranslateTextAsync(plainInputs, sourceLang, targetLang, cancellationToken);
         var htmlResults  = await _translator.TranslateHtmlAsync(htmlInputs, sourceLang, targetLang, cancellationToken);

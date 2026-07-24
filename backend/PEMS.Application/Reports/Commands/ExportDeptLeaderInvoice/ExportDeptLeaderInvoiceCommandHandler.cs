@@ -64,8 +64,6 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
                 ci.VisitInstanceId,
                 ci.VisitRequestId,
                 ci.VisitRequest.RequestCode,
-                ci.VisitRequest.DelegationName,
-                ci.VisitRequest.FormSchemaVersion,
                 ci.PlannedStartAt,
                 ci.PlannedEndAt,
                 ci.CurrentHostUserId,
@@ -74,18 +72,13 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
         if (visit == null)
             throw new NotFoundException("Không tìm thấy chuyến thăm trong phạm vi phòng ban của bạn.");
 
-        // This invoice is for ONE campus instance → v2 (incl. mixed) stamps THIS instance's per-campus
-        // delegation name into the PDF (never the global field, never a sibling); v1 keeps the global value,
-        // byte-identical. No global fallback for v2 (missing detail → the standard 409).
-        var delegationName = visit.DelegationName;
-        if (visit.FormSchemaVersion >= FormSchemaVersions.PerCampus)
-        {
-            var visitEntity = await _db.VisitRequests.AsNoTracking()
-                .FirstAsync(v => v.VisitRequestId == visit.VisitRequestId, cancellationToken);
-            var formContent = await _formReadService.ResolveCampusFormContentAsync(
-                visitEntity, new[] { visit.VisitInstanceId }, cancellationToken);
-            delegationName = formContent[visit.VisitInstanceId].DelegationName;
-        }
+        // This invoice is for ONE campus instance → it stamps THAT instance's per-campus delegation name
+        // into the PDF, never a sibling campus. A missing detail raises the standard 409, no fallback.
+        var visitEntity = await _db.VisitRequests.AsNoTracking()
+            .FirstAsync(v => v.VisitRequestId == visit.VisitRequestId, cancellationToken);
+        var formContent = await _formReadService.ResolveCampusFormContentAsync(
+            visitEntity, new[] { visit.VisitInstanceId }, cancellationToken);
+        var delegationName = formContent[visit.VisitInstanceId].DelegationName;
 
         // Re-read the requested items from the DB — quantity always comes from the host request.
         var requestedIds = request.Items.Select(i => i.LogisticsItemId).Distinct().ToList();
