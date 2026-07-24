@@ -5623,8 +5623,7 @@ INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash,
   (211, 'Hiroshi Nakamura', 'hiroshi.nakamura@osaka-design.example', '+81900000211', 'Nhật Bản', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
   (212, 'Fatima Zahra', 'fatima.zahra@casablanca-tech.example', '+21260000212', 'Morocco', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'SSO_AUTO_PROVISION', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
   (213, 'Visitor Locked Test', 'visitor.locked.test@example.com', '+12060000213', 'Canada', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'LOCKED', '2026-03-11 08:00:00', 7, '2026-06-25 08:00:00', 'VISITOR_FORM', '2026-03-11 09:00:00', '2026-06-20 09:00:00', '2026-03-11 08:00:00', NULL, '2026-06-20 09:00:00', NULL),
-  (214, 'Visitor Inactive Archive', 'visitor.inactive.archive@example.com', '+12060000214', 'New Zealand', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'INACTIVE', '2026-03-11 08:10:00', 0, NULL, 'VISITOR_FORM', '2026-03-11 09:10:00', '2026-04-01 09:10:00', '2026-03-11 08:10:00', NULL, '2026-05-01 09:10:00', NULL),
-  (215, 'HO Inactive Campus Archive', 'ho.inactive.archive@fpt.edu.vn', '0902000215', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 2, NULL, 1, NULL, 'MALE', NULL, NULL, 'FE-EXTRA-215', 'INACTIVE', '2026-02-11 11:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 11:00:00', '2026-04-30 11:00:00', '2026-02-11 11:00:00', 1, '2026-04-30 11:00:00', 1);
+  (214, 'Visitor Inactive Archive', 'visitor.inactive.archive@example.com', '+12060000214', 'New Zealand', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'INACTIVE', '2026-03-11 08:10:00', 0, NULL, 'VISITOR_FORM', '2026-03-11 09:10:00', '2026-04-01 09:10:00', '2026-03-11 08:10:00', NULL, '2026-05-01 09:10:00', NULL);
 
 UPDATE departments SET head_user_id = 121, updated_at = '2026-02-12 08:41:00', updated_by = 2 WHERE department_id = 101;
 UPDATE departments SET head_user_id = 123, updated_at = '2026-02-12 08:42:00', updated_by = 2 WHERE department_id = 102;
@@ -5694,7 +5693,6 @@ INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provi
   (252, 212, 'GOOGLE_SSO', 'google_sso-subject-212', 'fatima.zahra@casablanca-tech.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
   (253, 213, 'GOOGLE_SSO', 'google_sso-subject-213', 'visitor.locked.test@example.com', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
   (254, 214, 'GOOGLE_SSO', 'google_sso-subject-214', 'visitor.inactive.archive@example.com', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (255, 215, 'GOOGLE_SSO', 'google_sso-subject-215', 'ho.inactive.archive@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
   (256, 101, 'LOCAL_PASSWORD', NULL, 'ic.host.training.hn@fpt.edu.vn', TRUE, '2026-03-12 09:00:00', NULL),
   (257, 121, 'LOCAL_PASSWORD', NULL, 'it.leader.hn@fpt.edu.vn', TRUE, '2026-03-12 09:00:00', NULL),
   (258, 201, 'LOCAL_PASSWORD', NULL, 'aarav.mehta@iit-partners.example', TRUE, '2026-03-12 09:00:00', NULL),
@@ -8980,62 +8978,14 @@ INSERT INTO minute_action_items (action_item_id, minutes_id, title, note, due_da
 -- Old galleries/gallery_images seed has been migrated to the normalized model.
 -- =====================================================================
 
-INSERT INTO gallery_areas (area_id, campus_id, area_name, area_key, status, display_order, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, 'Academic Area', 'academic-area', 'ACTIVE', 0, '2026-04-01 09:00:00', 4, NULL, NULL),
-  (2, 1, 'Lab Zone', 'lab-zone', 'ACTIVE', 1, '2026-04-01 09:30:00', 4, NULL, NULL),
-  (3, 2, 'Green Walkway', 'green-walkway', 'ACTIVE', 2, '2026-04-02 09:00:00', 10, NULL, NULL),
-  (4, 3, 'Riverside Lab', 'riverside-lab', 'ACTIVE', 3, '2026-04-03 09:00:00', 12, NULL, NULL),
-  (5, 4, 'Mekong Workshop Zone', 'mekong-workshop-zone', 'ACTIVE', 4, '2026-04-04 09:00:00', 14, NULL, NULL),
-  (6, 5, 'Coastal Innovation Area', 'coastal-innovation-area', 'ACTIVE', 5, '2026-04-05 09:00:00', 16, NULL, NULL),
-  (7, 1, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 6, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (8, 2, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 7, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (9, 3, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 8, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (10, 4, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 9, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (11, 5, 'Coverage Zone', 'coverage-zone', 'ACTIVE', 10, '2026-08-18 08:00:00', 4, NULL, NULL);
-
-INSERT INTO gallery_locations (location_id, area_id, location_name, location_key, status, display_order, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, 'Alpha Lobby', 'alpha-lobby', 'ACTIVE', 0, '2026-04-01 09:00:00', 4, NULL, NULL),
-  (2, 2, 'Innovation Lab', 'innovation-lab', 'ACTIVE', 0, '2026-04-01 09:30:00', 4, NULL, NULL),
-  (3, 3, 'Central Walkway', 'central-walkway', 'ACTIVE', 0, '2026-04-02 09:00:00', 10, NULL, NULL),
-  (4, 4, 'Da Nang Lab View', 'da-nang-lab-view', 'ACTIVE', 0, '2026-04-03 09:00:00', 12, NULL, NULL),
-  (5, 5, 'CT Workshop Room', 'ct-workshop-room', 'ACTIVE', 0, '2026-04-04 09:00:00', 14, NULL, NULL),
-  (6, 6, 'QN Hospitality Space', 'qn-hospitality-space', 'ACTIVE', 0, '2026-04-05 09:00:00', 16, NULL, NULL),
-  (7, 7, 'Coverage Location 17001', 'coverage-location-17001', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (8, 7, 'Coverage Location 17002', 'coverage-location-17002', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (9, 7, 'Coverage Location 17003', 'coverage-location-17003', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (10, 7, 'Coverage Location 17004', 'coverage-location-17004', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (11, 7, 'Coverage Location 17005', 'coverage-location-17005', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (12, 7, 'Coverage Location 17006', 'coverage-location-17006', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (13, 8, 'Coverage Location 17007', 'coverage-location-17007', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (14, 8, 'Coverage Location 17008', 'coverage-location-17008', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (15, 8, 'Coverage Location 17009', 'coverage-location-17009', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (16, 8, 'Coverage Location 17010', 'coverage-location-17010', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (17, 8, 'Coverage Location 17011', 'coverage-location-17011', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (18, 8, 'Coverage Location 17012', 'coverage-location-17012', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (19, 9, 'Coverage Location 17013', 'coverage-location-17013', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (20, 9, 'Coverage Location 17014', 'coverage-location-17014', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (21, 9, 'Coverage Location 17015', 'coverage-location-17015', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (22, 9, 'Coverage Location 17016', 'coverage-location-17016', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (23, 9, 'Coverage Location 17017', 'coverage-location-17017', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (24, 9, 'Coverage Location 17018', 'coverage-location-17018', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (25, 10, 'Coverage Location 17019', 'coverage-location-17019', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (26, 10, 'Coverage Location 17020', 'coverage-location-17020', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (27, 10, 'Coverage Location 17021', 'coverage-location-17021', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (28, 10, 'Coverage Location 17022', 'coverage-location-17022', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (29, 10, 'Coverage Location 17023', 'coverage-location-17023', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (30, 10, 'Coverage Location 17024', 'coverage-location-17024', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (31, 11, 'Coverage Location 17025', 'coverage-location-17025', 'ACTIVE', 0, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (32, 11, 'Coverage Location 17026', 'coverage-location-17026', 'ACTIVE', 1, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (33, 11, 'Coverage Location 17027', 'coverage-location-17027', 'ACTIVE', 2, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (34, 11, 'Coverage Location 17028', 'coverage-location-17028', 'ACTIVE', 3, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (35, 11, 'Coverage Location 17029', 'coverage-location-17029', 'ACTIVE', 4, '2026-08-18 08:00:00', 4, NULL, NULL),
-  (36, 11, 'Coverage Location 17030', 'coverage-location-17030', 'ACTIVE', 5, '2026-08-18 08:00:00', 4, NULL, NULL);
+-- gallery_areas seed intentionally omitted.
+-- gallery_locations seed intentionally omitted.
 
 -- ==========================================================================
 -- Gallery item + media seed REMOVED (bilingual audio migration).
 -- Old seed items had a single `description` and no VI/EN audio, so they are no
 -- longer valid. Staff Leaders create gallery items via the UI with real audio.
--- (Areas/locations + their covers above are kept.)
+-- (Areas/locations are intentionally not seeded; schema remains available for UI-created data.)
 -- ==========================================================================
 
 -- Photo face tags are kept as a shared photo-tag module, now linked directly to files.
