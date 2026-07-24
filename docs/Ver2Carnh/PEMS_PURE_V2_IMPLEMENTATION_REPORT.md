@@ -542,6 +542,32 @@ Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / 
 
 ---
 
+## 10ter. PHASE 5 — VISIT-ADJACENT CONTRACT MATRIX (đang tiến hành)
+
+Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / TESTED` · `VERIFIED — NO CODE CHANGE` · `BLOCKED`.
+
+| Module | Surface | Actor / scope | Read source | Write target | Runtime test | Status |
+|---|---|---|---|---|---|---|
+| **5A Vision** | Confirm face tags | Host/Leader/participant của instance | detections của scan.instance | photo_face_tags theo instance guest | **`ConfirmFaceTagsScopeV2Tests` (3)** | **FIXED/TESTED** (anti-IDOR: guest phải thuộc scan.instance; sibling & foreign-request bị chặn; replay 409; stranger Forbidden) |
+| 5A Photo | My photo folders / instance photos | participant/host/coordinator | per-instance | — | `GetMyVisitPhotoFolders/GetVisitInstancePhotos…Tests` (unit) | VERIFIED |
+| 5A Media consent | News eligibility per-campus consent | accepted-participant ∪ host | detail.MediaConsentStatus của instance | — | `NewsEligibilityScopeV2Tests` (2, Phase 3) | VERIFIED |
+| **5B Expense** | General report get + summary **read** | HO/Admin, host, campus Staff Leader, dept có logistics report | per-instance reports | — | **`VisitExpenseScopeV2Tests` (3)** | **DEFECT→FIXED** (P5-EXP-1: 2 endpoint `[Authorize]`-only, 0 scope → cross-campus read leak; thêm `VisitExpenseAccessScope`) |
+| 5B Expense | Save report (write) | Host của instance (GENERAL); dept (LOGISTICS) | — | items; `total_amount` generated | **`VisitExpenseScopeV2Tests`** | VERIFIED (host sibling bị chặn; generated total = Σ qty×price qua add/update/delete; app không ghi total) |
+| 5C Minutes | List + search + export | non-HO→campus scope | per-instance detail | — | `MinutesListScopeAndShapeV2Tests` (3) + `MinutesExportPerCampusV2Tests` (2) (Phase 3) | VERIFIED |
+| 5C Documents | Owner context + search | Staff Leader→campus doc | instance→own; request→span | — | `DocumentVisitOwnerContextV2Tests` (3) + `DocumentSearchScopeV2Tests` (2) (Phase 3) | VERIFIED |
+| 5D News | Eligibility + contribution consent | accepted-participant ∪ host; per-campus consent | per-instance | news.visit_instance_id | `NewsEligibilityScopeV2Tests` (2) | VERIFIED (eligibility); contribution-create consent còn CODE-OK/TEST-MISSING |
+| 5C Minutes | Create/edit mutation | Host/participant | — | minutes theo instance | — | CODE-OK / TEST-MISSING |
+| 5E Agenda | Save agenda mutation | Host của instance | — | agenda theo instance | — | CODE-OK / TEST-MISSING |
+| 5E Logistics | Create/assign/handover/cancel | Host/department | — | logistics theo instance | — | CODE-OK / TEST-MISSING |
+
+### Defect thật đã sửa trong Phase 5
+
+- **P5-EXP-1 (cross-campus expense read leak).** `GET /api/visit-expenses/general/{id}` (`GetOrCreateGeneralExpenseReport` get-branch) và `GET /api/visit-expenses/summary/{id}` (`GetVisitInstanceExpenseSummary`) đều `[Authorize]`-only, handler trả toàn bộ item chi phí cho bất kỳ user đăng nhập nào → user Campus A đọc được chi phí Campus B theo instance id. Thêm `VisitExpenseAccessScope.EnsureCanViewAsync` (HO/Admin, host, Staff Leader đúng campus, dept có logistics report). Write path vốn đã host-scoped.
+
+**Còn lại để tuyên bố Phase 5 VERIFIED:** runtime test cho minutes create/edit mutation (5C), save-agenda mutation (5E), logistics mutation + handover + cancel-cascade (5E), news contribution-create consent (5D). Các surface đọc (list/detail/search/report/export) đã VERIFIED từ Phase 3.
+
+---
+
 ## 11. COMMIT ĐÃ TẠO (local, chưa push)
 
 | Hash | Slice |
