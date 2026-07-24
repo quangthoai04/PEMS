@@ -4,29 +4,23 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  ChevronDown, 
-  ChevronUp, 
-  Star, 
-  Calendar, 
-  Users, 
-  Clock, 
-  CheckSquare, 
-  Square, 
-  Upload, 
+import {
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  Users,
+  User,
+  Clock,
+  Upload,
   AlertCircle,
-  FileText, 
-  Building2, 
-  User, 
-  Briefcase, 
-  Phone, 
-  Mail, 
-  ExternalLink,
+  FileText,
+  Building2,
+  Briefcase,
+  Phone,
+  Mail,
   Plus,
-  CheckCircle2,
   X,
-  Check,
-  Globe,
+  CheckCircle2,
   Link2,
   MapPin,
   Loader2
@@ -74,153 +68,24 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     fetchMatches();
   }, [guestMembers, supportMembers]);
 
-  // State for Feedback table expansions
-  const [expandedRow1, setExpandedRow1] = useState(false);
-  const [expandedRow3, setExpandedRow3] = useState(false);
-  const [expandedRow4, setExpandedRow4] = useState(false);
-
-  const [ratings, setRatings] = useState<Record<string, number>>({
-    "guide": 5, "agenda": 4, "service": 5, "facility": 5
-  });
-  const [feedbacks, setFeedbacks] = useState<Record<string, string>>({
-    "guide": "Rất nhiệt tình và chuyên nghiệp.",
-    "agenda": "Lịch trình hợp lý, đúng giờ.",
-    "service": "Chu đáo, thân thiện.",
-    "facility": "Cơ sở vật chất hiện đại, khang trang."
-  });
-
-  const handleRating = (key: string, value: number) => setRatings(prev => ({ ...prev, [key]: value }));
-  const handleFeedback = (key: string, value: string) => setFeedbacks(prev => ({ ...prev, [key]: value }));
-
-  // Meeting Minutes state
-  const [notes, setNotes] = useState("Đoàn đánh giá cao cơ sở vật chất.\nTrao đổi tích cực về cơ hội hợp tác.");
-  const [actionItems, setActionItems] = useState([
-    { id: 1, text: "Gửi tài liệu giới thiệu chương trình", done: false, deadline: "2023-10-30" },
-    { id: 2, text: "Lên lịch họp chuyên sâu", done: false, deadline: "2023-11-05" }
-  ]);
-  const [meetingCompleted, setMeetingCompleted] = useState(false);
-
-  // Scan result state
   // Main sections open/close state
   const [isSection1Expanded, setIsSection1Expanded] = useState(true);
   const [isSection2Expanded, setIsSection2Expanded] = useState(true);
   const [isSection3Expanded, setIsSection3Expanded] = useState(true);
   const [isSection4Expanded, setIsSection4Expanded] = useState(true);
 
-  // Meeting Minutes state
-  const [isMeetingMinutesCreatedState, setIsMeetingMinutesCreated] = useState(false);
-  const isMeetingMinutesCreated = isMeetingMinutesCreatedState || isReadOnly;
-  const [isMeetingMinutesModalOpen, setIsMeetingMinutesModalOpen] = useState(false);
-  const [meetingDate, setMeetingDate] = useState("2023-11-20");
-  const [meetingName, setMeetingName] = useState("Họp trao đổi hợp tác");
-  const [attendees, setAttendees] = useState(["BGH FPTU", "Quản lý IC", "Đại diện ĐH Tokyo"]);
-  const [newAttendee, setNewAttendee] = useState("");
-  const [isAddingAttendee, setIsAddingAttendee] = useState(false);
-
-  // Redesigned participant list with confirmation, organization, and partner status
-  const [participantsList, setParticipantsList] = useState([
-    { id: 1, name: "Prof. Kenji Suzuki", role: "Giám đốc Hợp tác Quốc tế", org: "Đại học Tokyo", isPartner: true, confirmed: true },
-    { id: 2, name: "Dr. Yuki Tanaka", role: "Trưởng phòng Đào tạo", org: "Đại học Tokyo", isPartner: true, confirmed: true },
-    { id: 3, name: "Mr. Satoshi Nakamoto", role: "Đại diện Nghiên cứu", org: "Đại học Keio", isPartner: false, confirmed: false },
-    { id: 4, name: "Nguyễn Văn Nhật", role: "Quản lý Dự án", org: "Tập đoàn công nghệ FPT", isPartner: false, confirmed: true },
-    { id: 5, name: "Jean-Pierre", role: "Chuyên viên Nghiệp vụ", org: "Đại học Paris-Saclay", isPartner: false, confirmed: false },
-    { id: 6, name: "Nguyễn Thị Hồng Hạnh", role: "Cán bộ IC", org: "Phòng Hợp tác Quốc tế (IC)", isPartner: false, confirmed: true, isInternal: true },
-    { id: 7, name: "Trần Thế Minh", role: "Cán bộ IC", org: "Phòng Hợp tác Quốc tế (IC)", isPartner: false, confirmed: true, isInternal: true },
-    { id: 8, name: "Phạm Minh Thư", role: "Student / Sinh viên hỗ trợ", org: "Đại học FPT", isPartner: false, confirmed: true, isInternal: true }
-  ]);
-
-  const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
-  const [activeParticipantId, setActiveParticipantId] = useState<number | null>(null);
-  
-  // Modal states for creating partner
-  const [partnerCode, setPartnerCode] = useState("");
-  const [partnerName, setPartnerName] = useState("");
-  const [partnerCountry, setPartnerCountry] = useState("");
-  const [showModalValidationErr, setShowModalValidationErr] = useState(false);
-
-  // Quick Add new participant state
-  const [quickName, setQuickName] = useState("");
-  const [quickRole, setQuickRole] = useState("");
-  const [quickOrg, setQuickOrg] = useState("");
-  const [quickIsPartner, setQuickIsPartner] = useState(false);
-  const [showQuickAddError, setShowQuickAddError] = useState(false);
-
-  const handleOpenPartnerModal = (p: any) => {
-    setActiveParticipantId(p.id);
-    setPartnerName(p.org || "");
-    setPartnerCode(p.org ? p.org.toUpperCase().replace(/\s+/g, '-').normalize("NFD").replace(/[\u0300-\u036f]/g, "").substring(0, 10) : "");
-    setPartnerCountry("");
-    setShowModalValidationErr(false);
-    setIsPartnerModalOpen(true);
-  };
-
-  const handleSavePartner = () => {
-    if (!partnerCode.trim() || !partnerName.trim() || !partnerCountry.trim()) {
-      setShowModalValidationErr(true);
-      return;
-    }
-    // Update partner status for all participants with the same org name
-    setParticipantsList(prev => prev.map(p => {
-      if (p.org.toLowerCase() === partnerName.toLowerCase().trim()) {
-        return { ...p, isPartner: true };
-      }
-      if (p.id === activeParticipantId) {
-        return { ...p, isPartner: true, org: partnerName.trim() };
-      }
-      return p;
-    }));
-
-    setIsPartnerModalOpen(false);
-    setActiveParticipantId(null);
-    setPartnerCode("");
-    setPartnerName("");
-    setPartnerCountry("");
-  };
-
-  const handleToggleConfirm = (id: number) => {
-    setParticipantsList(prev => prev.map(p => {
-      if (p.id === id) {
-        return { ...p, confirmed: !p.confirmed };
-      }
-      return p;
-    }));
-  };
-
-  const handleAddParticipant = () => {
-    if (!quickName.trim() || !quickOrg.trim()) {
-      setShowQuickAddError(true);
-      return;
-    }
-    const newId = participantsList.length > 0 ? Math.max(...participantsList.map(p => p.id)) + 1 : 1;
-    setParticipantsList(prev => [
-      ...prev,
-      {
-        id: newId,
-        name: quickName.trim(),
-        role: quickRole.trim() || "Thành viên",
-        org: quickOrg.trim(),
-        isPartner: quickIsPartner,
-        confirmed: true
-      }
-    ]);
-    setQuickName("");
-    setQuickRole("");
-    setQuickOrg("");
-    setQuickIsPartner(false);
-    setShowQuickAddError(false);
-  };
 
   const [currentOcrJobId, setCurrentOcrJobId] = useState<number | null>(null);
 
-  // Scan result state
+  // Business-card OCR result — empty by default; populated only from a real scan, never seeded.
   const [scannedInfo, setScannedInfo] = useState({
-    name: "Takahiro Sato",
-    title: "Giám đốc Nhân sự",
-    company: "Tập đoàn công nghệ FPT",
-    phone: "0345678912",
-    email: "takahiro@example.com",
-    website: "https://fpt.com.vn",
-    address: "Khu Công nghệ cao Hòa Lạc, Hà Nội"
+    name: "",
+    title: "",
+    company: "",
+    phone: "",
+    email: "",
+    website: "",
+    address: ""
   });
 
   // Document and Contact Linkage States
@@ -228,24 +93,20 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
   const [selectedPartnerForDoc, setSelectedPartnerForDoc] = useState("");
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const [docError, setDocError] = useState("");
+  // Documents added THIS session. The real persistence is the backend (partnersApi.addDocument);
+  // this list is session-only display and is intentionally NOT cached in localStorage.
   const [uploadedDocuments, setUploadedDocuments] = useState<Array<{
     id: number;
     fileName: string;
     fileSize: string;
     partner: string;
     uploadedAt: string;
-  }>>(() => {
-    if (visitInstanceId) {
-      try {
-        const saved = localStorage.getItem(`pems_visit_${visitInstanceId}_docs`);
-        if (saved) return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [];
-  });
+  }>>([]);
 
   const [selectedPartnerForContact, setSelectedPartnerForContact] = useState("");
   const [contactSaveSuccess, setContactSaveSuccess] = useState(false);
+  // Contacts saved THIS session. Real persistence is the backend (partnersApi.createContact /
+  // businessCardOcrApi.confirmContact); session-only display, NOT cached in localStorage.
   const [savedContactsList, setSavedContactsList] = useState<Array<{
     name: string;
     title: string;
@@ -255,26 +116,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     website: string;
     address: string;
     targetPartner: string;
-  }>>(() => {
-    if (visitInstanceId) {
-      try {
-        const saved = localStorage.getItem(`pems_visit_${visitInstanceId}_contacts`);
-        if (saved) return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [];
-  });
-
-  // Keep localStorage in sync when state changes
-  useEffect(() => {
-    if (!visitInstanceId) return;
-    localStorage.setItem(`pems_visit_${visitInstanceId}_docs`, JSON.stringify(uploadedDocuments));
-  }, [uploadedDocuments, visitInstanceId]);
-
-  useEffect(() => {
-    if (!visitInstanceId) return;
-    localStorage.setItem(`pems_visit_${visitInstanceId}_contacts`, JSON.stringify(savedContactsList));
-  }, [savedContactsList, visitInstanceId]);
+  }>>([]);
 
   const getAvailablePartners = () => {
     // 1. Existing partners in the system: ONLY suggested partners from DB (similar names)
@@ -417,25 +259,6 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     }
   };
 
-  const renderStars = (key: string) => {
-    return (
-      <div className="flex gap-1">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button 
-            key={star} 
-            type="button" 
-            onClick={() => !isReadOnly && handleRating(key, star)}
-            disabled={isReadOnly}
-            className={`focus:outline-none ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
-          >
-            <Star 
-              className={`w-5 h-5 ${ratings[key] >= star ? 'fill-yellow-400 text-yellow-400' : `text-gray-300 ${isReadOnly ? '' : 'hover:text-yellow-200'}`} transition-colors`} 
-            />
-          </button>
-        ))}
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
@@ -455,208 +278,8 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
           chỉ đánh giá sau khi Host xác nhận kết thúc tiếp khách. */}
 
       {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
-      {visitInstanceId ? (
+      {visitInstanceId && (
         <MinutesCard visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} />
-      ) : (
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
-        <div
-          className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
-          onClick={() => setIsSection2Expanded(!isSection2Expanded)}
-        >
-          <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
-             <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">2</span>
-             Biên bản cuộc họp
-          </h2>
-          <button className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
-            {isSection2Expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-        </div>
-        <AnimatePresence>
-          {isSection2Expanded && (
-            <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-              <fieldset disabled={isReadOnly} className="contents">
-                <div className="p-4 sm:p-6 md:p-8">
-                {!isMeetingMinutesCreated ? (
-                  <div className="text-center py-6">
-                    <button 
-                      onClick={() => setIsMeetingMinutesModalOpen(true)}
-                      className="px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl shadow-sm hover:bg-[#e0611d] transition-colors inline-flex items-center gap-2"
-                    >
-                      <Plus className="w-5 h-5" />
-                      Tạo biên bản cuộc họp
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                     <div className="flex flex-col sm:flex-row sm:items-start gap-6 mb-8">
-                        <div className="flex-1 w-full max-w-[450px]">
-                           <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Tên biên bản</label>
-                           <input 
-                             type="text" 
-                             value={meetingName}
-                             onChange={(e) => setMeetingName(e.target.value)}
-                             className="bg-blue-50 text-blue-900 px-4 py-2.5 rounded-xl font-bold border border-blue-200 outline-none w-full focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all"
-                             placeholder="Nhập tên biên bản..."
-                           />
-                        </div>
-                        <div>
-                           <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thời gian</label>
-                           <div className="bg-blue-50 text-blue-900 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-blue-200 transition-all focus-within:ring-2 focus-within:ring-[#004c91]/20 focus-within:border-[#004c91]">
-                              <Calendar className="w-5 h-5 text-blue-600 shrink-0" />
-                              <input 
-                                type="date" 
-                                value={meetingDate}
-                                onChange={(e) => setMeetingDate(e.target.value)}
-                                className="bg-transparent border-none outline-none font-bold text-blue-900 cursor-pointer w-full"
-                              />
-                           </div>
-                        </div>
-                     </div>
-
-                      {/* Redesigned Participant Table Section */}
-                      <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
-                        <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
-                          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 font-sans">
-                            <Users className="w-4 h-4 text-[#004c91]" />
-                            Bảng danh sách chi tiết người tham gia cuộc họp
-                          </h3>
-                          <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">
-                            {participantsList.length} thành viên
-                          </span>
-                        </div>
-                        
-                        <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-                          <table className="w-full text-left border-collapse text-sm">
-                            <thead className="sticky top-0 bg-white z-10 shadow-[0_1px_0_rgba(229,231,235,1)]">
-                              <tr className="border-b border-gray-200 bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold font-sans">
-                                <th className="px-4 py-3 text-center w-20">Có mặt</th>
-                                <th className="px-5 py-3">Đại biểu tham gia</th>
-                                <th className="px-5 py-3">Đơn vị của khách</th>
-                                <th className="px-5 py-3 font-semibold">Tình trạng đối tác</th>
-                                <th className="px-5 py-3 text-center">Thao tác</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {participantsList.map((p) => (
-                                <tr key={p.id} className="hover:bg-gray-50/55 transition-colors">
-                                  <td className="px-4 py-4 text-center">
-                                    <button
-                                      type="button"
-                                      disabled={isReadOnly}
-                                      onClick={() => handleToggleConfirm(p.id)}
-                                      className="inline-flex items-center justify-center focus:outline-none transition-transform active:scale-90"
-                                    >
-                                      {p.confirmed ? (
-                                        <CheckSquare className="w-5 h-5 text-green-600 fill-green-50" />
-                                      ) : (
-                                        <Square className="w-5 h-5 text-gray-300 hover:text-gray-400" />
-                                      )}
-                                    </button>
-                                  </td>
-                                  <td className="px-5 py-4 font-sans">
-                                    <div className="font-semibold text-gray-900">{p.name}</div>
-                                    <div className="text-xs text-gray-500 font-medium">{p.role}</div>
-                                  </td>
-                                  <td className="px-5 py-4 font-sans">
-                                    <div className="flex items-center gap-1.5 text-gray-700 font-medium font-sans">
-                                      <Building2 className="w-4 h-4 text-gray-400 shrink-0" />
-                                      {p.org}
-                                    </div>
-                                  </td>
-                                  <td className="px-5 py-4 font-sans">
-                                    {p.isInternal ? null : p.isPartner ? (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-                                        <Check className="w-3 text-green-500 font-black shrink-0" /> Đã thành đối tác
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                        <AlertCircle className="w-3 text-amber-500 shrink-0" /> Chưa là đối tác
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-5 py-4 text-center font-sans">
-                                    {p.isInternal ? null : !p.isPartner ? (
-                                      <button
-                                        type="button"
-                                        disabled={isReadOnly || (isDept && isMeetingMinutesCreated)}
-                                        onClick={() => handleOpenPartnerModal(p)}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white disabled:opacity-50 disabled:pointer-events-none rounded-lg shadow-sm transition-all cursor-pointer"
-                                      >
-                                        <Plus className="w-3 h-3" /> Tạo đối tác
-                                      </button>
-                                    ) : (
-                                      <span className="text-xs text-green-600 font-bold flex items-center justify-center gap-1">
-                                        <Check className="w-4 h-4 text-green-500" /> Đã kết nối
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                     <div className="space-y-6">
-                        <div>
-                          <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#f37021] before:rounded-full">Ghi chú</h3>
-                          <textarea 
-                            className="w-full bg-gray-50/50 border border-gray-200 rounded-xl p-4 text-sm font-medium text-gray-800 min-h-[120px] focus:bg-white focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all outline-none resize-y"
-                            value={notes}
-                            onChange={e => setNotes(e.target.value)}
-                            placeholder="Nhập ghi chú hoặc biên bản tham quan..."
-                          />
-                        </div>
-
-                        <div>
-                          <h3 className="text-base font-bold text-gray-800 mb-3 ml-2 relative before:content-[''] before:absolute before:left-[-12px] before:top-[6px] before:w-1.5 before:h-1.5 before:bg-[#004c91] before:rounded-full">Đầu mục công việc</h3>
-                          <div className="space-y-3 bg-gray-50/50 border border-gray-100 rounded-xl p-4">
-                            {actionItems.map((item, index) => (
-                              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                <div className="flex items-center gap-3 flex-1">
-                                  <button onClick={() => {
-                                    const newItems = [...actionItems];
-                                    newItems[index].done = !newItems[index].done;
-                                    setActionItems(newItems);
-                                  }} className="text-[#004c91]">
-                                    {item.done ? <CheckSquare className="w-5 h-5 text-green-600" /> : <Square className="w-5 h-5 text-gray-400" />}
-                                  </button>
-                                  <input 
-                                    type="text" 
-                                    value={item.text} 
-                                    onChange={e => {
-                                      const newItems = [...actionItems];
-                                      newItems[index].text = e.target.value;
-                                      setActionItems(newItems);
-                                    }}
-                                    className={`flex-1 bg-transparent border-none outline-none text-sm font-medium ${item.done ? 'line-through text-gray-400' : 'text-gray-800'}`}
-                                    placeholder="Thêm hành động..."
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                   <Calendar className="w-4 h-4 text-orange-500" />
-                                   <input type="date" value={item.deadline} onChange={e => {
-                                      const newItems = [...actionItems];
-                                      newItems[index].deadline = e.target.value;
-                                      setActionItems(newItems);
-                                   }} className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
-                                </div>
-                              </div>
-                            ))}
-                            <button onClick={() => setActionItems([...actionItems, { id: Date.now(), text: '', done: false, deadline: '' }])} className="text-sm font-bold text-[#004c91] hover:text-[#003366] flex items-center gap-1.5 px-2 py-1 outline-none">
-                               <Plus className="w-4 h-4" /> Thêm đầu mục công việc
-                            </button>
-                          </div>
-                        </div>
-                     </div>
-                  </>
-                )}
-              </div>
-            </fieldset>
-          </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
       )}
 
        {/* 3. Đối tác & Tài liệu */}
@@ -1095,118 +718,6 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
         </div>
       )}
 
-      {/* Create Partner Dialog Modal */}
-      {isPartnerModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto font-sans">
-          {/* Backdrop wrapper */}
-          <div className="flex min-h-screen items-center justify-center p-4 text-center">
-            <div 
-              className="fixed inset-0 bg-gray-900/60 transition-opacity backdrop-blur-sm" 
-              onClick={() => {
-                setIsPartnerModalOpen(false);
-                setActiveParticipantId(null);
-              }}
-            />
-
-            {/* Modal Content */}
-            <div className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all w-full max-w-md border border-gray-100 z-10 scale-100 p-6">
-              <div className="flex items-start justify-between border-b border-gray-200 pb-4 mb-5">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-[#004c91]" />
-                    Tạo mới Đối tác
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">Vui lòng cung cấp đầy đủ thông tin để khởi tạo hồ sơ đối tác doanh nghiệp.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPartnerModalOpen(false);
-                    setActiveParticipantId(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 rounded-lg p-1 hover:bg-gray-100 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Input section */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-black mb-1.5">
-                    Mã đối tác<span className="text-red-500 font-extrabold ml-1">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={partnerCode}
-                    onChange={(e) => setPartnerCode(e.target.value.toUpperCase())}
-                    placeholder="VD: TOKYO-UNI"
-                    className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-medium text-gray-800 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-black mb-1.5">
-                    Tên đối tác<span className="text-red-500 font-extrabold ml-1">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={partnerName}
-                    onChange={(e) => setPartnerName(e.target.value)}
-                    placeholder="VD: Đại học Tokyo, Nhật Bản"
-                    className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-medium text-gray-800 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-black mb-1.5">
-                    Quốc gia<span className="text-red-500 font-extrabold ml-1">*</span>
-                  </label>
-                  <div className="relative">
-                    <Globe className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      value={partnerCountry}
-                      onChange={(e) => setPartnerCountry(e.target.value)}
-                      placeholder="VD: Nhật Bản"
-                      className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-medium text-gray-800 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Validation alert */}
-              {showModalValidationErr && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-700 font-bold">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                  Mời bạn điền tất cả các trường có dấu sao đỏ (*).
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-2.5 border-t border-gray-200 mt-6 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPartnerModalOpen(false);
-                    setActiveParticipantId(null);
-                  }}
-                  className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSavePartner}
-                  className="px-4 py-2 text-xs font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-all shadow-sm"
-                >
-                  Lưu thông tin
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="pb-10"></div>
       {/* Guide Modal */}
@@ -1257,186 +768,6 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
         </div>
       )}
 
-      {/* Meeting Minutes Modal */}
-      {isMeetingMinutesModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl relative animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="bg-[#004c91] px-6 py-4 rounded-t-2xl flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-[#f37021]" />
-                Biên bản cuộc họp
-              </h2>
-              <button
-                onClick={() => setIsMeetingMinutesModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 md:p-8 space-y-6">
-              {/* Tên biên bản & Thời gian */}
-              <div className="flex flex-col sm:flex-row sm:items-start gap-6">
-                <div className="flex-1 w-full max-w-[450px]">
-                  <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Tên biên bản</label>
-                  <input
-                    type="text"
-                    value={meetingName}
-                    onChange={(e) => setMeetingName(e.target.value)}
-                    className="bg-blue-50 text-blue-900 px-4 py-2.5 rounded-xl font-bold border border-blue-200 outline-none w-full focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all"
-                    placeholder="Nhập tên biên bản..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thời gian</label>
-                  <div className="bg-blue-50 text-blue-900 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-blue-200 focus-within:ring-2 focus-within:ring-[#004c91]/20 focus-within:border-[#004c91] transition-all">
-                    <Calendar className="w-5 h-5 text-blue-600 shrink-0" />
-                    <input
-                      type="date"
-                      value={meetingDate}
-                      onChange={(e) => setMeetingDate(e.target.value)}
-                      className="bg-transparent border-none outline-none font-bold text-blue-900 cursor-pointer w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Participant Table */}
-              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-                <div className="bg-gray-50/70 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-[#004c91]" />
-                    Danh sách người tham gia
-                  </h3>
-                  <span className="text-xs bg-[#004c91]/10 text-[#004c91] px-2.5 py-1 rounded-full font-bold">
-                    {participantsList.length} thành viên
-                  </span>
-                </div>
-                <div className="overflow-x-auto max-h-[260px] overflow-y-auto">
-                  <table className="w-full text-left border-collapse text-sm">
-                    <thead className="sticky top-0 bg-white z-10 shadow-[0_1px_0_rgba(229,231,235,1)]">
-                      <tr className="border-b border-gray-200 bg-gray-100/50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold">
-                        <th className="px-4 py-3 text-center w-20">Có mặt</th>
-                        <th className="px-5 py-3">Đại biểu</th>
-                        <th className="px-5 py-3">Đơn vị</th>
-                        <th className="px-5 py-3">Tình trạng</th>
-                        <th className="px-5 py-3 text-center">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {participantsList.map((p) => (
-                        <tr key={p.id} className="hover:bg-gray-50/55 transition-colors">
-                          <td className="px-4 py-3 text-center">
-                            <button type="button" onClick={() => handleToggleConfirm(p.id)} className="inline-flex items-center justify-center focus:outline-none transition-transform active:scale-90">
-                              {p.confirmed ? <CheckSquare className="w-5 h-5 text-green-600 fill-green-50" /> : <Square className="w-5 h-5 text-gray-300 hover:text-gray-400" />}
-                            </button>
-                          </td>
-                          <td className="px-5 py-3">
-                            <div className="font-semibold text-gray-900">{p.name}</div>
-                            <div className="text-xs text-gray-500">{p.role}</div>
-                          </td>
-                          <td className="px-5 py-3 text-gray-700 font-medium">{p.org}</td>
-                          <td className="px-5 py-3">
-                            {p.isInternal ? null : p.isPartner ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-                                <Check className="w-3 text-green-500 shrink-0" /> Đã đối tác
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                <AlertCircle className="w-3 text-amber-500 shrink-0" /> Chưa đối tác
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3 text-center">
-                            {p.isInternal ? null : !p.isPartner ? (
-                              <button type="button" onClick={() => handleOpenPartnerModal(p)} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg shadow-sm transition-all cursor-pointer">
-                                <Plus className="w-3 h-3" /> Tạo đối tác
-                              </button>
-                            ) : (
-                              <span className="text-xs text-green-600 font-bold flex items-center justify-center gap-1">
-                                <Check className="w-4 h-4 text-green-500" /> Đã kết nối
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Ghi chú */}
-              <div>
-                <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-4 bg-[#f37021] rounded-full inline-block"></span>
-                  Ghi chú
-                </h3>
-                <textarea
-                  className="w-full bg-gray-50/50 border border-gray-200 rounded-xl p-4 text-sm font-medium text-gray-800 min-h-[100px] focus:bg-white focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all outline-none resize-y"
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="Nhập ghi chú..."
-                />
-              </div>
-
-              {/* Đầu mục công việc */}
-              <div>
-                <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-4 bg-[#004c91] rounded-full inline-block"></span>
-                  Đầu mục công việc
-                </h3>
-                <div className="space-y-3 bg-gray-50/50 border border-gray-100 rounded-xl p-4">
-                  {actionItems.map((item, index) => (
-                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                      <div className="flex items-center gap-3 flex-1">
-                        <button onClick={() => { const newItems = [...actionItems]; newItems[index].done = !newItems[index].done; setActionItems(newItems); }} className="text-[#004c91]">
-                          {item.done ? <CheckSquare className="w-5 h-5 text-green-600" /> : <Square className="w-5 h-5 text-gray-400" />}
-                        </button>
-                        <input
-                          type="text"
-                          value={item.text}
-                          onChange={e => { const newItems = [...actionItems]; newItems[index].text = e.target.value; setActionItems(newItems); }}
-                          className={`flex-1 bg-transparent border-none outline-none text-sm font-medium ${item.done ? 'line-through text-gray-400' : 'text-gray-800'}`}
-                          placeholder="Thêm hành động..."
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-orange-500" />
-                        <input type="date" value={item.deadline} onChange={e => { const newItems = [...actionItems]; newItems[index].deadline = e.target.value; setActionItems(newItems); }} className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={() => setActionItems([...actionItems, { id: Date.now(), text: '', done: false, deadline: '' }])} className="text-sm font-bold text-[#004c91] hover:text-[#003366] flex items-center gap-1.5 px-2 py-1 outline-none">
-                    <Plus className="w-4 h-4" /> Thêm đầu mục công việc
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end gap-3">
-              <button
-                onClick={() => setIsMeetingMinutesModalOpen(false)}
-                className="px-6 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors shadow-sm"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={() => {
-                  setIsMeetingMinutesCreated(true);
-                  setIsMeetingMinutesModalOpen(false);
-                }}
-                className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003366] transition-all shadow-md flex items-center gap-2"
-              >
-                <CheckCircle2 className="w-5 h-5" />
-                Lưu biên bản
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
