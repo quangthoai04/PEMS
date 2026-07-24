@@ -23,6 +23,7 @@ import type {
   AccountStatistics,
   ActiveCampusOption,
   CampusDepartmentOption,
+  CreateAccountRequest,
   HoCampusCheck,
   RoleAssignmentOptions,
   StaffLeaderAvailability,
@@ -90,6 +91,49 @@ const subRoleLabel = (s?: unknown): string => {
   const raw = String(s).trim();
   return SUBROLE_LABELS[raw.toUpperCase()] ?? raw;
 };
+
+// Friendly role display name for the create-confirmation summary (spec §9). The SAME role code can
+// mean different things depending on WHO creates it and via which flow — HO creating STAFF makes a
+// Staff Leader (Trưởng phòng IC), a Staff Leader creating STAFF makes an IC Staff — so it is
+// resolved from the actor context, never from roleCode alone. Create-flow only: existing
+// list/detail rows keep the backend-provided roleName.
+const resolveCreateRoleDisplayName = (
+  role: string,
+  ctx: { isHO: boolean; isStaffLeader: boolean },
+): string => {
+  const r = String(role ?? '').toUpperCase();
+  if (ctx.isHO) {
+    if (r === 'HO') return 'Head Office';
+    if (r === 'STAFF') return 'Staff Leader — Trưởng phòng IC';
+  }
+  if (ctx.isStaffLeader) {
+    if (r === 'STAFF') return 'IC Staff';
+    if (r === 'DEPARTMENT') return 'Department Leader — Trưởng phòng ban';
+    if (r === 'STUDENT') return 'Student';
+  }
+  // Fallback (ADMIN flow — outside the spec's HO/SL scope, but the summary must stay readable).
+  switch (r) {
+    case 'ADMIN': return 'Quản trị viên';
+    case 'HO': return 'Head Office';
+    case 'STAFF': return 'Staff';
+    case 'DEPARTMENT': return 'Department Leader — Trưởng phòng ban';
+    case 'STUDENT': return 'Student';
+    case 'VISITOR': return 'Khách';
+    default: return r || '—';
+  }
+};
+
+// Human-readable projection of the create payload, shown on the confirmation screen (spec §10.2).
+// Built together with the payload snapshot so the screen can never drift from what is submitted.
+interface PendingCreateSummary {
+  fullName: string;
+  email: string;
+  roleDisplayName: string;
+  campusDisplayName?: string | null;
+  departmentDisplayName?: string | null;
+  studentCode?: string | null;
+  phone?: string | null;
+}
 
 export function AccountManagement() {
   const navigate = useNavigate();
@@ -300,6 +344,14 @@ export function AccountManagement() {
   // UC-96 create modal feedback.
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Create-confirmation step (spec §4/§15): "Tiếp tục" builds a snapshot and opens this screen;
+  // the API is only called from "Xác nhận tạo tài khoản". pendingCreatePayload is the EXACT object
+  // sent to the backend; pendingCreateSummary is its display projection (spec §10.3 — no drift).
+  const [isCreateConfirmOpen, setIsCreateConfirmOpen] = useState(false);
+  const [pendingCreatePayload, setPendingCreatePayload] = useState<CreateAccountRequest | null>(null);
+  const [pendingCreateSummary, setPendingCreateSummary] = useState<PendingCreateSummary | null>(null);
+  const confirmCreateBtnRef = useRef<HTMLButtonElement>(null);
 
   // UC-96 Staff Leader availability pre-check (HO picks a campus for role STAFF). Drives the
   // warning panel + disabled submit so HO can't try to create a 2nd Trưởng phòng IC.
@@ -671,10 +723,12 @@ export function AccountManagement() {
     }));
   };
 
-  // UC-96 — create a new account. HO → HO/Staff Leader; Staff Leader → STAFF/STAFF,
-  // DEPARTMENT/LEADER (optional department) or STUDENT. The backend derives sub-role and
-  // forces campus; we only collect what the role needs.
-  const handleCreateAccount = async () => {
+  // UC-96 — prepare the create-confirmation step (spec §16.1 "handleContinueCreateAccount").
+  // Runs the SAME validation as before, normalizes the data, builds the payload snapshot + its
+  // display summary, then opens the confirmation screen. It does NOT call the API (spec §4/§5.4).
+  // HO → HO/Staff Leader; Staff Leader → STAFF/STAFF, DEPARTMENT/LEADER (optional department) or
+  // STUDENT. The backend derives sub-role and forces campus; we only collect what the role needs.
+  const handleContinueCreateAccount = () => {
     setCreateError(null);
     setCreateStudentCodeError(null);
     setCreateFieldErrors({});
@@ -742,29 +796,76 @@ export function AccountManagement() {
     }
     const departmentId = isStaffLeader && role === 'DEPARTMENT' ? selectedDept : null;
 
+    // The EXACT object that will be POSTed on confirm (spec §10.1). Nothing here is recomputed in
+    // confirmCreateAccount — the summary below is a projection of THIS payload, so they can't drift.
+    const payload: CreateAccountRequest = {
+      roleCode: role as CreateAccountRequest['roleCode'],
+      fullName,
+      email,
+      phone: manualForm.phone || null,
+      // The create form has no gender field; the column is an ENUM
+      // (MALE/FEMALE/OTHER/UNKNOWN), so leave it null rather than sending a label.
+      gender: null,
+      primaryCampusId: primaryCampusId ?? null,
+      departmentId,
+      // MSSV only for STUDENT; null otherwise so no hidden code is ever sent (spec §5.6).
+      studentCode: role === 'STUDENT' ? studentCode : null,
+    };
+
+    // Display projection (spec §8 — show only fields that apply to the role, friendly labels, no
+    // raw ids / role codes / empty values). Campus/department come from resolved server data, never
+    // an arbitrary client value (spec §8.3).
+    const campusDisplayName = createCampus || (isStaffLeader ? (user?.campus || null) : null);
+    let departmentDisplayName: string | null = null;
+    if (isHO && role === 'STAFF') {
+      departmentDisplayName = slAvailability?.icDepartmentName || 'Phòng Hợp tác Quốc tế (IC)';
+    } else if (isStaffLeader && role === 'STAFF') {
+      departmentDisplayName = 'Phòng Hợp tác Quốc tế (IC)';
+    } else if (isStaffLeader && role === 'DEPARTMENT') {
+      departmentDisplayName =
+        campusDepartments.find((d) => String(d.departmentId) === String(departmentId))?.name || null;
+    }
+
+    const summary: PendingCreateSummary = {
+      fullName,
+      email,
+      roleDisplayName: resolveCreateRoleDisplayName(role, { isHO, isStaffLeader }),
+      campusDisplayName,
+      departmentDisplayName,
+      studentCode: role === 'STUDENT' ? studentCode : null,
+      phone: manualForm.phone.trim() || null,
+    };
+
+    // Fresh snapshot each time (spec §10.3) — open the confirmation, do NOT call the API here.
+    setPendingCreatePayload(payload);
+    setPendingCreateSummary(summary);
+    setIsCreateConfirmOpen(true);
+  };
+
+  // UC-96 — actually create the account (spec §16.2 "confirmCreateAccount"). Uses the snapshot only,
+  // guards against double-submit, and keeps the create/email outcomes distinct (spec §13/§14).
+  const confirmCreateAccount = async () => {
+    if (!pendingCreatePayload) return;   // no snapshot → nothing to submit
+    if (creating) return;                 // double-submit / double-click guard (spec §12.1)
     setCreating(true);
+    setCreateError(null);
     try {
-      const result = await accountManagementApi.createAccount({
-        roleCode: role as any,
-        fullName,
-        email,
-        phone: manualForm.phone || null,
-        // The create form has no gender field; the column is an ENUM
-        // (MALE/FEMALE/OTHER/UNKNOWN), so leave it null rather than sending a label.
-        gender: null,
-        primaryCampusId: primaryCampusId ?? null,
-        departmentId,
-        // MSSV only for STUDENT; null otherwise so no hidden code is ever sent (spec §5.6).
-        studentCode: role === 'STUDENT' ? studentCode : null,
-      });
+      const result = await accountManagementApi.createAccount(pendingCreatePayload);
 
-      // UC-96 requirement: toast for the email-notification outcome.
+      // Distinguish the account-creation result from the email-notification result (spec §14).
       if (result.emailNotificationStatus === 'SENT')
-        pushToast('success', `Đã tạo tài khoản ${result.email} và gửi email thông báo thành công.`);
+        pushToast('success', `Đã tạo tài khoản ${result.email} thành công. Email thông báo đã được gửi tới địa chỉ này.`);
       else
-        pushToast('warning', `Đã tạo tài khoản ${result.email} nhưng gửi email thông báo thất bại.`);
+        // Email failed but the account exists — must NOT be shown as a create failure (spec §13.2).
+        pushToast('warning', `Tài khoản ${result.email} đã được tạo thành công, nhưng hệ thống chưa gửi được email thông báo.`);
 
+      // Success: close both screens, reset the form + snapshot, refetch list + stats (spec §13.1/§15.3).
+      setIsCreateConfirmOpen(false);
+      setPendingCreatePayload(null);
+      setPendingCreateSummary(null);
       setIsCreateModalOpen(false);
+      setCreateError(null);
+      setCreateStudentCodeError(null);
       setCreateFieldErrors({});
       setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' });
       setCreateCampus('');
@@ -772,21 +873,51 @@ export function AccountManagement() {
       refetchAccounts();
       loadStatistics();
     } catch (err) {
+      // Backend rejected the create (spec §13.3): close the confirmation, KEEP the form + its data,
+      // map the error to its field, drop the failed snapshot. Never auto-retry / auto-create twice.
       const msg = getAccountErrorMessage(err, 'Không thể tạo tài khoản. Vui lòng thử lại.');
-      // A duplicate MSSV maps to its own field (modal stays open, other inputs kept — spec §5.8).
+      const role = pendingCreatePayload.roleCode;
       if (role === 'STUDENT' && /mã số sinh viên/i.test(msg)) {
         setCreateStudentCodeError(msg);
       } else if (/email/i.test(msg)) {
-        // Backend identity rejections (duplicate/domain/format) belong under the email input.
         setCreateFieldErrors((prev) => ({ ...prev, email: msg }));
       } else {
         setCreateError(msg);
       }
       pushToast('error', msg);
+      setIsCreateConfirmOpen(false);   // back to the still-populated form
+      setPendingCreatePayload(null);   // discard the failed snapshot (spec §13.3/§15.4)
+      setPendingCreateSummary(null);
     } finally {
       setCreating(false);
     }
   };
+
+  // "Quay lại chỉnh sửa" (spec §11): close the confirmation, drop the stale snapshot, keep the form
+  // exactly as the user left it. Blocked while a request is in flight (spec §12.1). The next
+  // "Tiếp tục" rebuilds a fresh snapshot from the latest form data (spec §10.3).
+  const backToEditFromConfirm = () => {
+    if (creating) return;
+    setIsCreateConfirmOpen(false);
+    setPendingCreatePayload(null);
+    setPendingCreateSummary(null);
+  };
+
+  // A11y (spec §18): move focus into the confirmation when it opens; Escape closes it, but only when
+  // no create request is in flight (never while isCreating).
+  useEffect(() => {
+    if (!isCreateConfirmOpen) return;
+    confirmCreateBtnRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !creating) {
+        setIsCreateConfirmOpen(false);
+        setPendingCreatePayload(null);
+        setPendingCreateSummary(null);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isCreateConfirmOpen, creating]);
 
   // Red border for an invalid identity input in the create modal (spec §7.4).
   const createInputClass = (hasError: boolean) =>
@@ -2208,7 +2339,8 @@ export function AccountManagement() {
                   Hủy bỏ
                 </button>
                 <button
-                  onClick={handleCreateAccount}
+                  type="button"
+                  onClick={handleContinueCreateAccount}
                   disabled={
                     creating ||
                     createIdentityInvalid ||
@@ -2219,9 +2351,108 @@ export function AccountManagement() {
                   }
                   className="px-5 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-[0_4px_12px_rgba(249,115,22,0.2)] hover:shadow-[0_6px_16px_rgba(249,115,22,0.4)] transition-all outline-none transform hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {creating ? 'Đang tạo...' : 'Xác nhận tạo'}
+                  Tiếp tục
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create-confirmation step (spec §6/§7/§12/§17) — nested above the create form (z-[70] > z-50),
+          overlay is NOT click-to-close so the review can't be dismissed by accident. */}
+      {isCreateConfirmOpen && pendingCreateSummary && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-confirm-title"
+        >
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-[#004c91] shrink-0">
+              <h2 id="create-confirm-title" className="text-lg font-black text-white uppercase tracking-wide">
+                Xác nhận thông tin tài khoản
+              </h2>
+              <button
+                type="button"
+                onClick={backToEditFromConfirm}
+                disabled={creating}
+                aria-label="Quay lại chỉnh sửa"
+                className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-4">
+              <dl className="space-y-3 text-sm">
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Họ và tên</dt>
+                  <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.fullName}</dd>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Vai trò</dt>
+                  <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.roleDisplayName}</dd>
+                </div>
+                {pendingCreateSummary.campusDisplayName && (
+                  <div className="flex flex-col gap-0.5">
+                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Cơ sở</dt>
+                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.campusDisplayName}</dd>
+                  </div>
+                )}
+                {pendingCreateSummary.departmentDisplayName && (
+                  <div className="flex flex-col gap-0.5">
+                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Phòng ban</dt>
+                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.departmentDisplayName}</dd>
+                  </div>
+                )}
+                {pendingCreateSummary.studentCode && (
+                  <div className="flex flex-col gap-0.5">
+                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Mã số sinh viên</dt>
+                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.studentCode}</dd>
+                  </div>
+                )}
+                {pendingCreateSummary.phone && (
+                  <div className="flex flex-col gap-0.5">
+                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Số điện thoại</dt>
+                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.phone}</dd>
+                  </div>
+                )}
+              </dl>
+
+              {/* Highlighted email block (spec §7) — amber warning (not an error), never truncated,
+                  wraps safely, and carries a check-your-email reminder (not color alone). */}
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
+                <p className="text-xs font-black uppercase tracking-wide text-amber-700">Email đăng nhập</p>
+                <p className="mt-1.5 text-base font-bold text-[#004c91] break-words">{pendingCreateSummary.email}</p>
+                <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+                  Hãy kiểm tra kỹ địa chỉ email này. Thông báo tài khoản và quyền đăng nhập sẽ được gửi tới địa chỉ trên.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer — exactly two actions (spec §6.3). Both locked while a request is in flight. */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl shrink-0 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={backToEditFromConfirm}
+                disabled={creating}
+                className="px-5 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition-colors outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Quay lại chỉnh sửa
+              </button>
+              <button
+                ref={confirmCreateBtnRef}
+                type="button"
+                onClick={confirmCreateAccount}
+                disabled={creating}
+                className="px-5 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-[0_4px_12px_rgba(249,115,22,0.2)] hover:shadow-[0_6px_16px_rgba(249,115,22,0.4)] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                {creating && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {creating ? 'Đang tạo...' : 'Xác nhận tạo tài khoản'}
+              </button>
             </div>
           </div>
         </div>

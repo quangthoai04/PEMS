@@ -309,14 +309,6 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
     }
 
     /// <summary>Human-readable role label shown in the role-changed email.</summary>
-    private static string ResolveRoleDisplayName(string roleCode, string? subRole) => roleCode switch
-    {
-        RoleCodes.Ho => "Head Office",
-        RoleCodes.Admin => "System Administrator",
-        RoleCodes.Staff when subRole == UserSubRoles.Leader => "Staff Leader — Trưởng phòng IC",
-        RoleCodes.Staff => "IC Staff",
-        RoleCodes.Department when subRole == UserSubRoles.Leader => "Department Leader — Trưởng phòng ban",
-        RoleCodes.Student => "Student",
-        _ => roleCode
-    };
+    private static string ResolveRoleDisplayName(string roleCode, string? subRole)
+        => AccountRoleDisplayNames.Resolve(roleCode, subRole);
 }

@@ -40,15 +40,30 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         public Mock<IEmailService> Email { get; } = new();
         public UpdateBasicAccountInfoCommandHandler Handler { get; }
 
+        /// <summary>Every (to, subject, body) sent through IEmailService.SendAsync, in order.</summary>
+        public List<(string To, string Subject, string Body)> Sent { get; } = new();
+
+        /// <summary>Addresses whose send should throw (simulates an SMTP failure). Empty = all succeed.</summary>
+        public HashSet<string> FailFor { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public Harness()
         {
             Sessions = new RecordingSessionService(Db);
             Email.Setup(e => e.SendAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
+                .Returns((string to, string subject, string body, CancellationToken _) =>
+                {
+                    Sent.Add((to, subject, body));
+                    return FailFor.Contains(to)
+                        ? Task.FromException(new InvalidOperationException("SMTP down"))
+                        : Task.CompletedTask;
+                });
             Handler = new UpdateBasicAccountInfoCommandHandler(
                 Db, Actor, new RoleAccessPolicy(), Sessions, Clock, Email.Object);
         }
+
+        public (string To, string Subject, string Body) SentTo(string email)
+            => Sent.Single(m => string.Equals(m.To, email, StringComparison.OrdinalIgnoreCase));
 
         public Task<UpdateBasicAccountInfoResponse> Run(UpdateBasicAccountInfoCommand cmd)
             => Handler.Handle(cmd, CancellationToken.None);
@@ -95,10 +110,19 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         LinkedAt = new DateTime(2026, 1, 1),
     };
 
+    private static UserAuthProvider LocalPassword(ulong userId, string email) => new()
+    {
+        UserId = userId,
+        ProviderType = ProviderTypes.LocalPassword,
+        ProviderEmail = email,
+        IsEnabled = true,
+        LinkedAt = new DateTime(2026, 1, 1),
+    };
+
     // ── Success paths ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task HoEditsAnotherHo_ChangesEmail_RepointsProvider_RevokesSessions()
+    public async Task HoEditsAnotherHo_ChangesEmail_UnlinksSsoProvider_RevokesSessions()
     {
         var h = CreateHarness();
         h.Db.Users.Add(Ho(810, "old.ho@fpt.edu.vn"));
@@ -118,12 +142,34 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         Assert.Equal("new.ho@fpt.edu.vn", user.Email);          // normalized lowercase
         Assert.Null(user.EmailVerifiedAt);                       // re-verify on next login
 
-        var provider = await h.Db.UserAuthProviders.SingleAsync(p => p.UserId == 810);
-        Assert.Equal("new.ho@fpt.edu.vn", provider.ProviderEmail);
-        Assert.Null(provider.ProviderSubject);                   // SSO re-links next login
+        // The Google row is DELETED, not blanked: a subject-less SSO row is rejected by the MySQL
+        // trigger trg_auth_providers_validate_bu, and login re-creates the link on next sign-in.
+        Assert.False(await h.Db.UserAuthProviders.AnyAsync(p => p.UserId == 810));
 
         Assert.Contains(h.Sessions.RevokeAllCalls,
             c => c.UserId == 810 && c.Reason == SessionRevokeReasons.AccountEmailChanged);
+    }
+
+    [Fact]
+    public async Task HoEditsAnotherHo_ChangesEmail_KeepsLocalPasswordProvider_RepointedAtNewEmail()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(811, "old.local@fpt.edu.vn"));
+        h.Db.UserAuthProviders.Add(LocalPassword(811, "old.local@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 811,
+            FullName = "Head Office Local",
+            Email = "new.local@fpt.edu.vn",
+        });
+
+        // LOCAL_PASSWORD carries no external subject, so it survives the email change and simply
+        // follows the account to the new address.
+        var provider = await h.Db.UserAuthProviders.SingleAsync(p => p.UserId == 811);
+        Assert.Equal(ProviderTypes.LocalPassword, provider.ProviderType);
+        Assert.Equal("new.local@fpt.edu.vn", provider.ProviderEmail);
     }
 
     [Fact]
@@ -184,6 +230,154 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         var change = Assert.Single(audit.Changes);
         Assert.Contains("brand.new@fpt.edu.vn", change.NewValueText);
         Assert.Contains("authenticationRelinkRequired", change.NewValueText);
+    }
+
+    // ── Email change notifications (spec §3/§4 — old-address privacy, new-address snapshot) ──
+
+    /// <summary>Adds a Staff Leader (id 830) whose department has a real, asserted name.</summary>
+    private static User StaffLeaderWithDepartment(Harness h, ulong id, string email, string departmentName)
+    {
+        var department = Uc106TestData.CreateGeneralDepartment(departmentId: 50);
+        department.Name = departmentName;
+        h.Db.Departments.Add(department);
+        var u = StaffLeader(id, email);
+        return u;
+    }
+
+    [Fact]
+    public async Task EmailChange_OldAddressMail_IsAnonymous_LeaksNothingAboutTheAccount()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(StaffLeaderWithDepartment(h, 830, "old.leader@fpt.edu.vn", "Phòng Hợp tác Quốc tế"));
+        h.Db.UserAuthProviders.Add(Google(830, "old.leader@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 830,
+            FullName = "Trần Văn Lãnh Đạo",
+            Email = "new.leader@fpt.edu.vn",
+        });
+
+        var mail = h.SentTo("old.leader@fpt.edu.vn");
+        Assert.Equal("Địa chỉ email này đã được gỡ khỏi một tài khoản PEMS", mail.Subject);
+        // Anonymous: no new address, no holder name, no role label / campus / department, no id.
+        // ("Staff Leader" as a bare phrase legitimately appears in the "contact your Staff Leader"
+        //  instruction, so we assert the account's full role LABEL is absent, not that word.)
+        Assert.DoesNotContain("new.leader@fpt.edu.vn", mail.Body);
+        Assert.DoesNotContain("Trần Văn Lãnh Đạo", mail.Body);
+        Assert.DoesNotContain("Staff Leader — Trưởng phòng IC", mail.Body);
+        Assert.DoesNotContain("Phòng Hợp tác Quốc tế", mail.Body);
+        Assert.DoesNotContain("Campus 1", mail.Body);
+        Assert.DoesNotContain("830", mail.Body);
+        // But it does say the address is unlinked and sessions were revoked.
+        Assert.Contains("không còn được sử dụng để đăng nhập", mail.Body);
+        Assert.Contains("thu hồi", mail.Body);
+    }
+
+    [Fact]
+    public async Task EmailChange_StaffLeaderNewAddressMail_ShowsFullAccountSnapshot()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(StaffLeaderWithDepartment(h, 830, "old.leader@fpt.edu.vn", "Phòng IC"));
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 830,
+            FullName = "Nguyễn Thị Trưởng Phòng",
+            Email = "leader.new@fpt.edu.vn",
+        });
+
+        var mail = h.SentTo("leader.new@fpt.edu.vn");
+        Assert.Equal("Email đăng nhập tài khoản PEMS của bạn đã được cập nhật", mail.Subject);
+        Assert.Contains("Nguyễn Thị Trưởng Phòng", mail.Body);
+        Assert.Contains("leader.new@fpt.edu.vn", mail.Body);
+        Assert.Contains("Staff Leader — Trưởng phòng IC", mail.Body);
+        Assert.Contains("Campus 1", mail.Body);            // campus name from DB
+        Assert.Contains("Phòng IC", mail.Body);            // department name from DB
+        Assert.DoesNotContain("old.leader@fpt.edu.vn", mail.Body);
+        Assert.Contains("SSO, Google hoặc FEID", mail.Body);
+        Assert.Contains("thu hồi", mail.Body);
+    }
+
+    [Fact]
+    public async Task EmailChange_HoNewAddressMail_OmitsDepartmentLine_NoNullText()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(840, "old.ho2@fpt.edu.vn"));   // HO has no department
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 840,
+            FullName = "Head Office Người",
+            Email = "ho2.new@fpt.edu.vn",
+        });
+
+        var mail = h.SentTo("ho2.new@fpt.edu.vn");
+        Assert.Contains("Head Office", mail.Body);
+        Assert.Contains("Campus 1", mail.Body);
+        Assert.DoesNotContain("Phòng ban:", mail.Body);   // department line dropped entirely
+        Assert.DoesNotContain("null", mail.Body);
+        Assert.DoesNotContain("old.ho2@fpt.edu.vn", mail.Body);
+    }
+
+    [Theory]
+    // (oldFails, newFails) -> expected EmailNotificationStatus
+    [InlineData(false, false, "SENT")]
+    [InlineData(true, false, "PARTIAL")]
+    [InlineData(false, true, "PARTIAL")]
+    [InlineData(true, true, "FAILED")]
+    public async Task EmailChange_SendFailures_YieldStatus_ButAccountStillSaved(
+        bool oldFails, bool newFails, string expectedStatus)
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(850, "old.status@fpt.edu.vn"));
+        h.Db.SaveChanges();
+        if (oldFails) h.FailFor.Add("old.status@fpt.edu.vn");
+        if (newFails) h.FailFor.Add("new.status@fpt.edu.vn");
+
+        var res = await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 850,
+            FullName = "Head Office Status",
+            Email = "new.status@fpt.edu.vn",
+        });
+
+        Assert.Equal(expectedStatus, res.EmailNotificationStatus);
+        // Both addresses are always attempted — a first-send failure never skips the second.
+        Assert.Equal(2, h.Sent.Count);
+        // The account is committed regardless of email outcome.
+        var user = await h.Db.Users.SingleAsync(u => u.UserId == 850);
+        Assert.Equal("new.status@fpt.edu.vn", user.Email);
+        Assert.Equal("Head Office Status", user.FullName);
+    }
+
+    [Fact]
+    public async Task EmailChange_NewAddressMail_HtmlEncodesDynamicValues_NoInjection()
+    {
+        // The department name comes straight from the DB (this command never validates it), so it is
+        // the realistic injection vector — full name is already restricted to letters/spaces/./'/-
+        // by the identity validator, which rejects markup upstream.
+        var h = CreateHarness();
+        h.Db.Users.Add(StaffLeaderWithDepartment(h, 830, "old.leader@fpt.edu.vn", "R&D <script>Phòng</script>"));
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateBasicAccountInfoCommand
+        {
+            UserId = 830,
+            FullName = "Lê Văn Ánh",
+            Email = "encode.new@fpt.edu.vn",
+        });
+
+        var mail = h.SentTo("encode.new@fpt.edu.vn");
+        // The raw markup must never reach the body verbatim.
+        Assert.DoesNotContain("<script>", mail.Body);
+        Assert.DoesNotContain("R&D <script>", mail.Body);
+        // It appears encoded instead — while Vietnamese stays readable.
+        Assert.Contains("R&amp;D &lt;script&gt;Phòng&lt;/script&gt;", mail.Body);
+        Assert.Contains("Lê Văn Ánh", mail.Body);
     }
 
     // ── Guards ────────────────────────────────────────────────────────────────

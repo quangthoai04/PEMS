@@ -346,7 +346,7 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
             disabled={loading || submitting || !preview?.canReplace}
             className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#f37021] hover:bg-[#e85c0d] shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Xác nhận thay thế
+            Tiếp tục
           </button>
         </div>
       </div>

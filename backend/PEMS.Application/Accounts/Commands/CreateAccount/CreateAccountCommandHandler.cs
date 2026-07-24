@@ -397,14 +397,8 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
     }
 
     /// <summary>Human-readable role label shown in the account-created email.</summary>
-    private static string ResolveRoleDisplayName(string roleCode, string? subRole) => roleCode switch
-    {
-        RoleCodes.Ho => "Head Office",
-        RoleCodes.Admin => "System Administrator",
-        RoleCodes.Staff when subRole == UserSubRoles.Leader => "Staff Leader — Trưởng phòng IC",
-        RoleCodes.Staff => "IC Staff",
-        _ => roleCode
-    };
+    private static string ResolveRoleDisplayName(string roleCode, string? subRole)
+        => AccountRoleDisplayNames.Resolve(roleCode, subRole);
 
     private static string? Clean(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
