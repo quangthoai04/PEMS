@@ -61,7 +61,8 @@ function campusBlock(code: string, dayOffset: number, delegation: string, tag: s
     visitType: 'MEETING',
     visitTypeOther: null,
     purpose: `Muc dich ${tag}`,
-    workingContent: null,
+    // Backend requires a non-empty working content per campus (Form.CampusVisits[].WorkingContent).
+    workingContent: `Noi dung lam viec ${tag}`,
     visitors: [{ fullName: `Guest ${tag}`, nationality: 'VN', jobTitle: 'GV', organization: 'Org' }],
     externalSupportMembers: [],
     operationalContact: { fullName: 'Op Contact', organization: 'Org', phone: '+84900000001', email: 'op@example.com' },
@@ -237,7 +238,8 @@ test.describe('Real-stack: authenticated v2 workflow journeys', () => {
       visitType: s1.hn.visitType,
       visitTypeOther: s1.hn.visitTypeOther ?? null,
       purpose: s1.hn.purpose,
-      workingContent: s1.hn.workingContent ?? null,
+      // Backend requires non-empty working content; never fall back to null on read-back.
+      workingContent: s1.hn.workingContent ?? 'Noi dung lam viec (amendment)',
       workingLanguage: s1.hn.workingLanguage,
       operationalContact: s1.hn.operationalContact,
       visitors: [

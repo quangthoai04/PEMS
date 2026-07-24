@@ -7,8 +7,24 @@
  * that the UI summary renders the backend-created request. Also proves the snapshot binding: an OTP verified
  * for this submission creates the request the backend bound at initiate.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+
+/** The FormField (label→control wrapper) whose visible label contains `label`. */
+function formField(page: Page, label: string): Locator {
+  return page.locator('div.flex.flex-col.gap-2').filter({ has: page.getByText(label, { exact: false }) }).first();
+}
+
+/**
+ * Fill a react-select control (CountrySelect / OrganizationCombobox — both Creatable, free text allowed):
+ * open it, type, and commit the matched-or-created option with Enter.
+ */
+async function fillReactSelect(scope: Locator, text: string) {
+  const input = scope.locator('input').first();
+  await input.click();
+  await input.fill(text);
+  await scope.page().keyboard.press('Enter');
+}
 
 const SINK = process.env.PEMS_E2E_TEST_SINK_PATH;
 
@@ -41,17 +57,29 @@ async function fillCampus0(page: Page, delegation: string) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
+  // register()-named fields are still plain DOM inputs.
   await page.locator('select[name="campusVisits.0.campus"]').selectOption('HN');
   await page.locator('input[name="campusVisits.0.startDatetime"]').fill(fmt(start));
   await page.locator('input[name="campusVisits.0.endDatetime"]').fill(fmt(end));
   await page.locator('input[name="campusVisits.0.delegationName"]').fill(delegation);
-  await page.locator('textarea[name="campusVisits.0.purpose"]').fill('Trao đổi hợp tác thật');
-  await page.locator('input[name="campusVisits.0.visitors.0.fullName"]').fill('Khách Thật');
-  await page.locator('input[name="campusVisits.0.visitors.0.jobTitle"]').fill('Giảng viên');
-  await page.locator('input[name="campusVisits.0.visitors.0.organization"]').fill('ĐH Đối Tác');
-  await page.locator('input[name="campusVisits.0.visitors.0.nationality"]').fill('Việt Nam');
+
+  // Purpose + working content are Controller/AutoGrowTextarea (no DOM name); reach them by FormField label.
+  // Working content is now REQUIRED by the backend, so it must be filled.
+  await formField(page, 'Mục đích').locator('textarea').fill('Trao đổi hợp tác thật');
+  await formField(page, 'Nội dung làm việc').locator('textarea').fill('Nội dung làm việc thực tế của đoàn');
+
+  // The first visitor row: fullName/jobTitle are aria-labelled inputs; organization/nationality are
+  // Creatable react-selects. Scope to the desktop visitors table so mobile duplicates never match.
+  const vRow = page.locator('[data-testid="v2-visitors-table"] tbody tr').first();
+  await vRow.locator('td').nth(1).locator('input').fill('Khách Thật');   // fullName
+  await vRow.locator('td').nth(2).locator('input').fill('Giảng viên');    // jobTitle
+  await fillReactSelect(vRow.locator('td').nth(3), 'ĐH Đối Tác');         // organization
+  await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');           // nationality
+
   await page.locator('input[name="campusVisits.0.operationalContact.fullName"]').fill('Đầu Mối CS');
+  await page.locator('input[name="campusVisits.0.operationalContact.organization"]').fill('Đơn vị đầu mối');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
+  await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }
 
 test.describe('Real-stack: public per-campus v2 create', () => {
@@ -64,9 +92,12 @@ test.describe('Real-stack: public per-campus v2 create', () => {
 
     // Registrant.
     await page.locator('input[name="registerInfo.fullName"]').fill('Người Thật E2E');
-    await page.locator('input[name="registerInfo.organization"]').fill('Công ty E2E');
+    // Organization is a free-solo PartnerOrgCombobox (typing a new value keeps it as a manually entered
+    // organization, partnerId null) — reach it by its accessible placeholder, not the old input name.
+    await page.getByPlaceholder('Nhập hoặc tìm tổ chức/đối tác...').fill('Công ty E2E');
     await page.locator('input[name="registerInfo.jobTitle"]').fill('Trưởng phòng');
-    await page.locator('input[name="registerInfo.nationality"]').fill('Việt Nam');
+    // Registrant nationality is a CountrySelect (react-select) — reach it by its FormField, not a name.
+    await fillReactSelect(formField(page, 'Quốc tịch'), 'Việt Nam');
     await page.locator('input[name="registerInfo.phone"]').fill('+84912345678');
     await page.locator('input[name="registerInfo.email"]').fill(email);
 

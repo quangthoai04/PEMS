@@ -71,7 +71,8 @@ export function campusBlock(code: string, dayOffset: number, delegation: string,
     visitType: 'MEETING',
     visitTypeOther: null,
     purpose: `Muc dich ${tag}`,
-    workingContent: null,
+    // Backend requires a non-empty working content per campus (Form.CampusVisits[].WorkingContent).
+    workingContent: `Noi dung lam viec ${tag}`,
     visitors: [{ fullName: `Guest ${tag}`, nationality: 'VN', jobTitle: 'GV', organization: 'Org' }],
     externalSupportMembers: [],
     operationalContact: { fullName: 'Op Contact', organization: 'Org', phone: '+84900000001', email: 'op@example.com' },
@@ -156,7 +157,8 @@ export async function submitAmendmentApi(
     visitType: hn.visitType,
     visitTypeOther: hn.visitTypeOther ?? null,
     purpose: hn.purpose,
-    workingContent: hn.workingContent ?? null,
+    // Backend requires non-empty working content; never fall back to null on read-back.
+    workingContent: hn.workingContent ?? 'Noi dung lam viec (amendment)',
     workingLanguage: hn.workingLanguage,
     operationalContact: hn.operationalContact,
     visitors: [
