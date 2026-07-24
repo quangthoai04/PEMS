@@ -34,6 +34,37 @@ public static class UserStatuses
     public const string Active = "ACTIVE";
     public const string Inactive = "INACTIVE";
     public const string Locked = "LOCKED";
+
+    /// <summary>
+    /// A newly-created internal account that has NOT yet proven ownership of its email address. It cannot
+    /// log in (password/SSO/refresh all reject it), cannot be a Host, and holds no effective authority —
+    /// a Head slot may be reserved for it, but the reservation grants nothing until the email is confirmed
+    /// and the account transitions to <see cref="Active"/>. Distinct from <see cref="Inactive"/>, which
+    /// means a once-active account was deactivated.
+    /// </summary>
+    public const string PendingEmailConfirmation = "PENDING_EMAIL_CONFIRMATION";
+}
+
+/// <summary>
+/// Lifecycle of a row in <c>account_email_confirmations</c> — the one-time email-ownership proof for a
+/// <see cref="UserStatuses.PendingEmailConfirmation"/> account. Only ONE row per user may be PENDING.
+/// </summary>
+public static class AccountEmailConfirmationStatuses
+{
+    /// <summary>Awaiting confirmation; the raw token is live (only its hash is stored).</summary>
+    public const string Pending = "PENDING";
+
+    /// <summary>The token was used to confirm the email; the account was activated.</summary>
+    public const string Confirmed = "CONFIRMED";
+
+    /// <summary>The confirmation window elapsed without use.</summary>
+    public const string Expired = "EXPIRED";
+
+    /// <summary>Replaced by a newer confirmation (resend / email edit); the old token no longer works.</summary>
+    public const string Superseded = "SUPERSEDED";
+
+    /// <summary>The pending account was cancelled/deleted before confirming; the reservation is released.</summary>
+    public const string Cancelled = "CANCELLED";
 }
 
 public static class EntityStatuses
