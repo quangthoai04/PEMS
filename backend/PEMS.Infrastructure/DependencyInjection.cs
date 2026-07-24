@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IPureV2SchemaReadiness, PEMS.Infrastructure.Services.PureV2SchemaReadinessService>();
         services.AddScoped<PEMS.Application.Common.Security.IRoleAccessPolicy, PEMS.Application.Common.Security.RoleAccessPolicy>();
         services.AddScoped<IOwnershipChecker, OwnershipChecker>();
         services.AddScoped<ISessionService, SessionService>();
