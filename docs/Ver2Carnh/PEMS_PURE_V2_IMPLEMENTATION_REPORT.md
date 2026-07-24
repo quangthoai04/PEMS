@@ -523,6 +523,25 @@ Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / 
 
 ---
 
+## 10bis. PHASE 4 — BACKEND COMPATIBILITY + FRONTEND PURE V2
+
+### Hai defect THẬT (severe) đã sửa
+
+| # | Defect | Bằng chứng | Sửa |
+|---|---|---|---|
+| P4-1 | **Cả stack V2 "chết" ngoài môi trường Testing.** `PerCampusFormV2Options.Enabled` và `PerCampusFormV2WriteOptions.Enabled` mặc định `false` trong C#, chỉ được set `true` ở `appsettings.Testing.json`. `appsettings.json` / `Development` / `Production` **không** có section → v2 endpoint trả 404, capability trả `enabled=false`. Không còn V1 phía sau nên đây là **form chết**, không phải fallback. Dev server chạy `ASPNETCORE_ENVIRONMENT=Development` → đúng trạng thái sống này. | `grep PerCampusFormV2 appsettings*.json`; option default `= false`; `launchSettings.json` = Development | Mặc định cả hai `= true` (runtime chỉ có một phiên bản). Đánh dấu **deprecated** + kill-switch. 3 unit test ghim default. |
+| P4-2 | **Frontend route mọi đơn tới trang không tồn tại.** `resolveVisitRowRoutes(id, row.formSchemaVersion)` rẽ theo `formSchemaVersion` — cột backend đã bỏ ở Phase 1, không endpoint nào emit → luôn `undefined` → `isPerCampusV2(undefined)=false` → route `/dashboard/visit/unsupported-version`, **route này không đăng ký trong `App.tsx`**, page component mồ côi. | `grep FormSchemaVersion backend` = 0 emit; `grep unsupported-version App.tsx` = 0 | `resolveVisitRowRoutes(id)` luôn trả route v2. Modal bỏ nhánh `formSchemaVersion` chết (giữ cơ chế 409-driven: uniform→flat, mixed→409→v2). Bỏ field `formSchemaVersion` khỏi 3 type. |
+
+### Trạng thái Phase 4
+
+- Backend: capability endpoint giữ contract nhưng luôn `enabled=true` ở mọi deployment thật; flag tắt → 404/error, **không** fallback V1; không còn feature flag chọn V1/V2 runtime.
+- Frontend: **0** tham chiếu runtime `formSchemaVersion` / `isPerCampusV2` / `unsupported-version` (chỉ còn comment/assertion ghi lại việc gỡ). Capability machinery đã sẵn "error, không fallback V1" từ trước (test `FinalCtaSection`).
+- Gate: FE **lint 0**, **unit 383/383** (389→383 do gộp test nhánh version thành test Pure V2 — chuyển coverage, không mất), **build ✓**. BE build 0 · Architecture 14/14 · Unit **958/958** · Integration **552/552** · `pems_db` 81 · 0 DB rác.
+
+**Còn nợ Phase 4 → Phase 6 real-stack:** E2E critical journeys (CTA→V2, deep link, refresh, OTP, edit, resubmit, mixed A/B/C, dirty-prompt, empty/error state) chạy trên stack thật thuộc Phase 6 theo master plan. Chưa tuyên bố Phase 4 "VERIFIED đầy đủ E2E" — mới **backend+frontend gate xanh**.
+
+---
+
 ## 11. COMMIT ĐÃ TẠO (local, chưa push)
 
 | Hash | Slice |
