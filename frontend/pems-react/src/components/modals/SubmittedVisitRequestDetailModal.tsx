@@ -20,7 +20,6 @@ import { SubmittedVisitRequestInfoPanel } from '../../features/delegations/compo
 import { DecisionReasonPanel } from '../../features/delegations/components/DecisionReasonPanel';
 import { CancellationReasonPanel } from '../../features/delegations/components/CancellationReasonPanel';
 import VisitRequestV2DetailView from '../../features/visit-request/components/v2/VisitRequestV2DetailView';
-import { isPerCampusV2 } from '../../features/visit-request/utils/visitVersionRouting';
 import { isFormVersionUpgradeRequired } from '../../features/visit-request/utils/formVersionErrors';
 
 import { formatVietnamDateTime } from '../../shared/utils/vietnamTime';
@@ -31,9 +30,6 @@ interface Props {
   onApprove?: (data: SubmittedVisitRequestFormDetail) => void;
   onReject?: (data: SubmittedVisitRequestFormDetail) => void;
   onAssignHost?: (data: SubmittedVisitRequestFormDetail) => void;
-  /** When a caller already knows the request's schema version, pass it so a v2 request opens the v2
-   * detail immediately — no flat fetch, no waiting for a v1 409. Omitted → discovered from the fetch. */
-  formSchemaVersion?: number | null;
 }
 
 const formatDateTime = (value?: string | null) => {
@@ -67,14 +63,15 @@ const headerTitle = (status?: string) => {
 };
 
 export function SubmittedVisitRequestDetailModal({
-  isOpen, visitRequestId, onClose, onApprove, onReject, onAssignHost, formSchemaVersion,
+  isOpen, visitRequestId, onClose, onApprove, onReject, onAssignHost,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SubmittedVisitRequestFormDetail | null>(null);
-  // A v2 request must render the per-campus v2 UI — even a UNIFORM v2 request that looks flat. The
-  // discriminator is the schema version (prop when the caller knows it; otherwise the fetched field or
-  // a v1 upgrade-required 409), NEVER the scope, campus count, or mixed flag.
+  // A MIXED request cannot be represented flat, so the backend answers its flat-detail endpoint with a
+  // stable upgrade-required 409 and this modal renders the per-campus v2 view instead. A UNIFORM request
+  // returns a flat projection (that one campus's own detail) and renders in the flat panel. The decision
+  // is driven entirely by that 409 — never by scope, campus count, or a form-version field.
   const [renderV2, setRenderV2] = useState(false);
 
   useEffect(() => {
@@ -88,30 +85,23 @@ export function SubmittedVisitRequestDetailModal({
     let active = true;
     setError(null);
     setData(null);
-    // Caller already knows it is v2 → open the v2 detail straight away (no flat fetch, no 409 wait).
-    if (isPerCampusV2(formSchemaVersion)) {
-      setRenderV2(true);
-      setLoading(false);
-      return;
-    }
     setRenderV2(false);
     setLoading(true);
     delegationsApi.getSubmittedVisitRequestFormDetail(visitRequestId)
       .then((res) => {
         if (!active) return;
-        // Uniform v2 returns a flat-looking projection; branch to the v2 UI on its version field.
-        if (isPerCampusV2(res.formSchemaVersion)) setRenderV2(true);
-        else setData(res);
+        // Uniform request → flat projection (this campus's own detail) renders in the flat panel.
+        setData(res);
       })
       .catch((e) => {
         if (!active) return;
-        // Mixed v2 flat-fetch → stable upgrade-required 409; route to the v2 UI instead of a raw error.
+        // Mixed request → stable upgrade-required 409; render the per-campus v2 view instead of erroring.
         if (isFormVersionUpgradeRequired(e)) setRenderV2(true);
         else setError(getFriendlyError(e));
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [isOpen, visitRequestId, formSchemaVersion]);
+  }, [isOpen, visitRequestId]);
 
   if (!isOpen) return null;
 

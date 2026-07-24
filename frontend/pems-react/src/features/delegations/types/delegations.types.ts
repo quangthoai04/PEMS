@@ -757,14 +757,8 @@ export interface VisitRequestManagementItem {
   campusStatus: VisitInstanceStatus | null;
   visitScope: VisitScope | null;
 
-  /**
-   * Form schema version from the database: 1 = legacy global form, 2 = per-campus (v2).
-   * Detail/edit/resubmit routing branches on THIS value so a v2 request always opens the v2 UI
-   * without waiting for a v1 endpoint to reply 409 FORM_VERSION_UPGRADE_REQUIRED. Optional so
-   * older cached list payloads (no field) fall back to v1.
-   */
-  formSchemaVersion?: number;
-  /** True when a v2 request stores different content per campus. */
+  /** True when a request stores different content per campus. Pure V2: every request is per-campus,
+   * so this only distinguishes the display label, never which UI version to render. */
   hasMixedCampusDetails?: boolean;
 
   campusId: number | null;
@@ -942,10 +936,6 @@ export interface SubmittedVisitRequestFormDetail {
   emailVerifiedAt?: string | null;
   requestStatus: string;
   visitScope: string;
-  /** Per-campus form v2 discriminator from the DB (1 = legacy global, 2 = per-campus). A shared detail
-   * surface renders the v2 UI when this is >= 2 — never inferred from scope/campus count. Optional so
-   * older cached payloads fail safe to v1. */
-  formSchemaVersion?: number;
   hasMixedCampusDetails?: boolean;
 
   delegationName: string;

@@ -200,7 +200,6 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     visitRequestId: 5,
     requestCode: 'VR-5',
     rowVersion: 7,
-    formSchemaVersion: 2,
     hasMixedCampusDetails: true,
     visitScope: 'MULTI_CAMPUS',
     requestStatus: 'PENDING_APPROVAL',

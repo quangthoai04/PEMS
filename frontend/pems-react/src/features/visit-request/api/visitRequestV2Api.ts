@@ -177,7 +177,6 @@ export interface ResolvedVisitForm {
   requestCode: string;
   /** Request-level optimistic-concurrency token — echoed back as expectedRequestRowVersion on edit/resubmit. */
   rowVersion: number;
-  formSchemaVersion: number;
   hasMixedCampusDetails: boolean;
   visitScope: string;
   requestStatus: string;

@@ -13,7 +13,7 @@ import { campusFixture } from './fixtures';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
 
 const form = (): ResolvedVisitForm => ({
-  visitRequestId: 1, requestCode: 'VR-1', rowVersion: 4, formSchemaVersion: 2,
+  visitRequestId: 1, requestCode: 'VR-1', rowVersion: 4,
   hasMixedCampusDetails: false, visitScope: 'SINGLE_CAMPUS', requestStatus: 'APPROVED',
   createdSource: 'PUBLIC', submittedAt: '2026-07-15T08:00:00', partnerId: null,
   registrant: { fullName: 'Reg', organization: 'Org', jobTitle: 'Head', phone: '+84900000001', email: 'r@x.vn', nationality: 'VN' },
