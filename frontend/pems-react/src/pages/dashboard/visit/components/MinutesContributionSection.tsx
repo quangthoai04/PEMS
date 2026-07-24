@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { MinutesContributionStatus } from '../../../../features/delegations/types/delegations.types';
 import { FileText, Lock, Edit3, X } from 'lucide-react';
+import { sanitizeHtml } from '../../../../shared/security/sanitizeHtml';
 import { MinutesCard } from '../MinutesCard';
 
 interface Props {
@@ -52,9 +53,10 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
 
       <div className="space-y-4">
         {data.content ? (
-          <div className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 max-h-[180px] overflow-y-auto whitespace-pre-wrap text-sm text-slate-700">
-            {data.content}
-          </div>
+          <div
+            className="prose prose-sm max-w-none w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 max-h-[180px] overflow-y-auto text-sm text-slate-700"
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.content) }}
+          />
         ) : (
           <p className="text-sm font-semibold text-slate-400">Nội dung biên bản trống.</p>
         )}

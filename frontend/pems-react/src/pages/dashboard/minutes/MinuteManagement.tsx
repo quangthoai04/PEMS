@@ -9,6 +9,10 @@ import { minutesApi } from './minutesApi';
 import { toast } from 'react-hot-toast';
 import { MinutesFilterParams, MinutesListItem, MinutesDetail } from './types';
 import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
+import {
+  formatMinutesStatus, formatAttendanceStatus, formatVisitStatus, formatActionItemStatus,
+} from '../../../shared/utils/domainLabels';
+import { sanitizeHtml, htmlToPlainText } from '../../../shared/security/sanitizeHtml';
 
 export function MinuteManagement() {
   const navigate = useNavigate();
@@ -219,11 +223,11 @@ export function MinuteManagement() {
           <span className="text-2xl font-bold text-[#004c91]">{listData?.summary?.totalMinutes || 0}</span>
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-          <span className="text-sm font-bold text-slate-500 mb-1">DRAFT</span>
+          <span className="text-sm font-bold text-slate-500 mb-1">{formatMinutesStatus('DRAFT')}</span>
           <span className="text-2xl font-bold text-slate-700">{listData?.summary?.draftCount || 0}</span>
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-          <span className="text-sm font-bold text-slate-500 mb-1">SAVED</span>
+          <span className="text-sm font-bold text-slate-500 mb-1">{formatMinutesStatus('SAVED')}</span>
           <span className="text-2xl font-bold text-green-600">{listData?.summary?.savedCount || 0}</span>
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
@@ -261,8 +265,8 @@ export function MinuteManagement() {
               className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
             >
               <option value="">Tất cả trạng thái</option>
-              <option value="DRAFT">DRAFT</option>
-              <option value="SAVED">SAVED</option>
+              <option value="DRAFT">{formatMinutesStatus('DRAFT')}</option>
+              <option value="SAVED">{formatMinutesStatus('SAVED')}</option>
             </select>
             
             <select 
@@ -271,9 +275,9 @@ export function MinuteManagement() {
               className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[160px]"
             >
               <option value="">Tất cả điểm danh</option>
-              <option value="PRESENT">PRESENT</option>
-              <option value="ABSENT">ABSENT</option>
-              <option value="EXCUSED">EXCUSED</option>
+              <option value="PRESENT">{formatAttendanceStatus('PRESENT')}</option>
+              <option value="ABSENT">{formatAttendanceStatus('ABSENT')}</option>
+              <option value="EXCUSED">{formatAttendanceStatus('EXCUSED')}</option>
             </select>
             
             <select 
@@ -282,10 +286,10 @@ export function MinuteManagement() {
               className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
             >
               <option value="">Tất cả đầu việc</option>
-              <option value="TODO">TODO</option>
-              <option value="IN_PROGRESS">IN_PROGRESS</option>
-              <option value="DONE">DONE</option>
-              <option value="CANCELLED">CANCELLED</option>
+              <option value="TODO">{formatActionItemStatus('TODO')}</option>
+              <option value="IN_PROGRESS">{formatActionItemStatus('IN_PROGRESS')}</option>
+              <option value="DONE">{formatActionItemStatus('DONE')}</option>
+              <option value="CANCELLED">{formatActionItemStatus('CANCELLED')}</option>
             </select>
 
             {isHO && (
@@ -312,7 +316,7 @@ export function MinuteManagement() {
               onClick={clearAllFilters}
               className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium bg-white text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap"
             >
-              Reset
+              Đặt lại
             </button>
           </div>
         </div>
@@ -438,7 +442,7 @@ export function MinuteManagement() {
                     <div className="flex flex-col gap-1">
                       <div className="font-bold text-slate-800 line-clamp-2">{doc.title}</div>
                       <div className="text-xs text-slate-500 font-mono">MIN #{doc.minutesId}</div>
-                      <div className="text-xs text-slate-600 line-clamp-1 italic">{doc.contentPreview || 'Chưa có nội dung'}</div>
+                      <div className="text-xs text-slate-600 line-clamp-1 italic">{htmlToPlainText(doc.contentPreview) || 'Chưa có nội dung'}</div>
                     </div>
                   </td>
                   <td className="px-4 py-4">
@@ -451,7 +455,7 @@ export function MinuteManagement() {
                   <td className="px-4 py-4">
                     <div className="flex flex-col gap-2 items-start">
                       <span className={`inline-flex px-2 py-0.5 text-xs font-bold rounded-md ${doc.status === 'SAVED' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
-                        {doc.status}
+                        {formatMinutesStatus(doc.status)}
                       </span>
                       {doc.lockState === 'LOCKED' && (
                         <div className="flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200" title={`Locked by ${doc.editLockedByName}`}>
@@ -560,7 +564,7 @@ export function MinuteManagement() {
                       <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded font-mono">MIN #{selectedMinute.minutesId}</span>
                       <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded font-mono">INST #{selectedMinute.visitInstanceId}</span>
                       <span className={`text-xs px-2 py-0.5 rounded font-bold ${selectedMinute.status === 'SAVED' ? 'bg-green-500/20 text-green-100 border border-green-400/30' : 'bg-slate-500/30 text-slate-100 border border-slate-400/30'}`}>
-                        {selectedMinute.status}
+                        {formatMinutesStatus(selectedMinute.status)}
                       </span>
                       {user?.campusName && (
                         <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded">{user.campusName}</span>
@@ -644,10 +648,10 @@ export function MinuteManagement() {
 
                       {/* Thông tin đoàn — key-value compact */}
                       <div>
-                        <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Thông tin đoàn / Visit Instance</h3>
+                        <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Thông tin đoàn / Chuyến thăm tại cơ sở</h3>
                         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Đoàn khách:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.visitTitle || 'Chưa có dữ liệu'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{detailData.status || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{detailData.status ? formatVisitStatus(detailData.status) : 'Chưa có dữ liệu'}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Host:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.hostName || 'Chưa có dữ liệu'}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Campus:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.campusName || 'Chưa có dữ liệu'}</dd></div>
                           <div className="flex gap-1.5 md:col-span-2"><dt className="text-slate-500 shrink-0">Thời gian dự kiến:</dt><dd className="font-semibold text-slate-800">
@@ -661,9 +665,14 @@ export function MinuteManagement() {
                       {/* Nội dung biên bản */}
                       <div>
                         <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Nội dung biên bản</h3>
-                        <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
-                          {detailData.content || 'Chưa có dữ liệu nội dung.'}
-                        </div>
+                        {detailData.content?.trim() ? (
+                          <div
+                            className="prose prose-sm max-w-none text-sm text-slate-700 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(detailData.content) }}
+                          />
+                        ) : (
+                          <div className="text-sm italic text-slate-400">Chưa có dữ liệu nội dung.</div>
+                        )}
                       </div>
 
                       <hr className="border-slate-100" />
@@ -710,9 +719,9 @@ export function MinuteManagement() {
                                       </div>
                                     ) : (
                                       <>
-                                        {p.attendanceStatus === 'PRESENT' && <span className="text-green-700 font-bold">PRESENT</span>}
-                                        {p.attendanceStatus === 'ABSENT' && <span className="text-red-700 font-bold">ABSENT</span>}
-                                        {p.attendanceStatus === 'EXCUSED' && <span className="text-yellow-700 font-bold">EXCUSED</span>}
+                                        {p.attendanceStatus === 'PRESENT' && <span className="text-green-700 font-bold">{formatAttendanceStatus('PRESENT')}</span>}
+                                        {p.attendanceStatus === 'ABSENT' && <span className="text-red-700 font-bold">{formatAttendanceStatus('ABSENT')}</span>}
+                                        {p.attendanceStatus === 'EXCUSED' && <span className="text-yellow-700 font-bold">{formatAttendanceStatus('EXCUSED')}</span>}
                                         {!p.attendanceStatus && <span className="text-slate-400">-</span>}
                                       </>
                                     )}
@@ -756,7 +765,7 @@ export function MinuteManagement() {
                                           ai.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
                                           ai.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' :
                                           'bg-orange-100 text-orange-800'}`}>
-                                        {ai.status}
+                                        {formatActionItemStatus(ai.status)}
                                       </span>
                                       {isOverdue && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase bg-red-100 text-red-700">Quá hạn</span>}
                                       <h4 className={`font-bold text-sm ${ai.status === 'DONE' ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{ai.title}</h4>

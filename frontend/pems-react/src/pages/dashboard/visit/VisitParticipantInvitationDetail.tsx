@@ -22,6 +22,7 @@ import {
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { showSuccessToast, showErrorToast } from '../../../shared/utils/toast';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -268,10 +269,10 @@ export function VisitParticipantInvitationDetail() {
                  setSubmitting(true);
                  try {
                    await delegationsApi.visitInvitations.assignDepartmentStaff(participantId!, parseInt(staffIdStr, 10), note || '');
-                   alert('Giao việc thành công!');
+                   showSuccessToast('Giao việc thành công.');
                    await fetchInvitation();
                  } catch (e: any) {
-                   alert('Không thể giao việc: ' + (e?.response?.data?.message || e?.message));
+                   showErrorToast(e, 'Không thể giao việc. Vui lòng thử lại.');
                  } finally {
                    setSubmitting(false);
                  }

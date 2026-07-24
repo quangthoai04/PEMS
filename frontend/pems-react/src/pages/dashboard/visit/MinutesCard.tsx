@@ -16,6 +16,7 @@ import {
   CheckSquare, Square,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type {
   VisitMinute, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
@@ -744,7 +745,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                       ) : data.content?.trim() ? (
                         <div
                           className="w-full rounded-xl border border-gray-200 bg-gray-50/60 p-4 min-h-[120px] text-sm text-gray-800 prose max-w-none"
-                          dangerouslySetInnerHTML={{ __html: data.content }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.content) }}
                         />
                       ) : (
                         <div className="w-full rounded-xl border border-gray-200 bg-gray-50/60 p-4 min-h-[120px] text-sm text-slate-400 italic">

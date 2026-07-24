@@ -99,8 +99,26 @@ export function sanitizeHtml(input: string | null | undefined): string {
 }
 
 /**
- * Specifically neutralizes actionable links (e.g., action tokens) and buttons 
- * to prevent internal users from triggering recipient actions when previewing 
+ * Converts rich-text HTML to a plain-text excerpt for list previews, so a raw tag (`<h2>`, `<p>`, …)
+ * never leaks into a table cell. Strips ALL markup, collapses whitespace, and truncates to `maxLength`
+ * with an ellipsis. Uses the DOM when available, with a regex fallback for SSR.
+ */
+export function htmlToPlainText(input: string | null | undefined, maxLength = 160): string {
+  if (!input) return '';
+  const cleaned = input.replace(/&nbsp;/gi, ' ').replace(/ /g, ' ').replace(INVISIBLE_CHARS, '');
+  let text: string;
+  if (typeof window === 'undefined' || typeof window.DOMParser === 'undefined') {
+    text = cleaned.replace(/<[^>]*>/g, ' ');
+  } else {
+    text = new window.DOMParser().parseFromString(cleaned, 'text/html').body.textContent ?? '';
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text;
+}
+
+/**
+ * Specifically neutralizes actionable links (e.g., action tokens) and buttons
+ * to prevent internal users from triggering recipient actions when previewing
  * sent emails in the dashboard.
  */
 export function sanitizeSentEmailPreviewHtml(html: string): string {
