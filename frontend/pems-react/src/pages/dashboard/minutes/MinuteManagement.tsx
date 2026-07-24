@@ -12,6 +12,7 @@ import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/
 import {
   formatMinutesStatus, formatAttendanceStatus, formatVisitStatus, formatActionItemStatus,
 } from '../../../shared/utils/domainLabels';
+import { sanitizeHtml, htmlToPlainText } from '../../../shared/security/sanitizeHtml';
 
 export function MinuteManagement() {
   const navigate = useNavigate();
@@ -441,7 +442,7 @@ export function MinuteManagement() {
                     <div className="flex flex-col gap-1">
                       <div className="font-bold text-slate-800 line-clamp-2">{doc.title}</div>
                       <div className="text-xs text-slate-500 font-mono">MIN #{doc.minutesId}</div>
-                      <div className="text-xs text-slate-600 line-clamp-1 italic">{doc.contentPreview || 'Chưa có nội dung'}</div>
+                      <div className="text-xs text-slate-600 line-clamp-1 italic">{htmlToPlainText(doc.contentPreview) || 'Chưa có nội dung'}</div>
                     </div>
                   </td>
                   <td className="px-4 py-4">
@@ -664,9 +665,14 @@ export function MinuteManagement() {
                       {/* Nội dung biên bản */}
                       <div>
                         <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Nội dung biên bản</h3>
-                        <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
-                          {detailData.content || 'Chưa có dữ liệu nội dung.'}
-                        </div>
+                        {detailData.content?.trim() ? (
+                          <div
+                            className="prose prose-sm max-w-none text-sm text-slate-700 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(detailData.content) }}
+                          />
+                        ) : (
+                          <div className="text-sm italic text-slate-400">Chưa có dữ liệu nội dung.</div>
+                        )}
                       </div>
 
                       <hr className="border-slate-100" />
