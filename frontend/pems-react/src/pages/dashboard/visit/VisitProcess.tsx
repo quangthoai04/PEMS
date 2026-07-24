@@ -34,6 +34,8 @@ import { LogisticsRequestSection } from '../../../features/delegations/component
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 import { VisitorVisitDetailPage } from './VisitorVisitDetailPage';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
+import { StaleDataBanner } from '../../../shared/components/state';
+import { canSubmitReminders, canAssignResponsible, candidatesAreGenuinelyEmpty } from './visitProcessGuards';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
@@ -284,6 +286,9 @@ export function VisitProcess() {
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
   const [isSavingAgenda, setIsSavingAgenda] = useState(false);
   const [agendaResponsibleCandidates, setAgendaResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
+  // A failed dependency load must NOT masquerade as "empty" — it blocks the action that consumes it.
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
+  const [remindersLoadFailed, setRemindersLoadFailed] = useState(false);
 
   // ── Datetime serialization (PEMS rule: MySQL DATETIME is LOCAL wall-clock, never UTC). ──
   // The API returns "YYYY-MM-DDTHH:mm:ss" (or "YYYY-MM-DD HH:mm:ss") with no timezone. We slice it
@@ -347,8 +352,11 @@ export function VisitProcess() {
         }
         return next;
       });
+      setRemindersLoadFailed(false);
     } catch {
-      /* keep current defaults if the load fails */
+      // The saved schedule is unknown — flag the failure so Save is blocked (it would otherwise
+      // overwrite the real schedule with the UI's blank defaults) and the user is offered a retry.
+      setRemindersLoadFailed(true);
     }
   }, [perm?.visitInstanceId]);
   useEffect(() => { void loadReminders(); }, [loadReminders]);
@@ -373,6 +381,8 @@ export function VisitProcess() {
   // Save the scheduled reminder configuration (nothing is sent now — a background job dispatches later).
   const handleSaveReminders = async () => {
     if (!perm) return;
+    // Refuse to save when the saved schedule failed to load — the request would clobber it with defaults.
+    if (remindersLoadFailed) { pushToast('error', 'Chưa tải được lịch cảnh báo đã lưu. Vui lòng thử lại trước khi lưu.'); return; }
     setSavingReminders(true);
     try {
       const items = REMINDER_CONFIGS.map((cfg) => ({
@@ -415,12 +425,16 @@ export function VisitProcess() {
   // Responsible-person candidates (active host + ACCEPTED supporting participants of THIS instance).
   // Loaded once per instance; on failure we keep an empty list (dropdown just shows "Chưa chọn").
   const loadAgendaResponsibleCandidates = React.useCallback(async () => {
-    if (!perm) { setAgendaResponsibleCandidates([]); return; }
+    if (!perm) { setAgendaResponsibleCandidates([]); setCandidatesLoadFailed(false); return; }
     try {
       const list = await delegationsApi.getAgendaResponsibleCandidates(perm.visitInstanceId);
       setAgendaResponsibleCandidates(Array.isArray(list) ? list : []);
+      setCandidatesLoadFailed(false);
     } catch {
+      // Do NOT let a failed load read as "no candidates" — clear the list AND flag the failure so the
+      // assign dropdown is disabled and a retry is offered instead of a misleading empty picker.
       setAgendaResponsibleCandidates([]);
+      setCandidatesLoadFailed(true);
     }
   }, [perm?.visitInstanceId]);
   useEffect(() => { void loadAgendaResponsibleCandidates(); }, [loadAgendaResponsibleCandidates]);
@@ -431,6 +445,11 @@ export function VisitProcess() {
   // independent of the (always-false) SETUP_SAVE_AVAILABLE gate — the backend re-checks the same rule.
   const canConfigurePrep = !isClosed && detail?.relation === 'HOST'
     && (detail?.instanceStatus === 'ASSIGNED' || detail?.instanceStatus === 'BEFORE_VISIT');
+  // Dependency gates: block the action whose data failed to load (never mutate on blank defaults).
+  // `remindersActionEnabled` also folds in the in-flight `savingReminders` flag at the button site.
+  const responsibleAssignEnabled = canAssignResponsible({ canEditAgenda, candidatesLoadFailed });
+  const supportingCandidateCount = agendaResponsibleCandidates.filter((c) => !c.isMainHost).length;
+  const showNoSupportingCandidatesHint = candidatesAreGenuinelyEmpty({ candidatesLoadFailed, supportingCandidateCount });
 
   // ── "Áp dụng mẫu Agenda" panel visibility ──
   // The apply-template panel is a heavy form (dropdown + preview table); leaving it always-open made
@@ -452,6 +471,13 @@ export function VisitProcess() {
     // Double-submit guard: spamming the button must never fire a 2nd request while the 1st is in
     // flight (a stale response could otherwise overwrite a newer one).
     if (isSavingAgenda) return;
+    // The responsible-person validation below checks each assignee against the candidate list. If that
+    // list failed to load it is empty, which would falsely reject every VALID existing assignee. Refuse
+    // the save and prompt a reload instead of corrupting the agenda on a dependency failure.
+    if (candidatesLoadFailed) {
+      pushToast('error', 'Chưa tải được danh sách người phụ trách. Vui lòng thử lại trước khi lưu lịch trình.');
+      return;
+    }
 
     // ── Validation (front-end). On failure we NEVER hit the API. ──
     for (const it of agendaItems) {
@@ -1041,7 +1067,7 @@ export function VisitProcess() {
                                           <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Người phụ trách</label>
                                           <select
                                             value={it.responsibleUserId ?? ''}
-                                            disabled={!canEditAgenda}
+                                            disabled={!responsibleAssignEnabled}
                                             onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleUserId: e.target.value ? Number(e.target.value) : null } : p))}
                                             className={ghostSelectClass}
                                           >
@@ -1080,7 +1106,14 @@ export function VisitProcess() {
                                 </div>
                               </div>
                             )}
-                            {canEditAgenda && agendaResponsibleCandidates.filter((c) => !c.isMainHost).length === 0 && (
+                            {canEditAgenda && candidatesLoadFailed && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                                <span>Không tải được danh sách người phụ trách. Không thể chọn người phụ trách cho tới khi tải lại.</span>
+                                <button type="button" onClick={() => { void loadAgendaResponsibleCandidates(); }}
+                                  className="inline-flex items-center gap-1 underline hover:no-underline">Thử lại</button>
+                              </div>
+                            )}
+                            {canEditAgenda && showNoSupportingCandidatesHint && (
                               <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                                 Chưa có người tham gia nào đã chấp nhận lời mời. Hiện tại chỉ Host chính có thể được chọn làm người phụ trách.
                               </p>
@@ -1138,6 +1171,10 @@ export function VisitProcess() {
                 Hệ thống chỉ đặt lịch — thông báo/email được gửi tự động khi tới thời điểm (phải trước thời điểm bắt đầu tiếp khách).
               </p>
 
+              {canConfigurePrep && remindersLoadFailed && (
+                <StaleDataBanner onRetry={() => { void loadReminders(); }} className="mb-4" />
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {REMINDER_CONFIGS.map((cfg) => {
                   const row = reminders[cfg.key];
@@ -1172,19 +1209,22 @@ export function VisitProcess() {
                 })}
               </div>
 
-              {canConfigurePrep && (
+              {canConfigurePrep && (() => {
+                const remindersActionEnabled = canSubmitReminders({ canConfigurePrep, remindersLoadFailed, busy: savingReminders });
+                return (
                 <div className="flex flex-wrap justify-end gap-3 mt-5">
-                  <button type="button" onClick={handleCancelReminders} disabled={savingReminders}
+                  <button type="button" onClick={handleCancelReminders} disabled={!remindersActionEnabled}
                     className="px-5 py-2.5 rounded-xl font-bold text-sm text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors shadow-sm outline-none disabled:opacity-60">
                     Tắt tất cả cảnh báo
                   </button>
-                  <button type="button" onClick={handleSaveReminders} disabled={savingReminders}
+                  <button type="button" onClick={handleSaveReminders} disabled={!remindersActionEnabled}
                     className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#004c91] hover:bg-[#013565] transition-colors shadow-sm outline-none disabled:opacity-60 flex items-center gap-2">
                     <Bell className="w-4 h-4" />
                     {savingReminders ? 'Đang lưu...' : 'Lưu cảnh báo'}
                   </button>
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* 3.5 Ghi chú */}

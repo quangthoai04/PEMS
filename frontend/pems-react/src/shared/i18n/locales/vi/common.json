@@ -1,1 +1,24 @@
-{}
+{
+  "asyncState": {
+    "loading": "Đang tải…",
+    "retry": "Thử lại",
+    "emptyTitle": "Chưa có dữ liệu",
+    "errorCodeLabel": "Mã lỗi",
+    "correlationLabel": "Mã tham chiếu",
+    "stale": {
+      "title": "Dữ liệu có thể đã cũ",
+      "description": "Lần làm mới gần nhất bị lỗi nên dữ liệu bên dưới có thể chưa cập nhật."
+    },
+    "error": {
+      "generic": "Đã xảy ra lỗi",
+      "forbidden": "Bạn không có quyền thực hiện",
+      "notFound": "Không tìm thấy dữ liệu",
+      "conflict": "Dữ liệu đang xung đột với trạng thái hiện tại",
+      "formDetailMissing": "Thông tin chuyến thăm chưa được thiết lập đầy đủ",
+      "validation": "Dữ liệu không hợp lệ để xử lý",
+      "server": "Hệ thống gặp lỗi",
+      "network": "Không thể kết nối tới máy chủ",
+      "timeout": "Yêu cầu quá thời gian chờ"
+    }
+  }
+}

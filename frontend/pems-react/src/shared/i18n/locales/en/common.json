@@ -1,1 +1,24 @@
-{}
+{
+  "asyncState": {
+    "loading": "Loading…",
+    "retry": "Try again",
+    "emptyTitle": "No data yet",
+    "errorCodeLabel": "Error code",
+    "correlationLabel": "Reference",
+    "stale": {
+      "title": "Data may be out of date",
+      "description": "The latest refresh failed, so what you see below may be stale."
+    },
+    "error": {
+      "generic": "Something went wrong",
+      "forbidden": "You do not have permission",
+      "notFound": "Not found",
+      "conflict": "This data conflicts with the current state",
+      "formDetailMissing": "This visit's details are not fully set up yet",
+      "validation": "The data could not be processed",
+      "server": "The system encountered an error",
+      "network": "Unable to reach the server",
+      "timeout": "The request timed out"
+    }
+  }
+}
