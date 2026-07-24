@@ -5,13 +5,15 @@ using PEMS.Application.Common.Options;
 namespace PEMS.Api.Controllers;
 
 /// <summary>
-/// Public, read-only feature-capability surface. It exposes ONLY the boolean state a browser needs to
-/// decide whether the per-campus form v2 flow is usable end-to-end — never any other config value, secret
-/// or connection detail. Anonymous by design (the homepage CTA is public and unauthenticated) and never
+/// DEPRECATED public capability surface. It exposes ONLY the boolean state a browser needs to decide
+/// whether the per-campus form v2 flow is usable end-to-end — never any other config value, secret or
+/// connection detail. Anonymous by design (the homepage CTA is public and unauthenticated) and never
 /// mutates anything.
 ///
-/// The frontend uses this as the single authority for the v2 cutover: it must NOT guess the flag itself,
-/// and it must fail SAFE to v1 when this endpoint is unreachable.
+/// Retained for the existing browser contract, but there is exactly one runtime now and both flags
+/// default ON, so in every real deployment this reports <c>enabled=true</c>. There is no v1 to fall back
+/// to: when the flag IS off, the browser surfaces an error rather than an older flow. Slated for removal
+/// once the frontend stops probing it.
 /// </summary>
 [ApiController]
 [Route("api/public/features")]
