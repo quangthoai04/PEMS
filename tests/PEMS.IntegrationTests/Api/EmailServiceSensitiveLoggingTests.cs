@@ -2,11 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PEMS.Infrastructure.Email;
 using Xunit;
 
 namespace PEMS.IntegrationTests.Api;
+
+/// <summary>Minimal <see cref="IHostEnvironment"/> for constructing an <see cref="EmailService"/> in tests.</summary>
+internal sealed class FakeHostEnvironment : IHostEnvironment
+{
+    public FakeHostEnvironment(string environmentName) => EnvironmentName = environmentName;
+    public string EnvironmentName { get; set; }
+    public string ApplicationName { get; set; } = "PEMS.Tests";
+    public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+}
 
 /// <summary>
 /// P0 #3a — when SMTP is disabled, <see cref="EmailService"/> must NOT write any sensitive content to the
@@ -32,7 +44,7 @@ public sealed class EmailServiceSensitiveLoggingTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Smtp:Enabled"] = "false" })
             .Build();
         logger = new CapturingLogger<EmailService>();
-        return new EmailService(config, logger);
+        return new EmailService(config, logger, new FakeHostEnvironment("Development"));
     }
 
     [Fact]
@@ -72,7 +84,7 @@ public sealed class EmailServiceSensitiveLoggingTests
 
         var log = string.Join("\n", logger.Messages);
         Assert.NotEmpty(logger.Messages);
-        Assert.Contains("SMTP disabled", log);        // the reason it was not sent (truthful, non-secret)
+        Assert.Contains("NOT sent", log);             // the reason it was not sent (truthful, non-secret)
         Assert.Contains("partner.example.com", log);  // recipient DOMAIN is allowed metadata
         Assert.Contains("Xác thực", log);             // the fixed subject/template identifier, not a secret
     }

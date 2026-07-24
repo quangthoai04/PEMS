@@ -91,6 +91,13 @@ public sealed class FileSinkEmailService : IEmailService
         return Task.CompletedTask;
     }
 
+    /// <summary>Truthful contract for the file sink: the record is always captured, so the outcome is Sent.</summary>
+    public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
+    {
+        Append(toEmail, "GENERIC", code: null, link: ExtractLink(htmlBody), subject);
+        return Task.FromResult(EmailDeliveryResult.Sent());
+    }
+
     public Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default)
     {
         Append(message.ToEmail, "GENERIC_MIME", code: null, link: ExtractLink(message.Body ?? string.Empty), message.Subject);

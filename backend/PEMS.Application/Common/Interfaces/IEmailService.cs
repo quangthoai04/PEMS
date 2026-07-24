@@ -42,6 +42,15 @@ public interface IEmailService
     Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Attempts to send an email and returns the TRUTHFUL delivery outcome (Sent / Skipped / Failed)
+    /// instead of throwing. Callers that PERSIST a delivery status MUST use this and map the outcome
+    /// faithfully — never record "sent" for a Skipped/Failed result, and never set a sent-timestamp on
+    /// a non-Sent outcome. The void <see cref="SendAsync(string,string,string,CancellationToken)"/>
+    /// remains for fire-and-forget callers (it throws on a hard failure so the caller still observes it).
+    /// </summary>
+    Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rich send: builds a real MIME message with the given body format, file attachments and inline
     /// (cid) images. Used by the email rich-editor send flows (drafts, participant invite, logistics).
     /// </summary>

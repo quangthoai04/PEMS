@@ -384,14 +384,20 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
 
         try
         {
-            await _emailService.SendAsync(
+            // TRUTHFUL status: only report SENT when the provider accepted the message. A disabled SMTP in
+            // dev/testing is SKIPPED (not "sent"); a provider/prod failure is FAILED. The account is already
+            // committed, so a non-Sent outcome never rolls it back — the operator can re-notify.
+            var result = await _emailService.TrySendAsync(
                 user.Email, "Tài khoản nội bộ PEMS của bạn đã được khởi tạo", html, cancellationToken);
-            return "SENT";
+            return result.Status switch
+            {
+                EmailDeliveryStatus.Sent => "SENT",
+                EmailDeliveryStatus.Skipped => "SKIPPED",
+                _ => "FAILED",
+            };
         }
         catch
         {
-            // Do not fail the request: the account is already created. The caller surfaces
-            // FAILED so the operator can re-notify.
             return "FAILED";
         }
     }

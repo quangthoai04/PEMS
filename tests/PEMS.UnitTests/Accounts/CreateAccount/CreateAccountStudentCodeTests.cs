@@ -36,6 +36,9 @@ public class CreateAccountStudentCodeTests
             Email.Setup(e => e.SendAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
+            Email.Setup(e => e.TrySendAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(EmailDeliveryResult.Sent());
             Notifications.Setup(n => n.CreateAsync(
                     It.IsAny<CreateNotificationRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);

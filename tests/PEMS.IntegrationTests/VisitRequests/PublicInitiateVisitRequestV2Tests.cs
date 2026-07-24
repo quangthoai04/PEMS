@@ -69,6 +69,7 @@ public sealed class PublicInitiateVisitRequestV2Tests
         public string? LastCode { get; private set; }
         public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendAsync(OutboundEmail message, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.FromResult(EmailDeliveryResult.Sent());
         public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken ct = default)
         { LastCode = code; return Task.CompletedTask; }
