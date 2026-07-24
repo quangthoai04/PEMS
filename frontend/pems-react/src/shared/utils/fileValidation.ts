@@ -44,11 +44,10 @@ export function getFileValidationRule(purpose: FilePurpose): FileValidationRule 
     case 'NEWS_IMAGE':
       return { maxSizeBytes: 5 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'VISIT_REQUEST_PHOTO':
-      return { 
-        maxSizeBytes: 100 * MB, 
-        allowedMimeTypes: [...IMAGE_MIMES, 'video/mp4', 'video/webm'], 
-        allowedExtensions: [...IMAGE_EXTS, '.mp4', '.webm'] 
-      };
+      // Canonical visit-photo contract — MUST match the backend rule
+      // (FileValidationPolicy.VisitRequestPhoto): images only, 5 MB/file, no video, no PDF.
+      // The per-request count cap (max 10) is enforced by the caller, mirroring the backend validator.
+      return { maxSizeBytes: 5 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'GALLERY_VIDEO':
       return {
         maxSizeBytes: 100 * MB,

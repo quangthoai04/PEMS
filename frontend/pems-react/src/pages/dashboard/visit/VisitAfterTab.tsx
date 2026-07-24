@@ -22,8 +22,9 @@ import { useVisitFeedback } from '../../../features/feedbacks/hooks/useVisitFeed
 import { FeedbackGroupSection } from '../../../features/feedbacks/components/FeedbackGroupSection';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
-import { showLoadingToast, updateToastSuccess, updateToastError } from '../../../shared/utils/toast';
+import { showLoadingToast, updateToastSuccess, updateToastError, showMessageErrorToast } from '../../../shared/utils/toast';
 import { EmptyState } from '../../../shared/components/state';
+import { validateFile } from '../../../shared/utils/fileValidation';
 
 // Helper cho collapse header
 function CollapsibleSection({ 
@@ -261,6 +262,14 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
     const files = e.target.files;
     if (files && files.length > 0 && visitInstanceId) {
       const fileList = Array.from(files);
+      if (e.target) e.target.value = '';
+      // Client-side pre-check mirrors the backend canonical visit-photo contract (JPEG/PNG/WebP,
+      // 5 MB/file, max 10/request). Backend re-enforces; this is UX only, to avoid a doomed upload.
+      for (const f of fileList) {
+        const check = validateFile(f, 'VISIT_REQUEST_PHOTO');
+        if (!check.ok) { showMessageErrorToast(`${f.name}: ${check.message ?? 'Ảnh không hợp lệ.'}`); return; }
+      }
+      if (fileList.length > 10) { showMessageErrorToast('Chỉ được tải lên tối đa 10 ảnh mỗi lần.'); return; }
       const toastId = showLoadingToast(`Đang tải lên ${fileList.length} ảnh để quét nhận diện khuôn mặt...`, 'visit-photo-upload');
       
       setDriveConfig(prev => ({
@@ -281,7 +290,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
         updateToastSuccess(toastId, `Đã tải lên thành công ${fileList.length} ảnh. Bạn có thể chọn ảnh để quét khuôn mặt.`);
       } catch (err) {
         console.error("Upload error", err);
-        updateToastError(toastId, err, 'Không thể tải ảnh lên. Vui lòng kiểm tra dung lượng hoặc định dạng file (hỗ trợ .jpg, .png lên tới 10MB).');
+        updateToastError(toastId, err, 'Không thể tải ảnh lên. Chỉ chấp nhận JPG/PNG/WEBP, tối đa 5MB mỗi file và 10 ảnh mỗi lần.');
         setDriveConfig(prev => ({
           ...prev,
           syncStatus: 'error',
@@ -427,7 +436,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileUpload}
-                      accept="image/jpeg,image/png,image/webp,image/*"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                       multiple
                       className="hidden"
                     />
