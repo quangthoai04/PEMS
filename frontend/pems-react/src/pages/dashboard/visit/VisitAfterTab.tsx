@@ -5,9 +5,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Sparkles, FileText, AlertCircle,
-  ArrowRight, FolderOpen, ExternalLink, RefreshCw,
-  Check, X, Star, Loader2
+  FileText, AlertCircle,
+  FolderOpen, ExternalLink, RefreshCw,
+  Check, Star, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +23,7 @@ import { FeedbackGroupSection } from '../../../features/feedbacks/components/Fee
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { showLoadingToast, updateToastSuccess, updateToastError } from '../../../shared/utils/toast';
+import { EmptyState } from '../../../shared/components/state';
 
 // Helper cho collapse header
 function CollapsibleSection({ 
@@ -200,7 +201,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
   const [driveConfig, setDriveConfig] = useState({
     isConnected: true,
-    folderName: `vr-${visitInstanceId || '3063'}`,
+    folderName: `vr-${visitInstanceId ?? ''}`,
     folderUrl: '',
     syncStatus: 'synced', // 'synced' | 'syncing' | 'error'
     lastSynced: '-',
@@ -208,53 +209,12 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
   });
   const [isDriveConfirmed, setIsDriveConfirmed] = useState(isReadOnly);
 
-  // Part 2: News state
-  const [newsTitleVi, setNewsTitleVi] = useState('Nâng tầm hợp tác đào tạo cùng Đại học Tokyo: Chuyến thăm thắt chặt tình hữu nghị');
-  const [newsTitleEn, setNewsTitleEn] = useState('Elevating Academic Training Collaboration with University of Tokyo: A Warm Visit');
-  const [meetingMinutesSummary, setMeetingMinutesSummary] = useState(
-    'Biên bản cuộc họp (15/10/2026):\n' +
-    '1. Đại học Tokyo nhất trí trao đổi 15 sinh viên sang FPT học tập kỳ chuyên ngành.\n' +
-    '2. FPT Campus Tour được triển khai trọn vẹn, gây ấn tượng sâu sắc về cơ sở vật chất.\n' +
-    '3. Thống nhất biên soạn giáo trình chung cho ngành Công nghệ Bán dẫn.'
-  );
-  const [newsContentVi, setNewsContentVi] = useState('');
-  const [newsContentEn, setNewsContentEn] = useState('');
-  const [fbPostLink, setFbPostLink] = useState('');
-
-  // "Lưu ý" info modal + the dept article-preview modal. The real "đóng đoàn" CTA lives ONLY in the
-  // VisitProcess stage bar (single source of truth); this tab no longer owns a close button so the
-  // same action can never appear twice on one tab (đặc tả mục 1.6 / 8.3).
+  // "Lưu ý" info modal. The real "đóng đoàn" CTA lives ONLY in the VisitProcess stage bar (single
+  // source of truth); this tab no longer owns a close button so the same action can never appear
+  // twice on one tab (đặc tả mục 1.6 / 8.3). News is per-instance and handled entirely by the real
+  // News workflow (VisitNewsSection → VisitNewsPostList → the shared News Management form); this tab
+  // holds no separate news editor and no mock preview.
   const [showNoticeModal, setShowNoticeModal] = useState(false);
-  const [isArticleModalOpen, setIsArticleModalOpen] = useState(false);
-
-  // Handle auto-writing News content based on Meeting Minutes
-  const handleAutoGenerateNews = () => {
-    // VI contents auto filled using Meeting Minutes
-    const viGenerated = `Đại học FPT vừa qua đã vinh dự đón tiếp Đoàn đối tác cấp cao từ Đại học Tokyo, Nhật Bản đến tham quan và làm việc.\n\n` +
-      `Theo Biên bản cuộc họp, hai bên đã thống nhất những điều khoản quan trọng trong chương trình nâng tầm hợp tác quốc tế. Đặc biệt: \n` +
-      `- Triển khai chương trình trao đổi 15 sinh viên ưu tú sang học tập kỳ chuyên ngành tại cơ sở của FPT.\n` +
-      `- Hoạt động Campus Tour diễn ra thành công ấn tượng, giúp đoàn thấu hiểu sâu sắc hơn về hạ tầng giảng dạy kỹ thuật tốt bậc nhất.\n` +
-      `- Nhất trí cùng phối hợp thiết kế chương trình học cho lĩnh vực Đào tạo Công nghệ Vi mạch Bán dẫn mới.\n\n` +
-      `Buổi họp trao đổi khép lại trong không khí hữu nghị, mở ra tương lai hợp tác rạng dỡ giữa hai đơn vị hàng đầu Việt Nam và xứ sở hoa anh đào.`;
-
-    // EN contents auto filled using Meeting Minutes
-    const enGenerated = `FPT University recently had the honor of welcoming a high-ranking delegation from the University of Tokyo, Japan for a productive visit.\n\n` +
-      `Based on the official meeting minutes, both parties have aligned on strategic cooperation milestones. Highlights include:\n` +
-      `- A mutual commitment to launch a high-caliber exchange academic plan for 15 distinguished students.\n` +
-      `- An impressive Campus Tour that showcased FPT University's world-class facilities.\n` +
-      `- Mutual agreement to collaborative design and deliver academic curricula in Semiconductor Engineering.\n\n` +
-      `The bilateral discussion concluded on a highly promising note, fostering international excellence and long-term relations.`;
-
-    setNewsContentVi(viGenerated);
-    setNewsContentEn(enGenerated);
-  };
-
-  // Run initial news generation and fetch real photo/drive metadata
-  useEffect(() => {
-    if (!newsContentVi) {
-      handleAutoGenerateNews();
-    }
-  }, []);
 
   const loadDriveMetadata = async () => {
     if (!visitInstanceId) return;
@@ -487,67 +447,21 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
         </div>
       </CollapsibleSection>
 
-      {/* SECTION 5: NEWS */}
+      {/* SECTION 5: NEWS — the real per-instance news workflow. VisitNewsPostList lists the actual
+          posts (role-scoped by the backend) and its "Tạo bài tin tức" button opens the shared News
+          Management form with this visit_instance_id preselected. There is no second editor and no
+          mock preview here. News is inherently per-instance, so with no instance there is nothing to
+          show — an honest empty state, never a fabricated sample article. */}
       {visitInstanceId ? (
         <VisitNewsSection visitInstanceId={visitInstanceId} sectionNumber="5" />
       ) : (
-        <CollapsibleSection number="5" title={isDept ? 'Tin tức đoàn khách' : 'Tạo tin tức'} subtitle={isDept ? 'Bài viết truyền thông về hoạt động tiếp khách' : 'Tạo tin tức dựa trên biên bản cuộc họp'}>
-          <div className="p-4 sm:p-6 md:p-8 text-center flex flex-col items-center justify-center space-y-4">
-            <p className="text-sm font-semibold text-gray-500 max-w-lg font-sans">
-              {isDept ? 'Xem chi tiết bài viết truyền thông đã được đăng lên hệ thống tin tức.' : 'Ấn nút bên dưới để chuyển sang tạo tin tức'}
-            </p>
-          {!isDept && (
-            <div className="my-2 px-4 py-3 bg-[#e8f5e9]/70 border-l-4 border-[#00a651] rounded-r-xl max-w-xl text-left shadow-sm">
-              <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-[#00a651]" />
-                <span>Không bắt buộc phải tạo tin tức, nếu khách không xác nhận truyền thông.</span>
-              </p>
-            </div>
-          )}
-          {isDept ? (
-            <div 
-              onClick={() => setIsArticleModalOpen(true)}
-              className="mt-4 w-full max-w-2xl bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer text-left group"
-            >
-              <div className="h-48 bg-gray-100 relative overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&q=80&w=800" 
-                  alt="News Cover" 
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-              <div className="p-5">
-                <div className="mb-2 text-xs text-gray-500 font-medium font-sans">
-                  Đăng ngày 15/10/2026 • 5 phút đọc
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 leading-snug group-hover:text-[#004c91] transition-colors mb-2">
-                  Chuyến thăm và làm việc của Đoàn khách Đại học Monash tại cơ sở
-                </h3>
-                <p className="text-sm text-gray-600 line-clamp-2">
-                  Buổi làm việc đã tạo ra các cơ hội hợp tác chiến lược giữa hai trường đại học trong tương lai gần, cùng với các hoạt động giao lưu học thuật.
-                </p>
-                <div className="mt-4 flex items-center text-[#004c91] text-sm font-bold gap-1 group-hover:gap-2 transition-all">
-                  Xem bài viết <ArrowRight className="w-4 h-4" />
-                </div>
-              </div>
-            </div>
-           ) : (
-            <button
-              type="button"
-              // Người dùng muốn TẠO tin → đi thẳng vào form tạo (không điều hướng sang list).
-              onClick={() => !isReadOnly && navigate('/dashboard/news/create')}
-              disabled={isReadOnly}
-              className={`inline-flex items-center gap-2 px-6 py-3 font-extrabold rounded-xl transition-all text-sm outline-none ${
-                isReadOnly
-                  ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-default shadow-none'
-                  : 'bg-[#004c91] hover:bg-[#00386b] text-white shadow-md hover:shadow-lg active:scale-95 cursor-pointer'
-              }`}
-            >
-              Chuyển sang trang tạo tin tức
-              <ExternalLink className="w-4 h-4 stroke-[2.5]" />
-            </button>
-           )}
-        </div>
+        <CollapsibleSection number="5" title="Tin tức đoàn khách" subtitle="Bài viết truyền thông về hoạt động tiếp khách">
+          <div className="p-6">
+            <EmptyState
+              title="Chưa thể hiển thị tin tức"
+              description="Tin tức gắn với từng chuyến thăm. Hãy mở đúng chuyến thăm để xem hoặc tạo bài viết."
+            />
+          </div>
         </CollapsibleSection>
       )}
 
@@ -635,70 +549,6 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                   >
                     Đã hiểu
                   </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ARTICLE MODAL */}
-      <AnimatePresence>
-        {isArticleModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsArticleModalOpen(false)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer"
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="bg-white rounded-3xl shadow-xl w-full max-w-3xl overflow-hidden relative border border-gray-100 z-10 text-left font-sans flex flex-col max-h-[90vh]"
-            >
-              {/* Header */}
-              <div className="px-6 py-4 flex items-center justify-between border-b border-gray-100 shrink-0">
-                <h3 className="font-bold text-gray-900">Chi tiết bài viết</h3>
-                <button
-                  type="button"
-                  onClick={() => setIsArticleModalOpen(false)}
-                  className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5 stroke-[2.5]" />
-                </button>
-              </div>
-              
-              {/* Content */}
-              <div className="p-6 overflow-y-auto space-y-6">
-                <div className="aspect-video w-full rounded-2xl overflow-hidden bg-gray-100">
-                  <img 
-                    src="https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&q=80&w=800" 
-                    alt="Cover" 
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="text-sm text-gray-500 font-medium pb-2 border-b border-gray-100">
-                    Đăng ngày 15/10/2026 • Bởi Ban Truyền thông
-                  </div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-[#004c91] leading-tight">
-                    Chuyến thăm và làm việc của Đoàn khách Đại học Monash tại cơ sở
-                  </h1>
-                  <div className="space-y-4 text-gray-700 leading-relaxed">
-                    <p>
-                      Sáng ngày 15/10/2026, cơ sở đào tạo hân hạnh đón tiếp đoàn công tác cấp cao từ Đại học Monash (Úc). Chuyến thăm nhằm mục đích tăng cường hợp tác, trao đổi học thuật và thảo luận về các chương trình liên kết đào tạo trong tương lai.
-                    </p>
-                    <p>
-                      Trong khuôn khổ buổi làm việc, Ban lãnh đạo hai bên đã tiến hành thảo luận chi tiết về cơ hội trao đổi sinh viên, nghiên cứu chung và chia sẻ kinh nghiệm giảng dạy. Đặc biệt, nội dung về trí tuệ nhân tạo và ứng dụng công nghệ trong giáo dục được sự quan tâm rất lớn từ cả hai phía.
-                    </p>
-                    <p>
-                      Buổi làm việc đã tạo ra các cơ hội hợp tác chiến lược giữa hai trường đại học trong tương lai gần, cùng với các hoạt động giao lưu học thuật dự kiến sẽ sớm được triển khai.
-                    </p>
-                  </div>
                 </div>
               </div>
             </motion.div>
