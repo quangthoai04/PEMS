@@ -453,9 +453,60 @@ Nếu build fail:
 
 ---
 
-## 10. QUERY CONSUMER MATRIX (runtime)
+## 10. QUERY CONSUMER MATRIX (runtime) — Phase 3
 
-**Chưa lập.** §11 yêu cầu matrix có bằng chứng **runtime**, phụ thuộc integration test chạy được → phụ thuộc Phase 1. Không ghi `static-PASS` (bị cấm).
+Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / TESTED` · `VERIFIED` · `BLOCKED`.
+`VERIFIED` chỉ dùng khi có runtime test thật đang chạy trong gate. "Scope order" = scope áp **trước** (✅) hay **sau** (✗) keyword/filter.
+
+### 3A — list / detail / search
+
+| ID | Surface | Handler | Actor / scope | Visit data source | Mixed | Scope order | Cross-campus test | Status |
+|---|---|---|---|---|---|---|---|---|
+| 3A-01 | Guest delegation list — instance tab | `ViewGuestDelegationListQueryHandler.QueryInstanceLevelAsync` | Staff Leader→campus; Staff→host; Dept/Student→assignment | `x.c.FormDetail.DelegationName` (THIS instance) | label ở request-tab | ✅ scope rồi keyword | `V2MixedListSurfacesTests` (hidden-sibling) | VERIFIED |
+| 3A-02 | Guest delegation list — request tab | `...QueryRequestLevelAsync` | Visitor owner / registrant / HO | `CampusInstances.Any(FormDetail…)` any-campus (actor sở hữu cả đơn) | `Khác nhau theo cơ sở` | ✅ scope theo relation rồi keyword | `V2MixedListSurfacesTests` | VERIFIED |
+| 3A-03 | Delegation detail | `ViewGuestDelegationDetailsQueryHandler` | theo instance | per-instance detail | n/a | n/a | `RequestDetailV2Tests`, `SubmittedVisitRequestFormDetailV2Tests` | VERIFIED |
+| 3A-04 | Editable detail | `GetEditableVisitRequestDetailQueryHandler` | Visitor owner | per-instance detail | per-campus | n/a | `EditableVisitRequestDetailV2Tests` (5) | VERIFIED |
+| 3A-05 | Instance summary | `GetVisitInstanceSummaryQueryHandler` | instance authz | per-instance detail | per-campus | n/a | `VisitInstanceSummaryV2Tests` (8) | VERIFIED |
+| 3A-06 | Document search | `SearchDocumentsQueryHandler` | Staff Leader→`CampusId==primary`; khác→request.CampusId | doc-level | n/a | ✅ scope (`d.CampusId==campusId`) rồi `Q` | dùng chung `SearchDocuments` | CODE-OK / TEST-MISSING |
+| 3A-07 | Minutes search + summary | `SearchAndFilterMinutesQueryHandler` | non-HO→`vrc.CampusId==primary`; HO→optional | per-instance detail (batched) | per-campus | ✅ scope join trước, summary sau scope, keyword sau | **`MinutesListScopeAndShapeV2Tests` (3) — mới** | FIXED / TESTED |
+
+### 3B — calendar / invitation / process / agenda
+
+| ID | Surface | Handler | Actor / scope | Visit data source | Status |
+|---|---|---|---|---|---|
+| 3B-01 | Staff calendar | `GetStaffCalendarQueryHandler` | Staff Leader→`CampusId==primary` | `x.c.FormDetail.DelegationName` | `StaffCalendarDetailV2Tests` (9) → VERIFIED |
+| 3B-02 | Invitation list | `GetVisitInvitationsQueryHandler` | participant role + status | `x.c.FormDetail` (THIS instance), keyword sau role-scope | VERIFIED (`DeptInvitationDetailV2Tests`) |
+| 3B-03 | Invitation detail | `GetVisitInvitationDetailQueryHandler` | ParticipantId | per-instance detail | `VisitInvitationDetailV2Tests` (6) → VERIFIED |
+| 3B-04 | Invitation by id / landing | `GetVisitInvitationByIdQueryHandler` | invitee | per-instance detail | `MyVisitInvitationByIdV2Tests` (8) → VERIFIED |
+| 3B-05 | Process detail | `GetVisitProcessDetailQueryHandler` | instance authz | per-instance detail | `VisitProcessDetailV2Tests` (8) → VERIFIED |
+| 3B-06 | Contribution | `GetVisitInstanceContributionQueryHandler` | host/assignment | per-instance detail | `VisitInstanceContributionV2Tests` (8) → VERIFIED |
+| 3B-07 | Agenda setup | `GetAgendaSetupForInstanceQueryHandler` | host/leader/HO | per-instance detail | `AgendaSetupForInstanceV2Tests` (8) → VERIFIED |
+
+### 3C — report / invoice / export / email
+
+| ID | Surface | Handler | Visit data source | Status |
+|---|---|---|---|---|
+| 3C-01 | HO report overview | `GetHoReportOverviewQueryHandler` | `HasMixed ? label : CampusInstances.FirstOrDefault().FormDetail` | `GetHoReportOverviewCanonicalV2Tests` (8) → VERIFIED |
+| 3C-02 | Staff Leader report | `GetStaffLeaderReportOverviewQueryHandler` | `CampusInstances.Where(CampusId==campusId).FormDetail` (chính campus) | VERIFIED |
+| 3C-03 | Dept Leader invoice | `GetDeptLeaderInvoice{Items,Visits}QueryHandler` | scope theo `RequestedToDepartmentId`; `ci.FormDetail` | `GetStaffLeaderDeptInvoiceItemsCanonicalV2Tests` (7) → VERIFIED |
+| 3C-04 | Schedule report PDF | `ExportScheduleReportPdfQueryHandler` + `ScheduleReportDataBuilder` | `ResolveCampusFormContentAsync` per-instance | `ScheduleReportPerCampusTests` (8 unit) → VERIFIED |
+| 3C-05 | Minutes export PDF/Excel | `ExportMinutes{Pdf,Excel}QueryHandler` | `VisitInstanceEffectiveName.ForInstancesAsync` + guard `PrimaryCampusId!=vrc.CampusId` | CODE-OK / TEST-MISSING |
+| 3C-06 | Email action info / execute | `GetEmailActionInfoQueryHandler`, `ExecuteEmailActionCommandHandler` | token→target instance | `VisitParticipantInvite*`, contact workflows → VERIFIED |
+
+### 3D — feedback / minutes / media / news
+
+| ID | Surface | Handler | Visit data source | Status |
+|---|---|---|---|---|
+| 3D-01 | Document owner context | `ViewDocumentDetailQueryHandler` | instance→own; request→span | `DocumentVisitOwnerContextV2Tests` (3) → VERIFIED (slice 3D-1) |
+| 3D-02 | Feedback search | `SearchAndFilterFeedbackQueryHandler` | non-HO/ADMIN→`allowedInstanceIds` theo `PrimaryCampusId`; keyword sau | per-instance `FormDetail.DelegationName` | **`FeedbackSearchScopeV2Tests` (2)** → VERIFIED |
+| 3D-03 | Feedback summary | `ViewFeedbackSummaryQueryHandler` | `HasMixed ? label : CampusInstances.FirstOrDefault().FormDetail` (non-mixed → mọi campus giống nhau → deterministic hợp lệ) | CODE-OK (pattern đã được duyệt ở Phase 1) |
+| 3D-04 | My-visit photo folders | `GetMyVisitPhotoFoldersQueryHandler` | participant/host/coordinator→`instanceIds`; `VisitInstanceEffectiveName` per-instance | `GetMyVisitPhotoFoldersQueryHandlerTests` (unit) → VERIFIED |
+| 3D-05 | Visit instance photos | `GetVisitInstancePhotosQueryHandler` | `EnsureInstanceAuthz` + `ResolveCampusFormContentAsync` | `GetVisitInstancePhotosQueryHandlerTests` (unit) → VERIFIED |
+| 3D-06 | News eligibility | `GetEligibleVisitInstancesForNewsQueryHandler` | accepted-participant ∪ host; per-campus consent; `VisitInstanceEffectiveName` | **`NewsEligibilityScopeV2Tests` (2)** → VERIFIED |
+
+**Đã sửa trong Phase 3 tính đến nay:** 3A-07 (N+1 90→cố định + scope-before-keyword có test), 3D-01 (span).
+**Đã bổ sung runtime test (không đổi code production):** 3D-02 feedback search scope, 3D-06 news per-campus consent.
+**Không còn `UNREVIEWED`.** Còn `CODE-OK / TEST-MISSING`: 3A-06 (document search), 3C-05 (minutes export) — sẽ bổ sung runtime test trong slice 3C trước khi tuyên bố Phase 3 VERIFIED. 3D-03 là CODE-OK theo pattern `HasMixed ? label : single-instance` đã duyệt ở Phase 1 (non-mixed ⇒ mọi campus detail giống hệt ⇒ `FirstOrDefault` deterministic, không phải representative-campus defect).
 
 ---
 
