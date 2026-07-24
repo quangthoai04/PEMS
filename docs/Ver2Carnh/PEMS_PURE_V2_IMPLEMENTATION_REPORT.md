@@ -467,7 +467,7 @@ Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / 
 | 3A-03 | Delegation detail | `ViewGuestDelegationDetailsQueryHandler` | theo instance | per-instance detail | n/a | n/a | `RequestDetailV2Tests`, `SubmittedVisitRequestFormDetailV2Tests` | VERIFIED |
 | 3A-04 | Editable detail | `GetEditableVisitRequestDetailQueryHandler` | Visitor owner | per-instance detail | per-campus | n/a | `EditableVisitRequestDetailV2Tests` (5) | VERIFIED |
 | 3A-05 | Instance summary | `GetVisitInstanceSummaryQueryHandler` | instance authz | per-instance detail | per-campus | n/a | `VisitInstanceSummaryV2Tests` (8) | VERIFIED |
-| 3A-06 | Document search | `SearchDocumentsQueryHandler` | Staff Leader→`CampusId==primary`; khác→request.CampusId | doc-level | n/a | ✅ scope (`d.CampusId==campusId`) rồi `Q` | dùng chung `SearchDocuments` | CODE-OK / TEST-MISSING |
+| 3A-06 | Document search | `SearchDocumentsQueryHandler` | Staff Leader→`CampusId==primary`; khác→request.CampusId | doc-level | n/a | ✅ scope (`d.CampusId==campusId`) rồi `Q` | **`DocumentSearchScopeV2Tests` (2)** | VERIFIED |
 | 3A-07 | Minutes search + summary | `SearchAndFilterMinutesQueryHandler` | non-HO→`vrc.CampusId==primary`; HO→optional | per-instance detail (batched) | per-campus | ✅ scope join trước, summary sau scope, keyword sau | **`MinutesListScopeAndShapeV2Tests` (3) — mới** | FIXED / TESTED |
 
 ### 3B — calendar / invitation / process / agenda
@@ -490,7 +490,7 @@ Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / 
 | 3C-02 | Staff Leader report | `GetStaffLeaderReportOverviewQueryHandler` | `CampusInstances.Where(CampusId==campusId).FormDetail` (chính campus) | VERIFIED |
 | 3C-03 | Dept Leader invoice | `GetDeptLeaderInvoice{Items,Visits}QueryHandler` | scope theo `RequestedToDepartmentId`; `ci.FormDetail` | `GetStaffLeaderDeptInvoiceItemsCanonicalV2Tests` (7) → VERIFIED |
 | 3C-04 | Schedule report PDF | `ExportScheduleReportPdfQueryHandler` + `ScheduleReportDataBuilder` | `ResolveCampusFormContentAsync` per-instance | `ScheduleReportPerCampusTests` (8 unit) → VERIFIED |
-| 3C-05 | Minutes export PDF/Excel | `ExportMinutes{Pdf,Excel}QueryHandler` | `VisitInstanceEffectiveName.ForInstancesAsync` + guard `PrimaryCampusId!=vrc.CampusId` | CODE-OK / TEST-MISSING |
+| 3C-05 | Minutes export PDF/Excel | `ExportMinutes{Pdf,Excel}QueryHandler` | `VisitInstanceEffectiveName.ForInstancesAsync` + guard `PrimaryCampusId!=vrc.CampusId` | **`MinutesExportPerCampusV2Tests` (2)** — parse XLSX, đọc ô "Đoàn khách" → VERIFIED |
 | 3C-06 | Email action info / execute | `GetEmailActionInfoQueryHandler`, `ExecuteEmailActionCommandHandler` | token→target instance | `VisitParticipantInvite*`, contact workflows → VERIFIED |
 
 ### 3D — feedback / minutes / media / news
@@ -504,9 +504,22 @@ Trạng thái: `UNREVIEWED` · `CODE-OK / TEST-MISSING` · `DEFECT` · `FIXED / 
 | 3D-05 | Visit instance photos | `GetVisitInstancePhotosQueryHandler` | `EnsureInstanceAuthz` + `ResolveCampusFormContentAsync` | `GetVisitInstancePhotosQueryHandlerTests` (unit) → VERIFIED |
 | 3D-06 | News eligibility | `GetEligibleVisitInstancesForNewsQueryHandler` | accepted-participant ∪ host; per-campus consent; `VisitInstanceEffectiveName` | **`NewsEligibilityScopeV2Tests` (2)** → VERIFIED |
 
-**Đã sửa trong Phase 3 tính đến nay:** 3A-07 (N+1 90→cố định + scope-before-keyword có test), 3D-01 (span).
-**Đã bổ sung runtime test (không đổi code production):** 3D-02 feedback search scope, 3D-06 news per-campus consent.
-**Không còn `UNREVIEWED`.** Còn `CODE-OK / TEST-MISSING`: 3A-06 (document search), 3C-05 (minutes export) — sẽ bổ sung runtime test trong slice 3C trước khi tuyên bố Phase 3 VERIFIED. 3D-03 là CODE-OK theo pattern `HasMixed ? label : single-instance` đã duyệt ở Phase 1 (non-mixed ⇒ mọi campus detail giống hệt ⇒ `FirstOrDefault` deterministic, không phải representative-campus defect).
+**Đã sửa code production trong Phase 3:** 3A-07 (N+1 90→cố định + scope-before-keyword có test), 3D-01 (span).
+**Đã bổ sung runtime test (không đổi code production):** 3D-02 feedback search scope, 3D-06 news per-campus consent, 3A-06 document search scope, 3C-05 minutes export (parse XLSX).
+**Không còn `UNREVIEWED` và không còn `CODE-OK / TEST-MISSING`.** 3D-03 là CODE-OK theo pattern `HasMixed ? label : single-instance` đã duyệt ở Phase 1 (non-mixed ⇒ mọi campus detail giống hệt ⇒ `FirstOrDefault` deterministic, không phải representative-campus defect).
+
+### Gate Phase 3 (đo bằng cách chạy thật)
+
+- Query Consumer Matrix hoàn chỉnh — 0 `UNREVIEWED`, 0 `CODE-OK / TEST-MISSING`.
+- Cross-campus leakage = 0 (chứng minh runtime: guest-list, minutes, feedback, news, document-search, export).
+- Scope-before-keyword chứng minh cho mọi search có scope (guest-list, minutes, feedback, document-search).
+- Report/export dùng đúng target instance; export parse ra nội dung thật.
+- Không representative-campus fallback trong runtime (3D-01 span đã sửa; 3D-03 negation đúng).
+- Không request-level form read; không production `FormSchemaVersion` branch.
+- N+1 nghiêm trọng đã phân loại: 3A-07 minutes list đã sửa (test đếm query).
+- build 0 error · Architecture 14/14 · Unit 955/955 · Integration **552/552** · `git diff --check` sạch · `pems_db` 81 bảng · 0 DB disposable sót.
+
+**Phase 3 VERIFIED.**
 
 ---
 
