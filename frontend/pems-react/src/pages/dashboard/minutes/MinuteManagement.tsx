@@ -202,7 +202,7 @@ export function MinuteManagement() {
         <span className="text-[#004c91] font-bold">Quản lý biên bản</span>
       </div>
       
-      <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="border-b border-gray-100 pb-3 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý biên bản</h1>
@@ -212,7 +212,6 @@ export function MinuteManagement() {
               </span>
             )}
           </div>
-          <p className="text-gray-500 mt-2 font-medium">Tra cứu, xem chi tiết và tải xuống biên bản của các đoàn khách thuộc campus bạn quản lý</p>
         </div>
       </div>
 

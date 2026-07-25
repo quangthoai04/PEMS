@@ -752,16 +752,10 @@ export function VisitProcess() {
         </span>
       </div>
 
-      <div className="mb-8">
+      <div className="mb-4">
         <h1 className="text-3xl font-bold text-[#004c91]">
           {isReceptionDetail ? 'Chi tiết đón tiếp' : 'Quy trình tiếp khách'}
         </h1>
-        <p className="text-gray-500 mt-1 font-medium">
-          {isReceptionDetail
-            ? 'Thông tin chi tiết chuẩn bị đón tiếp đoàn khách (Trước tiếp khách)'
-            : 'Quản lý các bước chuẩn bị, đón tiếp và sau khi tiếp khách'
-          }
-        </p>
       </div>
 
       {(isCancelledView || perm?.instanceStatus === 'CANCELLED') && !isReceptionDetail ? (

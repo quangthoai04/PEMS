@@ -150,7 +150,6 @@ export function FeedbackManagement() {
                </span>
             )}
           </div>
-          <p className="text-gray-500 mt-1 font-medium">Tổng hợp và tra cứu đánh giá của các đoàn khách đã hoàn tất</p>
         </div>
       </div>
 

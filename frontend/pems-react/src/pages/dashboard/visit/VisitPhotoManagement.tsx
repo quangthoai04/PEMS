@@ -274,10 +274,14 @@ export function VisitPhotoManagement() {
   return (
     <div className="w-full pb-16 animate-in fade-in duration-300">
       {/* Breadcrumb Header */}
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
+      <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-2">
         <span>Dashboard</span>
         <span>/</span>
         <span className="text-[#004c91] font-bold">Quản lý ảnh đoàn khách</span>
+      </div>
+
+      <div className="border-b border-gray-100 pb-3 mb-4 text-left flex justify-start">
+        <h1 className="text-3xl font-bold text-[#004c91]">Quản lý ảnh đoàn khách</h1>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

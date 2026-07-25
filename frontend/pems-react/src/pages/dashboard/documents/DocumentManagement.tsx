@@ -100,7 +100,7 @@ export function DocumentManagement() {
         <span className="text-[#004c91] font-bold">Quản lý tài liệu</span>
       </div>
 
-      <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="border-b border-gray-100 pb-3 mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài liệu</h1>
@@ -108,9 +108,6 @@ export function DocumentManagement() {
               Campus: {user?.campusName || 'Hệ thống'}
             </span>
           </div>
-          <p className="text-gray-500 mt-2 font-medium">
-            Tra cứu, xem và tải xuống tài liệu nghiệp vụ của campus {user?.campusName || 'Hệ thống'} được lưu trên Google Drive
-          </p>
         </div>
       </div>
 

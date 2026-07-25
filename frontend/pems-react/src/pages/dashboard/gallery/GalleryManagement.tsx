@@ -215,7 +215,6 @@ function GalleryManagementMock() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
           <h1 className="text-3xl font-bold text-[#004c91] tracking-tight">VisitFPTU Gallery</h1>
-          <p className="text-gray-500 mt-1 font-medium">Quản lý tài nguyên hình ảnh và video</p>
         </div>
         <div className="flex items-center gap-3">
 

@@ -114,9 +114,6 @@ export function CreateVisitRequest() {
           <h1 className="text-3xl font-bold text-[#004c91]">
             Tạo đoàn khách
           </h1>
-          <p className="text-gray-500 mt-1 font-medium">
-            {guestData ? "Phê duyệt và chuyển đổi yêu cầu thành đoàn khách chính thức" : "Tạo mới đoàn khách vào hệ thống"}
-          </p>
         </div>
       </div>
 

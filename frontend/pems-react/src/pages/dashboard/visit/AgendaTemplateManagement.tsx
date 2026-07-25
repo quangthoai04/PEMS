@@ -336,7 +336,6 @@ export function AgendaTemplateManagement() {
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý mẫu Agenda</h1>
-            <p className="text-gray-500 mt-2 font-medium">Tạo và quản lý lịch trình mẫu theo loại hình visit và phạm vi cơ sở.</p>
           </div>
           <div className="flex items-center gap-3">
             <select
