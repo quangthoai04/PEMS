@@ -104,15 +104,57 @@ public sealed record WithdrawVisitAmendmentCommand(ulong VisitRequestId, ulong V
 public sealed record GetVisitRequestHistoryQuery(ulong VisitRequestId)
     : IRequest<VisitRequestHistoryResponse>;
 
-/// <summary>One scoped timeline entry. Metadata only — no snapshot JSON, no tokens, no IP/UA, no full
-/// emails (identity entries carry the masked email in <c>Detail</c>).</summary>
+/// <summary>
+/// One scoped timeline entry. Metadata only — no snapshot JSON, no tokens, no IP/UA, no full emails
+/// (identity entries carry the MASKED email only).
+///
+/// The entry is STRUCTURED rather than pre-formatted: the backend states WHAT happened
+/// (<see cref="EventCode"/> plus the few facts that event carries) and the frontend decides how to say
+/// it. The previous shape shipped assembled Vietnamese titles with audit fragments glued on
+/// ("source=CREATE;approvalRevision=1", "Cơ sở: REJECTED", "email=***;PENDING→APPLIED"), which was
+/// untranslatable, leaked internal enum names to whoever opened the page, and made two campuses of the
+/// same request produce identical lines.
+/// </summary>
 public sealed record VisitHistoryEntryDto(
     DateTime At,
-    string Kind,            // REQUEST_REVISION | INSTANCE_REVISION | AMENDMENT | AMENDMENT_DECISION | IDENTITY | DECISION
+    string EventCode,
     ulong? VisitInstanceId,
-    string Title,
-    string? Detail,
-    string? ActorName);
+    /// <summary>Campus of this entry — without it, multi-campus requests emit indistinguishable rows.</summary>
+    string? CampusName,
+    string? ActorName,
+    uint? FormRevision,
+    uint? ApprovalRevision,
+    uint? AmendmentNo,
+    /// <summary>Business status this event settled on (campus decision / amendment outcome).</summary>
+    string? StatusCode,
+    /// <summary>Why a revision was written (CREATE / SAFE_EDIT / AMENDMENT …).</summary>
+    string? SourceType,
+    string? Reason,
+    string? MaskedEmail,
+    string? FromStatus,
+    string? ToStatus);
+
+/// <summary>
+/// The vocabulary the timeline speaks. Every value maps to one frontend sentence; a value the client
+/// has not been taught renders as a neutral "other change" rather than as a raw code.
+/// </summary>
+public static class VisitHistoryEventCodes
+{
+    public const string RequestRevision = "REQUEST_REVISION";
+    public const string InstanceContentCreated = "INSTANCE_CONTENT_CREATED";
+    public const string InstanceContentRevised = "INSTANCE_CONTENT_REVISED";
+    public const string InstanceApproved = "INSTANCE_APPROVED";
+    public const string InstanceRejected = "INSTANCE_REJECTED";
+    public const string InstanceCancelled = "INSTANCE_CANCELLED";
+    public const string InstanceClosed = "INSTANCE_CLOSED";
+    public const string InstanceDecided = "INSTANCE_DECIDED";
+    public const string AmendmentSubmitted = "AMENDMENT_SUBMITTED";
+    public const string AmendmentApproved = "AMENDMENT_APPROVED";
+    public const string AmendmentRejected = "AMENDMENT_REJECTED";
+    public const string AmendmentWithdrawn = "AMENDMENT_WITHDRAWN";
+    public const string AmendmentDecided = "AMENDMENT_DECIDED";
+    public const string ContactIdentityChanged = "CONTACT_IDENTITY_CHANGED";
+}
 
 public sealed record VisitRequestHistoryResponse(
     ulong VisitRequestId,

@@ -284,6 +284,32 @@
     "openEdit": "Edit request",
     "openResubmit": "Edit & resubmit"
   },
+  "history": {
+    "loading": "Loading history…",
+    "loadFailed": "The change history could not be loaded.",
+    "empty": "No changes have been recorded yet.",
+    "someone": "A user",
+    "thisRequest": "this request",
+    "reason": "Reason",
+    "notInForceYet": "Not the content in force",
+    "events": {
+      "REQUEST_REVISION": "{{actor}} updated the request's shared information.",
+      "INSTANCE_CONTENT_CREATED": "Content for {{campus}} was created — version {{formRevision}}.",
+      "INSTANCE_CONTENT_REVISED": "{{actor}} updated the content for {{campus}} — version {{formRevision}}.",
+      "INSTANCE_APPROVED": "{{actor}} accepted the delegation at {{campus}}.",
+      "INSTANCE_REJECTED": "{{actor}} declined to host at {{campus}}.",
+      "INSTANCE_CANCELLED": "{{actor}} cancelled the visit at {{campus}}.",
+      "INSTANCE_CLOSED": "{{campus}} closed the visit.",
+      "INSTANCE_DECIDED": "{{actor}} recorded a decision for {{campus}}.",
+      "AMENDMENT_SUBMITTED": "{{actor}} proposed change #{{amendmentNo}} for {{campus}}.",
+      "AMENDMENT_APPROVED": "{{actor}} approved change #{{amendmentNo}} at {{campus}}.",
+      "AMENDMENT_REJECTED": "{{actor}} rejected change #{{amendmentNo}} at {{campus}}.",
+      "AMENDMENT_WITHDRAWN": "{{actor}} withdrew change #{{amendmentNo}} at {{campus}}.",
+      "AMENDMENT_DECIDED": "Change #{{amendmentNo}} at {{campus}} was decided.",
+      "CONTACT_IDENTITY_CHANGED": "The contact role changed ({{email}}).",
+      "UNKNOWN": "Another change was recorded."
+    }
+  },
   "revision": {
     "title": "Content status",
     "current": "Current content: version {{form}}",

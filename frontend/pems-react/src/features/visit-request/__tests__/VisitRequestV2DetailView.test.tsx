@@ -241,21 +241,25 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.getByRole('button', { name: 'Propose change' })).toBeInTheDocument();
   });
 
-  it('history timeline renders the server-scoped MASKED entries as-is', async () => {
+  it('history timeline renders the server-scoped MASKED entries as business sentences', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
     vi.mocked(getVisitRequestHistory).mockResolvedValue({
       visitRequestId: 1,
       requestCode: 'VR-2026-001',
       entries: [{
-        at: '2026-07-16T10:00:00', kind: 'IDENTITY', visitInstanceId: null,
-        title: 'Đầu mối d***@x.vn đã xác nhận vai trò', detail: null, actorName: null,
+        at: '2026-07-16T10:00:00', eventCode: 'CONTACT_IDENTITY_CHANGED', visitInstanceId: null,
+        campusName: null, actorName: null, formRevision: null, approvalRevision: null,
+        amendmentNo: null, statusCode: 'CLAIM_APPLIED', sourceType: null, reason: null,
+        maskedEmail: 'd***@x.vn', fromStatus: 'PENDING', toStatus: 'APPLIED',
       }],
     });
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
 
-    expect(await screen.findByText('Đầu mối d***@x.vn đã xác nhận vai trò')).toBeInTheDocument();
+    expect(await screen.findByText('The contact role changed (d***@x.vn).')).toBeInTheDocument();
     // Masked means masked — the full address never appears anywhere in the DOM:
     expect(screen.queryByText(/dauMoi@|d@x\.vn/)).not.toBeInTheDocument();
+    // …and the raw status transition never reaches the reader either.
+    expect(screen.queryByText(/PENDING|APPLIED|CLAIM_APPLIED/)).not.toBeInTheDocument();
   });
 
   it('flag OFF / not found → stable friendly message, no silent v1 fallback fetch', async () => {

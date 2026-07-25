@@ -284,6 +284,32 @@
     "openEdit": "Sửa đơn",
     "openResubmit": "Sửa & gửi lại đơn"
   },
+  "history": {
+    "loading": "Đang tải lịch sử…",
+    "loadFailed": "Không thể tải lịch sử thay đổi.",
+    "empty": "Chưa có thay đổi nào được ghi nhận.",
+    "someone": "Một người dùng",
+    "thisRequest": "đơn này",
+    "reason": "Lý do",
+    "notInForceYet": "Chưa phải nội dung hiệu lực",
+    "events": {
+      "REQUEST_REVISION": "{{actor}} đã cập nhật thông tin chung của đơn.",
+      "INSTANCE_CONTENT_CREATED": "Nội dung cho {{campus}} được tạo — phiên bản {{formRevision}}.",
+      "INSTANCE_CONTENT_REVISED": "{{actor}} đã cập nhật nội dung tại {{campus}} — phiên bản {{formRevision}}.",
+      "INSTANCE_APPROVED": "{{actor}} đã tiếp nhận đoàn tại {{campus}}.",
+      "INSTANCE_REJECTED": "{{actor}} đã từ chối tiếp nhận tại {{campus}}.",
+      "INSTANCE_CANCELLED": "{{actor}} đã hủy lịch thăm tại {{campus}}.",
+      "INSTANCE_CLOSED": "{{campus}} đã đóng đoàn.",
+      "INSTANCE_DECIDED": "{{actor}} đã ra quyết định cho {{campus}}.",
+      "AMENDMENT_SUBMITTED": "{{actor}} đã gửi đề xuất thay đổi #{{amendmentNo}} cho {{campus}}.",
+      "AMENDMENT_APPROVED": "{{actor}} đã duyệt đề xuất thay đổi #{{amendmentNo}} tại {{campus}}.",
+      "AMENDMENT_REJECTED": "{{actor}} đã từ chối đề xuất thay đổi #{{amendmentNo}} tại {{campus}}.",
+      "AMENDMENT_WITHDRAWN": "{{actor}} đã rút đề xuất thay đổi #{{amendmentNo}} tại {{campus}}.",
+      "AMENDMENT_DECIDED": "Đề xuất thay đổi #{{amendmentNo}} tại {{campus}} đã được xử lý.",
+      "CONTACT_IDENTITY_CHANGED": "Vai trò đầu mối liên hệ có thay đổi ({{email}}).",
+      "UNKNOWN": "Có một thay đổi khác được ghi nhận."
+    }
+  },
   "revision": {
     "title": "Tình trạng nội dung",
     "current": "Nội dung hiện tại: phiên bản {{form}}",
