@@ -39,6 +39,32 @@ function todayStr() {
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')}`;
 }
 
+function getDaysForYearMonth(year: number, month: number) {
+  const firstDayRaw = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const firstDayIndex = firstDayRaw === 0 ? 6 : firstDayRaw - 1;
+  const totalDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const prevMonthTotalDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const days = [];
+
+  for (let i = 0; i < firstDayIndex; i++) {
+    const d = prevMonthTotalDays - firstDayIndex + 1 + i;
+    const pm = month === 0 ? 11 : month - 1;
+    const py = month === 0 ? year - 1 : year;
+    days.push({ day: d, month: pm, year: py, isCurrentMonth: false });
+  }
+  for (let i = 1; i <= totalDays; i++) {
+    days.push({ day: i, month, year, isCurrentMonth: true });
+  }
+  const targetLen = days.length > 35 ? 42 : 35;
+  const remaining = targetLen - days.length;
+  for (let i = 1; i <= remaining; i++) {
+    const nm = month === 11 ? 0 : month + 1;
+    const ny = month === 11 ? year + 1 : year;
+    days.push({ day: i, month: nm, year: ny, isCurrentMonth: false });
+  }
+  return days;
+}
+
 /** Parse key "YYYY-MM-DD" thành Date theo PHẦN lịch (không phải instant UTC midnight —
  *  new Date('YYYY-MM-DD') sẽ lùi 1 ngày ở browser múi giờ âm). */
 function parseDateKey(s: string): Date {
@@ -703,25 +729,67 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
               })()}
             </div>
           ) : (
-            <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 bg-white max-h-[720px] overflow-y-auto">
-              {yearMonths.map(({ month: m, items }) => (
-                <button key={m} onClick={() => { setMonth(m); setDisplayMode('Tháng'); }}
-                  className="text-left rounded-2xl border border-slate-200 bg-slate-50/60 p-4 hover:border-orange-200 hover:bg-orange-50/40 transition-colors min-h-[120px]">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-black text-[#004c91]">{MONTHS[m]}</h4>
-                    <span className="text-[11px] font-black text-slate-400">{items.length} lịch</span>
-                  </div>
-                  <div className="space-y-1">
-                    {items.slice(0, 3).map(ev => (
-                      <div key={ev.id} className={`px-2 py-1 rounded-md border text-[10px] font-normal truncate ${ev.color}`}>
-                        <span className={ev.status === 'CANCELLED' ? 'line-through' : ''}>{ev.title}</span>
+            <div className="p-6 overflow-y-auto no-scrollbar max-h-[720px] bg-white">
+              <h3 className="text-sm font-extrabold text-[#004c91] uppercase tracking-wider mb-6 text-center">
+                Tổng quan danh mục sự kiện năm {year}
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {MONTHS.map((mName, mIdx) => {
+                  const mDays = getDaysForYearMonth(year, mIdx);
+                  const isCurrentMonthThisYear = mIdx === (new Date().getMonth()) && year === (new Date().getFullYear());
+                  return (
+                    <div
+                      key={mName}
+                      className={`p-3.5 rounded-2xl border transition-colors ${
+                        isCurrentMonthThisYear ? 'border-orange-300 bg-orange-50/20' : 'bg-slate-50/50 border-slate-150/80 hover:border-orange-200'
+                      }`}
+                    >
+                      <h4 className="text-xs font-black text-[#004c91] text-center mb-2.5">{mName}</h4>
+
+                      <div className="grid grid-cols-7 text-center text-[9px] font-black text-slate-400 mb-1">
+                        <div>T2</div><div>T3</div><div>T4</div><div>T5</div><div>T6</div><div>T7</div><div>CN</div>
                       </div>
-                    ))}
-                    {items.length > 3 && <p className="text-[11px] font-bold text-orange-600">...và {items.length - 3} lịch khác</p>}
-                    {!items.length && <p className="text-[11px] font-semibold text-slate-300">Không có lịch</p>}
-                  </div>
-                </button>
-              ))}
+
+                      <div className="grid grid-cols-7 text-center gap-0.5 text-[10px]">
+                        {mDays.map((cell, cIdx) => {
+                          const cellKey = `${cell.year}-${String(cell.month + 1).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`;
+                          const cellEvents = displayItems.filter(e => e.date === cellKey);
+                          const hasEvents = cellEvents.length > 0;
+                          const isTodayCell = cellKey === today;
+
+                          return (
+                            <button
+                              key={cIdx}
+                              type="button"
+                              onClick={() => {
+                                setMonth(cell.month);
+                                setSelectedDate(cellKey);
+                                setDisplayMode(hasEvents ? 'Ngày' : 'Tháng');
+                              }}
+                              className={`relative w-5.5 h-5.5 rounded-full flex items-center justify-center font-bold transition-all mx-auto cursor-pointer ${
+                                isTodayCell
+                                  ? 'bg-[#004c91] text-white font-black'
+                                  : hasEvents
+                                  ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 font-black'
+                                  : cell.isCurrentMonth
+                                  ? 'text-slate-700 hover:bg-slate-200'
+                                  : 'text-slate-350 hover:bg-slate-100/50'
+                              }`}
+                              title={hasEvents ? `${cellKey}: ${cellEvents.length} lịch` : undefined}
+                            >
+                              {cell.day}
+                              {hasEvents && (
+                                <span className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ${isTodayCell ? 'bg-white' : 'bg-red-500'} border border-white`} />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

@@ -42,6 +42,32 @@ import { formatVietnamTime, toVietnamCalendarDate } from '../../../../shared/uti
 type DisplayMode = 'Ngày' | 'Tuần' | 'Tháng' | 'Năm';
 type CalendarType = 'office' | 'mine';
 
+function getDaysForYearMonth(year: number, month: number) {
+  const firstDayRaw = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const firstDayIndex = firstDayRaw === 0 ? 6 : firstDayRaw - 1;
+  const totalDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const prevMonthTotalDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const days = [];
+
+  for (let i = 0; i < firstDayIndex; i++) {
+    const d = prevMonthTotalDays - firstDayIndex + 1 + i;
+    const pm = month === 0 ? 11 : month - 1;
+    const py = month === 0 ? year - 1 : year;
+    days.push({ day: d, month: pm, year: py, isCurrentMonth: false });
+  }
+  for (let i = 1; i <= totalDays; i++) {
+    days.push({ day: i, month, year, isCurrentMonth: true });
+  }
+  const targetLen = days.length > 35 ? 42 : 35;
+  const remaining = targetLen - days.length;
+  for (let i = 1; i <= remaining; i++) {
+    const nm = month === 11 ? 0 : month + 1;
+    const ny = month === 11 ? year + 1 : year;
+    days.push({ day: i, month: nm, year: ny, isCurrentMonth: false });
+  }
+  return days;
+}
+
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const MONTH_NAMES = [
   'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
@@ -546,87 +572,86 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   return (
     <div className="space-y-4">
       {/* ── Toolbar ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
-        <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2 mr-1">
-          <CalendarIcon className="w-5 h-5 text-[#004c91]" />
-          Lịch yêu cầu đến thăm
-        </h2>
-
-        <div className="flex items-center gap-1">
-          <button onClick={goPrev} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-[#004c91] transition-colors cursor-pointer">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm font-extrabold text-slate-700 min-w-[150px] text-center">{headerLabel}</span>
-          <button onClick={goNext} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-[#004c91] transition-colors cursor-pointer">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <button onClick={goToday} className="ml-1 text-xs font-bold text-[#004c91] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
-            Hôm nay
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 ml-auto">
-          {/* Loại lịch */}
-          <div className="flex rounded-xl border border-slate-200 overflow-hidden">
-            <button
-              onClick={() => setCalendarType('office')}
-              className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${calendarType === 'office' ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
-            >
-              <Briefcase className="w-3.5 h-3.5" /> Lịch văn phòng
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        {/* Bên trái: Điều hướng thời gian + Bộ lọc (cạnh nút sang trái sang phải) */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Điều hướng */}
+          <div className="flex items-center gap-1">
+            <button onClick={goToday} className="mr-1.5 text-xs font-bold text-[#004c91] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
+              Hôm nay
             </button>
-            <button
-              onClick={() => setCalendarType('mine')}
-              className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${calendarType === 'mine' ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
-            >
-              <UserIcon className="w-3.5 h-3.5" /> Lịch của tôi
+            <button onClick={goPrev} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-[#004c91] transition-colors cursor-pointer">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-extrabold text-slate-700 min-w-[130px] text-center">{headerLabel}</span>
+            <button onClick={goNext} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-[#004c91] transition-colors cursor-pointer">
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Chế độ hiển thị */}
-          <div className="relative">
-            <button
-              onClick={() => setShowModeDropdown((v) => !v)}
-              className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              {displayMode} <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            {showModeDropdown && (
-              <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[110px]">
-                {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as DisplayMode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => { setDisplayMode(m); setShowModeDropdown(false); }}
-                    className={`w-full text-left px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${displayMode === m ? 'bg-blue-50 text-[#004c91]' : 'text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            )}
+          {/* Bộ lọc (chuyển sang trái cạnh nút điều hướng) */}
+          <div className="flex items-center gap-2">
+            {/* Loại lịch */}
+            <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+              <button
+                onClick={() => setCalendarType('office')}
+                className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${calendarType === 'office' ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                <Briefcase className="w-3.5 h-3.5" /> Lịch văn phòng
+              </button>
+              <button
+                onClick={() => setCalendarType('mine')}
+                className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${calendarType === 'mine' ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                <UserIcon className="w-3.5 h-3.5" /> Lịch của tôi
+              </button>
+            </div>
+
+            {/* Chế độ hiển thị */}
+            <div className="relative">
+              <button
+                onClick={() => setShowModeDropdown((v) => !v)}
+                className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {displayMode} <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {showModeDropdown && (
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[110px]">
+                  {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as DisplayMode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => { setDisplayMode(m); setShowModeDropdown(false); }}
+                      className={`w-full text-left px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${displayMode === m ? 'bg-blue-50 text-[#004c91]' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* ── Bảng lịch ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {/* Legend — màu "Cần xử lý" chỉ có ý nghĩa với Staff Leader (người xử lý được) */}
-        <div className="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {/* Lịch của tôi: chỉ còn "Tôi là người phụ trách" (xanh dương) + "Lịch cá nhân" (tím) + "Hủy" (gạch ngang). */}
+        {/* Bên phải: Chú thích (Legend) nằm bên phải phần lọc */}
+        <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap ml-auto">
           {LEGEND.filter((l) =>
             (l.key !== 'NEEDS_ACTION' || (isStaffLeader && calendarType === 'office'))
             && (l.key !== 'PROCESSED' || calendarType === 'office')
             && (l.key !== 'PERSONAL' || calendarType === 'mine'),
           ).map((l) => (
-            <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+            <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
               <span className={`w-2.5 h-2.5 rounded-full ${l.dot}`} />
-              {/* Lịch văn phòng: xanh dương gộp đơn phụ trách + lịch cá nhân → gọi là "Lịch của tôi". */}
               <span className={l.key === 'CANCELLED' ? 'line-through text-slate-500 font-semibold' : ''}>
                 {l.key === 'MINE' && calendarType === 'office' ? 'Lịch của tôi' : l.label}
               </span>
             </span>
           ))}
-          {loading && <Loader2 className="w-4 h-4 animate-spin text-[#004c91] ml-auto" />}
+          {loading && <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" />}
         </div>
+      </div>
+
+      {/* ── Bảng lịch ── */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
 
         {error ? (
           <div className="py-14 text-center">
@@ -718,34 +743,69 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             )}
           </div>
         ) : displayMode === 'Năm' ? (
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 bg-white max-h-[720px] overflow-y-auto">
-            {yearMonths.map(({ month: m, pills }) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => {
-                  setAnchorDate(new Date(Date.UTC(anchorDate.getUTCFullYear(), m, 1)));
-                  setDisplayMode('Tháng');
-                }}
-                className={`text-left rounded-2xl border p-4 transition-colors min-h-[120px] cursor-pointer ${m === today.getUTCMonth() && anchorDate.getUTCFullYear() === today.getUTCFullYear() ? 'border-[#004c91]/60 bg-blue-50/40 hover:bg-blue-50/70' : 'border-slate-200 bg-slate-50/60 hover:border-orange-200 hover:bg-orange-50/40'}`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-black text-[#004c91]">{MONTH_NAMES[m]}</h4>
-                  <span className="text-[11px] font-black text-slate-400">{pills.length} lịch</span>
-                </div>
-                <div className="space-y-1">
-                  {pills.slice(0, 3).map((p) => (
-                    <EventPill key={p.key} pill={p} />
-                  ))}
-                  {pills.length > 3 && (
-                    <p className="text-[11px] font-bold text-orange-600">...và {pills.length - 3} lịch khác</p>
-                  )}
-                  {!pills.length && (
-                    <p className="text-[11px] font-semibold text-slate-300">Không có lịch</p>
-                  )}
-                </div>
-              </button>
-            ))}
+          <div className="p-6 overflow-y-auto no-scrollbar max-h-[720px] bg-white">
+            <h3 className="text-sm font-extrabold text-[#004c91] uppercase tracking-wider mb-6 text-center">
+              Tổng quan danh mục sự kiện năm {anchorDate.getUTCFullYear()}
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {MONTH_NAMES.map((mName, mIdx) => {
+                const mDays = getDaysForYearMonth(anchorDate.getUTCFullYear(), mIdx);
+                const isCurrentMonthThisYear = mIdx === today.getUTCMonth() && anchorDate.getUTCFullYear() === today.getUTCFullYear();
+                return (
+                  <div
+                    key={mName}
+                    className={`p-3.5 rounded-2xl border transition-colors ${
+                      isCurrentMonthThisYear ? 'border-orange-300 bg-orange-50/20' : 'bg-slate-50/50 border-slate-150/80 hover:border-orange-200'
+                    }`}
+                  >
+                    <h4 className="text-xs font-black text-[#004c91] text-center mb-2.5">{mName}</h4>
+
+                    <div className="grid grid-cols-7 text-center text-[9px] font-black text-slate-400 mb-1">
+                      {WEEKDAYS.map((w) => (
+                        <div key={w}>{w}</div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 text-center gap-0.5 text-[10px]">
+                      {mDays.map((cell, cIdx) => {
+                        const cellKey = `${cell.year}-${String(cell.month + 1).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`;
+                        const cellEvents = eventsByDay[cellKey] || [];
+                        const hasEvents = cellEvents.length > 0;
+                        const isTodayCell = cellKey === todayKey;
+
+                        return (
+                          <button
+                            key={cIdx}
+                            type="button"
+                            onClick={() => {
+                              setAnchorDate(new Date(Date.UTC(cell.year, cell.month, cell.day)));
+                              setDayViewReturnMode('Tháng');
+                              setDisplayMode(hasEvents ? 'Ngày' : 'Tháng');
+                            }}
+                            className={`relative w-5.5 h-5.5 rounded-full flex items-center justify-center font-bold transition-all mx-auto cursor-pointer ${
+                              isTodayCell
+                                ? 'bg-[#004c91] text-white font-black'
+                                : hasEvents
+                                ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 font-black'
+                                : cell.isCurrentMonth
+                                ? 'text-slate-700 hover:bg-slate-200'
+                                : 'text-slate-350 hover:bg-slate-100/50'
+                            }`}
+                            title={hasEvents ? `${cellKey}: ${cellEvents.length} lịch` : undefined}
+                          >
+                            {cell.day}
+                            {hasEvents && (
+                              <span className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ${isTodayCell ? 'bg-white' : 'bg-red-500'} border border-white`} />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="p-4">
