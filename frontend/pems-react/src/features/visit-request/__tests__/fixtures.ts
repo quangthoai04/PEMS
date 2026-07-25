@@ -9,7 +9,9 @@ export const campusFixture = (overrides: Partial<ResolvedCampusVisit> = {}): Res
   plannedStartAt: '2026-08-01T09:00:00',
   plannedEndAt: '2026-08-01T11:30:00',
   timezone: 'Asia/Ho_Chi_Minh',
-  instanceStatus: 'APPROVED',
+  // A CAMPUS instance is never "APPROVED" — that value belongs to visit_requests.status. The
+  // decided-and-hosted state of an instance is ASSIGNED (see the visit_request_campuses enum).
+  instanceStatus: 'ASSIGNED',
   currentHostUserId: 5,
   currentHostName: 'Host Hà Nội',
   decidedByUserId: 6,

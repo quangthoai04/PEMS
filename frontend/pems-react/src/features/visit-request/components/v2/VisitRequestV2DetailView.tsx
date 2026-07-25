@@ -12,17 +12,24 @@ import VisitSafeEditModal from '../VisitSafeEditModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
 import { hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
+import { VisitSectionCard } from './shared/VisitSectionCard';
+import { VisitStatusBadge } from './shared/VisitStatusBadge';
+import { ReadOnlyInfoGrid } from './shared/ReadOnlyInfoGrid';
 
 interface Props {
   visitRequestId: number;
 }
 
 /**
- * The per-campus v2 detail screen (plan §9.2/§9.4/§9.5): request-level data exactly ONCE,
- * then one CampusVisitDetailCard per AUTHORIZED campus — the component renders only what
- * the backend scoped to this caller; role names on the client are presentation hints, the
- * backend re-authorizes every command. Mixed content is labeled explicitly; no campus is
- * ever promoted to "representative".
+ * The per-campus v2 detail screen (plan §9.2/§9.4/§9.5 + §12–§19): request-level data exactly ONCE,
+ * then one CampusVisitDetailCard per AUTHORIZED campus — the component renders only what the
+ * backend scoped to this caller; role names on the client are presentation hints, the backend
+ * re-authorizes every command. Mixed content is labeled explicitly; no campus is ever promoted to
+ * "representative".
+ *
+ * Visually it is the same system as the Xử lý đơn screen (blue section headers, orange step
+ * numbers, the shared person table), so moving between reading and processing a request does not
+ * feel like moving between two products.
  */
 export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
@@ -59,9 +66,23 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   }
   if (error || !data) {
     return (
-      <div role="alert" className="m-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-        <p>{t(`visitRequestV2:detail.${error ?? 'generic'}`)}</p>
+      <div role="alert" className="m-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>{t(`visitRequestV2:detail.${error ?? 'generic'}`)}</p>
+        </div>
+        {/* A transport failure is worth retrying in place; "not found" and "forbidden" are answers,
+            not failures, so they get no retry that could only ever repeat itself. */}
+        {error === 'generic' && (
+          <button
+            type="button"
+            data-testid="detail-retry"
+            onClick={() => void load()}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-bold text-amber-800 hover:bg-amber-100"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:detail.retry')}
+          </button>
+        )}
       </div>
     );
   }
@@ -77,62 +98,66 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const canSafeEdit = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
 
   return (
-    <div className="space-y-6">
-      {/* ── Request-level (rendered exactly once) ── */}
-      <header className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 sm:p-5">
+    <div className="space-y-4">
+      {/* ── Overview card (§14.1): identity of the request, its state, and what may be done to it ── */}
+      <header className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-50">{data.requestCode}</h2>
-          <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-0.5 text-xs font-bold text-slate-700 dark:text-slate-200">
-            {t(`visitRequestV2:status.${data.requestStatus}`, data.requestStatus)}
-          </span>
-          <span className="rounded-full bg-[#004c91]/10 px-2.5 py-0.5 text-xs font-bold text-[#004c91]">
+          <h2 className="text-xl font-extrabold text-[#004c91]">{data.requestCode}</h2>
+          <VisitStatusBadge kind="request" status={data.requestStatus} data-testid="request-status" />
+          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-200">
             {t('visitRequestV2:detail.campusTotal', { count: data.campusVisits.length })}
           </span>
           {showMixedLabel && (
-            <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-800">
+            <span className="rounded-full bg-[#f37021]/10 px-2.5 py-0.5 text-xs font-bold text-[#f37021] ring-1 ring-inset ring-[#f37021]/20">
               {t('visitRequestV2:detail.mixedLabel')}
             </span>
           )}
-          {canEditPending && (
-            <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
-              <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
-            </Link>
-          )}
-          {canResubmit && (
-            <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
-              <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
-            </Link>
-          )}
-          {canSafeEdit && (
-            <button type="button" data-testid="safe-edit-open" onClick={() => setSafeEditOpen(true)}
-              className={`${canEditPending || canResubmit ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50`}>
-              <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:safeEdit.open')}
-            </button>
-          )}
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {canEditPending && (
+              <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
+                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
+              </Link>
+            )}
+            {canResubmit && (
+              <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
+                <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
+              </Link>
+            )}
+            {canSafeEdit && (
+              <button type="button" data-testid="safe-edit-open" onClick={() => setSafeEditOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:safeEdit.open')}
+              </button>
+            )}
+          </div>
         </div>
-        <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="inline text-slate-400">{t('visitRequestV2:detail.submittedAt')}: </dt>
-            <dd className="inline text-slate-700 dark:text-slate-200">{formatVietnamDateTime(data.submittedAt)}</dd>
-          </div>
-          <div>
-            <dt className="inline text-slate-400">{t('visitRequestV2:sections.registrant')}: </dt>
-            <dd className="inline text-slate-700 dark:text-slate-200">
-              {data.registrant.fullName}{data.registrant.organization ? ` — ${data.registrant.organization}` : ''}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-slate-400">{t('visitRequestV2:detail.primaryContact')}: </dt>
-            <dd className="inline text-slate-700 dark:text-slate-200">
-              {data.primaryContact.fullName}
-              {data.primaryContact.accessStatus === 'PENDING_CONFIRMATION' && (
-                <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
-                  {t('visitRequestV2:detail.contactPending')}
-                </span>
-              )}
-            </dd>
-          </div>
-        </dl>
+
+        <ReadOnlyInfoGrid
+          className="mt-4"
+          rows={[
+            { label: t('visitRequestV2:detail.submittedAt'), value: formatVietnamDateTime(data.submittedAt) },
+            {
+              label: t('visitRequestV2:sections.registrant'),
+              value: [data.registrant.fullName, data.registrant.organization].filter(Boolean).join(' — '),
+            },
+            {
+              label: t('visitRequestV2:detail.primaryContact'),
+              value: data.primaryContact.fullName
+                ? (
+                  <>
+                    {data.primaryContact.fullName}
+                    {data.primaryContact.accessStatus === 'PENDING_CONFIRMATION' && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
+                        {t('visitRequestV2:detail.contactPending')}
+                      </span>
+                    )}
+                  </>
+                )
+                : null,
+            },
+          ]}
+        />
       </header>
 
       {/* ── Identity workflow (registrant / ACTIVE contact only — backend re-authorizes) ── */}
@@ -146,48 +171,104 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         />
       )}
 
-      {/* ── Per-campus cards: ONLY the campuses the backend returned for this caller ── */}
-      <div className="space-y-4">
-        {data.campusVisits.map(cv => {
-          const canDecide = hasAction(cv.allowedActions, VisitV2Action.ApproveAmendment);
-          const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
-          const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
-          return (
-            <CampusVisitDetailCard key={cv.visitInstanceId} campus={cv}>
-              {cv.activeAmendment && (canDecide || canWithdraw) && (
-                <div className="mt-4">
-                  <VisitAmendmentPanel
-                    visitRequestId={data.visitRequestId}
-                    visitInstanceId={cv.visitInstanceId}
-                    canDecide={canDecide}
-                    canWithdraw={canWithdraw}
-                    onChanged={() => void load()}
-                  />
-                </div>
-              )}
-              {canSubmitAmendment && (
-                <div className="mt-4">
-                  <button type="button" data-testid={`amendment-open-${cv.visitInstanceId}`} onClick={() => setAmendCampus(cv)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
-                    <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:amend.open')}
-                  </button>
-                </div>
-              )}
-            </CampusVisitDetailCard>
-          );
-        })}
-      </div>
-
-      {/* ── Scoped, masked history ── */}
-      <section
-        aria-label={t('visitRequestV2:detail.historyTitle')}
-        className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 sm:p-5"
+      {/* ── ① Registrant ── */}
+      <VisitSectionCard
+        step={1}
+        title={t('visitRequestV2:sections.registrant')}
+        readOnlyLabel={t('visitRequestV2:detail.readOnly')}
+        data-testid="section-registrant"
       >
-        <h3 className="mb-3 text-sm font-extrabold text-slate-900 dark:text-slate-50">
-          {t('visitRequestV2:detail.historyTitle')}
-        </h3>
+        <ReadOnlyInfoGrid
+          rows={[
+            { label: t('visitRequestV2:registrant.fullName'), value: data.registrant.fullName },
+            { label: t('visitRequestV2:registrant.organization'), value: data.registrant.organization },
+            { label: t('visitRequestV2:registrant.jobTitle'), value: data.registrant.jobTitle },
+            { label: t('visitRequestV2:card.phone'), value: data.registrant.phone },
+            { label: t('visitRequestV2:registrant.nationality'), value: data.registrant.nationality },
+            { label: t('visitRequestV2:card.email'), value: data.registrant.email },
+          ]}
+        />
+      </VisitSectionCard>
+
+      {/* ── ② Primary contact ── */}
+      <VisitSectionCard
+        step={2}
+        title={t('visitRequestV2:sections.contact')}
+        readOnlyLabel={t('visitRequestV2:detail.readOnly')}
+        data-testid="section-contact"
+      >
+        <ReadOnlyInfoGrid
+          rows={[
+            { label: t('visitRequestV2:person.fullName'), value: data.primaryContact.fullName },
+            { label: t('visitRequestV2:person.organization'), value: data.primaryContact.organization },
+            { label: t('visitRequestV2:card.phone'), value: data.primaryContact.phone },
+            { label: t('visitRequestV2:card.email'), value: data.primaryContact.email },
+            {
+              label: t('visitRequestV2:detail.contactAccessStatus'),
+              value: data.primaryContact.accessStatus === 'ACTIVE'
+                ? t('visitRequestV2:detail.contactActive')
+                : t('visitRequestV2:detail.contactPending'),
+            },
+            {
+              label: t('visitRequestV2:detail.contactVerifiedAt'),
+              value: data.primaryContact.verifiedAt ? formatVietnamDateTime(data.primaryContact.verifiedAt) : null,
+            },
+          ]}
+        />
+      </VisitSectionCard>
+
+      {/* ── ③ Per-campus cards: ONLY the campuses the backend returned for this caller ── */}
+      <VisitSectionCard
+        step={3}
+        title={t('visitRequestV2:sections.campuses')}
+        headerExtra={
+          <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+            {t('visitRequestV2:detail.campusTotal', { count: data.campusVisits.length })}
+          </span>
+        }
+        data-testid="section-campuses"
+      >
+        {data.campusVisits.length === 0 ? (
+          <p className="text-sm italic text-slate-400">{t('visitRequestV2:detail.noCampusInScope')}</p>
+        ) : (
+          <div className="space-y-4">
+            {data.campusVisits.map(cv => {
+              const canDecide = hasAction(cv.allowedActions, VisitV2Action.ApproveAmendment);
+              const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
+              const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
+              return (
+                <CampusVisitDetailCard key={cv.visitInstanceId} campus={cv}>
+                  {cv.activeAmendment && (canDecide || canWithdraw) && (
+                    <VisitAmendmentPanel
+                      visitRequestId={data.visitRequestId}
+                      visitInstanceId={cv.visitInstanceId}
+                      canDecide={canDecide}
+                      canWithdraw={canWithdraw}
+                      onChanged={() => void load()}
+                    />
+                  )}
+                  {canSubmitAmendment && (
+                    <button type="button" data-testid={`amendment-open-${cv.visitInstanceId}`} onClick={() => setAmendCampus(cv)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
+                      <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:amend.open')}
+                    </button>
+                  )}
+                </CampusVisitDetailCard>
+              );
+            })}
+          </div>
+        )}
+      </VisitSectionCard>
+
+      {/* ── ④ Scoped, masked history ── */}
+      <VisitSectionCard
+        step={4}
+        title={t('visitRequestV2:detail.historyTitle')}
+        readOnlyLabel={t('visitRequestV2:detail.readOnly')}
+        data-testid="section-history"
+      >
         <VisitHistoryTimeline visitRequestId={data.visitRequestId} />
-      </section>
+      </VisitSectionCard>
 
       {safeEditOpen && (
         <VisitSafeEditModal

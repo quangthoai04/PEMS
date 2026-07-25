@@ -28,7 +28,11 @@
     "organization": "Đơn vị công tác",
     "nationality": "Quốc tịch",
     "stt": "STT",
-    "actions": "Thao tác"
+    "actions": "Thao tác",
+    "ordinal": "STT",
+    "count": "{{count}} người",
+    "noVisitors": "Chưa có danh sách khách.",
+    "noSupport": "Không có nhân sự hỗ trợ đi kèm."
   },
   "card": {
     "cardN": "Cơ sở {{n}}",
@@ -231,18 +235,36 @@
     "primaryContact": "Đầu mối liên hệ",
     "contactPending": "Chưa xác nhận",
     "historyTitle": "Lịch sử thay đổi",
-    "backToList": "Về danh sách đơn"
+    "backToList": "Về danh sách đơn",
+    "readOnly": "Chỉ đọc",
+    "retry": "Thử lại",
+    "decidedBy": "Người quyết định",
+    "decidedAt": "Thời điểm quyết định",
+    "decisionNote": "Lý do / Ghi chú",
+    "contactAccessStatus": "Trạng thái xác nhận",
+    "contactActive": "Đã xác nhận",
+    "contactVerifiedAt": "Xác nhận lúc",
+    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem."
   },
   "status": {
-    "PENDING": "Chờ xử lý",
-    "ASSIGNED": "Đã phân công",
-    "APPROVED": "Đã duyệt",
-    "REJECTED": "Từ chối",
-    "CANCELLED": "Đã hủy",
-    "COMPLETED": "Hoàn tất",
-    "PENDING_APPROVAL": "Chờ duyệt",
-    "PARTIALLY_APPROVED": "Duyệt một phần",
-    "IN_PROGRESS": "Đang diễn ra"
+    "unknown": "Không xác định",
+    "instance": {
+      "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
+      "ASSIGNED": "Đã duyệt và gán Host",
+      "BEFORE_VISIT": "Đang chuẩn bị",
+      "DURING_VISIT": "Đang tiếp khách",
+      "AFTER_VISIT": "Sau tiếp khách",
+      "CLOSED": "Đã đóng đoàn",
+      "CANCELLED": "Đã hủy",
+      "REJECTED": "Đã từ chối"
+    },
+    "request": {
+      "PENDING_APPROVAL": "Chờ duyệt",
+      "PARTIALLY_APPROVED": "Đã duyệt một phần",
+      "APPROVED": "Đã duyệt",
+      "REJECTED": "Đã từ chối",
+      "CANCELLED": "Đã hủy"
+    }
   },
   "edit": {
     "titleEdit": "Sửa đơn (đang chờ duyệt)",

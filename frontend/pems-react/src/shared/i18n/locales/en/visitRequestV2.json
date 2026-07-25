@@ -28,7 +28,11 @@
     "organization": "Organization",
     "nationality": "Nationality",
     "stt": "No.",
-    "actions": "Actions"
+    "actions": "Actions",
+    "ordinal": "No.",
+    "count": "{{count}} people",
+    "noVisitors": "No guests listed yet.",
+    "noSupport": "No accompanying support staff."
   },
   "card": {
     "cardN": "Campus {{n}}",
@@ -231,18 +235,36 @@
     "primaryContact": "Contact person",
     "contactPending": "Unconfirmed",
     "historyTitle": "Change history",
-    "backToList": "Back to request list"
+    "backToList": "Back to request list",
+    "readOnly": "Read only",
+    "retry": "Try again",
+    "decidedBy": "Decided by",
+    "decidedAt": "Decided at",
+    "decisionNote": "Reason / Note",
+    "contactAccessStatus": "Confirmation status",
+    "contactActive": "Confirmed",
+    "contactVerifiedAt": "Confirmed at",
+    "noCampusInScope": "No campus in your viewing scope."
   },
   "status": {
-    "PENDING": "Pending",
-    "ASSIGNED": "Assigned",
-    "APPROVED": "Approved",
-    "REJECTED": "Rejected",
-    "CANCELLED": "Cancelled",
-    "COMPLETED": "Completed",
-    "PENDING_APPROVAL": "Pending approval",
-    "PARTIALLY_APPROVED": "Partially approved",
-    "IN_PROGRESS": "In progress"
+    "unknown": "Unknown",
+    "instance": {
+      "WAITING_REQUEST_APPROVAL": "Awaiting Staff Leader",
+      "ASSIGNED": "Approved — host assigned",
+      "BEFORE_VISIT": "Preparing",
+      "DURING_VISIT": "Visit in progress",
+      "AFTER_VISIT": "After the visit",
+      "CLOSED": "Closed",
+      "CANCELLED": "Cancelled",
+      "REJECTED": "Rejected"
+    },
+    "request": {
+      "PENDING_APPROVAL": "Pending approval",
+      "PARTIALLY_APPROVED": "Partially approved",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "CANCELLED": "Cancelled"
+    }
   },
   "edit": {
     "titleEdit": "Edit request (pending approval)",
