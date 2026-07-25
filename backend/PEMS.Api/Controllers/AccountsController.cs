@@ -59,6 +59,15 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // P0 #1 — cancel a pending account before it is ever confirmed. Releases any reserved Head slot,
+        // cancels its confirmation token(s) and deactivates the account so a slot is never held forever.
+        [HttpPost("cancel-pending-account")]
+        public async Task<IActionResult> CancelPendingAccount([FromBody] PEMS.Application.Accounts.Commands.CancelPendingAccount.CancelPendingAccountCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("viewaccountdetails")]
 
         public async Task<IActionResult> ViewAccountDetails([FromQuery] PEMS.Application.Accounts.Queries.ViewAccountDetails.ViewAccountDetailsQuery query, CancellationToken cancellationToken)
