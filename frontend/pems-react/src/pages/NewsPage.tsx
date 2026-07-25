@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar,
   Newspaper,
@@ -27,6 +27,10 @@ import { formatVietnamDate } from '../shared/utils/vietnamTime';
 const LATEST_INITIAL_SIZE = 3;
 const LATEST_LOAD_MORE_STEP = 3;
 const TOP_STORIES_SIZE = 3;
+// However many articles are marked featured should rotate through — 50 is the public news
+// endpoint's own MaxPageSize clamp (ViewNewsQuery.cs), not an arbitrary frontend limit.
+const HERO_ROTATE_SIZE = 50;
+const HERO_ROTATE_INTERVAL_MS = 5000;
 const CAMPUS_STORIES_INITIAL_SIZE = 3;
 const CAMPUS_STORIES_LOAD_MORE_STEP = 3;
 
@@ -166,41 +170,51 @@ function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; load
   if (!item) return null;
 
   return (
-    <FadeSection className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
-      <Link to={`/news/${item.newsId}`} className="group block">
-        <div className="relative aspect-[16/10] sm:aspect-[21/9] overflow-hidden">
-          <ArticleImage
-            item={item}
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 px-8 sm:px-12 lg:px-16 pb-5 sm:pb-10 lg:pb-14 max-w-[1600px] mx-auto">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="px-3 py-1 rounded-full bg-[#f37021] text-white text-xs font-bold uppercase tracking-wide">
-                {t('news:card.featured')}
-              </span>
-              {item.publishedAt && (
-                <span className="flex items-center gap-1.5 text-white/80 text-sm">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {formatDate(item.publishedAt)}
+    <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={item.newsId}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.6, ease: 'easeInOut' }}
+        >
+          <Link to={`/news/${item.newsId}`} className="group block">
+            <div className="relative aspect-[16/10] sm:aspect-[21/9] overflow-hidden">
+              <ArticleImage
+                item={item}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 px-8 sm:px-12 lg:px-16 pb-5 sm:pb-10 lg:pb-14 max-w-[1600px] mx-auto">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="px-3 py-1 rounded-full bg-[#f37021] text-white text-xs font-bold uppercase tracking-wide">
+                    {t('news:card.featured')}
+                  </span>
+                  {item.publishedAt && (
+                    <span className="flex items-center gap-1.5 text-white/80 text-sm">
+                      <Calendar className="w-3.5 h-3.5" />
+                      {formatDate(item.publishedAt)}
+                    </span>
+                  )}
+                </div>
+                <h1 className="text-xl sm:text-3xl lg:text-4xl font-bold text-white leading-tight mb-3 max-w-3xl group-hover:text-orange-100 transition-colors">
+                  {item.title}
+                </h1>
+                {item.summary && (
+                  <p className="hidden sm:block text-white/85 text-base leading-relaxed max-w-2xl line-clamp-2 mb-4">
+                    {item.summary}
+                  </p>
+                )}
+                <span className="inline-flex items-center gap-1.5 text-white font-bold text-sm group-hover:gap-2.5 transition-all">
+                  {t('news:card.readMore')} <ArrowRight className="w-4 h-4" />
                 </span>
-              )}
+              </div>
             </div>
-            <h1 className="text-xl sm:text-3xl lg:text-4xl font-bold text-white leading-tight mb-3 max-w-3xl group-hover:text-orange-100 transition-colors">
-              {item.title}
-            </h1>
-            {item.summary && (
-              <p className="hidden sm:block text-white/85 text-base leading-relaxed max-w-2xl line-clamp-2 mb-4">
-                {item.summary}
-              </p>
-            )}
-            <span className="inline-flex items-center gap-1.5 text-white font-bold text-sm group-hover:gap-2.5 transition-all">
-              {t('news:card.readMore')} <ArrowRight className="w-4 h-4" />
-            </span>
-          </div>
-        </div>
-      </Link>
-    </FadeSection>
+          </Link>
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -484,7 +498,8 @@ export function NewsPage() {
   }, [keyword]);
 
   // Hero + top stories (only meaningful with no active filter/search — otherwise fold into grid)
-  const [hero, setHero] = useState<PublicNewsListItem | null>(null);
+  const [heroItems, setHeroItems] = useState<PublicNewsListItem[]>([]);
+  const [heroIndex, setHeroIndex] = useState(0);
   const [heroLoading, setHeroLoading] = useState(true);
   const [topStories, setTopStories] = useState<PublicNewsListItem[]>([]);
   const [topLoading, setTopLoading] = useState(true);
@@ -518,15 +533,18 @@ export function NewsPage() {
       setHeroLoading(true);
       setTopLoading(true);
       try {
-        const featuredRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, isFeatured: true, languageCode: lang });
-        let featured = featuredRes.items[0] ?? null;
-        if (!featured) {
+        const featuredRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: HERO_ROTATE_SIZE, isFeatured: true, languageCode: lang });
+        let featured = featuredRes.items ?? [];
+        if (featured.length === 0) {
           const latestRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, sort: 'latest', languageCode: lang });
-          featured = latestRes.items[0] ?? null;
+          featured = latestRes.items ?? [];
         }
-        if (!cancelled) setHero(featured);
+        if (!cancelled) {
+          setHeroItems(featured);
+          setHeroIndex(0);
+        }
       } catch {
-        if (!cancelled) setHero(null);
+        if (!cancelled) setHeroItems([]);
       } finally {
         if (!cancelled) setHeroLoading(false);
       }
@@ -544,6 +562,15 @@ export function NewsPage() {
       cancelled = true;
     };
   }, [reloadKey, lang]);
+
+  // Rotate the hero banner through all featured items, looping every 5s.
+  useEffect(() => {
+    if (heroItems.length <= 1) return;
+    const timer = setInterval(() => {
+      setHeroIndex(i => (i + 1) % heroItems.length);
+    }, HERO_ROTATE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [heroItems]);
 
   // Latest grid — reacts to filters + load-more (pageIndex stays 1, pageSize grows)
   useEffect(() => {
@@ -670,7 +697,7 @@ export function NewsPage() {
       {/* A. Hero — full-bleed viewport width, only when no filter is active */}
       {!hasActiveFilter && (
         <div className="mb-14">
-          <NewsroomHero item={hero} loading={heroLoading} />
+          <NewsroomHero item={heroItems[heroIndex] ?? null} loading={heroLoading} />
         </div>
       )}
 

@@ -306,7 +306,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
             <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-40">Phân loại</th>
+                  <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-56">Phân loại</th>
                   <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase min-w-[140px]">Tên hạng mục</th>
                   <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase text-right w-16">SL</th>
                   <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-24">Đơn vị</th>

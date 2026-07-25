@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, X, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -46,6 +46,7 @@ interface AvailableActions {
   canReject: boolean;
   canHide: boolean;
   canShow: boolean;
+  canSetFeatured: boolean;
   canTranslate: boolean;
 }
 
@@ -66,6 +67,7 @@ interface NewsDetail {
   reviewedAt?: string;
   reviewNote?: string;
   publishedAt?: string;
+  isFeatured: boolean;
   rowVersion: number;
   languageCode: string;
   availableLanguages: string[];
@@ -312,6 +314,7 @@ export function NewsDetailDashboard() {
   const [showRejectPopup, setShowRejectPopup]     = useState(false);
   const [actionLoading, setActionLoading]          = useState(false);
   const [selectedLang, setSelectedLang]            = useState<string | null>(null);
+  const [isFeaturedChecked, setIsFeaturedChecked]  = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -324,7 +327,10 @@ export function NewsDetailDashboard() {
         const { data } = await httpClient.get<NewsDetail>(`/news/${id}`, {
           params: selectedLang ? { languageCode: selectedLang } : undefined,
         });
-        if (!cancelled) setNews(data);
+        if (!cancelled) {
+          setNews(data);
+          setIsFeaturedChecked(data.isFeatured);
+        }
       } catch (err: unknown) {
         if (!cancelled) {
           const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -346,12 +352,32 @@ export function NewsDetailDashboard() {
       await httpClient.patch(`/news/${news.newsId}/review`, {
         action,
         reason: reason ?? null,
-        rowVersion: news.rowVersion
+        rowVersion: news.rowVersion,
+        isFeatured: isFeaturedChecked
       });
       toast.success(action === 'APPROVE' ? 'Bài viết đã được duyệt thành công!' : 'Bài viết đã bị từ chối.');
       setShowApprovePopup(false);
       setShowRejectPopup(false);
       setTimeout(() => navigate('/dashboard/news'), 1200);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Có lỗi xảy ra, vui lòng thử lại.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleToggleFeatured() {
+    if (!news) return;
+    const nextFeatured = !news.isFeatured;
+    setActionLoading(true);
+    try {
+      const { data } = await httpClient.patch<{ isFeatured: boolean; rowVersion: number }>(
+        `/news/${news.newsId}/featured`,
+        { isFeatured: nextFeatured, rowVersion: news.rowVersion }
+      );
+      setNews({ ...news, isFeatured: data.isFeatured, rowVersion: data.rowVersion });
+      toast.success(data.isFeatured ? 'Đã đánh dấu bài viết là nổi bật.' : 'Đã bỏ đánh dấu nổi bật.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(msg ?? 'Có lỗi xảy ra, vui lòng thử lại.');
@@ -447,6 +473,31 @@ export function NewsDetailDashboard() {
                 className="flex items-center gap-2 bg-white border border-[#004c91] text-[#004c91] font-semibold px-4 py-2 rounded-xl hover:bg-[#eef5fa] transition-colors text-sm"
               >
                 <Edit2 className="w-4 h-4" /> Chỉnh sửa
+              </button>
+            )}
+            {(actions.canApprove || actions.canReject) && (
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isFeaturedChecked}
+                  onChange={(e) => setIsFeaturedChecked(e.target.checked)}
+                  className="w-4 h-4 accent-[#004c91] cursor-pointer"
+                />
+                Nổi bật
+              </label>
+            )}
+            {actions.canSetFeatured && !actions.canApprove && !actions.canReject && (
+              <button
+                onClick={handleToggleFeatured}
+                disabled={actionLoading}
+                className={`flex items-center gap-2 font-semibold px-4 py-2 rounded-xl transition-colors text-sm disabled:opacity-50 ${
+                  news.isFeatured
+                    ? 'bg-[#f37021] text-white hover:bg-[#d85f14]'
+                    : 'bg-white border border-[#f37021] text-[#f37021] hover:bg-orange-50'
+                }`}
+              >
+                <Star className={`w-4 h-4 ${news.isFeatured ? 'fill-white' : ''}`} />
+                {news.isFeatured ? 'Bỏ nổi bật' : 'Đánh dấu nổi bật'}
               </button>
             )}
             {actions.canApprove && (

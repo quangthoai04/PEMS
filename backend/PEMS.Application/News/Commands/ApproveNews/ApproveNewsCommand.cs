@@ -8,4 +8,6 @@ public sealed record ApproveNewsCommand : IRequest<ApproveNewsResponse>
     public string Action { get; init; } = string.Empty; // "APPROVE" | "REJECT"
     public string? Reason { get; init; }
     public int RowVersion { get; init; }
+    /// <summary>Null = leave IsFeatured unchanged; otherwise set it (checkbox next to Duyệt/Từ chối).</summary>
+    public bool? IsFeatured { get; init; }
 }

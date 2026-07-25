@@ -78,6 +78,9 @@ public sealed class ApproveNewsCommandHandler
             notificationMessage = $"Bài viết \"{await GetNewsTitleAsync(request.NewsId, cancellationToken)}\" bị từ chối. Lý do: {request.Reason!.Trim()}";
         }
 
+        if (request.IsFeatured.HasValue)
+            news.IsFeatured = request.IsFeatured.Value;
+
         news.ReviewedBy = currentUserId;
         news.ReviewedAt = now;
         news.RowVersion++;

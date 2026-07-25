@@ -155,7 +155,8 @@ namespace PEMS.Api.Controllers
                 NewsId     = newsId,
                 Action     = body.Action,
                 Reason     = body.Reason,
-                RowVersion = body.RowVersion
+                RowVersion = body.RowVersion,
+                IsFeatured = body.IsFeatured
             };
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
@@ -171,6 +172,22 @@ namespace PEMS.Api.Controllers
                 NewsId       = newsId,
                 TargetStatus = body.TargetStatus,
                 RowVersion   = body.RowVersion
+            };
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // Standalone featured toggle for an already-reviewed post (Published/Hidden/Rejected):
+        // PATCH /api/news/{newsId}/featured — "Bỏ nổi bật" / "Đánh dấu nổi bật" on the detail page.
+        [HttpPatch("{newsId}/featured")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> SetNewsFeatured(ulong newsId, [FromBody] SetFeaturedBody body, CancellationToken cancellationToken)
+        {
+            var command = new PEMS.Application.News.Commands.SetNewsFeatured.SetNewsFeaturedCommand
+            {
+                NewsId     = newsId,
+                IsFeatured = body.IsFeatured,
+                RowVersion = body.RowVersion
             };
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
@@ -274,9 +291,10 @@ namespace PEMS.Api.Controllers
 
     public sealed record CreateVisitInstanceNewsBody(string Title, string? Summary, string? Body);
     public sealed record UpdateVisitInstanceNewsBody(string Title, string? Summary, string? Body, int RowVersion);
-    public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion);
+    public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion, bool? IsFeatured = null);
     public sealed record AutoTranslateNewsBody(string? SourceLanguage, string TargetLanguage, bool Save);
     public sealed record ChangeVisibilityBody(string TargetStatus, int RowVersion);
+    public sealed record SetFeaturedBody(bool IsFeatured, int RowVersion);
     public sealed record EditNewsBody(
         int    RowVersion,
         ulong? CoverFileId,
