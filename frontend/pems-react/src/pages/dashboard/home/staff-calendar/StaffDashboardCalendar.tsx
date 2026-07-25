@@ -590,8 +590,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                       }
                     }}
                     className={`group relative min-h-[160px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${inMonth && dayEvents.length > 0 ? 'cursor-pointer' : ''}
-                      ${isToday ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-100'}
-                      ${!inMonth ? 'bg-slate-50/60' : 'bg-white'}`}
+                      ${isToday ? 'border-[#004c91]/80 ring-1 ring-[#004c91]/40 bg-blue-50/50' : 'border-slate-300'}
+                      ${!inMonth ? 'bg-slate-50/60 border-slate-200' : 'bg-white'}`}
                   >
                     {/* Chỉ hiển thị ngày thuộc tháng đang xem — ô ngoài tháng để trống (giống Dept Leader). */}
                     {inMonth && (

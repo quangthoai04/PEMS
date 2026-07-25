@@ -148,19 +148,23 @@ export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attention
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-0">
       {/* Đơn/thư chưa xử lý – list compact, list hết mọi item */}
-      <AssignedTaskList
-        items={attentionItems}
-        busyKey={actionLoadingId}
-        onAccept={handleAcceptItem}
-        onDecline={setDecliningItem}
-        onPropose={setProposingItem}
-        onOpenDetail={openDetail}
-      />
+      {attentionItems.length > 0 && (
+        <div className="p-4 md:p-5 pb-4">
+          <AssignedTaskList
+            items={attentionItems}
+            busyKey={actionLoadingId}
+            onAccept={handleAcceptItem}
+            onDecline={setDecliningItem}
+            onPropose={setProposingItem}
+            onOpenDetail={openDetail}
+          />
+        </div>
+      )}
 
       {/* Main tasks panel */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white border-t border-slate-200 overflow-hidden">
         {/* Filters bar */}
         <div className="bg-[#005594] px-4 py-3 flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">

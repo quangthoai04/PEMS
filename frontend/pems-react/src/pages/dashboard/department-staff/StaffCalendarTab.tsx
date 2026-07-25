@@ -358,9 +358,9 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const canSignReturn = activeEvent?.itemType === 'REQUEST' && activeEvent.status === 'IN_PROGRESS';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-0">
       {/* Toolbar + chú thích gọn trên cùng 1 dòng */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-3 flex-wrap p-4 md:p-5 pb-4">
         <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200 flex items-center gap-1">
           <button onClick={() => { setMonth(now.getUTCMonth()); onYearChange(now.getUTCFullYear()); }} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white shadow-sm hover:bg-slate-50 border border-slate-200/60 rounded-lg">Hôm nay</button>
           <div className="h-4 w-px bg-slate-200 mx-1" />
@@ -393,14 +393,14 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
 
       <div className="flex gap-4">
         {/* Calendar grid */}
-        <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex-1 bg-white border-t border-slate-200 overflow-hidden">
           <div className="grid grid-cols-7 bg-[#004c91] text-center text-xs font-extrabold text-white uppercase tracking-wider py-4">
             {WEEKDAYS.map(d => <div key={d}>{d}</div>)}
           </div>
           {calendarLoading ? (
             <div className="flex items-center justify-center h-64 text-sm text-slate-400 font-semibold">Đang tải lịch...</div>
           ) : displayMode === 'Tháng' ? (
-            <div className="grid grid-cols-7 grid-rows-5 min-h-[850px] divide-x divide-y divide-slate-200 bg-slate-50/20">
+            <div className="grid grid-cols-7 grid-rows-5 min-h-[850px] divide-x divide-y divide-slate-300 border-b border-slate-300 bg-slate-50/20">
               {daysGrid.map((cell, idx) => {
                 const dayEvs = calendarItems.filter(e => e.date === cell.dateStr);
                 const isSelected = selectedDate === cell.dateStr;

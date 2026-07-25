@@ -166,6 +166,7 @@ export function HODashboardView() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase text-xs">
                       <tr>
+                        <th className="px-4 py-3 font-bold w-12 text-center">STT</th>
                         <th className="px-5 py-3 font-bold">Mã đơn</th>
                         <th className="px-5 py-3 font-bold">Tên đoàn</th>
                         <th className="px-5 py-3 font-bold">Campus ĐK</th>
@@ -175,6 +176,7 @@ export function HODashboardView() {
                     <tbody className="divide-y divide-slate-100">
                       {pendingRequests.map((req: any, idx: number) => (
                         <tr key={idx} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 font-extrabold text-slate-400 text-center text-xs">{idx + 1}</td>
                           <td className="px-5 py-3 font-semibold text-slate-800">{req.id}</td>
                           <td className="px-5 py-3 font-medium text-slate-600">{req.name}</td>
                           <td className="px-5 py-3 font-medium text-slate-600">{req.campus}</td>
@@ -209,6 +211,7 @@ export function HODashboardView() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase text-xs">
                       <tr>
+                        <th className="px-4 py-3 font-bold w-12 text-center">STT</th>
                         <th className="px-5 py-3 font-bold">Campus</th>
                         <th className="px-5 py-3 font-bold">Đang xử lý</th>
                         <th className="px-5 py-3 font-bold">Sắp diễn ra</th>
@@ -218,6 +221,7 @@ export function HODashboardView() {
                     <tbody className="divide-y divide-slate-100">
                       {campusStatus.map((c: any, idx: number) => (
                         <tr key={idx} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 font-extrabold text-slate-400 text-center text-xs">{idx + 1}</td>
                           <td className="px-5 py-3 font-bold text-slate-800">{c.name}</td>
                           <td className="px-5 py-3 font-medium text-slate-600">{c.processing}</td>
                           <td className="px-5 py-3 font-medium text-slate-600">{c.upcoming}</td>

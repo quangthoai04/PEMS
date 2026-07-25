@@ -96,7 +96,7 @@ export function DeptStaffDashboard() {
         </div>
 
         {/* Tab content */}
-        <div className="p-5 md:p-6">
+        <div className="p-0">
           {activeTab === 'calendar' && (
             <StaffCalendarTab
               year={currentYear}

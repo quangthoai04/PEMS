@@ -296,7 +296,8 @@ export function VisitProcessSummaryPage() {
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
                   <tr className="bg-slate-50">
-                    <th className="p-3 text-xs font-bold text-slate-500 uppercase rounded-tl-xl">Họ tên</th>
+                    <th className="p-3 text-xs font-bold text-slate-500 uppercase rounded-tl-xl text-center w-12">STT</th>
+                    <th className="p-3 text-xs font-bold text-slate-500 uppercase">Họ tên</th>
                     <th className="p-3 text-xs font-bold text-slate-500 uppercase">Vai trò</th>
                     <th className="p-3 text-xs font-bold text-slate-500 uppercase rounded-tr-xl">Trạng thái</th>
                   </tr>
@@ -304,6 +305,7 @@ export function VisitProcessSummaryPage() {
                 <tbody className="divide-y divide-gray-100">
                   {data.participantSummary?.map((p, idx) => (
                     <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-3 text-sm font-extrabold text-slate-400 text-center text-xs">{idx + 1}</td>
                       <td className="p-3 text-sm font-medium text-gray-900">{p.fullName}</td>
                       <td className="p-3 text-sm text-gray-600">{p.isHost ? 'Host' : p.participantRole}</td>
                       <td className="p-3 text-sm">

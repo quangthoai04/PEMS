@@ -1407,6 +1407,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           <table className="w-full min-w-[980px] text-left border-x border-b border-slate-100 rounded-b-2xl overflow-hidden">
             <thead className="bg-[#005594] text-white text-[11px] uppercase font-black">
               <tr>
+                <th className="px-4 py-4 w-[60px] text-center">STT</th>
                 <th className="px-7 py-4">Đoàn khách</th>
                 <th className="px-5 py-4">Nhiệm vụ được giao</th>
                 <th className="px-5 py-4">Thời gian</th>
@@ -1418,11 +1419,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             <tbody className="divide-y divide-slate-100">
               {assignmentItems.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Không có dữ liệu phù hợp</td>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Không có dữ liệu phù hợp</td>
                 </tr>
               )}
-              {assignmentItems.map(item => (
+              {assignmentItems.map((item, index) => (
                 <tr key={`${item.itemType}_${item.itemId}`} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="px-4 py-5 text-center text-xs font-extrabold text-slate-500">{index + 1}</td>
                   <td className="px-7 py-5">
                     <p className="text-sm font-black text-slate-900 line-clamp-2">{item.delegationName}</p>
                     <p className="text-[11px] text-slate-450 font-semibold">{item.itemType === 'INVITATION' ? 'Thư mời' : 'Đơn yêu cầu'} {item.requestCode ? `• ${item.requestCode}` : ''}</p>
@@ -1610,11 +1612,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       )}
 
 
-    <div className={viewMode === 'calendar' ? 'bg-white rounded-3xl border border-slate-200/85 shadow-md p-4 sm:p-6 md:p-8 font-sans' : 'font-sans'}>
+    <div className={viewMode === 'calendar' ? 'bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden font-sans' : 'font-sans'}>
       
       {/* Shared Header Bar */}
       {viewMode === 'calendar' && (
-      <header className="pb-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 mb-6">
+      <header className="p-4 sm:p-6 pb-5 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-bold text-[#f37021] uppercase tracking-widest block mb-0.5">FPT University • PEMS v3.0</span>
           <h1 className="text-xl md:text-2xl font-black text-[#004c91] tracking-tight">
@@ -1886,7 +1888,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         <div className="w-full">
           
            {/* Calendar Container */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col">
+          <div className="w-full flex flex-col border-t border-slate-200">
             
             {/* 1. MONTH VIEW */}
             {displayMode === 'Tháng' && (
@@ -1903,7 +1905,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
 
                 {/* Grid of Days */}
-                <div className="grid grid-cols-7 grid-rows-5 flex-grow min-h-[920px] divide-x divide-y divide-slate-200 border-l border-r border-b border-slate-200 bg-slate-50/20">
+                <div className="grid grid-cols-7 grid-rows-5 flex-grow min-h-[920px] divide-x divide-y divide-slate-300 border-l border-r border-b border-slate-300 bg-slate-50/20">
                   {daysGrid.map((cell, idx) => {
                     const dayEvents = filteredEvents.filter(e => e.date === cell.dateString);
                     const isSelected = selectedCellDate === cell.dateString;
