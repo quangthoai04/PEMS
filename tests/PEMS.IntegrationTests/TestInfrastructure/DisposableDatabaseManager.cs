@@ -20,7 +20,11 @@ public static class DisposableDatabaseManager
     private static string? _disposableDbName;
 
     /// <summary>Number of persistent base tables the canonical schema must produce.</summary>
-    public const int ExpectedBaseTableCount = 81;
+    /// <remarks>
+    /// 82 since the P0 account-email-confirmation work added <c>account_email_confirmations</c>; the constant
+    /// had been left at 81, which made every disposable import abort before a single test ran.
+    /// </remarks>
+    public const int ExpectedBaseTableCount = 82;
 
     /// <summary>Number of triggers the canonical schema must produce.</summary>
     public const int ExpectedTriggerCount = 32;

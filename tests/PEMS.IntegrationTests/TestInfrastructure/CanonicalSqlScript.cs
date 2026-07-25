@@ -34,8 +34,12 @@ public static class CanonicalSqlScript
     /// account_email_confirmations table. Also realigns FileName to the canonical file that commit ebf0d69a
     /// left on disk (the previous LATEST name had been removed, so the schema-contract check could not resolve).
     /// </summary>
+    /// (2026-07-25, second bump) Re-pinned after commit 59c86766 appended the demo-data refresh block
+    /// (deletes + re-inserts of the 3001-3090 / 5001-5160 demo ranges) to the canonical script. The schema
+    /// DDL itself is unchanged; only the trailing data block is new, and retargeting still rewrites every
+    /// database-selection statement, so a disposable run never touches pems_db.
     public const string ExpectedSha256 =
-        "577f39974813293f269a7fcf551eb1bf2d6599ee2765ef67b9f6e054b2e9e7cd";
+        "84680cfaf21582af763ebddf5b1b2568a4a22970ac1d60d4f5bce469d4d918fa";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
