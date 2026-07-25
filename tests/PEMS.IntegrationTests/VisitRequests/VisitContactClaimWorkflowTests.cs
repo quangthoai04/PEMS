@@ -157,7 +157,7 @@ public sealed class VisitContactClaimWorkflowTests
             "EN", null, "DECLINED", null, null, null);
         return new VisitRequestFormDataV2(
             submissionId,
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
             new ContactPointDto("Contact B", "OrgB", "+8492", contactEmail), // ≠ registrant → INITIAL_CLAIM
             null, new List<CampusVisitFormDto> { campus });
     }
@@ -577,7 +577,7 @@ public sealed class VisitContactClaimWorkflowTests
             using (var db = NewContext())
             {
                 var res = await Replace(db, Registrant, new FakeEmail()).Handle(
-                    new ReplacePendingVisitContactCommand(selfLinked, "Registrant", "Org", "+8491", "registrant@example.com"),
+                    new ReplacePendingVisitContactCommand(selfLinked, "Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                     CancellationToken.None);
                 Assert.Equal(PrimaryContactAccessStatuses.Active, res.PrimaryContactAccessStatus);
                 Assert.Null(res.ClaimStatus);

@@ -93,8 +93,15 @@ public sealed class CreateVisitRequestV2CommandHandler
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
 
-        var contactEmail = form.PrimaryContact.Email.Trim().ToLowerInvariant();
-        var registrantEmail = actor.Email!.ToLowerInvariant();
+        var contactEmail = RegistrantIdentityRules.Normalize(form.PrimaryContact.Email);
+        var registrantEmail = RegistrantIdentityRules.Normalize(actor.Email);
+
+        // ── Registrant identity (plan §5.3/§8.1) ──
+        // This endpoint is SELF-registration only: the JWT is what stands in for the OTP, so it can only
+        // vouch for the caller's OWN mailbox. A form naming somebody else as registrant is routed to the
+        // delegated OTP flow instead — otherwise registrant_user_id and the persisted registrant snapshot
+        // would describe two different people, with nothing having verified the second one.
+        RegistrantIdentityRules.EnsureDirectCreateIsSelfRegistration(actor.Email, form.Registrant.Email);
 
         if (isInternal && (contactEmail == registrantEmail))
             throw new BusinessRuleException(
