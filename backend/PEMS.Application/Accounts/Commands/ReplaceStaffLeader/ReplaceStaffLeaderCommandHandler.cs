@@ -24,6 +24,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
     private readonly ISecurityAuditService _audit;
     private readonly IDateTimeService _clock;
     private readonly IEmailService _emailService;
+    private readonly IAccountEmailConfirmationService _confirmations;
 
     public ReplaceStaffLeaderCommandHandler(
         IApplicationDbContext db,
@@ -31,7 +32,8 @@ public sealed class ReplaceStaffLeaderCommandHandler
         ISessionService sessionService,
         ISecurityAuditService audit,
         IDateTimeService clock,
-        IEmailService emailService)
+        IEmailService emailService,
+        IAccountEmailConfirmationService confirmations)
     {
         _db = db;
         _currentUser = currentUser;
@@ -39,6 +41,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
         _audit = audit;
         _clock = clock;
         _emailService = emailService;
+        _confirmations = confirmations;
     }
 
     public async Task<ReplaceStaffLeaderResponse> Handle(
@@ -84,6 +87,8 @@ public sealed class ReplaceStaffLeaderCommandHandler
         string oldLeaderName;
         User newLeader;
         var existingUserPromoted = false;
+        // Raw confirmation token for a brand-new (pending) leader — embedded in the emailed link post-commit.
+        string? newLeaderConfirmationToken = null;
         try
         {
             // Tracked loads for the write.
@@ -166,7 +171,10 @@ public sealed class ReplaceStaffLeaderCommandHandler
                     SubRole = UserSubRoles.Leader,
                     PrimaryCampusId = request.CampusId,
                     DepartmentId = icDepartmentId,
-                    Status = UserStatuses.Active,
+                    // P0 #1: a brand-new leader must prove email ownership before it can act. Created
+                    // PENDING; it reserves the IC-head slot below but holds no authority (cannot log in)
+                    // until it confirms its email and activates. No login email is sent pre-activation.
+                    Status = UserStatuses.PendingEmailConfirmation,
                     CreatedVia = CreatedViaValues.ManualCreated,
                     CreatedAt = now,
                     CreatedBy = actorId,
@@ -181,6 +189,11 @@ public sealed class ReplaceStaffLeaderCommandHandler
             oldLeader.UpdatedBy = actorId;
 
             await _db.SaveChangesAsync(cancellationToken); // assigns newLeader.UserId in CREATE_NEW_USER
+
+            // A brand-new leader gets a one-time email-ownership token (hash persisted with the txn below).
+            if (!existingUserPromoted)
+                newLeaderConfirmationToken = await _confirmations.IssuePendingAsync(
+                    newLeader.UserId, newLeader.Email, isResend: false, cancellationToken);
 
             // ── Repoint campus + IC department heads to the new leader (BR-RSL-17). ──
             campus.IcHeadUserId = newLeader.UserId;
@@ -255,7 +268,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
         // ── Notifications after commit (non-fatal). New-leader email outcome surfaced to the UI.
         //    The replacement reason is included in both emails. ──
         var emailStatus = await SendNewLeaderEmailAsync(
-            newLeader, avail.CampusName, avail.IcDepartmentName, reason, cancellationToken);
+            newLeader, avail.CampusName, avail.IcDepartmentName, reason, newLeaderConfirmationToken, cancellationToken);
         await SendOldLeaderEmailAsync(oldLeaderEmail, oldLeaderName, avail.CampusName, reason, cancellationToken);
 
         return new ReplaceStaffLeaderResponse
@@ -270,8 +283,20 @@ public sealed class ReplaceStaffLeaderCommandHandler
     }
 
     private async Task<string> SendNewLeaderEmailAsync(
-        User newLeader, string? campusName, string? departmentName, string reason, CancellationToken cancellationToken)
+        User newLeader, string? campusName, string? departmentName, string reason,
+        string? confirmationToken, CancellationToken cancellationToken)
     {
+        // Brand-new leader (PENDING) → confirmation link ONLY, never a "log in now" email pre-activation.
+        if (confirmationToken is not null)
+        {
+            var result = await _emailService.TrySendAsync(
+                newLeader.Email, AccountConfirmationEmail.Subject,
+                AccountConfirmationEmail.BuildHtml(newLeader.FullName, _confirmations.BuildConfirmUrl(confirmationToken)),
+                cancellationToken);
+            return AccountConfirmationEmail.MapStatus(result.Status);
+        }
+
+        // Promoted existing (already active + confirmed) leader → role-change notification.
         var name = System.Net.WebUtility.HtmlEncode(newLeader.FullName);
         var emailEnc = System.Net.WebUtility.HtmlEncode(newLeader.Email);
         var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
