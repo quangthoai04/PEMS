@@ -31,6 +31,7 @@
     "PASSWORD_LOGIN_DISABLED": "Đăng nhập bằng mật khẩu đã bị tắt. Vui lòng sử dụng SSO/FEID.",
     "INVALID_CREDENTIALS": "Email hoặc mật khẩu không đúng.",
     "ACCOUNT_INACTIVE": "Tài khoản của bạn đã bị vô hiệu hóa.",
+    "ACCOUNT_PENDING_EMAIL_CONFIRMATION": "Tài khoản chưa xác nhận email. Vui lòng kiểm tra email để xác nhận trước khi đăng nhập.",
     "ACCOUNT_LOCKED": "Tài khoản của bạn đang bị khóa. Vui lòng thử lại sau hoặc liên hệ quản trị viên.",
     "DEPARTMENT_INACTIVE": "Phòng ban của tài khoản đã ngừng hoạt động. Vui lòng liên hệ Trưởng phòng Hợp tác quốc tế tại cơ sở.",
     "CAMPUS_INACTIVE_ACCESS_DENIED": "Cơ sở của tài khoản hiện đã ngừng hoạt động. Vui lòng liên hệ Head Office để được hỗ trợ.",
