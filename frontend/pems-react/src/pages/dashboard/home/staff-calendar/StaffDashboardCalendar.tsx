@@ -49,13 +49,14 @@ const MONTH_NAMES = [
 ];
 
 /** Legend đúng nhóm nghiệp vụ yêu cầu đến thăm (không dùng "thư mời"/"đơn yêu cầu").
- *  Đơn bị hủy hiển thị bằng gạch ngang chữ (không chú thích xám riêng);
+ *  Đơn bị hủy hiển thị bằng gạch ngang chữ;
  *  "Lịch cá nhân" (tím) chỉ hiện ở "Lịch của tôi" — ở lịch văn phòng nó gộp màu xanh dương với MINE. */
 const LEGEND: { key: string; label: string; dot: string }[] = [
   { key: 'NEEDS_ACTION', label: 'Cần xử lý', dot: 'bg-amber-400' },
   { key: 'MINE', label: 'Tôi là người phụ trách', dot: 'bg-[#004c91]' },
   { key: 'PROCESSED', label: 'Đã xử lý', dot: 'bg-emerald-500' },
   { key: 'PERSONAL', label: 'Lịch cá nhân', dot: 'bg-purple-400' },
+  { key: 'CANCELLED', label: 'Hủy', dot: 'bg-slate-400' },
 ];
 
 const PILL_CLASS: Record<string, string> = {
@@ -533,7 +534,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         {/* Legend — màu "Cần xử lý" chỉ có ý nghĩa với Staff Leader (người xử lý được) */}
         <div className="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {/* Lịch của tôi: chỉ còn "Tôi là người phụ trách" (xanh dương) + "Lịch cá nhân" (tím). */}
+          {/* Lịch của tôi: chỉ còn "Tôi là người phụ trách" (xanh dương) + "Lịch cá nhân" (tím) + "Hủy" (gạch ngang). */}
           {LEGEND.filter((l) =>
             (l.key !== 'NEEDS_ACTION' || (isStaffLeader && calendarType === 'office'))
             && (l.key !== 'PROCESSED' || calendarType === 'office')
@@ -542,7 +543,9 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
               <span className={`w-2.5 h-2.5 rounded-full ${l.dot}`} />
               {/* Lịch văn phòng: xanh dương gộp đơn phụ trách + lịch cá nhân → gọi là "Lịch của tôi". */}
-              {l.key === 'MINE' && calendarType === 'office' ? 'Lịch của tôi' : l.label}
+              <span className={l.key === 'CANCELLED' ? 'line-through text-slate-500 font-semibold' : ''}>
+                {l.key === 'MINE' && calendarType === 'office' ? 'Lịch của tôi' : l.label}
+              </span>
             </span>
           ))}
           {loading && <Loader2 className="w-4 h-4 animate-spin text-[#004c91] ml-auto" />}
@@ -573,7 +576,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 const isToday = key === todayKey;
                 const isPast = key < todayKey;
                 const dayEvents = eventsByDay[key] || [];
-                const visible = dayEvents.slice(0, 3);
+                const visible = dayEvents.slice(0, 5);
                 const more = dayEvents.length - visible.length;
                 return (
                   <div
@@ -586,7 +589,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                         setDisplayMode('Ngày');
                       }
                     }}
-                    className={`group relative min-h-[92px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${inMonth && dayEvents.length > 0 ? 'cursor-pointer' : ''}
+                    className={`group relative min-h-[160px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${inMonth && dayEvents.length > 0 ? 'cursor-pointer' : ''}
                       ${isToday ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-100'}
                       ${!inMonth ? 'bg-slate-50/60' : 'bg-white'}`}
                   >

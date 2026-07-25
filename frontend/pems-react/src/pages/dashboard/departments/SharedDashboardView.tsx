@@ -1627,7 +1627,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
-          <span className="flex items-center gap-2"><span className="line-through text-slate-500">Bị hủy</span></span>
+          <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-200 border-2 border-slate-400"></div><span className="line-through text-slate-500">Hủy</span></span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm bg-slate-300/60 border border-slate-300"></div>Ngày đã qua</span>
           <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>Tôi</span>
         </div>
@@ -1903,7 +1903,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 </div>
 
                 {/* Grid of Days */}
-                <div className="grid grid-cols-7 grid-rows-5 flex-grow min-h-[850px] divide-x divide-y divide-slate-200 border-l border-r border-b border-slate-200 bg-slate-50/20">
+                <div className="grid grid-cols-7 grid-rows-5 flex-grow min-h-[920px] divide-x divide-y divide-slate-200 border-l border-r border-b border-slate-200 bg-slate-50/20">
                   {daysGrid.map((cell, idx) => {
                     const dayEvents = filteredEvents.filter(e => e.date === cell.dateString);
                     const isSelected = selectedCellDate === cell.dateString;
@@ -1918,7 +1918,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             setDisplayMode('Ngày');
                           }
                         }}
-                        className={`h-[160px] max-h-[160px] overflow-hidden p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${
+                        className={`h-[175px] max-h-[175px] overflow-hidden p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${
                           isSelected
                             ? 'bg-orange-50 ring-2 ring-inset ring-[#f37021] z-10 shadow-sm'
                             : cell.isCurrent

@@ -387,6 +387,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400 inline-block" />Thư mời</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400 inline-block" />Đơn yêu cầu</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400 inline-block" />Đã xử lý</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-100 border-2 border-slate-400 inline-block" /><span className="line-through text-slate-500">Hủy</span></span>
         </div>
       </div>
 
@@ -399,7 +400,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           {calendarLoading ? (
             <div className="flex items-center justify-center h-64 text-sm text-slate-400 font-semibold">Đang tải lịch...</div>
           ) : displayMode === 'Tháng' ? (
-            <div className="grid grid-cols-7 grid-rows-5 min-h-[700px] divide-x divide-y divide-slate-200 bg-slate-50/20">
+            <div className="grid grid-cols-7 grid-rows-5 min-h-[850px] divide-x divide-y divide-slate-200 bg-slate-50/20">
               {daysGrid.map((cell, idx) => {
                 const dayEvs = calendarItems.filter(e => e.date === cell.dateStr);
                 const isSelected = selectedDate === cell.dateStr;
@@ -413,7 +414,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                       if (dayEvs.length > 0) setDisplayMode('Ngày');
                       else setActiveEvent(null);
                     }}
-                    className={`relative h-[130px] max-h-[130px] overflow-hidden p-2 flex flex-col cursor-pointer transition-colors group ${
+                    className={`relative h-[165px] max-h-[165px] overflow-hidden p-2 flex flex-col cursor-pointer transition-colors group ${
                       isSelected ? 'bg-orange-50 ring-2 ring-inset ring-[#f37021] z-10' : cell.isCurrent ? 'bg-white hover:bg-orange-50/40' : 'bg-slate-50/30 hover:bg-slate-50'
                     }`}>
                     {cell.isCurrent && (

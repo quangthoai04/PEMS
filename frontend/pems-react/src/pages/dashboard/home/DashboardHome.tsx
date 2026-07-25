@@ -312,34 +312,29 @@ export function DashboardHome() {
     <div className="w-full space-y-8 pb-12 animate-fade-in">
       
       {/* Jumbotron Welcome Banner */}
-      <div className="bg-gradient-to-tr from-[#e3effd] via-[#fef0e6] to-[#e6f7eb] rounded-3xl p-6 md:p-8 text-slate-800 shadow-md relative overflow-hidden border border-slate-200/50">
+      <div className="bg-gradient-to-tr from-[#e3effd] via-[#fef0e6] to-[#e6f7eb] rounded-2xl px-5 py-3.5 md:px-6 md:py-4 text-slate-800 shadow-md relative overflow-hidden border border-slate-200/50">
         <div className="absolute inset-0 bg-[radial-gradient(#f37021_1px,transparent_1px)] opacity-5 pointer-events-none" style={{ backgroundSize: "24px 24px" }}></div>
-        <div className="absolute top-0 right-0 w-[450px] h-[450px] bg-gradient-to-br from-[#f37021]/10 to-transparent rounded-full blur-[90px] translate-x-1/4 -translate-y-1/4 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-12 w-[250px] h-[250px] bg-[#004c91]/8 rounded-full blur-[60px] translate-y-1/2 pointer-events-none"></div>
+        <div className="absolute top-0 right-0 w-[350px] h-[350px] bg-gradient-to-br from-[#f37021]/10 to-transparent rounded-full blur-[80px] translate-x-1/4 -translate-y-1/4 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-12 w-[200px] h-[200px] bg-[#004c91]/8 rounded-full blur-[50px] translate-y-1/2 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-1 bg-white/60 text-slate-700 border border-slate-200/80 px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider w-fit shadow-xs">
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 mb-0.5 bg-white/60 text-slate-700 border border-slate-200/80 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider w-fit shadow-xs">
               <Sparkles className="w-3.5 h-3.5 text-[#f37021] animate-pulse" />
               <span>{isAdmin ? "Khu vực Quản trị Hệ thống" : "Hệ thống quản trị hợp tác quốc tế"}</span>
             </div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-extrabold mb-1 tracking-tight">
+            <h1 className="text-xl md:text-2xl lg:text-3xl font-extrabold tracking-tight">
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004c91] to-[#f37021]">Xin chào, {user.name}</span>
             </h1>
-            <p className="text-slate-600 text-xs md:text-sm font-medium max-w-2xl leading-relaxed">
-              {isAdmin 
-                ? "Chào mừng bạn trở lại! Dưới đây là tổng quan về trạng thái máy chủ, thống kê người dùng và các biểu đồ lưu lượng truy cập hệ thống theo thời gian thực."
-                : "Chào mừng bạn trở lại góc quản lý! Mọi kế hoạch đón tiếp, chương trình giao lưu, Inbound, và lịch sự kiện quốc tế hôm nay đều nằm trong tầm tay của bạn."}
-            </p>
           </div>
           
-          <div className="bg-white/80 backdrop-blur-md border border-slate-200/60 p-5 rounded-2xl flex items-center gap-4 shadow-xs hover:bg-white transition-all shrink-0">
-            <div className="w-11 h-11 bg-gradient-to-br from-[#004c91] to-[#0461b5] rounded-xl flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/10">
-              <Clock className="w-5.5 h-5.5 text-white" />
+          <div className="bg-white/80 backdrop-blur-md border border-slate-200/60 py-2.5 px-4 rounded-xl flex items-center gap-3 shadow-xs hover:bg-white transition-all shrink-0">
+            <div className="w-9 h-9 bg-gradient-to-br from-[#004c91] to-[#0461b5] rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/10">
+              <Clock className="w-4.5 h-4.5 text-white" />
             </div>
             <div>
               <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Thời gian hệ thống</p>
-              <p className="font-extrabold text-[#004c91] text-sm md:text-base tracking-wide mt-0.5">
+              <p className="font-extrabold text-[#004c91] text-xs md:text-sm tracking-wide mt-0.5">
                 {formatVietnamDateTimeLocale(currentSystemTime, 'vi-VN', { day: '2-digit', month: 'long', year: 'numeric' })} - {formatVietnamTime(currentSystemTime)}
               </p>
             </div>
