@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import VisitSafeEditModal from '../VisitSafeEditModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
 import { hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
+import { showSuccessToast } from '../../../../shared/utils/toast';
 import { VisitSectionCard } from './shared/VisitSectionCard';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid } from './shared/ReadOnlyInfoGrid';
@@ -57,6 +58,18 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The edit/resubmit page navigates here with its success message in router state. Nothing consumed
+  // it, so a successful save landed on a silent screen. Show it exactly once and clear the state
+  // immediately — otherwise a back/forward or a refresh would replay a stale confirmation.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const flash = (location.state as { flash?: string } | null)?.flash;
+    if (!flash) return;
+    showSuccessToast(flash);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
 
   if (loading) {
     return (

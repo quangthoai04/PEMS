@@ -6,6 +6,8 @@ import {
   withdrawAmendment,
   type AmendmentDto,
 } from '../api/visitRequestV2Api';
+import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   visitRequestId: number;
@@ -86,16 +88,15 @@ export default function VisitAmendmentPanel({
     setMessage(null);
     try {
       const result = await fn();
-      setMessage(result.message);
+      // Deciding an amendment makes this panel disappear (the proposal is no longer active), so an
+      // inline confirmation would be unmounted before it could be read.
+      showSuccessToast(result.message);
       setRejectMode(false);
       setNote('');
       await refresh();
       onChanged?.();
     } catch (err: unknown) {
-      setMessage(
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-          'Không thể xử lý đề xuất. Vui lòng tải lại và thử lại.',
-      );
+      showErrorToast(err, 'Không thể xử lý đề xuất. Vui lòng tải lại và thử lại.');
     } finally {
       setBusy(false);
     }
@@ -116,7 +117,7 @@ export default function VisitAmendmentPanel({
         </span>
       </div>
       <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-        Người đề xuất: {amendment.requestedByName ?? '—'} · {new Date(amendment.requestedAt).toLocaleString('vi-VN')}
+        Người đề xuất: {amendment.requestedByName ?? '—'} · {formatVietnamDateTime(amendment.requestedAt)}
         {amendment.reason ? ` · Lý do: ${amendment.reason}` : ''}
       </p>
 

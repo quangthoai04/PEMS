@@ -188,7 +188,8 @@
       "needOne": "At least one guest is required.",
       "changeSummary": "Member changes: +{{added}} added · −{{removed}} removed · {{modified}} edited",
       "noChange": "No member changes vs. the active content yet."
-    }
+    },
+    "submitted": "Change proposal sent for {{campus}}."
   },
   "safeEdit": {
     "open": "Quick edit",

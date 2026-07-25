@@ -188,7 +188,8 @@
       "needOne": "Cần ít nhất một khách trong đoàn.",
       "changeSummary": "Thay đổi nhân sự: +{{added}} thêm · −{{removed}} bớt · {{modified}} chỉnh sửa",
       "noChange": "Chưa thay đổi nhân sự so với nội dung đang hiệu lực."
-    }
+    },
+    "submitted": "Đã gửi đề xuất thay đổi cho {{campus}}."
   },
   "safeEdit": {
     "open": "Sửa nhanh",

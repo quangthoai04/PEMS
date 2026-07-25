@@ -8,6 +8,7 @@ import {
   type ResolvedMember,
 } from '../api/visitRequestV2Api';
 import { AmendmentErrorCode, errorCodeOf } from '../utils/visitV2Actions';
+import { showSuccessToast } from '../../../shared/utils/toast';
 
 interface Props {
   visitRequestId: number;
@@ -155,8 +156,12 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
     };
     try {
       await submitAmendment(visitRequestId, campus.visitInstanceId, payload);
+      // The modal closes on this callback, so the confirmation has to outlive it.
+      showSuccessToast(t('visitRequestV2:amend.submitted', { campus: campus.campusName }));
       onSubmitted();
     } catch (err) {
+      // mapError turns the stable error codes into wording the user can act on (already pending,
+      // window expired, stale version) — those belong next to the form, not in a toast that vanishes.
       setError(mapError(err));
     } finally {
       setBusy(false);

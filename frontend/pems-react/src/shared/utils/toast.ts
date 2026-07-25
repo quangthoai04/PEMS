@@ -57,6 +57,19 @@ function pickString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+/**
+ * First usable string out of a FluentValidation `errors` payload — either an array of messages or
+ * the `{ "Form.Field": ["message"] }` dictionary ASP.NET produces.
+ */
+function firstValidationMessage(errors: unknown): string | undefined {
+  if (!errors || typeof errors !== 'object') return undefined;
+  const flat = Array.isArray(errors) ? errors : Object.values(errors).flat();
+  for (const entry of flat) {
+    if (typeof entry === 'string' && entry.trim()) return entry.trim();
+  }
+  return undefined;
+}
+
 /** Chữ tiếng Việt có dấu — dùng để phát hiện message backend chưa được dịch. */
 const VIETNAMESE_CHARS = /[àáâãèéêìíòóôõùúăđĩũơưạ-ỹ]/i;
 
@@ -96,7 +109,7 @@ export function getApiErrorMessage(error: unknown, fallback?: string): string {
   }
 
   const data = err?.response?.data as
-    | { message?: unknown; error?: unknown; title?: unknown; errorCode?: unknown }
+    | { message?: unknown; error?: unknown; title?: unknown; errorCode?: unknown; errors?: unknown }
     | string
     | undefined;
 
@@ -109,6 +122,10 @@ export function getApiErrorMessage(error: unknown, fallback?: string): string {
     typeof data === 'string' ? data : undefined,
     typeof data === 'object' ? data?.message : undefined,
     typeof data === 'object' ? data?.error : undefined,
+    // FluentValidation answers with `errors: { Field: ["..."] }` (or an array) and NO top-level
+    // message. Without this the user got a generic "something went wrong" while the server had
+    // already said exactly which field was wrong.
+    typeof data === 'object' ? firstValidationMessage(data?.errors) : undefined,
     typeof data === 'object' ? data?.title : undefined,
   );
   // Backend hiện trả message tiếng Việt và chưa có errorCode chuẩn hoá; ở EN mode
