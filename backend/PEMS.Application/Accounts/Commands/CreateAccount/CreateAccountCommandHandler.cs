@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using Application.Common.Interfaces;
 using MediatR;
@@ -57,9 +58,31 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         var actorCampus = _currentUser.PrimaryCampusId;
         var privileged = AccountProvisioningRules.IsPrivileged(_currentUser.RoleCode);
 
-        if (await _db.Users.AsNoTracking().AnyAsync(u => u.Email == email, cancellationToken))
-            throw new ConflictException(
-                AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
+        // P0 #1 email reuse: if the address belongs to an existing account, only a never-confirmed
+        // pending-flow SHELL — created via this flow (has confirmation rows), never activated, currently not
+        // ACTIVE, and holding no live token (i.e. CANCELLED / EXPIRED) — may be recycled IN PLACE. Everything
+        // (role/campus/department/head-slot) is re-validated below. Any account that was ever ACTIVE/CONFIRMED,
+        // or is still awaiting a live confirmation, conflicts exactly as before (no silent reactivation).
+        var existingByEmail = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+        User? recycleUser = null;
+        if (existingByEmail is not null)
+        {
+            var priorConfirmations = await _db.AccountEmailConfirmations
+                .Where(c => c.UserId == existingByEmail.UserId).ToListAsync(cancellationToken);
+            var nowForRecycle = _clock.VietnamNow;
+            var isRecyclablePendingShell =
+                priorConfirmations.Count > 0
+                && existingByEmail.Status != UserStatuses.Active
+                && !priorConfirmations.Any(c => c.Status == AccountEmailConfirmationStatuses.Confirmed)
+                && !priorConfirmations.Any(c =>
+                    c.Status == AccountEmailConfirmationStatuses.Pending && c.ExpiresAt >= nowForRecycle);
+
+            if (isRecyclablePendingShell)
+                recycleUser = existingByEmail;
+            else
+                throw new ConflictException(
+                    AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
+        }
 
         var isStaffLeaderCaller = _currentUser.RoleCode == RoleCodes.Staff
             && _currentUser.SubRole == UserSubRoles.Leader;
@@ -177,32 +200,41 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                 throw new ValidationException("Vui lòng nhập mã số sinh viên.");
             if (code.Length > 30)
                 throw new ValidationException("Mã số sinh viên không được vượt quá 30 ký tự.");
-            if (await _db.Users.AsNoTracking().AnyAsync(u => u.StudentCode == code, cancellationToken))
+            // Exclude the recycled shell itself so its own previous student_code is not a false conflict.
+            var studentCodeTaken = recycleUser is null
+                ? await _db.Users.AsNoTracking().AnyAsync(u => u.StudentCode == code, cancellationToken)
+                : await _db.Users.AsNoTracking().AnyAsync(u => u.StudentCode == code && u.UserId != recycleUser.UserId, cancellationToken);
+            if (studentCodeTaken)
                 throw new ConflictException("Mã số sinh viên này đã được sử dụng bởi tài khoản khác.");
             resolvedStudentCode = code;
         }
 
         var now = _clock.VietnamNow;
-        var user = new User
+        // New account, or the recycled pending shell — either way (re)provisioned from scratch below.
+        var user = recycleUser ?? new User();
+        user.FullName = fullName;
+        user.Email = email;
+        user.Phone = Clean(request.Phone);
+        user.Gender = request.Gender;
+        user.Nationality = Clean(request.Nationality);
+        user.StudentCode = resolvedStudentCode;
+        user.RoleId = shape.RoleId;
+        user.SubRole = shape.SubRole;
+        user.PrimaryCampusId = shape.PrimaryCampusId;
+        user.DepartmentId = shape.DepartmentId;
+        // P0 #1: (re)start UNCONFIRMED — it cannot log in (password/SSO/refresh all reject a non-active status)
+        // and holds no effective authority. A Head slot may still be reserved below; the reservation grants
+        // nothing until the owner confirms their email and the account activates.
+        user.Status = UserStatuses.PendingEmailConfirmation;
+        user.CreatedVia = CreatedViaValues.ManualCreated;
+        user.CreatedAt = now;               // restart the confirmation window
+        user.CreatedBy = actorId;
+        if (recycleUser is not null)
         {
-            FullName = fullName,
-            Email = email,
-            Phone = Clean(request.Phone),
-            Gender = request.Gender,
-            Nationality = Clean(request.Nationality),
-            StudentCode = resolvedStudentCode,
-            RoleId = shape.RoleId,
-            SubRole = shape.SubRole,
-            PrimaryCampusId = shape.PrimaryCampusId,
-            DepartmentId = shape.DepartmentId,
-            // P0 #1: the account starts UNCONFIRMED — it cannot log in (password/SSO/refresh all reject a
-            // non-active status) and holds no effective authority. A Head slot may still be reserved below;
-            // the reservation grants nothing until the owner confirms their email and the account activates.
-            Status = UserStatuses.PendingEmailConfirmation,
-            CreatedVia = CreatedViaValues.ManualCreated,
-            CreatedAt = now,
-            CreatedBy = actorId,
-        };
+            user.UpdatedAt = now;
+            user.UpdatedBy = actorId;
+            user.PasswordHash = null;       // drop any stale credential from the previous attempt
+        }
 
         var passwordSet = false;
         if (!string.IsNullOrEmpty(request.Password))
@@ -246,7 +278,26 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                     "Cơ sở này đã có tài khoản Head Office. Vui lòng chọn cơ sở khác hoặc quản lý tài khoản HO hiện có.",
                     AccountErrorCodes.CampusHoAlreadyActive);
 
-            _db.Users.Add(user);
+            if (recycleUser is null)
+            {
+                _db.Users.Add(user);
+            }
+            else
+            {
+                // Clear any stale Head slot the shell still held so the re-validation below starts clean.
+                foreach (var camp in await _db.Campuses.Where(c => c.IcHeadUserId == user.UserId).ToListAsync(cancellationToken))
+                {
+                    camp.IcHeadUserId = null;
+                    camp.UpdatedBy = actorId;
+                    camp.UpdatedAt = now;
+                }
+                foreach (var dep in await _db.Departments.Where(d => d.HeadUserId == user.UserId).ToListAsync(cancellationToken))
+                {
+                    dep.HeadUserId = null;
+                    dep.UpdatedBy = actorId;
+                    dep.UpdatedAt = now;
+                }
+            }
             await _db.SaveChangesAsync(cancellationToken);
 
             // P0 #1: persist the email-ownership proof atomically with the account. Only the hash is stored;
@@ -295,7 +346,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             {
                 ActorUserId = actorId,
                 CampusId = shape.PrimaryCampusId,
-                Action = "CREATE_ACCOUNT",
+                Action = recycleUser is null ? "CREATE_ACCOUNT" : "RECREATE_PENDING_ACCOUNT",
                 EntityType = "User",
                 EntityId = user.UserId,
                 Changes = new List<AuditLogChange>
