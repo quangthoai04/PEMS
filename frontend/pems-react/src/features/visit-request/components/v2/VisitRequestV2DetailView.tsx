@@ -5,7 +5,7 @@ import { AlertCircle, Loader2, PencilLine, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getVisitRequestFormV2, type ResolvedCampusVisit, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
-import ContactIdentityPanel from '../ContactIdentityPanel';
+import ContactIdentityActions from '../ContactIdentityActions';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
 import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../VisitSafeEditModal';
@@ -150,17 +150,6 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         </div>
       </header>
 
-      {/* ── Identity workflow (registrant / ACTIVE contact only — backend re-authorizes) ── */}
-      {isManager && (
-        <ContactIdentityPanel
-          visitRequestId={data.visitRequestId}
-          primaryContactAccessStatus={data.primaryContact.accessStatus}
-          contactEmailMasked={data.primaryContact.email || null}
-          canManage
-          onChanged={() => void load()}
-        />
-      )}
-
       {/* ── ① Registrant ── */}
       <VisitSectionCard
         step={1}
@@ -205,6 +194,19 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             },
           ]}
         />
+
+        {/* The claim/transfer workflow belongs to THIS contact, so it lives in this section rather
+            than in a card of its own above — splitting one business object across two cards is what
+            produced the duplicated contact block. Backend re-authorizes every command. */}
+        {isManager && (
+          <ContactIdentityActions
+            visitRequestId={data.visitRequestId}
+            primaryContactAccessStatus={data.primaryContact.accessStatus}
+            contactEmailMasked={data.primaryContact.email || null}
+            canManage
+            onChanged={() => void load()}
+          />
+        )}
       </VisitSectionCard>
 
       {/* ── ③ Per-campus cards: ONLY the campuses the backend returned for this caller ── */}

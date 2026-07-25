@@ -116,11 +116,10 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByText('Varies by campus')).not.toBeInTheDocument();
   });
 
-  it('identity panel is wired for the request manager and ABSENT for read-only HO', async () => {
+  it('contact actions are wired for the request manager and ABSENT for read-only HO', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
     const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
-    // ContactIdentityPanel (G-1, VI aria-label) appears for REGISTRANT:
-    expect(await screen.findByLabelText('Quản lý đầu mối liên hệ')).toBeInTheDocument();
+    expect(await screen.findByTestId('contact-identity-actions')).toBeInTheDocument();
     unmount();
 
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
@@ -128,7 +127,17 @@ describe('VisitRequestV2DetailView', () => {
     }));
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Quản lý đầu mối liên hệ')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-actions')).not.toBeInTheDocument();
+  });
+
+  it('contact actions live INSIDE the contact section, not in a card of their own', async () => {
+    // One business object, one card. The old standalone panel produced a second contact heading
+    // above sections 1 and 2, which is what made the screen look like it repeated itself.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    const actions = await screen.findByTestId('contact-identity-actions');
+    expect(screen.getByTestId('section-contact')).toContainElement(actions);
   });
 
   it('active amendment: the decision panel is gated by per-instance allowedActions, not relation', async () => {

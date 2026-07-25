@@ -284,6 +284,23 @@
     "openEdit": "Sửa đơn",
     "openResubmit": "Sửa & gửi lại đơn"
   },
+  "contact": {
+    "manageTitle": "Quản lý đầu mối",
+    "pendingNotice": "Đầu mối {{email}} chưa xác nhận lời mời (hiệu lực 72 giờ). Việc duyệt của các cơ sở không chờ xác nhận này.",
+    "activeNotice": "Đầu mối hiện tại đã xác nhận và đang quản lý đơn. Cần đổi người phụ trách? Gửi lời mời chuyển giao.",
+    "transferPending": "Đang chờ {{email}} tiếp nhận vai trò đầu mối (hiệu lực đến {{expiresAt}}). Đầu mối hiện tại vẫn giữ nguyên quyền.",
+    "transferKeepsRights": "Đầu mối hiện tại giữ nguyên quyền cho tới khi người mới đăng nhập đúng Google và bấm chấp nhận (hiệu lực 24 giờ). Tài khoản của đầu mối cũ không bị xóa hay khóa.",
+    "resendInvitation": "Gửi lại lời mời",
+    "replaceOpen": "Nhập lại email đầu mối",
+    "replaceSubmit": "Cập nhật & gửi lời mời mới",
+    "transferOpen": "Chuyển giao vai trò đầu mối",
+    "transferSubmit": "Gửi lời mời chuyển giao",
+    "transferReason": "Lý do chuyển giao",
+    "cancelTransfer": "Hủy lời mời chuyển giao",
+    "loadingTransfer": "Đang kiểm tra lời mời chuyển giao…",
+    "transferLoadFailed": "Không kiểm tra được trạng thái chuyển giao. Chưa thể khẳng định có lời mời đang chờ hay không.",
+    "actionFailed": "Không thể thực hiện thao tác. Vui lòng thử lại."
+  },
   "outcome": {
     "title": "Tình trạng hiện tại",
     "waitingAll": "Đang chờ {{count}} cơ sở xử lý.",

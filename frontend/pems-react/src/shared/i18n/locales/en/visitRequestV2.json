@@ -284,6 +284,23 @@
     "openEdit": "Edit request",
     "openResubmit": "Edit & resubmit"
   },
+  "contact": {
+    "manageTitle": "Manage the contact role",
+    "pendingNotice": "{{email}} has not accepted the invitation yet (valid for 72 hours). Campus approvals do not wait for this confirmation.",
+    "activeNotice": "The current contact has confirmed and is managing this request. Need somebody else? Send a transfer invitation.",
+    "transferPending": "Waiting for {{email}} to take over the contact role (valid until {{expiresAt}}). The current contact keeps every right until then.",
+    "transferKeepsRights": "The current contact keeps every right until the new person signs in with the matching Google account and accepts (valid for 24 hours). The previous contact's account is not deleted or locked.",
+    "resendInvitation": "Resend invitation",
+    "replaceOpen": "Correct the contact email",
+    "replaceSubmit": "Update & send a new invitation",
+    "transferOpen": "Transfer the contact role",
+    "transferSubmit": "Send transfer invitation",
+    "transferReason": "Reason for the transfer",
+    "cancelTransfer": "Cancel the transfer invitation",
+    "loadingTransfer": "Checking for a pending transfer…",
+    "transferLoadFailed": "Could not check the transfer status. Whether an invitation is pending is currently unknown.",
+    "actionFailed": "The action could not be completed. Please try again."
+  },
   "outcome": {
     "title": "Current status",
     "waitingAll": "Waiting for {{count}} campus(es) to respond.",
