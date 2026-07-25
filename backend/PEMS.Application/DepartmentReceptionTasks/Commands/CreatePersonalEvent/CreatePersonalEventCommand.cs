@@ -44,6 +44,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent
 
             ulong userId = _currentUserService.UserId.Value;
 
+            // Check overlapping active calendar events, invitations, or logistics requests in database for this user
+            var hasOverlap = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
+                _context, userId, startAt, endAt, null, null, cancellationToken);
+
+            if (hasOverlap)
+            {
+                throw new Exception("Khung giờ tạo lịch cá nhân bị trùng với đơn/thư hoặc lịch khác trong ngày! Vui lòng chọn khung giờ khác.");
+            }
+
             var ev = new CalendarEvent
             {
                 OwnerUserId = userId,

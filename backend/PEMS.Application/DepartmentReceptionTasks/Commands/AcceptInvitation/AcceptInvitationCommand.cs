@@ -42,6 +42,21 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
             // if (p.Status != "INVITED") throw new Exception("Thư mời không ở trạng thái chờ xác nhận.");
 
             var userId = _currentUserService.UserId;
+            if (!userId.HasValue) throw new Exception("Không xác định được người dùng");
+
+            // Database time conflict check
+            var campus = await _context.VisitRequestCampuses.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.VisitInstanceId == p.VisitInstanceId, cancellationToken);
+            if (campus != null)
+            {
+                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
+                    _context, userId.Value, campus.PlannedStartAt, campus.PlannedEndAt, null, p.ParticipantId, cancellationToken);
+                if (hasConflict)
+                {
+                    throw new Exception("Thư mời này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
+                }
+            }
+
             p.Status = "ACCEPTED";
             p.RespondedAt = VietnamTime.Now();
             p.UpdatedBy = userId;

@@ -99,6 +99,22 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             if (assignee == null)
                 throw new Exception("Người phụ trách không hợp lệ hoặc không thuộc phòng ban");
 
+            // Database time conflict check for target assignee
+            var campus = await _context.VisitRequestCampuses.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.VisitInstanceId == l.VisitInstanceId, cancellationToken);
+            DateTime startAt = l.UsageStartAt ?? (campus != null ? campus.PlannedStartAt : DateTime.MinValue);
+            DateTime endAt = l.UsageEndAt ?? (campus != null ? campus.PlannedEndAt : DateTime.MaxValue);
+
+            if (startAt != DateTime.MinValue && endAt != DateTime.MaxValue)
+            {
+                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
+                    _context, assignee.UserId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
+                if (hasConflict)
+                {
+                    throw new Exception($"Nhân sự {assignee.FullName} đã bị trùng lịch làm việc vào khung giờ của đơn này. Vui lòng chọn nhân sự khác.");
+                }
+            }
+
             var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
             var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
             await OutboundEmailAttachments.ValidateAsync(_context, userId, attachInputs, cancellationToken);

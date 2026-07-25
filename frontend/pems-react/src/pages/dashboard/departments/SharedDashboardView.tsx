@@ -108,6 +108,32 @@ type AssignmentProgressItem = {
   cancelReason?: string;
 };
 
+function parseTimeToMinutes(timeStr?: string | null): { start: number; end: number } | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split('-').map(s => s.trim());
+  if (parts.length === 2 && parts[0].includes(':') && parts[1].includes(':')) {
+    const [h1, m1] = parts[0].split(':').map(Number);
+    const [h2, m2] = parts[1].split(':').map(Number);
+    if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
+      return { start: h1 * 60 + m1, end: h2 * 60 + m2 };
+    }
+  }
+  return null;
+}
+
+function checkTimeOverlap(
+  date1?: string | null,
+  time1?: string | null,
+  date2?: string | null,
+  time2?: string | null
+): boolean {
+  if (!date1 || !date2 || !time1 || !time2 || date1 !== date2) return false;
+  const r1 = parseTimeToMinutes(time1);
+  const r2 = parseTimeToMinutes(time2);
+  if (!r1 || !r2) return false;
+  return r1.start < r2.end && r1.end > r2.start;
+}
+
 /** Parse key "YYYY-MM-DD" theo PHẦN lịch — new Date('YYYY-MM-DD') là UTC midnight và lùi 1 ngày ở browser múi giờ âm. */
 function parseDateKey(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
@@ -639,6 +665,69 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     });
   }, [candidates, isDeptLeader, currentUserId, currentUserEmail]);
 
+  // ── Time Conflict Validations ──────────────────────────────────────────────
+  const leaderSelfConflict = React.useMemo(() => {
+    if (!isDeptLeader || !activePopoverEvent) return null;
+    const leaderId = [user?.id, user?.userId, user?.account, user?.user_id].find(v => v != null);
+
+    return events.find(ev => {
+      if (ev.id === activePopoverEvent.id || (ev.rawId === activePopoverEvent.rawId && ev.itemType === activePopoverEvent.itemType)) {
+        return false;
+      }
+      const st = ev.status;
+      if (st === 'CANCELLED' || st === 'DECLINED' || st === 'REJECTED') return false;
+
+      const isMine = ev.relatedUserId != null && leaderId != null && String(ev.relatedUserId) === String(leaderId);
+      const isHandled = st === 'ACCEPTED' || st === 'CHANGE_PROPOSED' || ev.itemType === 'PERSONAL';
+
+      if ((isHandled && isMine) || (ev.itemType === 'PERSONAL' && isMine)) {
+        return checkTimeOverlap(activePopoverEvent.date, activePopoverEvent.time, ev.date, ev.time);
+      }
+      return false;
+    });
+  }, [isDeptLeader, activePopoverEvent, events, user]);
+
+  const getCandidateConflict = React.useCallback((staffUserId: number | string) => {
+    let targetDate: string | null = null;
+    let targetTime: string | null = null;
+
+    if (activePopoverEvent) {
+      targetDate = activePopoverEvent.date;
+      targetTime = activePopoverEvent.time;
+    } else if (assigningTaskItem) {
+      const startIso = assigningTaskItem.startAt || assigningTaskItem.dueAt;
+      const endIso = assigningTaskItem.endAt || assigningTaskItem.dueAt;
+      if (startIso && endIso) {
+        const sd = toVietnamCalendarDate(startIso) ?? new Date(NaN);
+        const ed = toVietnamCalendarDate(endIso) ?? new Date(NaN);
+        if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
+          targetDate = `${sd.getUTCFullYear()}-${String(sd.getUTCMonth() + 1).padStart(2, '0')}-${String(sd.getUTCDate()).padStart(2, '0')}`;
+          targetTime = `${String(sd.getUTCHours()).padStart(2, '0')}:${String(sd.getUTCMinutes()).padStart(2, '0')} - ${String(ed.getUTCHours()).padStart(2, '0')}:${String(ed.getUTCMinutes()).padStart(2, '0')}`;
+        }
+      }
+    }
+
+    if (!targetDate || !targetTime) return null;
+
+    const sIdStr = String(staffUserId);
+
+    return events.find(ev => {
+      if (activePopoverEvent && (ev.id === activePopoverEvent.id || (ev.rawId === activePopoverEvent.rawId && ev.itemType === activePopoverEvent.itemType))) {
+        return false;
+      }
+      const st = ev.status;
+      if (st === 'CANCELLED' || st === 'DECLINED' || st === 'REJECTED') return false;
+
+      const isStaffAssigned = ev.relatedUserId != null && String(ev.relatedUserId) === sIdStr;
+      const isStaffActiveTask = isStaffAssigned && (st === 'ACCEPTED' || st === 'ASSIGNED' || st === 'IN_PROGRESS' || st === 'CHANGE_PROPOSED' || ev.itemType === 'PERSONAL');
+
+      if (isStaffActiveTask || (ev.itemType === 'PERSONAL' && isStaffAssigned)) {
+        return checkTimeOverlap(targetDate, targetTime, ev.date, ev.time);
+      }
+      return false;
+    });
+  }, [activePopoverEvent, assigningTaskItem, events]);
+
   const fetchAssignmentsProgress = React.useCallback(async () => {
     if (!(isDeptLeader || isDeptStaff)) return;
     setAssignmentLoading(true);
@@ -1038,6 +1127,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     try {
       const st = newStartTime || '08:00';
       const et = newEndTime || '09:00';
+      const newTime = `${st} - ${et}`;
+
+      const conflictingEvent = events.find(ev => {
+        const s = ev.status;
+        if (s === 'CANCELLED' || s === 'DECLINED' || s === 'REJECTED') return false;
+        return checkTimeOverlap(selectedCellDate, newTime, ev.date, ev.time);
+      });
+
+      if (conflictingEvent) {
+        toast.error(`Thời gian tạo lịch cá nhân bị trùng với đơn/thư hoặc lịch khác trong ngày (${conflictingEvent.time}: ${conflictingEvent.title}). Vui lòng chọn khung giờ khác!`);
+        return;
+      }
 
       await departmentReceptionTasksApi.createPersonalEvent(
         newTitle,
@@ -1580,20 +1681,38 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             <div className="max-h-[360px] overflow-y-auto py-2">
               {filteredCandidates.length === 0 ? (
                 <div className="px-5 py-8 text-center text-sm font-semibold text-slate-400">Không có nhân sự phù hợp</div>
-              ) : filteredCandidates.map((staff) => (
-                <button
-                  key={staff.id || staff.userId}
-                  type="button"
-                  onClick={() => handleSelectAssignee(staff)}
-                  className="w-full px-5 py-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-800 truncate">{staff.name}</p>
-                    <p className="text-xs font-medium text-slate-500 truncate">{staff.email}</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-300" />
-                </button>
-              ))}
+              ) : filteredCandidates.map((staff) => {
+                const staffConflict = getCandidateConflict(staff.id || staff.userId);
+                return (
+                  <button
+                    key={staff.id || staff.userId}
+                    type="button"
+                    disabled={!!staffConflict}
+                    onClick={() => {
+                      if (staffConflict) {
+                        toast.error(`Nhân sự ${staff.name} đã bị trùng thời gian (${staffConflict.time} - ${staffConflict.title})!`);
+                        return;
+                      }
+                      handleSelectAssignee(staff);
+                    }}
+                    className={`w-full px-5 py-3 text-left transition-colors flex items-center justify-between gap-3 ${
+                      staffConflict ? 'bg-red-50/50 hover:bg-red-50 cursor-not-allowed border-l-4 border-red-500' : 'hover:bg-blue-50 cursor-pointer'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-slate-800 truncate">{staff.name}</p>
+                      <p className="text-xs font-medium text-slate-500 truncate">{staff.email}</p>
+                      {staffConflict && (
+                        <p className="text-[11px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
+                          Bị trùng thời gian ({staffConflict.time} - {staffConflict.title})
+                        </p>
+                      )}
+                    </div>
+                    {!staffConflict && <ChevronRight className="w-4 h-4 text-slate-300" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -3080,6 +3199,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     {/* Hiển thị nút Từ chối / Xác nhận tham gia cho lời mời đang chờ phản hồi. */}
                     {invitationStatus === 'pending' && (
                       <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
+                        {isDeptLeader && leaderSelfConflict && (
+                          <div className="mb-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-start gap-2 shadow-xs">
+                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-black">Thư/đơn này đã trùng thời gian của bạn ({leaderSelfConflict.time}). Hãy phân công cho nhân sự!</p>
+                              <p className="text-[11px] font-normal text-red-600 mt-0.5">Trùng với: {leaderSelfConflict.title}</p>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="flex flex-col sm:flex-row gap-4 w-full">
                           <button
@@ -3093,6 +3221,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </button>
                           <button
                             onClick={async () => {
+                              if (isDeptLeader && leaderSelfConflict) {
+                                toast.error(`Thư/đơn này đã trùng thời gian của bạn (${leaderSelfConflict.time}). Hãy phân công cho nhân sự!`);
+                                return;
+                              }
                               try {
                                 if (activePopoverEvent?.rawId) {
                                   await departmentReceptionTasksApi.acceptInvitation(activePopoverEvent.rawId);
@@ -3105,8 +3237,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 }
                               } catch (e) { console.error(e); toast.error('Xác nhận thất bại'); }
                             }}
-                            disabled={!!assignedPerson}
-                            className={`flex-1 py-4 px-6 rounded-2xl font-black uppercase tracking-wider transition-all duration-300 outline-none text-sm text-center ${(!!assignedPerson)
+                            disabled={!!assignedPerson || (isDeptLeader && !!leaderSelfConflict)}
+                            className={`flex-1 py-4 px-6 rounded-2xl font-black uppercase tracking-wider transition-all duration-300 outline-none text-sm text-center ${(!!assignedPerson || (isDeptLeader && !!leaderSelfConflict))
                                 ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
                                 : 'bg-[#004c91] text-white hover:bg-[#003b73] shadow-lg shadow-[#004c91]/20 active:scale-[0.98] border border-blue-600 cursor-pointer'
                               }`}>
@@ -3129,31 +3261,47 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 <div className="py-2">
                                   {filteredCandidates.length === 0 ? (
                                     <div className="px-4 py-3 text-xs text-slate-400 text-center font-medium">Không có nhân sự phòng ban</div>
-                                  ) : filteredCandidates.map((staff) => (
-                                    <button
-                                      key={staff.id || staff.userId}
-                                      className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
-                                      onClick={async () => {
-                                        if (activePopoverEvent?.rawId) {
-                                          await openInvitationAssignPreview({
-                                            participantId: activePopoverEvent.rawId,
-                                            staffId: staff.id || staff.userId,
-                                            staffName: staff.name || staff.fullName || 'Nhân sự',
-                                            title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
-                                            delegationName: activePopoverEvent?.delegationName,
-                                          });
-                                        }
-                                      }}
-                                    >
-                                      <div>
-                                        <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
-                                        <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
-                                      </div>
-                                      {assignedPerson === staff.name && (
-                                        <CheckSquare className="w-4 h-4 text-[#004c91]" />
-                                      )}
-                                    </button>
-                                  ))}
+                                  ) : filteredCandidates.map((staff) => {
+                                    const staffConflict = getCandidateConflict(staff.id || staff.userId);
+                                    return (
+                                      <button
+                                        key={staff.id || staff.userId}
+                                        disabled={!!staffConflict}
+                                        className={`w-full px-4 py-3 text-left border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between ${
+                                          staffConflict ? 'bg-red-50/50 hover:bg-red-50 cursor-not-allowed border-l-4 border-red-500' : 'hover:bg-slate-50 cursor-pointer'
+                                        }`}
+                                        onClick={async () => {
+                                          if (staffConflict) {
+                                            toast.error(`Nhân sự ${staff.name} đã bị trùng thời gian (${staffConflict.time} - ${staffConflict.title})!`);
+                                            return;
+                                          }
+                                          if (activePopoverEvent?.rawId) {
+                                            await openInvitationAssignPreview({
+                                              participantId: activePopoverEvent.rawId,
+                                              staffId: staff.id || staff.userId,
+                                              staffName: staff.name || staff.fullName || 'Nhân sự',
+                                              title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
+                                              delegationName: activePopoverEvent?.delegationName,
+                                            });
+                                          }
+                                        }}
+                                      >
+                                        <div>
+                                          <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
+                                          <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
+                                          {staffConflict && (
+                                            <span className="block text-[11px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                              <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
+                                              Trùng thời gian ({staffConflict.time} - {staffConflict.title})
+                                            </span>
+                                          )}
+                                        </div>
+                                        {assignedPerson === staff.name && (
+                                          <CheckSquare className="w-4 h-4 text-[#004c91]" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -3451,6 +3599,16 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
                     {(requestStatus === 'pending' || requestStatus === 'accepted' || requestStatus === 'assigned' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
                       <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
+                        {isDeptLeader && leaderSelfConflict && requestStatus === 'pending' && (
+                          <div className="mb-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-start gap-2 shadow-xs">
+                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-black">Đơn/thư này đã trùng thời gian của bạn ({leaderSelfConflict.time}). Hãy phân công cho nhân sự!</p>
+                              <p className="text-[11px] font-normal text-red-600 mt-0.5">Trùng với: {leaderSelfConflict.title}</p>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Nút Xác nhận/Từ chối hiện cho cả REQUESTED (pending) */}
                         {requestStatus === 'pending' && (
                           <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -3465,6 +3623,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             </button>
                             <button
                               onClick={async () => {
+                                if (isDeptLeader && leaderSelfConflict) {
+                                  toast.error(`Đơn/thư này đã trùng thời gian của bạn (${leaderSelfConflict.time}). Hãy phân công cho nhân sự!`);
+                                  return;
+                                }
                                 try {
                                   if (activePopoverEvent?.rawId) {
                                     await departmentReceptionTasksApi.confirmRequest(activePopoverEvent.rawId);
@@ -3477,8 +3639,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   }
                                 } catch (e) { console.error(e); toast.error('Xác nhận thất bại'); }
                               }}
-                              disabled={!!assignedPerson}
-                              className={`flex-1 py-4 px-6 rounded-2xl font-black uppercase tracking-wider transition-all duration-300 outline-none text-sm text-center ${(!!assignedPerson)
+                              disabled={!!assignedPerson || (isDeptLeader && !!leaderSelfConflict)}
+                              className={`flex-1 py-4 px-6 rounded-2xl font-black uppercase tracking-wider transition-all duration-300 outline-none text-sm text-center ${(!!assignedPerson || (isDeptLeader && !!leaderSelfConflict))
                                   ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
                                   : 'bg-[#004c91] text-white hover:bg-[#003b73] shadow-lg shadow-[#004c91]/20 active:scale-[0.98] border border-blue-600 cursor-pointer'
                                 }`}>
@@ -3531,31 +3693,47 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 <div className="py-2">
                                   {filteredCandidates.length === 0 ? (
                                     <div className="px-4 py-3 text-xs text-slate-400 text-center font-medium">Không có nhân sự phòng ban</div>
-                                  ) : filteredCandidates.map((staff) => (
-                                    <button
-                                      key={staff.id || staff.userId}
-                                      className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between"
-                                      onClick={async () => {
-                                        if (activePopoverEvent?.rawId) {
-                                          await openLogisticsAssignPreview({
-                                            logisticsItemId: activePopoverEvent.rawId,
-                                            staffId: staff.id || staff.userId,
-                                            staffName: staff.name || staff.fullName || 'Nhân sự',
-                                            title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
-                                            delegationName: activePopoverEvent?.delegationName,
-                                          });
-                                        }
-                                      }}
-                                    >
-                                      <div>
-                                        <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
-                                        <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
-                                      </div>
-                                      {assignedPerson === staff.name && (
-                                        <CheckSquare className="w-4 h-4 text-[#004c91]" />
-                                      )}
-                                    </button>
-                                  ))}
+                                  ) : filteredCandidates.map((staff) => {
+                                    const staffConflict = getCandidateConflict(staff.id || staff.userId);
+                                    return (
+                                      <button
+                                        key={staff.id || staff.userId}
+                                        disabled={!!staffConflict}
+                                        className={`w-full px-4 py-3 text-left border-b border-slate-50 last:border-0 transition-colors group flex items-start justify-between ${
+                                          staffConflict ? 'bg-red-50/50 hover:bg-red-50 cursor-not-allowed border-l-4 border-red-500' : 'hover:bg-slate-50 cursor-pointer'
+                                        }`}
+                                        onClick={async () => {
+                                          if (staffConflict) {
+                                            toast.error(`Nhân sự ${staff.name} đã bị trùng thời gian (${staffConflict.time} - ${staffConflict.title})!`);
+                                            return;
+                                          }
+                                          if (activePopoverEvent?.rawId) {
+                                            await openLogisticsAssignPreview({
+                                              logisticsItemId: activePopoverEvent.rawId,
+                                              staffId: staff.id || staff.userId,
+                                              staffName: staff.name || staff.fullName || 'Nhân sự',
+                                              title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
+                                              delegationName: activePopoverEvent?.delegationName,
+                                            });
+                                          }
+                                        }}
+                                      >
+                                        <div>
+                                          <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
+                                          <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
+                                          {staffConflict && (
+                                            <span className="block text-[11px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                              <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
+                                              Trùng thời gian ({staffConflict.time} - {staffConflict.title})
+                                            </span>
+                                          )}
+                                        </div>
+                                        {assignedPerson === staff.name && (
+                                          <CheckSquare className="w-4 h-4 text-[#004c91]" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}

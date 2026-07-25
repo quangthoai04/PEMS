@@ -115,14 +115,42 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
       toast.error('Không thể tạo lịch trong quá khứ. Vui lòng chọn ngày từ hôm nay trở đi.');
       return;
     }
+
+    const st = newStartTime || '08:00';
+    const et = newEndTime || '09:00';
+    const newTime = `${st} - ${et}`;
+
+    const conflictingEvent = calendarItems.find(ev => {
+      const s = ev.status;
+      if (s === 'CANCELLED' || s === 'DECLINED' || s === 'REJECTED') return false;
+      const parts = ev.time ? ev.time.split('-').map(x => x.trim()) : [];
+      if (parts.length === 2 && parts[0].includes(':') && parts[1].includes(':')) {
+        const [h1, m1] = parts[0].split(':').map(Number);
+        const [h2, m2] = parts[1].split(':').map(Number);
+        const [nh1, nm1] = st.split(':').map(Number);
+        const [nh2, nm2] = et.split(':').map(Number);
+        const start1 = nh1 * 60 + nm1;
+        const end1 = nh2 * 60 + nm2;
+        const start2 = h1 * 60 + m1;
+        const end2 = h2 * 60 + m2;
+        return ev.date === selectedDate && start1 < end2 && end1 > start2;
+      }
+      return false;
+    });
+
+    if (conflictingEvent) {
+      toast.error(`Thời gian tạo lịch cá nhân bị trùng với đơn/thư hoặc lịch khác trong ngày (${conflictingEvent.time}: ${conflictingEvent.title}). Vui lòng chọn khung giờ khác!`);
+      return;
+    }
+
     setAddLoading(true);
     try {
       await departmentReceptionTasksApi.createPersonalEvent(
         newTitle.trim(),
         newContent.trim(),
         selectedDate,
-        newStartTime || '08:00',
-        newEndTime || '09:00'
+        st,
+        et
       );
       toast.success('Đã lưu lịch cá nhân');
       onRefresh();

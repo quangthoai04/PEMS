@@ -38,6 +38,22 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
                 throw new Exception("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
 
+            // Database time conflict check
+            var campus = await _context.VisitRequestCampuses.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.VisitInstanceId == l.VisitInstanceId, cancellationToken);
+            DateTime startAt = l.UsageStartAt ?? (campus != null ? campus.PlannedStartAt : DateTime.MinValue);
+            DateTime endAt = l.UsageEndAt ?? (campus != null ? campus.PlannedEndAt : DateTime.MaxValue);
+
+            if (startAt != DateTime.MinValue && endAt != DateTime.MaxValue)
+            {
+                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
+                    _context, userId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
+                if (hasConflict)
+                {
+                    throw new Exception("Đơn này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
+                }
+            }
+
             var now = VietnamTime.Now();
 
             l.Status = "ACCEPTED";
