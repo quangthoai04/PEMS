@@ -115,8 +115,8 @@ public sealed class VisitAmendmentV2Tests
                     new VisitRequestAggregateStatusService(db));
             var form = new VisitRequestFormDataV2(
                 "AM" + Guid.NewGuid().ToString("N"),
-                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-                new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+                new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                 null, new List<CampusVisitFormDto> { Campus("HN", start), Campus("HCM", start.AddDays(1)) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }
@@ -582,8 +582,8 @@ public sealed class VisitAmendmentV2Tests
                     new VisitRequestAggregateStatusService(db));
                 var form = new VisitRequestFormDataV2(
                     "AM" + Guid.NewGuid().ToString("N"),
-                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-                    new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+                    new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                     null, new List<CampusVisitFormDto> { Campus("HN", Now.AddDays(20)) });
                 pendingRequest = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
             }

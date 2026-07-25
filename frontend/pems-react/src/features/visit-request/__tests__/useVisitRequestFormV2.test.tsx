@@ -69,9 +69,16 @@ describe('useVisitRequestFormV2', () => {
     vi.clearAllMocks();
   });
 
-  const setup = (mode: 'public' | 'authenticated' = 'public') => {
+  /**
+   * `currentUserEmail` decides the submit contract in authenticated mode, so it defaults to the
+   * registrant address in `validValues()` — i.e. self-registration unless a test says otherwise.
+   */
+  const setup = (
+    mode: 'public' | 'authenticated' = 'public',
+    currentUserEmail: string | null = 'reg@example.com',
+  ) => {
     const onSuccess = vi.fn();
-    const view = renderHook(() => useVisitRequestFormV2(onSuccess, undefined, { mode }));
+    const view = renderHook(() => useVisitRequestFormV2(onSuccess, undefined, { mode, currentUserEmail }));
     return { ...view, onSuccess };
   };
 
@@ -192,7 +199,7 @@ describe('useVisitRequestFormV2', () => {
     expect(onSuccess).toHaveBeenCalledWith(mockCreateResponse, expect.anything());
   });
 
-  it('AUTHENTICATED: posts the flat v2 create contract directly (no OTP)', async () => {
+  it('AUTHENTICATED SELF: posts the flat v2 create contract directly (no OTP)', async () => {
     vi.mocked(createVisitRequestV2).mockResolvedValue(mockCreateResponse as never);
 
     const { result, onSuccess } = setup('authenticated');
@@ -206,11 +213,78 @@ describe('useVisitRequestFormV2', () => {
 
 
     expect(createVisitRequestV2).toHaveBeenCalledTimes(1);
+    expect(initiateVisitRequestV2).not.toHaveBeenCalled();
     const [payload] = vi.mocked(createVisitRequestV2).mock.calls[0];
     expect(payload.registrant.email).toBe('reg@example.com');
     expect(payload.campusVisits[0].delegationName).toBe('Đoàn A');
     expect(payload.primaryContact.email).toBe('contact@example.com');
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a different mailbox', 'someone.else@fpt.edu.vn'],
+    ['a plus-alias of the same mailbox', 'reg+delegated@example.com'],
+    ['a dot-variant of the same mailbox', 'r.eg@example.com'],
+  ])(
+    'AUTHENTICATED DELEGATED (%s): never direct-creates — it mints an OTP challenge instead',
+    async (_label, actorEmail) => {
+      vi.mocked(initiateVisitRequestV2).mockResolvedValue({
+        sessionToken: 'sess-deleg', message: 'ok', maskedEmail: 'r***@example.com', expiresAt: '',
+        maxAttempts: 5, resendAfterSeconds: 60,
+      } as never);
+
+      const { result } = setup('authenticated', actorEmail);
+      act(() => {
+        result.current.form.reset(validValues());
+      });
+
+      await act(async () => {
+        await result.current.onSubmit();
+      });
+
+      // The session cannot vouch for an address it does not own, so the direct contract is never used.
+      expect(createVisitRequestV2).not.toHaveBeenCalled();
+      expect(initiateVisitRequestV2).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(result.current.sessionToken).toBe('sess-deleg'));
+    },
+  );
+
+  it('AUTHENTICATED DELEGATED: the created request carries no processing intent', async () => {
+    vi.mocked(initiateVisitRequestV2).mockResolvedValue({
+      sessionToken: 'sess-deleg', message: 'ok', maskedEmail: 'r***@example.com', expiresAt: '',
+      maxAttempts: 5, resendAfterSeconds: 60,
+    } as never);
+    vi.mocked(verifyAndCreateVisitRequestV2).mockResolvedValue(mockCreateResponse as never);
+
+    const { result, onSuccess } = setup('authenticated', 'someone.else@fpt.edu.vn');
+    act(() => {
+      result.current.form.reset(validValues());
+    });
+
+    await act(async () => {
+      await result.current.onSubmit();
+    });
+    await waitFor(() => expect(result.current.sessionToken).toBe('sess-deleg'));
+
+    await act(async () => {
+      await result.current.verifyOtp('123456');
+    });
+
+    const [payload] = vi.mocked(verifyAndCreateVisitRequestV2).mock.calls[0];
+    // The backend rejects a delegated payload that carries one, so it must never be built.
+    expect(payload.campusVisits[0].processing).toBeNull();
+    expect(onSuccess).toHaveBeenCalledWith(mockCreateResponse, expect.anything());
+  });
+
+  it('isSelfRegistration is false in public mode even when the addresses match', () => {
+    const { result } = setup('public', 'reg@example.com');
+    expect(result.current.isSelfRegistration('reg@example.com')).toBe(false);
+  });
+
+  it('isSelfRegistration never matches a signed-in account with no email on record', () => {
+    const { result } = setup('authenticated', null);
+    expect(result.current.isSelfRegistration('')).toBe(false);
+    expect(result.current.isSelfRegistration('reg@example.com')).toBe(false);
   });
 
   it('invalid form → no API call, first broken campus index exposed for expand/focus', async () => {

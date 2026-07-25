@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
+import { VisitStatusBadge } from './shared/VisitStatusBadge';
 
 interface Props {
   response: V2CreateResponse;
@@ -120,9 +121,9 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
                 {t('visitRequestV2:summary.campusHeading', { index: index + 1, campus: campusName(cv.campus) })}
               </h3>
               {instance && (
-                <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-[#004c91]">
-                  {t('visitRequestV2:summary.instanceStatus')}:{' '}
-                  {t(`visitRequestV2:status.${instance.status}`, instance.status)}
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                  {t('visitRequestV2:summary.instanceStatus')}:
+                  <VisitStatusBadge kind="instance" status={instance.status} />
                 </span>
               )}
             </div>

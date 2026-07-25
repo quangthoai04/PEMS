@@ -76,8 +76,15 @@ public sealed class InitiateVisitRequestV2CommandHandler
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
 
+        // ── No direct processing on an OTP-gated submission (plan §5.4/§6) ──
+        // This endpoint serves BOTH the public visitor submit and the authenticated DELEGATED create
+        // ("I am filling this in for somebody else"). In neither case is the submitter the person the OTP
+        // will verify, so a SELF_HOST/ASSIGN_HOST intent can never be honoured. Verify used to drop it
+        // silently; rejecting here means a forged payload is refused BEFORE an OTP is ever sent.
+        RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form);
+
         var now = _clock.VietnamNow;
-        var email = form.Registrant.Email.Trim().ToLowerInvariant();
+        var email = RegistrantIdentityRules.Normalize(form.Registrant.Email);
 
         // ── Fail fast (same depth as v1 initiate): the registrant email links a VISITOR account at verify —
         //    an internal/inactive email must never enter the public flow; the primary-contact email is what

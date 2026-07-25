@@ -9,13 +9,18 @@
     "contactDesc": "The contact person manages the request and signs in with Google using this email. If it is someone else, they will receive a confirmation email.",
     "contactSameAsRegistrant": "Same as registrant",
     "campuses": "Visit content per campus",
-    "campusesDesc": "Add one card per campus. You can copy content between campuses — after copying, every campus is still edited independently."
+    "campusesDesc": "Add one card per campus. You can copy content between campuses — after copying, every campus is still edited independently.",
+    "contactInternalNotAllowed": "The contact person must represent the visiting delegation, not the internal staff member creating the request on their behalf."
   },
   "registrant": {
     "fullName": "Full name",
     "organization": "Organization",
     "jobTitle": "Job title",
-    "nationality": "Nationality"
+    "nationality": "Nationality",
+    "useMyProfile": "I am the registrant",
+    "matchesAccount": "This email matches your signed-in account — no OTP verification needed.",
+    "requiresOtp": "The registrant email differs from your signed-in account. An OTP will be sent to that email to verify it before the request is created.",
+    "autofillFailed": "Could not load your profile. Please try again or fill the fields in manually."
   },
   "person": {
     "fullName": "Full name",
@@ -23,7 +28,11 @@
     "organization": "Organization",
     "nationality": "Nationality",
     "stt": "No.",
-    "actions": "Actions"
+    "actions": "Actions",
+    "ordinal": "No.",
+    "count": "{{count}} people",
+    "noVisitors": "No guests listed yet.",
+    "noSupport": "No accompanying support staff."
   },
   "card": {
     "cardN": "Campus {{n}}",
@@ -226,18 +235,36 @@
     "primaryContact": "Contact person",
     "contactPending": "Unconfirmed",
     "historyTitle": "Change history",
-    "backToList": "Back to request list"
+    "backToList": "Back to request list",
+    "readOnly": "Read only",
+    "retry": "Try again",
+    "decidedBy": "Decided by",
+    "decidedAt": "Decided at",
+    "decisionNote": "Reason / Note",
+    "contactAccessStatus": "Confirmation status",
+    "contactActive": "Confirmed",
+    "contactVerifiedAt": "Confirmed at",
+    "noCampusInScope": "No campus in your viewing scope."
   },
   "status": {
-    "PENDING": "Pending",
-    "ASSIGNED": "Assigned",
-    "APPROVED": "Approved",
-    "REJECTED": "Rejected",
-    "CANCELLED": "Cancelled",
-    "COMPLETED": "Completed",
-    "PENDING_APPROVAL": "Pending approval",
-    "PARTIALLY_APPROVED": "Partially approved",
-    "IN_PROGRESS": "In progress"
+    "unknown": "Unknown",
+    "instance": {
+      "WAITING_REQUEST_APPROVAL": "Awaiting Staff Leader",
+      "ASSIGNED": "Approved — host assigned",
+      "BEFORE_VISIT": "Preparing",
+      "DURING_VISIT": "Visit in progress",
+      "AFTER_VISIT": "After the visit",
+      "CLOSED": "Closed",
+      "CANCELLED": "Cancelled",
+      "REJECTED": "Rejected"
+    },
+    "request": {
+      "PENDING_APPROVAL": "Pending approval",
+      "PARTIALLY_APPROVED": "Partially approved",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "CANCELLED": "Cancelled"
+    }
   },
   "edit": {
     "titleEdit": "Edit request (pending approval)",

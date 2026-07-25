@@ -109,6 +109,10 @@ public static class VisitRequestErrorCodes
     public const string InternalRegistrantCannotBeContact = "INTERNAL_REGISTRANT_CANNOT_BE_CONTACT";
     // The caller's role may not create visit requests at all (ADMIN/HO/DEPARTMENT/STUDENT).
     public const string RoleCannotCreateVisitRequest = "ROLE_CANNOT_CREATE_VISIT_REQUEST";
+    // The authenticated DIRECT create carried a registrant email that is not the caller's own.
+    // The caller must re-submit through the delegated OTP flow (initiate → verify) so the named
+    // registrant proves ownership of that mailbox. Nothing is written when this is raised.
+    public const string RegistrantEmailVerificationRequired = "REGISTRANT_EMAIL_VERIFICATION_REQUIRED";
     // A Visitor (or public) payload carried SELF_HOST/ASSIGN_HOST/host metadata.
     public const string InvalidCampusSubmissionMode = "INVALID_CAMPUS_SUBMISSION_MODE";
     // Staff tried to direct-process a campus other than their own primary campus.

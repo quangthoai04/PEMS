@@ -126,8 +126,8 @@ public sealed class CreateVisitRequestV2CommandTests
             "EN", null, "DECLINED", null, null, null);
         return new VisitRequestFormDataV2(
             submissionId,
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-            new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"), // A==B → ACTIVE
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)), // A==B → ACTIVE
             null, new List<CampusVisitFormDto> { campus });
     }
 

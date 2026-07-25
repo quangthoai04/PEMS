@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { CampusVisitDetailCard } from '../components/v2/CampusVisitDetailCard';
 import { campusFixture } from './fixtures';
 
@@ -11,7 +11,7 @@ describe('CampusVisitDetailCard', () => {
     render(<CampusVisitDetailCard campus={campusFixture()} />);
 
     expect(screen.getByText('FPTU Hà Nội')).toBeInTheDocument();
-    expect(screen.getByText('Approved')).toBeInTheDocument();
+    expect(screen.getByText('Approved — host assigned')).toBeInTheDocument();
     expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
     expect(screen.getByText('Trao đổi hợp tác')).toBeInTheDocument();
     expect(screen.getByText('Nội dung làm việc HN')).toBeInTheDocument();
@@ -22,24 +22,45 @@ describe('CampusVisitDetailCard', () => {
     expect(screen.queryByText(/HCM/)).not.toBeInTheDocument();
   });
 
-  it('people list is collapsed by default and toggles with an accessible button', () => {
+  it('never renders a raw enum, even for a status the UI has not been taught', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({ instanceStatus: 'SOME_FUTURE_STATE' })} />);
+
+    expect(screen.queryByText('SOME_FUTURE_STATE')).not.toBeInTheDocument();
+    expect(screen.getByTestId('campus-status-10')).toHaveTextContent('Unknown');
+  });
+
+  it('shows the delegation up front, numbered, without a toggle to find it behind', () => {
+    // The people list used to start collapsed. "Who is coming" is the reason this card gets
+    // opened at all, so it is now on the page from the first render.
     render(<CampusVisitDetailCard campus={campusFixture()} />);
 
-    const toggle = screen.getByRole('button', { name: /Delegation list \(1 guests, 0 support\)/ });
-    const region = document.getElementById('cvd-people-10')!;
-    // jsdom loads no Tailwind CSS, so visibility is asserted via the `hidden` class the
-    // component toggles (the aria-expanded state is the accessible contract).
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(region).toHaveClass('hidden');
+    // Both layouts are in the DOM (CSS picks one), so assertions are scoped to the table.
+    const table = within(screen.getByTestId('campus-visitors-10')).getByRole('table');
+    const cells = within(table).getAllByRole('cell').map(c => c.textContent);
+    // The ordinal is derived from the row position, never stored.
+    expect(cells.slice(0, 5)).toEqual(['1', 'Khách Một', 'GV', 'ĐH ABC', 'VN']);
+    expect(within(screen.getByTestId('campus-visitors-10')).getByText('1 people')).toBeInTheDocument();
+  });
 
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(region).not.toHaveClass('hidden');
-    expect(screen.getByText('Khách Một')).toBeInTheDocument();
+  it('keeps every field for a person on the narrow layout too', () => {
+    // The mobile cards are always rendered (CSS decides which layout is visible), so dropping a
+    // field to shorten them would silently lose data on a phone.
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
 
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(region).toHaveClass('hidden');
+    const visitors = screen.getByTestId('campus-visitors-10');
+    const mobileCards = visitors.querySelector('ul');
+    expect(mobileCards).not.toBeNull();
+    expect(within(mobileCards as HTMLElement).getByText('Khách Một')).toBeInTheDocument();
+    expect(within(mobileCards as HTMLElement).getByText('GV')).toBeInTheDocument();
+    expect(within(mobileCards as HTMLElement).getByText('ĐH ABC')).toBeInTheDocument();
+    expect(within(mobileCards as HTMLElement).getByText('VN')).toBeInTheDocument();
+  });
+
+  it('states an empty support list instead of hiding the section', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
+
+    const support = screen.getByTestId('campus-support-10');
+    expect(within(support).getByText('No accompanying support staff.')).toBeInTheDocument();
   });
 
   it('shows the pending-amendment badge only when an active amendment exists', () => {

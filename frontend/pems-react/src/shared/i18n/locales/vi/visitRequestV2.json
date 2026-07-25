@@ -9,13 +9,18 @@
     "contactDesc": "Đầu mối liên hệ quản lý đơn và đăng nhập bằng Google với email này. Nếu là người khác, họ sẽ nhận email xác nhận vai trò.",
     "contactSameAsRegistrant": "Dùng thông tin người đăng ký",
     "campuses": "Nội dung tham quan theo cơ sở",
-    "campusesDesc": "Thêm một thẻ cho mỗi cơ sở. Có thể sao chép nội dung giữa các cơ sở — sau khi sao chép, mỗi cơ sở vẫn chỉnh sửa độc lập."
+    "campusesDesc": "Thêm một thẻ cho mỗi cơ sở. Có thể sao chép nội dung giữa các cơ sở — sau khi sao chép, mỗi cơ sở vẫn chỉnh sửa độc lập.",
+    "contactInternalNotAllowed": "Đầu mối liên hệ phải là người đại diện phía đoàn khách, không phải nhân sự nội bộ đang tạo hộ."
   },
   "registrant": {
     "fullName": "Họ và tên",
     "organization": "Đơn vị công tác",
     "jobTitle": "Chức vụ",
-    "nationality": "Quốc tịch"
+    "nationality": "Quốc tịch",
+    "useMyProfile": "Tôi là người đăng ký",
+    "matchesAccount": "Email trùng với tài khoản đang đăng nhập — không cần xác minh OTP.",
+    "requiresOtp": "Email người đăng ký khác tài khoản đang đăng nhập. Hệ thống sẽ gửi mã OTP tới email này để xác minh trước khi tạo đơn.",
+    "autofillFailed": "Không lấy được thông tin hồ sơ của bạn. Vui lòng thử lại hoặc nhập thủ công."
   },
   "person": {
     "fullName": "Họ và tên",
@@ -23,7 +28,11 @@
     "organization": "Đơn vị công tác",
     "nationality": "Quốc tịch",
     "stt": "STT",
-    "actions": "Thao tác"
+    "actions": "Thao tác",
+    "ordinal": "STT",
+    "count": "{{count}} người",
+    "noVisitors": "Chưa có danh sách khách.",
+    "noSupport": "Không có nhân sự hỗ trợ đi kèm."
   },
   "card": {
     "cardN": "Cơ sở {{n}}",
@@ -226,18 +235,36 @@
     "primaryContact": "Đầu mối liên hệ",
     "contactPending": "Chưa xác nhận",
     "historyTitle": "Lịch sử thay đổi",
-    "backToList": "Về danh sách đơn"
+    "backToList": "Về danh sách đơn",
+    "readOnly": "Chỉ đọc",
+    "retry": "Thử lại",
+    "decidedBy": "Người quyết định",
+    "decidedAt": "Thời điểm quyết định",
+    "decisionNote": "Lý do / Ghi chú",
+    "contactAccessStatus": "Trạng thái xác nhận",
+    "contactActive": "Đã xác nhận",
+    "contactVerifiedAt": "Xác nhận lúc",
+    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem."
   },
   "status": {
-    "PENDING": "Chờ xử lý",
-    "ASSIGNED": "Đã phân công",
-    "APPROVED": "Đã duyệt",
-    "REJECTED": "Từ chối",
-    "CANCELLED": "Đã hủy",
-    "COMPLETED": "Hoàn tất",
-    "PENDING_APPROVAL": "Chờ duyệt",
-    "PARTIALLY_APPROVED": "Duyệt một phần",
-    "IN_PROGRESS": "Đang diễn ra"
+    "unknown": "Không xác định",
+    "instance": {
+      "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
+      "ASSIGNED": "Đã duyệt và gán Host",
+      "BEFORE_VISIT": "Đang chuẩn bị",
+      "DURING_VISIT": "Đang tiếp khách",
+      "AFTER_VISIT": "Sau tiếp khách",
+      "CLOSED": "Đã đóng đoàn",
+      "CANCELLED": "Đã hủy",
+      "REJECTED": "Đã từ chối"
+    },
+    "request": {
+      "PENDING_APPROVAL": "Chờ duyệt",
+      "PARTIALLY_APPROVED": "Đã duyệt một phần",
+      "APPROVED": "Đã duyệt",
+      "REJECTED": "Đã từ chối",
+      "CANCELLED": "Đã hủy"
+    }
   },
   "edit": {
     "titleEdit": "Sửa đơn (đang chờ duyệt)",

@@ -139,8 +139,8 @@ public sealed class NewsContributionConsentV2Tests
             new VisitRequestAggregateStatusService(db));
         var form = new VisitRequestFormDataV2(
             "NC" + Guid.NewGuid().ToString("N"),
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-            new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
         return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
     }

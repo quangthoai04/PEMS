@@ -179,7 +179,7 @@ public sealed class VisitContactTransferWorkflowTests
             "EN", null, "DECLINED", null, null, null);
         return new VisitRequestFormDataV2(
             submissionId,
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
             new ContactPointDto("Contact B", "OrgB", "+8492", contactEmail),
             null, new List<CampusVisitFormDto> { campus });
     }

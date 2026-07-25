@@ -106,8 +106,8 @@ public sealed class V2MixedListSurfacesTests
                     new VisitRequestAggregateStatusService(db));
             var form = new VisitRequestFormDataV2(
                 "LS" + Guid.NewGuid().ToString("N"),
-                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-                new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+                new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                 null,
                 new List<CampusVisitFormDto> { Campus("HN", start, hnName), Campus("HCM", start.AddDays(1), hcmName) });
             var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
@@ -194,8 +194,8 @@ public sealed class V2MixedListSurfacesTests
                     new VisitRequestAggregateStatusService(db));
                 var form = new VisitRequestFormDataV2(
                     "LS" + Guid.NewGuid().ToString("N"),
-                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-                    new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+                    new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                     null,
                     new List<CampusVisitFormDto>
                     {
