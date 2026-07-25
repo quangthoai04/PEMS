@@ -12,9 +12,10 @@ interface Props {
   instanceStatus: string;
   onChanged: () => void;
   relation?: string;
+  isReadOnly?: boolean;
 }
 
-export function MediaContributionSection({ visitInstanceId, data, canView, instanceStatus, onChanged, relation }: Props) {
+export function MediaContributionSection({ visitInstanceId, data, canView, instanceStatus, onChanged, relation, isReadOnly = false }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   // Khối "Ảnh đoàn khách" chỉ dành cho Student ACCEPTED của instance — backend trả 403 cho người
@@ -24,7 +25,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const files = Array.from(e.target.files) as File[];
-    
+
     // In Phase 3, we mock the call to the actual backend endpoint which might be a stub
     const formData = new FormData();
     files.forEach(f => formData.append('files', f));
@@ -93,7 +94,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
               </div>
             )}
 
-            {data.canCurrentUserUpload && (
+            {data.canCurrentUserUpload && !isReadOnly && (
               <div className="pt-2 relative">
                 <input
                   type="file"
@@ -120,19 +121,19 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
       {/* Ảnh đoàn khách (Student) — lưu Drive VR-{request}/{campus}, bảng visit_photos */}
       {showStudentPhotos && (
         <div className={!isStudent ? "pt-4 mt-4 border-t border-slate-100" : ""}>
-            <div className="flex items-center gap-2 mb-3">
-              <Camera className="w-4 h-4 text-[#f37021]" />
-              <h3 className="text-sm font-black text-[#004c91]">Ảnh đoàn khách</h3>
-            </div>
-            <VisitPhotoPanel
-              visitInstanceId={visitInstanceId}
-              mode="edit"
-              columns={6}
-              maxInitialItems={18}
-              onForbidden={() => setShowStudentPhotos(false)}
-            />
+          <div className="flex items-center gap-2 mb-3">
+            <Camera className="w-4 h-4 text-[#f37021]" />
+            <h3 className="text-sm font-black text-[#004c91]">Ảnh đoàn khách</h3>
           </div>
-        )}
+          <VisitPhotoPanel
+            visitInstanceId={visitInstanceId}
+            mode={isReadOnly ? 'view' : 'edit'}
+            columns={6}
+            maxInitialItems={18}
+            onForbidden={() => setShowStudentPhotos(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

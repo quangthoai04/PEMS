@@ -96,10 +96,9 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
 
   // Khi thu gọn: chỉ còn icon căn giữa (icon to hơn, vùng click cao hơn), ẩn label (span).
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-3 rounded-xl transition-colors font-medium ${
-      collapsed
-        ? "justify-center px-0 py-3.5 [&>span]:hidden [&>svg]:w-6 [&>svg]:h-6"
-        : "px-4 py-3"
+    `flex items-center gap-3 rounded-xl transition-colors font-medium ${collapsed
+      ? "justify-center px-0 py-3.5 [&>span]:hidden [&>svg]:w-6 [&>svg]:h-6"
+      : "px-4 py-3"
     } ${isActive
       ? "bg-[#d2e5f5] text-[#004c91]"
       : "text-gray-600 hover:bg-[#d2e5f5] hover:text-[#004c91]"
@@ -202,98 +201,98 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
               </NavLink>
             </>
           ) : (
-          <>
-          {roleForSidebar !== 'VISITOR' && roleForSidebar !== 'STUDENT' && (
-            <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
-              <Home className="w-5 h-5 flex-shrink-0" />
-              <span>Dashboard</span>
-            </NavLink>
-          )}
-          {roleForSidebar !== "DEPARTMENT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
-            <NavLink to="/dashboard/news" className={navItemClass} onClick={handleLinkClick}>
-              <Newspaper className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý tin tức</span>
-            </NavLink>
-          )}
-          {(["HO", "STAFF", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
-            <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
-              <Mail className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý email</span>
-            </NavLink>
-          )}
-          {["STAFF", "ADMIN", "HO"].includes(
-            roleForSidebar,
-          ) && !isRealAdmin && (
-              <NavLink to="/dashboard/partners" className={navItemClass} onClick={handleLinkClick}>
-                <Users className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý đối tác</span>
-              </NavLink>
-            )}
-          {(((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && !isDeptStaff) && (
-            <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
-              <Building2 className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý phòng ban</span>
-            </NavLink>
-          )}
-          {(roleForSidebar === "HO" || isStaffLeader) && (
-            <NavLink to="/dashboard/accounts" className={navItemClass} onClick={handleLinkClick}>
-              <UserCog className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý tài khoản</span>
-            </NavLink>
-          )}
-          {roleForSidebar === "HO" && (
-            <NavLink to="/dashboard/campus" className={navItemClass} onClick={handleLinkClick}>
-              <MapPin className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý campus</span>
-            </NavLink>
-          )}
-          {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && !isDeptStaff && (
-            <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
-              <Briefcase className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý tiếp khách</span>
-            </NavLink>
-          )}
-          {(["STUDENT", "STAFF", "HO", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
-            <NavLink to="/dashboard/visit-photos" className={navItemClass} onClick={handleLinkClick}>
-              <Camera className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý ảnh đoàn khách</span>
-            </NavLink>
-          )}
-          {(["HO", "STAFF"].includes(roleForSidebar)) && (
             <>
-              <NavLink to="/dashboard/documents" className={navItemClass} onClick={handleLinkClick}>
-                <FileText className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý tài liệu</span>
-              </NavLink>
-              {(roleForSidebar !== 'HO' && isStaffLeader) && (
-                <NavLink to="/dashboard/gallery" className={navItemClass} onClick={handleLinkClick}>
-                  <Image className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý Gallery</span>
+              {roleForSidebar !== 'VISITOR' && roleForSidebar !== 'STUDENT' && (
+                <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
+                  <Home className="w-5 h-5 flex-shrink-0" />
+                  <span>Dashboard</span>
                 </NavLink>
               )}
-              <NavLink to="/dashboard/minutes" className={navItemClass} onClick={handleLinkClick}>
-                <ClipboardList className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý biên bản</span>
-              </NavLink>
-              <NavLink to="/dashboard/feedback" className={navItemClass} onClick={handleLinkClick}>
-                <MessageSquare className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý feedback</span>
-              </NavLink>
+              {roleForSidebar !== "DEPARTMENT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
+                <NavLink to="/dashboard/news" className={navItemClass} onClick={handleLinkClick}>
+                  <Newspaper className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý tin tức</span>
+                </NavLink>
+              )}
+              {(["HO", "STAFF", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
+                <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
+                  <Mail className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý email</span>
+                </NavLink>
+              )}
+              {["STAFF", "ADMIN", "HO"].includes(
+                roleForSidebar,
+              ) && !isRealAdmin && (
+                  <NavLink to="/dashboard/partners" className={navItemClass} onClick={handleLinkClick}>
+                    <Users className="w-5 h-5 flex-shrink-0" />
+                    <span>Quản lý đối tác</span>
+                  </NavLink>
+                )}
+              {(((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && !isDeptStaff) && (
+                <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
+                  <Building2 className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý phòng ban</span>
+                </NavLink>
+              )}
+              {(roleForSidebar === "HO" || isStaffLeader) && (
+                <NavLink to="/dashboard/accounts" className={navItemClass} onClick={handleLinkClick}>
+                  <UserCog className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý tài khoản</span>
+                </NavLink>
+              )}
+              {roleForSidebar === "HO" && (
+                <NavLink to="/dashboard/campus" className={navItemClass} onClick={handleLinkClick}>
+                  <MapPin className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý campus</span>
+                </NavLink>
+              )}
+              {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && !isDeptStaff && (
+                <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
+                  <Briefcase className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý tiếp khách</span>
+                </NavLink>
+              )}
+              {(["STUDENT", "STAFF", "HO"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
+                <NavLink to="/dashboard/visit-photos" className={navItemClass} onClick={handleLinkClick}>
+                  <Camera className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý ảnh đoàn khách</span>
+                </NavLink>
+              )}
+              {(["HO", "STAFF"].includes(roleForSidebar)) && (
+                <>
+                  <NavLink to="/dashboard/documents" className={navItemClass} onClick={handleLinkClick}>
+                    <FileText className="w-5 h-5 flex-shrink-0" />
+                    <span>Quản lý tài liệu</span>
+                  </NavLink>
+                  {(roleForSidebar !== 'HO' && isStaffLeader) && (
+                    <NavLink to="/dashboard/gallery" className={navItemClass} onClick={handleLinkClick}>
+                      <Image className="w-5 h-5 flex-shrink-0" />
+                      <span>Quản lý Gallery</span>
+                    </NavLink>
+                  )}
+                  <NavLink to="/dashboard/minutes" className={navItemClass} onClick={handleLinkClick}>
+                    <ClipboardList className="w-5 h-5 flex-shrink-0" />
+                    <span>Quản lý biên bản</span>
+                  </NavLink>
+                  <NavLink to="/dashboard/feedback" className={navItemClass} onClick={handleLinkClick}>
+                    <MessageSquare className="w-5 h-5 flex-shrink-0" />
+                    <span>Quản lý feedback</span>
+                  </NavLink>
+                </>
+              )}
+              {(roleForSidebar === "HO" || isStaffLeader || isDeptLeader) && (
+                <NavLink to="/dashboard/reports" className={navItemClass} onClick={handleLinkClick}>
+                  <BarChart2 className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý báo cáo</span>
+                </NavLink>
+              )}
+              {["HO"].includes(roleForSidebar) && !isStaffLeader && (
+                <NavLink to="/dashboard/faq" className={navItemClass} onClick={handleLinkClick}>
+                  <HelpCircle className="w-5 h-5 flex-shrink-0" />
+                  <span>Quản lý FAQ</span>
+                </NavLink>
+              )}
             </>
-          )}
-          {(roleForSidebar === "HO" || isStaffLeader || isDeptLeader) && (
-            <NavLink to="/dashboard/reports" className={navItemClass} onClick={handleLinkClick}>
-              <BarChart2 className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý báo cáo</span>
-            </NavLink>
-          )}
-          {["HO"].includes(roleForSidebar) && !isStaffLeader && (
-            <NavLink to="/dashboard/faq" className={navItemClass} onClick={handleLinkClick}>
-              <HelpCircle className="w-5 h-5 flex-shrink-0" />
-              <span>Quản lý FAQ</span>
-            </NavLink>
-          )}
-          </>
           )}
         </nav>
 

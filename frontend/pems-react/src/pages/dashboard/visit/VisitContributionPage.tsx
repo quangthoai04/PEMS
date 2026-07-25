@@ -200,6 +200,11 @@ export function VisitContributionPage() {
 
   const scopedLogistics: ContributionLogisticsItem[] = summary.logistics || [];
 
+  const userStr = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null;
+  const currentUser = userStr ? JSON.parse(userStr) : null;
+  const isDeptRole = currentUser?.roleCode === 'DEPARTMENT' || currentUser?.roleCode === 'DEPT_STAFF' || (perm.relation && (perm.relation.includes('DEPARTMENT') || perm.relation.includes('DEPT_STAFF')));
+  const isReadOnlyContribution = perm.isReadOnly || isDeptRole;
+
   return (
     <div className="p-4 sm:p-6 md:p-8 w-full mx-auto pb-16 animate-in fade-in duration-300">
       {Breadcrumb}
@@ -238,10 +243,10 @@ export function VisitContributionPage() {
             </span>
           </div>
 
-          {perm.isReadOnly && (
+          {isReadOnlyContribution && (
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
               <Lock className="w-3.5 h-3.5 shrink-0" />
-              Chuyến thăm đã đóng/hủy — trang ở chế độ chỉ xem.
+              {isDeptRole ? 'Phòng ban / Nhân sự phòng ban chỉ có quyền xem thông tin đóng góp.' : 'Chuyến thăm đã đóng/hủy — trang ở chế độ chỉ xem.'}
             </p>
           )}
         </div>
@@ -361,6 +366,7 @@ export function VisitContributionPage() {
                 canView={perm.canViewMinutes}
                 instanceStatus={summary.instanceStatus}
                 onChanged={loadData}
+                isReadOnly={isReadOnlyContribution}
               />
             )}
             {perm.canViewMedia && workspace.media && (
@@ -371,6 +377,7 @@ export function VisitContributionPage() {
                 instanceStatus={summary.instanceStatus}
                 onChanged={loadData}
                 relation={perm.relation}
+                isReadOnly={isReadOnlyContribution}
               />
             )}
             {perm.canViewNews && workspace.news && (
@@ -380,6 +387,7 @@ export function VisitContributionPage() {
                 canView={perm.canViewNews}
                 instanceStatus={summary.instanceStatus}
                 onChanged={loadData}
+                isReadOnly={isReadOnlyContribution}
               />
             )}
           </div>

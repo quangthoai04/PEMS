@@ -46,9 +46,8 @@ export function DeptLeadVisitTasksPage() {
 
   return (
     <div className="w-full flex flex-col space-y-6 pb-12 overflow-x-hidden animate-in fade-in duration-300">
-      <div className="border-b border-gray-100 pb-4">
+      <div className="border-b border-gray-100 pb-3">
         <h1 className="text-3xl font-bold text-[#004c91]">Nhiệm vụ tiếp khách</h1>
-        <p className="text-slate-500 mt-2">Theo dõi, phân công và cập nhật các nhiệm vụ phòng ban được mời hỗ trợ.</p>
       </div>
 
       <div className="flex border-b border-gray-200 overflow-x-auto custom-scrollbar mb-6">

@@ -62,6 +62,13 @@ export type AssignedTask = {
   needsAttention: boolean;
   attentionReason?: string;
   cancelReason?: string;
+  time?: string;
+  host?: string;
+  location?: string;
+  purpose?: string;
+  status?: string;
+  date?: string;
+  rawId?: number | string;
 };
 
 export type TaskStatusFilter =

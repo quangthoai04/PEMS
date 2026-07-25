@@ -16,13 +16,14 @@ interface Props {
   canView: boolean;
   instanceStatus: string;
   onChanged: () => void;
+  isReadOnly?: boolean;
 }
 
-export function NewsContributionSection({ visitInstanceId, data, canView }: Props) {
+export function NewsContributionSection({ visitInstanceId, data, canView, isReadOnly = false }: Props) {
   if (!canView) return null;
 
   // Hai chặn nghiệp vụ hiển thị rõ cho người đóng góp (backend cũng enforce khi tạo/sửa).
-  const createBlocked = data.newsNotRequired || !data.mediaConsentAllowed;
+  const createBlocked = data.newsNotRequired || !data.mediaConsentAllowed || isReadOnly;
 
   return (
     <div className="py-5">

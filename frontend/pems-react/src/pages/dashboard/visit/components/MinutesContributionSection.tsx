@@ -19,9 +19,10 @@ interface Props {
   canView: boolean;
   instanceStatus: string;
   onChanged: () => void;
+  isReadOnly?: boolean;
 }
 
-export function MinutesContributionSection({ visitInstanceId, data, canView, onChanged }: Props) {
+export function MinutesContributionSection({ visitInstanceId, data, canView, onChanged, isReadOnly = false }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
 
   if (!canView) return null;
@@ -68,7 +69,7 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
           </div>
         )}
 
-        {data.canCurrentUserEdit && (
+        {data.canCurrentUserEdit && !isReadOnly && (
           <div className="pt-2 flex flex-wrap gap-3">
             <button
               type="button"

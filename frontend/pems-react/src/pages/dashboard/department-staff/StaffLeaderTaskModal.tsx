@@ -23,6 +23,17 @@ import { timeAgo } from '../../../features/notifications/components/Notification
 import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
+function parseHHMM(val?: string) {
+  if (!val) return '';
+  if (val.includes('T')) {
+    const local = toVietnamDateTimeLocalInput(val);
+    return local ? local.slice(11, 16) : '';
+  }
+  const match = val.match(/(\d{2}:\d{2})/);
+  if (match) return match[1];
+  return '';
+}
+
 export type StaffLeaderTaskModalItem = {
   itemType: 'INVITATION' | 'REQUEST';
   rawId: number | string;
@@ -155,6 +166,15 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   const visitRequestId = Number(detail?.visitRequestId || item?.visitRequestId || 0) || null;
   const startTime = detail?.startTime || item?.time?.split('-')[0]?.trim() || '';
   const endTime = detail?.endTime || item?.time?.split('-')[1]?.trim() || '';
+
+  useEffect(() => {
+    if (detail || item) {
+      const s = parseHHMM(detail?.proposedUsageStartAt || startTime);
+      const e = parseHHMM(detail?.proposedUsageEndAt || endTime);
+      if (s && !proposalStartTime) setProposalStartTime(s);
+      if (e && !proposalEndTime) setProposalEndTime(e);
+    }
+  }, [detail, item, startTime, endTime]);
   const displayDate = detail?.date || item?.date?.split('-').reverse().join('-') || '';
   const detailTitle = detail?.title || item?.title || '';
   const delegationName = detail?.delegationName || item?.delegationName || '';
@@ -475,11 +495,11 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                   const userStr = localStorage.getItem("currentUser");
                   const currentUser = userStr ? JSON.parse(userStr) : null;
                   const isDeptLeader = currentUser?.role?.toUpperCase() === 'DEPARTMENT' && currentUser?.subRole?.toUpperCase() === 'LEADER';
-                  
+
                   // Check if task is assigned to someone else (a staff)
                   const assignedUserId = detail?.assigneeId || detail?.currentResponsibleId;
                   const isAssignedToOther = assignedUserId && assignedUserId !== currentUser?.id;
-                  
+
                   const readOnlyHandover = isDeptLeader && isAssignedToOther;
 
                   return (
