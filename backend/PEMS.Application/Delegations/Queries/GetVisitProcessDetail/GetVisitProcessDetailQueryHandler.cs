@@ -363,17 +363,6 @@ public sealed class GetVisitProcessDetailQueryHandler
         };
     }
 
-    private static VisitProcessGuestMemberDto MapGuestMember(Domain.Entities.Delegations.VisitGuestMember m) => new()
-    {
-        GuestMemberId = m.GuestMemberId,
-        MemberType = m.MemberType,
-        FullName = m.FullName,
-        Organization = m.Organization,
-        JobTitle = m.JobTitle,
-        Nationality = m.Nationality,
-        DisplayOrder = (int)m.DisplayOrder,
-    };
-
     // Maps a v2 per-campus member row (resolved via IVisitFormReadService for the TARGET instance).
     private static VisitProcessGuestMemberDto MapRow(VisitFormMemberRow r) => new()
     {
