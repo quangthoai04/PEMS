@@ -49,14 +49,20 @@ public sealed class CreateNewsCommandHandler
         var roleCode = _currentUser.RoleCode ?? string.Empty;
         var subRole  = _currentUser.SubRole  ?? string.Empty;
 
-        // Step 1: Role check — only Staff (regular) and Student
-        var isStaff = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff;
+        // Step 1: Role check — Staff (regular, or Leader when self-hosting a delegation) and Student.
+        // A Staff Leader may be the Host of an instance (self-host, see
+        // ApproveCampusInstanceCommandHandler) and must be able to write its news same as any other
+        // Host; Step 4 below still requires them to actually BE the Host/accepted participant of the
+        // chosen instance.
+        var isRegularStaff = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff;
+        var isStaffLeader = roleCode == RoleCodes.Staff && subRole == UserSubRoles.Leader;
         var isStudent = roleCode == RoleCodes.Student;
-        if (!isStaff && !isStudent)
-            throw new ForbiddenException("Chỉ Staff thường và Student mới được tạo tin tức.");
+        if (!isRegularStaff && !isStaffLeader && !isStudent)
+            throw new ForbiddenException("Chỉ Staff và Student mới được tạo tin tức.");
 
-        // Step 1b: Student bắt buộc chọn đoàn; Staff thường được tạo tin không gắn đoàn nào.
-        if (isStudent && !request.VisitInstanceId.HasValue)
+        // Step 1b: Student và Staff Leader (chỉ viết được khi tự host đoàn) bắt buộc chọn đoàn;
+        // Staff thường được tạo tin không gắn đoàn nào.
+        if ((isStudent || isStaffLeader) && !request.VisitInstanceId.HasValue)
             throw new ValidationException("Vui lòng chọn đoàn tiếp khách trước khi tạo tin tức.");
 
         ulong? campusId = null;

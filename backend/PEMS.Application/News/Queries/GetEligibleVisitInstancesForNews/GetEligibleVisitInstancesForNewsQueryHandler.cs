@@ -29,10 +29,12 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
             ?? throw new ForbiddenException("You do not have permission.");
 
         var roleCode = _currentUser.RoleCode ?? string.Empty;
-        var subRole = _currentUser.SubRole ?? string.Empty;
 
-        var isAllowed = (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff)
-                     || roleCode == RoleCodes.Student;
+        // Any Staff (regular or Leader) or Student may reach this far — the Host/accepted-participant
+        // filter below is the real gate. This lets a Staff Leader who self-hosts a delegation (see
+        // ApproveCampusInstanceCommandHandler) see it as eligible; a Leader who is not hosting anything
+        // simply gets an empty list, same as a Staff Leader always did.
+        var isAllowed = roleCode == RoleCodes.Staff || roleCode == RoleCodes.Student;
         if (!isAllowed)
             throw new ForbiddenException("Only Staff and Student can create news.");
 
