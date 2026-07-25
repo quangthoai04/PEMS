@@ -102,11 +102,10 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   }
 
   const { viewer } = data;
-  // Relation is used ONLY for the identity workflow (claim/transfer) — a separate backend-authorized flow.
-  const isManager = (viewer.relation === 'REGISTRANT' || viewer.relation === 'VISITOR_OWNER') && !viewer.isReadOnly;
   const showMixedLabel = data.hasMixedCampusDetails && data.campusVisits.length > 1;
   // Every mutation action is driven ONLY by backend allowedActions — never relation/status. The backend
   // re-authorizes each command; HO/Host/out-of-scope viewers receive no actions and so see no buttons.
+  // The contact identity workflow is the last one to join this rule: it used to read viewer.relation.
   const canEditPending = hasAction(viewer.allowedActions, VisitV2Action.EditPendingRequest);
   const canResubmit = hasAction(viewer.allowedActions, VisitV2Action.ResubmitRejectedRequest);
   const canSafeEdit = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
@@ -210,16 +209,15 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
 
         {/* The claim/transfer workflow belongs to THIS contact, so it lives in this section rather
             than in a card of its own above — splitting one business object across two cards is what
-            produced the duplicated contact block. Backend re-authorizes every command. */}
-        {isManager && (
-          <ContactIdentityActions
-            visitRequestId={data.visitRequestId}
-            primaryContactAccessStatus={data.primaryContact.accessStatus}
-            contactEmailMasked={data.primaryContact.email || null}
-            canManage
-            onChanged={() => void load()}
-          />
-        )}
+            produced the duplicated contact block. Which of its actions exist is the backend's call,
+            passed straight through; the panel renders nothing at all when none were granted. */}
+        <ContactIdentityActions
+          visitRequestId={data.visitRequestId}
+          primaryContactAccessStatus={data.primaryContact.accessStatus}
+          contactEmail={data.primaryContact.email || null}
+          allowedActions={viewer.allowedActions}
+          onChanged={() => void load()}
+        />
       </VisitSectionCard>
 
       {/* ── ③ Per-campus cards: ONLY the campuses the backend returned for this caller ── */}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -10,17 +10,25 @@ import {
   resendContactTransfer,
   type ContactTransferState,
 } from '../api/visitRequestV2Api';
+import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
+import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
 
 interface Props {
   visitRequestId: number;
-  /** ACTIVE | PENDING_CONFIRMATION — drives which workflow (claim vs transfer) is offered. */
+  /** ACTIVE | PENDING_CONFIRMATION — describes the contact's state to the reader. */
   primaryContactAccessStatus: string;
-  /** Masked contact email for display (never the full address of someone else). */
-  contactEmailMasked?: string | null;
-  /** Whether the CURRENT user may manage the invitation (registrant or ACTIVE contact). */
-  canManage: boolean;
+  /** The contact's email: shown in the state line, and compared to block a same-address transfer. */
+  contactEmail?: string | null;
+  /**
+   * Request-level `viewer.allowedActions` from the backend. Each button is rendered ONLY when its own
+   * code is present — never from role, relation or status. The five codes mirror the guards in the
+   * claim/transfer handlers (actor, lifecycle window, resend cap, one-pending-change), so the panel no
+   * longer offers a resend past its cap or a transfer the backend would refuse.
+   */
+  allowedActions: string[] | undefined;
   onChanged?: () => void;
 }
 
@@ -34,12 +42,23 @@ interface ContactFormState {
 
 const emptyForm: ContactFormState = { fullName: '', organization: '', phone: '', email: '', reason: '' };
 
+/** Mirrors the FluentValidation limits on both commands — the backend stays the authority. */
+const MAX = { fullName: 150, organization: 200, phone: 50, email: 150, reason: 500 } as const;
+
+const labelCls = 'block text-xs font-semibold text-slate-500';
+const fieldCls =
+  'mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ' +
+  'transition-colors focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]';
+
 /**
  * The contact-role workflow, rendered INSIDE the contact section rather than as its own card.
  *
  * While the contact is PENDING_CONFIRMATION: resend the INITIAL_CLAIM (72h) or replace the invited
  * email (typo fix). Once ACTIVE: propose a 24h TRANSFER — the current owner keeps every right until
  * the invited person explicitly accepts; the panel shows/cancels/resends the pending transfer.
+ *
+ * The form stays closed until asked for and then opens inline, two columns on desktop and one on
+ * mobile: five stacked full-width rows turned a small handover into a page of its own.
  *
  * Feedback follows the house rule: the outcome of a mutation is a toast (the panel may be scrolled
  * out of view by the time the server answers), while a failure to LOAD the transfer state stays
@@ -49,21 +68,34 @@ const emptyForm: ContactFormState = { fullName: '', organization: '', phone: '',
 export default function ContactIdentityActions({
   visitRequestId,
   primaryContactAccessStatus,
-  contactEmailMasked,
-  canManage,
+  contactEmail,
+  allowedActions,
   onChanged,
 }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
   const isPending = primaryContactAccessStatus === 'PENDING_CONFIRMATION';
+
+  const can = useMemo(() => ({
+    resendClaim: hasAction(allowedActions, VisitV2Action.ResendContactClaim),
+    replaceContact: hasAction(allowedActions, VisitV2Action.ReplacePendingContact),
+    initiateTransfer: hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
+    resendTransfer: hasAction(allowedActions, VisitV2Action.ResendContactTransfer),
+    cancelTransfer: hasAction(allowedActions, VisitV2Action.CancelContactTransfer),
+  }), [allowedActions]);
+  const hasAnyAction = Object.values(can).some(Boolean);
+
   const [transfer, setTransfer] = useState<ContactTransferState | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState<'replace' | 'transfer' | null>(null);
   const [form, setForm] = useState<ContactFormState>(emptyForm);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
+  // Only worth asking when a transfer action is on the table at all.
+  const transferRelevant = can.resendTransfer || can.cancelTransfer || can.initiateTransfer;
   const refreshTransfer = useCallback(async () => {
-    if (isPending || !canManage) return;
+    if (!transferRelevant) return;
     setLoading(true);
     setLoadError(false);
     try {
@@ -76,21 +108,28 @@ export default function ContactIdentityActions({
     } finally {
       setLoading(false);
     }
-  }, [visitRequestId, isPending, canManage]);
+  }, [visitRequestId, transferRelevant]);
 
   useEffect(() => {
     void refreshTransfer();
   }, [refreshTransfer]);
 
-  if (!canManage) return null;
+  if (!hasAnyAction) return null;
+
+  const closeForm = () => {
+    // Only this form's own scratch data — the visit-request draft is a different thing entirely.
+    setShowForm(null);
+    setForm(emptyForm);
+    setEmailError(null);
+  };
 
   const run = async (fn: () => Promise<{ message: string }>) => {
+    if (busy) return; // a second click while the first is in flight would send the invitation twice
     setBusy(true);
     try {
       const result = await fn();
       showSuccessToast(result.message);
-      setShowForm(null);
-      setForm(emptyForm);
+      closeForm();
       await refreshTransfer();
       onChanged?.();
     } catch (err: unknown) {
@@ -100,90 +139,133 @@ export default function ContactIdentityActions({
     }
   };
 
-  const fieldLabel = (field: keyof ContactFormState) =>
-    field === 'fullName' ? t('visitRequestV2:person.fullName')
-      : field === 'organization' ? t('visitRequestV2:person.organization')
-        : field === 'phone' ? t('visitRequestV2:card.phone')
-          : t('visitRequestV2:card.email');
+  const submitForm = (mode: 'replace' | 'transfer') => {
+    // Transferring to the address that already holds the role is refused by the backend
+    // (EMAIL_UNCHANGED). Saying so here costs one comparison and saves a round trip.
+    if (mode === 'transfer' && isSameEmailIdentity(form.email, contactEmail)) {
+      setEmailError(t('visitRequestV2:contact.transferEmailUnchanged'));
+      return;
+    }
+    setEmailError(null);
+    void run(() =>
+      mode === 'replace'
+        ? replacePendingContact(visitRequestId, {
+            fullName: form.fullName,
+            organization: form.organization,
+            phone: form.phone,
+            email: form.email,
+          })
+        : initiateContactTransfer(visitRequestId, {
+            fullName: form.fullName,
+            organization: form.organization,
+            phone: form.phone,
+            email: form.email,
+            reason: form.reason || undefined,
+          }),
+    );
+  };
+
+  const textField = (
+    field: 'fullName' | 'organization' | 'phone' | 'email',
+    label: string,
+    required: boolean,
+  ) => (
+    <div>
+      <label htmlFor={`ci-${field}`} className={labelCls}>
+        {label}
+        {required && <span className="text-red-500"> *</span>}
+      </label>
+      <input
+        id={`ci-${field}`}
+        type={field === 'email' ? 'email' : 'text'}
+        required={required}
+        maxLength={MAX[field]}
+        className={fieldCls}
+        value={form[field]}
+        onChange={e => {
+          const { value } = e.target;
+          setForm(f => ({ ...f, [field]: value }));
+          if (field === 'email') setEmailError(null);
+        }}
+        aria-invalid={field === 'email' && emailError ? true : undefined}
+        aria-describedby={field === 'email' && emailError ? 'ci-email-error' : undefined}
+      />
+      {field === 'email' && emailError && (
+        <p id="ci-email-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">
+          {emailError}
+        </p>
+      )}
+    </div>
+  );
 
   const contactForm = (mode: 'replace' | 'transfer') => (
     <form
-      className="mt-3 space-y-2"
+      className="mt-3 max-w-4xl"
+      data-testid={`contact-form-${mode}`}
       onSubmit={e => {
         e.preventDefault();
-        void run(() =>
-          mode === 'replace'
-            ? replacePendingContact(visitRequestId, {
-                fullName: form.fullName,
-                organization: form.organization,
-                phone: form.phone,
-                email: form.email,
-              })
-            : initiateContactTransfer(visitRequestId, {
-                fullName: form.fullName,
-                organization: form.organization,
-                phone: form.phone,
-                email: form.email,
-                reason: form.reason || undefined,
-              }),
-        );
+        submitForm(mode);
       }}
     >
-      {(['fullName', 'organization', 'phone', 'email'] as const).map(field => (
-        <div key={field}>
-          <label htmlFor={`ci-${field}`} className="block text-xs font-semibold text-slate-500">
-            {fieldLabel(field)}
-            {field !== 'organization' && <span className="text-red-500"> *</span>}
-          </label>
-          <input
-            id={`ci-${field}`}
-            type={field === 'email' ? 'email' : 'text'}
-            required={field !== 'organization'}
-            maxLength={field === 'organization' ? 200 : 150}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"
-            value={form[field]}
-            onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-          />
-        </div>
-      ))}
+      {/* Two columns from the tablet breakpoint up, one below it — no horizontal scroll on mobile. */}
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2" data-testid="contact-form-grid">
+        {textField('fullName', t('visitRequestV2:person.fullName'), true)}
+        {textField('organization', t('visitRequestV2:person.organization'), false)}
+        {textField('phone', t('visitRequestV2:card.phone'), true)}
+        {textField('email', t('visitRequestV2:card.email'), true)}
+
+        {mode === 'transfer' && (
+          <div className="md:col-span-2" data-testid="contact-form-reason">
+            <label htmlFor="ci-reason" className={labelCls}>
+              {t('visitRequestV2:contact.transferReason')}
+            </label>
+            <div className="mt-1">
+              <AutoGrowTextarea
+                id="ci-reason"
+                minRows={2}
+                maxLength={MAX.reason}
+                value={form.reason}
+                onChange={value => setForm(f => ({ ...f, reason: value }))}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
       {mode === 'transfer' && (
-        <div>
-          <label htmlFor="ci-reason" className="block text-xs font-semibold text-slate-500">
-            {t('visitRequestV2:contact.transferReason')}
-          </label>
-          <input
-            id="ci-reason"
-            maxLength={500}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"
-            value={form.reason}
-            onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-          />
-        </div>
-      )}
-      {mode === 'transfer' && (
-        <p className="text-xs text-amber-700" role="note">
+        <p className="mt-3 text-xs text-amber-700" role="note">
           {t('visitRequestV2:contact.transferKeepsRights')}
         </p>
       )}
-      <div className="flex gap-2 pt-1">
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          disabled={busy}
+          data-testid="contact-form-cancel"
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          onClick={closeForm}
+        >
+          {t('visitRequestV2:common.cancel')}
+        </button>
         <button
           type="submit"
           disabled={busy}
           data-testid="contact-form-submit"
-          className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#f37021] px-4 py-2 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
         >
-          {mode === 'replace' ? t('visitRequestV2:contact.replaceSubmit') : t('visitRequestV2:contact.transferSubmit')}
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold"
-          onClick={() => setShowForm(null)}
-        >
-          {t('visitRequestV2:common.cancel')}
+          {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+          {busy
+            ? t('visitRequestV2:contact.sending')
+            : mode === 'replace'
+              ? t('visitRequestV2:contact.replaceSubmit')
+              : t('visitRequestV2:contact.transferSubmit')}
         </button>
       </div>
     </form>
   );
+
+  const pendingTransfer = transfer?.hasPendingTransfer === true;
 
   return (
     <div data-testid="contact-identity-actions" className="mt-4 border-t border-slate-200 pt-4">
@@ -214,44 +296,51 @@ export default function ContactIdentityActions({
         </div>
       )}
 
-      {isPending ? (
-        <>
-          <p className="mt-2 text-sm text-amber-700">
-            {t('visitRequestV2:contact.pendingNotice', { email: contactEmailMasked ?? '' })}
-          </p>
-          {showForm === 'replace' ? (
-            contactForm('replace')
-          ) : (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                data-testid="contact-resend-claim"
-                className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
-                onClick={() => void run(() => resendContactClaim(visitRequestId))}
-              >
-                {t('visitRequestV2:contact.resendInvitation')}
-              </button>
-              <button
-                type="button"
-                data-testid="contact-replace-open"
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => setShowForm('replace')}
-              >
-                {t('visitRequestV2:contact.replaceOpen')}
-              </button>
-            </div>
+      {isPending && (
+        <p className="mt-2 text-sm text-amber-700">
+          {t('visitRequestV2:contact.pendingNotice', { email: contactEmail ?? '' })}
+        </p>
+      )}
+
+      {pendingTransfer && (
+        <p className="mt-2 text-sm text-amber-700">
+          {t('visitRequestV2:contact.transferPending', {
+            email: transfer?.newEmailMasked ?? '',
+            expiresAt: transfer?.expiresAt ? formatVietnamDateTime(transfer.expiresAt) : '',
+          })}
+        </p>
+      )}
+
+      {!isPending && !pendingTransfer && !loadError && (
+        <p className="mt-2 text-sm text-slate-600">{t('visitRequestV2:contact.activeNotice')}</p>
+      )}
+
+      {showForm ? (
+        contactForm(showForm)
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {can.resendClaim && (
+            <button
+              type="button"
+              disabled={busy}
+              data-testid="contact-resend-claim"
+              className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
+              onClick={() => void run(() => resendContactClaim(visitRequestId))}
+            >
+              {t('visitRequestV2:contact.resendInvitation')}
+            </button>
           )}
-        </>
-      ) : transfer?.hasPendingTransfer ? (
-        <>
-          <p className="mt-2 text-sm text-amber-700">
-            {t('visitRequestV2:contact.transferPending', {
-              email: transfer.newEmailMasked ?? '',
-              expiresAt: transfer.expiresAt ? formatVietnamDateTime(transfer.expiresAt) : '',
-            })}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          {can.replaceContact && (
+            <button
+              type="button"
+              data-testid="contact-replace-open"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              onClick={() => setShowForm('replace')}
+            >
+              {t('visitRequestV2:contact.replaceOpen')}
+            </button>
+          )}
+          {can.resendTransfer && (
             <button
               type="button"
               disabled={busy}
@@ -261,33 +350,29 @@ export default function ContactIdentityActions({
             >
               {t('visitRequestV2:contact.resendInvitation')}
             </button>
+          )}
+          {can.cancelTransfer && (
             <button
               type="button"
               disabled={busy}
               data-testid="contact-cancel-transfer"
-              className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+              className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
               onClick={() => void run(() => cancelContactTransfer(visitRequestId))}
             >
               {t('visitRequestV2:contact.cancelTransfer')}
             </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="mt-2 text-sm text-slate-600">{t('visitRequestV2:contact.activeNotice')}</p>
-          {showForm === 'transfer' ? (
-            contactForm('transfer')
-          ) : (
+          )}
+          {can.initiateTransfer && (
             <button
               type="button"
               data-testid="contact-transfer-open"
-              className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               onClick={() => setShowForm('transfer')}
             >
               {t('visitRequestV2:contact.transferOpen')}
             </button>
           )}
-        </>
+        </div>
       )}
     </div>
   );

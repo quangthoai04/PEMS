@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -17,6 +18,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
     private readonly ICurrentUserService _currentUser;
     private readonly ILogger<VisitFormReadService> _logger;
     private readonly IDateTimeService? _clock;
+    private readonly PerCampusFormV2WriteOptions? _writeFlag;
 
     /// <summary>Self-service amendment cutoff — mirrors VisitAmendmentService.SelfServiceCutoffHours.</summary>
     private const int SelfServiceCutoffHours = 24;
@@ -25,12 +27,14 @@ public sealed class VisitFormReadService : IVisitFormReadService
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         ILogger<VisitFormReadService> logger,
-        IDateTimeService? clock = null)
+        IDateTimeService? clock = null,
+        PerCampusFormV2WriteOptions? writeFlag = null)
     {
         _db = db;
         _currentUser = currentUser;
         _logger = logger;
         _clock = clock;
+        _writeFlag = writeFlag;
     }
 
     public async Task<ResolvedVisitFormDto> ResolveAsync(ulong visitRequestId, CancellationToken cancellationToken)
@@ -274,11 +278,24 @@ public sealed class VisitFormReadService : IVisitFormReadService
             });
         }
 
+        // ── Primary-contact identity workflow: what the CLAIM/TRANSFER handlers would actually allow ──
+        // Only a VISITOR account that is the registrant or the current contact can reach any of it, so the
+        // pending-change lookup is skipped entirely for everybody else (HO, Staff Leader, Host).
+        // The five commands all 404 when v2 WRITE is disabled, so with the flag off the UI must not offer
+        // them either. Absent options (unit construction) means "not disabled".
+        var isContactWorkflowActor = _writeFlag?.Enabled != false
+            && _currentUser.RoleCode == RoleCodes.Visitor
+            && (request.RegistrantUserId == userId || request.VisitorUserId == userId);
+        var contactActions = isContactWorkflowActor
+            ? await BuildContactActionsAsync(request, instances, userId, now, cancellationToken)
+            : new List<string>();
+
         // EDIT_PENDING: fully pending + ≥24h out. RESUBMIT: rejected. SUBMIT_SAFE_EDIT: v2 + not cancelled.
         // (Mirrors UpdatePendingVisitRequestV2 / ResubmitRejectedVisitRequestV2 / SubmitVisitSafeEdit handlers.)
         List<string> BuildRequestActions()
         {
             var actions = new List<string> { VisitFormActions.View };
+            actions.AddRange(contactActions);
             if (!requesterSide) return actions;
             var fullyPending = instances.Count > 0
                 && request.Status == VisitRequestStatuses.PendingApproval
@@ -334,6 +351,85 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 AllowedActions = BuildRequestActions()
             }
         };
+    }
+
+    /// <summary>Resend cap shared by ResendVisitContactClaim / ResendVisitContactTransfer.</summary>
+    private const int MaxContactResends = 5;
+
+    /// <summary>
+    /// The five primary-contact identity actions, each granted only when the corresponding command handler
+    /// would accept the call — same actor test, same lifecycle window, same resend cap, same
+    /// one-pending-change rule. The handlers still re-authorize independently; this only decides what the
+    /// UI is allowed to offer, so a button can no longer promise something the backend will refuse.
+    ///
+    /// Caller has already established that the actor is a VISITOR who is the registrant or the current
+    /// contact of THIS request.
+    /// </summary>
+    private async Task<List<string>> BuildContactActionsAsync(
+        VisitRequest request,
+        IReadOnlyList<VisitRequestCampus> instances,
+        ulong userId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var actions = new List<string>();
+        var isRegistrant = request.RegistrantUserId == userId;
+        var notCancelled = request.Status != VisitRequestStatuses.Cancelled;
+
+        // At most one PENDING change per request is guaranteed by the DB, but read the set rather than
+        // assume it: a wrong assumption here would silently drop the resend/cancel buttons.
+        var pendingChanges = await _db.VisitRequestIdentityChanges.AsNoTracking()
+            .Where(c => c.VisitRequestId == request.VisitRequestId
+                        && c.Status == IdentityChangeStatuses.Pending)
+            .Select(c => new { c.ChangeKind, c.ExpiresAt, c.ResendCount })
+            .ToListAsync(cancellationToken);
+        var pendingClaim = pendingChanges.FirstOrDefault(c => c.ChangeKind == IdentityChangeKinds.InitialClaim);
+        var pendingTransfer = pendingChanges.FirstOrDefault(c => c.ChangeKind == IdentityChangeKinds.Transfer);
+
+        // ── Contact still unclaimed → INITIAL_CLAIM territory (registrant only; RegistrantClaimGuard). ──
+        var contactUnclaimed = request.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.PendingConfirmation
+            && request.VisitorUserId is null;
+        if (isRegistrant && notCancelled && contactUnclaimed)
+        {
+            // Replace needs no existing claim row — it supersedes whatever is there. Resend needs one,
+            // and stops at the cap instead of offering a button that returns CLAIM_RESEND_LIMIT.
+            actions.Add(VisitFormActions.ReplacePendingContact);
+            if (pendingClaim is not null && pendingClaim.ResendCount < MaxContactResends)
+                actions.Add(VisitFormActions.ResendContactClaim);
+        }
+
+        // ── Contact established → TRANSFER territory (registrant or the current owner; TransferGuards). ──
+        var contactActive = request.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active
+            && request.VisitorUserId is not null;
+        if (!contactActive)
+            return actions;
+
+        // Mirrors TransferGuards.EnsureTransferLifecycleOpen — cancel is deliberately NOT gated on it,
+        // because closing an invitation stays possible once the window has passed.
+        var visitStarted = instances.Any(c =>
+            c.Status is VisitInstanceStatuses.DuringVisit
+                or VisitInstanceStatuses.AfterVisit
+                or VisitInstanceStatuses.Closed);
+        var activeStarts = instances
+            .Where(c => c.Status != VisitInstanceStatuses.Cancelled && c.Status != VisitInstanceStatuses.Rejected)
+            .Select(c => c.PlannedStartAt)
+            .ToList();
+        var lifecycleOpen = notCancelled
+            && !visitStarted
+            && (activeStarts.Count == 0 || activeStarts.Min() >= now.AddHours(SelfServiceCutoffHours));
+
+        if (pendingTransfer is null)
+        {
+            // A pending CLAIM also blocks initiate: the handler refuses any second pending change.
+            if (lifecycleOpen && pendingClaim is null)
+                actions.Add(VisitFormActions.InitiateContactTransfer);
+            return actions;
+        }
+
+        if (lifecycleOpen && pendingTransfer.ExpiresAt > now && pendingTransfer.ResendCount < MaxContactResends)
+            actions.Add(VisitFormActions.ResendContactTransfer);
+        actions.Add(VisitFormActions.CancelContactTransfer);
+        return actions;
     }
 
     /// <inheritdoc />

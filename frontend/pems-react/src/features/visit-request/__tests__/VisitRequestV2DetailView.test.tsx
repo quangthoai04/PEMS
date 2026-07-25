@@ -116,8 +116,21 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByText('Varies by campus')).not.toBeInTheDocument();
   });
 
-  it('contact actions are wired for the request manager and ABSENT for read-only HO', async () => {
+  it('contact actions follow the backend action codes, not the viewer relation', async () => {
+    // A REGISTRANT with no contact action code granted (for instance inside the 24h window, or with
+    // the request already cancelled) must see NOTHING — the relation alone never earns a button.
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    const { unmount: unmountBare } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-actions')).not.toBeInTheDocument();
+    unmountBare();
+
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'],
+      },
+    }));
     const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByTestId('contact-identity-actions')).toBeInTheDocument();
     unmount();
@@ -133,7 +146,12 @@ describe('VisitRequestV2DetailView', () => {
   it('contact actions live INSIDE the contact section, not in a card of their own', async () => {
     // One business object, one card. The old standalone panel produced a second contact heading
     // above sections 1 and 2, which is what made the screen look like it repeated itself.
-    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'],
+      },
+    }));
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
 
     const actions = await screen.findByTestId('contact-identity-actions');
