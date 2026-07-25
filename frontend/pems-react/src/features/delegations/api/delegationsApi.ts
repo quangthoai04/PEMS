@@ -144,14 +144,16 @@ export const delegationsApi = {
     return data;
   },
 
-  /** "Báo cáo Lịch trình" PDF (giai đoạn Trước tiếp khách) — backend generates + returns the file. */
+  /** "Báo cáo Lịch trình" PDF (giai đoạn Trước tiếp khách) — backend generates + returns the file.
+   * languageCode 'en' asks the backend to auto-translate the report content before rendering. */
   async exportScheduleReportPdf(
     visitRequestId: number | string,
     visitInstanceId: number | string,
+    languageCode: 'vi' | 'en' = 'vi',
   ): Promise<{ blob: Blob; fileName: string }> {
     const response = await httpClient.get(
       API_ENDPOINTS.delegations.scheduleReportPdf(visitRequestId, visitInstanceId),
-      { responseType: 'blob' },
+      { responseType: 'blob', params: { languageCode } },
     );
     const disposition: string = response.headers?.['content-disposition'] ?? '';
     const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);

@@ -20,7 +20,8 @@ import {
   Loader2,
   ArrowRightCircle,
   Wand2,
-  Download
+  Download,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
@@ -240,27 +241,64 @@ export function VisitProcess() {
     }
   };
 
-  // "Báo cáo Lịch trình" PDF — backend generates from real data (agenda, participants, form);
-  // pure export, does not touch the stage/lock state above.
-  const [isExportingScheduleReport, setIsExportingScheduleReport] = useState(false);
-  const exportScheduleReport = async () => {
-    if (!perm || isExportingScheduleReport) return;
-    setIsExportingScheduleReport(true);
+  // "Báo cáo Lịch trình" PDF — backend generates from real data (agenda, participants, form).
+  // Fetched once into a blob, previewed in-modal (object URL in an iframe), and only written to
+  // disk when the user explicitly clicks "Tải xuống" inside the modal — pure export, does not
+  // touch the stage/lock state above. Ticking "Tiếng Anh" re-fetches with languageCode=en — the
+  // backend auto-translates the whole report before rendering — and the download button then
+  // writes that English PDF; leaving it unticked downloads the original Vietnamese PDF as before.
+  const [scheduleReportModal, setScheduleReportModal] = useState<{
+    isOpen: boolean;
+    loading: boolean;
+    error: string | null;
+    blob: Blob | null;
+    fileName: string;
+    previewUrl: string | null;
+    english: boolean;
+  }>({ isOpen: false, loading: false, error: null, blob: null, fileName: '', previewUrl: null, english: false });
+
+  const fetchScheduleReport = async (english: boolean) => {
+    if (!perm) return;
+    setScheduleReportModal(prev => ({ ...prev, isOpen: true, loading: true, error: null, english }));
     try {
-      const { blob, fileName } = await delegationsApi.exportScheduleReportPdf(perm.visitRequestId, perm.visitInstanceId);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      const { blob, fileName } = await delegationsApi.exportScheduleReportPdf(
+        perm.visitRequestId, perm.visitInstanceId, english ? 'en' : 'vi');
+      const previewUrl = URL.createObjectURL(blob);
+      setScheduleReportModal(prev => {
+        if (prev.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+        return { isOpen: true, loading: false, error: null, blob, fileName, previewUrl, english };
+      });
     } catch (e: any) {
-      pushToast('error', apiErrorMessage(e, 'Không thể tải báo cáo lịch trình. Vui lòng thử lại sau.'));
-    } finally {
-      setIsExportingScheduleReport(false);
+      setScheduleReportModal(prev => ({
+        ...prev, loading: false, blob: null, previewUrl: null,
+        error: apiErrorMessage(e, 'Không thể tải báo cáo lịch trình. Vui lòng thử lại sau.'),
+      }));
     }
+  };
+
+  const openScheduleReportPreview = () => {
+    if (scheduleReportModal.loading) return;
+    fetchScheduleReport(false);
+  };
+
+  const toggleScheduleReportEnglish = (english: boolean) => {
+    if (scheduleReportModal.loading) return;
+    fetchScheduleReport(english);
+  };
+
+  const closeScheduleReportModal = () => {
+    if (scheduleReportModal.previewUrl) URL.revokeObjectURL(scheduleReportModal.previewUrl);
+    setScheduleReportModal({ isOpen: false, loading: false, error: null, blob: null, fileName: '', previewUrl: null, english: false });
+  };
+
+  const downloadScheduleReport = () => {
+    if (!scheduleReportModal.blob || !scheduleReportModal.previewUrl) return;
+    const link = document.createElement('a');
+    link.href = scheduleReportModal.previewUrl;
+    link.download = scheduleReportModal.fileName || 'BaoCaoLichTrinh.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
@@ -1414,12 +1452,12 @@ export function VisitProcess() {
         <div className="mt-6 flex justify-end">
           <button
             type="button"
-            disabled={isExportingScheduleReport}
-            onClick={exportScheduleReport}
+            disabled={scheduleReportModal.loading}
+            onClick={openScheduleReportPreview}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#004c91] bg-white px-6 py-2.5 text-sm font-bold text-[#004c91] shadow-sm outline-none transition-colors hover:bg-[#004c91]/5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
           >
-            {isExportingScheduleReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {isExportingScheduleReport ? 'Đang tạo báo cáo...' : 'Báo cáo Lịch trình'}
+            {scheduleReportModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {scheduleReportModal.loading ? 'Đang tạo báo cáo...' : 'Báo cáo Lịch trình'}
           </button>
         </div>
       )}
@@ -1572,6 +1610,95 @@ export function VisitProcess() {
                   className="px-5 py-2 rounded-lg font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
                 >
                   Đóng
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Schedule Report Preview Modal */}
+      <AnimatePresence>
+        {scheduleReportModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeScheduleReportModal} />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl w-full max-w-3xl h-[85vh] relative z-10 shadow-2xl border border-gray-100 flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#004c91]" />
+                  Xem trước Báo cáo Lịch trình
+                </h3>
+                <button
+                  onClick={closeScheduleReportModal}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-white">
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={scheduleReportModal.english}
+                    disabled={scheduleReportModal.loading}
+                    onChange={(e) => toggleScheduleReportEnglish(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]/30 disabled:opacity-50"
+                  />
+                  <span className="text-sm font-bold text-gray-700">Tiếng Anh</span>
+                  <span className="text-xs text-gray-400 font-medium">— hệ thống tự động dịch toàn bộ báo cáo</span>
+                </label>
+              </div>
+
+              <div className="flex-1 min-h-0 bg-gray-100">
+                {scheduleReportModal.loading && (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-500">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <p className="text-sm font-semibold">
+                      {scheduleReportModal.english ? 'Đang dịch và tạo báo cáo...' : 'Đang tạo báo cáo...'}
+                    </p>
+                  </div>
+                )}
+                {!scheduleReportModal.loading && scheduleReportModal.error && (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6">
+                    <AlertCircle className="w-6 h-6 text-red-500" />
+                    <p className="text-sm font-semibold text-red-600">{scheduleReportModal.error}</p>
+                    <button
+                      onClick={() => fetchScheduleReport(scheduleReportModal.english)}
+                      className="px-4 py-2 rounded-lg font-bold text-sm text-[#004c91] bg-white border border-[#004c91] hover:bg-[#004c91]/5 transition-colors"
+                    >
+                      Thử lại
+                    </button>
+                  </div>
+                )}
+                {!scheduleReportModal.loading && !scheduleReportModal.error && scheduleReportModal.previewUrl && (
+                  <iframe
+                    src={scheduleReportModal.previewUrl}
+                    title="Xem trước báo cáo lịch trình"
+                    className="w-full h-full border-0"
+                  />
+                )}
+              </div>
+
+              <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100 flex-shrink-0">
+                <button
+                  onClick={closeScheduleReportModal}
+                  className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={downloadScheduleReport}
+                  disabled={!scheduleReportModal.blob}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Tải xuống
                 </button>
               </div>
             </motion.div>

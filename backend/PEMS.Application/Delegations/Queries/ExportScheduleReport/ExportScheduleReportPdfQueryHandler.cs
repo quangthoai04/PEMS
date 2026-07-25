@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MediatR;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Application.Translation;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 using QuestPDF.Infrastructure;
@@ -16,19 +18,25 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
     private readonly IVisitFormReadService _formReadService;
     private readonly IFileStorageService _storage;
     private readonly IGoogleDriveStorageService _drive;
+    private readonly IContentTranslationService _translator;
+    private readonly ILogger<ExportScheduleReportPdfQueryHandler> _logger;
 
     public ExportScheduleReportPdfQueryHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IVisitFormReadService formReadService,
         IFileStorageService storage,
-        IGoogleDriveStorageService drive)
+        IGoogleDriveStorageService drive,
+        IContentTranslationService translator,
+        ILogger<ExportScheduleReportPdfQueryHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _formReadService = formReadService;
         _storage = storage;
         _drive = drive;
+        _translator = translator;
+        _logger = logger;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -76,13 +84,81 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
         if (instance.CurrentHostUserId is null)
             throw new ValidationException("Chưa có Host được phân công cho chuyến thăm này — không thể xuất báo cáo lịch trình.");
 
-        var dto = await ScheduleReportDataBuilder.BuildAsync(_db, _formReadService, instance, cancellationToken);
+        var dto = await ScheduleReportDataBuilder.BuildAsync(
+            _db, _formReadService, instance, cancellationToken, request.LanguageCode);
+
+        bool isEnglish = string.Equals(request.LanguageCode, "en", StringComparison.OrdinalIgnoreCase);
+        if (isEnglish)
+            await TranslateToEnglishAsync(dto, instance.VisitInstanceId, cancellationToken);
 
         byte[]? partnerLogoBytes = dto.PartnerLogoFileId.HasValue
             ? await TryLoadFileBytesAsync(dto.PartnerLogoFileId.Value, cancellationToken)
             : null;
 
-        return ScheduleReportPdfRenderer.Render(dto, ScheduleReportAssets.FptLogoBytes, partnerLogoBytes);
+        return ScheduleReportPdfRenderer.Render(dto, ScheduleReportAssets.FptLogoBytes, partnerLogoBytes, request.LanguageCode);
+    }
+
+    /// <summary>
+    /// Best-effort VI → EN machine translation of the report's free-text content (delegation name,
+    /// purpose, organizations, agenda) — batched into one provider call. Role labels are already set
+    /// in English by <see cref="ScheduleReportDataBuilder"/> and people's names are never translated.
+    /// A provider hiccup (missing config, HTTP error, quota) must never block the export — the report
+    /// is simply rendered with its original Vietnamese content instead (same rule as News auto-translate).
+    /// </summary>
+    private async Task TranslateToEnglishAsync(ScheduleReportDto dto, ulong visitInstanceId, CancellationToken cancellationToken)
+    {
+        var texts = new List<string>();
+        var setters = new List<Action<string>>();
+
+        void Track(string? value, Action<string> setter)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            texts.Add(value);
+            setters.Add(setter);
+        }
+
+        Track(dto.DelegationName, v => dto.DelegationName = v);
+        Track(dto.Purpose, v => dto.Purpose = v);
+        foreach (var p in dto.GuestSide) Track(p.Organization, v => p.Organization = v);
+        foreach (var p in dto.FptSide) Track(p.Organization, v => p.Organization = v);
+        foreach (var a in dto.Agenda)
+        {
+            Track(a.Title, v => a.Title = v);
+            Track(a.Description, v => a.Description = v);
+            Track(a.Venue, v => a.Venue = v);
+        }
+
+        if (texts.Count == 0) return;
+
+        IReadOnlyList<string>? translated;
+        try
+        {
+            translated = await _translator.TranslateTextAsync(texts, "vi", "en", cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Schedule report translation failed for visit instance {VisitInstanceId}; falling back to Vietnamese content.",
+                visitInstanceId);
+            return;
+        }
+
+        if (translated.Count != texts.Count)
+        {
+            _logger.LogWarning(
+                "Schedule report translation returned {ResultCount} results for {SourceCount} sources; falling back to Vietnamese content.",
+                translated.Count, texts.Count);
+            return;
+        }
+
+        for (var i = 0; i < setters.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(translated[i])) setters[i](translated[i]);
+        }
     }
 
     private async Task<byte[]?> TryLoadFileBytesAsync(ulong fileId, CancellationToken cancellationToken)

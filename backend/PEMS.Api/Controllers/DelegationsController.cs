@@ -180,12 +180,16 @@ namespace PEMS.Api.Controllers
         // "Báo cáo Lịch trình" PDF (đặc tả Prompt_AI_Bao_Cao_Lich_Trinh): same scope rule as
         // process-detail above (403 in the handler otherwise).
         [HttpGet("{visitRequestId}/campuses/{visitInstanceId}/schedule-report/pdf")]
-        public async Task<IActionResult> ExportScheduleReportPdf(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        public async Task<IActionResult> ExportScheduleReportPdf(
+            ulong visitRequestId, ulong visitInstanceId, [FromQuery] string? languageCode, CancellationToken cancellationToken)
         {
+            var isEnglish = string.Equals(languageCode, "en", StringComparison.OrdinalIgnoreCase);
             var fileBytes = await _mediator.Send(
-                new PEMS.Application.Delegations.Queries.ExportScheduleReport.ExportScheduleReportPdfQuery(visitRequestId, visitInstanceId),
+                new PEMS.Application.Delegations.Queries.ExportScheduleReport.ExportScheduleReportPdfQuery(
+                    visitRequestId, visitInstanceId, isEnglish ? "en" : "vi"),
                 cancellationToken);
-            return File(fileBytes, "application/pdf", $"BaoCaoLichTrinh-{visitInstanceId}.pdf");
+            var suffix = isEnglish ? "-EN" : "";
+            return File(fileBytes, "application/pdf", $"BaoCaoLichTrinh-{visitInstanceId}{suffix}.pdf");
         }
 
         // Valid "Người phụ trách" candidates for the agenda editor: the active host + ACCEPTED

@@ -5,6 +5,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
 using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Application.Translation;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 using Xunit;
@@ -28,7 +29,10 @@ public class ExportScheduleReportPdfQueryHandlerTests
         var formRead = new VisitFormReadService(db, currentUser, NullLogger<VisitFormReadService>.Instance);
         var storage = new Mock<IFileStorageService>(MockBehavior.Loose);
         var drive = new Mock<IGoogleDriveStorageService>(MockBehavior.Loose);
-        var handler = new ExportScheduleReportPdfQueryHandler(db, currentUser, formRead, storage.Object, drive.Object);
+        var translator = new Mock<IContentTranslationService>(MockBehavior.Loose);
+        var handler = new ExportScheduleReportPdfQueryHandler(
+            db, currentUser, formRead, storage.Object, drive.Object, translator.Object,
+            NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
         return (db, handler, currentUser);
     }
 
@@ -171,7 +175,9 @@ public class ExportScheduleReportPdfQueryHandlerTests
         var handler = new ExportScheduleReportPdfQueryHandler(
             db, currentUser, formRead,
             new Mock<IFileStorageService>(MockBehavior.Loose).Object,
-            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object);
+            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
+            new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
+            NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
 
         await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
             new ExportScheduleReportPdfQuery(ScheduleReportTestData.VisitRequestId, ScheduleReportTestData.VisitInstanceId), default));
@@ -194,7 +200,9 @@ public class ExportScheduleReportPdfQueryHandlerTests
         var formRead = new VisitFormReadService(db, currentUser, NullLogger<VisitFormReadService>.Instance);
         var handlerWithLogo = new ExportScheduleReportPdfQueryHandler(
             db, currentUser, formRead, storage.Object,
-            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object);
+            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
+            new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
+            NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
 
         var bytes = await handlerWithLogo.Handle(
             new ExportScheduleReportPdfQuery(ScheduleReportTestData.VisitRequestId, ScheduleReportTestData.VisitInstanceId), default);

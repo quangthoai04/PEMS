@@ -489,7 +489,7 @@ export function VisitPhotoManagement() {
                         </span>
                         {item.plannedStartAt && (
                           <span className="text-[11px] text-gray-400 font-medium">
-                            📅 {formatVietnamDate(item.plannedStartAt)}
+                            {formatVietnamDate(item.plannedStartAt)}
                           </span>
                         )}
                       </div>

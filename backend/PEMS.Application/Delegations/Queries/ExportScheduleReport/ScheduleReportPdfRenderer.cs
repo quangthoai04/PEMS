@@ -18,9 +18,11 @@ public static class ScheduleReportPdfRenderer
     private static readonly string BorderColor = "#999999";
     private static readonly string MutedText = Colors.Grey.Darken1;
 
-    public static byte[] Render(ScheduleReportDto dto, byte[] fptLogoBytes, byte[]? partnerLogoBytes)
+    public static byte[] Render(ScheduleReportDto dto, byte[] fptLogoBytes, byte[]? partnerLogoBytes, string languageCode = "vi")
     {
         bool hasPartnerLogo = partnerLogoBytes is { Length: > 0 };
+        bool isEnglish = string.Equals(languageCode, "en", StringComparison.OrdinalIgnoreCase);
+        string L(string vi, string en) => isEnglish ? en : vi;
 
         return Document.Create(container =>
         {
@@ -66,30 +68,30 @@ public static class ScheduleReportPdfRenderer
                     col.Item().Column(info =>
                     {
                         info.Spacing(4);
-                        FieldLine(info, "Thời gian", FormatTimeRange(dto.PlannedStartAt, dto.PlannedEndAt));
-                        FieldLine(info, "Địa điểm", dto.Location);
-                        FieldLine(info, "Mục tiêu", string.IsNullOrWhiteSpace(dto.Purpose) ? "-" : dto.Purpose);
+                        FieldLine(info, L("Thời gian", "Time"), FormatTimeRange(dto.PlannedStartAt, dto.PlannedEndAt));
+                        FieldLine(info, L("Địa điểm", "Location"), dto.Location);
+                        FieldLine(info, L("Mục tiêu", "Objective"), string.IsNullOrWhiteSpace(dto.Purpose) ? "-" : dto.Purpose);
                     });
 
                     // ── 1. Thành phần phía khách ──
                     col.Item().Column(section =>
                     {
-                        section.Item().Text("1. Thành phần phía khách").Bold().FontSize(11).Underline();
-                        section.Item().PaddingTop(4).Element(c => PersonBulletList(c, dto.GuestSide));
+                        section.Item().Text(L("1. Thành phần phía khách", "1. Guest Delegation")).Bold().FontSize(11).Underline();
+                        section.Item().PaddingTop(4).Element(c => PersonBulletList(c, dto.GuestSide, isEnglish));
                     });
 
                     // ── 2. Thành phần phía FPT ──
                     col.Item().Column(section =>
                     {
-                        section.Item().Text("2. Thành phần phía FPT").Bold().FontSize(11).Underline();
-                        section.Item().PaddingTop(4).Element(c => PersonBulletList(c, dto.FptSide));
+                        section.Item().Text(L("2. Thành phần phía FPT", "2. FPT Delegation")).Bold().FontSize(11).Underline();
+                        section.Item().PaddingTop(4).Element(c => PersonBulletList(c, dto.FptSide, isEnglish));
                     });
 
                     // ── 3. Lịch trình ──
                     col.Item().Column(section =>
                     {
-                        section.Item().Text("3. Lịch trình").Bold().FontSize(11).Underline();
-                        section.Item().PaddingTop(4).Element(c => AgendaTable(c, dto.Agenda));
+                        section.Item().Text(L("3. Lịch trình", "3. Schedule")).Bold().FontSize(11).Underline();
+                        section.Item().PaddingTop(4).Element(c => AgendaTable(c, dto.Agenda, isEnglish));
                     });
                 });
 
@@ -114,11 +116,11 @@ public static class ScheduleReportPdfRenderer
         });
     }
 
-    private static void PersonBulletList(QuestPDF.Infrastructure.IContainer container, List<ScheduleReportPersonDto> people)
+    private static void PersonBulletList(QuestPDF.Infrastructure.IContainer container, List<ScheduleReportPersonDto> people, bool isEnglish)
     {
         if (people.Count == 0)
         {
-            container.Text("Chưa có thông tin").Italic().FontColor(MutedText);
+            container.Text(isEnglish ? "No information available" : "Chưa có thông tin").Italic().FontColor(MutedText);
             return;
         }
 
@@ -146,7 +148,7 @@ public static class ScheduleReportPdfRenderer
         });
     }
 
-    private static void AgendaTable(QuestPDF.Infrastructure.IContainer container, List<ScheduleReportAgendaRowDto> rows)
+    private static void AgendaTable(QuestPDF.Infrastructure.IContainer container, List<ScheduleReportAgendaRowDto> rows, bool isEnglish)
     {
         container.Table(table =>
         {
@@ -188,7 +190,7 @@ public static class ScheduleReportPdfRenderer
             if (rows.Count == 0)
             {
                 table.Cell().ColumnSpan(4).Border(0.75f).BorderColor(BorderColor).Padding(8)
-                    .AlignCenter().Text("Chưa có nội dung lịch trình được thiết lập").Italic().FontColor(MutedText);
+                    .AlignCenter().Text(isEnglish ? "No schedule content has been set up yet" : "Chưa có nội dung lịch trình được thiết lập").Italic().FontColor(MutedText);
             }
         });
     }

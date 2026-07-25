@@ -21,8 +21,10 @@ public static class ScheduleReportDataBuilder
         IApplicationDbContext db,
         IVisitFormReadService formReadService,
         VisitRequestCampus instance,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string languageCode = "vi")
     {
+        bool isEnglish = string.Equals(languageCode, "en", StringComparison.OrdinalIgnoreCase);
         var visit = instance.VisitRequest;
 
         // ── Delegation name / purpose / guest composition — always this campus's own detail ──
@@ -37,9 +39,9 @@ public static class ScheduleReportDataBuilder
 
         var guestSide = new List<ScheduleReportPersonDto>();
         guestSide.AddRange(detail.Visitors.OrderBy(v => v.DisplayOrder)
-            .Select(v => MapGuestPerson(v.FullName, v.Organization, "Khách mời")));
+            .Select(v => MapGuestPerson(v.FullName, v.Organization, isEnglish ? "Guest" : "Khách mời")));
         guestSide.AddRange(detail.SupportMembers.OrderBy(v => v.DisplayOrder)
-            .Select(v => MapGuestPerson(v.FullName, v.Organization, "Nhân sự hỗ trợ")));
+            .Select(v => MapGuestPerson(v.FullName, v.Organization, isEnglish ? "Support Staff" : "Nhân sự hỗ trợ")));
 
         // ── FPT side: Host + accepted (non-host) participants — same rule as MinuteAutoFill ──
         var fptSide = new List<ScheduleReportPersonDto>();
@@ -68,7 +70,7 @@ public static class ScheduleReportDataBuilder
             {
                 if (p.UserId == instance.CurrentHostUserId) continue; // never double-list the host
                 if (!userById.TryGetValue(p.UserId, out var u)) continue;
-                fptSide.Add(MapFptPerson(u, RoleLabel(p.ParticipantRole)));
+                fptSide.Add(MapFptPerson(u, RoleLabel(p.ParticipantRole, isEnglish)));
             }
         }
 
@@ -110,12 +112,15 @@ public static class ScheduleReportDataBuilder
         RoleLabel = roleLabel,
     };
 
-    private static string RoleLabel(string participantRole) => participantRole switch
+    private static string RoleLabel(string participantRole, bool isEnglish) => (participantRole, isEnglish) switch
     {
-        ParticipantRoles.IcHost => "IC Host",
-        ParticipantRoles.IcSupport => "Cán bộ IC",
-        ParticipantRoles.DeptSupport => "Cán bộ phòng ban",
-        ParticipantRoles.Student => "Sinh viên hỗ trợ",
+        (ParticipantRoles.IcHost, _) => "IC Host",
+        (ParticipantRoles.IcSupport, true) => "IC Staff",
+        (ParticipantRoles.IcSupport, false) => "Cán bộ IC",
+        (ParticipantRoles.DeptSupport, true) => "Department Staff",
+        (ParticipantRoles.DeptSupport, false) => "Cán bộ phòng ban",
+        (ParticipantRoles.Student, true) => "Student Volunteer",
+        (ParticipantRoles.Student, false) => "Sinh viên hỗ trợ",
         _ => participantRole,
     };
 }
