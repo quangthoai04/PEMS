@@ -196,17 +196,17 @@ export function NewsManagement() {
   return (
     <div className="w-full pb-12">
       {/* Breadcrumb */}
-      <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
+      <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>
         <span className="mx-2">/</span>
         <span className="text-[#004c91]">Quản lý tin tức</span>
       </div>
-      <div className="border-b border-gray-100 pb-4 mb-6 text-left flex justify-start">
+      <div className="border-b border-gray-100 pb-3 mb-4 text-left flex justify-start">
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tin tức</h1>
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center flex-wrap gap-3 mb-6">
+      <div className="flex items-center flex-wrap gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input

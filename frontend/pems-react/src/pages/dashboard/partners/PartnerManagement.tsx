@@ -153,7 +153,7 @@ export function PartnerManagement() {
   return (
     <div className="w-full pb-12">
       {/* Breadcrumb */}
-      <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
+      <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors cursor-pointer">
           Dashboard
         </button>
@@ -161,12 +161,12 @@ export function PartnerManagement() {
         <span className="text-[#004c91]">Quản lý đối tác</span>
       </div>
 
-      <div className="border-b border-gray-100 pb-4 mb-6 flex justify-between items-center">
+      <div className="border-b border-gray-100 pb-3 mb-4 flex justify-between items-center">
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý đối tác</h1>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[250px] max-w-md">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input

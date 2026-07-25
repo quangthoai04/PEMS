@@ -52,7 +52,7 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
       .trim();
 
   return (
-    <div className="w-full flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="w-full flex flex-col space-y-4 pb-12 animate-in fade-in duration-300">
       {/* Header */}
       <div className="flex flex-col space-y-1">
         <div className="flex justify-between items-center">

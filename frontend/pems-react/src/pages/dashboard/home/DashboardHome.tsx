@@ -309,7 +309,7 @@ export function DashboardHome() {
   const weekdayNames = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
   return (
-    <div className="w-full space-y-8 pb-12 animate-fade-in">
+    <div className="w-full space-y-4 pb-12 animate-fade-in">
       
       {/* Jumbotron Welcome Banner */}
       <div className="bg-gradient-to-tr from-[#e3effd] via-[#fef0e6] to-[#e6f7eb] rounded-2xl px-5 py-3.5 md:px-6 md:py-4 text-slate-800 shadow-md relative overflow-hidden border border-slate-200/50">

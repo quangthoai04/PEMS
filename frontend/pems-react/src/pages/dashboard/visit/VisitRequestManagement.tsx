@@ -1451,11 +1451,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             : 'Bạn chưa có đơn phụ trách nào.';
 
   return (
-    <div className="w-full flex flex-col space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="w-full flex flex-col space-y-4 pb-12 animate-in fade-in duration-300">
       {/* Header */}
       {!isEmbedded && (
         <>
-          <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
+          <div className="mb-1 flex items-center text-sm font-medium text-gray-500">
             <button onClick={() => navTo('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
             <span className="mx-2">/</span>
             <span className="text-[#004c91]">Quản lý tiếp khách</span>

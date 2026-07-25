@@ -1154,13 +1154,13 @@ export function AccountManagement() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
+      <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-2">
         <span>Dashboard</span>
         <span>/</span>
         <span className="text-[#004c91]">Quản lý tài khoản</span>
       </div>
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài khoản</h1>
           <p className="text-gray-500 mt-1 font-medium">Tổng quan hệ thống và phân quyền truy cập</p>

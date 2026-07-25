@@ -319,7 +319,7 @@ export function DepartmentManagement() {
   return (
     <div className="w-full pb-12">
       {/* Breadcrumb */}
-      <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
+      <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate("/dashboard")} className="hover:text-[#004c91] transition-colors">
           Dashboard
         </button>
@@ -328,7 +328,7 @@ export function DepartmentManagement() {
       </div>
 
       {/* Header */}
-      <div className="border-b border-gray-100 pb-4 mb-6 text-left flex justify-start">
+      <div className="border-b border-gray-100 pb-3 mb-4 text-left flex justify-start">
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý phòng ban</h1>
       </div>
 

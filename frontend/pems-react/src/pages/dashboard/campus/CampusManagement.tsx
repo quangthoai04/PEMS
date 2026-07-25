@@ -291,14 +291,14 @@ export function CampusManagement() {
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
-    <div className="p-4 md:p-8 space-y-6 bg-gray-50/50 min-h-screen">
+    <div className="w-full space-y-4 pb-12">
       {/* Breadcrumb & Tiêu đề */}
-      <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
         <span className="hover:text-[#004c91] cursor-pointer transition-colors" onClick={() => navigate('/dashboard')}>Dashboard</span>
         <span className="mx-2">/</span>
         <span className="text-[#004c91] font-medium">Quản lý campus</span>
       </div>
-      <div className="border-b border-gray-100 pb-4 mb-6 text-left flex justify-start">
+      <div className="border-b border-gray-100 pb-3 mb-4 text-left flex justify-start">
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý campus</h1>
       </div>
 

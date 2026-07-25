@@ -56,7 +56,7 @@ export function HODashboardView() {
   } = data;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-12 pt-4">
+    <div className="space-y-4 animate-in fade-in duration-500 pb-12">
       {/* 2. Quick action bar */}
       <div className="flex flex-wrap gap-3">
         <Link to="/dashboard/visit" className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-lg border border-slate-200 shadow-sm hover:border-[#004c91] hover:text-[#004c91] transition-colors text-sm font-bold text-slate-700">

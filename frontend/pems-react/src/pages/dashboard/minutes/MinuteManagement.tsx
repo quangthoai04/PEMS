@@ -194,9 +194,9 @@ export function MinuteManagement() {
   const currentPage = filters.page || 1;
 
   return (
-    <div className="w-full pb-12 flex flex-col space-y-6 animate-in fade-in duration-300">
+    <div className="w-full pb-12 flex flex-col space-y-4 animate-in fade-in duration-300">
       {/* 1. Header & Navigation Layer */}
-      <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
+      <div className="mb-2 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
         <span className="mx-2">/</span>
         <span className="text-[#004c91] font-bold">Quản lý biên bản</span>

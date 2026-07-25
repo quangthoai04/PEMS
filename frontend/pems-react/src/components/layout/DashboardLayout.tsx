@@ -57,19 +57,14 @@ export function DashboardLayout() {
 
       {/* Main dashboard content container */}
       <main className="flex-1 max-h-screen overflow-y-auto bg-[#F8FAFC] relative flex flex-col">
-        {/* Desktop notification bell: a STICKY in-flow strip with real height (h-14) so the
-            bell has its own row — it never covers page titles/action buttons (e.g. the
-            "Tạo đoàn khách" button), and the content below can use the FULL width without
-            reserving a right gutter. pointer-events only on the bell itself so the strip
-            doesn't block clicks while content scrolls underneath. */}
-        <div className="hidden lg:flex sticky top-0 z-40 h-14 shrink-0 items-start justify-end px-6 pointer-events-none">
-          <div className="mt-3 h-max pointer-events-auto bg-white/80 backdrop-blur-md shadow-sm rounded-full border border-gray-100 p-1">
+        {/* Desktop notification bell: floating overlay in top right corner */}
+        <div className="hidden lg:flex absolute top-3 right-6 z-40 pointer-events-none">
+          <div className="pointer-events-auto bg-white/80 backdrop-blur-md shadow-sm rounded-full border border-gray-100 p-1">
              <NotificationBellButton variant="dashboard" />
           </div>
         </div>
 
-        {/* Nội dung căn sát sidebar và tràn hết chiều ngang cho mọi role (không max-w,
-            không chừa khoảng phải — chuông đã có hàng riêng phía trên). */}
+        {/* Nội dung căn sát sidebar và tràn hết chiều ngang cho mọi role */}
         <div className={`flex-1 w-full max-w-none ${isSidebarCollapsed ? 'p-2 sm:p-3 md:p-4' : 'p-3 sm:p-4 md:p-5'}`}>
           <Outlet />
         </div>

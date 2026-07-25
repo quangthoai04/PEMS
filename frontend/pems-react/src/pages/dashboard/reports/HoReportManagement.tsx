@@ -203,7 +203,7 @@ export function HoReportManagement() {
   const p = data?.partners;
 
   return (
-    <div className="w-full space-y-8 pb-16 animate-in fade-in duration-300">
+    <div className="w-full space-y-4 pb-16 animate-in fade-in duration-300">
       {/* ── Header + nút xuất báo cáo ── */}
       <div className="border-b border-gray-100 pb-4 flex flex-wrap items-start justify-between gap-4">
         <div>

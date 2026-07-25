@@ -469,7 +469,7 @@ export function StaffLeaderReportManagement() {
   const d = data?.departments;
 
   return (
-    <div className="w-full space-y-8 pb-16 animate-in fade-in duration-300">
+    <div className="w-full space-y-4 pb-16 animate-in fade-in duration-300">
       {/* ── Header + bộ lọc thời gian ── */}
       <div className="border-b border-gray-100 pb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
