@@ -148,13 +148,11 @@ export function AccountManagement() {
 
   // ADMIN/HO xem toàn quốc mặc định; các role campus-scoped mặc định campus của mình.
   const defaultCampus = (isHO || isRealAdmin) ? "" : (user?.campus || "Hà Nội");
-  const [allFilters, setAllFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "" });
-  const [pendingFilters, setPendingFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "" });
+  const [allFilters, setAllFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "", accountType: "INTERNAL" });
+  const [pendingFilters, setPendingFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "", accountType: "INTERNAL" });
   
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  // Staff Leader top-level view switch: internal accounts vs the read-only "Visitor liên quan" tab.
-  const [slView, setSlView] = useState<'internal' | 'visitors'>('internal');
 
   const currentFilters = activeTab === 'all' ? allFilters : pendingFilters;
   const setCurrentFilters = activeTab === 'all' ? setAllFilters : setPendingFilters;
@@ -163,11 +161,21 @@ export function AccountManagement() {
   const campusFilter = currentFilters.campus;
   const roleFilter = currentFilters.role;
   const statusFilter = currentFilters.status;
+  const accountTypeFilter = currentFilters.accountType;
 
   const setSearchQuery = (val: string) => setCurrentFilters(prev => ({ ...prev, search: val }));
   const setCampusFilter = (val: string) => setCurrentFilters(prev => ({ ...prev, campus: val }));
-  const setRoleFilter = (val: string) => setCurrentFilters(prev => ({ ...prev, role: val }));
   const setStatusFilter = (val: string) => setCurrentFilters(prev => ({ ...prev, status: val }));
+  const setAccountTypeFilter = (val: string) => setCurrentFilters(prev => ({
+    ...prev,
+    accountType: val,
+    role: val === 'INTERNAL' && prev.role === 'VISITOR' ? '' : prev.role,
+  }));
+  const setRoleFilter = (val: string) => setCurrentFilters(prev => ({
+    ...prev,
+    role: val,
+    accountType: val === 'VISITOR' ? 'VISITOR' : (prev.accountType === 'VISITOR' && val ? 'INTERNAL' : prev.accountType),
+  }));
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -284,7 +292,7 @@ export function AccountManagement() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, searchQuery, campusFilter, roleFilter, statusFilter]);
+  }, [activeTab, searchQuery, campusFilter, roleFilter, statusFilter, accountTypeFilter]);
 
   // ── UC-95 / UC-99: real account data from the API (replaces the old mock) ──
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -618,13 +626,39 @@ export function AccountManagement() {
     return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
   });
 
-  const totalItems = isServerTab ? (accountsData?.totalItems ?? 0) : sortedPending.length;
+  const paginatedAccounts = useMemo(() => {
+    if (!isServerTab) {
+      return sortedPending.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    }
+    let list = accounts;
+    if (accountTypeFilter === 'INTERNAL') {
+      list = list.filter(acc => String(acc.role).toUpperCase() !== 'VISITOR');
+    }
+    if (roleFilter) {
+      list = list.filter(acc => String(acc.role).toUpperCase() === roleFilter.toUpperCase());
+    }
+    if (statusFilter) {
+      const s = statusFilter.toUpperCase();
+      list = list.filter(acc => String(acc.status).toUpperCase() === s || String(acc.rawStatus || '').toUpperCase() === s);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(acc =>
+        (acc.name && acc.name.toLowerCase().includes(q)) ||
+        (acc.email && acc.email.toLowerCase().includes(q)) ||
+        (acc.studentId && acc.studentId.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [isServerTab, accountTypeFilter, roleFilter, statusFilter, searchQuery, accounts, sortedPending, currentPage, pageSize]);
+
+  const totalItems = isServerTab
+    ? (roleFilter || statusFilter || searchQuery.trim() ? paginatedAccounts.length : (accountsData?.totalItems ?? 0))
+    : sortedPending.length;
+
   const totalPages = isServerTab
-    ? (accountsData?.totalPages ?? 0)
-    : Math.ceil(sortedPending.length / pageSize);
-  const paginatedAccounts = isServerTab
-    ? accounts
-    : sortedPending.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    ? (roleFilter || statusFilter || searchQuery.trim() ? Math.ceil(paginatedAccounts.length / pageSize) || 1 : (accountsData?.totalPages ?? 0))
+    : Math.ceil(sortedPending.length / pageSize) || 1;
 
   const getRoleStyle = (role: string) => {
     switch(role.toUpperCase()) {
@@ -633,7 +667,7 @@ export function AccountManagement() {
       case 'DEPARTMENT': return 'bg-orange-50 text-orange-700 border-orange-200';
       case 'STAFF': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'STUDENT': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'VISITOR': return 'bg-pink-50 text-pink-700 border-pink-200';
+      case 'VISITOR': return 'bg-blue-50 text-blue-700 border-blue-200';
       default: return 'bg-gray-50 text-gray-700 border-gray-200';
     }
   };
@@ -1115,44 +1149,6 @@ export function AccountManagement() {
     }
   };
 
-  // Staff-Leader-only top-level tabs: internal accounts vs the read-only "Visitor liên quan" tab.
-  const staffLeaderTabs = isStaffLeader ? (
-    <div className="flex gap-1 mb-8 bg-white rounded-2xl p-1.5 border border-gray-100 shadow-sm w-fit">
-      <button
-        onClick={() => setSlView('internal')}
-        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors outline-none ${slView === 'internal' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-500 hover:text-[#004c91]'}`}
-      >
-        Tài khoản nội bộ
-      </button>
-      <button
-        onClick={() => setSlView('visitors')}
-        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors outline-none ${slView === 'visitors' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-500 hover:text-[#004c91]'}`}
-      >
-        Tài khoản khách
-      </button>
-    </div>
-  ) : null;
-
-  // Read-only related-visitors view: a self-contained tab, scope resolved server-side.
-  if (isStaffLeader && slView === 'visitors') {
-    return (
-      <div className="w-full pb-12 animate-in fade-in duration-300">
-        <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
-          <span>Dashboard</span>
-          <span>/</span>
-          <span className="text-[#004c91]">Quản lý tài khoản</span>
-        </div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài khoản</h1>
-          </div>
-        </div>
-        {staffLeaderTabs}
-        <RelatedVisitorsTab />
-      </div>
-    );
-  }
-
   return (
     <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
@@ -1168,63 +1164,81 @@ export function AccountManagement() {
         </div>
       </div>
 
-      {staffLeaderTabs}
-
-      {/* I. Top Widgets */}
-      {!isHO && (
-        <div className={`grid grid-cols-1 sm:grid-cols-2 ${(isStaffLeader || isRealAdmin) ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-6 mb-8`}>
-          {stats.map((stat: any, idx) => {
-            const Icon = stat.icon;
-            if (stat.isHOStyle) {
-              return (
-                <button 
-                  key={idx} 
-                  onClick={stat.onClick} 
-                  className={`relative bg-white border border-slate-100 ${stat.theme.borderTop} border-t-4 rounded-2xl p-6 shadow-sm flex flex-col justify-between overflow-hidden group text-left w-full hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/80 transition-all duration-300 ease-in-out focus:ring-2 focus:ring-[#004c91]/20 outline-none`}
-                >
-                  {/* Subtle Radial Glow */}
-                  <div className={`absolute inset-0 bg-gradient-to-br ${stat.theme.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`}></div>
-                  
-                  {/* Top Row */}
-                  <div className="flex items-center justify-between w-full mb-6 relative z-10">
-                    <span className={`text-sm font-black ${stat.theme.iconText} uppercase tracking-widest`}>{stat.campus}</span>
-                    <div className={`w-10 h-10 rounded-xl ${stat.theme.iconBg} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-300 ease-out`}>
-                      <Icon className={`w-5 h-5 ${stat.theme.iconText}`} />
-                    </div>
-                  </div>
-
-                  {/* Bottom Row */}
-                  <div className="relative z-10 flex items-baseline gap-2 mt-auto">
-                    <h3 className={`text-4xl font-extrabold ${stat.theme.iconText} tracking-tight`}>{stat.value}</h3>
-                    <span className="text-sm font-medium text-slate-500">Tài khoản</span>
-                  </div>
-                </button>
-              );
-            }
-
+      {/* I. Top Widgets & Create Account Card */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${stats.length === 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4 mb-8 items-stretch`}>
+        {stats.map((stat: any, idx) => {
+          const Icon = stat.icon;
+          if (stat.isHOStyle) {
             return (
-              <button key={idx} onClick={stat.onClick} className={`rounded-[2rem] p-6 border ${stat.bg} shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all duration-300 text-left w-full focus:ring-2 focus:ring-[#004c91]/20`}>
-                <div className="flex justify-between items-start mb-4">
-                  <div className={`w-12 h-12 rounded-2xl ${stat.iconBg} shadow-sm flex items-center justify-center shrink-0`}>
-                    <Icon className={`w-6 h-6 ${stat.color}`} />
+              <button 
+                key={idx} 
+                onClick={stat.onClick} 
+                className={`relative bg-white border border-slate-100 ${stat.theme.borderTop} border-t-4 rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden group text-left w-full hover:-translate-y-1 hover:shadow-md transition-all duration-200 focus:ring-2 focus:ring-[#004c91]/20 outline-none`}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${stat.theme.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`}></div>
+                
+                {/* Dòng 1: Icon + Số liệu */}
+                <div className="flex items-center justify-between w-full mb-2 relative z-10">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-8 h-8 rounded-lg ${stat.theme.iconBg} flex items-center justify-center shrink-0`}>
+                      <Icon className={`w-4.5 h-4.5 ${stat.theme.iconText}`} />
+                    </div>
+                    <h3 className={`text-2xl font-black ${stat.theme.iconText} tracking-tight`}>{stat.value}</h3>
                   </div>
+                  <span className={`text-xs font-black ${stat.theme.iconText} uppercase tracking-widest`}>{stat.campus}</span>
                 </div>
-                <div>
-                  <h3 className={`text-3xl font-black ${stat.textColor || 'text-gray-900'} tracking-tight leading-none mb-2`}>{stat.value}</h3>
-                  <p className={`text-[10px] sm:text-[11px] font-bold ${stat.labelColor || 'text-gray-500'} uppercase tracking-wide leading-tight`}>{stat.label}</p>
+
+                {/* Dòng 2: Chú thích */}
+                <div className="relative z-10">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{stat.label}</span>
                 </div>
               </button>
             );
-          })}
-        </div>
-      )}
+          }
 
-      <div className="flex justify-end mb-8">
+          return (
+            <button 
+              key={idx} 
+              onClick={stat.onClick} 
+              className={`rounded-2xl p-4 sm:p-4.5 border ${stat.bg} shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-all duration-200 text-left w-full focus:ring-2 focus:ring-[#004c91]/20 outline-none`}
+            >
+              {/* Dòng 1: Icon + Số liệu */}
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`w-9 h-9 rounded-xl ${stat.iconBg} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
+                  <Icon className={`w-5 h-5 ${stat.color}`} />
+                </div>
+                <h3 className={`text-2xl sm:text-2xl font-black ${stat.textColor || 'text-gray-900'} tracking-tight leading-none`}>
+                  {stat.value}
+                </h3>
+              </div>
+
+              {/* Dòng 2: Chú thích */}
+              <div>
+                <p className={`text-[10px] sm:text-[11px] font-bold ${stat.labelColor || 'text-gray-500'} uppercase tracking-wider leading-tight truncate`}>
+                  {stat.label}
+                </p>
+              </div>
+            </button>
+          );
+        })}
+
+        {/* Card 5: Tạo tài khoản mới */}
         <button
-          onClick={() => { setCreateError(null); setCreateStudentCodeError(null); setSelectedDept(''); setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' }); setIsCreateModalOpen(true); }}
-          className="bg-[#f37021] hover:bg-[#e85c0d] text-white px-6 py-3.5 rounded-2xl font-bold flex items-center gap-2 shadow-sm shadow-orange-500/20 transition-all hover:shadow-md hover:shadow-orange-500/40 outline-none"
+          onClick={() => { 
+            setCreateError(null); 
+            setCreateStudentCodeError(null); 
+            setSelectedDept(''); 
+            setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' }); 
+            setIsCreateModalOpen(true); 
+          }}
+          className="bg-[#f37021] hover:bg-[#e85c0d] text-white rounded-2xl p-4 sm:p-4.5 border border-transparent shadow-sm shadow-orange-500/20 flex items-center justify-center gap-2.5 transition-all hover:shadow-md hover:shadow-orange-500/40 cursor-pointer outline-none focus:ring-2 focus:ring-orange-400 group w-full"
         >
-          + Tạo tài khoản mới
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+            <Plus className="w-5 h-5 text-white stroke-[2.5]" />
+          </div>
+          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight leading-none whitespace-nowrap">
+            Tạo tài khoản mới
+          </h3>
         </button>
       </div>
 
@@ -1235,7 +1249,13 @@ export function AccountManagement() {
         </div>
       )}
 
-      <div ref={tableRef} className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-[#004c91] overflow-hidden">
+      {accountTypeFilter === 'VISITOR' ? (
+        <RelatedVisitorsTab
+          accountTypeFilter={accountTypeFilter}
+          onAccountTypeChange={(val) => setAccountTypeFilter(val)}
+        />
+      ) : (
+        <div ref={tableRef} className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-[#004c91] overflow-hidden">
         {/* Tab Filters — tab "Chờ duyệt" là mock, ẩn với ADMIN/HO/Staff Leader */}
         {!isHO && !isStaffLeader && !isRealAdmin && (
           <div className="flex px-6 bg-[#004c91]">
@@ -1284,19 +1304,54 @@ export function AccountManagement() {
             </div>
           )}
 
+          {/* Lọc Loại Tài khoản (Tài khoản nội bộ / Tài khoản khách) */}
+          <div className="relative">
+            <select
+              value={accountTypeFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setAccountTypeFilter(val);
+                if (val === 'VISITOR') {
+                  setRoleFilter('VISITOR');
+                } else if (val === 'INTERNAL' && roleFilter === 'VISITOR') {
+                  setRoleFilter('');
+                }
+              }}
+              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+            >
+              <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
+              <option className="text-gray-900" value="VISITOR">Tài khoản khách</option>
+            </select>
+            <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
+          </div>
+
           <div className="relative">
             <select
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setRoleFilter(val);
+                if (val === 'VISITOR') {
+                  setAccountTypeFilter('VISITOR');
+                } else if (val && val !== 'VISITOR' && accountTypeFilter === 'VISITOR') {
+                  setAccountTypeFilter('INTERNAL');
+                }
+              }}
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
               <option className="text-gray-900" value="">Tất cả Vai trò</option>
               {ROLES.filter(r => {
+                if (accountTypeFilter === 'INTERNAL' && r === 'VISITOR') return false;
+                if (accountTypeFilter === 'VISITOR' && r !== 'VISITOR') return false;
                 if (isRealAdmin) return true; // ADMIN xem mọi role
                 if (isHO) return ['HO', 'STAFF'].includes(r);
-                if (isStaffLeader) return ['STAFF', 'DEPARTMENT', 'STUDENT'].includes(r);
+                if (isStaffLeader) return ['STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR'].includes(r);
                 return r !== 'HO';
-              }).map(r => <option className="text-gray-900" key={r} value={r}>{r}</option>)}
+              }).map(r => (
+                <option className="text-gray-900" key={r} value={r}>
+                  {r === 'STAFF' ? 'Nhân viên' : r === 'DEPARTMENT' ? 'Trưởng phòng' : r === 'STUDENT' ? 'Sinh viên' : r === 'HO' ? 'Cán bộ HO' : r === 'ADMIN' ? 'Quản trị viên' : r}
+                </option>
+              ))}
             </select>
             <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
           </div>
@@ -1335,252 +1390,253 @@ export function AccountManagement() {
 
         {/* III. Bảng danh sách */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
-              <tr>
-                <th className="p-5 pl-8 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">STT</th>
-                <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Họ và Tên</th>
-                <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Tên đăng nhập (Email)</th>
-                {!isStaff && <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Cơ sở</th>}
-                <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Vai trò</th>
-                {!isHO && !isStaffLeader && (
-                  <th
-                    className={`p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap ${activeTab === 'pending' ? 'cursor-pointer hover:bg-gray-50 transition-colors select-none group' : ''}`}
-                    onClick={() => activeTab === 'pending' && setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                  >
-                    <div className="flex items-center justify-center gap-1.5">
-                      {activeTab === 'pending' ? 'Thời gian gửi' : 'Tình trạng'}
-                      {activeTab === 'pending' && (
-                        <div className="flex flex-col text-gray-300 group-hover:text-[#004c91] transition-colors">
-                          <ChevronUp className={`w-2.5 h-2.5 -mb-0.5 ${sortOrder === 'asc' ? 'text-[#004c91]' : ''}`} />
-                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortOrder === 'desc' ? 'text-[#004c91]' : ''}`} />
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
+                  <tr>
+                    <th className="p-5 pl-8 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">STT</th>
+                    <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Họ và Tên</th>
+                    <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Tên đăng nhập (Email)</th>
+                    {!isStaff && <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Cơ sở</th>}
+                    <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Vai trò</th>
+                    {!isHO && !isStaffLeader && (
+                      <th
+                        className={`p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap ${activeTab === 'pending' ? 'cursor-pointer hover:bg-gray-50 transition-colors select-none group' : ''}`}
+                        onClick={() => activeTab === 'pending' && setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                      >
+                        <div className="flex items-center justify-center gap-1.5">
+                          {activeTab === 'pending' ? 'Thời gian gửi' : 'Tình trạng'}
+                          {activeTab === 'pending' && (
+                            <div className="flex flex-col text-gray-300 group-hover:text-[#004c91] transition-colors">
+                              <ChevronUp className={`w-2.5 h-2.5 -mb-0.5 ${sortOrder === 'asc' ? 'text-[#004c91]' : ''}`} />
+                              <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortOrder === 'desc' ? 'text-[#004c91]' : ''}`} />
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </th>
-                )}
-                <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Trạng thái</th>
-                <th className="p-5 pr-8 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Hành động</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {paginatedAccounts.length > 0 ? paginatedAccounts.map((acc, idx) => (
-                <tr key={acc.id} className="hover:bg-blue-50/30 transition-colors group">
-                  <td className="p-5 pl-8 text-sm font-bold text-[#004c91] text-center">{(currentPage - 1) * pageSize + idx + 1}</td>
-                  <td className="p-5 text-center">
-                    <div>
-                      <p className="text-[13px] font-bold text-[#004c91] leading-tight whitespace-nowrap">{acc.name}</p>
-                    </div>
-                  </td>
-                  <td className="p-5 text-[13px] font-medium text-gray-600 truncate max-w-[200px] text-center">{acc.email}</td>
-                  {!isStaff && <td className="p-5 text-[13px] font-bold text-gray-700 text-center">{acc.campus}</td>}
-                  <td className="p-5 text-center">
-                    <span className={`inline-flex px-3 py-1.5 rounded-lg border shadow-sm font-bold text-[10px] tracking-wider uppercase ${getRoleStyle(acc.role)}`}>
-                      {acc.role}
-                    </span>
-                  </td>
-                  {!isHO && !isStaffLeader && (
-                    <td className="p-5 text-center">
-                      {activeTab === 'pending' ? (
-                        <span className="text-[13px] font-bold text-gray-600 whitespace-nowrap tracking-wide">{acc.createdAt?.split('-').reverse().join('-')}</span>
-                      ) : (
-                        <span className={`text-[11px] font-bold uppercase tracking-wider ${acc.loginStatus === 'Đã đăng nhập' ? 'text-[#0aa14f]' : 'text-gray-400'}`}>
-                          {acc.loginStatus}
+                      </th>
+                    )}
+                    <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Trạng thái</th>
+                    <th className="p-5 pr-8 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {paginatedAccounts.length > 0 ? paginatedAccounts.map((acc, idx) => (
+                    <tr key={acc.id} className="hover:bg-blue-50/30 transition-colors group">
+                      <td className="p-5 pl-8 text-sm font-bold text-[#004c91] text-center">{(currentPage - 1) * pageSize + idx + 1}</td>
+                      <td className="p-5 text-center">
+                        <div>
+                          <p className="text-[13px] font-bold text-[#004c91] leading-tight whitespace-nowrap">{acc.name}</p>
+                        </div>
+                      </td>
+                      <td className="p-5 text-[13px] font-medium text-gray-600 truncate max-w-[200px] text-center">{acc.email}</td>
+                      {!isStaff && <td className="p-5 text-[13px] font-bold text-gray-700 text-center">{acc.campus}</td>}
+                      <td className="p-5 text-center">
+                        <span className={`inline-flex px-3 py-1.5 rounded-lg border shadow-sm font-bold text-[10px] tracking-wider uppercase ${getRoleStyle(acc.role)}`}>
+                          {acc.role}
                         </span>
-                      )}
-                    </td>
-                  )}
-                  <td className="p-5 text-center">
-                    {acc.status === 'Active' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Hoạt động</span>}
-                    {acc.status === 'Inactive' && <span className="inline-flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-amber-200"><div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div> Vô hiệu hóa</span>}
-                    {acc.status === 'Locked' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Bị khóa</span>}
-                    {acc.status === 'Pending' && <span className="inline-flex items-center gap-1.5 text-sky-700 bg-sky-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-sky-200"><div className="w-1.5 h-1.5 rounded-full bg-sky-500"></div> Chờ xác nhận email</span>}
-                    {acc.status === 'Deactive' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Khóa</span>}
-                    {acc.status === 'Pending Approved' && <span className="inline-flex items-center gap-1.5 text-[#f37021] bg-[#fef1e8] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#f37021]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#f37021]"></div> Chờ duyệt</span>}
-                    {acc.status === 'Approved' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Đã duyệt</span>}
-                    {acc.status === 'Rejected' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Từ chối</span>}
-                  </td>
-                  <td className="p-5 pr-8 text-center">
-                    <div className="flex items-center justify-center gap-2 transition-opacity">
-                      {(isRealAdmin || isStaffLeader) ? (
-                        <>
-                          <button 
-                            onClick={() => openViewDrawer(acc)}
-                            className="flex items-center justify-center p-2 text-gray-500 hover:text-[#004c91] hover:bg-blue-50/50 rounded-full transition-all outline-none"
-                            title="Xem tài khoản"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
+                      </td>
+                      {!isHO && !isStaffLeader && (
+                        <td className="p-5 text-center">
                           {activeTab === 'pending' ? (
-                            acc.status === 'Pending Approved' && (
-                              <>
-                                <button 
-                                  className="flex items-center justify-center p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-full transition-all outline-none"
-                                  title="Duyệt"
-                                >
-                                  <CheckCircle className="w-5 h-5" />
-                                </button>
-                                <button 
-                                  className="flex items-center justify-center p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-all outline-none"
-                                  title="Từ chối"
-                                >
-                                  <XCircle className="w-5 h-5" />
-                                </button>
-                              </>
-                            )
+                            <span className="text-[13px] font-bold text-gray-600 whitespace-nowrap tracking-wide">{acc.createdAt?.split('-').reverse().join('-')}</span>
+                          ) : (
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${acc.loginStatus === 'Đã đăng nhập' ? 'text-[#0aa14f]' : 'text-gray-400'}`}>
+                              {acc.loginStatus}
+                            </span>
+                          )}
+                        </td>
+                      )}
+                      <td className="p-5 text-center">
+                        {acc.status === 'Active' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Hoạt động</span>}
+                        {acc.status === 'Inactive' && <span className="inline-flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-amber-200"><div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div> Vô hiệu hóa</span>}
+                        {acc.status === 'Locked' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Bị khóa</span>}
+                        {acc.status === 'Pending' && <span className="inline-flex items-center gap-1.5 text-sky-700 bg-sky-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-sky-200"><div className="w-1.5 h-1.5 rounded-full bg-sky-500"></div> Chờ xác nhận email</span>}
+                        {acc.status === 'Deactive' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Khóa</span>}
+                        {acc.status === 'Pending Approved' && <span className="inline-flex items-center gap-1.5 text-[#f37021] bg-[#fef1e8] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#f37021]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#f37021]"></div> Chờ duyệt</span>}
+                        {acc.status === 'Approved' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Đã duyệt</span>}
+                        {acc.status === 'Rejected' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Từ chối</span>}
+                      </td>
+                      <td className="p-5 pr-8 text-center">
+                        <div className="flex items-center justify-center gap-2 transition-opacity">
+                          {(isRealAdmin || isStaffLeader) ? (
+                            <>
+                              <button 
+                                onClick={() => openViewDrawer(acc)}
+                                className="flex items-center justify-center p-2 text-gray-500 hover:text-[#004c91] hover:bg-blue-50/50 rounded-full transition-all outline-none"
+                                title="Xem tài khoản"
+                              >
+                                <Eye className="w-5 h-5" />
+                              </button>
+                              {activeTab === 'pending' ? (
+                                acc.status === 'Pending Approved' && (
+                                  <>
+                                    <button 
+                                      className="flex items-center justify-center p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-full transition-all outline-none"
+                                      title="Duyệt"
+                                    >
+                                      <CheckCircle className="w-5 h-5" />
+                                    </button>
+                                    <button 
+                                      className="flex items-center justify-center p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-all outline-none"
+                                      title="Từ chối"
+                                    >
+                                      <XCircle className="w-5 h-5" />
+                                    </button>
+                                  </>
+                                )
+                              ) : (
+                                <>
+                                  {((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
+                                    <label className="relative flex items-center cursor-pointer ml-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
+                                      <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
+                                      <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
+                                        <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
+                                      </div>
+                                    </label>
+                                  ) : !(isRealAdmin && acc.status === 'Locked') && (
+                                    <span className="text-gray-300 text-sm">—</span>
+                                  )}
+                                  {/* LOCK/UNLOCK — flow riêng của ADMIN (khác toggle ACTIVE↔INACTIVE),
+                                      không tự khóa chính mình; backend re-check toàn bộ. */}
+                                  {isRealAdmin && !acc.isCurrentUser && acc.status === 'Active' && (
+                                    <button
+                                      onClick={() => { setLockError(null); setLockReason(''); setLockTarget(acc); }}
+                                      className="flex items-center justify-center p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-all outline-none"
+                                      title="Khóa tài khoản (bảo mật)"
+                                    >
+                                      <Key className="w-4.5 h-4.5" />
+                                    </button>
+                                  )}
+                                  {isRealAdmin && !acc.isCurrentUser && acc.status === 'Locked' && (
+                                    <button
+                                      onClick={() => { setLockError(null); setLockReason(''); setLockTarget(acc); }}
+                                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#0aa14f] border border-[#0aa14f]/40 hover:bg-[#eaffe4] transition-colors outline-none"
+                                      title="Mở khóa tài khoản"
+                                    >
+                                      Mở khóa
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </>
+                          ) : isStaff ? (
+                            <>
+                              <button 
+                                onClick={() => openViewDrawer(acc)}
+                                className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all outline-none"
+                                title="Xem tài khoản"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </>
                           ) : (
                             <>
-                              {((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
-                                <label className="relative flex items-center cursor-pointer ml-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
-                                  <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
-                                  <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
-                                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
-                                  </div>
-                                </label>
-                              ) : !(isRealAdmin && acc.status === 'Locked') && (
+                              <button 
+                                onClick={() => openViewDrawer(acc)}
+                                className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all outline-none"
+                                title="Xem tài khoản"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              {activeTab === 'pending' ? (
+                                acc.status === 'Pending Approved' && (
+                                  <>
+                                    <button 
+                                      className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-green-600 hover:border-green-600 hover:bg-green-50 transition-all outline-none mx-1 relative z-10"
+                                      title="Duyệt"
+                                    >
+                                      <CheckCircle className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                      className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-red-500 hover:border-red-500 hover:bg-red-50 transition-all outline-none mr-1 relative z-10"
+                                      title="Từ chối"
+                                    >
+                                      <XCircle className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )
+                              ) : ((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
+                                <>
+                                  <label className="relative flex items-center cursor-pointer mx-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
+                                    <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
+                                    <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
+                                      <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
+                                    </div>
+                                  </label>
+                                </>
+                              ) : (
                                 <span className="text-gray-300 text-sm">—</span>
                               )}
-                              {/* LOCK/UNLOCK — flow riêng của ADMIN (khác toggle ACTIVE↔INACTIVE),
-                                  không tự khóa chính mình; backend re-check toàn bộ. */}
-                              {isRealAdmin && !acc.isCurrentUser && acc.status === 'Active' && (
-                                <button
-                                  onClick={() => { setLockError(null); setLockReason(''); setLockTarget(acc); }}
-                                  className="flex items-center justify-center p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-all outline-none"
-                                  title="Khóa tài khoản (bảo mật)"
-                                >
-                                  <Key className="w-4.5 h-4.5" />
-                                </button>
-                              )}
-                              {isRealAdmin && !acc.isCurrentUser && acc.status === 'Locked' && (
-                                <button
-                                  onClick={() => { setLockError(null); setLockReason(''); setLockTarget(acc); }}
-                                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#0aa14f] border border-[#0aa14f]/40 hover:bg-[#eaffe4] transition-colors outline-none"
-                                  title="Mở khóa tài khoản"
-                                >
-                                  Mở khóa
-                                </button>
-                              )}
                             </>
                           )}
-                        </>
-                      ) : isStaff ? (
-                        <>
-                          <button 
-                            onClick={() => openViewDrawer(acc)}
-                            className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all outline-none"
-                            title="Xem tài khoản"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button 
-                            onClick={() => openViewDrawer(acc)}
-                            className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all outline-none"
-                            title="Xem tài khoản"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {activeTab === 'pending' ? (
-                            acc.status === 'Pending Approved' && (
-                              <>
-                                <button 
-                                  className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-green-600 hover:border-green-600 hover:bg-green-50 transition-all outline-none mx-1 relative z-10"
-                                  title="Duyệt"
-                                >
-                                  <CheckCircle className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-red-500 hover:border-red-500 hover:bg-red-50 transition-all outline-none mr-1 relative z-10"
-                                  title="Từ chối"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              </>
-                            )
-                          ) : ((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
-                            <>
-                              <label className="relative flex items-center cursor-pointer mx-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
-                                <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
-                                <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
-                                  <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
-                                </div>
-                              </label>
-                            </>
-                          ) : (
-                            <span className="text-gray-300 text-sm">—</span>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan={8} className="py-16 text-center text-gray-400 font-medium text-sm">
-                    {isServerTab && accountsLoading ? 'Đang tải danh sách tài khoản...' : 'Không tìm thấy tài khoản nào phù hợp'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalItems > 0 && (
-        <div className="p-6 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500">Hiển thị</span>
-            <div className="relative">
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
-              >
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-              <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={8} className="py-16 text-center text-gray-400 font-medium text-sm">
+                        {isServerTab && accountsLoading ? 'Đang tải danh sách tài khoản...' : 'Không tìm thấy tài khoản nào phù hợp'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <span className="text-sm font-medium text-gray-500">tài khoản / trang</span>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+            {/* Pagination */}
+            {totalItems > 0 && (
+            <div className="p-6 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-500">Hiển thị</span>
+                <div className="relative">
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+                <span className="text-sm font-medium text-gray-500">tài khoản / trang</span>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`w-8 h-8 rounded-lg text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"
                 >
-                  {page}
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
-              ))}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`w-8 h-8 rounded-lg text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <button
-               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-               disabled={currentPage === totalPages}
-               className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#004c91] hover:border-[#004c91] hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+            )}
         </div>
-        )}
-      </div>
+      )}
 
       {/* Modal: Chi tiết Tài khoản */}
       {isViewDrawerOpen && selectedAccount && (

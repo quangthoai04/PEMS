@@ -84,7 +84,7 @@ internal static class AccountListQueryExecutor
             {
                 throw new AuthBusinessException(
                     AccountErrorCodes.CampusScopeForbidden,
-                    "BÃ¡ÂºÂ¡n khÃƒÂ´ng cÃƒÂ³ quyÃ¡Â»Ân xem tÃƒÂ i khoÃ¡ÂºÂ£n Ã¡Â»Å¸ cÃ†Â¡ sÃ¡Â»Å¸ nÃƒÂ y.", 403);
+                    "Bạn không có quyền xem tài khoản ở cơ sở này.", 403);
             }
 
             if (isStaffLeader)
@@ -107,7 +107,7 @@ internal static class AccountListQueryExecutor
             }
         }
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Keyword search (safe fields only) Ã¢â€â‚¬Ã¢â€â‚¬
+        // ── Keyword search (safe fields only) ──
         // HO Account Management scope (UC-95/UC-99): the HO screen manages ONLY
         // HO accounts and Staff Leaders. ADMIN keeps the unrestricted privileged view.
         if (isHoCaller)

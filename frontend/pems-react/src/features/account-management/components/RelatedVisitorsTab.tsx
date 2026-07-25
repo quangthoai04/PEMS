@@ -60,7 +60,12 @@ function StatusBadge({ status }: { status: string }) {
   return <span className="inline-flex items-center gap-1.5 text-gray-600 bg-gray-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-gray-200">{STATUS_LABELS[s] ?? status}</span>;
 }
 
-export function RelatedVisitorsTab() {
+interface RelatedVisitorsTabProps {
+  accountTypeFilter?: 'INTERNAL' | 'VISITOR';
+  onAccountTypeChange?: (val: 'INTERNAL' | 'VISITOR') => void;
+}
+
+export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTypeChange }: RelatedVisitorsTabProps = {}) {
   const [search, setSearch] = useState('');
   const [nationalityFilter, setNationalityFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -157,6 +162,20 @@ export function RelatedVisitorsTab() {
             className="w-full pl-11 pr-4 py-3 rounded-2xl border-none focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all text-sm shadow-inner bg-white/10 text-white placeholder:text-blue-200"
           />
         </div>
+
+        {onAccountTypeChange && (
+          <div className="relative">
+            <select
+              value={accountTypeFilter}
+              onChange={(e) => onAccountTypeChange(e.target.value as 'INTERNAL' | 'VISITOR')}
+              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+            >
+              <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
+              <option className="text-gray-900" value="VISITOR">Tài khoản khách</option>
+            </select>
+            <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
+          </div>
+        )}
 
         <div className="relative" ref={natRef}>
           <button
