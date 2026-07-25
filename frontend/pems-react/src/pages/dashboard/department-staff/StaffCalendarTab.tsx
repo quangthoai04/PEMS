@@ -5,7 +5,7 @@
  */
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  ChevronLeft, ChevronRight, ChevronDown, X, Clock, MapPin, User, AlertCircle, FileText,
+  ChevronLeft, ChevronRight, ChevronDown, X, Clock, MapPin, User, AlertCircle, FileText, Plus, Calendar as CalendarIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -99,6 +99,40 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const [showProposalInput, setShowProposalInput] = useState(false);
   const [handoverNote, setHandoverNote] = useState('');
   const [submittedVisitRequestId, setSubmittedVisitRequestId] = useState<number | null>(null);
+
+  // Personal Event state for Staff
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newContent, setNewContent] = useState('');
+  const [newStartTime, setNewStartTime] = useState('08:00');
+  const [newEndTime, setNewEndTime] = useState('09:00');
+  const [addLoading, setAddLoading] = useState(false);
+
+  const handleCreatePersonalEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !selectedDate) return;
+    if (selectedDate < today) {
+      toast.error('Không thể tạo lịch trong quá khứ. Vui lòng chọn ngày từ hôm nay trở đi.');
+      return;
+    }
+    setAddLoading(true);
+    try {
+      await departmentReceptionTasksApi.createPersonalEvent(
+        newTitle.trim(),
+        newContent.trim(),
+        selectedDate,
+        newStartTime || '08:00',
+        newEndTime || '09:00'
+      );
+      toast.success('Đã lưu lịch cá nhân');
+      onRefresh();
+      setShowAddModal(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Lỗi khi lưu lịch cá nhân');
+    } finally {
+      setAddLoading(false);
+    }
+  };
 
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
@@ -387,6 +421,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400 inline-block" />Thư mời</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400 inline-block" />Đơn yêu cầu</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400 inline-block" />Đã xử lý</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500 inline-block" />Lịch cá nhân</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-100 border-2 border-slate-400 inline-block" /><span className="line-through text-slate-500">Hủy</span></span>
         </div>
       </div>
@@ -419,7 +454,27 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                     }`}>
                     {cell.isCurrent && (
                       <>
-                        <span className={`self-start text-xs font-extrabold px-1.5 py-0.5 rounded-md mb-1 ${isToday ? 'bg-red-500 text-white' : isSelected ? 'bg-[#f37021] text-white' : 'text-slate-700'}`}>{cell.day}</span>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-md ${isToday ? 'bg-red-500 text-white' : isSelected ? 'bg-[#f37021] text-white' : 'text-slate-700'}`}>{cell.day}</span>
+                          {!isPastDay && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDate(cell.dateStr);
+                                setNewTitle('');
+                                setNewContent('');
+                                setNewStartTime('08:00');
+                                setNewEndTime('09:00');
+                                setShowAddModal(true);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 text-[#f37021] hover:text-[#004c91] transition-opacity p-0.5 hover:bg-orange-100 rounded-md cursor-pointer"
+                              title="Tạo lịch cá nhân"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                         <div className="space-y-0.5 overflow-y-auto flex-1 no-scrollbar">
                           {dayEvs.map(ev => renderEventPill(ev, cell.dateStr))}
                         </div>
@@ -723,6 +778,99 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
         onClose={() => setSubmittedVisitRequestId(null)}
       />
       <NotificationDetailModal item={changeNotifDetail} onClose={() => setChangeNotifDetail(null)} />
+
+      {/* Personal Event Creation Modal for Staff */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-3.5 bg-[#004c91] text-white flex items-center justify-between">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-[#f37021]" />
+                Lên Lịch Cá Nhân ({selectedDate})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreatePersonalEvent} className="p-5 space-y-4 text-xs text-slate-800">
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">
+                    Tiêu đề sự kiện *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: Họp nội bộ / Nhiệm vụ riêng"
+                    value={newTitle}
+                    onChange={e => setNewTitle(e.target.value)}
+                    className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">
+                    Khung giờ *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      required
+                      value={newStartTime}
+                      onChange={e => setNewStartTime(e.target.value)}
+                      className="flex-1 text-xs px-3 py-2 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none"
+                    />
+                    <span className="text-slate-400 font-bold text-xs shrink-0">—</span>
+                    <input
+                      type="time"
+                      required
+                      value={newEndTime}
+                      min={newStartTime}
+                      onChange={e => setNewEndTime(e.target.value)}
+                      className="flex-1 text-xs px-3 py-2 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">
+                    Nội dung / Ghi chú
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={newContent}
+                    onChange={e => setNewContent(e.target.value)}
+                    placeholder="Mô tả nội dung công việc..."
+                    className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-[#f37021] outline-none resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  disabled={addLoading || !newTitle.trim()}
+                  className="py-2 px-6 bg-[#f37021] hover:bg-[#e05f10] text-white font-black rounded-xl transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {addLoading ? 'Đang lưu...' : 'Xác nhận lưu'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

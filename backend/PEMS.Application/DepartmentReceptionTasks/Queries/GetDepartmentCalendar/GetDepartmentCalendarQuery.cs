@@ -224,29 +224,26 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
             }
 
             // 3. PERSONAL (calendar_events)
-            if (!isDepartmentStaff)
-            {
-                var events = await _context.CalendarEvents
-                    .Where(e => e.OwnerUserId == userId
-                                && e.Status == "ACTIVE"
-                                && e.StartAt >= startDate
-                                && e.StartAt < endDate)
-                    .ToListAsync(cancellationToken);
+            var events = await _context.CalendarEvents
+                .Where(e => e.OwnerUserId == userId
+                            && e.Status == "ACTIVE"
+                            && e.StartAt >= startDate
+                            && e.StartAt < endDate)
+                .ToListAsync(cancellationToken);
 
-                foreach (var e in events)
+            foreach (var e in events)
+            {
+                items.Add(new DepartmentCalendarItemDto
                 {
-                    items.Add(new DepartmentCalendarItemDto
-                    {
-                        Id = e.CalendarEventId,
-                        ItemType = "PERSONAL",
-                        Title = e.Title,
-                        FullTitle = e.Title + (string.IsNullOrEmpty(e.Description) ? "" : " - " + e.Description),
-                        Date = e.StartAt.ToString("yyyy-MM-dd"),
-                        StartAt = e.StartAt.ToString("o"),
-                        EndAt = e.EndAt.ToString("o"),
-                        Status = e.Status
-                    });
-                }
+                    Id = e.CalendarEventId,
+                    ItemType = "PERSONAL",
+                    Title = e.Title,
+                    FullTitle = e.Title + (string.IsNullOrEmpty(e.Description) ? "" : " - " + e.Description),
+                    Date = e.StartAt.ToString("yyyy-MM-dd"),
+                    StartAt = e.StartAt.ToString("o"),
+                    EndAt = e.EndAt.ToString("o"),
+                    Status = e.Status
+                });
             }
 
             return items;

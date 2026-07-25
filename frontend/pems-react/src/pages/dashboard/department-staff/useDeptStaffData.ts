@@ -106,6 +106,9 @@ function mapCalendarItem(item: any, idx: number): CalendarItem {
       col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
       hCol = 'border-purple-600';
     }
+  } else if (item.itemType === 'PERSONAL') {
+    col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
+    hCol = 'border-purple-600';
   } else if (isProcessed) {
     // Staff đã xử lý → xanh dương
     col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
