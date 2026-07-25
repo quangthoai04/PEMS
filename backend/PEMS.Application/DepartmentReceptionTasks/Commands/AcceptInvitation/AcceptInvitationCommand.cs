@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using PEMS.Application.Common;
+using PEMS.Application.Common.Exceptions;
+
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
 {
     public class AcceptInvitationCommand : IRequest<bool>
@@ -35,14 +37,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
                 .Include(x => x.VisitInstance).ThenInclude(v => v.VisitRequest)
                 .FirstOrDefaultAsync(x => x.ParticipantId == request.ParticipantId, cancellationToken);
 
-            if (p == null) throw new Exception("Không tìm thấy thư mời");
+            if (p == null) throw new NotFoundException("Không tìm thấy thư mời");
 
             // Chỉ cho ACCEPT nếu status = INVITED
             // Allow accepting anytime
             // if (p.Status != "INVITED") throw new Exception("Thư mời không ở trạng thái chờ xác nhận.");
 
             var userId = _currentUserService.UserId;
-            if (!userId.HasValue) throw new Exception("Không xác định được người dùng");
+            if (!userId.HasValue) throw new ValidationException("Không xác định được người dùng");
 
             // Database time conflict check
             var campus = await _context.VisitRequestCampuses.AsNoTracking()
@@ -53,7 +55,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
                     _context, userId.Value, campus.PlannedStartAt, campus.PlannedEndAt, null, p.ParticipantId, cancellationToken);
                 if (hasConflict)
                 {
-                    throw new Exception("Thư mời này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
+                    throw new ValidationException("Thư mời này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
                 }
             }
 

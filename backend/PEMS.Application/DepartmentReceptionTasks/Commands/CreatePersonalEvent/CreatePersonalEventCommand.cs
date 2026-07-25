@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using PEMS.Application.Common;
+using PEMS.Application.Common.Exceptions;
+
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent
 {
     public class CreatePersonalEventCommand : IRequest<ulong>
@@ -30,17 +32,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent
 
         public async Task<ulong> Handle(CreatePersonalEventCommand request, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(request.Title)) throw new Exception("Vui lòng nhập tiêu đề");
+            if (string.IsNullOrWhiteSpace(request.Title)) throw new ValidationException("Vui lòng nhập tiêu đề");
             if (string.IsNullOrWhiteSpace(request.Date) || string.IsNullOrWhiteSpace(request.StartTime) || string.IsNullOrWhiteSpace(request.EndTime))
-                throw new Exception("Vui lòng nhập thời gian hợp lệ");
+                throw new ValidationException("Vui lòng nhập thời gian hợp lệ");
 
             if (!DateTime.TryParse($"{request.Date}T{request.StartTime}:00", out var startAt) ||
                 !DateTime.TryParse($"{request.Date}T{request.EndTime}:00", out var endAt))
             {
-                throw new Exception("Định dạng thời gian không hợp lệ");
+                throw new ValidationException("Định dạng thời gian không hợp lệ");
             }
 
-            if (endAt <= startAt) throw new Exception("Thời gian kết thúc phải lớn hơn thời gian bắt đầu");
+            if (endAt <= startAt) throw new ValidationException("Thời gian kết thúc phải lớn hơn thời gian bắt đầu");
 
             ulong userId = _currentUserService.UserId.Value;
 
@@ -50,7 +52,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent
 
             if (hasOverlap)
             {
-                throw new Exception("Khung giờ tạo lịch cá nhân bị trùng với đơn/thư hoặc lịch khác trong ngày! Vui lòng chọn khung giờ khác.");
+                throw new ValidationException("Khung giờ tạo lịch cá nhân bị trùng với đơn/thư hoặc lịch khác trong ngày! Vui lòng chọn khung giờ khác.");
             }
 
             var ev = new CalendarEvent

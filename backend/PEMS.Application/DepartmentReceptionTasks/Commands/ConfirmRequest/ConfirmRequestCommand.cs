@@ -7,6 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using PEMS.Application.Common;
+using PEMS.Application.Common.Exceptions;
+
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
 {
     public class ConfirmRequestCommand : IRequest<bool>
@@ -30,13 +32,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
-            if (l == null) throw new Exception("Không tìm thấy đơn yêu cầu");
+            if (l == null) throw new NotFoundException("Không tìm thấy đơn yêu cầu");
 
             // Verify department
             ulong userId = _currentUserService.UserId.Value;
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
-                throw new Exception("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
+                throw new ForbiddenException("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
 
             // Database time conflict check
             var campus = await _context.VisitRequestCampuses.AsNoTracking()
@@ -50,7 +52,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
                     _context, userId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
                 if (hasConflict)
                 {
-                    throw new Exception("Đơn này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
+                    throw new ValidationException("Đơn này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
                 }
             }
 
