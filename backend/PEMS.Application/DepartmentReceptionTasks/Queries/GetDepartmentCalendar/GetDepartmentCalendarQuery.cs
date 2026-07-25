@@ -94,8 +94,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                    where u.DepartmentId == deptId
                                          && r.RoleCode == "DEPARTMENT"
                                          && p.Status != "REMOVED"
-                                         && (!isDepartmentStaff || p.UserId == userId)
-                                         && (!isDepartmentStaff || p.AssignedBy != null)
                                          && c.PlannedStartAt >= startDate
                                          && c.PlannedStartAt < endDate
                                    // EffectiveDelegationName: a MIXED per-campus v2 request shows THIS
@@ -117,15 +115,19 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                         .Where(x => x.p.AssignedBy != null && x.p.Status != "DECLINED" && x.p.Status != "REMOVED")
                         .OrderByDescending(x => x.p.AssignedAt ?? x.p.InvitedAt ?? x.p.CreatedAt)
                         .FirstOrDefault();
+                    var leaderRow = g
+                        .Where(x => leaderUserId != null && x.p.UserId == leaderUserId.Value)
+                        .OrderByDescending(x => x.p.InvitedAt ?? x.p.CreatedAt)
+                        .FirstOrDefault();
+                    var nonDeclined = g
+                        .Where(x => x.p.Status != "DECLINED" && x.p.Status != "REMOVED")
+                        .OrderByDescending(x => x.p.InvitedAt ?? x.p.CreatedAt)
+                        .FirstOrDefault();
                     var declinedStaff = g
                         .Where(x => x.p.AssignedBy != null && x.p.Status == "DECLINED")
                         .OrderByDescending(x => x.p.RespondedAt ?? x.p.AssignedAt ?? x.p.CreatedAt)
                         .FirstOrDefault();
-                    var leaderRow = g
-                        .Where(x => leaderUserId == null || x.p.UserId == leaderUserId.Value)
-                        .OrderByDescending(x => x.p.InvitedAt ?? x.p.CreatedAt)
-                        .FirstOrDefault();
-                    return activeStaff ?? declinedStaff ?? leaderRow ?? g.First();
+                    return activeStaff ?? leaderRow ?? nonDeclined ?? declinedStaff ?? g.First();
                 })
                 .ToList();
 
@@ -183,7 +185,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                                                && h.BorrowerSignedAt != null
                                                && h.ProviderSignedAt != null)
                                  where l.RequestedToDepartmentId == deptId
-                                       && (!isDepartmentStaff || l.AssignedToUserId == userId)
                                        && startAt >= startDate
                                        && startAt < endDate
                                  select new

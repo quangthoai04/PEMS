@@ -552,50 +552,45 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             let cat = '';
             let col = '';
             let hCol = '';
-            let isProcessed = false;
             const itemStatus = item.itemStatus || item.status;
-            const relatedId = item.relatedUserId != null ? String(item.relatedUserId) : null;
-            const isMine = relatedId != null && [user?.id, user?.userId, user?.account, user?.user_id]
-              .some(v => v != null && String(v) === relatedId);
+            const relatedId = item.relatedUserId != null ? String(item.relatedUserId) : (item.assignedToUserId != null ? String(item.assignedToUserId) : null);
+            const currentUserIdStr = user?.id ?? user?.userId ?? user?.user_id ?? user?.account;
+            const isMine = relatedId != null && currentUserIdStr != null && String(currentUserIdStr) === String(relatedId);
+            const isProcessed = itemStatus !== 'REQUESTED' && itemStatus !== 'ASSIGNED' && itemStatus !== 'SUBMITTED' && itemStatus !== 'PENDING';
 
-            if (item.itemType === 'INVITATION') {
-              isProcessed = itemStatus !== 'REQUESTED';
-              cat = 'Lời mời tham gia';
-            } else if (item.itemType === 'REQUEST') {
-              isProcessed = itemStatus !== 'REQUESTED';
-              cat = 'Đơn yêu cầu mượn đồ';
-            } else {
-              cat = 'Lịch của tôi';
-            }
-
-            if (itemStatus === 'CANCELLED') {
-              // Đã hủy: giữ màu theo loại đơn (không tô xám), chữ gạch ngang khi render.
-              if (item.itemType === 'INVITATION') {
-                col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
-                hCol = 'border-emerald-500';
-              } else if (item.itemType === 'REQUEST') {
-                col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
-                hCol = 'border-orange-500';
-              } else {
+            if (itemStatus === 'CANCELLED' || itemStatus === 'REJECTED') {
+              cat = 'Hủy';
+              col = 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200';
+              hCol = 'border-slate-400';
+            } else if (item.itemType === 'PERSONAL') {
+              if (calendarType === 'Lịch của tôi') {
+                cat = 'Lịch cá nhân';
                 col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
                 hCol = 'border-purple-600';
-              }
-            } else if (isProcessed || (isMine && (item.itemType === 'INVITATION' || item.itemType === 'REQUEST'))) {
-              if (item.status !== 'ASSIGNED') {
+              } else {
                 cat = 'Lịch của tôi';
+                col = 'bg-blue-50 text-[#004c91] border-blue-300 hover:bg-blue-100';
+                hCol = 'border-blue-500';
               }
-              // Đơn phụ trách (chấp nhận / từ chối / đề xuất) -> Màu xanh dương
-              col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
+            } else if (isMine && (itemStatus === 'ACCEPTED' || itemStatus === 'IN_PROGRESS' || itemStatus === 'DONE')) {
+              cat = calendarType === 'Lịch của tôi' ? 'Đơn phụ trách' : 'Lịch của tôi';
+              col = 'bg-blue-50 text-[#004c91] border-blue-300 hover:bg-blue-100';
               hCol = 'border-blue-500';
-            } else if (item.itemType === 'INVITATION') {
+            } else if (!isDeptLeader && isMine && (itemStatus === 'ASSIGNED' || itemStatus === 'INVITED' || itemStatus === 'REQUESTED')) {
+              // Dept Staff: "Cần xử lý" (Vàng) cho các đơn được leader giao nhưng chưa phản hồi
+              cat = 'Cần xử lý';
+              col = 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100';
+              hCol = 'border-amber-500';
+            } else if (isDeptLeader && (itemStatus === 'SUBMITTED' || itemStatus === 'PENDING' || itemStatus === 'UNASSIGNED' || itemStatus === 'INVITED' || itemStatus === 'REQUESTED' || itemStatus === 'DECLINED')) {
+              // Dept Leader: "Cần xử lý" (Vàng) cho các đơn chưa có người nhận/cần giao
+              cat = 'Cần xử lý';
+              col = 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100';
+              hCol = 'border-amber-500';
+            } else {
+              // Còn lại: "Đã có người phụ trách" (Xanh lá)
+              cat = 'Đã có người phụ trách';
               col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
               hCol = 'border-emerald-500';
-            } else if (item.itemType === 'REQUEST') {
-              col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
-              hCol = 'border-orange-500';
-            } else {
-              col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
-              hCol = 'border-purple-600';
             }
 
             // Re-based: UTC getters trả đúng phần giờ Việt Nam.
@@ -839,16 +834,37 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   // Filter events based on type
   const filteredEvents = useMemo(() => {
-    if (calendarType === 'Lịch của tôi') {
-      if (isStudent || isVisitor) return events;
-      return events.filter(e => {
-        if (e.category === 'Lịch của tôi') return true;
-        const eid = String(e.relatedUserId);
-        return eid === String(user?.id) || eid === String(user?.userId) || eid === String(user?.account) || eid === String(user?.user_id);
-      });
-    }
-    return events; // "Trong văn phòng" shows all
-  }, [events, calendarType, isStudent, isVisitor]);
+    const currentUserIdStr = user?.id ?? user?.userId ?? user?.user_id ?? user?.account;
+    const baseList = calendarType === 'Lịch của tôi'
+      ? events.filter(e => {
+          if (isStudent || isVisitor) return true;
+          if (e.itemType === 'PERSONAL') return true;
+          const relatedId = e.relatedUserId != null ? String(e.relatedUserId) : null;
+          return relatedId != null && currentUserIdStr != null && String(currentUserIdStr) === String(relatedId);
+        })
+      : events;
+
+    return baseList.map(e => {
+      if (e.itemType === 'PERSONAL') {
+        if (calendarType === 'Lịch của tôi') {
+          return {
+            ...e,
+            category: 'Lịch cá nhân',
+            color: 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200',
+            hoverColor: 'border-purple-600',
+          };
+        } else {
+          return {
+            ...e,
+            category: 'Lịch của tôi',
+            color: 'bg-blue-50 text-[#004c91] border-blue-300 hover:bg-blue-100',
+            hoverColor: 'border-blue-500',
+          };
+        }
+      }
+      return e;
+    });
+  }, [events, calendarType, isStudent, isVisitor, user]);
 
   const eventsInCurrentMonthAndYear = useMemo(() => {
     return filteredEvents.filter(e => {
@@ -1723,282 +1739,213 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
         {/* Shared Header Bar */}
         {viewMode === 'calendar' && (
-          <header className="p-4 sm:p-6 pb-5 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <span className="text-[10px] font-bold text-[#f37021] uppercase tracking-widest block mb-0.5">FPT University • PEMS v3.0</span>
-              <h1 className="text-xl md:text-2xl font-black text-[#004c91] tracking-tight">
-                Lịch chung & theo dõi sự kiện
-              </h1>
+          <header className="p-4 sm:p-6 pb-4 flex flex-wrap items-center gap-4">
+            {/* Google-Calendar-style toolbar button group */}
+            <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200 flex items-center gap-1">
+              <button
+                onClick={handleResetToAugust2026}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-white shadow-xs hover:bg-slate-50 border border-slate-250/60 rounded-lg transition-all"
+              >
+                Hôm nay
+              </button>
+              <div className="h-4 w-px bg-slate-200 mx-1"></div>
+              <button
+                onClick={handlePrev}
+                className="p-2 text-slate-600 hover:bg-white rounded-lg hover:text-slate-800 hover:shadow-3xs transition-all active:scale-95"
+                title="Trước"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleNext}
+                className="p-2 text-slate-600 hover:bg-white rounded-lg hover:text-slate-800 hover:shadow-3xs transition-all active:scale-95"
+                title="Sau"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Legend */}
-            <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-600">
-              {calendarType === 'Lịch của tôi' ? (
+            {/* Month & Year Dropdown Trigger with Mini Calendar Popover */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setMiniMonth(currentMonth);
+                  setMiniYear(currentYear);
+                  setShowMiniCalendar(!showMiniCalendar);
+                  setShowDisplayDropdown(false);
+                }}
+                className="flex items-center justify-between w-[155px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-3xs"
+              >
+                <span className="text-slate-800 select-none">
+                  {displayMode === 'Ngày' && selectedCellDate ? `Ngày ${selectedCellDate.split('-').reverse().join('/')}` :
+                    displayMode === 'Tuần' && selectedCellDate ? `Tuần ${(() => {
+                      const d = parseDateKey(selectedCellDate);
+                      const startYear = new Date(d.getFullYear(), 0, 1);
+                      const days = Math.floor((d.getTime() - startYear.getTime()) / (24 * 60 * 60 * 1000));
+                      return Math.ceil((d.getDay() + 1 + days) / 7);
+                    })()}` :
+                      displayMode === 'Năm' ? `Năm ${currentYear}` :
+                        `Tháng ${currentMonth + 1}, ${currentYear}`}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              </button>
+
+              {showMiniCalendar && (
                 <>
-                  <span className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>
-                    Đơn phụ trách
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>
-                    Lịch cá nhân
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-slate-200 border-2 border-slate-400"></div>
-                    <span className="line-through text-slate-500">Hủy</span>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
-                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
-                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
-                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-200 border-2 border-slate-400"></div><span className="line-through text-slate-500">Hủy</span></span>
-                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>Tôi</span>
+                  <div className="fixed inset-0 z-25" onClick={() => setShowMiniCalendar(false)} />
+                  <div className="absolute left-0 top-full mt-2 w-[280px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-4 animate-fade-in-quick text-slate-800">
+                    <div className="flex items-center justify-between mb-3.5">
+                      <span className="text-xs font-extrabold text-slate-700">
+                        Tháng {miniMonth + 1} năm {miniYear}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (miniMonth === 0) { setMiniMonth(11); setMiniYear(y => y - 1); }
+                            else setMiniMonth(m => m - 1);
+                          }}
+                          className="p-1 text-slate-550 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg hover:shadow-3xs transition-all active:scale-95"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (miniMonth === 11) { setMiniMonth(0); setMiniYear(y => y + 1); }
+                            else setMiniMonth(m => m + 1);
+                          }}
+                          className="p-1 text-slate-550 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg hover:shadow-3xs transition-all active:scale-95"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-7 text-center text-[10px] font-black text-slate-400 mb-2">
+                      <div>CN</div><div>T2</div><div>T3</div><div>T4</div><div>T5</div><div>T6</div><div>T7</div>
+                    </div>
+                    <div className="grid grid-cols-7 text-center gap-y-1 text-xs">
+                      {miniDaysGrid.map((cell, idx) => {
+                        const mStr = String(cell.month + 1).padStart(2, '0');
+                        const dStr = String(cell.day).padStart(2, '0');
+                        const cellDateStr = `${cell.year}-${mStr}-${dStr}`;
+                        const isSelected = selectedCellDate === cellDateStr;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setCurrentMonth(cell.month);
+                              setCurrentYear(cell.year);
+                              setSelectedCellDate(cellDateStr);
+                              const ev = events.find(e => e.date === cellDateStr);
+                              if (ev) setActivePopoverEvent(ev);
+                              else setActivePopoverEvent(null);
+                              setShowMiniCalendar(false);
+                            }}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center font-bold transition-all mx-auto select-none ${isSelected
+                              ? 'bg-[#f37021] text-white shadow-sm font-extrabold scale-105'
+                              : cell.isCurrentMonth
+                                ? 'text-slate-800 hover:bg-slate-100'
+                                : 'text-slate-300 hover:bg-slate-50'
+                              }`}
+                          >
+                            {cell.day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </>
               )}
             </div>
 
-            {/* Google-Calendar-style toolbar button group */}
-            {viewMode === 'calendar' && (
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200 flex items-center gap-1">
-                  <button
-                    onClick={handleResetToAugust2026}
-                    className="px-4 py-2 text-xs font-bold text-slate-700 bg-white shadow-xs hover:bg-slate-50 border border-slate-250/60 rounded-lg transition-all"
-                  >
-                    Hôm nay
-                  </button>
-                  <div className="h-4 w-px bg-slate-200 mx-1"></div>
-                  <button
-                    onClick={handlePrev}
-                    className="p-2 text-slate-600 hover:bg-white rounded-lg hover:text-slate-800 hover:shadow-3xs transition-all active:scale-95"
-                    title="Trước"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleNext}
-                    className="p-2 text-slate-600 hover:bg-white rounded-lg hover:text-slate-800 hover:shadow-3xs transition-all active:scale-95"
-                    title="Sau"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+            {/* Display Mode Dropdown "Hiển thị: " */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowDisplayDropdown(!showDisplayDropdown);
+                  setShowMiniCalendar(false);
+                  setShowTypeDropdown(false);
+                }}
+                className="flex items-center justify-between w-[150px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-3xs"
+              >
+                <span className="text-slate-800 font-extrabold select-none">Hiển thị: {displayMode}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              </button>
+              {showDisplayDropdown && (
+                <>
+                  <div className="fixed inset-0 z-25" onClick={() => setShowDisplayDropdown(false)} />
+                  <div className="absolute left-0 top-full mt-2 w-[150px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800">
+                    {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => { setDisplayMode(mode); setShowDisplayDropdown(false); }}
+                        className={`w-full text-left px-5 py-2.5 text-xs font-bold transition-colors block ${displayMode === mode ? 'bg-slate-50 text-[#004c91]' : 'text-slate-700 hover:bg-slate-50'}`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
-                {/* Month & Year Dropdown Trigger with Mini Calendar Popover */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setMiniMonth(currentMonth);
-                      setMiniYear(currentYear);
-                      setShowMiniCalendar(!showMiniCalendar);
-                      setShowDisplayDropdown(false);
-                    }}
-                    className="flex items-center justify-between w-[155px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-3xs"
-                  >
-                    <span className="text-slate-800 select-none">
-                      {displayMode === 'Ngày' && selectedCellDate ? `Ngày ${selectedCellDate.split('-').reverse().join('/')}` :
-                        displayMode === 'Tuần' && selectedCellDate ? `Tuần ${(() => {
-                          const d = parseDateKey(selectedCellDate);
-                          const startYear = new Date(d.getFullYear(), 0, 1);
-                          const days = Math.floor((d.getTime() - startYear.getTime()) / (24 * 60 * 60 * 1000));
-                          return Math.ceil((d.getDay() + 1 + days) / 7);
-                        })()}` :
-                          displayMode === 'Năm' ? `Năm ${currentYear}` :
-                            `Tháng ${currentMonth + 1}, ${currentYear}`}
-                    </span>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                  </button>
+            {/* Calendar Type Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowTypeDropdown(!showTypeDropdown);
+                  setShowDisplayDropdown(false);
+                  setShowMiniCalendar(false);
+                }}
+                className="flex items-center justify-between gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#004c91] hover:bg-slate-50 transition-colors shadow-3xs"
+              >
+                <span className="select-none text-left truncate">{calendarType}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#004c91]/75 flex-shrink-0" />
+              </button>
+              {showTypeDropdown && (
+                <>
+                  <div className="fixed inset-0 z-25" onClick={() => setShowTypeDropdown(false)} />
+                  <div className="absolute left-0 top-full mt-2 w-[160px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800">
+                    {((isStudent || isVisitor) ? ['Lịch của tôi'] : ['Trong văn phòng', 'Lịch của tôi']).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          setCalendarType(type as 'Trong văn phòng' | 'Lịch của tôi');
+                          setShowTypeDropdown(false);
+                        }}
+                        className={`w-full text-left px-5 py-2.5 text-xs font-bold transition-colors block ${calendarType === type ? 'bg-slate-50 text-[#f37021]' : 'text-slate-700 hover:bg-slate-50'}`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
-                  {showMiniCalendar && (
-                    <>
-                      {/* Overlay backdrop to close clicking outside */}
-                      <div
-                        className="fixed inset-0 z-25"
-                        onClick={() => setShowMiniCalendar(false)}
-                      />
-
-                      {/* Popover Card */}
-                      <div className="absolute right-0 top-full mt-2 w-[280px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-4 animate-fade-in-quick text-slate-800">
-
-                        {/* Miniature header */}
-                        <div className="flex items-center justify-between mb-3.5">
-                          <span className="text-xs font-extrabold text-slate-700">
-                            Tháng {miniMonth + 1} năm {miniYear}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (miniMonth === 0) {
-                                  setMiniMonth(11);
-                                  setMiniYear(y => y - 1);
-                                } else {
-                                  setMiniMonth(m => m - 1);
-                                }
-                              }}
-                              className="p-1 text-slate-550 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg hover:shadow-3xs transition-all active:scale-95"
-                            >
-                              <ChevronLeft className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (miniMonth === 11) {
-                                  setMiniMonth(0);
-                                  setMiniYear(y => y + 1);
-                                } else {
-                                  setMiniMonth(m => m + 1);
-                                }
-                              }}
-                              className="p-1 text-slate-550 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg hover:shadow-3xs transition-all active:scale-95"
-                            >
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Week days labels */}
-                        <div className="grid grid-cols-7 text-center text-[10px] font-black text-slate-400 mb-2">
-                          <div>CN</div>
-                          <div>T2</div>
-                          <div>T3</div>
-                          <div>T4</div>
-                          <div>T5</div>
-                          <div>T6</div>
-                          <div>T7</div>
-                        </div>
-
-                        {/* Days grid */}
-                        <div className="grid grid-cols-7 text-center gap-y-1 text-xs">
-                          {miniDaysGrid.map((cell, idx) => {
-                            const mStr = String(cell.month + 1).padStart(2, '0');
-                            const dStr = String(cell.day).padStart(2, '0');
-                            const cellDateStr = `${cell.year}-${mStr}-${dStr}`;
-                            const isSelected = selectedCellDate === cellDateStr;
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                  setCurrentMonth(cell.month);
-                                  setCurrentYear(cell.year);
-                                  setSelectedCellDate(cellDateStr);
-
-                                  // Find matching event or clear
-                                  const ev = events.find(e => e.date === cellDateStr);
-                                  if (ev) {
-                                    setActivePopoverEvent(ev);
-                                  } else {
-                                    setActivePopoverEvent(null);
-                                  }
-                                  setShowMiniCalendar(false);
-                                }}
-                                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold transition-all mx-auto select-none ${isSelected
-                                    ? 'bg-[#f37021] text-white shadow-sm font-extrabold scale-105'
-                                    : cell.isCurrentMonth
-                                      ? 'text-slate-800 hover:bg-slate-100'
-                                      : 'text-slate-300 hover:bg-slate-50'
-                                  }`}
-                              >
-                                {cell.day}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Display Mode Dropdown "Hiển thị: " -> Ngày, Tuần, Tháng, Năm */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowDisplayDropdown(!showDisplayDropdown);
-                      setShowMiniCalendar(false);
-                      setShowTypeDropdown(false);
-                    }}
-                    className="flex items-center justify-between w-[150px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-3xs"
-                  >
-                    <span className="text-slate-800 font-extrabold select-none">Hiển thị: {displayMode}</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                  </button>
-
-                  {showDisplayDropdown && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-25"
-                        onClick={() => setShowDisplayDropdown(false)}
-                      />
-                      <div className="absolute right-0 top-full mt-2 w-[150px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800">
-                        {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => {
-                              setDisplayMode(mode);
-                              setShowDisplayDropdown(false);
-                            }}
-                            className={`w-full text-left px-5 py-2.5 text-xs font-bold transition-colors block ${displayMode === mode
-                                ? 'bg-slate-50 text-[#004c91]'
-                                : 'text-slate-700 hover:bg-slate-50'
-                              }`}
-                          >
-                            {mode}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* New Calendar Type Dropdown "Loại lịch: " -> Trong văn phòng, Lịch của tôi */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowTypeDropdown(!showTypeDropdown);
-                      setShowDisplayDropdown(false);
-                      setShowMiniCalendar(false);
-                    }}
-                    className="flex items-center justify-between w-[240px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#004c91] hover:bg-slate-50 transition-colors shadow-3xs"
-                  >
-                    <span className="select-none text-left truncate">Loại lịch: {calendarType}</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-[#004c91]/75 flex-shrink-0 ml-1" />
-                  </button>
-
-                  {showTypeDropdown && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-25"
-                        onClick={() => setShowTypeDropdown(false)}
-                      />
-                      <div className="absolute right-0 top-full mt-2 w-[240px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800">
-                        {((isStudent || isVisitor) ? ['Lịch của tôi'] : ['Trong văn phòng', 'Lịch của tôi']).map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => {
-                              setCalendarType(type as 'Trong văn phòng' | 'Lịch của tôi');
-                              setShowTypeDropdown(false);
-                            }}
-                            className={`w-full text-left px-5 py-2.5 text-xs font-bold transition-colors block ${calendarType === type
-                                ? 'bg-slate-50 text-[#f37021]'
-                                : 'text-slate-700 hover:bg-slate-50'
-                              }`}
-                          >
-                            {type}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Chú thích màu sắc ngang hàng bên phải */}
+            <div className="ml-auto flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600">
+              {calendarType === 'Trong văn phòng' ? (
+                <>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />Cần xử lý</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />Đã có người phụ trách</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-[#004c91] inline-block" />Lịch của tôi</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-400 inline-block" /><span className="line-through text-slate-500">Hủy</span></span>
+                </>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-[#004c91] inline-block" />Đơn phụ trách</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-purple-500 inline-block" />Lịch cá nhân</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-400 inline-block" /><span className="line-through text-slate-500">Hủy</span></span>
+                </>
+              )}
+            </div>
           </header>
         )}
 

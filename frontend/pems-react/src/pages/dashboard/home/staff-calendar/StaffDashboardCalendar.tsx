@@ -53,8 +53,8 @@ const MONTH_NAMES = [
  *  "Lịch cá nhân" (tím) chỉ hiện ở "Lịch của tôi" — ở lịch văn phòng nó gộp màu xanh dương với MINE. */
 const LEGEND: { key: string; label: string; dot: string }[] = [
   { key: 'NEEDS_ACTION', label: 'Cần xử lý', dot: 'bg-amber-400' },
-  { key: 'MINE', label: 'Tôi là người phụ trách', dot: 'bg-[#004c91]' },
-  { key: 'PROCESSED', label: 'Đã xử lý', dot: 'bg-emerald-500' },
+  { key: 'PROCESSED', label: 'Đã có người phụ trách', dot: 'bg-emerald-500' },
+  { key: 'MINE', label: 'Đơn phụ trách', dot: 'bg-[#004c91]' },
   { key: 'PERSONAL', label: 'Lịch cá nhân', dot: 'bg-purple-400' },
   { key: 'CANCELLED', label: 'Hủy', dot: 'bg-slate-400' },
 ];
@@ -65,7 +65,7 @@ const PILL_CLASS: Record<string, string> = {
   PROCESSED: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100',
   CANCELLED_OR_EXPIRED: 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200',
   NEUTRAL: 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100',
-  PERSONAL: 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100',
+  PERSONAL: 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200',
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -350,9 +350,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   const EventPill = ({ pill, full = false }: { pill: CalendarPill; full?: boolean; key?: string | number }) => {
     if (pill.kind === 'personal') {
       const ev = pill.event;
-      // Lịch văn phòng: lịch cá nhân gộp chung màu xanh dương với "Tôi là người phụ trách";
-      // Lịch của tôi: giữ màu tím để phân biệt đơn phụ trách và lịch cá nhân.
-      const personalClass = calendarType === 'mine' ? PILL_CLASS.PERSONAL : PILL_CLASS.MINE;
+      const personalClass = PILL_CLASS.PERSONAL;
       return (
         <button
           type="button"

@@ -48,7 +48,7 @@ export function DeptStaffDashboard() {
     calendarItems, calendarLoading, fetchCalendar,
     tasks, totalTasks, tasksLoading, attentionItems,
     fetchTasks,
-  } = useDeptStaffData(currentYear);
+  } = useDeptStaffData(currentYear, user);
 
   useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
 

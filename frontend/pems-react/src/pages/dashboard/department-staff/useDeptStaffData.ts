@@ -29,6 +29,7 @@ export type CalendarItem = {
   host: string;
   purpose?: string;
   cancelReason?: string;
+  relatedUserId?: number | string;
 };
 
 export type AssignedTask = {
@@ -87,41 +88,36 @@ export type TaskStatusFilter =
 // Cam          = đơn yêu cầu chưa xử lý
 // Đã hủy      = giữ màu theo loại, chữ gạch ngang khi render (không tô xám)
 // Ngày quá khứ được phủ lớp xám ở lưới lịch, không tô xám từng item.
-function mapCalendarItem(item: any, idx: number): CalendarItem {
+function mapCalendarItem(item: any, idx: number, currentUserId?: string | number | null): CalendarItem {
   const itemStatus = item.itemStatus || item.status;
   const rawId = item.itemId || item.logisticsItemId || item.participantId || item.id;
-  const isProcessed = itemStatus !== 'REQUESTED' && itemStatus !== 'ASSIGNED';
+  const relatedId = item.relatedUserId != null ? String(item.relatedUserId) : (item.assignedToUserId != null ? String(item.assignedToUserId) : null);
+  const isMine = relatedId != null && currentUserId != null && String(currentUserId) === String(relatedId);
+  const isProcessed = itemStatus !== 'REQUESTED' && itemStatus !== 'ASSIGNED' && itemStatus !== 'SUBMITTED' && itemStatus !== 'PENDING';
 
   let col = '';
   let hCol = '';
 
-  if (itemStatus === 'CANCELLED') {
-    if (item.itemType === 'INVITATION') {
-      col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
-      hCol = 'border-emerald-500';
-    } else if (item.itemType === 'REQUEST') {
-      col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
-      hCol = 'border-orange-500';
-    } else {
-      col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
-      hCol = 'border-purple-600';
-    }
+  if (itemStatus === 'CANCELLED' || itemStatus === 'REJECTED') {
+    // Hủy: màu xám
+    col = 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200';
+    hCol = 'border-slate-400';
   } else if (item.itemType === 'PERSONAL') {
-    col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
-    hCol = 'border-purple-600';
-  } else if (isProcessed) {
-    // Staff đã xử lý → xanh dương
-    col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
+    // Lịch cá nhân: bên lịch văn phòng hiển thị màu xanh dương (Lịch của tôi)
+    col = 'bg-blue-50 text-[#004c91] border-blue-300 hover:bg-blue-100';
     hCol = 'border-blue-500';
-  } else if (item.itemType === 'INVITATION') {
+  } else if (isMine && (itemStatus === 'ACCEPTED' || itemStatus === 'IN_PROGRESS' || itemStatus === 'DONE')) {
+    // Staff đã nhận / phụ trách -> Đơn phụ trách (Xanh dương)
+    col = 'bg-blue-50 text-[#004c91] border-blue-300 hover:bg-blue-100';
+    hCol = 'border-blue-500';
+  } else if (isMine && (itemStatus === 'ASSIGNED' || itemStatus === 'INVITED' || itemStatus === 'REQUESTED')) {
+    // Dept Staff: "Cần xử lý" (Vàng) cho các đơn được leader phân công cho chính mình nhưng chưa phản hồi
+    col = 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100';
+    hCol = 'border-amber-500';
+  } else {
+    // Còn lại: "Đã có người phụ trách" (Xanh lá)
     col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
     hCol = 'border-emerald-500';
-  } else if (item.itemType === 'REQUEST') {
-    col = 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
-    hCol = 'border-orange-500';
-  } else {
-    col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
-    hCol = 'border-purple-600';
   }
 
   // Re-based: local getters bên dưới trả đúng phần giờ Việt Nam trên mọi browser.
@@ -150,6 +146,7 @@ function mapCalendarItem(item: any, idx: number): CalendarItem {
       ? `Đã bị hủy.${item.cancelReason ? ` Lý do: ${item.cancelReason}` : ''}`
       : item.title || '',
     cancelReason: item.cancelReason,
+    relatedUserId: item.relatedUserId ?? item.assignedToUserId,
   };
 }
 
@@ -177,10 +174,12 @@ export const DEFAULT_FILTER: AssignmentsFilter = {
   pageSize: 10,
 };
 
-export function useDeptStaffData(year: number) {
+export function useDeptStaffData(year: number, user?: any) {
   // ── Calendar ──────────────────────────────────────────────────────────────
   const [calendarItems, setCalendarItems] = useState<CalendarItem[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
+
+  const currentUserId = user?.id ?? user?.userId ?? user?.user_id ?? user?.account;
 
   const fetchCalendar = useCallback(async () => {
     setCalendarLoading(true);
@@ -193,14 +192,14 @@ export function useDeptStaffData(year: number) {
           const st = it.itemStatus || it.status;
           return st !== 'DECLINED' && st !== 'REJECTED';
         });
-        setCalendarItems(visible.map(mapCalendarItem));
+        setCalendarItems(visible.map((item, idx) => mapCalendarItem(item, idx, currentUserId)));
       }
     } catch (e) {
       console.error('Fetch calendar error:', e);
     } finally {
       setCalendarLoading(false);
     }
-  }, [year]);
+  }, [year, currentUserId]);
 
   // ── Assigned tasks ────────────────────────────────────────────────────────
   const [tasks, setTasks] = useState<AssignedTask[]>([]);
