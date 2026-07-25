@@ -47,6 +47,8 @@ public static class DependencyInjection
         services.AddScoped<IEmailActionTokenService, EmailActionTokenService>();
         services.AddScoped<PEMS.Application.Accounts.Common.IAccountEmailConfirmationService,
             PEMS.Infrastructure.Email.AccountEmailConfirmationService>();
+        services.AddScoped<PEMS.Application.Accounts.Common.IAccountEmailConfirmationMaintenance,
+            PEMS.Application.Accounts.Common.AccountEmailConfirmationMaintenance>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
 
@@ -133,6 +135,10 @@ public static class DependencyInjection
 
         // Background job — pending-amendment expiry (window passed / instance started), plan §16.6.
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitAmendmentExpiryHostedService>();
+
+        // Background job — pending-account email-confirmation maintenance (P0 #1): expire overdue tokens
+        // and auto-cancel long-unconfirmed pending accounts, releasing any reserved Head slot.
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.AccountEmailConfirmationMaintenanceHostedService>();
 
         return services;
     }
