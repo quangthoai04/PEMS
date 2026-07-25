@@ -1486,36 +1486,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         </>
       )}
 
-      {/* UC-27: pending invitations entry point (accept/decline lives on the detail screen) */}
-      {showTabs && pendingInvitations.length > 0 && (
-        <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Mail className="w-5 h-5 text-[#F37021]" />
-            <h3 className="text-sm font-bold text-slate-800">Lời mời tham gia chờ phản hồi ({pendingInvitations.length})</h3>
-          </div>
-          <div className="space-y-2">
-            {pendingInvitations.map((inv) => (
-              <button
-                key={inv.participantId}
-                onClick={() => navTo(`/dashboard/visit/invitations/${inv.participantId}`)}
-                className="w-full flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-white px-4 py-3 text-left hover:border-[#F37021] hover:shadow-sm transition-all outline-none cursor-pointer"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-[#004c91] truncate">{inv.delegationName || 'Đoàn khách'}</p>
-                  <p className="text-xs text-slate-500 truncate">
-                    {isStaffLeader && inv.participantRole === 'IC_SUPPORT' ? 'Staff Leader hỗ trợ IC' : (PARTICIPANT_ROLE_LABELS[inv.participantRole] ?? inv.participantRole)}
-                    {inv.campusName ? ` · ${inv.campusName}` : ''}
-                    {inv.invitedByName ? ` · Mời bởi ${inv.invitedByName}` : ''}
-                  </p>
-                </div>
-                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-bold text-[#F37021]">
-                  Phản hồi <ChevronRight className="w-4 h-4" />
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* UC-27: pending invitations entry point (removed per user request to declutter) */}
 
       {/* Tabs */}
       {showTabs && !isEmbedded && (
