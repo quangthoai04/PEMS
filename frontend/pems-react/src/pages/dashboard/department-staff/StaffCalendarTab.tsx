@@ -88,7 +88,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const [selectedDate, setSelectedDate] = useState<string | null>(today);
   const [displayMode, setDisplayMode] = useState<'Ngày' | 'Tuần' | 'Tháng' | 'Năm'>('Tháng');
   const [showDisplayDd, setShowDisplayDd] = useState(false);
-  const [calendarType, setCalendarType] = useState<'office' | 'mine'>('office');
+  const [calendarType, setCalendarType] = useState<'office' | 'mine'>('mine');
   const [showTypeDd, setShowTypeDd] = useState(false);
   const [activeEvent, setActiveEvent] = useState<CalendarItem | null>(null);
   const [eventDetail, setEventDetail] = useState<any>(null);
@@ -161,6 +161,72 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
       toast.error(err?.response?.data?.message || 'Lỗi khi lưu lịch cá nhân');
     } finally {
       setAddLoading(false);
+    }
+  };
+
+  // Xem / Sửa / Xóa lịch cá nhân
+  const [personalEventModal, setPersonalEventModal] = useState<{
+    open: boolean; eventId?: number | string; title: string; description: string;
+    date: string; startTime: string; endTime: string; submitting: boolean; error?: string | null; isEditing?: boolean;
+  }>({ open: false, title: '', description: '', date: '', startTime: '', endTime: '', submitting: false });
+
+  const openPersonalEventModal = (ev: CalendarItem) => {
+    const rawId = ev.rawId || ev.id;
+    const timeParts = (ev.time || '09:00 - 10:00').split(' - ');
+    const startTimeStr = timeParts[0]?.trim() || '09:00';
+    const endTimeStr = timeParts[1]?.trim() || '10:00';
+    setPersonalEventModal({
+      open: true,
+      eventId: rawId,
+      title: ev.title.replace(' (đã hủy)', ''),
+      description: (ev as any).description || (ev as any).purpose || '',
+      date: ev.date,
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      submitting: false,
+      error: null,
+      isEditing: false,
+    });
+  };
+
+  const submitUpdatePersonalEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!personalEventModal.eventId) return;
+    setPersonalEventModal((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await departmentReceptionTasksApi.updatePersonalEvent(
+        personalEventModal.eventId,
+        personalEventModal.title.trim(),
+        personalEventModal.description.trim(),
+        personalEventModal.date,
+        personalEventModal.startTime,
+        personalEventModal.endTime
+      );
+      toast.success('Đã cập nhật lịch cá nhân.');
+      setPersonalEventModal((s) => ({ ...s, open: false, submitting: false }));
+      onRefresh();
+    } catch (err: any) {
+      setPersonalEventModal((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi cập nhật lịch cá nhân.',
+      }));
+    }
+  };
+
+  const handleDeletePersonalEvent = async () => {
+    if (!personalEventModal.eventId) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa lịch cá nhân này?')) return;
+    setPersonalEventModal((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await departmentReceptionTasksApi.deletePersonalEvent(personalEventModal.eventId);
+      toast.success('Đã xóa lịch cá nhân.');
+      setPersonalEventModal((s) => ({ ...s, open: false, submitting: false }));
+      onRefresh();
+    } catch (err: any) {
+      setPersonalEventModal((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi xóa lịch cá nhân.',
+      }));
     }
   };
 
@@ -257,7 +323,15 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   const renderEventPill = (ev: CalendarItem, dateStr: string) => {
     const hasChanges = getEventChangeNotifs(ev).length > 0;
     return (
-      <div key={ev.id} onClick={e => { e.stopPropagation(); setSelectedDate(dateStr); setActiveEvent(ev); }}
+      <div key={ev.id} onClick={e => {
+        e.stopPropagation();
+        setSelectedDate(dateStr);
+        if (ev.itemType === 'PERSONAL') {
+          openPersonalEventModal(ev);
+        } else {
+          setActiveEvent(ev);
+        }
+      }}
         className={`relative px-1.5 py-1 rounded-md border text-[9px] font-normal leading-tight cursor-pointer truncate ${hasChanges ? 'pr-4' : ''} ${ev.color} ${activeEvent?.id === ev.id ? 'ring-2 ring-[#f37021]/50' : ''}`}>
         <span className="inline-block w-1 h-1 rounded-full mr-1 bg-current" />
         <span className={ev.status === 'CANCELLED' ? 'line-through' : ''}>{ev.title}</span>
@@ -948,6 +1022,128 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                 >
                   {addLoading ? 'Đang lưu...' : 'Xác nhận lưu'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal xem/sửa/xóa lịch cá nhân ── */}
+      {personalEventModal.open && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white flex items-center justify-between">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-purple-200" />
+                {personalEventModal.isEditing ? 'Chỉnh sửa lịch cá nhân' : 'Chi tiết lịch cá nhân'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPersonalEventModal((s) => ({ ...s, open: false }))}
+                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={submitUpdatePersonalEvent} className="p-6 space-y-4 text-xs text-slate-800">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
+                  Tiêu đề sự kiện *
+                </label>
+                <input
+                  type="text"
+                  required
+                  disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                  placeholder="VD: Họp định kỳ"
+                  value={personalEventModal.title}
+                  onChange={(e) => setPersonalEventModal((s) => ({ ...s, title: e.target.value }))}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Ngày *</label>
+                  <input
+                    type="date"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.date}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, date: e.target.value }))}
+                    className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Bắt đầu *</label>
+                  <input
+                    type="time"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.startTime}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, startTime: e.target.value }))}
+                    className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Kết thúc *</label>
+                  <input
+                    type="time"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.endTime}
+                    min={personalEventModal.startTime}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, endTime: e.target.value }))}
+                    className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Nội dung</label>
+                <textarea
+                  rows={3}
+                  disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                  value={personalEventModal.description}
+                  onChange={(e) => setPersonalEventModal((s) => ({ ...s, description: e.target.value }))}
+                  className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-purple-500 outline-none resize-none font-sans bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                />
+              </div>
+              {personalEventModal.error && <p className="text-red-500 text-xs font-semibold">{personalEventModal.error}</p>}
+              <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleDeletePersonalEvent}
+                  disabled={personalEventModal.submitting}
+                  className="px-3.5 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Xóa lịch
+                </button>
+                <div className="flex gap-2">
+                  {!personalEventModal.isEditing ? (
+                    <button
+                      type="button"
+                      onClick={() => setPersonalEventModal((s) => ({ ...s, isEditing: true }))}
+                      className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer"
+                    >
+                      Chỉnh sửa
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPersonalEventModal((s) => ({ ...s, isEditing: false }))}
+                        className="px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={personalEventModal.submitting}
+                        className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {personalEventModal.submitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </form>
           </div>

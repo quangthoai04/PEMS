@@ -109,6 +109,18 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
+  updatePersonalEvent: async (id: number | string, title: string, description: string, date: string, startTime: string, endTime: string) => {
+    const { data } = await httpClient.put<any>(`${API_ENDPOINTS.departmentReceptionTasks.personalEvents}/${id}`, {
+      calendarEventId: Number(id), title, description, date, startTime, endTime
+    });
+    return data;
+  },
+
+  deletePersonalEvent: async (id: number | string) => {
+    const { data } = await httpClient.delete<any>(`${API_ENDPOINTS.departmentReceptionTasks.personalEvents}/${id}`);
+    return data;
+  },
+
   acceptAssignment: async (logisticsItemId: number | string) => {
     const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.acceptAssignment(logisticsItemId));
     return data;

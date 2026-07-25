@@ -98,6 +98,12 @@ public sealed class GetStaffCalendarQueryHandler
                     || x.c.CurrentHostUserId != null));
         }
 
+        if (!isStaffLeader)
+        {
+            // IC Staff không nhìn thấy các đơn đang 'Chờ xử lý tại campus' chưa được gán host.
+            q = q.Where(x => x.c.CurrentHostUserId != null || x.c.Status != VisitInstanceStatus.WaitingRequestApproval);
+        }
+
         // Giao với khung thời gian đang hiển thị.
         q = q.Where(x => x.c.PlannedStartAt <= to && x.c.PlannedEndAt >= from);
 

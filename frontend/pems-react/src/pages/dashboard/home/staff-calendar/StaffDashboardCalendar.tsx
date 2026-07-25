@@ -97,7 +97,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   // View Ngày có thể mở từ lưới Tháng hoặc Tuần — nút "Quay lại" trả về đúng nơi xuất phát.
   const [dayViewReturnMode, setDayViewReturnMode] = useState<'Tháng' | 'Tuần'>('Tháng');
   const [anchorDate, setAnchorDate] = useState<Date>(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())));
-  const [calendarType, setCalendarType] = useState<CalendarType>('office');
+  const [calendarType, setCalendarType] = useState<CalendarType>('mine');
   const [showModeDropdown, setShowModeDropdown] = useState(false);
 
   // ── Data ──
@@ -125,6 +125,74 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     open: boolean; date: string; title: string; description: string;
     startTime: string; endTime: string; submitting: boolean; error: string | null;
   }>({ open: false, date: todayStr, title: '', description: '', startTime: '09:00', endTime: '10:00', submitting: false, error: null });
+
+  // Xem / Sửa / Xóa lịch cá nhân
+  const [personalEventModal, setPersonalEventModal] = useState<{
+    open: boolean; eventId?: number | string; title: string; description: string;
+    date: string; startTime: string; endTime: string; submitting: boolean; error?: string | null; isEditing?: boolean;
+  }>({ open: false, title: '', description: '', date: '', startTime: '', endTime: '', submitting: false });
+
+  const openPersonalEventModal = (ev: StaffCalendarPersonalEvent) => {
+    const rawId = ev.calendarEventId || (ev as any).id;
+    const sd = toVnDate(ev.startAt);
+    const ed = toVnDate(ev.endAt);
+    const dateStr = toDateKey(sd);
+    const startTimeStr = `${pad2(sd.getUTCHours())}:${pad2(sd.getUTCMinutes())}`;
+    const endTimeStr = `${pad2(ed.getUTCHours())}:${pad2(ed.getUTCMinutes())}`;
+    setPersonalEventModal({
+      open: true,
+      eventId: rawId,
+      title: ev.title || '',
+      description: ev.description || '',
+      date: dateStr,
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      submitting: false,
+      error: null,
+      isEditing: false,
+    });
+  };
+
+  const submitUpdatePersonalEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!personalEventModal.eventId) return;
+    setPersonalEventModal((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await departmentReceptionTasksApi.updatePersonalEvent(
+        personalEventModal.eventId,
+        personalEventModal.title.trim(),
+        personalEventModal.description.trim(),
+        personalEventModal.date,
+        personalEventModal.startTime,
+        personalEventModal.endTime
+      );
+      toast.success('Đã cập nhật lịch cá nhân.');
+      setPersonalEventModal((s) => ({ ...s, open: false, submitting: false }));
+      await fetchCalendar();
+    } catch (err: any) {
+      setPersonalEventModal((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi cập nhật lịch cá nhân.',
+      }));
+    }
+  };
+
+  const handleDeletePersonalEvent = async () => {
+    if (!personalEventModal.eventId) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa lịch cá nhân này?')) return;
+    setPersonalEventModal((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await departmentReceptionTasksApi.deletePersonalEvent(personalEventModal.eventId);
+      toast.success('Đã xóa lịch cá nhân.');
+      setPersonalEventModal((s) => ({ ...s, open: false, submitting: false }));
+      await fetchCalendar();
+    } catch (err: any) {
+      setPersonalEventModal((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi xóa lịch cá nhân.',
+      }));
+    }
+  };
 
   // ── Thông báo chưa đọc gắn với đơn tham quan — chấm đỏ nháy + "Thay đổi mới" (giống Dept Leader) ──
   const navigate = useNavigate();
@@ -245,6 +313,14 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     return map;
   }, [allPills, gridStart, gridEnd]);
 
+  const yearMonths = useMemo(() => Array.from({ length: 12 }, (_, m) => {
+    const monthPills = allPills.filter((p) => {
+      const d = toVnDate(p.startAt);
+      return d.getUTCFullYear() === anchorDate.getUTCFullYear() && d.getUTCMonth() === m;
+    });
+    return { month: m, pills: monthPills };
+  }), [allPills, anchorDate]);
+
   // ── Điều hướng ──
   const goPrev = () => {
     if (displayMode === 'Năm') setAnchorDate((d) => new Date(Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1)));
@@ -350,13 +426,16 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   const EventPill = ({ pill, full = false }: { pill: CalendarPill; full?: boolean; key?: string | number }) => {
     if (pill.kind === 'personal') {
       const ev = pill.event;
-      const personalClass = PILL_CLASS.PERSONAL;
+      const personalClass = calendarType === 'mine' ? PILL_CLASS.PERSONAL : PILL_CLASS.MINE;
       return (
         <button
           type="button"
-          onClick={(e) => e.stopPropagation()}
-          title={`${ev.title} — Lịch cá nhân`}
-          className={`w-full text-left border rounded-lg transition-colors cursor-default ${personalClass} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            openPersonalEventModal(ev);
+          }}
+          title={`${ev.title} — Lịch cá nhân (bấm để xem/sửa/xóa)`}
+          className={`w-full text-left border rounded-lg transition-colors cursor-pointer ${personalClass} ${full ? 'px-3 py-2' : 'px-1.5 py-0.5'}`}
         >
           {full ? (
             <>
@@ -639,27 +718,34 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             )}
           </div>
         ) : displayMode === 'Năm' ? (
-          <div className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {MONTH_NAMES.map((name, idx) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => { setAnchorDate(new Date(Date.UTC(anchorDate.getUTCFullYear(), idx, 1))); setDisplayMode('Tháng'); }}
-                  className={`text-left p-4 rounded-xl border transition-colors cursor-pointer ${idx === today.getUTCMonth() && anchorDate.getUTCFullYear() === today.getUTCFullYear() ? 'border-[#004c91]/60 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
-                >
-                  <p className="text-sm font-extrabold text-slate-700">{name}</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {yearMonthCounts[idx] > 0 ? `${yearMonthCounts[idx]} yêu cầu đến thăm` : 'Không có yêu cầu'}
-                  </p>
-                </button>
-              ))}
-            </div>
-            {!loading && items.length === 0 && (
-              <p className="text-center text-sm text-slate-400 font-medium py-4">
-                Không có yêu cầu đến thăm trong khoảng thời gian này.
-              </p>
-            )}
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 bg-white max-h-[720px] overflow-y-auto">
+            {yearMonths.map(({ month: m, pills }) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  setAnchorDate(new Date(Date.UTC(anchorDate.getUTCFullYear(), m, 1)));
+                  setDisplayMode('Tháng');
+                }}
+                className={`text-left rounded-2xl border p-4 transition-colors min-h-[120px] cursor-pointer ${m === today.getUTCMonth() && anchorDate.getUTCFullYear() === today.getUTCFullYear() ? 'border-[#004c91]/60 bg-blue-50/40 hover:bg-blue-50/70' : 'border-slate-200 bg-slate-50/60 hover:border-orange-200 hover:bg-orange-50/40'}`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-black text-[#004c91]">{MONTH_NAMES[m]}</h4>
+                  <span className="text-[11px] font-black text-slate-400">{pills.length} lịch</span>
+                </div>
+                <div className="space-y-1">
+                  {pills.slice(0, 3).map((p) => (
+                    <EventPill key={p.key} pill={p} />
+                  ))}
+                  {pills.length > 3 && (
+                    <p className="text-[11px] font-bold text-orange-600">...và {pills.length - 3} lịch khác</p>
+                  )}
+                  {!pills.length && (
+                    <p className="text-[11px] font-semibold text-slate-300">Không có lịch</p>
+                  )}
+                </div>
+              </button>
+            ))}
           </div>
         ) : (
           <div className="p-4">
@@ -861,6 +947,128 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 >
                   {addEvent.submitting ? 'Đang lưu...' : 'Xác nhận lưu'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal xem/sửa/xóa lịch cá nhân ── */}
+      {personalEventModal.open && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white flex items-center justify-between">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-purple-200" />
+                {personalEventModal.isEditing ? 'Chỉnh sửa lịch cá nhân' : 'Chi tiết lịch cá nhân'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPersonalEventModal((s) => ({ ...s, open: false }))}
+                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={submitUpdatePersonalEvent} className="p-6 space-y-4 text-xs text-slate-800">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
+                  Tiêu đề sự kiện *
+                </label>
+                <input
+                  type="text"
+                  required
+                  disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                  placeholder="VD: Họp định kỳ"
+                  value={personalEventModal.title}
+                  onChange={(e) => setPersonalEventModal((s) => ({ ...s, title: e.target.value }))}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Ngày *</label>
+                  <input
+                    type="date"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.date}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, date: e.target.value }))}
+                    className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Bắt đầu *</label>
+                  <input
+                    type="time"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.startTime}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, startTime: e.target.value }))}
+                    className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Kết thúc *</label>
+                  <input
+                    type="time"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.endTime}
+                    min={personalEventModal.startTime}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, endTime: e.target.value }))}
+                    className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Nội dung</label>
+                <textarea
+                  rows={3}
+                  disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                  value={personalEventModal.description}
+                  onChange={(e) => setPersonalEventModal((s) => ({ ...s, description: e.target.value }))}
+                  className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-purple-500 outline-none resize-none font-sans bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                />
+              </div>
+              {personalEventModal.error && <p className="text-red-500 text-xs font-semibold">{personalEventModal.error}</p>}
+              <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleDeletePersonalEvent}
+                  disabled={personalEventModal.submitting}
+                  className="px-3.5 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Xóa lịch
+                </button>
+                <div className="flex gap-2">
+                  {!personalEventModal.isEditing ? (
+                    <button
+                      type="button"
+                      onClick={() => setPersonalEventModal((s) => ({ ...s, isEditing: true }))}
+                      className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer"
+                    >
+                      Chỉnh sửa
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPersonalEventModal((s) => ({ ...s, isEditing: false }))}
+                        className="px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={personalEventModal.submitting}
+                        className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {personalEventModal.submitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </form>
           </div>

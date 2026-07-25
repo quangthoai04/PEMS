@@ -114,7 +114,7 @@ public static class StaffCalendarLogic
             };
         }
 
-        // Thứ tự ưu tiên: tôi là host > hủy/hết hạn > cần xử lý (chỉ Staff Leader) > đã xử lý > trung tính.
+        // Thứ tự ưu tiên: tôi là host > hủy/hết hạn > cần xử lý (chỉ Staff Leader) > đã xử lý / đã có người phụ trách > trung tính.
         string color;
         if (isMine)
             color = StaffCalendarColorTypes.Mine;
@@ -122,7 +122,7 @@ public static class StaffCalendarLogic
             color = StaffCalendarColorTypes.CancelledOrExpired;
         else if (hasNoHost && !isRejected && viewer.IsStaffLeader)
             color = StaffCalendarColorTypes.NeedsAction;
-        else if (isDecided)
+        else if (isDecided || !hasNoHost)
             color = StaffCalendarColorTypes.Processed;
         else
             color = StaffCalendarColorTypes.Neutral;

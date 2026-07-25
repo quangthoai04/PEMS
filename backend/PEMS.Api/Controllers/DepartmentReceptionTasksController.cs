@@ -148,6 +148,19 @@ namespace PEMS.Api.Controllers
         {
             return Ok(await _mediator.Send(command));
         }
+
+        [HttpPut("personal-events/{id}")]
+        public async Task<IActionResult> UpdatePersonalEvent(ulong id, [FromBody] PEMS.Application.Calendars.Commands.UpdatePersonalEvent.UpdatePersonalEventCommand command)
+        {
+            command.CalendarEventId = id;
+            return Ok(await _mediator.Send(command));
+        }
+
+        [HttpDelete("personal-events/{id}")]
+        public async Task<IActionResult> DeletePersonalEvent(ulong id)
+        {
+            return Ok(await _mediator.Send(new PEMS.Application.Calendars.Commands.DeletePersonalEvent.DeletePersonalEventCommand(id)));
+        }
     }
 
     public sealed record DepartmentInvitationAssignBody(ulong AssigneeUserId, string? Note, EmailOverride? EmailOverride = null);
