@@ -5,6 +5,7 @@ using FluentValidation;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Validation;
 using PEMS.Domain.Constants;
+using static PEMS.Application.Delegations.Commands.CreateVisitRequestV2.LengthMessages;
 
 namespace PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 
@@ -103,17 +104,21 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
 
         // ── Per-campus visit content ──
         RuleFor(c => c.DelegationName)
-            .NotEmpty().WithMessage("Tên đoàn không được để trống.").MaximumLength(200);
+            .NotEmpty().WithMessage("Tên đoàn không được để trống.")
+            .MaximumLength(200).WithMessage(TooLong("Tên đoàn", 200));
         RuleFor(c => c.VisitType)
             .NotEmpty().WithMessage("Loại hình tham quan không được để trống.")
             .Must(t => AllowedVisitTypes.Contains(t)).WithMessage("Loại hình tham quan không hợp lệ.");
         RuleFor(c => c.VisitTypeOther)
-            .NotEmpty().WithMessage("Vui lòng ghi rõ loại hình tham quan khác.").MaximumLength(200)
+            .NotEmpty().WithMessage("Vui lòng ghi rõ loại hình tham quan khác.")
+            .MaximumLength(200).WithMessage(TooLong("Loại hình tham quan khác", 200))
             .When(c => c.VisitType == "OTHER");
         RuleFor(c => c.Purpose)
-            .NotEmpty().WithMessage("Mục đích thăm không được để trống.").MaximumLength(2000);
+            .NotEmpty().WithMessage("Mục đích thăm không được để trống.")
+            .MaximumLength(2000).WithMessage(TooLong("Mục đích thăm", 2000));
         RuleFor(c => c.WorkingContent)
-            .NotEmpty().WithMessage("Nội dung làm việc không được để trống.").MaximumLength(4000);
+            .NotEmpty().WithMessage("Nội dung làm việc không được để trống.")
+            .MaximumLength(4000).WithMessage(TooLong("Nội dung làm việc", 4000));
 
         // ── Per-campus operational (working) contact — a snapshot, never a login ──
         RuleFor(c => c.OperationalContact).NotNull().WithMessage("Thiếu đầu mối phối hợp của cơ sở.");
@@ -124,13 +129,18 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
         RuleFor(c => c.WorkingLanguage)
             .Must(l => l is "EN" or "VI").WithMessage("Ngôn ngữ làm việc phải là EN hoặc VI.");
         RuleFor(c => c.TransportationNote)
-            .MaximumLength(2000).WithMessage("Nhận diện phương tiện di chuyển tối đa 2000 ký tự.")
+            .MaximumLength(2000).WithMessage(TooLong("Nhận diện phương tiện di chuyển", 2000))
             .Must(note => string.IsNullOrEmpty(note) || (!note.Contains('<') && !note.Contains('>')))
             .WithMessage("Nhận diện phương tiện di chuyển không được chứa HTML/script.");
         RuleFor(c => c.MediaConsentStatus)
             .NotEmpty().WithMessage("Trạng thái truyền thông không được để trống.")
             .Must(s => s is "AGREED" or "DECLINED").WithMessage("Trạng thái truyền thông không hợp lệ.");
-        RuleFor(c => c.Notes).MaximumLength(2000);
+        // The form has always capped this at 2000; the server never did, so a direct call could
+        // store a note the edit screen would then refuse to save back.
+        RuleFor(c => c.MediaConsentNote)
+            .MaximumLength(2000).WithMessage(TooLong("Ghi chú truyền thông", 2000));
+        RuleFor(c => c.Notes)
+            .MaximumLength(2000).WithMessage(TooLong("Ghi chú cho FPTU", 2000));
 
         // ── People (per-campus, independent) ──
         RuleFor(c => c.Visitors)
