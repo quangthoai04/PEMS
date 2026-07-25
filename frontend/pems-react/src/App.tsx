@@ -6,6 +6,7 @@
 import React, { useEffect } from 'react';
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import VisitContactInvitationPage from './pages/identity/VisitContactInvitationPage';
+import ConfirmEmailPage from './pages/account/ConfirmEmailPage';
 import VisitRequestV2Page from './pages/visit/VisitRequestV2Page';
 import VisitRequestV2DetailPage from './pages/dashboard/visit/VisitRequestV2DetailPage';
 import EditVisitRequestV2Page from './pages/dashboard/visit/EditVisitRequestV2Page';
@@ -149,6 +150,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/confirm-email" element={<ConfirmEmailPage />} />
           <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
           <Route path="/403" element={<ForbiddenPage />} />
           <Route path="/invalid-account" element={<InvalidAccountPage />} />
