@@ -57,6 +57,8 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'validation']);
   const { campuses, loading: campusesLoading } = useRegistrationCampuses();
   const [showErrors, setShowErrors] = useState(false);
+  /** Set when "continue verifying" found no usable challenge left (another tab, or storage cleared). */
+  const [resumeFailed, setResumeFailed] = useState(false);
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
@@ -280,6 +282,46 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       {vm.migratedFromGlobalDraft && (
         <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800">
           {t('visitRequestV2:draft.migrated')}
+        </div>
+      )}
+
+      {/* ── A verification already asked for, waiting to be finished ──
+          Closing the OTP modal or reloading the tab does not throw the request away, so the way
+          back in has to be visible. It never re-sends by itself: an unnecessary code burns the
+          rate limit and kills the one that may already be in the user's inbox. */}
+      {vm.pendingOtp && !vm.sessionToken && (
+        <div
+          role="status"
+          data-testid="v2-otp-resume"
+          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <p className="font-bold">{t('visitRequestV2:draft.pendingOtpTitle')}</p>
+          <p className="mt-1">
+            {t('visitRequestV2:draft.pendingOtpBody', { email: vm.pendingOtp.maskedEmail })}
+          </p>
+          {resumeFailed && (
+            <p className="mt-1 font-medium" role="alert">
+              {t('visitRequestV2:draft.resumeOtpUnavailable')}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="v2-otp-resume-continue"
+              onClick={() => setResumeFailed(!vm.resumeOtp())}
+              className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a]"
+            >
+              {t('visitRequestV2:draft.resumeOtp')}
+            </button>
+            <button
+              type="button"
+              data-testid="v2-otp-resume-discard"
+              onClick={() => { setResumeFailed(false); vm.discardPendingOtp(); }}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              {t('visitRequestV2:draft.discardOtp')}
+            </button>
+          </div>
         </div>
       )}
 

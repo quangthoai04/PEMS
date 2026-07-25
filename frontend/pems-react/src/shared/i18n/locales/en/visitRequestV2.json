@@ -103,7 +103,13 @@
     "migrated": "Your previous draft (shared form) was converted to the per-campus layout — review each campus card before submitting.",
     "foundAt": "A draft saved at {{time}} was found. Restore it?",
     "restore": "Restore draft",
-    "discard": "Discard draft"
+    "discard": "Discard draft",
+    "savedForLater": "Your request has been saved. You can finish verifying the email later.",
+    "pendingOtpTitle": "This request is waiting for email verification",
+    "pendingOtpBody": "A verification code was sent to {{email}}. You can enter it without filling the form in again.",
+    "resumeOtp": "Continue verifying",
+    "discardOtp": "Discard the code",
+    "resumeOtpUnavailable": "That verification code can no longer be used. Submit again for a new one — your answers are kept."
   },
   "submit": {
     "public": "Submit & receive OTP",

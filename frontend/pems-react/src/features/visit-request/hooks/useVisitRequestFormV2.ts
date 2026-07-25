@@ -20,9 +20,14 @@ import {
   newClientKey,
 } from '../utils/visitRequestV2Form';
 import {
+  clearOtpChallengeToken,
   clearVisitRequestV2Draft,
+  hasMeaningfulV2Data,
   loadVisitRequestV2DraftWithMigration,
+  readOtpChallengeToken,
+  saveOtpChallengeToken,
   saveVisitRequestV2Draft,
+  type VisitRequestV2OtpContext,
 } from '../utils/visitRequestV2DraftStorage';
 import { visitRequestApi, type CampusProcessingChoice } from '../api/visitRequestApi';
 import {
@@ -31,7 +36,7 @@ import {
   verifyAndCreateVisitRequestV2,
   type V2CreateResponse,
 } from '../api/visitRequestV2Api';
-import { getApiErrorMessage, showSuccessToast } from '../../../shared/utils/toast';
+import { getApiErrorMessage, showInfoToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
@@ -78,6 +83,13 @@ function getOtpErrorMeta(error: unknown): OtpErrorMeta {
 }
 
 const OTP_HUMAN_VERIFICATION_REQUIRED = 'OTP_HUMAN_VERIFICATION_REQUIRED';
+/**
+ * The backend's answer when a submissionId already belongs to a request with different content.
+ * The only way to reach it is a stored intent that outlived its request (a create that committed
+ * while the browser failed to clear the draft), and the user cannot fix that by retrying — so the
+ * stale intent is dropped and the next attempt starts a fresh one.
+ */
+const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
@@ -190,6 +202,12 @@ export const useVisitRequestFormV2 = (
   const submissionIdRef = useRef<string | null>(null);
   const autoSaveBlockedRef = useRef(false);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
+  /**
+   * The OTP challenge that was already requested for this draft, if any. It survives a wrong code,
+   * a closed modal and a reload — the whole point being that none of those are a reason to make
+   * somebody type the form again.
+   */
+  const [pendingOtp, setPendingOtp] = useState<VisitRequestV2OtpContext | null>(null);
 
   const maxCampuses = options?.maxCampuses ?? V2_MAX_CAMPUSES;
 
@@ -234,6 +252,10 @@ export const useVisitRequestFormV2 = (
           ? draft.data.campusVisits.map(cv => ({ ...createEmptyCampusVisit(cv.clientKey || newClientKey()), ...cv }))
           : defaults.campusVisits,
     });
+    // Restoring the TYPING without restoring the submission intent is what turns a resumed draft
+    // into a second request: the backend keys idempotency on the submissionId.
+    submissionIdRef.current = draft.submissionId ?? null;
+    setPendingOtp(draft.otp ?? null);
     setMigratedFromGlobalDraft(migrated);
     setDraftHydrated(true);
     return true;
@@ -264,17 +286,29 @@ export const useVisitRequestFormV2 = (
   }, [hydrateDraft]);
 
   const discardDraft = useCallback(() => {
+    // Deleting the draft deletes the whole submission intent with it: the id, the pending challenge
+    // and its token. Leaving any of them behind would attach the next form to an abandoned attempt.
     clearVisitRequestV2Draft(draftNamespace);
+    submissionIdRef.current = null;
+    setPendingOtp(null);
+    setSessionToken(null);
     setMigratedFromGlobalDraft(false);
     setDraftAvailableAt(null);
     autoSaveBlockedRef.current = false;
     setDraftHydrated(true);
   }, [draftNamespace]);
 
-  /** Force-saves immediately, bypassing the debounce — for "save draft and exit". */
-  const saveDraftNow = useCallback(() => {
-    saveVisitRequestV2Draft(form.getValues(), undefined, draftNamespace);
-  }, [form, draftNamespace]);
+  /**
+   * Force-saves immediately, bypassing the debounce. Used for "save draft and exit" AND before every
+   * step of the OTP round trip: the 700ms autosave has not necessarily fired when somebody fills the
+   * last field and submits, and that is exactly the draft worth keeping.
+   */
+  const saveDraftNow = useCallback(
+    (options?: { submissionId?: string | null; otp?: VisitRequestV2OtpContext | null }) => {
+      saveVisitRequestV2Draft(form.getValues(), undefined, draftNamespace, options);
+    },
+    [form, draftNamespace],
+  );
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -396,15 +430,22 @@ export const useVisitRequestFormV2 = (
       try {
         const submissionId = submissionIdRef.current ?? crypto.randomUUID();
         submissionIdRef.current = submissionId;
+        // Persist the intent BEFORE the request leaves: a retry after a network failure must reuse
+        // this id, or the backend sees two unrelated submissions and creates two requests.
+        saveDraftNow({ submissionId });
         const submittedValues = cloneValues(data);
         const payload = buildV2CreatePayload(
           submittedValues, submissionId, options?.getCampusProcessing?.() ?? []);
         const result = await createVisitRequestV2(payload);
         submissionIdRef.current = null;
+        setPendingOtp(null);
         clearVisitRequestV2Draft(draftNamespace);
         onSuccess(result, submittedValues);
       } catch (error) {
-        submissionIdRef.current = null;
+        // The id is KEPT: the same submit intent is what makes the retry idempotent. The one
+        // exception is an intent the server says is already spoken for.
+        if (getApiErrorCode(error) === IDEMPOTENCY_KEY_REUSED) submissionIdRef.current = null;
+        saveDraftNow({ submissionId: submissionIdRef.current });
         const mapped = applyServerFieldErrors(error);
         if (mapped) {
           setSubmitError(t('validation:fixErrorsBeforeContinue'));
@@ -436,8 +477,14 @@ export const useVisitRequestFormV2 = (
     setSubmitError(null);
     setFirstErrorCampusIndex(null);
     try {
-      const submissionId = crypto.randomUUID();
+      // One submit INTENT, however many OTP attempts it takes. Re-initiating with the same id
+      // refreshes the bound snapshot server-side (InitiateVisitRequestV2CommandHandler), so a new
+      // id here would only ever mean "a second, unrelated request".
+      const submissionId = submissionIdRef.current ?? crypto.randomUUID();
       submissionIdRef.current = submissionId;
+      // Saved before the call, not after: if this throws — or the tab dies mid-flight — the typing
+      // and the intent are already on disk.
+      saveDraftNow({ submissionId });
       const res = await initiateVisitRequestV2(buildV2CreatePayload(data, submissionId));
       if (!res?.sessionToken) throw new Error(t('toast:visitRequest.otpTokenMissing'));
       resetOtpChallengeState();
@@ -445,9 +492,22 @@ export const useVisitRequestFormV2 = (
       setResendAfterSeconds(res.resendAfterSeconds ?? 60);
       setSessionToken(res.sessionToken);
       setMaskedEmail(res.maskedEmail);
+      const otp: VisitRequestV2OtpContext = {
+        targetEmail: data.registerInfo.email,
+        maskedEmail: res.maskedEmail,
+        expiresAt: res.expiresAt ?? null,
+        resendAfterSeconds: res.resendAfterSeconds ?? null,
+        savedAt: Date.now(),
+      };
+      setPendingOtp(otp);
+      saveDraftNow({ submissionId, otp });
+      saveOtpChallengeToken(submissionId, res.sessionToken, draftNamespace);
     } catch (error) {
-      submissionIdRef.current = null;
+      // Keep the id and the draft: the user has typed a whole form and the mail may simply have
+      // failed to send. Clearing either would make them start over for a transport error.
       setSessionToken(null);
+      if (getApiErrorCode(error) === IDEMPOTENCY_KEY_REUSED) submissionIdRef.current = null;
+      saveDraftNow({ submissionId: submissionIdRef.current });
       const mapped = applyServerFieldErrors(error);
       if (mapped) {
         setSubmitError(t('validation:fixErrorsBeforeContinue'));
@@ -477,12 +537,17 @@ export const useVisitRequestFormV2 = (
         const submittedValues = cloneValues(form.getValues());
         const payload = buildV2CreatePayload(submittedValues, submissionIdRef.current);
         const result = await verifyAndCreateVisitRequestV2(payload, otpCode, sessionToken);
+        // ONLY here — a confirmed create — is the draft allowed to disappear.
         setSessionToken(null);
         submissionIdRef.current = null;
+        setPendingOtp(null);
         resetOtpChallengeState();
         clearVisitRequestV2Draft(draftNamespace);
         onSuccess(result, submittedValues);
       } catch (error) {
+        // A wrong code, an expired challenge, a dropped connection: the form is untouched and stays
+        // on disk with its submission intent. The user retries or asks for a new code.
+        saveDraftNow();
         const code = getApiErrorCode(error);
         const meta = getOtpErrorMeta(error);
         if (meta.remainingAttempts !== null) setRemainingAttempts(meta.remainingAttempts);
@@ -505,21 +570,33 @@ export const useVisitRequestFormV2 = (
         setIsVerifying(false);
       }
     },
-    [sessionToken, form, draftNamespace, onSuccess, resetOtpChallengeState, applyServerFieldErrors, t],
+    [sessionToken, form, draftNamespace, onSuccess, resetOtpChallengeState, applyServerFieldErrors, saveDraftNow, t],
   );
 
   const resendOtp = useCallback(async () => {
     if (!sessionToken || !submissionIdRef.current) return;
+    const submissionId = submissionIdRef.current;
     setIsResending(true);
     setOtpError(null);
     try {
       const data = form.getValues();
       const res = await visitRequestApi.resendOtp(
-        data.registerInfo.email, data.registerInfo.fullName, submissionIdRef.current, sessionToken);
+        data.registerInfo.email, data.registerInfo.fullName, submissionId, sessionToken);
       setSessionToken(res.sessionToken);
       resetOtpChallengeState();
       setRemainingAttempts(res.maxAttempts ?? null);
       setResendAfterSeconds(res.resendAfterSeconds ?? 60);
+      // A resend supersedes the old code but stays the SAME submission — only the challenge is new.
+      const otp: VisitRequestV2OtpContext = {
+        targetEmail: data.registerInfo.email,
+        maskedEmail: maskedEmail || data.registerInfo.email,
+        expiresAt: null,
+        resendAfterSeconds: res.resendAfterSeconds ?? null,
+        savedAt: Date.now(),
+      };
+      setPendingOtp(otp);
+      saveDraftNow({ submissionId, otp });
+      saveOtpChallengeToken(submissionId, res.sessionToken, draftNamespace);
     } catch (error) {
       const meta = getOtpErrorMeta(error);
       if (meta.humanVerificationRequired || getApiErrorCode(error) === OTP_HUMAN_VERIFICATION_REQUIRED) {
@@ -529,7 +606,7 @@ export const useVisitRequestFormV2 = (
     } finally {
       setIsResending(false);
     }
-  }, [sessionToken, form, resetOtpChallengeState, t]);
+  }, [sessionToken, form, maskedEmail, draftNamespace, resetOtpChallengeState, saveDraftNow, t]);
 
   const recoverOtp = useCallback(
     async (humanVerificationToken: string) => {
@@ -553,11 +630,58 @@ export const useVisitRequestFormV2 = (
     [sessionToken, isRecoveringOtp, form, resetOtpChallengeState, t],
   );
 
+  /**
+   * Closing the OTP modal is NOT cancelling the request. The form, the draft, the submission id and
+   * the challenge all survive; only the modal goes away. Previously this dropped the submissionId,
+   * so coming back meant a brand-new submit intent — and the user was told nothing, so an
+   * accidental Esc looked exactly like losing the whole form.
+   */
   const cancelOtp = useCallback(() => {
     setSessionToken(null);
-    submissionIdRef.current = null;
     resetOtpChallengeState();
-  }, [resetOtpChallengeState]);
+    saveDraftNow();
+    if (hasMeaningfulV2Data(form.getValues())) {
+      showInfoToast(t('visitRequestV2:draft.savedForLater'));
+    }
+  }, [resetOtpChallengeState, saveDraftNow, form, t]);
+
+  /**
+   * Re-opens the modal for a challenge that was already issued — after closing it, or after a
+   * reload in the same tab. It never asks for a new code: an unnecessary resend burns the user's
+   * rate limit and invalidates the code that may already be sitting in their inbox.
+   */
+  const resumeOtp = useCallback((): boolean => {
+    const submissionId = submissionIdRef.current;
+    if (!submissionId || !pendingOtp) return false;
+    const token = readOtpChallengeToken(submissionId, draftNamespace);
+    if (!token) return false;
+    setMaskedEmail(pendingOtp.maskedEmail);
+    setSessionToken(token);
+    resetOtpChallengeState();
+    return true;
+  }, [pendingOtp, draftNamespace, resetOtpChallengeState]);
+
+  /** Forgets the pending challenge (keeping the form) — "I will start the verification again". */
+  const discardPendingOtp = useCallback(() => {
+    setPendingOtp(null);
+    setSessionToken(null);
+    clearOtpChallengeToken(draftNamespace);
+    saveDraftNow({ otp: null });
+    resetOtpChallengeState();
+  }, [draftNamespace, saveDraftNow, resetOtpChallengeState]);
+
+  /**
+   * A challenge proves ONE mailbox. Retargeting the form at a different registrant email leaves the
+   * old challenge unusable (the backend binds the token to email + purpose + submissionId and
+   * answers SESSION_INVALID), so the client must forget it rather than offer to "continue" with a
+   * code that can no longer verify anything. The typing is untouched.
+   */
+  const watchedRegistrantEmail = form.watch('registerInfo.email');
+  useEffect(() => {
+    if (!pendingOtp) return;
+    if (isSameEmailIdentity(watchedRegistrantEmail, pendingOtp.targetEmail)) return;
+    discardPendingOtp();
+  }, [watchedRegistrantEmail, pendingOtp, discardPendingOtp]);
 
   const resetForm = useCallback(() => {
     autoSaveBlockedRef.current = true;
@@ -570,6 +694,7 @@ export const useVisitRequestFormV2 = (
     setFirstErrorCampusIndex(null);
     setApplyToAllPrompt(null);
     submissionIdRef.current = null;
+    setPendingOtp(null);
     resetOtpChallengeState();
     clearVisitRequestV2Draft(draftNamespace);
     autoSaveBlockedRef.current = false;
@@ -611,6 +736,10 @@ export const useVisitRequestFormV2 = (
     resendOtp,
     recoverOtp,
     cancelOtp,
+    /** A challenge already issued for this draft, still waiting to be completed. */
+    pendingOtp,
+    resumeOtp,
+    discardPendingOtp,
     // Draft
     draftHydrated,
     hydrateDraft,

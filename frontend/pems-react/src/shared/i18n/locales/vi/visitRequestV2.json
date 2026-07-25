@@ -103,7 +103,13 @@
     "migrated": "Bản nháp cũ (biểu mẫu chung) đã được chuyển sang dạng theo từng cơ sở — kiểm tra lại nội dung từng thẻ trước khi gửi.",
     "foundAt": "Có bản nháp đã lưu lúc {{time}}. Bạn muốn khôi phục không?",
     "restore": "Khôi phục bản nháp",
-    "discard": "Bỏ bản nháp"
+    "discard": "Bỏ bản nháp",
+    "savedForLater": "Đơn của bạn đã được lưu tạm. Bạn có thể tiếp tục xác minh email sau.",
+    "pendingOtpTitle": "Đơn đang chờ xác minh email",
+    "pendingOtpBody": "Mã xác minh đã được gửi tới {{email}}. Bạn có thể nhập tiếp mà không cần khai lại đơn.",
+    "resumeOtp": "Tiếp tục xác minh",
+    "discardOtp": "Bỏ mã xác minh",
+    "resumeOtpUnavailable": "Mã xác minh cũ không còn dùng được. Bấm gửi đơn để nhận mã mới; nội dung đơn vẫn được giữ nguyên."
   },
   "submit": {
     "public": "Gửi yêu cầu & nhận mã OTP",

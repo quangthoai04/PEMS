@@ -33,6 +33,7 @@ import {
   dismissCapabilityToasts,
 } from '../../../shared/features/useVisitEntryCta';
 import { resolveVisitRowRoutes } from '../../../features/visit-request/utils/visitVersionRouting';
+import { visitDraftNamespace } from '../../../features/visit-request/utils/visitRequestV2DraftStorage';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
 import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
@@ -1899,7 +1900,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <VisitRequestV2Modal
             isOpen={showV2Modal}
             mode="authenticated"
-            draftNamespace={user?.userId ? `u${user.userId}` : undefined}
+            draftNamespace={visitDraftNamespace(user?.userId)}
             onClose={() => {
               setShowV2Modal(false);
               loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);

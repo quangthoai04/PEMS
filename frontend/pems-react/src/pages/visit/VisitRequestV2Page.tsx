@@ -5,6 +5,7 @@ import { VisitRequestFormV2 } from '../../features/visit-request/components/v2/V
 import { VisitRequestV2SuccessPanel } from '../../features/visit-request/components/v2/VisitRequestV2SuccessPanel';
 import type { V2CreateResponse } from '../../features/visit-request/api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../../features/visit-request/schema/visitRequestV2.schema';
+import { visitDraftNamespace } from '../../features/visit-request/utils/visitRequestV2DraftStorage';
 import { useAuth } from '../../shared/hooks/useAuth';
 
 interface Props {
@@ -23,7 +24,11 @@ export default function VisitRequestV2Page({ mode }: Props) {
   const { user } = useAuth();
   const [result, setResult] = useState<{ response: V2CreateResponse; values: VisitRequestV2Schema } | null>(null);
 
-  const draftNamespace = mode === 'authenticated' ? (user?.email ?? undefined) : undefined;
+  // Keyed by ACCOUNT, exactly as the dashboard modal is: this route and that modal are the same
+  // person filling in the same form, and an email-keyed namespace forked them into two drafts —
+  // start on one surface, come back on the other, and the work looked lost. (It also kept an email
+  // address in a localStorage key, which is PII sitting where it does not need to be.)
+  const draftNamespace = mode === 'authenticated' ? visitDraftNamespace(user?.userId) : undefined;
 
   if (result) {
     return (

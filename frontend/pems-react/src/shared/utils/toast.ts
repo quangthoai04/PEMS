@@ -152,6 +152,14 @@ export function showSuccessToast(message: string, id?: string, duration = 3000):
   return toast.success(message, id ? { id, duration } : { duration });
 }
 
+/**
+ * Toast thông tin — không phải thành công cũng không phải lỗi (vd "đã lưu tạm bản nháp").
+ * Vẫn dùng chung viewport top-right của App.tsx.
+ */
+export function showInfoToast(message: string, id?: string, duration = 4000): string {
+  return toast(maskSecrets(message), id ? { id, duration } : { duration });
+}
+
 /** Toast lỗi từ một error bất kỳ (đã trích + mask message). */
 export function showErrorToast(error: unknown, fallback?: string, id?: string): string {
   return toast.error(getApiErrorMessage(error, fallback), id ? { id, duration: 3000 } : { duration: 3000 });

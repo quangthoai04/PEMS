@@ -120,6 +120,13 @@ export const OtpVerificationModal: React.FC<Props> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // stopPropagation, not just preventDefault. This modal is rendered through a PORTAL, and a React
+    // portal keeps the COMPONENT tree even though it leaves the DOM tree — so the synthetic submit
+    // event still bubbles to the <form> that renders the modal, which is the visit-request form
+    // itself. Without this, every "Xác nhận" click also re-submitted the whole registration and
+    // minted a SECOND OTP challenge: the code the user was holding stopped working, and the initiate
+    // that came back cleared the "wrong code" message they were reading.
+    e.stopPropagation();
     if (!confirmDisabled) onVerify(code);
   };
 
