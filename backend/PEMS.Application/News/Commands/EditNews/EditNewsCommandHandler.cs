@@ -36,13 +36,12 @@ public sealed class EditNewsCommandHandler
             ?? throw new ForbiddenException("Bạn chưa đăng nhập.");
 
         var roleCode = _currentUser.RoleCode ?? string.Empty;
-        var subRole  = _currentUser.SubRole  ?? string.Empty;
 
-        // Only Staff (non-leader) and Student may edit their own posts
-        var isAllowed = (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff)
-                     || roleCode == RoleCodes.Student;
+        // Staff (incl. Leader self-hosting a delegation) and Student may edit their own posts —
+        // the AuthorUserId check right below is the real gate, same as CreateNewsCommandHandler.
+        var isAllowed = roleCode == RoleCodes.Staff || roleCode == RoleCodes.Student;
         if (!isAllowed)
-            throw new ForbiddenException("Chỉ Staff thường và Student mới được chỉnh sửa tin tức.");
+            throw new ForbiddenException("Chỉ Staff và Student mới được chỉnh sửa tin tức.");
 
         // Load news (tracked)
         var news = await _dbContext.News

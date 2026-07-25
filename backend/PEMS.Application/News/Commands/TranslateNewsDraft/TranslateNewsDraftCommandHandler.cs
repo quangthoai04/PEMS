@@ -32,14 +32,12 @@ public sealed class TranslateNewsDraftCommandHandler
             throw new ForbiddenException("Bạn chưa đăng nhập.");
 
         var roleCode = _currentUser.RoleCode ?? string.Empty;
-        var subRole  = _currentUser.SubRole  ?? string.Empty;
 
-        // Same authoring roles as CreateNewsCommand — only Staff (regular) and Student may
-        // compose news, so only they may ask for a draft translation while composing one.
-        var isAllowed = (roleCode == RoleCodes.Staff && subRole == UserSubRoles.Staff)
-                     || roleCode == RoleCodes.Student;
+        // Same authoring roles as CreateNewsCommand (incl. Staff Leader self-hosting a delegation)
+        // may compose news, so the same set may ask for a draft translation while composing one.
+        var isAllowed = roleCode == RoleCodes.Staff || roleCode == RoleCodes.Student;
         if (!isAllowed)
-            throw new ForbiddenException("Chỉ Staff thường và Student mới được dịch tin tức.");
+            throw new ForbiddenException("Chỉ Staff và Student mới được dịch tin tức.");
 
         var sourceLang = string.IsNullOrWhiteSpace(request.SourceLanguage) ? "vi" : request.SourceLanguage.Trim();
         var targetLang = request.TargetLanguage.Trim();

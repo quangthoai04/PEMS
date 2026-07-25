@@ -44,7 +44,7 @@ namespace PEMS.Api.Controllers
         // đoàn, the image is routed into that đoàn's own Drive folder instead of the flat News
         // folder — same folder the Student visit-photo feature already uses for that instance.
         [HttpPost("cover-upload")]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         [RequestSizeLimit(6 * 1024 * 1024)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadNewsCoverImage(
@@ -70,7 +70,7 @@ namespace PEMS.Api.Controllers
         // Same pipeline as cover-upload (Google Drive + files metadata); returns fileId
         // to reference from contentSections[].sectionFiles.
         [HttpPost("section-file-upload")]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         [RequestSizeLimit(6 * 1024 * 1024)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadNewsSectionImage(
@@ -105,7 +105,7 @@ namespace PEMS.Api.Controllers
 
         // Create News support: get eligible closed visit instances
         [HttpGet("eligible-visit-instances")]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> GetEligibleVisitInstances(
             [FromQuery] bool includeAlreadyHasNews = false,
             CancellationToken cancellationToken = default)
@@ -121,7 +121,7 @@ namespace PEMS.Api.Controllers
 
         // UC-Create News: POST /api/news
         [HttpPost]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> CreateNews(
             [FromBody] PEMS.Application.News.Commands.CreateNews.CreateNewsCommand command,
             CancellationToken cancellationToken)
@@ -246,7 +246,7 @@ namespace PEMS.Api.Controllers
         // UC Translate News Draft: POST /api/news/translate-draft — same translation preview as
         // auto-translate above, but for a post being composed (no NewsId yet). Never persists.
         [HttpPost("translate-draft")]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> TranslateNewsDraft(
             [FromBody] PEMS.Application.News.Commands.TranslateNewsDraft.TranslateNewsDraftCommand command,
             CancellationToken cancellationToken)
@@ -266,7 +266,7 @@ namespace PEMS.Api.Controllers
 
         // UC Edit News: PUT /api/news/{newsId}
         [HttpPut("{newsId}")]
-        [RoleAuthorize(EffectiveRole.Staff, EffectiveRole.Student)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> EditNews(
             ulong newsId,
             [FromBody] EditNewsBody body,
