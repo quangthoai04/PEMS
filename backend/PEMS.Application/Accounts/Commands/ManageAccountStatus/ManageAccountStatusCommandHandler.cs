@@ -59,6 +59,14 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
         if (actorId is not null && user.UserId == actorId.Value)
             throw new ForbiddenException("You cannot change the status of your own account.");
 
+        // P0 #1: a PENDING_EMAIL_CONFIRMATION account is activated ONLY by confirming its email — never via
+        // this status toggle (that would bypass the email-ownership proof). Manage it through resend / edit
+        // email / cancel instead.
+        if (user.Status == UserStatuses.PendingEmailConfirmation)
+            throw new BusinessRuleException(
+                "Tài khoản đang chờ xác nhận email. Chỉ có thể kích hoạt bằng cách xác nhận email; vui lòng dùng chức năng gửi lại/huỷ xác nhận.",
+                "ACCOUNT_PENDING_EMAIL_CONFIRMATION");
+
         // ── HO scope (HO_BASIC_INFO spec §14): an HO may enable/disable another HO (any campus)
         //    or a Staff Leader, only between ACTIVE and INACTIVE, and never a LOCKED account.
         //    The self-account guard above already blocks changing one's own status. ──

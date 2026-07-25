@@ -127,6 +127,19 @@ public class ManageAccountStatusHoScopeTests
     }
 
     [Fact]
+    public async Task CannotActivateAPendingEmailConfirmationAccount()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(Ho(810, campus: Campus, status: UserStatuses.PendingEmailConfirmation));
+        h.Db.SaveChanges();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            h.Run(new ManageAccountStatusCommand { UserId = 810, Status = "ACTIVE" }));
+        Assert.Equal("ACCOUNT_PENDING_EMAIL_CONFIRMATION", ex.ErrorCode);
+        Assert.Equal(UserStatuses.PendingEmailConfirmation, (await h.Db.Users.SingleAsync(u => u.UserId == 810)).Status);
+    }
+
+    [Fact]
     public async Task HoCannotChangeOwnStatus()
     {
         var h = CreateHarness();
