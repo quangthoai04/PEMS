@@ -309,7 +309,9 @@
       "noData": "File Excel không có dữ liệu.",
       "headerOnly": "File không có dữ liệu (chỉ có header hoặc rỗng).",
       "missingColumns": "Thiếu cột bắt buộc: {{missing}}. File phải có các cột: {{required}}.",
-      "requiredCell": "Dòng {{row}}: Cột \"{{column}}\" không được để trống."
+      "requiredCell": "Dòng {{row}}: Cột \"{{column}}\" không được để trống.",
+      "cellRequired": "Không được để trống",
+      "cellMaxLength": "Vượt quá {{max}} ký tự (đang có {{length}})"
     },
     "template": {
       "index": "STT",
