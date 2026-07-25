@@ -12,8 +12,9 @@ using PEMS.UnitTests.TestInfrastructure;
 namespace PEMS.UnitTests.Delegations.VisitPhotos;
 
 /// <summary>
-/// Upload scope + pipeline: only an ACTIVE Student with ACCEPTED STUDENT participation in the exact
-/// instance may upload; all files are policy-validated BEFORE any Drive call; every visit_photos row
+/// Upload scope + pipeline: an ACTIVE user may upload when they are the instance's Host, hold role
+/// ADMIN/STAFF (regular Staff or Staff Leader), or hold an ACCEPTED/ASSIGNED participation in the
+/// exact instance; all files are policy-validated BEFORE any Drive call; every visit_photos row
 /// links the server-resolved request/instance/folder; a failed link compensates the committed
 /// Drive/files upload.
 /// </summary>
@@ -166,12 +167,119 @@ public class UploadVisitInstancePhotosCommandHandlerTests
     }
 
     [Fact]
-    public async Task NonStudentRole_IsForbidden_EvenIfHost()
+    public async Task StaffHost_CanUploadPhotos()
     {
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db, "AFTER_VISIT");
+        var folder = VisitPhotoTestSeed.AddFolder(db);
+
+        var fileUpload = new Mock<IFileUploadService>(MockBehavior.Strict);
+        fileUpload
+            .Setup(f => f.UploadBusinessFileAsync(
+                It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(),
+                FilePurpose.VisitRequestPhoto, (long)DelegationsTestData.HostUserId, CampusFolderId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UploadedFileDto
+            {
+                FileId = UploadedFileId,
+                FileUrl = $"/api/files/{UploadedFileId}/content",
+                ExternalFileId = $"drv-file-{UploadedFileId}",
+                MimeType = "image/jpeg",
+                ChecksumSha256 = "00",
+                ObjectKey = $"visit-photos/{UploadedFileId}.jpg",
+            });
+
+        var folderService = new Mock<IVisitPhotoFolderService>();
+        folderService
+            .Setup(s => s.EnsureUploadTargetAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), "C1",
+                DelegationsTestData.HostUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, CampusFolderExternalId = CampusFolderId });
+
+        // Default FakeDelegationsCurrentUser = the seeded instance Host, role STAFF / sub_role STAFF.
         var handler = new UploadVisitInstancePhotosCommandHandler(
-            db, new FakeDelegationsCurrentUser(), Mock.Of<IFileUploadService>(), new FileValidationPolicy(),
+            db, new FakeDelegationsCurrentUser(), fileUpload.Object, new FileValidationPolicy(),
+            folderService.Object, Mock.Of<IGoogleDriveStorageService>(),
+            NullLogger<UploadVisitInstancePhotosCommandHandler>.Instance);
+
+        var response = await handler.Handle(Command(JpegFile()), default);
+
+        Assert.Single(response.Photos);
+        Assert.Equal(DelegationsTestData.HostUserId, db.VisitPhotos.Single().UploadedBy);
+    }
+
+    [Fact]
+    public async Task StaffLeader_UnrelatedToInstance_CanUploadPhotos()
+    {
+        const ulong leaderUserId = 300;
+        var db = DelegationsTestDbContext.Create();
+        DelegationsTestData.SeedBase(db, "AFTER_VISIT");
+        db.Users.Add(DelegationsTestData.CreateUser(leaderUserId, DelegationsTestData.StaffRoleId, UserSubRoles.Leader, null));
+        db.SaveChanges();
+        var folder = VisitPhotoTestSeed.AddFolder(db);
+
+        var fileUpload = new Mock<IFileUploadService>(MockBehavior.Strict);
+        fileUpload
+            .Setup(f => f.UploadBusinessFileAsync(
+                It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(),
+                FilePurpose.VisitRequestPhoto, (long)leaderUserId, CampusFolderId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UploadedFileDto
+            {
+                FileId = UploadedFileId,
+                FileUrl = $"/api/files/{UploadedFileId}/content",
+                ExternalFileId = $"drv-file-{UploadedFileId}",
+                MimeType = "image/jpeg",
+                ChecksumSha256 = "00",
+                ObjectKey = $"visit-photos/{UploadedFileId}.jpg",
+            });
+
+        var folderService = new Mock<IVisitPhotoFolderService>();
+        folderService
+            .Setup(s => s.EnsureUploadTargetAsync(
+                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), "C1",
+                leaderUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, CampusFolderExternalId = CampusFolderId });
+
+        // Not the Host and never added as a participant of this instance — universal Staff/Admin
+        // access is the only reason this succeeds.
+        var currentUser = new FakeDelegationsCurrentUser
+        {
+            UserId = leaderUserId,
+            RoleId = DelegationsTestData.StaffRoleId,
+            RoleCode = RoleCodes.Staff,
+            SubRole = UserSubRoles.Leader,
+        };
+
+        var handler = new UploadVisitInstancePhotosCommandHandler(
+            db, currentUser, fileUpload.Object, new FileValidationPolicy(),
+            folderService.Object, Mock.Of<IGoogleDriveStorageService>(),
+            NullLogger<UploadVisitInstancePhotosCommandHandler>.Instance);
+
+        var response = await handler.Handle(Command(JpegFile()), default);
+
+        Assert.Single(response.Photos);
+    }
+
+    [Fact]
+    public async Task UnrelatedNonStaffRole_IsForbidden()
+    {
+        const ulong deptUserId = 301;
+        var db = DelegationsTestDbContext.Create();
+        DelegationsTestData.SeedBase(db, "AFTER_VISIT");
+        db.Users.Add(DelegationsTestData.CreateUser(deptUserId, DelegationsTestData.DepartmentRoleId, null, null));
+        db.SaveChanges();
+
+        // Neither Host, nor Admin/Staff, nor a participant of this instance — must stay forbidden.
+        var currentUser = new FakeDelegationsCurrentUser
+        {
+            UserId = deptUserId,
+            RoleId = DelegationsTestData.DepartmentRoleId,
+            RoleCode = RoleCodes.Department,
+            SubRole = null,
+        };
+
+        var handler = new UploadVisitInstancePhotosCommandHandler(
+            db, currentUser, Mock.Of<IFileUploadService>(), new FileValidationPolicy(),
             Mock.Of<IVisitPhotoFolderService>(), Mock.Of<IGoogleDriveStorageService>(),
             NullLogger<UploadVisitInstancePhotosCommandHandler>.Instance);
 

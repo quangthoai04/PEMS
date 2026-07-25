@@ -124,10 +124,9 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
     }
 
     /// <summary>
-    /// READING the folder list is deliberately broader than UPLOADING. The face-scan / photo-tagging
-    /// workflow needs the Host (Staff) to open the đoàn's folder, so a Staff host sees the instances they
-    /// host. Uploading stays Student-only — that stricter rule is enforced by
-    /// <c>VisitPhotoStudentScope</c> and by the DB trigger, and is covered in
+    /// READING the folder list uses its own visibility rule (Admin/Staff-Leader see everything; a
+    /// regular Staff host sees only the instances they host or participate in). Uploading has a
+    /// separate rule enforced by <c>VisitPhotoStudentScope</c> and by the DB trigger — see
     /// <c>UploadVisitInstancePhotosCommandHandlerTests</c>.
     /// </summary>
     [Fact]

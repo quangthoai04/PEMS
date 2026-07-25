@@ -19,12 +19,11 @@ public sealed class VisitInstanceMediaAccessContext
 }
 
 /// <summary>
-/// Authorizes access to a đoàn's (visit instance's) shared photo folder/gallery for both the
-/// Student visit-photo feature AND composing a News post for that instance — i.e. "Host or ACCEPTED
-/// participant" (Staff regular or Student), the same rule <c>CreateNewsCommandHandler</c> already
-/// enforces when actually creating the News row. Deliberately broader than the Student-only
-/// <see cref="VisitPhotoStudentScope"/>, since News authors also include Staff and both features
-/// need to see/reuse the same underlying <c>VR-{visit_request_id}/{campus_code}</c> Drive folder.
+/// Authorizes access to a đoàn's (visit instance's) shared photo folder/gallery for VIEWING (folder
+/// listing, face-scan, News cover image) — i.e. "Host, Admin/Staff-Leader, or ACCEPTED/ASSIGNED
+/// participant", the same rule <c>CreateNewsCommandHandler</c> already enforces when actually
+/// creating the News row. <see cref="VisitPhotoStudentScope"/> enforces the separate (now broader)
+/// rule for UPLOADING — see that type for details.
 /// All relation ids (visit_request_id, campus_code) are resolved server-side from
 /// visit_instance_id; nothing the frontend claims is trusted.
 /// </summary>

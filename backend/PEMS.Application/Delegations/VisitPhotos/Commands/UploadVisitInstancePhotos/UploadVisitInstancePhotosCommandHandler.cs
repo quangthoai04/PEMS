@@ -42,9 +42,9 @@ public sealed class UploadVisitInstancePhotosCommandHandler
     public async Task<UploadVisitInstancePhotosResponse> Handle(
         UploadVisitInstancePhotosCommand request, CancellationToken cancellationToken)
     {
-        // Uploading is STRICTER than viewing: the database trigger trg_visit_photos_validate_bi only
-        // accepts an ACTIVE STUDENT with ACCEPTED participation, so authorize on exactly that rule and
-        // fail with 403 here rather than letting the INSERT blow up as a 500.
+        // Authorize against the same rule the database trigger trg_visit_photos_validate_bi enforces
+        // (Host, Admin/Staff, or an accepted/assigned participant) so a rejected caller fails with a
+        // clean 403 here rather than letting the INSERT blow up as a 500.
         var scope = await VisitPhotoStudentScope.ResolveAcceptedStudentAsync(
             _db, _currentUser, request.VisitInstanceId, cancellationToken);
 
