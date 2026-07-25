@@ -45,6 +45,8 @@ public static class DependencyInjection
         services.AddSingleton<IDateTimeService, DateTimeService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IEmailActionTokenService, EmailActionTokenService>();
+        services.AddScoped<PEMS.Application.Accounts.Common.IAccountEmailConfirmationService,
+            PEMS.Infrastructure.Email.AccountEmailConfirmationService>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
 

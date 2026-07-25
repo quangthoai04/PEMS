@@ -20,6 +20,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
     private readonly AuthOptions _options;
     private readonly IEmailService _emailService;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IAccountEmailConfirmationService _confirmations;
 
     public CreateAccountCommandHandler(
         IApplicationDbContext db,
@@ -28,7 +29,8 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         IDateTimeService clock,
         AuthOptions options,
         IEmailService emailService,
-        PEMS.Application.Notifications.Common.INotificationService notificationService)
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IAccountEmailConfirmationService confirmations)
     {
         _db = db;
         _currentUser = currentUser;
@@ -37,6 +39,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         _options = options;
         _emailService = emailService;
         _notificationService = notificationService;
+        _confirmations = confirmations;
     }
 
     public async Task<CreateAccountResponse> Handle(CreateAccountCommand request, CancellationToken cancellationToken)
@@ -192,7 +195,10 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             SubRole = shape.SubRole,
             PrimaryCampusId = shape.PrimaryCampusId,
             DepartmentId = shape.DepartmentId,
-            Status = UserStatuses.Active,
+            // P0 #1: the account starts UNCONFIRMED — it cannot log in (password/SSO/refresh all reject a
+            // non-active status) and holds no effective authority. A Head slot may still be reserved below;
+            // the reservation grants nothing until the owner confirms their email and the account activates.
+            Status = UserStatuses.PendingEmailConfirmation,
             CreatedVia = CreatedViaValues.ManualCreated,
             CreatedAt = now,
             CreatedBy = actorId,
@@ -227,6 +233,9 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         await using var transaction = needsTransaction
             ? await _db.BeginTransactionAsync(cancellationToken)
             : null;
+
+        // The raw confirmation token — kept in memory only, embedded into the emailed link after commit.
+        var confirmationToken = string.Empty;
         try
         {
             // Re-check the campus has no HO right before inserting (concurrency guard).
@@ -239,6 +248,11 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
 
             _db.Users.Add(user);
             await _db.SaveChangesAsync(cancellationToken);
+
+            // P0 #1: persist the email-ownership proof atomically with the account. Only the hash is stored;
+            // the raw token is returned for the confirmation link and never written to the DB or the log.
+            confirmationToken = await _confirmations.IssuePendingAsync(
+                user.UserId, email, isResend: false, cancellationToken);
 
             // user.UserId is now populated by the database (BIGINT AUTO_INCREMENT).
             // ── Flow B: make the new Staff Leader the IC head of the campus + IC department. ──
@@ -329,9 +343,11 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             throw;
         }
 
-        // ── UC-96 BR-96-09: notify the new account. Failure does not roll back the
-        //    already-committed account; we report it via EmailNotificationStatus. ──
-        var emailStatus = await SendCreatedNotificationAsync(user, shape, cancellationToken);
+        // ── P0 #1: email the confirmation link (NOT a welcome — welcome is sent only after the owner
+        //    confirms). Failure/skip does not roll back the already-committed pending account; we report
+        //    it truthfully via EmailNotificationStatus so the operator can resend. ──
+        var emailStatus = await SendConfirmationEmailAsync(
+            user, shape, _confirmations.BuildConfirmUrl(confirmationToken), cancellationToken);
 
         return new CreateAccountResponse
         {
@@ -344,8 +360,8 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         };
     }
 
-    private async Task<string> SendCreatedNotificationAsync(
-        User user, AccountProvisioningRules.ResolvedShape shape, CancellationToken cancellationToken)
+    private async Task<string> SendConfirmationEmailAsync(
+        User user, AccountProvisioningRules.ResolvedShape shape, string confirmUrl, CancellationToken cancellationToken)
     {
         var campusName = shape.PrimaryCampusId is null
             ? null
@@ -354,41 +370,35 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                 .Select(c => c.Name)
                 .FirstOrDefaultAsync(cancellationToken);
 
-        var departmentName = shape.DepartmentId is null
-            ? null
-            : await _db.Departments.AsNoTracking()
-                .Where(d => d.DepartmentId == shape.DepartmentId)
-                .Select(d => d.Name)
-                .FirstOrDefaultAsync(cancellationToken);
-
         var name = System.Net.WebUtility.HtmlEncode(user.FullName);
         var emailEnc = System.Net.WebUtility.HtmlEncode(user.Email);
         var roleEnc = System.Net.WebUtility.HtmlEncode(ResolveRoleDisplayName(shape.RoleCode, shape.SubRole));
         var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
+        var urlEnc = System.Net.WebUtility.HtmlEncode(confirmUrl);
 
         var html =
             $"<p>Xin chào {name},</p>" +
-            "<p>Tài khoản nội bộ PEMS của bạn đã được khởi tạo thành công.</p>" +
+            "<p>Một tài khoản nội bộ PEMS đã được tạo với địa chỉ email này. " +
+            "Để kích hoạt tài khoản, vui lòng xác nhận rằng bạn là chủ sở hữu email.</p>" +
             "<p><strong>Thông tin tài khoản:</strong></p>" +
             "<ul>" +
             $"<li>Email đăng nhập: <strong>{emailEnc}</strong></li>" +
             $"<li>Vai trò: <strong>{roleEnc}</strong></li>" +
             $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
-            (departmentName is null ? "" : $"<li>Phòng ban: <strong>{System.Net.WebUtility.HtmlEncode(departmentName)}</strong></li>") +
             "</ul>" +
-            "<p>Bạn vui lòng truy cập Internal Portal của PEMS và đăng nhập bằng chính địa chỉ email trên thông qua SSO/Google/FEID.</p>" +
-            "<p><strong>Lưu ý:</strong></p>" +
-            "<ul><li>Nếu bạn không yêu cầu tài khoản này, hoặc thông tin vai trò/cơ sở chưa chính xác, " +
-            "vui lòng liên hệ HO hoặc quản trị hệ thống để được hỗ trợ.</li></ul>" +
+            $"<p><a href=\"{urlEnc}\" style=\"display:inline-block;background:#004c91;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold\">Xác nhận email &amp; kích hoạt tài khoản</a></p>" +
+            $"<p>Hoặc mở liên kết: <br/>{urlEnc}</p>" +
+            "<p>Liên kết có hiệu lực trong <strong>24 giờ</strong>. Trước khi xác nhận, tài khoản chưa thể đăng nhập.</p>" +
+            "<p><strong>Lưu ý:</strong> Nếu bạn không yêu cầu tài khoản này, vui lòng bỏ qua email — tài khoản sẽ không được kích hoạt nếu không có xác nhận.</p>" +
             "<p>Trân trọng,<br/>PEMS System</p>";
 
         try
         {
             // TRUTHFUL status: only report SENT when the provider accepted the message. A disabled SMTP in
             // dev/testing is SKIPPED (not "sent"); a provider/prod failure is FAILED. The account is already
-            // committed, so a non-Sent outcome never rolls it back — the operator can re-notify.
+            // committed (pending), so a non-Sent outcome never rolls it back — the operator can resend.
             var result = await _emailService.TrySendAsync(
-                user.Email, "Tài khoản nội bộ PEMS của bạn đã được khởi tạo", html, cancellationToken);
+                user.Email, "PEMS — Xác nhận email để kích hoạt tài khoản", html, cancellationToken);
             return result.Status switch
             {
                 EmailDeliveryStatus.Sent => "SENT",

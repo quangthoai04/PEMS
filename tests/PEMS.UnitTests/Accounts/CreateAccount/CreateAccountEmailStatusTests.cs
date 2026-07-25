@@ -2,6 +2,7 @@ using Application.Common.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using PEMS.Application.Accounts.Commands.CreateAccount;
+using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
 using PEMS.Application.Notifications.Common;
@@ -32,9 +33,15 @@ public class CreateAccountEmailStatusTests
         notifications.Setup(n => n.CreateAsync(It.IsAny<CreateNotificationRequest>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        var confirmations = new Mock<IAccountEmailConfirmationService>();
+        confirmations.Setup(c => c.IssuePendingAsync(
+                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("raw-token");
+        confirmations.Setup(c => c.BuildConfirmUrl(It.IsAny<string>())).Returns("http://localhost:5173/confirm-email?token=raw-token");
+
         var handler = new CreateAccountCommandHandler(
             db, new FakeCurrentUserService(), new Mock<IPasswordHasher>().Object, new FakeDateTimeService(),
-            new AuthOptions(), email.Object, notifications.Object);
+            new AuthOptions(), email.Object, notifications.Object, confirmations.Object);
         return (handler, db);
     }
 
@@ -76,5 +83,16 @@ public class CreateAccountEmailStatusTests
         var res = await handler.Handle(StudentCmd(), CancellationToken.None);
 
         Assert.Equal("SENT", res.EmailNotificationStatus);
+    }
+
+    [Fact]
+    public async Task Created_account_starts_pending_email_confirmation_not_active()
+    {
+        var (handler, db) = Build(EmailDeliveryResult.Sent());
+
+        await handler.Handle(StudentCmd(), CancellationToken.None);
+
+        var user = await db.Users.SingleAsync(u => u.Email == "new.student@fpt.edu.vn");
+        Assert.Equal(UserStatuses.PendingEmailConfirmation, user.Status);   // cannot log in until confirmed
     }
 }
