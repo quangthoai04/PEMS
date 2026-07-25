@@ -284,6 +284,17 @@
     "openEdit": "Edit request",
     "openResubmit": "Edit & resubmit"
   },
+  "revision": {
+    "title": "Content status",
+    "current": "Current content: version {{form}}",
+    "applied": "Content version {{form}} is in force",
+    "rejected": "Content version {{form}} was rejected",
+    "notApprovedYet": "Approval status: not approved yet",
+    "approvedAt": "Approved at round {{approval}}",
+    "amendmentPending": "Change proposal #{{amendmentNo}} is awaiting approval",
+    "cancelledNote": "The visit was cancelled",
+    "closedNote": "The visit is closed"
+  },
   "contact": {
     "manageTitle": "Manage the contact role",
     "pendingNotice": "{{email}} has not accepted the invitation yet (valid for 72 hours). Campus approvals do not wait for this confirmation.",

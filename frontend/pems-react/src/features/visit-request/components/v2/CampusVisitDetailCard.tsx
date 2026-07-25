@@ -6,6 +6,7 @@ import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid, type InfoRow } from './shared/ReadOnlyInfoGrid';
 import { PersonListTable } from './shared/PersonListTable';
+import { resolveCampusRevisionState } from './shared/campusRevisionState';
 
 interface Props {
   campus: ResolvedCampusVisit;
@@ -28,6 +29,16 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
   const visitTypeLabel = campus.visitType === 'OTHER' && campus.visitTypeOther
     ? campus.visitTypeOther
     : t(`visitRequest:step2Info.visitTypes.${campus.visitType}`, campus.visitType);
+
+  // Approval wording comes from the lifecycle, never from approvalRevision — that number is 1 from
+  // the moment the request is created, long before anybody decides anything.
+  const revisionState = resolveCampusRevisionState({
+    instanceStatus: campus.instanceStatus,
+    formRevision: campus.formRevision,
+    approvalRevision: campus.approvalRevision,
+    decidedAt: campus.decidedAt,
+    activeAmendmentNo: campus.activeAmendment?.amendmentNo ?? null,
+  });
 
   const contact = campus.operationalContact;
   const contactSummary = contact?.fullName
@@ -128,11 +139,17 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
               },
               { label: t('visitRequestV2:detail.decisionNote'), value: campus.decisionNote },
               {
-                label: t('visitRequestV2:detail.revision'),
-                value: t('visitRequestV2:detail.revisionValue', {
-                  form: campus.formRevision,
-                  approval: campus.approvalRevision,
-                }),
+                label: t('visitRequestV2:revision.title'),
+                value: (
+                  <>
+                    {t(revisionState.headlineKey, revisionState.values)}
+                    {revisionState.noteKey && (
+                      <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                        {t(revisionState.noteKey, revisionState.values)}
+                      </span>
+                    )}
+                  </>
+                ),
               },
             ]}
           />

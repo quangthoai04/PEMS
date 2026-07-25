@@ -284,6 +284,17 @@
     "openEdit": "Sửa đơn",
     "openResubmit": "Sửa & gửi lại đơn"
   },
+  "revision": {
+    "title": "Tình trạng nội dung",
+    "current": "Nội dung hiện tại: phiên bản {{form}}",
+    "applied": "Đang áp dụng nội dung phiên bản {{form}}",
+    "rejected": "Nội dung phiên bản {{form}} đã bị từ chối",
+    "notApprovedYet": "Trạng thái xét duyệt: Chưa được duyệt",
+    "approvedAt": "Được duyệt ở lần {{approval}}",
+    "amendmentPending": "Đề xuất thay đổi #{{amendmentNo}} đang chờ duyệt",
+    "cancelledNote": "Lịch thăm đã bị hủy",
+    "closedNote": "Đoàn đã đóng"
+  },
   "contact": {
     "manageTitle": "Quản lý đầu mối",
     "pendingNotice": "Đầu mối {{email}} chưa xác nhận lời mời (hiệu lực 72 giờ). Việc duyệt của các cơ sở không chờ xác nhận này.",
