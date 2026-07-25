@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Controller } from 'react-hook-form';
-import { AlertCircle, Loader2, Plus, Send } from 'lucide-react';
+import { AlertCircle, BadgeCheck, Loader2, Plus, Send, ShieldCheck, UserRound } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -23,6 +23,9 @@ import { OtpVerificationModal } from '../OtpVerificationModal';
 import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusProcessingChoice } from '../../api/visitRequestApi';
 import { useAuthContext } from '../../../../shared/auth/AuthContext';
+import { profileApi } from '../../../profile/api/profileApi';
+import { getApiErrorMessage } from '../../../../shared/utils/toast';
+import { isSameEmailIdentity } from '../../../../shared/utils/emailIdentity';
 
 interface Props {
   mode: UseVisitRequestFormV2Options['mode'];
@@ -78,11 +81,16 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const vm = useVisitRequestFormV2(onSuccess, () => setShowErrors(true), {
     mode,
     draftNamespace,
+    currentUserEmail: user?.email,
     // The ceiling is "one card per campus open for registration", read from the backend — not a
     // constant. Retiring or adding a campus changes the form with no code change.
     maxCampuses: campuses.length || undefined,
     getCampusProcessing: () => {
       if (!isAuthenticated) return [];
+      // A processing intent is only ever valid on a SELF-registration: on a delegated submission the
+      // backend refuses the whole payload, so stale choices must never leave the browser. The panel is
+      // hidden and the state cleared when the email changes, and this is the last gate before the wire.
+      if (!isSameEmailIdentity(user?.email, form.getValues('registerInfo.email'))) return [];
       const selected = new Set(
         form.getValues('campusVisits').map(cv => (cv.campus || '').toUpperCase()).filter(Boolean),
       );
@@ -179,6 +187,49 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const watchedReg = form.watch('registerInfo');
   const isRegInfoEmpty = !watchedReg?.fullName?.trim() && !watchedReg?.organization?.trim() && !watchedReg?.phone?.trim() && !watchedReg?.email?.trim();
 
+  // ── Registrant identity (authenticated only) ──
+  // Recomputed from the WATCHED email, so editing the field flips the banner, the submit contract and
+  // the campus processing panel in the same render — there is no stale "verified" state to leak.
+  const isInternalActor = creatorRole === 'STAFF' || creatorRole === 'STAFF_LEADER';
+  const isSelfRegistrant = isAuthenticated && isSameEmailIdentity(user?.email, watchedReg?.email);
+
+  const [autofillState, setAutofillState] = useState<'idle' | 'loading' | 'error'>('idle');
+
+  /**
+   * Fills the registrant block from the signed-in user's own profile. Explicitly user-triggered:
+   * pre-filling on mount would silently overwrite a restored draft, which is exactly the behaviour
+   * that loses typed work. Fields the profile has no value for are left blank for the user to add
+   * rather than being padded with a role label.
+   */
+  const fillRegistrantFromProfile = async () => {
+    setAutofillState('loading');
+    try {
+      const me = await profileApi.getMyProfile();
+      form.setValue('registerInfo', {
+        fullName: me.fullName ?? '',
+        email: me.email ?? '',
+        phone: me.phone ?? '',
+        nationality: me.nationality ?? '',
+        jobTitle: me.displayPosition ?? '',
+        organization: me.displayDepartmentName ?? me.department?.name ?? me.displayCampusName ?? '',
+      }, { shouldValidate: true, shouldDirty: true });
+      setAutofillState('idle');
+    } catch (err) {
+      setAutofillState('error');
+      vm.setSubmitError(getApiErrorMessage(err, t('visitRequestV2:registrant.autofillFailed')));
+    }
+  };
+
+  // Choices made while the form named the signed-in user must not survive that name changing:
+  // once this is a delegated submission the whole payload would be rejected for carrying them.
+  const wasSelfRegistrantRef = useRef(isSelfRegistrant);
+  useEffect(() => {
+    if (wasSelfRegistrantRef.current && !isSelfRegistrant) {
+      setCampusProcessing(prev => (Object.keys(prev).length === 0 ? prev : {}));
+    }
+    wasSelfRegistrantRef.current = isSelfRegistrant;
+  }, [isSelfRegistrant]);
+
   return (
     <form id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
       {/* ── Restore Draft Modal ── */}
@@ -233,10 +284,49 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       )}
 
       {/* ── Request-level: registrant ── */}
-      <FormSection id="v2-registrant" title={t('visitRequestV2:sections.registrant')}>
+      <FormSection
+        id="v2-registrant"
+        title={t('visitRequestV2:sections.registrant')}
+        headerRight={isAuthenticated ? (
+          <button
+            type="button"
+            data-testid="v2-registrant-use-me"
+            disabled={autofillState === 'loading'}
+            onClick={() => void fillRegistrantFromProfile()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {autofillState === 'loading'
+              ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              : <UserRound className="h-4 w-4" aria-hidden />}
+            {t('visitRequestV2:registrant.useMyProfile')}
+          </button>
+        ) : undefined}
+      >
+        {/* Which submit contract this form is on, in the user's words — shown BEFORE they submit so the
+            OTP round-trip is never a surprise. Driven by the watched email, so it flips as they type. */}
+        {isAuthenticated && (
+          <div
+            role="status"
+            data-testid={isSelfRegistrant ? 'v2-registrant-self' : 'v2-registrant-delegated'}
+            className={`mb-4 flex items-start gap-2 rounded-xl border p-3 text-sm font-medium ${
+              isSelfRegistrant
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}
+          >
+            {isSelfRegistrant
+              ? <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              : <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
+            <span>
+              {isSelfRegistrant
+                ? t('visitRequestV2:registrant.matchesAccount')
+                : t('visitRequestV2:registrant.requiresOtp')}
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
           <FormField label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
-            <input {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
+            <input data-testid="v2-registrant-fullName" {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
           </FormField>
           {/* Free-solo partner/organization search: picking a known partner links partnerId,
               typing anything else keeps the text as a manually entered organization. */}
@@ -260,7 +350,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             />
           </FormField>
           <FormField label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
-            <input {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
+            <input data-testid="v2-registrant-jobTitle" {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
             <Controller
@@ -278,10 +368,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
-            <input {...register('registerInfo.phone')} placeholder="+84…" className={inputCls(!!regErr?.phone, false, false)} />
+            <input data-testid="v2-registrant-phone" {...register('registerInfo.phone')} placeholder="+84…" className={inputCls(!!regErr?.phone, false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
-            <input type="email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
+            <input type="email" data-testid="v2-registrant-email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
           </FormField>
         </div>
       </FormSection>
@@ -294,14 +384,23 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         headerRight={
           <button
             type="button"
+            data-testid="v2-contact-same-as-registrant"
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={isRegInfoEmpty}
+            // An internal member of staff can never be the delegation's contact — the backend rejects it
+            // with INTERNAL_REGISTRANT_CANNOT_BE_CONTACT. Copying their own details in is therefore a dead
+            // end, so the affordance is removed instead of letting them fill the block and fail on submit.
+            disabled={isRegInfoEmpty || (isInternalActor && isSelfRegistrant)}
             onClick={syncContactFromRegistrant}
           >
             {t('visitRequestV2:sections.contactSameAsRegistrant')}
           </button>
         }
       >
+        {isInternalActor && isSelfRegistrant && (
+          <p className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium text-slate-600">
+            {t('visitRequestV2:sections.contactInternalNotAllowed')}
+          </p>
+        )}
         <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
           <FormField label={t('visitRequestV2:person.fullName')} required error={cpErr?.fullName?.message} showValidIcon={false}>
             <input {...register('contactPoint.fullName')} className={inputCls(!!cpErr?.fullName, false, false)} />
@@ -350,7 +449,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                   onRemove={() => requestRemove(index)}
                   canRemove={campusVisitFields.fields.length > 1}
                   showErrors={showErrors}
-                  processing={isAuthenticated ? {
+                  // Only a SELF-registration may state how a campus is processed: on a delegated
+                  // submission the OTP verifies the registrant, not the person typing, so every campus
+                  // routes to its Staff Leader and the backend rejects any intent to the contrary.
+                  processing={isAuthenticated && isSelfRegistrant ? {
                     role: creatorRole,
                     ownCampusCode: user?.campusCode,
                     values: campusProcessing,
@@ -400,7 +502,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60"
             >
               {vm.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {mode === 'authenticated' ? t('visitRequestV2:submit.authenticated') : t('visitRequestV2:submit.public')}
+              {/* The label states the contract the form is actually on: a delegated submission ends in
+                  an OTP round-trip, so it must not promise an immediate create. */}
+              {isAuthenticated && isSelfRegistrant
+                ? t('visitRequestV2:submit.authenticated')
+                : t('visitRequestV2:submit.public')}
             </button>
           </div>
         </>,
@@ -486,8 +592,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         </div>
       )}
 
-      {/* ── Public OTP (v2 create happens at verify; see hook) ── */}
-      {mode !== 'authenticated' && vm.sessionToken && (
+      {/* ── OTP (v2 create happens at verify; see hook) ──
+          Rendered whenever a challenge is live, not only in public mode: an authenticated user
+          registering somebody else takes the same challenge, and gating this on `mode` would leave
+          them with a pending session token and no way to enter the code. */}
+      {vm.sessionToken && (
         <OtpVerificationModal
           maskedEmail={vm.maskedEmail}
           otpError={vm.otpError}

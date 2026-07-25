@@ -46,9 +46,18 @@ vi.mock('react-i18next', () => ({
 
 import { VisitRequestFormV2 } from '../components/v2/VisitRequestFormV2';
 
-const STAFF_HN = { userId: 5, roleCode: 'STAFF', subRole: 'STAFF', campusCode: 'HN' };
-const LEADER_HN = { userId: 6, roleCode: 'STAFF', subRole: 'LEADER', campusCode: 'HN' };
-const VISITOR = { userId: 9, roleCode: 'VISITOR', subRole: null, campusCode: null };
+const STAFF_HN = { userId: 5, roleCode: 'STAFF', subRole: 'STAFF', campusCode: 'HN', email: 'staff.hn@fpt.edu.vn' };
+const LEADER_HN = { userId: 6, roleCode: 'STAFF', subRole: 'LEADER', campusCode: 'HN', email: 'leader.hn@fpt.edu.vn' };
+const VISITOR = { userId: 9, roleCode: 'VISITOR', subRole: null, campusCode: null, email: 'visitor@example.com' };
+
+/**
+ * Types an address into the registrant email field. Processing controls exist ONLY on a
+ * self-registration, so every processing assertion has to state whose name the form is in —
+ * otherwise it is asserting against an empty email, which is nobody.
+ */
+function typeRegistrantEmail(value: string) {
+  fireEvent.change(screen.getByTestId('v2-registrant-email'), { target: { value } });
+}
 
 /**
  * Picks a campus in the first (only) card, which is what reveals its processing panel. Targets the
@@ -73,6 +82,7 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     authUser.mockReturnValue(STAFF_HN);
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
 
+    typeRegistrantEmail(STAFF_HN.email);
     selectFirstCampus('HN');
 
     expect(screen.getByTestId('campus-processing-SELF_HOST-HN')).toBeTruthy();
@@ -85,20 +95,66 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     authUser.mockReturnValue(LEADER_HN);
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u6" onSuccess={vi.fn()} />);
 
+    typeRegistrantEmail(LEADER_HN.email);
     selectFirstCampus('HN');
 
     expect(screen.getByTestId('campus-processing-ASSIGN_HOST-HN')).toBeTruthy();
+  });
+
+  it('recognises the signed-in account regardless of case and padding', () => {
+    authUser.mockReturnValue(STAFF_HN);
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
+
+    typeRegistrantEmail('  STAFF.HN@FPT.EDU.VN  ');
+    selectFirstCampus('HN');
+
+    expect(screen.getByTestId('v2-registrant-self')).toBeTruthy();
+    expect(screen.getByTestId('campus-processing-SELF_HOST-HN')).toBeTruthy();
   });
 
   it('locks a campus outside the creator scope to a read-only routed notice', () => {
     authUser.mockReturnValue(LEADER_HN);
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u6" onSuccess={vi.fn()} />);
 
+    typeRegistrantEmail(LEADER_HN.email);
     selectFirstCampus('HCM');
 
     expect(screen.getByTestId('campus-processing-readonly-HCM')).toBeTruthy();
     expect(screen.queryByTestId('campus-processing-SELF_HOST-HCM')).toBeNull();
     expect(getCreateHostCandidates).not.toHaveBeenCalled();
+  });
+
+  // ── Delegated submissions carry no processing at all ──────────────────────────
+
+  it('hides every processing control once the registrant is somebody else', () => {
+    authUser.mockReturnValue(LEADER_HN);
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u6" onSuccess={vi.fn()} />);
+
+    typeRegistrantEmail(LEADER_HN.email);
+    selectFirstCampus('HN');
+    expect(screen.getByTestId('campus-processing-SELF_HOST-HN')).toBeTruthy();
+
+    // The Leader retypes the registrant as an external guest — this is now a delegated submission.
+    typeRegistrantEmail('guest@partner.example.com');
+
+    expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-processing-ASSIGN_HOST-HN')).toBeNull();
+    // Not even the read-only routed notice: the whole panel belongs to self-registration.
+    expect(screen.queryByTestId('campus-processing-readonly-HN')).toBeNull();
+    expect(screen.getByTestId('v2-registrant-delegated')).toBeTruthy();
+  });
+
+  it('treats a plus-alias of the signed-in address as somebody else', () => {
+    // Identity is trim + lower-case only: folding "+alias" would let the account act as an address
+    // it has never proven it controls.
+    authUser.mockReturnValue(STAFF_HN);
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
+
+    typeRegistrantEmail('staff.hn+delegated@fpt.edu.vn');
+    selectFirstCampus('HN');
+
+    expect(screen.getByTestId('v2-registrant-delegated')).toBeTruthy();
+    expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();
   });
 
   it('never renders internal processing on the PUBLIC form', () => {
@@ -116,6 +172,8 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     authUser.mockReturnValue(VISITOR);
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u9" onSuccess={vi.fn()} />);
 
+    // Self-registration — so the absence of controls is about the ROLE, not the identity gate.
+    typeRegistrantEmail(VISITOR.email);
     selectFirstCampus('HN');
 
     expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();

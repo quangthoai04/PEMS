@@ -32,6 +32,7 @@ import {
   type V2CreateResponse,
 } from '../api/visitRequestV2Api';
 import { getApiErrorMessage, showSuccessToast } from '../../../shared/utils/toast';
+import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
 function getApiErrorCode(error: unknown): string | null {
@@ -111,6 +112,12 @@ export interface UseVisitRequestFormV2Options {
   draftNamespace?: string;
   /** Supplier of per-campus processing choices (authenticated Staff/Leader only). */
   getCampusProcessing?: () => CampusProcessingChoice[];
+  /**
+   * Authenticated mode only: the signed-in user's own email. It decides which submit contract the form
+   * uses — the session can only vouch for THIS mailbox, so a form naming anybody else has to prove that
+   * person's identity with an OTP instead (plan §5.3/§5.4). Leave undefined in public mode.
+   */
+  currentUserEmail?: string | null;
   minAdvanceHours?: number;
   /**
    * How many campuses are open for registration right now (from the backend). Caps the campus
@@ -162,6 +169,18 @@ export const useVisitRequestFormV2 = (
   const [isRecoveringOtp, setIsRecoveringOtp] = useState(false);
 
   const [applyToAllPrompt, setApplyToAllPrompt] = useState<ApplyToAllPrompt | null>(null);
+
+  const currentUserEmail = options?.currentUserEmail;
+  /**
+   * "Is the person named as registrant the signed-in user?" — the single question that decides the
+   * submit contract, so it is derived in ONE place and exposed for the UI to render from.
+   * Always false in public mode: there is no session to be the same as.
+   */
+  const isSelfRegistration = useCallback(
+    (registrantEmail: string | null | undefined): boolean =>
+      isAuthenticatedMode && isSameEmailIdentity(currentUserEmail, registrantEmail),
+    [isAuthenticatedMode, currentUserEmail],
+  );
 
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [migratedFromGlobalDraft, setMigratedFromGlobalDraft] = useState(false);
@@ -401,11 +420,16 @@ export const useVisitRequestFormV2 = (
   );
 
   const onSubmit = form.handleSubmit(async data => {
-    if (isAuthenticatedMode) {
+    // Authenticated SELF-registration is the only case the session alone can authorise: the JWT
+    // proves this mailbox and nothing else. Naming somebody else as registrant falls through to the
+    // OTP challenge below — the same initiate/verify pair the public submit uses — so that person
+    // proves the mailbox is theirs. Sending it to direct-create instead would just earn a
+    // REGISTRANT_EMAIL_VERIFICATION_REQUIRED from the backend.
+    if (isAuthenticatedMode && isSelfRegistration(data.registerInfo.email)) {
       await submitAuthenticated(data);
       return;
     }
-    // Public: mint the OTP challenge through the v2 initiate endpoint. The FULL v2 form is
+    // Mint the OTP challenge through the v2 initiate endpoint. The FULL v2 form is
     // sent and its snapshot is bound server-side, so 30-minute / zero-support submissions
     // work and verify builds from exactly this form — no v1 projection, no silent fallback.
     setIsSubmitting(true);
@@ -565,6 +589,7 @@ export const useVisitRequestFormV2 = (
     applyToAllPrompt,
     // Submit
     onSubmit,
+    isSelfRegistration,
     isSubmitting,
     submitError,
     setSubmitError,
