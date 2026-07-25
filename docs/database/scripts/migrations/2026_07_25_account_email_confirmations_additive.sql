@@ -6,11 +6,9 @@
 -- only when a matching, unexpired, PENDING token is confirmed. Only the token
 -- HASH is stored; the raw token lives solely in the emailed confirmation link.
 --
--- Purely additive: creates one new table and does not alter users/departments/
--- campuses, so the running application never breaks mid-deploy. The new
--- PENDING_EMAIL_CONFIRMATION value for users.status is a plain string (the column
--- is VARCHAR, not a native ENUM in the canonical schema), so no column change is
--- required for it.
+-- Additive: extends the users.status ENUM with 'PENDING_EMAIL_CONFIRMATION' and
+-- creates one new table. It does not drop or narrow anything, so the running
+-- application never breaks mid-deploy.
 --
 -- Idempotent: guarded with information_schema checks so it can be re-run safely.
 -- Target: a disposable / allowlisted database ONLY (never pems_db, never prod).
@@ -18,6 +16,24 @@
 -- =============================================================================
 
 SET @schema := DATABASE();
+
+-- ── Extend users.status ENUM with PENDING_EMAIL_CONFIRMATION (skip if present) ──
+-- users.status is a native ENUM('ACTIVE','INACTIVE','LOCKED'); a pending account
+-- cannot be stored without adding the new value. Widening an ENUM is additive and
+-- keeps every existing row valid.
+SET @status_has_pending := (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = @schema AND table_name = 'users' AND column_name = 'status'
+    AND column_type LIKE '%PENDING_EMAIL_CONFIRMATION%'
+);
+
+SET @ddl_status := IF(@status_has_pending = 0,
+  'ALTER TABLE users MODIFY COLUMN status ENUM(''ACTIVE'',''INACTIVE'',''LOCKED'',''PENDING_EMAIL_CONFIRMATION'') NOT NULL DEFAULT ''ACTIVE'' COMMENT ''ACTIVE=hoạt động, INACTIVE=tạm ngưng, LOCKED=bị khóa, PENDING_EMAIL_CONFIRMATION=chờ xác nhận email''',
+  'SELECT ''users.status already has PENDING_EMAIL_CONFIRMATION — skipped'' AS note;');
+
+PREPARE stmt_status FROM @ddl_status;
+EXECUTE stmt_status;
+DEALLOCATE PREPARE stmt_status;
 
 -- ── Create table account_email_confirmations (skip if it already exists) ─────
 SET @tbl_exists := (

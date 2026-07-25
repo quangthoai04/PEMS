@@ -543,7 +543,7 @@ CREATE TABLE users (
   avatar_url VARCHAR(500) NULL,
   student_code VARCHAR(30) NULL,
   fe_id VARCHAR(100) NULL,
-  status ENUM('ACTIVE','INACTIVE','LOCKED') NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE=hoạt động, INACTIVE=tạm ngưng, LOCKED=bị khóa',
+  status ENUM('ACTIVE','INACTIVE','LOCKED','PENDING_EMAIL_CONFIRMATION') NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE=hoạt động, INACTIVE=tạm ngưng, LOCKED=bị khóa, PENDING_EMAIL_CONFIRMATION=chờ xác nhận email',
   email_verified_at DATETIME NULL COMMENT 'Thời điểm email được xác thực qua SSO lần đầu hoặc xác nhận bởi hệ thống',
   failed_login_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Số lần đăng nhập sai local password liên tiếp; reset khi login thành công',
   locked_until DATETIME NULL COMMENT 'Thời điểm hết khóa tạm thời nếu bị lock',
@@ -3316,6 +3316,47 @@ CREATE TABLE email_action_tokens (
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='One-time action tokens for email buttons: accept, decline, negotiate, handover signature.';
+
+-- P0 #1: one-time email-ownership proof for newly-created internal accounts. An account is created
+-- with users.status = 'PENDING_EMAIL_CONFIRMATION' and activated only when a matching, unexpired,
+-- PENDING token is confirmed. Only the token HASH is stored; the raw token lives solely in the emailed link.
+CREATE TABLE account_email_confirmations (
+  confirmation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+  user_id         BIGINT UNSIGNED NOT NULL
+    COMMENT 'Tài khoản đang chờ xác nhận email',
+  target_email    VARCHAR(255) NOT NULL
+    COMMENT 'Email được chứng minh quyền sở hữu (email chuẩn hoá tại thời điểm phát hành)',
+  token_hash      CHAR(64) NOT NULL
+    COMMENT 'SHA-256 (hex) của token gốc — KHÔNG bao giờ lưu token gốc',
+
+  status          VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    COMMENT 'PENDING / CONFIRMED / EXPIRED / SUPERSEDED / CANCELLED',
+
+  expires_at      DATETIME NOT NULL,
+  resend_count    INT NOT NULL DEFAULT 0,
+
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  confirmed_at    DATETIME NULL DEFAULT NULL,
+  cancelled_at    DATETIME NULL DEFAULT NULL,
+
+  PRIMARY KEY (confirmation_id),
+
+  UNIQUE KEY uq_account_email_confirmations_token_hash (token_hash),
+  KEY idx_account_email_confirmations_user (user_id),
+  KEY idx_account_email_confirmations_status_expiry (status, expires_at),
+
+  CONSTRAINT chk_account_email_confirmations_status
+    CHECK (status IN ('PENDING','CONFIRMED','EXPIRED','SUPERSEDED','CANCELLED')),
+  CONSTRAINT chk_account_email_confirmations_target_email_not_blank
+    CHECK (CHAR_LENGTH(TRIM(target_email)) > 0),
+
+  CONSTRAINT fk_account_email_confirmations_user
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Bằng chứng sở hữu email một-lần cho tài khoản nội bộ mới (P0 #1).';
 
 CREATE TABLE notifications (
   notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
