@@ -280,6 +280,28 @@
     "reload": "Tải lại dữ liệu mới",
     "submitFailed": "Không thể lưu. Vui lòng thử lại.",
     "saveEdit": "Lưu thay đổi",
-    "saveResubmit": "Gửi lại đơn"
+    "saveResubmit": "Gửi lại đơn",
+    "openEdit": "Sửa đơn",
+    "openResubmit": "Sửa & gửi lại đơn"
+  },
+  "outcome": {
+    "title": "Tình trạng hiện tại",
+    "waitingAll": "Đang chờ {{count}} cơ sở xử lý.",
+    "accepted": "{{count}} cơ sở đã tiếp nhận",
+    "waiting": "{{count}} cơ sở đang chờ xử lý",
+    "rejected": "{{count}} cơ sở từ chối",
+    "cancelled": "{{count}} cơ sở đã hủy",
+    "inProgress": "{{count}} cơ sở đang thực hiện",
+    "closed": "{{count}} cơ sở đã đóng",
+    "allRejected": "Đơn đã bị từ chối tại tất cả cơ sở.",
+    "allCancelled": "Đơn đã bị hủy.",
+    "seePerCampus": "Xem quyết định chi tiết trong từng cơ sở bên dưới.",
+    "noCampus": "Không có cơ sở nào trong phạm vi bạn được xem.",
+    "cancelledAt": "Hủy lúc",
+    "cancelledBy": "Người thực hiện",
+    "cancellationReason": "Lý do",
+    "latestRejection": "Từ chối gần nhất",
+    "rejectedBy": "Người xử lý",
+    "rejectionReason": "Lý do"
   }
 }

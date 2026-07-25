@@ -15,6 +15,7 @@ import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { VisitSectionCard } from './shared/VisitSectionCard';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid } from './shared/ReadOnlyInfoGrid';
+import { VisitOutcomeSummary } from './shared/VisitOutcomeSummary';
 
 interface Props {
   visitRequestId: number;
@@ -114,14 +115,17 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           )}
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* These are NAVIGATION, not submits — they open the edit form. Labelling them
+                "Lưu thay đổi" / "Gửi lại đơn" claimed an action that only happens on the form's own
+                submit button, which still carries those labels. */}
             {canEditPending && (
               <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
-                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
+                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.openEdit')}
               </Link>
             )}
             {canResubmit && (
               <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
-                <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
+                <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.openResubmit')}
               </Link>
             )}
             {canSafeEdit && (
@@ -133,31 +137,17 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           </div>
         </div>
 
-        <ReadOnlyInfoGrid
-          className="mt-4"
-          rows={[
-            { label: t('visitRequestV2:detail.submittedAt'), value: formatVietnamDateTime(data.submittedAt) },
-            {
-              label: t('visitRequestV2:sections.registrant'),
-              value: [data.registrant.fullName, data.registrant.organization].filter(Boolean).join(' — '),
-            },
-            {
-              label: t('visitRequestV2:detail.primaryContact'),
-              value: data.primaryContact.fullName
-                ? (
-                  <>
-                    {data.primaryContact.fullName}
-                    {data.primaryContact.accessStatus === 'PENDING_CONFIRMATION' && (
-                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
-                        {t('visitRequestV2:detail.contactPending')}
-                      </span>
-                    )}
-                  </>
-                )
-                : null,
-            },
-          ]}
-        />
+        {/* The registrant and contact blocks used to be repeated here, immediately above sections 1
+            and 2 that show the same people in full. The overview answers "which request, what state,
+            what can I do" — who the people are is the sections' job. */}
+        <p className="mt-3 text-sm text-slate-500">
+          {t('visitRequestV2:detail.submittedAt')}:{' '}
+          <span className="font-medium text-slate-700">{formatVietnamDateTime(data.submittedAt)}</span>
+        </p>
+
+        <div className="mt-3">
+          <VisitOutcomeSummary form={data} />
+        </div>
       </header>
 
       {/* ── Identity workflow (registrant / ACTIVE contact only — backend re-authorizes) ── */}

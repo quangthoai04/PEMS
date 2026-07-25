@@ -280,6 +280,28 @@
     "reload": "Reload latest data",
     "submitFailed": "Could not save. Please try again.",
     "saveEdit": "Save changes",
-    "saveResubmit": "Resubmit request"
+    "saveResubmit": "Resubmit request",
+    "openEdit": "Edit request",
+    "openResubmit": "Edit & resubmit"
+  },
+  "outcome": {
+    "title": "Current status",
+    "waitingAll": "Waiting for {{count}} campus(es) to respond.",
+    "accepted": "{{count}} campus(es) accepted",
+    "waiting": "{{count}} campus(es) awaiting response",
+    "rejected": "{{count}} campus(es) rejected",
+    "cancelled": "{{count}} campus(es) cancelled",
+    "inProgress": "{{count}} campus(es) in progress",
+    "closed": "{{count}} campus(es) closed",
+    "allRejected": "This request was rejected at every campus.",
+    "allCancelled": "This request was cancelled.",
+    "seePerCampus": "See each campus below for the detailed decision.",
+    "noCampus": "No campus in your viewing scope.",
+    "cancelledAt": "Cancelled at",
+    "cancelledBy": "Cancelled by",
+    "cancellationReason": "Reason",
+    "latestRejection": "Latest rejection",
+    "rejectedBy": "Decided by",
+    "rejectionReason": "Reason"
   }
 }

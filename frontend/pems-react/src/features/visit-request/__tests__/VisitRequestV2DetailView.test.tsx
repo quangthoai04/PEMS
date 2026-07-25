@@ -40,6 +40,10 @@ const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitF
   createdSource: 'PUBLIC',
   submittedAt: '2026-07-15T08:00:00',
   partnerId: null,
+  cancelledByUserId: null,
+  cancelledByName: null,
+  cancelledAt: null,
+  cancellationReason: null,
   registrant: {
     fullName: 'Người Đăng Ký', organization: 'ĐH ABC', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN',
@@ -186,6 +190,36 @@ describe('VisitRequestV2DetailView', () => {
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Quick edit' })).toBeInTheDocument();
+  });
+
+  it('labels the edit entry points as navigation, never as a save', async () => {
+    // These are <Link>s to the edit form. "Save changes" belongs to the button that actually submits;
+    // reusing it here promised an action that did not happen.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'EDIT_PENDING_REQUEST', 'RESUBMIT_REJECTED_REQUEST'],
+      },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Edit request' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit & resubmit' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Save changes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Resubmit request' })).not.toBeInTheDocument();
+  });
+
+  it('overview states the request and its outcome without repeating sections 1 and 2', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    // The people appear exactly once each - in their own section, not also in the overview.
+    expect(screen.getAllByText('Người Đăng Ký')).toHaveLength(1);
+    expect(screen.getAllByText('Đầu Mối')).toHaveLength(1);
+    // …and the overview now answers "where has this got to" instead.
+    expect(screen.getByTestId('visit-outcome-summary')).toBeInTheDocument();
   });
 
   it('per-instance SUBMIT_AMENDMENT surfaces a propose-change entry point', async () => {
