@@ -79,7 +79,7 @@ public class GetHODashboardOverviewQueryHandler
             {
                 Id = r.VisitRequestId.ToString(),
                 // Request-level row: a MIXED v2 request has no single business name (plan §8.3).
-                Name = r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName,
+                Name = r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : (r.CampusInstances.Select(ci => ci.FormDetail.DelegationName).FirstOrDefault() ?? r.RequestCode ?? "Đoàn khách"),
                 Campus = "Nhiều cơ sở"
             })
             .ToListAsync(cancellationToken);

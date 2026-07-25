@@ -118,7 +118,7 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
                     RecipientUserId: id,
                     Title: "Visitor đã gửi lại đơn bị từ chối",
                     // Request-level message: a mixed request has no single business name.
-                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({(visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : visit.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName)}). Vui lòng xử lý lại tại cơ sở của bạn.",
+                    Message: $"Visitor đã chỉnh sửa và gửi lại đơn {visit.RequestCode} ({(visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : (visit.CampusInstances.FirstOrDefault()?.FormDetail?.DelegationName ?? visit.RequestCode))}). Vui lòng xử lý lại tại cơ sở của bạn.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitRequest,
                     RelatedId: visit.VisitRequestId,

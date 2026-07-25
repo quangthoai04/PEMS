@@ -106,7 +106,7 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
         // Request-level fallback title: a MIXED v2 request has no single business name (plan §8.3).
         var visitTitles = await _context.VisitRequests.Where(r => requestIds.Contains(r.VisitRequestId))
             .ToDictionaryAsync(r => r.VisitRequestId,
-                r => r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : r.CampusInstances.FirstOrDefault()!.FormDetail!.DelegationName,
+                r => r.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : (r.CampusInstances.Select(ci => ci.FormDetail.DelegationName).FirstOrDefault() ?? r.RequestCode ?? "Đoàn khách"),
                 cancellationToken);
 
         var instanceIds = projections.Where(x => x.VisitInstanceId.HasValue).Select(x => x.VisitInstanceId!.Value).ToList();
