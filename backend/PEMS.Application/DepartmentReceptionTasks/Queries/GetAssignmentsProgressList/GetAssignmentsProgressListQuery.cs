@@ -186,7 +186,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
         {
             var startAt = row.li.UsageStartAt ?? row.inst.PlannedStartAt;
             var endAt = row.li.UsageEndAt ?? row.inst.PlannedEndAt;
-            var uiStatus = NormalizeRequestStatus(row.li.Status, row.inst.Status, row.vr.Status, row.BorrowSigned, row.ReturnSigned);
+            var isAssignedToLeader = leaderUserId != null && row.li.AssignedToUserId == leaderUserId;
+            var uiStatus = NormalizeRequestStatus(row.li.Status, row.inst.Status, row.vr.Status, row.BorrowSigned, row.ReturnSigned, isAssignedToLeader);
             var isSelfAccepted = row.li.AssignedToUserId == currentUserId && row.li.Status == "ACCEPTED";
             var hasActiveAssignee = row.li.AssignedToUserId.HasValue
                 && row.li.AssignedAt.HasValue
@@ -287,11 +288,16 @@ public sealed class GetAssignmentsProgressListQueryHandler
             .Select(g =>
             {
                 var activeStaff = g
-                    .Where(x => x.p.AssignedBy != null && x.p.Status != ParticipantStatuses.Declined && x.p.Status != ParticipantStatuses.Removed)
+                    .Where(x => (leaderUserId == null || x.p.UserId != leaderUserId.Value)
+                                && x.p.AssignedBy != null
+                                && x.p.Status != ParticipantStatuses.Declined
+                                && x.p.Status != ParticipantStatuses.Removed)
                     .OrderByDescending(x => x.p.AssignedAt ?? x.p.InvitedAt ?? x.p.CreatedAt)
                     .FirstOrDefault();
                 var declinedStaff = g
-                    .Where(x => x.p.AssignedBy != null && x.p.Status == ParticipantStatuses.Declined)
+                    .Where(x => (leaderUserId == null || x.p.UserId != leaderUserId.Value)
+                                && x.p.AssignedBy != null
+                                && x.p.Status == ParticipantStatuses.Declined)
                     .OrderByDescending(x => x.p.RespondedAt ?? x.p.AssignedAt ?? x.p.CreatedAt)
                     .FirstOrDefault();
                 var leaderRow = g
@@ -309,7 +315,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
             var row = group.selected!;
             var activeStaff = group.activeStaff;
             var leaderRow = group.leaderRow;
-            var uiStatus = NormalizeInvitationStatus(row.p.Status, row.p.AssignedBy != null, row.inst.Status, row.inst.PlannedStartAt, row.inst.PlannedEndAt, now);
+            var uiStatus = NormalizeInvitationStatus(row.p.Status, activeStaff != null, row.inst.Status, row.inst.PlannedStartAt, row.inst.PlannedEndAt, now);
             var isLeaderSelfAccepted = row.p.UserId == currentUserId && row.p.Status == ParticipantStatuses.Accepted;
             var canLeaderHandle = uiStatus is "REQUESTED" or "DECLINED";
 
@@ -481,7 +487,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
         return "Nhân viên";
     }
 
-    private static string NormalizeRequestStatus(string status, string instanceStatus, string requestStatus, bool borrowSigned, bool returnSigned)
+    private static string NormalizeRequestStatus(string status, string instanceStatus, string requestStatus, bool borrowSigned, bool returnSigned, bool isAssignedToLeader = false)
     {
         if (requestStatus == "CANCELLED" || instanceStatus == "CANCELLED" || status == "CANCELLED") return "CANCELLED";
         if (returnSigned || status == "DONE") return "DONE";
@@ -490,7 +496,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
         return status switch
         {
             "REQUESTED" => "REQUESTED",
-            "ASSIGNED" => "ASSIGNED",
+            "ASSIGNED" => isAssignedToLeader ? "REQUESTED" : "ASSIGNED",
             "ACCEPTED" => "ACCEPTED",
             "DECLINED" => "REJECTED",
             "REJECTED" => "REJECTED",

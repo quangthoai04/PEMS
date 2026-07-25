@@ -554,18 +554,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
                 hCol = 'border-purple-600';
               }
-            } else if (isProcessed) {
+            } else if (isProcessed || (isMine && (item.itemType === 'INVITATION' || item.itemType === 'REQUEST'))) {
               if (item.status !== 'ASSIGNED') {
                 cat = 'Lịch của tôi';
               }
-              if (isDeptLeader && isMine) {
-                // Đơn Dept Leader phụ trách (đã chấp nhận) → màu tím như "Tôi".
-                col = 'bg-purple-100 text-purple-800 border-purple-400 hover:bg-purple-200';
-                hCol = 'border-purple-600';
-              } else {
-                col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
-                hCol = 'border-blue-500';
-              }
+              // Đơn phụ trách (chấp nhận / từ chối / đề xuất) -> Màu xanh dương
+              col = 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
+              hCol = 'border-blue-500';
             } else if (item.itemType === 'INVITATION') {
               col = 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100';
               hCol = 'border-emerald-500';
@@ -1619,12 +1614,30 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
             {/* Legend */}
             <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-600">
-              <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
-              <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
-              <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
-              <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-200 border-2 border-slate-400"></div><span className="line-through text-slate-500">Hủy</span></span>
-              <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm bg-slate-300/60 border border-slate-300"></div>Ngày đã qua</span>
-              <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>Tôi</span>
+              {calendarType === 'Lịch của tôi' ? (
+                <>
+                  <span className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>
+                    Đơn phụ trách
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>
+                    Lịch cá nhân
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-slate-200 border-2 border-slate-400"></div>
+                    <span className="line-through text-slate-500">Hủy</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-400"></div>Thư mời</span>
+                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-50 border-2 border-orange-400"></div>Đơn yêu cầu</span>
+                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-400"></div>Đã xử lý</span>
+                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-200 border-2 border-slate-400"></div><span className="line-through text-slate-500">Hủy</span></span>
+                  <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-200 border-2 border-purple-500"></div>Tôi</span>
+                </>
+              )}
             </div>
 
             {/* Google-Calendar-style toolbar button group */}
@@ -3589,41 +3602,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                         )}
 
-                        {/* Assignment History */}
-                        {activeEventDetail?.assignmentHistory?.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-slate-100">
-                            <div className="flex items-center gap-2 text-slate-400 mb-3">
-                              <Clock className="w-4 h-4" />
-                              <span className="text-[11px] font-bold uppercase tracking-wider">Lịch sử phân công</span>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              {activeEventDetail.assignmentHistory.map((att: any) => (
-                                <div key={att.attemptId} className={`flex items-start gap-3 p-3 rounded-xl border ${att.status === 'DECLINED' || att.status === 'REJECTED' ? 'bg-red-50 border-red-100' :
-                                    att.status === 'ACCEPTED' ? 'bg-green-50 border-green-100' :
-                                      'bg-slate-50 border-slate-100'
-                                  }`}>
-                                  <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${att.status === 'DECLINED' || att.status === 'REJECTED' ? 'bg-red-400' :
-                                      att.status === 'ACCEPTED' ? 'bg-green-500' :
-                                        'bg-amber-400'
-                                    }`} />
-                                  <div className="flex-1 min-w-0">
-                                    <span className="block text-sm font-bold text-slate-800">{att.assigneeName}</span>
-                                    <span className={`text-[11px] font-semibold ${att.status === 'DECLINED' || att.status === 'REJECTED' ? 'text-red-600' :
-                                        att.status === 'ACCEPTED' ? 'text-green-600' :
-                                          'text-amber-600'
-                                      }`}>
-                                      {att.status === 'DECLINED' || att.status === 'REJECTED' ? 'Đã từ chối' : att.status === 'ACCEPTED' ? 'Đã nhận' : 'Đang chờ phản hồi'}
-                                    </span>
-                                    <span className="block text-[10px] text-slate-400 font-mono mt-0.5">{att.assignedAt}</span>
-                                    {att.responseNote && (
-                                      <span className="block text-xs text-red-600 italic mt-1">Lý do: "{att.responseNote}"</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+
                       </div>
                     )}
 

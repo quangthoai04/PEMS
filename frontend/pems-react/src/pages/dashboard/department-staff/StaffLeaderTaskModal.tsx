@@ -463,22 +463,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                   </div>
                 )}
 
-                {/* Lịch sử phản hồi phân công */}
-                {isRequest && Array.isArray(detail?.assignmentHistory) && detail.assignmentHistory.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-100">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Lịch sử phản hồi phân công</p>
-                    <div className="divide-y divide-slate-100">
-                      {detail.assignmentHistory.map((att: any) => (
-                        <div key={att.attemptId} className="py-1.5 text-xs font-semibold text-slate-700">
-                          <span className="font-black text-[#004c91]">{att.assigneeName}</span>
-                          {att.status === 'ACCEPTED' && <> đã chấp nhận lúc <span className="font-black">{att.respondedAt || att.assignedAt}</span>.</>}
-                          {(att.status === 'DECLINED' || att.status === 'REJECTED') && <> đã từ chối lúc <span className="font-black">{att.respondedAt || att.assignedAt}</span>{att.responseNote ? <> với lý do: <span className="text-rose-600 font-black">{att.responseNote}</span></> : '.'}</>}
-                          {att.status === 'PENDING' && <> đang chờ phản hồi từ lúc <span className="font-black">{att.assignedAt}</span>.</>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
 
                 {/* Phản hồi thư mời */}
                 {!isRequest && ['ACCEPTED', 'DECLINED', 'REJECTED', 'DONE', 'IN_PROGRESS'].includes(effectiveStatus) && (
