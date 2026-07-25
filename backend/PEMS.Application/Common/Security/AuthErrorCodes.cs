@@ -19,6 +19,13 @@ public static class AuthErrorCodes
     public const string AccountLocked = "ACCOUNT_LOCKED";
 
     /// <summary>
+    /// P0 #1: a newly-created account whose owner has NOT yet confirmed their email. It cannot sign in
+    /// (credentials or SSO) or refresh until the email is confirmed. The frontend shows a specific
+    /// "chưa xác nhận email" message (never a generic inactive/campus error). HTTP 403.
+    /// </summary>
+    public const string AccountPendingEmailConfirmation = "ACCOUNT_PENDING_EMAIL_CONFIRMATION";
+
+    /// <summary>
     /// UC-106: a DEPARTMENT-role account whose linked department is INACTIVE may not sign in
     /// (credentials or SSO) or refresh a token until the department is enabled again. HTTP 403.
     /// </summary>

@@ -47,6 +47,7 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Campus> Campuses => Set<Campus>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<AccountEmailConfirmation> AccountEmailConfirmations => Set<AccountEmailConfirmation>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<UserAuthProvider> UserAuthProviders => Set<UserAuthProvider>();
     public DbSet<VisitRequestCampus> VisitRequestCampuses => Set<VisitRequestCampus>();

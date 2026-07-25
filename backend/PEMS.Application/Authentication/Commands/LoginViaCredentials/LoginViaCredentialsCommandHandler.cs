@@ -102,6 +102,12 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
                 request, AuthErrorCodes.AccountLocked,
                 "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
 
+        // P0 #1: a pending account has not proven email ownership — a specific message, never "inactive"/campus.
+        if (user.Status == UserStatuses.PendingEmailConfirmation)
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "status_pending_email_confirmation", SecurityEventFailureReasonCodes.AccountDisabled,
+                request, AuthErrorCodes.AccountPendingEmailConfirmation,
+                "Tài khoản chưa xác nhận email. Vui lòng kiểm tra email để xác nhận trước khi đăng nhập.", 403, cancellationToken);
+
         // Account status must be ACTIVE.
         if (user.Status != UserStatuses.Active)
             await FailAsync(user, email, portal, LoginLogStatuses.Blocked, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,

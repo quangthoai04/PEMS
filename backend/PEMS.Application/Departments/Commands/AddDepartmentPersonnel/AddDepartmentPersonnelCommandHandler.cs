@@ -1,143 +1,190 @@
-using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Accounts.Common;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Departments;
 using PEMS.Domain.Entities.Users;
-using PEMS.Domain.Entities.Emails;
-using System.Text.Json;
 
-using PEMS.Application.Common;
 namespace PEMS.Application.Departments.Commands.AddDepartmentPersonnel;
 
+/// <summary>
+/// P0 #2 — provisions a new DEPARTMENT personnel account through the SHARED confirmation-based flow (no
+/// second confirmation flow of its own):
+///   1. authorizes the actor against the department's campus/department scope (403 otherwise);
+///   2. validates the identity and shape via the shared <see cref="AccountProvisioningRules"/>;
+///   3. creates the account <c>PENDING_EMAIL_CONFIRMATION</c> (never a direct ACTIVE bypass), reserving the
+///      department-head slot for a Leader;
+///   4. issues a one-time confirmation token via the shared <see cref="IAccountEmailConfirmationService"/>
+///      and emails the confirmation link (built from configured base URLs — no hardcoded domain), reporting
+///      the delivery outcome truthfully.
+/// The account holds no effective authority until its owner confirms the email and it activates.
+/// </summary>
 public sealed class AddDepartmentPersonnelCommandHandler : IRequestHandler<AddDepartmentPersonnelCommand, AddDepartmentPersonnelResponse>
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
     private readonly IEmailService _emailService;
+    private readonly IAccountEmailConfirmationService _confirmations;
+    private readonly IDateTimeService _clock;
 
-    public AddDepartmentPersonnelCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService, IEmailService emailService)
+    public AddDepartmentPersonnelCommandHandler(
+        IApplicationDbContext context,
+        ICurrentUserService currentUserService,
+        IEmailService emailService,
+        IAccountEmailConfirmationService confirmations,
+        IDateTimeService clock)
     {
         _context = context;
         _currentUserService = currentUserService;
         _emailService = emailService;
+        _confirmations = confirmations;
+        _clock = clock;
     }
 
     public async Task<AddDepartmentPersonnelResponse> Handle(AddDepartmentPersonnelCommand request, CancellationToken cancellationToken)
     {
-        var currentUserId = _currentUserService.UserId;
-        
+        // Authenticate first, so an anonymous caller can never probe department existence or scope.
+        var actorId = _currentUserService.UserId;
+        if (actorId is null || !_currentUserService.IsAuthenticated)
+            throw new ForbiddenException("Bạn cần đăng nhập để thực hiện thao tác này.");
+
         var department = await _context.Departments
             .Include(d => d.Campus)
             .FirstOrDefaultAsync(d => d.DepartmentId == request.DepartmentId, cancellationToken);
 
-        if (department == null || department.Status != "ACTIVE")
-        {
+        if (department == null || department.Status != EntityStatuses.Active)
             return new AddDepartmentPersonnelResponse { Success = false, Message = "Phòng ban không tồn tại hoặc không hoạt động." };
-        }
 
-        var emailExists = await _context.Users.AnyAsync(u => u.Email == request.Email, cancellationToken);
-        if (emailExists)
-        {
-            return new AddDepartmentPersonnelResponse { Success = false, Message = "Email đã tồn tại trong hệ thống." };
-        }
+        // Authorize the actor against the department's campus/department scope (403 when out of scope).
+        EnsureCanManageDepartmentPersonnel(actorId.Value, department);
 
-        var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleCode == "DEPARTMENT", cancellationToken);
-        if (role == null)
-        {
-            return new AddDepartmentPersonnelResponse { Success = false, Message = "Role DEPARTMENT không tồn tại." };
-        }
+        var email = AccountIdentityRules.NormalizeEmail(request.Email);
+        var fullName = AccountIdentityRules.NormalizeFullName(request.FullName);
+        if (AccountIdentityRules.ValidateFullName(fullName) is { } nameError)
+            throw new ValidationException(nameError);
+        if (AccountIdentityRules.ValidateEmail(email) is { } emailError)
+            throw new ValidationException(emailError);
 
-        var newUser = new User
+        if (await _context.Users.AsNoTracking().AnyAsync(u => u.Email == email, cancellationToken))
+            throw new ConflictException(
+                AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
+
+        // "Trưởng phòng" → department head (LEADER); anyone else is a department staff member.
+        var subRole = request.Role == "Trưởng phòng" ? UserSubRoles.Leader : UserSubRoles.Staff;
+
+        // Shared shape validation (mirrors the DB triggers): DEPARTMENT must be a GENERAL department in scope.
+        var privileged = AccountProvisioningRules.IsPrivileged(_currentUserService.RoleCode);
+        var shape = await AccountProvisioningRules.ResolveAsync(
+            _context, RoleCodes.Department, subRole, department.CampusId, request.DepartmentId,
+            privileged, _currentUserService.PrimaryCampusId, cancellationToken);
+
+        // A Leader reserves the department-head slot — refuse if the department already has a different head.
+        var reservesDepartmentHead = shape.SubRole == UserSubRoles.Leader;
+        if (reservesDepartmentHead && department.HeadUserId is not null)
+            throw new ConflictException(
+                "Phòng ban này đã có trưởng phòng. Vui lòng bỏ gán trưởng phòng hiện tại trước khi chỉ định người mới.");
+
+        var now = _clock.VietnamNow;
+        var user = new User
         {
-            FullName = request.FullName,
-            Email = request.Email,
-            Phone = request.Phone,
+            FullName = fullName,
+            Email = email,
+            Phone = Clean(request.Phone),
             Gender = request.Gender,
-            RoleId = role.RoleId,
-            SubRole = request.Role == "Trưởng phòng" ? "LEADER" : "STAFF",
-            PrimaryCampusId = department.CampusId,
-            DepartmentId = request.DepartmentId,
-            Status = "ACTIVE",
-            CreatedVia = "MANUAL_CREATED",
-            CreatedAt = VietnamTime.Now(),
-            CreatedBy = currentUserId
+            RoleId = shape.RoleId,
+            SubRole = shape.SubRole,
+            PrimaryCampusId = shape.PrimaryCampusId,
+            DepartmentId = shape.DepartmentId,
+            // P0 #1/#2: created UNCONFIRMED — cannot log in, no effective authority; the department-head slot
+            // reserved below grants nothing until the owner confirms their email and the account activates.
+            Status = UserStatuses.PendingEmailConfirmation,
+            CreatedVia = CreatedViaValues.ManualCreated,
+            CreatedAt = now,
+            CreatedBy = actorId,
         };
 
-        _context.Users.Add(newUser);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        // Send email
-        var subject = "[PEMS] Chào mừng bạn gia nhập hệ thống PEMS";
-        var body = $@"
-<div style=""font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;"">
-    <div style=""background-color: #004c91; padding: 20px; text-align: center;"">
-        <h2 style=""color: #fff; margin: 0;"">Hệ thống Quản lý PEMS</h2>
-    </div>
-    <div style=""padding: 30px;"">
-        <p style=""font-size: 16px; margin-top: 0;"">Xin chào <strong>{newUser.FullName}</strong>,</p>
-        <p>Tài khoản của bạn đã được khởi tạo thành công trên Hệ thống Quản lý Lễ tân & Khách tham quan (PEMS).</p>
-        <div style=""background-color: #f9f9f9; border-left: 4px solid #f37021; padding: 15px; margin: 20px 0;"">
-            <h3 style=""margin-top: 0; color: #004c91; font-size: 16px;"">Thông tin truy cập:</h3>
-            <ul style=""list-style-type: none; padding-left: 0; margin-bottom: 0;"">
-                <li style=""margin-bottom: 8px;""><strong>Email đăng nhập:</strong> {newUser.Email}</li>
-                <li style=""margin-bottom: 8px;""><strong>Vai trò:</strong> Nhân viên phòng ban (DEPARTMENT {newUser.SubRole.ToUpper()})</li>
-                <li style=""margin-bottom: 8px;""><strong>Đơn vị:</strong> {department.Name}</li>
-                <li><strong>Cơ sở:</strong> {department.Campus?.Name ?? ""}</li>
-            </ul>
-        </div>
-        <p>Vui lòng đăng nhập vào hệ thống để bắt đầu tiếp nhận và xử lý các nhiệm vụ được phân công.</p>
-        <div style=""text-align: center; margin: 30px 0;"">
-            <a href=""https://pems.fpt.edu.vn"" style=""background-color: #f37021; color: #fff; text-decoration: none; padding: 12px 25px; border-radius: 5px; font-weight: bold; display: inline-block;"">Đăng nhập vào PEMS</a>
-        </div>
-        <p style=""font-size: 13px; color: #777;"">Nếu bạn gặp bất kỳ vấn đề nào trong quá trình đăng nhập, vui lòng liên hệ Trưởng phòng ban hoặc Quản trị hệ thống để được hỗ trợ.</p>
-    </div>
-    <div style=""background-color: #f1f1f1; padding: 15px; text-align: center; font-size: 12px; color: #666;"">
-        Đây là email tự động từ hệ thống PEMS. Vui lòng không trả lời email này.
-    </div>
-</div>";
-
-        var sentEmail = new SentEmail
-        {
-            RelatedType = "USER",
-            RelatedId = newUser.UserId,
-            Subject = subject,
-            BodySnapshot = body,
-            Status = "QUEUED",
-            SentBy = currentUserId,
-            SentAt = VietnamTime.Now()
-        };
-
-        _context.SentEmails.Add(sentEmail);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        var recipient = new SentEmailRecipient
-        {
-            RecipientEmail = newUser.Email,
-            RecipientName = newUser.FullName,
-            RecipientType = "TO",
-            DeliveryStatus = "QUEUED"
-        };
-
-        sentEmail.Recipients.Add(recipient);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        // Actually send the email using IEmailService
+        var confirmationToken = string.Empty;
+        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
         try
         {
-            await _emailService.SendAsync(newUser.Email, subject, body, cancellationToken);
-            sentEmail.Status = "SENT";
-            recipient.DeliveryStatus = "DELIVERED";
+            _context.Users.Add(user);
             await _context.SaveChangesAsync(cancellationToken);
+
+            confirmationToken = await _confirmations.IssuePendingAsync(user.UserId, email, isResend: false, cancellationToken);
+
+            if (reservesDepartmentHead)
+            {
+                department.HeadUserId = user.UserId;
+                department.UpdatedBy = actorId;
+                department.UpdatedAt = now;
+            }
+
+            _context.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                CampusId = department.CampusId,
+                Action = "ADD_DEPARTMENT_PERSONNEL",
+                EntityType = "User",
+                EntityId = user.UserId,
+                Changes = new List<AuditLogChange>(),
+                CreatedAt = now,
+            });
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-        catch (Exception)
+        catch
         {
-            sentEmail.Status = "FAILED";
-            recipient.DeliveryStatus = "FAILED";
-            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
 
-        return new AddDepartmentPersonnelResponse { Success = true, Message = "Đã thêm nhân sự thành công.", UserId = newUser.UserId };
+        // Send the confirmation link (truthful outcome). A non-Sent result never rolls back the pending
+        // account — the operator can resend.
+        var result = await _emailService.TrySendAsync(
+            email, AccountConfirmationEmail.Subject,
+            AccountConfirmationEmail.BuildHtml(fullName, _confirmations.BuildConfirmUrl(confirmationToken)),
+            cancellationToken);
+
+        return new AddDepartmentPersonnelResponse
+        {
+            Success = true,
+            Message = "Đã tạo nhân sự phòng ban; tài khoản đang chờ xác nhận email.",
+            UserId = user.UserId,
+            EmailNotificationStatus = AccountConfirmationEmail.MapStatus(result.Status),
+        };
     }
+
+    /// <summary>
+    /// Only these actors may add personnel to <paramref name="department"/>:
+    ///  • HO or Staff Leader (IC head) of the SAME campus — full campus authority; or
+    ///  • the Department Leader who heads THIS specific department.
+    /// Anyone else — including a campus-mismatched leader or a department leader of a different
+    /// department — is refused with 403.
+    /// </summary>
+    private void EnsureCanManageDepartmentPersonnel(ulong actorId, Department department)
+    {
+        var role = _currentUserService.RoleCode;
+        var subRole = _currentUserService.SubRole;
+        var actorCampus = _currentUserService.PrimaryCampusId;
+
+        var isCampusAuthority =
+            (role == RoleCodes.Ho || (role == RoleCodes.Staff && subRole == UserSubRoles.Leader))
+            && actorCampus == department.CampusId;
+
+        var isThisDepartmentHead =
+            role == RoleCodes.Department && subRole == UserSubRoles.Leader
+            && actorCampus == department.CampusId
+            && department.HeadUserId == actorId;
+
+        if (!isCampusAuthority && !isThisDepartmentHead)
+            throw new ForbiddenException("Bạn không có quyền thêm nhân sự cho phòng ban này.");
+    }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

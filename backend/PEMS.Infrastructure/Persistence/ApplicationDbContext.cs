@@ -35,6 +35,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     // ── Users + Auth ──────────────────────────────────────────────────────
     public DbSet<User> Users { get; set; }
+    public DbSet<AccountEmailConfirmation> AccountEmailConfirmations { get; set; }
     public DbSet<UserAuthProvider> UserAuthProviders { get; set; }
     public DbSet<UserSession> UserSessions { get; set; }
     public DbSet<OtpToken> OtpTokens { get; set; }
@@ -971,6 +972,18 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<EmailActionToken>()
             .HasIndex(t => t.TokenHash).IsUnique()
             .HasDatabaseName("uq_email_action_token_hash");
+
+        // AccountEmailConfirmation (P0 #1) → User (CASCADE: the proof dies with the account). Only the
+        // token hash is stored; it is unique so a raw token maps to exactly one confirmation.
+        modelBuilder.Entity<AccountEmailConfirmation>()
+            .HasOne(c => c.User).WithMany()
+            .HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AccountEmailConfirmation>()
+            .HasIndex(c => c.TokenHash).IsUnique()
+            .HasDatabaseName("uq_account_email_confirmations_token_hash");
+        modelBuilder.Entity<AccountEmailConfirmation>()
+            .HasIndex(c => new { c.Status, c.ExpiresAt })
+            .HasDatabaseName("idx_account_email_confirmations_status_expiry");
 
         // Notification (v10) → RecipientUser (CASCADE), ActorUser/VisitRequest/VisitInstance/Campus
         // (all SetNull). Priority persists as its SQL ENUM string (name maps 1:1). dedupe_key is

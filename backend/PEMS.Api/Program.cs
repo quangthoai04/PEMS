@@ -20,6 +20,12 @@ var generatedDevJwtKey = PEMS.Api.Extensions.SecretConfigurationValidator.TryPro
     builder.Configuration, builder.Configuration, builder.Environment);
 PEMS.Api.Extensions.SecretConfigurationValidator.ValidateSecrets(builder.Configuration, builder.Environment);
 
+var frontendBaseUrl = builder.Configuration["App:FrontendBaseUrl"];
+if (builder.Environment.IsProduction() && (string.IsNullOrEmpty(frontendBaseUrl) || frontendBaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) || frontendBaseUrl.Contains("127.0.0.1")))
+{
+    throw new InvalidOperationException("Production environment cannot use 'localhost' as FrontendBaseUrl.");
+}
+
 // ── Application / Infrastructure services ────────────────────────────────────
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);

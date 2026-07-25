@@ -115,6 +115,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<EmailDraftRecipient>();
         modelBuilder.Ignore<EmailDraftAttachment>();
         modelBuilder.Ignore<Notification>();
+        modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<ApiConfiguration>();
         modelBuilder.Ignore<ApiUsageQuota>();
         modelBuilder.Ignore<ApiRequestLog>();
@@ -166,6 +167,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
 
     // ── Aggregates this slice never touches (NOT discovered by EF) ────────────
     DbSet<UserAuthProvider> IApplicationDbContext.UserAuthProviders => Set<UserAuthProvider>();
+    DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
     DbSet<UserSession> IApplicationDbContext.UserSessions => Set<UserSession>();
     DbSet<OtpToken> IApplicationDbContext.OtpTokens => Set<OtpToken>();
     DbSet<LoginLog> IApplicationDbContext.LoginLogs => Set<LoginLog>();

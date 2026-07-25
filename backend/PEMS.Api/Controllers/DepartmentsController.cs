@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,6 +62,10 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // P0 #2: department personnel provisioning is an account-creation path — it must require an
+        // authenticated caller. The handler is the final authorization gate (campus/department scope);
+        // an out-of-scope actor is refused there with 403.
+        [Authorize]
         [HttpPost("adddepartmentpersonnel")]
         public async Task<IActionResult> AddDepartmentPersonnel([FromBody] PEMS.Application.Departments.Commands.AddDepartmentPersonnel.AddDepartmentPersonnelCommand command, CancellationToken cancellationToken)
         {

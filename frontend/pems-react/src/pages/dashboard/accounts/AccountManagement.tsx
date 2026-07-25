@@ -465,7 +465,7 @@ export function AccountManagement() {
       role: a.roleCode,
       roleName: a.roleName,
       loginStatus: a.lastLoginAt ? 'Đã đăng nhập' : 'Chưa từng đăng nhập',
-      status: a.status === 'ACTIVE' ? 'Active' : a.status === 'INACTIVE' ? 'Inactive' : 'Locked',
+      status: a.status === 'ACTIVE' ? 'Active' : a.status === 'INACTIVE' ? 'Inactive' : a.status === 'PENDING_EMAIL_CONFIRMATION' ? 'Pending' : 'Locked',
       rawStatus: a.status,
       gender: genderLabel(a.gender),
       phone: a.phone,
@@ -852,12 +852,15 @@ export function AccountManagement() {
     try {
       const result = await accountManagementApi.createAccount(pendingCreatePayload);
 
-      // Distinguish the account-creation result from the email-notification result (spec §14).
+      // P0 #1: the account is created PENDING email confirmation — never shown as "activated". The
+      // email-notification result is reported truthfully (SENT / SKIPPED-in-dev / FAILED), and a non-SENT
+      // outcome is a warning, NOT a create failure — the account exists and can be resent.
       if (result.emailNotificationStatus === 'SENT')
-        pushToast('success', `Đã tạo tài khoản ${result.email} thành công. Email thông báo đã được gửi tới địa chỉ này.`);
+        pushToast('success', `Đã tạo tài khoản ${result.email}. Tài khoản đang chờ xác nhận email — đã gửi liên kết xác nhận tới địa chỉ này.`);
+      else if (result.emailNotificationStatus === 'SKIPPED')
+        pushToast('warning', `Đã tạo tài khoản ${result.email} và đang chờ xác nhận email. Email chưa được gửi trong môi trường hiện tại (SMTP tắt).`);
       else
-        // Email failed but the account exists — must NOT be shown as a create failure (spec §13.2).
-        pushToast('warning', `Tài khoản ${result.email} đã được tạo thành công, nhưng hệ thống chưa gửi được email thông báo.`);
+        pushToast('warning', `Đã tạo tài khoản ${result.email} và đang chờ xác nhận email, nhưng hệ thống chưa gửi được email xác nhận. Vui lòng gửi lại email xác nhận.`);
 
       // Success: close both screens, reset the form + snapshot, refetch list + stats (spec §13.1/§15.3).
       setIsCreateConfirmOpen(false);
@@ -1391,6 +1394,7 @@ export function AccountManagement() {
                     {acc.status === 'Active' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Hoạt động</span>}
                     {acc.status === 'Inactive' && <span className="inline-flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-amber-200"><div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div> Vô hiệu hóa</span>}
                     {acc.status === 'Locked' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Bị khóa</span>}
+                    {acc.status === 'Pending' && <span className="inline-flex items-center gap-1.5 text-sky-700 bg-sky-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-sky-200"><div className="w-1.5 h-1.5 rounded-full bg-sky-500"></div> Chờ xác nhận email</span>}
                     {acc.status === 'Deactive' && <span className="inline-flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-full text-[11px] font-bold border border-red-200"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div> Khóa</span>}
                     {acc.status === 'Pending Approved' && <span className="inline-flex items-center gap-1.5 text-[#f37021] bg-[#fef1e8] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#f37021]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#f37021]"></div> Chờ duyệt</span>}
                     {acc.status === 'Approved' && <span className="inline-flex items-center gap-1.5 text-[#0aa14f] bg-[#eaffe4] px-3 py-1.5 rounded-full text-[11px] font-bold border border-[#0aa14f]/30"><div className="w-1.5 h-1.5 rounded-full bg-[#0aa14f]"></div> Đã duyệt</span>}
@@ -1426,7 +1430,7 @@ export function AccountManagement() {
                             )
                           ) : (
                             <>
-                              {(!isServerTab || acc.canManageStatus) ? (
+                              {((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
                                 <label className="relative flex items-center cursor-pointer ml-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
                                   <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />
                                   <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#004c91] transition-colors relative">
@@ -1495,7 +1499,7 @@ export function AccountManagement() {
                                 </button>
                               </>
                             )
-                          ) : (!isServerTab || acc.canManageStatus) ? (
+                          ) : ((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
                             <>
                               <label className="relative flex items-center cursor-pointer mx-1" title={acc.status === 'Active' ? 'Vô hiệu hóa' : 'Kích hoạt'}>
                                 <input type="checkbox" className="sr-only peer" checked={acc.status === 'Active'} onChange={() => requestToggleStatus(acc)} />

@@ -96,6 +96,7 @@ public sealed class VisitContactClaimWorkflowTests
             return Task.CompletedTask;
         }
         public Task SendAsync(OutboundEmail message, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.FromResult(EmailDeliveryResult.Sent());
         public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendVisitorAccountCreatedOrLinkedEmailAsync(string toEmail, string contactName, string delegationName, string requestCode, string visitScope, string plannedTimeText, CancellationToken ct = default) => Task.CompletedTask;

@@ -78,10 +78,13 @@ public sealed class FileSinkEmailService : IEmailService
         }
     }
 
-    /// <summary>Extracts a claim/transfer invitation token from a link in the body, if present.</summary>
+    /// <summary>
+    /// Extracts the actionable link from an email body for the E2E inbox: a claim/transfer invitation link,
+    /// or the account email-confirmation link (<c>/confirm-email?token=…</c>), if present.
+    /// </summary>
     private static string? ExtractLink(string body)
     {
-        var m = Regex.Match(body, @"https?://[^\s""'<>]*visit-contact-(?:claim|transfer)/[^\s""'<>]+");
+        var m = Regex.Match(body, @"https?://[^\s""'<>]*(?:visit-contact-(?:claim|transfer)/|confirm-email\?token=)[^\s""'<>]+");
         return m.Success ? m.Value : null;
     }
 
@@ -89,6 +92,13 @@ public sealed class FileSinkEmailService : IEmailService
     {
         Append(toEmail, "GENERIC", code: null, link: ExtractLink(htmlBody), subject);
         return Task.CompletedTask;
+    }
+
+    /// <summary>Truthful contract for the file sink: the record is always captured, so the outcome is Sent.</summary>
+    public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
+    {
+        Append(toEmail, "GENERIC", code: null, link: ExtractLink(htmlBody), subject);
+        return Task.FromResult(EmailDeliveryResult.Sent());
     }
 
     public Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default)

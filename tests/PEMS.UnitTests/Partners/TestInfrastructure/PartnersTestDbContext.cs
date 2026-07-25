@@ -66,6 +66,7 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
         // only need a Campus row to exist for the FK, so cut the graph at User/Department instead
         // of trying to fully reconfigure it here.
         modelBuilder.Ignore<User>();
+        modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<Department>();
         modelBuilder.Entity<Campus>().Ignore(c => c.IcHeadUser);
         modelBuilder.Entity<Campus>().Ignore(c => c.Departments);
@@ -137,6 +138,7 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
     DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
+    DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
     DbSet<Notification> IApplicationDbContext.Notifications => Set<Notification>();
     DbSet<CalendarEvent> IApplicationDbContext.CalendarEvents => Set<CalendarEvent>();
     DbSet<ApiConfiguration> IApplicationDbContext.ApiConfigurations => Set<ApiConfiguration>();

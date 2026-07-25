@@ -41,6 +41,33 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // P0 #1 — re-issue the email-confirmation link for a still-pending account (rate-limited). The
+        // handler authorizes the caller (HO / the account's Staff Leader) and reports delivery truthfully.
+        [HttpPost("resend-email-confirmation")]
+        public async Task<IActionResult> ResendEmailConfirmation([FromBody] PEMS.Application.Accounts.Commands.ResendAccountEmailConfirmation.ResendAccountEmailConfirmationCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // P0 #1 — correct a pending account's email (typo). Revokes the old token, updates the address,
+        // and sends a fresh confirmation to the new email; a neutral notice goes to the old address.
+        [HttpPost("edit-pending-email")]
+        public async Task<IActionResult> EditPendingEmail([FromBody] PEMS.Application.Accounts.Commands.EditPendingAccountEmail.EditPendingAccountEmailCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // P0 #1 — cancel a pending account before it is ever confirmed. Releases any reserved Head slot,
+        // cancels its confirmation token(s) and deactivates the account so a slot is never held forever.
+        [HttpPost("cancel-pending-account")]
+        public async Task<IActionResult> CancelPendingAccount([FromBody] PEMS.Application.Accounts.Commands.CancelPendingAccount.CancelPendingAccountCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("viewaccountdetails")]
 
         public async Task<IActionResult> ViewAccountDetails([FromQuery] PEMS.Application.Accounts.Queries.ViewAccountDetails.ViewAccountDetailsQuery query, CancellationToken cancellationToken)

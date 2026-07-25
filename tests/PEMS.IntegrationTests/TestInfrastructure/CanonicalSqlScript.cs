@@ -24,15 +24,18 @@ public static class CanonicalSqlScript
 {
     /// <summary>The only accepted schema script. No wildcards, no fallback to historical names.</summary>
     public const string FileName =
-        "PEMS_FULL_V2_ONLY_CANONICAL_TRANSLATION_GALLERY_FAQ_VISION_GUARD_DIRECT_SEED_NO_STAGING_LATEST (1).sql";
+        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY.sql";
 
     /// <summary>
     /// SHA-256 of the canonical script this test suite is written against. Changing the schema is allowed,
     /// but it MUST be a deliberate act: update this constant in the same commit as the .sql change so a
     /// silent drift between schema and tests is impossible.
+    /// (2026-07-25) Bumped with the P0 #1 change: users.status ENUM + PENDING_EMAIL_CONFIRMATION and the new
+    /// account_email_confirmations table. Also realigns FileName to the canonical file that commit ebf0d69a
+    /// left on disk (the previous LATEST name had been removed, so the schema-contract check could not resolve).
     /// </summary>
     public const string ExpectedSha256 =
-        "7ec63e9044ecd1910e9a7137c99773bb13b36902f3042fd7bc6cfce402892415";
+        "577f39974813293f269a7fcf551eb1bf2d6599ee2765ef67b9f6e054b2e9e7cd";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

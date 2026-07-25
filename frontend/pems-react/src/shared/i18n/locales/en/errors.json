@@ -31,6 +31,7 @@
     "PASSWORD_LOGIN_DISABLED": "Password sign-in is disabled. Please use SSO/FEID.",
     "INVALID_CREDENTIALS": "Incorrect email or password.",
     "ACCOUNT_INACTIVE": "Your account has been deactivated.",
+    "ACCOUNT_PENDING_EMAIL_CONFIRMATION": "This account has not confirmed its email yet. Please check the inbox to confirm before signing in.",
     "ACCOUNT_LOCKED": "Your account is locked. Please try again later or contact an administrator.",
     "DEPARTMENT_INACTIVE": "Your account's department has been deactivated. Please contact the International Cooperation Department Leader at your campus.",
     "CAMPUS_INACTIVE_ACCESS_DENIED": "Your campus is currently inactive. Please contact Head Office for assistance.",
