@@ -43,12 +43,15 @@ const campus = (id: number, code: string, name: string, rowVersion: number, dele
   supportMembers: [], operationalContact: { fullName: `OP ${code}`, organization: 'ĐH X', phone: '+84912345678', email: 'op@example.com' },
   workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null, noteToFptu: null,
   formRevision: 1, approvalRevision: 0, rowVersion, activeAmendment: null,
+  cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
+  cancellationActorType: null, cancellationSource: null, cancellationReason: null,
 });
 
 const form = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => ({
   visitRequestId: 5, requestCode: 'VR-5', rowVersion: 7,
   hasMixedCampusDetails: false, visitScope: 'SINGLE_CAMPUS', requestStatus: 'PENDING_APPROVAL',
   createdSource: 'PUBLIC', submittedAt: '2026-07-15T08:00:00', partnerId: null,
+  cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
   registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN' },
   primaryContact: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'c@x.vn', accessStatus: 'ACTIVE', verifiedAt: null },
   campusVisits: [campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN')],

@@ -38,8 +38,12 @@ public static class CanonicalSqlScript
     /// (deletes + re-inserts of the 3001-3090 / 5001-5160 demo ranges) to the canonical script. The schema
     /// DDL itself is unchanged; only the trailing data block is new, and retargeting still rewrites every
     /// database-selection statement, so a disposable run never touches pems_db.
+    /// (2026-07-25, third bump) Re-pinned after 36e22105 ("Fix upload photo") rewrote the
+    /// visit-photo uploader trigger body to admit Host/Staff/Admin/Participant instead of Students only.
+    /// No table, column or trigger was added or removed, so ExpectedBaseTableCount/ExpectedTriggerCount
+    /// are unchanged — this bump records a deliberate behaviour change inside an existing trigger.
     public const string ExpectedSha256 =
-        "84680cfaf21582af763ebddf5b1b2568a4a22970ac1d60d4f5bce469d4d918fa";
+        "d609a08ee4c0a4f03fc2876257d91c15d764b70f0d94c5e12020c50fb371c071";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

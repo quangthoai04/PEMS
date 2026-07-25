@@ -21,6 +21,16 @@ public sealed class ResolvedVisitFormDto
     public DateTime SubmittedAt { get; init; }
     public long? PartnerId { get; init; }
 
+    // ── Cancellation outcome (UC-136) ──
+    // Populated only when the REQUEST itself was cancelled. The detail screen has to explain how a
+    // request ended, and "CANCELLED" on its own leaves the reader hunting through the timeline for who
+    // did it and why. Request-level cancellation is not campus-scoped, so there is nothing to hide here:
+    // a caller who can read the request can read how it ended.
+    public ulong? CancelledByUserId { get; init; }
+    public string? CancelledByName { get; init; }
+    public DateTime? CancelledAt { get; init; }
+    public string? CancellationReason { get; init; }
+
     public ResolvedRegistrantDto Registrant { get; init; } = new();
     public ResolvedPrimaryContactDto PrimaryContact { get; init; } = new();
 
@@ -86,6 +96,17 @@ public sealed class ResolvedCampusVisitDto
     public DateTime? DecidedAt { get; init; }
     public string? DecisionActorRole { get; init; }
     public string? DecisionNote { get; init; }
+
+    // ── Per-campus cancellation (UC-136) ──
+    // A campus can be cancelled on its own without the whole request being cancelled, so this is
+    // separate from the request-level block above. It is projected from the instance the caller is
+    // already authorized to see, so it carries no cross-campus information.
+    public ulong? CancelledByUserId { get; init; }
+    public string? CancelledByName { get; init; }
+    public DateTime? CancelledAt { get; init; }
+    public string? CancellationActorType { get; init; }
+    public string? CancellationSource { get; init; }
+    public string? CancellationReason { get; init; }
 
     // This campus's form content, from its own visit_instance_form_details row.
     public string DelegationName { get; init; } = "";

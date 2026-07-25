@@ -7,7 +7,7 @@ import {
   type SafeEditPayload,
   type SafeEditResponse,
 } from '../api/visitRequestV2Api';
-import { errorCodeOf } from '../utils/visitV2Actions';
+import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 
 interface Props {
   form: ResolvedVisitForm;
@@ -83,14 +83,19 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     try {
       const res = await patchSafeDetails(form.visitRequestId, payload);
       setApplied(res);
+      // The parent closes the modal on this callback, so the in-modal success panel is never seen —
+      // the confirmation has to survive the modal, which is what the global toast is for.
+      showSuccessToast(t('visitRequestV2:safeEdit.appliedCount', { count: res.appliedChanges.length }));
       onSaved();
     } catch (err) {
-      const code = errorCodeOf(err);
+      // A version conflict is actionable INSIDE the modal (reload and retry), so it stays inline.
+      // Anything else is a plain failure the user cannot fix here: surface it and keep the modal open.
       if (err && (err as { response?: { status?: number } }).response?.status === 409) {
         setConflict(true);
         setError(t('visitRequestV2:safeEdit.conflict'));
       } else {
-        setError(code ? t('visitRequestV2:safeEdit.errGeneric') : t('visitRequestV2:safeEdit.errGeneric'));
+        setError(t('visitRequestV2:safeEdit.errGeneric'));
+        showErrorToast(err, t('visitRequestV2:safeEdit.errGeneric'));
       }
     } finally {
       setBusy(false);

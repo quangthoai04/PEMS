@@ -33,6 +33,7 @@ import {
   dismissCapabilityToasts,
 } from '../../../shared/features/useVisitEntryCta';
 import { resolveVisitRowRoutes } from '../../../features/visit-request/utils/visitVersionRouting';
+import { visitDraftNamespace } from '../../../features/visit-request/utils/visitRequestV2DraftStorage';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
 import { RejectedReasonModal } from '../../../features/delegations/components/RejectedReasonModal';
@@ -52,12 +53,10 @@ import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackA
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
 import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
+import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted';
 
 type ActionTone = 'blue' | 'green' | 'red' | 'gray' | 'orange';
-
-// Lightweight in-page toast (cùng pattern với CampusManagement — không thêm thư viện mới).
-type Toast = { id: number; type: 'success' | 'error'; msg: string };
 
 const ActionIconButton = ({
   title, icon, tone = 'blue', onClick, label,
@@ -367,29 +366,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; instanceId?: number | null; text: string; submitting: boolean; error: string | null; confirmed: boolean }>({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null, confirmed: false });
   const [assign, setAssign] = useState<{ open: boolean; row: Row | null; mode: 'approve' }>({ open: false, row: null, mode: 'approve' });
 
-  // ── Toasts (success/failure notification cho approve/reject/cancel/assign host) ──
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const pushToast = (type: Toast['type'], msg: string) => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((prev) => [...prev, { id, type, msg }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
-  };
-  // Lấy message lỗi nghiệp vụ thật từ backend (400/403/404/409/422). Ưu tiên message → error →
-  // errors (mảng/đối tượng từ FluentValidation) → title; chỉ fallback chung khi không có gì.
-  const apiErrorMessage = (e: any, fallback: string): string => {
-    const data = e?.response?.data;
-    if (!data) return fallback;
-    if (typeof data === 'string' && data.trim()) return data;
-    if (data.message) return data.message;
-    if (data.error) return data.error;
-    if (data.errors) {
-      const flat = Array.isArray(data.errors) ? data.errors : Object.values(data.errors).flat();
-      const first = (flat as any[]).find((x) => typeof x === 'string' && x.trim());
-      if (first) return first;
-    }
-    if (data.title) return data.title;
-    return fallback;
-  };
+  // Mutation feedback goes through the ONE global top-right toaster mounted in App.tsx
+  // (shared/utils/toast). This page used to run its own bottom-right viewport, which is why a
+  // cancellation appeared in the opposite corner from every other notification in the product.
 
   // Feedback rule mới: map visitInstanceId → trạng thái đánh giá của user hiện tại.
   // Backend trả các instance user là Visitor/Host và đã kết thúc tiếp khách (AFTER_VISIT/CLOSED);
@@ -890,13 +869,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       }
       const wasDecline = reject.action === ('DECLINE_INVITATION' as any);
       setReject({ open: false, row: null, action: null, text: '', submitting: false, error: null });
-      pushToast('success', wasDecline ? 'Từ chối lời mời thành công.' : 'Đã từ chối tiếp nhận tại cơ sở này.');
+      showSuccessToast(wasDecline ? 'Từ chối lời mời thành công.' : 'Đã từ chối tiếp nhận tại cơ sở này.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
       if (wasDecline) {
         await loadPendingInvitations();
       }
     } catch (e: any) {
-      const msg = apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.');
+      const msg = getApiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.');
       setReject((s) => ({ ...s, submitting: false, error: `Không thể từ chối. ${msg}` }));
     }
   };
@@ -904,11 +883,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const submitAcceptInvitation = async (row: Row) => {
     try {
       await delegationsApi.visitInvitations.acceptInvitation((row as any).participantId);
-      pushToast('success', 'Đã chấp nhận lời mời.');
+      showSuccessToast('Đã chấp nhận lời mời.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
       await loadPendingInvitations();
     } catch (e: any) {
-      pushToast('error', apiErrorMessage(e, 'Không thể chấp nhận lời mời. Vui lòng thử lại sau.'));
+      showErrorToast(e, 'Không thể chấp nhận lời mời. Vui lòng thử lại sau.');
     }
   };
 
@@ -918,10 +897,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const note = window.prompt('Nhập ghi chú/nhiệm vụ:');
     try {
       await delegationsApi.visitInvitations.assignDepartmentStaff((row as any).participantId, parseInt(staffIdStr, 10), note || '');
-      pushToast('success', 'Đã giao việc cho nhân sự.');
+      showSuccessToast('Đã giao việc cho nhân sự.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      pushToast('error', apiErrorMessage(e, 'Không thể giao việc. Vui lòng thử lại sau.'));
+      showErrorToast(e, 'Không thể giao việc. Vui lòng thử lại sau.');
     }
   };
 
@@ -942,13 +921,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         await delegationsApi.cancelVisitRequest(cancel.row.visitRequestId, payload);
       }
       setCancel({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null, confirmed: false });
-      pushToast('success', 'Đã hủy lịch thăm thành công.');
+      showSuccessToast('Đã hủy lịch thăm thành công.');
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
       // Surface the backend's real business message (clean Vietnamese sentence such as
       // "Không thể hủy lịch thăm. Đơn đang chờ duyệt..."); apiErrorMessage walks
       // message → error → errors → title and only then a generic safe fallback.
-      setCancel((s) => ({ ...s, submitting: false, error: apiErrorMessage(e, 'Không thể hủy lịch thăm. Vui lòng thử lại sau.') }));
+      setCancel((s) => ({ ...s, submitting: false, error: getApiErrorMessage(e, 'Không thể hủy lịch thăm. Vui lòng thử lại sau.') }));
     }
   };
 
@@ -1921,7 +1900,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           <VisitRequestV2Modal
             isOpen={showV2Modal}
             mode="authenticated"
-            draftNamespace={user?.userId ? `u${user.userId}` : undefined}
+            draftNamespace={visitDraftNamespace(user?.userId)}
             onClose={() => {
               setShowV2Modal(false);
               loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
@@ -2086,7 +2065,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           onClose={() => setAssign({ open: false, row: null, mode: 'approve' })}
           onConfirmed={() => {
             setAssign({ open: false, row: null, mode: 'approve' });
-            pushToast('success', 'Đã duyệt cơ sở và gán host phụ trách.');
+            showSuccessToast('Đã duyệt cơ sở và gán host phụ trách.');
             loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
           }}
         />
@@ -2100,29 +2079,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         onSubmitted={handleFeedbackSubmitted}
       />
 
-      {/* Toast viewport (success/failure notifications) */}
-      {toasts.length > 0 && (
-        <div className="fixed bottom-5 right-5 z-[200] flex flex-col gap-2 w-[min(92vw,360px)]">
-          {toasts.map((t) => (
-            <motion.div
-              key={t.id}
-              initial={{ opacity: 0, x: 24 }}
-              animate={{ opacity: 1, x: 0 }}
-              role="status"
-              className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${t.type === 'success'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-red-50 border-red-200 text-red-700'
-                }`}
-            >
-              {t.type === 'success' ? <Check className="mt-0.5 h-4 w-4 flex-shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
-              <span className="flex-1">{t.msg}</span>
-              <button type="button" aria-label="Đóng" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
-                <X className="h-4 w-4" />
-              </button>
-            </motion.div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

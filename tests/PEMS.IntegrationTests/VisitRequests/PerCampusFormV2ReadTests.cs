@@ -391,6 +391,284 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    // ── 4b. Cancellation outcome metadata (UC-136) ───────────────────────────
+
+    [Fact]
+    public async Task Request_cancellation_metadata_is_mapped_with_the_actor_name()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var cancelledAt = DateTime.Now.AddDays(-1);
+        req.Status = "CANCELLED";
+        req.CancelledBy = VisitorOwner;
+        req.CancelledAt = cancelledAt;
+        req.CancellationReason = "Thay đổi lịch công tác của đoàn.";
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        Assert.Equal(VisitorOwner, dto.CancelledByUserId);
+        Assert.Equal(cancelledAt, dto.CancelledAt!.Value, TimeSpan.FromSeconds(1));
+        Assert.Equal("Thay đổi lịch công tác của đoàn.", dto.CancellationReason);
+        // The name is resolved server-side: the screen must not have to look a user id up itself.
+        Assert.False(string.IsNullOrWhiteSpace(dto.CancelledByName));
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Campus_cancellation_metadata_is_mapped_per_instance()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // A campus must be DECIDED before it can be cancelled on its own: a DB trigger enforces that a
+        // still-pending instance is only cancelled as part of cancelling the whole request (UC-136).
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true, host0: IcStaffC1);
+        var cancelledAt = DateTime.Now.AddDays(-2);
+        instances[0].Status = "CANCELLED";
+        // A HOST cancellation must be recorded against the instance's own official host — the schema
+        // refuses to attribute it to anybody else.
+        instances[0].CancelledBy = IcStaffC1;
+        instances[0].CancelledAt = cancelledAt;
+        // The schema allows only VISITOR|HOST and SELF_SERVICE|EXTERNAL_CONFIRMATION here.
+        instances[0].CancellationActorType = "HOST";
+        instances[0].CancellationSource = "EXTERNAL_CONFIRMATION";
+        instances[0].CancellationReason = "Cơ sở bận sự kiện khác.";
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var cancelled = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)instances[0].VisitInstanceId);
+        Assert.Equal(IcStaffC1, cancelled.CancelledByUserId);
+        Assert.Equal("HOST", cancelled.CancellationActorType);
+        Assert.Equal("EXTERNAL_CONFIRMATION", cancelled.CancellationSource);
+        Assert.Equal("Cơ sở bận sự kiện khác.", cancelled.CancellationReason);
+        Assert.False(string.IsNullOrWhiteSpace(cancelled.CancelledByName));
+
+        // The sibling was never cancelled and must not inherit any of it.
+        var other = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)instances[1].VisitInstanceId);
+        Assert.Null(other.CancelledAt);
+        Assert.Null(other.CancellationReason);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Hidden_campus_cancellation_never_reaches_a_scoped_leader()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Campus 1 is decided (so it CAN be cancelled alone) and then cancelled; campus 2 is untouched.
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true, host0: IcStaffC1);
+        instances[0].Status = "CANCELLED";
+        instances[0].CancelledBy = IcStaffC1;   // the instance's own host, per the schema guard
+        instances[0].CancelledAt = DateTime.Now.AddDays(-1);
+        instances[0].CancellationActorType = "HOST";
+        instances[0].CancellationSource = "EXTERNAL_CONFIRMATION";
+        instances[0].CancellationReason = "LÝ DO CỦA CƠ SỞ KHÁC";
+        await db.SaveChangesAsync();
+
+        // A Staff Leader scoped to campus 2 must not learn that campus 1 was cancelled, nor why.
+        var dto = await Resolver(db, StaffLeader(SlCampus2, Campus2)).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var only = Assert.Single(dto.CampusVisits);
+        Assert.Equal((long)Campus2, only.CampusId);
+        Assert.Null(only.CancellationReason);
+        Assert.DoesNotContain(dto.CampusVisits, c => c.CancellationReason == "LÝ DO CỦA CƠ SỞ KHÁC");
+        await tx.RollbackAsync();
+    }
+
+    // ── 4b. Primary-contact identity actions ─────────────────────────────────
+    // The frontend used to decide these from `viewer.relation` alone, so it offered buttons the backend
+    // would refuse: a resend past its cap, a transfer inside the 24h window, a second transfer while one
+    // was already pending. Each test below is one of those refusals.
+
+    private static readonly string[] ContactActionCodes =
+    {
+        VisitFormActions.ResendContactClaim, VisitFormActions.ReplacePendingContact,
+        VisitFormActions.InitiateContactTransfer, VisitFormActions.ResendContactTransfer,
+        VisitFormActions.CancelContactTransfer,
+    };
+
+    private static async Task MakeContactUnclaimedAsync(ApplicationDbContext db, VisitRequest req)
+    {
+        var tracked = await db.VisitRequests.SingleAsync(v => v.VisitRequestId == req.VisitRequestId);
+        tracked.PrimaryContactAccessStatus = PrimaryContactAccessStatuses.PendingConfirmation;
+        tracked.VisitorUserId = null;
+        tracked.PrimaryContactVerifiedAt = null;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedPendingIdentityChangeAsync(
+        ApplicationDbContext db, ulong visitRequestId, string kind, uint resendCount, DateTime expiresAt)
+    {
+        db.VisitRequestIdentityChanges.Add(new VisitRequestIdentityChange
+        {
+            VisitRequestId = visitRequestId,
+            ChangeKind = kind,
+            TargetRelation = IdentityChangeTargetRelations.PrimaryContact,
+            NewEmailMasked = "n***@e.com",
+            // A TRANSFER always captures the owner it is taking the role from — the DB enforces it,
+            // exactly as InitiateVisitContactTransferCommandHandler does.
+            OldUserId = kind == IdentityChangeKinds.Transfer ? VisitorOwner : null,
+            Status = IdentityChangeStatuses.Pending,
+            ExpectedRequestRowVersion = 0,
+            RequestedBy = VisitorOwner,
+            RequestedAt = DateTime.Now,
+            ExpiresAt = expiresAt,
+            ResendCount = resendCount,
+            CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task An_established_contact_offers_only_the_transfer_initiation()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Seed default: contact ACTIVE and linked, earliest start +20d, nothing pending.
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+
+        Assert.Contains(VisitFormActions.InitiateContactTransfer, actions);
+        // The claim workflow is over — resending or re-entering the invitation would 409.
+        Assert.DoesNotContain(VisitFormActions.ResendContactClaim, actions);
+        Assert.DoesNotContain(VisitFormActions.ReplacePendingContact, actions);
+        Assert.DoesNotContain(VisitFormActions.CancelContactTransfer, actions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task An_unclaimed_contact_offers_replace_always_and_resend_only_below_the_cap()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        await MakeContactUnclaimedAsync(db, req);
+        await SeedPendingIdentityChangeAsync(
+            db, req.VisitRequestId, IdentityChangeKinds.InitialClaim, resendCount: 4, DateTime.Now.AddHours(72));
+
+        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+        Assert.Contains(VisitFormActions.ReplacePendingContact, actions);
+        Assert.Contains(VisitFormActions.ResendContactClaim, actions);
+        // An unclaimed contact cannot be transferred — that is the claim workflow's job.
+        Assert.DoesNotContain(VisitFormActions.InitiateContactTransfer, actions);
+
+        // One more resend and the handler answers CLAIM_RESEND_LIMIT; the button must go before that.
+        var claim = await db.VisitRequestIdentityChanges
+            .SingleAsync(c => c.VisitRequestId == req.VisitRequestId);
+        claim.ResendCount = 5;
+        await db.SaveChangesAsync();
+
+        var atCap = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+        Assert.DoesNotContain(VisitFormActions.ResendContactClaim, atCap);
+        Assert.Contains(VisitFormActions.ReplacePendingContact, atCap); // replace has no cap
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_pending_transfer_replaces_initiation_with_resend_and_cancel()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        await SeedPendingIdentityChangeAsync(
+            db, req.VisitRequestId, IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
+
+        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+
+        Assert.Contains(VisitFormActions.ResendContactTransfer, actions);
+        Assert.Contains(VisitFormActions.CancelContactTransfer, actions);
+        // A second transfer is refused by the one-pending-change guard, so it is never offered.
+        Assert.DoesNotContain(VisitFormActions.InitiateContactTransfer, actions);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Inside_the_24h_window_a_transfer_cannot_start_or_resend_but_can_still_be_cancelled()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instances[0].VisitInstanceId);
+        instance.PlannedStartAt = DateTime.Now.AddHours(6);
+        instance.PlannedEndAt = DateTime.Now.AddHours(8);
+        await db.SaveChangesAsync();
+
+        var beforeTransfer = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+        Assert.DoesNotContain(VisitFormActions.InitiateContactTransfer, beforeTransfer);
+
+        await SeedPendingIdentityChangeAsync(
+            db, req.VisitRequestId, IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
+        var withTransfer = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+
+        Assert.DoesNotContain(VisitFormActions.ResendContactTransfer, withTransfer);
+        // Cancel is NOT gated on the window: closing an invitation stays possible after it passes,
+        // and CancelVisitContactTransferCommandHandler does not call EnsureTransferLifecycleOpen.
+        Assert.Contains(VisitFormActions.CancelContactTransfer, withTransfer);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task No_contact_action_reaches_ho_a_campus_leader_or_a_host()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+
+        foreach (var viewer in new ICurrentUserService[]
+                 { Ho(), StaffLeader(SlCampus1, Campus1), Host(IcStaffC1, Campus1) })
+        {
+            var actions = (await Resolver(db, viewer).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+                .Viewer.AllowedActions;
+            Assert.All(ContactActionCodes, code => Assert.DoesNotContain(code, actions));
+        }
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_cancelled_request_offers_no_contact_action()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var tracked = await db.VisitRequests.SingleAsync(v => v.VisitRequestId == req.VisitRequestId);
+        tracked.Status = VisitRequestStatuses.Cancelled;
+        tracked.CancelledBy = VisitorOwner;
+        tracked.CancelledAt = DateTime.Now;
+        tracked.CancellationReason = "Đoàn hủy chuyến"; // the DB requires a reason with a cancellation
+        await db.SaveChangesAsync();
+
+        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .Viewer.AllowedActions;
+        Assert.All(ContactActionCodes, code => Assert.DoesNotContain(code, actions));
+        await tx.RollbackAsync();
+    }
+
     // ── 5. allowedActions (mirror the command-handler authorization) ─────────
 
     [Fact]

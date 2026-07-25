@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getVisitRequestFormV2, type ResolvedCampusVisit, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
-import ContactIdentityPanel from '../ContactIdentityPanel';
+import ContactIdentityActions from '../ContactIdentityActions';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
 import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../VisitSafeEditModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
 import { hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
+import { showSuccessToast } from '../../../../shared/utils/toast';
 import { VisitSectionCard } from './shared/VisitSectionCard';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid } from './shared/ReadOnlyInfoGrid';
+import { VisitOutcomeSummary } from './shared/VisitOutcomeSummary';
 
 interface Props {
   visitRequestId: number;
@@ -57,6 +59,18 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     void load();
   }, [load]);
 
+  // The edit/resubmit page navigates here with its success message in router state. Nothing consumed
+  // it, so a successful save landed on a silent screen. Show it exactly once and clear the state
+  // immediately — otherwise a back/forward or a refresh would replay a stale confirmation.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const flash = (location.state as { flash?: string } | null)?.flash;
+    if (!flash) return;
+    showSuccessToast(flash);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
+
   if (loading) {
     return (
       <p role="status" className="flex items-center gap-2 p-6 text-sm text-slate-500">
@@ -88,11 +102,10 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   }
 
   const { viewer } = data;
-  // Relation is used ONLY for the identity workflow (claim/transfer) — a separate backend-authorized flow.
-  const isManager = (viewer.relation === 'REGISTRANT' || viewer.relation === 'VISITOR_OWNER') && !viewer.isReadOnly;
   const showMixedLabel = data.hasMixedCampusDetails && data.campusVisits.length > 1;
   // Every mutation action is driven ONLY by backend allowedActions — never relation/status. The backend
   // re-authorizes each command; HO/Host/out-of-scope viewers receive no actions and so see no buttons.
+  // The contact identity workflow is the last one to join this rule: it used to read viewer.relation.
   const canEditPending = hasAction(viewer.allowedActions, VisitV2Action.EditPendingRequest);
   const canResubmit = hasAction(viewer.allowedActions, VisitV2Action.ResubmitRejectedRequest);
   const canSafeEdit = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
@@ -114,14 +127,17 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           )}
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* These are NAVIGATION, not submits — they open the edit form. Labelling them
+                "Lưu thay đổi" / "Gửi lại đơn" claimed an action that only happens on the form's own
+                submit button, which still carries those labels. */}
             {canEditPending && (
               <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
-                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveEdit')}
+                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.openEdit')}
               </Link>
             )}
             {canResubmit && (
               <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
-                <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.saveResubmit')}
+                <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.openResubmit')}
               </Link>
             )}
             {canSafeEdit && (
@@ -133,43 +149,18 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           </div>
         </div>
 
-        <ReadOnlyInfoGrid
-          className="mt-4"
-          rows={[
-            { label: t('visitRequestV2:detail.submittedAt'), value: formatVietnamDateTime(data.submittedAt) },
-            {
-              label: t('visitRequestV2:sections.registrant'),
-              value: [data.registrant.fullName, data.registrant.organization].filter(Boolean).join(' — '),
-            },
-            {
-              label: t('visitRequestV2:detail.primaryContact'),
-              value: data.primaryContact.fullName
-                ? (
-                  <>
-                    {data.primaryContact.fullName}
-                    {data.primaryContact.accessStatus === 'PENDING_CONFIRMATION' && (
-                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
-                        {t('visitRequestV2:detail.contactPending')}
-                      </span>
-                    )}
-                  </>
-                )
-                : null,
-            },
-          ]}
-        />
-      </header>
+        {/* The registrant and contact blocks used to be repeated here, immediately above sections 1
+            and 2 that show the same people in full. The overview answers "which request, what state,
+            what can I do" — who the people are is the sections' job. */}
+        <p className="mt-3 text-sm text-slate-500">
+          {t('visitRequestV2:detail.submittedAt')}:{' '}
+          <span className="font-medium text-slate-700">{formatVietnamDateTime(data.submittedAt)}</span>
+        </p>
 
-      {/* ── Identity workflow (registrant / ACTIVE contact only — backend re-authorizes) ── */}
-      {isManager && (
-        <ContactIdentityPanel
-          visitRequestId={data.visitRequestId}
-          primaryContactAccessStatus={data.primaryContact.accessStatus}
-          contactEmailMasked={data.primaryContact.email || null}
-          canManage
-          onChanged={() => void load()}
-        />
-      )}
+        <div className="mt-3">
+          <VisitOutcomeSummary form={data} />
+        </div>
+      </header>
 
       {/* ── ① Registrant ── */}
       <VisitSectionCard
@@ -214,6 +205,18 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               value: data.primaryContact.verifiedAt ? formatVietnamDateTime(data.primaryContact.verifiedAt) : null,
             },
           ]}
+        />
+
+        {/* The claim/transfer workflow belongs to THIS contact, so it lives in this section rather
+            than in a card of its own above — splitting one business object across two cards is what
+            produced the duplicated contact block. Which of its actions exist is the backend's call,
+            passed straight through; the panel renders nothing at all when none were granted. */}
+        <ContactIdentityActions
+          visitRequestId={data.visitRequestId}
+          primaryContactAccessStatus={data.primaryContact.accessStatus}
+          contactEmail={data.primaryContact.email || null}
+          allowedActions={viewer.allowedActions}
+          onChanged={() => void load()}
         />
       </VisitSectionCard>
 

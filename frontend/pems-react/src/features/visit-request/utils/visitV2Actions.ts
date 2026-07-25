@@ -10,6 +10,14 @@ export const VisitV2Action = {
   EditPendingRequest: 'EDIT_PENDING_REQUEST',
   ResubmitRejectedRequest: 'RESUBMIT_REJECTED_REQUEST',
   SubmitSafeEdit: 'SUBMIT_SAFE_EDIT',
+  // primary-contact identity workflow (viewer.allowedActions). The panel used to decide these from
+  // viewer.relation, which is why it could offer a resend past its cap or a transfer inside the 24h
+  // window — decisions only the backend's own guards can make correctly.
+  ResendContactClaim: 'RESEND_CONTACT_CLAIM',
+  ReplacePendingContact: 'REPLACE_PENDING_CONTACT',
+  InitiateContactTransfer: 'INITIATE_CONTACT_TRANSFER',
+  ResendContactTransfer: 'RESEND_CONTACT_TRANSFER',
+  CancelContactTransfer: 'CANCEL_CONTACT_TRANSFER',
   // per instance (campusVisit.allowedActions)
   SubmitAmendment: 'SUBMIT_AMENDMENT',
   ApproveAmendment: 'APPROVE_AMENDMENT',

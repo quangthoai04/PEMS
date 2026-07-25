@@ -40,6 +40,10 @@ const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitF
   createdSource: 'PUBLIC',
   submittedAt: '2026-07-15T08:00:00',
   partnerId: null,
+  cancelledByUserId: null,
+  cancelledByName: null,
+  cancelledAt: null,
+  cancellationReason: null,
   registrant: {
     fullName: 'Người Đăng Ký', organization: 'ĐH ABC', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN',
@@ -112,11 +116,23 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByText('Varies by campus')).not.toBeInTheDocument();
   });
 
-  it('identity panel is wired for the request manager and ABSENT for read-only HO', async () => {
+  it('contact actions follow the backend action codes, not the viewer relation', async () => {
+    // A REGISTRANT with no contact action code granted (for instance inside the 24h window, or with
+    // the request already cancelled) must see NOTHING — the relation alone never earns a button.
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    const { unmount: unmountBare } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-actions')).not.toBeInTheDocument();
+    unmountBare();
+
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'],
+      },
+    }));
     const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
-    // ContactIdentityPanel (G-1, VI aria-label) appears for REGISTRANT:
-    expect(await screen.findByLabelText('Quản lý đầu mối liên hệ')).toBeInTheDocument();
+    expect(await screen.findByTestId('contact-identity-actions')).toBeInTheDocument();
     unmount();
 
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
@@ -124,7 +140,22 @@ describe('VisitRequestV2DetailView', () => {
     }));
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Quản lý đầu mối liên hệ')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-actions')).not.toBeInTheDocument();
+  });
+
+  it('contact actions live INSIDE the contact section, not in a card of their own', async () => {
+    // One business object, one card. The old standalone panel produced a second contact heading
+    // above sections 1 and 2, which is what made the screen look like it repeated itself.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'],
+      },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    const actions = await screen.findByTestId('contact-identity-actions');
+    expect(screen.getByTestId('section-contact')).toContainElement(actions);
   });
 
   it('active amendment: the decision panel is gated by per-instance allowedActions, not relation', async () => {
@@ -188,6 +219,36 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.getByRole('button', { name: 'Quick edit' })).toBeInTheDocument();
   });
 
+  it('labels the edit entry points as navigation, never as a save', async () => {
+    // These are <Link>s to the edit form. "Save changes" belongs to the button that actually submits;
+    // reusing it here promised an action that did not happen.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+        allowedActions: ['VIEW', 'EDIT_PENDING_REQUEST', 'RESUBMIT_REJECTED_REQUEST'],
+      },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Edit request' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit & resubmit' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Save changes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Resubmit request' })).not.toBeInTheDocument();
+  });
+
+  it('overview states the request and its outcome without repeating sections 1 and 2', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    // The people appear exactly once each - in their own section, not also in the overview.
+    expect(screen.getAllByText('Người Đăng Ký')).toHaveLength(1);
+    expect(screen.getAllByText('Đầu Mối')).toHaveLength(1);
+    // …and the overview now answers "where has this got to" instead.
+    expect(screen.getByTestId('visit-outcome-summary')).toBeInTheDocument();
+  });
+
   it('per-instance SUBMIT_AMENDMENT surfaces a propose-change entry point', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
       viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW', 'SUBMIT_SAFE_EDIT'] },
@@ -198,21 +259,25 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.getByRole('button', { name: 'Propose change' })).toBeInTheDocument();
   });
 
-  it('history timeline renders the server-scoped MASKED entries as-is', async () => {
+  it('history timeline renders the server-scoped MASKED entries as business sentences', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
     vi.mocked(getVisitRequestHistory).mockResolvedValue({
       visitRequestId: 1,
       requestCode: 'VR-2026-001',
       entries: [{
-        at: '2026-07-16T10:00:00', kind: 'IDENTITY', visitInstanceId: null,
-        title: 'Đầu mối d***@x.vn đã xác nhận vai trò', detail: null, actorName: null,
+        at: '2026-07-16T10:00:00', eventCode: 'CONTACT_IDENTITY_CHANGED', visitInstanceId: null,
+        campusName: null, actorName: null, formRevision: null, approvalRevision: null,
+        amendmentNo: null, statusCode: 'CLAIM_APPLIED', sourceType: null, reason: null,
+        maskedEmail: 'd***@x.vn', fromStatus: 'PENDING', toStatus: 'APPLIED',
       }],
     });
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
 
-    expect(await screen.findByText('Đầu mối d***@x.vn đã xác nhận vai trò')).toBeInTheDocument();
+    expect(await screen.findByText('The contact role changed (d***@x.vn).')).toBeInTheDocument();
     // Masked means masked — the full address never appears anywhere in the DOM:
     expect(screen.queryByText(/dauMoi@|d@x\.vn/)).not.toBeInTheDocument();
+    // …and the raw status transition never reaches the reader either.
+    expect(screen.queryByText(/PENDING|APPLIED|CLAIM_APPLIED/)).not.toBeInTheDocument();
   });
 
   it('flag OFF / not found → stable friendly message, no silent v1 fallback fetch', async () => {

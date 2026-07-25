@@ -17,9 +17,24 @@ describe('CampusVisitDetailCard', () => {
     expect(screen.getByText('Nội dung làm việc HN')).toBeInTheDocument();
     expect(screen.getByText('Host Hà Nội')).toBeInTheDocument();
     expect(screen.getByText(/Leader HN/)).toBeInTheDocument();
-    expect(screen.getByText('Content v2 · Approval v1')).toBeInTheDocument();
+    // The fixture is ASSIGNED with a recorded decision → the content is in force and approved.
+    expect(screen.getByText('Content version 2 is in force')).toBeInTheDocument();
+    expect(screen.getByText('Approved at round 1')).toBeInTheDocument();
     // Masked-scope guarantee: the card shows ONLY what it was given (no sibling data).
     expect(screen.queryByText(/HCM/)).not.toBeInTheDocument();
+  });
+
+  it('does not claim approval on a campus nobody has decided yet', () => {
+    // approvalRevision is 1 from the moment the request is created, so the old unconditional
+    // "Approval v1" told a waiting visitor their campus had already approved.
+    render(<CampusVisitDetailCard campus={campusFixture({
+      instanceStatus: 'WAITING_REQUEST_APPROVAL', decidedAt: null, decidedByName: null,
+      formRevision: 1, approvalRevision: 1,
+    })} />);
+
+    expect(screen.getByText('Approval status: not approved yet')).toBeInTheDocument();
+    expect(screen.getByText('Current content: version 1')).toBeInTheDocument();
+    expect(screen.queryByText(/Approved at round/)).not.toBeInTheDocument();
   });
 
   it('never renders a raw enum, even for a status the UI has not been taught', () => {

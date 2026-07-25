@@ -17,7 +17,9 @@ const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<OrgOpti
     boxShadow: isCell ? 'none' : (state.isFocused ? `0 0 0 1px ${hasError ? '#f87171' : '#f37021'}` : 'none'),
     '&:hover': { borderColor: isCell ? (hasError ? '#f87171' : '#bfdbfe') : (hasError ? '#f87171' : '#f37021') },
     minHeight: isCell ? '44px' : '36px',
-    height: isCell ? '44px' : '36px',
+    // No fixed height: a long organization name must WRAP and grow the row rather than be
+    // clipped to an ellipsis the user cannot read back (plan §21.3).
+    height: 'auto',
     fontSize: '0.875rem',
     fontWeight: isCell ? '500' : '400',
     backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : 'transparent',
@@ -26,7 +28,17 @@ const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<OrgOpti
   }),
   valueContainer: (base) => ({
     ...base,
-    padding: '0 8px',
+    padding: '2px 8px',
+    flexWrap: 'wrap',
+  }),
+  singleValue: (base) => ({
+    ...base,
+    color: '#111827',
+    fontWeight: '400',
+    whiteSpace: 'normal',
+    overflow: 'visible',
+    textOverflow: 'clip',
+    wordBreak: 'break-word',
   }),
   input: (base) => ({
     ...base,
@@ -51,7 +63,6 @@ const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<OrgOpti
     zIndex: 9999,
   }),
   placeholder: (base) => ({ ...base, color: '#9ca3af', fontWeight: '400' }),
-  singleValue: (base) => ({ ...base, color: '#111827', fontWeight: '400' }),
   indicatorSeparator: () => ({ display: 'none' }),
   dropdownIndicator: (base) => ({ ...base, padding: '4px' }),
   clearIndicator: (base) => ({ ...base, padding: '4px' }),

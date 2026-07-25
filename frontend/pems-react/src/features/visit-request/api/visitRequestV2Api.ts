@@ -143,6 +143,13 @@ export interface ResolvedCampusVisit {
   decidedAt: string | null;
   decisionActorRole: string | null;
   decisionNote: string | null;
+  /** Per-campus cancellation (UC-136) — a campus can be cancelled without the whole request being. */
+  cancelledByUserId: number | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  cancellationActorType: string | null;
+  cancellationSource: string | null;
+  cancellationReason: string | null;
   delegationName: string;
   visitType: string;
   visitTypeOther: string | null;
@@ -183,6 +190,11 @@ export interface ResolvedVisitForm {
   createdSource: string;
   submittedAt: string;
   partnerId: number | null;
+  /** Request-level cancellation (UC-136) — set only when the whole request was cancelled. */
+  cancelledByUserId: number | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
   registrant: {
     fullName: string;
     organization: string;
@@ -455,13 +467,26 @@ export const rejectAmendment = (visitInstanceId: number, amendmentId: number, no
 
 // ── Scoped, masked history timeline ──────────────────────────────────────────
 
+/**
+ * A STRUCTURED timeline entry: the backend states what happened, the client decides how to word it.
+ * The old shape carried pre-assembled Vietnamese titles with audit fragments glued on
+ * ("source=CREATE;approvalRevision=1"), which could not be translated and leaked internal enum names.
+ */
 export interface VisitHistoryEntry {
   at: string;
-  kind: string; // REQUEST_REVISION | INSTANCE_REVISION | AMENDMENT | AMENDMENT_DECISION | IDENTITY | DECISION
+  eventCode: string;
   visitInstanceId: number | null;
-  title: string;
-  detail: string | null;
+  campusName: string | null;
   actorName: string | null;
+  formRevision: number | null;
+  approvalRevision: number | null;
+  amendmentNo: number | null;
+  statusCode: string | null;
+  sourceType: string | null;
+  reason: string | null;
+  maskedEmail: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
 }
 
 export interface VisitRequestHistory {

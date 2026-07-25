@@ -61,6 +61,40 @@ describe('v2 draft UX', () => {
     vi.clearAllMocks();
   });
 
+  it('offers a way back into a verification that was already requested', async () => {
+    // Restored typing with no way to finish the OTP is a dead end: the user would have to submit
+    // again, burning a code that may already be sitting in their inbox.
+    saveVisitRequestV2Draft(
+      {
+        registerInfo: {
+          fullName: 'Người Nháp', organization: 'ĐH Nháp', jobTitle: 'TP',
+          phone: '+84912345678', email: 'draft@example.com', nationality: 'VN',
+        },
+      } as never,
+      undefined,
+      NS,
+      {
+        submissionId: 'sub-1',
+        otp: {
+          targetEmail: 'draft@example.com', maskedEmail: 'dr***@example.com',
+          expiresAt: null, resendAfterSeconds: 60, savedAt: Date.now(),
+        },
+      },
+    );
+    renderForm();
+    await act(async () => { fireEvent.click(screen.getByTestId('v2-draft-restore')); });
+
+    expect(screen.getByTestId('v2-otp-resume')).toBeTruthy();
+    expect(screen.getByTestId('v2-otp-resume-continue')).toBeTruthy();
+
+    // Forgetting the code leaves the answers alone — it is the challenge being dropped, not the form.
+    await act(async () => { fireEvent.click(screen.getByTestId('v2-otp-resume-discard')); });
+    expect(screen.queryByTestId('v2-otp-resume')).toBeNull();
+    const name = screen.getAllByRole('textbox')[0] as HTMLInputElement;
+    expect(name.value).toBe('Người Nháp');
+    expect(loadVisitRequestV2Draft(NS)?.otp).toBeUndefined();
+  });
+
   it('offers the draft instead of applying it silently', () => {
     seedDraft();
     renderForm();

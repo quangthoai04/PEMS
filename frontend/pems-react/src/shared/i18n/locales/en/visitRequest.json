@@ -309,7 +309,9 @@
       "noData": "The Excel file contains no data.",
       "headerOnly": "The file has no data rows (header only, or empty).",
       "missingColumns": "Missing required column(s): {{missing}}. The file must contain: {{required}}.",
-      "requiredCell": "Row {{row}}: column \"{{column}}\" must not be empty."
+      "requiredCell": "Row {{row}}: column \"{{column}}\" must not be empty.",
+      "cellRequired": "Must not be empty",
+      "cellMaxLength": "Longer than {{max}} characters (currently {{length}})"
     },
     "template": {
       "index": "No.",

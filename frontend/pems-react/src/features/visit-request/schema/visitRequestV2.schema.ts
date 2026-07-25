@@ -84,9 +84,9 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
     startDatetime: z.string().min(1, t('startTimeRequired')),
     endDatetime: z.string().min(1, t('endTimeRequired')),
 
-    delegationName: z.string().trim().min(1, t('delegationNameRequired')).max(200),
+    delegationName: z.string().trim().min(1, t('delegationNameRequired')).max(200, t('maxLength', { max: 200 })),
     visitType: z.enum(['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER']),
-    visitTypeOther: z.string().max(200).optional().default(''),
+    visitTypeOther: z.string().max(200, t('maxLength', { max: 200 })).optional().default(''),
     purpose: z.string().trim().min(1, t('purposeRequired')).max(2000, t('maxLength', { max: 2000 })),
     workingContent: z.string().trim().min(1, t('workingContentRequired')).max(4000, t('maxLength', { max: 4000 })),
 
@@ -115,8 +115,8 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       .optional()
       .default(''),
     mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
-    mediaConsentNote: z.string().max(2000).optional().default(''),
-    notes: z.string().max(2000).optional().default(''),
+    mediaConsentNote: z.string().max(2000, t('maxLength', { max: 2000 })).optional().default(''),
+    notes: z.string().max(2000, t('maxLength', { max: 2000 })).optional().default(''),
   })
   .superRefine((data, ctx) => {
     if (data.visitType === 'OTHER' && (!data.visitTypeOther || data.visitTypeOther.trim() === '')) {

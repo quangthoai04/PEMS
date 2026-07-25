@@ -19,6 +19,21 @@ public static class VisitFormActions
     /// <summary>Registrant/ACTIVE contact may apply a safe/privacy edit (v2, request not cancelled).</summary>
     public const string SubmitSafeEdit = "SUBMIT_SAFE_EDIT";
 
+    // ── Primary-contact identity workflow (request-level) ────────────────────
+    // These mirror the guards in the contact-claim / contact-transfer handlers exactly. Before them the
+    // frontend decided from `viewer.relation` alone, so it offered buttons the backend would refuse
+    // (a resend past its cap, a transfer inside the 24h window, a second transfer while one is pending).
+    /// <summary>Registrant may re-send the pending INITIAL_CLAIM invitation (cap 5).</summary>
+    public const string ResendContactClaim = "RESEND_CONTACT_CLAIM";
+    /// <summary>Registrant may correct the invited contact email while it is still unclaimed.</summary>
+    public const string ReplacePendingContact = "REPLACE_PENDING_CONTACT";
+    /// <summary>Registrant / current ACTIVE contact may propose handing the contact role to someone else.</summary>
+    public const string InitiateContactTransfer = "INITIATE_CONTACT_TRANSFER";
+    /// <summary>Registrant / current ACTIVE contact may re-send the pending TRANSFER invitation (cap 5).</summary>
+    public const string ResendContactTransfer = "RESEND_CONTACT_TRANSFER";
+    /// <summary>Registrant / current ACTIVE contact may cancel the pending TRANSFER.</summary>
+    public const string CancelContactTransfer = "CANCEL_CONTACT_TRANSFER";
+
     // ── Per-campus instance ──────────────────────────────────────────────────
     /// <summary>Requester side may propose an amendment for an ASSIGNED/BEFORE_VISIT instance ≥24h out with no pending amendment.</summary>
     public const string SubmitAmendment = "SUBMIT_AMENDMENT";

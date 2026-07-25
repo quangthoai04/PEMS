@@ -81,8 +81,35 @@ public sealed class GetVisitRequestHistoryQueryHandler
         if (visibleInstanceIds.Count == 0 && !includeRequestLevel)
             throw new ForbiddenException("Bạn không có quyền xem lịch sử của đơn này.");
 
-        var entries = new List<VisitHistoryEntryDto>();
+        // ── Campus names for the visible instances ──
+        // Without these, a three-campus request emits three identical "content created" rows and the
+        // reader cannot tell which campus each one belongs to.
+        var visibleCampusIds = visit.CampusInstances
+            .Where(c => visibleInstanceIds.Contains(c.VisitInstanceId))
+            .Select(c => c.CampusId).Distinct().ToList();
+        var campusNameById = visibleCampusIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _db.Campuses.AsNoTracking()
+                .Where(c => visibleCampusIds.Contains(c.CampusId))
+                .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+        var campusNameByInstance = visit.CampusInstances
+            .Where(c => visibleInstanceIds.Contains(c.VisitInstanceId))
+            .ToDictionary(
+                c => c.VisitInstanceId,
+                c => campusNameById.TryGetValue(c.CampusId, out var n) ? n : null);
+        string? CampusOf(ulong? instanceId) =>
+            instanceId is { } id && campusNameByInstance.TryGetValue(id, out var n) ? n : null;
+
+        // Raw facts are collected first, then names are attached in one pass — the previous version
+        // built the name dictionary and then never used it, so every entry went out with a null actor.
+        var raw = new List<(VisitHistoryEntryDto Entry, ulong? ActorId)>();
         var actorIds = new HashSet<ulong>();
+
+        void Add(VisitHistoryEntryDto entry, ulong? actorId)
+        {
+            if (actorId is { } id) actorIds.Add(id);
+            raw.Add((entry, actorId));
+        }
 
         // ── Instance revisions (applied, immutable) ──
         var instanceRevisions = await _db.VisitInstanceFormRevisionHistories.AsNoTracking()
@@ -92,12 +119,11 @@ public sealed class GetVisitRequestHistoryQueryHandler
             .ToListAsync(cancellationToken);
         foreach (var r in instanceRevisions)
         {
-            if (r.AppliedBy is { } by) actorIds.Add(by);
-            entries.Add(new VisitHistoryEntryDto(
-                r.AppliedAt, "INSTANCE_REVISION", r.VisitInstanceId,
-                $"Nội dung cơ sở — bản áp dụng #{r.FormRevision}",
-                $"source={r.SourceType};approvalRevision={r.ApprovalRevision}",
-                null));
+            Add(new VisitHistoryEntryDto(
+                r.AppliedAt, InstanceRevisionCode(r.SourceType, r.FormRevision),
+                r.VisitInstanceId, CampusOf(r.VisitInstanceId), null,
+                r.FormRevision, r.ApprovalRevision, null, null, r.SourceType, null, null, null, null),
+                r.AppliedBy);
         }
 
         // ── Request-level revisions ──
@@ -109,10 +135,22 @@ public sealed class GetVisitRequestHistoryQueryHandler
                 .ToListAsync(cancellationToken);
             foreach (var r in requestRevisions)
             {
-                if (r.AppliedBy is { } by) actorIds.Add(by);
-                entries.Add(new VisitHistoryEntryDto(
-                    r.AppliedAt, "REQUEST_REVISION", null,
-                    $"Thông tin chung — bản #{r.RequestRevision}", $"source={r.SourceType}", null));
+                Add(new VisitHistoryEntryDto(
+                    r.AppliedAt, RequestRevisionCode(r.SourceType), null, null, null,
+                    r.RequestRevision, null, null, null, r.SourceType, null, null, null, null),
+                    r.AppliedBy);
+            }
+
+            // Cancelling the whole request is recorded on the request row itself, not in a revision
+            // table — so without this the timeline simply stopped at the last edit and never said the
+            // request had been called off, by whom, or why.
+            if (visit.CancelledAt is { } requestCancelledAt)
+            {
+                Add(new VisitHistoryEntryDto(
+                    requestCancelledAt, VisitHistoryEventCodes.RequestCancelled, null, null, null,
+                    null, null, null, VisitRequestStatuses.Cancelled, null,
+                    visit.CancellationReason, null, null, null),
+                    visit.CancelledBy);
             }
         }
 
@@ -124,29 +162,58 @@ public sealed class GetVisitRequestHistoryQueryHandler
             .ToListAsync(cancellationToken);
         foreach (var a in amendments)
         {
-            actorIds.Add(a.RequestedBy);
-            entries.Add(new VisitHistoryEntryDto(
-                a.RequestedAt, "AMENDMENT", a.VisitInstanceId,
-                $"Đề xuất thay đổi #{a.AmendmentNo} (chưa phải nội dung hiệu lực)",
-                $"status={a.Status}", null));
+            Add(new VisitHistoryEntryDto(
+                a.RequestedAt, VisitHistoryEventCodes.AmendmentSubmitted, a.VisitInstanceId,
+                CampusOf(a.VisitInstanceId), null, null, null, a.AmendmentNo,
+                null, null, null, null, null, null),
+                a.RequestedBy);
+
             if (a.DecidedAt is { } decidedAt)
             {
-                if (a.DecidedBy is { } by) actorIds.Add(by);
-                entries.Add(new VisitHistoryEntryDto(
-                    decidedAt, "AMENDMENT_DECISION", a.VisitInstanceId,
-                    $"Đề xuất #{a.AmendmentNo}: {a.Status}", a.DecisionNote, null));
+                var code = a.Status switch
+                {
+                    AmendmentStatuses.Approved => VisitHistoryEventCodes.AmendmentApproved,
+                    AmendmentStatuses.Rejected => VisitHistoryEventCodes.AmendmentRejected,
+                    AmendmentStatuses.Withdrawn => VisitHistoryEventCodes.AmendmentWithdrawn,
+                    _ => VisitHistoryEventCodes.AmendmentDecided,
+                };
+                Add(new VisitHistoryEntryDto(
+                    decidedAt, code, a.VisitInstanceId, CampusOf(a.VisitInstanceId), null,
+                    null, null, a.AmendmentNo, a.Status, null, a.DecisionNote, null, null, null),
+                    a.DecidedBy);
             }
         }
 
-        // ── Campus decisions ──
+        // ── Campus decisions + cancellations ──
         foreach (var c in visit.CampusInstances.Where(c => visibleInstanceIds.Contains(c.VisitInstanceId)))
         {
             if (c.DecidedAt is { } decidedAt)
             {
-                if (c.DecidedBy is { } by) actorIds.Add(by);
-                entries.Add(new VisitHistoryEntryDto(
-                    decidedAt, "DECISION", c.VisitInstanceId,
-                    $"Cơ sở: {c.Status}", c.DecisionNote, null));
+                var code = c.Status switch
+                {
+                    VisitInstanceStatuses.Rejected => VisitHistoryEventCodes.InstanceRejected,
+                    VisitInstanceStatuses.Assigned => VisitHistoryEventCodes.InstanceApproved,
+                    // A campus that has moved on (BEFORE/DURING/AFTER/CLOSED) was approved to get there;
+                    // the decision event still describes that approval.
+                    VisitInstanceStatuses.BeforeVisit or VisitInstanceStatuses.DuringVisit
+                        or VisitInstanceStatuses.AfterVisit or VisitInstanceStatuses.Closed
+                        => VisitHistoryEventCodes.InstanceApproved,
+                    _ => VisitHistoryEventCodes.InstanceDecided,
+                };
+                Add(new VisitHistoryEntryDto(
+                    decidedAt, code, c.VisitInstanceId, CampusOf(c.VisitInstanceId), null,
+                    null, null, null, c.Status, null, c.DecisionNote, null, null, null),
+                    c.DecidedBy);
+            }
+
+            // Cancelling a campus is a separate event from deciding it, and used to be invisible here.
+            if (c.CancelledAt is { } cancelledAt)
+            {
+                Add(new VisitHistoryEntryDto(
+                    cancelledAt, VisitHistoryEventCodes.InstanceCancelled, c.VisitInstanceId,
+                    CampusOf(c.VisitInstanceId), null, null, null, null,
+                    VisitInstanceStatuses.Cancelled, c.CancellationSource, c.CancellationReason, null, null, null),
+                    c.CancelledBy);
             }
         }
 
@@ -159,24 +226,55 @@ public sealed class GetVisitRequestHistoryQueryHandler
                 .ToListAsync(cancellationToken);
             foreach (var e in identityEvents)
             {
-                if (e.ActorUserId is { } by) actorIds.Add(by);
-                entries.Add(new VisitHistoryEntryDto(
-                    e.CreatedAt, "IDENTITY", null,
-                    e.EventType,
-                    $"email={e.EmailMasked};{e.FromStatus}→{e.ToStatus}", null));
+                Add(new VisitHistoryEntryDto(
+                    e.CreatedAt, VisitHistoryEventCodes.ContactIdentityChanged, null, null, null,
+                    null, null, null, e.EventType, null, null, e.EmailMasked, e.FromStatus, e.ToStatus),
+                    e.ActorUserId);
             }
         }
 
-        // ── Actor display names (one query) + final ordering ──
+        // ── Actor display names (one query), then attach them ──
         var names = actorIds.Count == 0
             ? new Dictionary<ulong, string>()
             : await _db.Users.AsNoTracking()
                 .Where(u => actorIds.Contains(u.UserId))
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
-        // (names resolved per entry kind above where available; entries keep null actor when unknown)
 
-        var ordered = entries.OrderByDescending(e => e.At).ToList();
+        var ordered = raw
+            .Select(x => x.ActorId is { } id && names.TryGetValue(id, out var name)
+                ? x.Entry with { ActorName = name }
+                : x.Entry)
+            .OrderByDescending(e => e.At)
+            .ToList();
+
         return new VisitRequestHistoryResponse(
             visit.VisitRequestId, visit.RequestCode ?? string.Empty, ordered);
     }
+
+    /// <summary>
+    /// What a per-campus revision row MEANS, read from the reason it was written rather than from its
+    /// number. Both "sửa nhanh" and "gửi lại đơn" already write these rows — the timeline just collapsed
+    /// every one of them into "content created / revised", so a safe edit and a resubmit were
+    /// indistinguishable from an ordinary edit. Revision 1 is still a creation for rows written before
+    /// <c>source_type</c> was populated.
+    /// </summary>
+    private static string InstanceRevisionCode(string? sourceType, uint formRevision) => sourceType switch
+    {
+        FormRevisionSourceTypes.Create => VisitHistoryEventCodes.InstanceContentCreated,
+        FormRevisionSourceTypes.SafeEdit => VisitHistoryEventCodes.InstanceSafeEditApplied,
+        FormRevisionSourceTypes.Resubmit => VisitHistoryEventCodes.InstanceContentResubmitted,
+        FormRevisionSourceTypes.AmendmentApplied => VisitHistoryEventCodes.InstanceAmendmentApplied,
+        _ => formRevision <= 1
+            ? VisitHistoryEventCodes.InstanceContentCreated
+            : VisitHistoryEventCodes.InstanceContentRevised,
+    };
+
+    /// <summary>Same reading for the request-level (registrant + contact block) revisions.</summary>
+    private static string RequestRevisionCode(string? sourceType) => sourceType switch
+    {
+        FormRevisionSourceTypes.Create => VisitHistoryEventCodes.RequestCreated,
+        FormRevisionSourceTypes.SafeEdit => VisitHistoryEventCodes.RequestSafeEditApplied,
+        FormRevisionSourceTypes.Resubmit => VisitHistoryEventCodes.RequestResubmitted,
+        _ => VisitHistoryEventCodes.RequestRevision,
+    };
 }

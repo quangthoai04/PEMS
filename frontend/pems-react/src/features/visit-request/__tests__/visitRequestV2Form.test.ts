@@ -206,6 +206,7 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     createdSource: 'PUBLIC',
     submittedAt: '2026-07-15T08:00:00',
     partnerId: 3,
+    cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
     registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+8491', email: 'reg@x.vn', nationality: 'VN' },
     primaryContact: { fullName: 'ĐM', organization: 'ĐH X', phone: '+8492', email: 'c@x.vn', accessStatus: 'ACTIVE', verifiedAt: null },
     campusVisits: [
@@ -219,6 +220,8 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', phone: '+8493', email: 'op@x.vn' },
         workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null, noteToFptu: 'ghi chú HN',
         formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
+        cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
+        cancellationActorType: null, cancellationSource: null, cancellationReason: null,
       },
       {
         visitInstanceId: 11, campusId: 2, campusCode: 'HCM', campusName: 'FPTU HCM',
@@ -231,6 +234,8 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', phone: '+8494', email: '' },
         workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', mediaConsentNote: 'ok', noteToFptu: null,
         formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,
+        cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
+        cancellationActorType: null, cancellationSource: null, cancellationReason: null,
       },
     ],
     viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
