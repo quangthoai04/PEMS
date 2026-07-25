@@ -326,6 +326,9 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                     onRemove={() => requestRemove(index)}
                     canRemove={allowAddRemove && campusVisitFields.fields.length > 1}
                     showErrors={showErrors}
+                    // Editing/resubmitting only needs 24h notice — the same floor the schema
+                    // above was built with, so the picker and the resolver cannot disagree.
+                    minAdvanceHours={V2_MIN_ADVANCE_HOURS_EDIT}
                   />
                 </div>
               );

@@ -13,6 +13,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { fillSchedule } from './realstackHelpers';
 
 /** The FormField (label→control wrapper) whose visible label contains `label`. */
 function formField(page: Page, label: string): Locator {
@@ -62,25 +63,23 @@ async function fillCampus0(page: Page, delegation: string) {
   start.setDate(start.getDate() + 10);
   start.setHours(9, 0, 0, 0);
   const end = new Date(start.getTime() + 30 * 60 * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
   await page.locator('select[name="campusVisits.0.campus"]').selectOption('HN');
-  await page.locator('input[name="campusVisits.0.startDatetime"]').fill(fmt(start));
-  await page.locator('input[name="campusVisits.0.endDatetime"]').fill(fmt(end));
-  await page.locator('input[name="campusVisits.0.delegationName"]').fill(delegation);
+  await fillSchedule(page, 0, start, end);
+  await page.getByTestId('campus-delegation-input').fill(delegation);
 
   await formField(page, 'Mục đích').locator('textarea').fill('Trao đổi hợp tác thật');
   await formField(page, 'Nội dung làm việc').locator('textarea').fill('Nội dung làm việc thực tế của đoàn');
 
+  // Name and job title are auto-growing textareas now; organization/nationality stay react-selects.
   const vRow = page.locator('[data-testid="v2-visitors-table"] tbody tr').first();
-  await vRow.locator('td').nth(1).locator('input').fill('Khách Thật');
-  await vRow.locator('td').nth(2).locator('input').fill('Giảng viên');
+  await vRow.locator('td').nth(1).locator('textarea').fill('Khách Thật');
+  await vRow.locator('td').nth(2).locator('textarea').fill('Giảng viên');
   await fillReactSelect(vRow.locator('td').nth(3), 'ĐH Đối Tác');
   await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');
 
-  await page.locator('input[name="campusVisits.0.operationalContact.fullName"]').fill('Đầu Mối CS');
-  await page.locator('input[name="campusVisits.0.operationalContact.organization"]').fill('Đơn vị đầu mối');
+  await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
+  await page.getByTestId('campus-opcontact-org').fill('Đơn vị đầu mối');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }
@@ -139,7 +138,7 @@ test.describe('Real-stack: the draft survives the OTP round trip', () => {
     await page.getByRole('button', { name: 'Quay lại' }).click();
     await expect(otpModal(page)).toBeHidden();
     await expect(page.locator('input[name="registerInfo.email"]')).toHaveValue(email);
-    await expect(page.locator('input[name="campusVisits.0.delegationName"]')).toHaveValue('Đoàn Journey A');
+    await expect(page.getByTestId('campus-delegation-input')).toHaveValue('Đoàn Journey A');
 
     // The way back in is offered, and it does NOT request a second code.
     await expect(page.getByTestId('v2-otp-resume')).toBeVisible();
@@ -167,7 +166,7 @@ test.describe('Real-stack: the draft survives the OTP round trip', () => {
     await page.getByTestId('v2-draft-restore').click();
 
     await expect(page.locator('input[name="registerInfo.email"]')).toHaveValue(email);
-    await expect(page.locator('input[name="campusVisits.0.delegationName"]')).toHaveValue('Đoàn Journey B');
+    await expect(page.getByTestId('campus-delegation-input')).toHaveValue('Đoàn Journey B');
 
     // Same challenge, same submission intent — no retyping and no second code.
     await page.getByTestId('v2-otp-resume-continue').click();

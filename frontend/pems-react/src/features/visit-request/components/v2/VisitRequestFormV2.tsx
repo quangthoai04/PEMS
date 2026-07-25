@@ -491,6 +491,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                   onRemove={() => requestRemove(index)}
                   canRemove={campusVisitFields.fields.length > 1}
                   showErrors={showErrors}
+                  minAdvanceHours={vm.minAdvanceHours}
                   // Only a SELF-registration may state how a campus is processed: on a delegated
                   // submission the OTP verifies the registrant, not the person typing, so every campus
                   // routes to its Staff Leader and the backend rejects any intent to the contrary.

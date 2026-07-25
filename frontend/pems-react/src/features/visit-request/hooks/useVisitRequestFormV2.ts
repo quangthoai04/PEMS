@@ -750,5 +750,7 @@ export const useVisitRequestFormV2 = (
     saveDraftNow,
     migratedFromGlobalDraft,
     resetForm,
+    /** Exposed so the schedule picker enforces the SAME floor the schema does (72h vs 24h). */
+    minAdvanceHours,
   };
 };

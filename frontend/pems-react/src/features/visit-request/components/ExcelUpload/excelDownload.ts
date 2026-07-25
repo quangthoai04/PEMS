@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { ExcelTranslator } from './excelValidator';
+import type { ExcelTranslator, ExcelImportReport } from './excelValidator';
 
 const saveWorkbook = (wb: XLSX.WorkBook, filename: string) => {
   XLSX.writeFile(wb, filename);
@@ -50,4 +50,50 @@ export const downloadSupportTeamTemplate = (t: ExcelTranslator) => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, t('visitRequest:excel.template.supportSheet'));
   saveWorkbook(wb, 'support-team-template.xlsx');
+};
+
+/**
+ * The rejected file's report, as a workbook the user can open next to their own sheet
+ * (plan §5). A summary block first — so the numbers survive being forwarded to whoever
+ * actually owns the list — then one row per problem, keyed by the SAME row number the
+ * user sees in Excel.
+ */
+export const downloadExcelErrorReport = (
+  report: ExcelImportReport,
+  campusLabel: string,
+  t: ExcelTranslator,
+) => {
+  const L = (key: string) => t(`visitRequestV2:excel.report.${key}`);
+  const kindLabel = report.kind === 'visitors'
+    ? t('visitRequestV2:card.visitors')
+    : t('visitRequestV2:card.supportTeam');
+
+  const summary: (string | number)[][] = [
+    [L('title')],
+    [],
+    [L('fileName'), report.fileName],
+    [L('dataKind'), kindLabel],
+    [L('campus'), campusLabel],
+    [L('checkedAt'), report.checkedAt],
+    [L('totalRows'), report.totalRows],
+    [L('validRows'), report.validRows],
+    [L('errorRows'), report.errorRows],
+    [L('duplicateRows'), report.duplicateRows],
+    [L('overLimitRows'), report.overLimitRows],
+  ];
+  if (report.fatalMessage) summary.push([L('fatal'), report.fatalMessage]);
+
+  const detail: (string | number)[][] = [
+    [],
+    [L('detailHeading')],
+    [L('colRow'), L('colColumn'), L('colMessage')],
+    ...report.errors.map(e => [e.row, e.column, e.message]),
+  ];
+
+  const ws = makeSheet([...summary, ...detail], [22, 26, 60]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, L('sheetName'));
+  // Keep the source file's stem so the report is obviously about THAT upload.
+  const stem = report.fileName.replace(/\.[^.]+$/, '') || 'import';
+  saveWorkbook(wb, `${stem}-error-report.xlsx`);
 };

@@ -6,7 +6,7 @@
  * secret; identity is resolved SERVER-SIDE from the seeded profile file. Preconditions and post-action state
  * checks may use the authenticated API (allowed by §4/§5); the action UNDER TEST is always driven via the DOM.
  */
-import { expect, type APIRequestContext, type Browser } from '@playwright/test';
+import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 export const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
 export const SECRET = process.env.PEMS_E2E_AUTH_SECRET ?? '';
@@ -56,6 +56,41 @@ export async function meUser(request: APIRequestContext, profileKey: string): Pr
 const pad = (n: number) => String(n).padStart(2, '0');
 export const wallClock = (d: Date) =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+
+export const dateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const timeKey = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+/**
+ * Drives ONE campus card's schedule through the real picker: a date, a start time and an end
+ * time, each committed with Enter (which the control swallows — pressing it must never submit
+ * the registration). Crossing midnight switches the card into its explicit multi-day mode
+ * first, because a same-day end list stops at 23:59 by design.
+ */
+export async function fillSchedule(page: Page, cardIndex: number, start: Date, end: Date) {
+  const id = (suffix: string) => page.getByTestId(`campus-${cardIndex}-${suffix}`);
+  const multiDay = dateKey(start) !== dateKey(end);
+
+  if (multiDay) {
+    const box = id('multiday');
+    if (!(await box.isChecked())) await box.check();
+  }
+
+  await id('start-date').fill(dateKey(start));
+
+  const startTime = id('start-time');
+  await startTime.click();
+  await startTime.fill(timeKey(start));
+  await startTime.press('Enter');
+
+  if (multiDay) await id('end-date').fill(dateKey(end));
+
+  const endTime = id('end-time');
+  await endTime.click();
+  await endTime.fill(timeKey(end));
+  await endTime.press('Enter');
+
+  await expect(endTime).toHaveValue(timeKey(end));
+}
 
 /** A campus visit block for the v2 create payload (schedule well past the 24h/30-min rules). */
 export function campusBlock(code: string, dayOffset: number, delegation: string, tag: string) {

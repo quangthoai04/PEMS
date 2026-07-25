@@ -15,6 +15,7 @@
  */
 import { test, expect, type Browser, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { fillSchedule } from './realstackHelpers';
 
 const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
 const SECRET = process.env.PEMS_E2E_AUTH_SECRET ?? '';
@@ -86,25 +87,22 @@ async function fillCampus0(page: Page, delegation: string) {
   start.setDate(start.getDate() + 12);
   start.setHours(9, 0, 0, 0);
   const end = new Date(start.getTime() + 60 * 60 * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
   await page.locator('select[name="campusVisits.0.campus"]').selectOption('HN');
-  await page.locator('input[name="campusVisits.0.startDatetime"]').fill(fmt(start));
-  await page.locator('input[name="campusVisits.0.endDatetime"]').fill(fmt(end));
-  await page.locator('input[name="campusVisits.0.delegationName"]').fill(delegation);
+  await fillSchedule(page, 0, start, end);
+  await page.getByTestId('campus-delegation-input').fill(delegation);
 
   await formField(page, 'Mục đích').locator('textarea').fill('Trao đổi hợp tác (real stack identity)');
   await formField(page, 'Nội dung làm việc').locator('textarea').fill('Nội dung làm việc thực tế của đoàn');
 
   const vRow = page.locator('[data-testid="v2-visitors-table"] tbody tr').first();
-  await vRow.locator('td').nth(1).locator('input').fill('Khách Định Danh');
-  await vRow.locator('td').nth(2).locator('input').fill('Giảng viên');
+  await vRow.locator('td').nth(1).locator('textarea').fill('Khách Định Danh');
+  await vRow.locator('td').nth(2).locator('textarea').fill('Giảng viên');
   await fillReactSelect(vRow.locator('td').nth(3), 'ĐH Đối Tác');
   await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');
 
-  await page.locator('input[name="campusVisits.0.operationalContact.fullName"]').fill('Đầu Mối CS');
-  await page.locator('input[name="campusVisits.0.operationalContact.organization"]').fill('Đơn vị đầu mối');
+  await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
+  await page.getByTestId('campus-opcontact-org').fill('Đơn vị đầu mối');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }

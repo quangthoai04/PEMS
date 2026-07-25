@@ -9,6 +9,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { fillSchedule } from './realstackHelpers';
 
 /** The FormField (label→control wrapper) whose visible label contains `label`. */
 function formField(page: Page, label: string): Locator {
@@ -54,14 +55,11 @@ async function fillCampus0(page: Page, delegation: string) {
   start.setDate(start.getDate() + 10);
   start.setHours(9, 0, 0, 0);
   const end = new Date(start.getTime() + 30 * 60 * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
-  // register()-named fields are still plain DOM inputs.
   await page.locator('select[name="campusVisits.0.campus"]').selectOption('HN');
-  await page.locator('input[name="campusVisits.0.startDatetime"]').fill(fmt(start));
-  await page.locator('input[name="campusVisits.0.endDatetime"]').fill(fmt(end));
-  await page.locator('input[name="campusVisits.0.delegationName"]').fill(delegation);
+  // Date + start time + end time through the real picker (no datetime-local any more).
+  await fillSchedule(page, 0, start, end);
+  await page.getByTestId('campus-delegation-input').fill(delegation);
 
   // Purpose + working content are Controller/AutoGrowTextarea (no DOM name); reach them by FormField label.
   // Working content is now REQUIRED by the backend, so it must be filled.
@@ -71,13 +69,13 @@ async function fillCampus0(page: Page, delegation: string) {
   // The first visitor row: fullName/jobTitle are aria-labelled inputs; organization/nationality are
   // Creatable react-selects. Scope to the desktop visitors table so mobile duplicates never match.
   const vRow = page.locator('[data-testid="v2-visitors-table"] tbody tr').first();
-  await vRow.locator('td').nth(1).locator('input').fill('Khách Thật');   // fullName
-  await vRow.locator('td').nth(2).locator('input').fill('Giảng viên');    // jobTitle
-  await fillReactSelect(vRow.locator('td').nth(3), 'ĐH Đối Tác');         // organization
-  await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');           // nationality
+  await vRow.locator('td').nth(1).locator('textarea').fill('Khách Thật');   // fullName (auto-grow)
+  await vRow.locator('td').nth(2).locator('textarea').fill('Giảng viên');   // jobTitle (auto-grow)
+  await fillReactSelect(vRow.locator('td').nth(3), 'ĐH Đối Tác');           // organization
+  await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');             // nationality
 
-  await page.locator('input[name="campusVisits.0.operationalContact.fullName"]').fill('Đầu Mối CS');
-  await page.locator('input[name="campusVisits.0.operationalContact.organization"]').fill('Đơn vị đầu mối');
+  await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
+  await page.getByTestId('campus-opcontact-org').fill('Đơn vị đầu mối');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }

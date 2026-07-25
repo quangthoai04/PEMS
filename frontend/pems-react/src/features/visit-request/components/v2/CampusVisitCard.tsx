@@ -1,28 +1,44 @@
 import React, { useRef, useState } from 'react';
 import { Controller, useFieldArray, type UseFormReturn } from 'react-hook-form';
-import { AlertCircle, ChevronDown, Copy, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, ChevronDown, Copy, FileSpreadsheet, Plus, Replace, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
+import { V2_MAX_MEMBERS_PER_CAMPUS, V2_MIN_ADVANCE_HOURS_CREATE } from '../../schema/visitRequestV2.schema';
 import type { RegistrationCampusOption } from '../../api/visitRequestApi';
 import { FormField, inputCls } from '../shared/FormField';
 import { AutoGrowTextarea } from '../shared/AutoGrowTextarea';
+import { AutoGrowTextField } from '../shared/AutoGrowTextField';
+import { VisitDateTimeRangePicker } from '../shared/VisitDateTimeRangePicker';
 import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
-import {
-  isAllowedExcelFile,
-  validateSupportTeamExcel,
-  validateVisitorExcel,
-  type ExcelTranslator,
-} from '../ExcelUpload/excelValidator';
+import { validatePersonExcel, canApplyImport, type ExcelTranslator, type PersonRow } from '../ExcelUpload/excelValidator';
+import { ExcelImportPanel, type ExcelImportState } from '../ExcelUpload/ExcelImportPanel';
 import { downloadVisitorTemplate, downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
 import { CampusProcessingV2Panel } from './CampusProcessingV2Panel';
 import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusProcessingChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
 
-const MAX_EXCEL_FILE_BYTES = 5 * 1024 * 1024; // 5MB per-campus import cap
-
 const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER'] as const;
+
+/**
+ * Per-field ceilings, mirroring `buildCampusVisitSchema` and the FluentValidation rules that
+ * back it. Declared here only so the counter and the schema cannot drift apart on screen.
+ */
+const MAX = {
+  delegationName: 200,
+  visitTypeOther: 200,
+  purpose: 2000,
+  workingContent: 4000,
+  transportationNote: 2000,
+  mediaConsentNote: 2000,
+  notes: 2000,
+  personName: 150,
+  personJobTitle: 150,
+  personOrganization: 200,
+  contactName: 150,
+  contactOrganization: 200,
+} as const;
 
 interface Props {
   form: UseFormReturn<VisitRequestV2Schema>;
@@ -42,6 +58,8 @@ interface Props {
   onRemove: () => void;
   canRemove: boolean;
   showErrors?: boolean;
+  /** 72h for a new submit, 24h for visitor edit/resubmit — same source as the Zod schema. */
+  minAdvanceHours?: number;
   /**
    * Authenticated create only: who will process THIS campus. Omitted entirely for the public
    * form, which never renders internal processing controls and never sends a processing intent.
@@ -84,6 +102,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   onRemove,
   canRemove,
   showErrors,
+  minAdvanceHours = V2_MIN_ADVANCE_HOURS_CREATE,
   processing,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
@@ -95,7 +114,14 @@ export const CampusVisitCard: React.FC<Props> = ({
   const visitorFields = useFieldArray({ control, name: `campusVisits.${index}.visitors` });
   const supportFields = useFieldArray({ control, name: `campusVisits.${index}.supportTeam` });
 
-  const [excelMessage, setExcelMessage] = useState<string | null>(null);
+  // ONE state per section: guests and support staff are imported separately, and a shared
+  // message could not say which list it described (nor survive a second import).
+  const [excelState, setExcelState] = useState<Record<'visitors' | 'supportTeam', ExcelImportState>>({
+    visitors: {}, supportTeam: {},
+  });
+  const [pendingReplace, setPendingReplace] = useState<
+    { kind: 'visitors' | 'supportTeam'; rows: PersonRow[]; fileName: string } | null
+  >(null);
   const visitorFileRef = useRef<HTMLInputElement>(null);
   const supportFileRef = useRef<HTMLInputElement>(null);
 
@@ -107,38 +133,65 @@ export const CampusVisitCard: React.FC<Props> = ({
 
   const excelT: ExcelTranslator = (key, options) => t(key, options);
 
+  const setSection = (kind: 'visitors' | 'supportTeam', next: ExcelImportState) =>
+    setExcelState(prev => ({ ...prev, [kind]: next }));
+
+  /** The rows CURRENTLY in a section — the baseline for duplicate detection and the 200 cap. */
+  const currentRows = (kind: 'visitors' | 'supportTeam'): PersonRow[] =>
+    ((watch(`${base}.${kind}`) ?? []) as PersonRow[]).map(r => ({
+      fullName: r?.fullName ?? '', jobTitle: r?.jobTitle ?? '',
+      organization: r?.organization ?? '', nationality: r?.nationality ?? '',
+    }));
+
+  /**
+   * A row the user has not filled in at all. An untouched blank row is scaffolding, not data:
+   * it must not consume one of the 200 slots, and appending after it would leave a gap.
+   */
+  const isBlank = (r: PersonRow) =>
+    !r.fullName.trim() && !r.jobTitle.trim() && !r.organization.trim() && !r.nationality.trim();
+
+  /**
+   * Imports into THIS campus card only, and only ever ADDS (plan §7): replacing was destroying
+   * rows typed by hand with no warning. Replacing is still possible — as its own action, below,
+   * behind a confirmation.
+   */
   const importExcel = async (kind: 'visitors' | 'supportTeam', file: File) => {
-    setExcelMessage(null);
-    if (!isAllowedExcelFile(file)) {
-      setExcelMessage(t('visitRequestV2:excel.invalidType'));
-      return;
-    }
-    if (file.size > MAX_EXCEL_FILE_BYTES) {
-      setExcelMessage(t('visitRequestV2:excel.tooLarge', { maxMb: 5 }));
-      return;
-    }
-    // Import applies to THIS campus card only — never to a global member list.
-    if (kind === 'visitors') {
-      const result = await validateVisitorExcel(file, [], excelT);
-      if (!result.valid) {
-        setExcelMessage(result.errors[0]?.message ?? t('visitRequestV2:excel.parseFailed'));
-        return;
-      }
-      visitorFields.replace(result.data.map(r => ({
-        fullName: r.fullName, jobTitle: r.jobTitle, organization: r.organization, nationality: r.nationality,
-      })));
-      setExcelMessage(t('visitRequestV2:excel.importedVisitors', { count: result.data.length }));
-    } else {
-      const result = await validateSupportTeamExcel(file, [], excelT);
-      if (!result.valid) {
-        setExcelMessage(result.errors[0]?.message ?? t('visitRequestV2:excel.parseFailed'));
-        return;
-      }
-      supportFields.replace(result.data.map(r => ({
-        fullName: r.fullName, jobTitle: r.jobTitle, organization: r.organization, nationality: r.nationality,
-      })));
-      setExcelMessage(t('visitRequestV2:excel.importedSupport', { count: result.data.length }));
-    }
+    setSection(kind, { loadingFileName: file.name });
+    const existing = currentRows(kind).filter(r => !isBlank(r));
+
+    // validatePersonExcel never throws: an unreadable workbook comes back as a report with a
+    // fatalMessage, so the panel can explain it instead of the promise rejecting silently.
+    const report = await validatePersonExcel(file, kind, existing, excelT);
+    setSection(kind, { report });
+    if (!canApplyImport(report)) return;
+
+    const rows = report.data.map(r => ({
+      fullName: r.fullName, jobTitle: r.jobTitle, organization: r.organization, nationality: r.nationality,
+    }));
+    const fields = kind === 'visitors' ? visitorFields : supportFields;
+    const blanks = currentRows(kind).map(isBlank);
+    // Drop the untouched placeholder rows so the imported list starts where the user's does.
+    for (let i = blanks.length - 1; i >= 0; i--) if (blanks[i]) fields.remove(i);
+    fields.append(rows);
+  };
+
+  /** Whether the last import for this section still holds rows a replace could use. */
+  const canReplaceFrom = (kind: 'visitors' | 'supportTeam') => {
+    const report = excelState[kind].report;
+    return !!report && canApplyImport(report);
+  };
+
+  const requestReplace = (kind: 'visitors' | 'supportTeam') => {
+    const report = excelState[kind].report;
+    if (!report || !canApplyImport(report)) return;
+    setPendingReplace({ kind, rows: report.data, fileName: report.fileName });
+  };
+
+  const confirmReplace = () => {
+    if (!pendingReplace) return;
+    const fields = pendingReplace.kind === 'visitors' ? visitorFields : supportFields;
+    fields.replace(pendingReplace.rows);
+    setPendingReplace(null);
   };
 
   const fieldError = (path: string): string | undefined => {
@@ -201,20 +254,24 @@ export const CampusVisitCard: React.FC<Props> = ({
       );
     }
 
+    // Name and job title WRAP rather than scroll sideways: a long name in a table cell used to
+    // be readable only by dragging the caret through it (plan §21.3).
+    const max = field === 'fullName' ? MAX.personName : MAX.personJobTitle;
     return (
       <Controller
         name={name}
         control={control}
         render={({ field: f }) => (
-          <input
+          <AutoGrowTextField
             value={f.value ?? ''}
             onChange={f.onChange}
             onBlur={f.onBlur}
             placeholder={placeholder}
-            aria-label={placeholder}
-            className={isCell
-              ? `w-full border-0 bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-[#004c91] ${hasError ? 'bg-red-50/40' : ''}`
-              : inputCls(hasError, false, false)}
+            ariaLabel={placeholder}
+            hasError={hasError}
+            maxLength={max}
+            isCell={isCell}
+            testId={`${kind}-${rowIndex}-${field}`}
           />
         )}
       />
@@ -381,9 +438,9 @@ export const CampusVisitCard: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Schedule */}
+        {/* Campus */}
         <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-3">
-          <FormField label={t('visitRequestV2:card.campus')} required error={showErrors ? fieldError('campus') : fieldError('campus')} showValidIcon={false}>
+          <FormField label={t('visitRequestV2:card.campus')} required error={fieldError('campus')} showValidIcon={false}>
             <select
               {...register(`${base}.campus`)}
               className={inputCls(!!fieldError('campus'), !!campusCode, false)}
@@ -399,24 +456,50 @@ export const CampusVisitCard: React.FC<Props> = ({
                 ))}
             </select>
           </FormField>
-          <FormField label={t('visitRequestV2:card.startAt')} required error={fieldError('startDatetime')} showValidIcon={false}>
-            <input type="datetime-local" {...register(`${base}.startDatetime`)} className={inputCls(!!fieldError('startDatetime'), false, false)} />
-          </FormField>
-          <FormField
-            label={t('visitRequestV2:card.endAt')}
-            required
-            error={fieldError('endDatetime')}
-            subtitle={t('visitRequestV2:card.minDurationHint')}
-            showValidIcon={false}
-          >
-            <input type="datetime-local" {...register(`${base}.endDatetime`)} className={inputCls(!!fieldError('endDatetime'), false, false)} />
-          </FormField>
         </div>
+
+        {/* Schedule — one date + a start and end time, with the end offered by duration. Both
+            halves still write the SAME two wall-clock fields the API has always taken. */}
+        <Controller
+          name={`${base}.startDatetime`}
+          control={control}
+          render={({ field: startField }) => (
+            <Controller
+              name={`${base}.endDatetime`}
+              control={control}
+              render={({ field: endField }) => (
+                <VisitDateTimeRangePicker
+                  idPrefix={`campus-${index}`}
+                  minAdvanceHours={minAdvanceHours}
+                  startValue={startField.value ?? ''}
+                  endValue={endField.value ?? ''}
+                  onChange={({ start, end }) => { startField.onChange(start); endField.onChange(end); }}
+                  startError={fieldError('startDatetime')}
+                  endError={fieldError('endDatetime')}
+                />
+              )}
+            />
+          )}
+        />
 
         {/* Content */}
         <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
           <FormField label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
-            <input data-testid="campus-delegation-input" {...register(`${base}.delegationName`)} className={inputCls(!!fieldError('delegationName'), false, false)} />
+            <Controller
+              name={`${base}.delegationName`}
+              control={control}
+              render={({ field }) => (
+                <AutoGrowTextField
+                  testId="campus-delegation-input"
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!fieldError('delegationName')}
+                  maxLength={MAX.delegationName}
+                  ariaLabel={t('visitRequestV2:card.delegationName')}
+                />
+              )}
+            />
           </FormField>
           <FormField label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
             <select {...register(`${base}.visitType`)} className={inputCls(!!fieldError('visitType'), false, false)}>
@@ -429,7 +512,20 @@ export const CampusVisitCard: React.FC<Props> = ({
           </FormField>
           {visitType === 'OTHER' && (
             <FormField label={t('visitRequestV2:card.visitTypeOther')} required error={fieldError('visitTypeOther')} showValidIcon={false}>
-              <input {...register(`${base}.visitTypeOther`)} className={inputCls(!!fieldError('visitTypeOther'), false, false)} />
+              <Controller
+                name={`${base}.visitTypeOther`}
+                control={control}
+                render={({ field }) => (
+                  <AutoGrowTextField
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    hasError={!!fieldError('visitTypeOther')}
+                    maxLength={MAX.visitTypeOther}
+                    ariaLabel={t('visitRequestV2:card.visitTypeOther')}
+                  />
+                )}
+              />
             </FormField>
           )}
         </div>
@@ -447,7 +543,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                   onChange={field.onChange}
                   onBlur={field.onBlur}
                   hasError={!!fieldError('purpose')}
-                  maxLength={2000}
+                  maxLength={MAX.purpose}
                   minRows={3}
                 />
               )}
@@ -463,7 +559,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                   onChange={field.onChange}
                   onBlur={field.onBlur}
                   hasError={!!fieldError('workingContent')}
-                  maxLength={4000}
+                  maxLength={MAX.workingContent}
                   minRows={3}
                 />
               )}
@@ -476,7 +572,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.visitors')} <span className="text-red-500">*</span>
             <span className="text-xs font-medium text-slate-400">
-              {t('visitRequestV2:card.memberCount', { count: visitorFields.fields.length, max: 200 })}
+              {t('visitRequestV2:card.memberCount', { count: visitorFields.fields.length, max: V2_MAX_MEMBERS_PER_CAMPUS })}
             </span>
             <span className="ml-auto flex items-center gap-2">
               <button
@@ -488,7 +584,9 @@ export const CampusVisitCard: React.FC<Props> = ({
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                data-testid="v2-visitors-import"
+                disabled={!!excelState.visitors.loadingFileName}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => visitorFileRef.current?.click()}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importForCampus')}
@@ -510,6 +608,23 @@ export const CampusVisitCard: React.FC<Props> = ({
           {fieldError('visitors') && (
             <p className="mb-2 text-xs font-semibold text-red-600">{fieldError('visitors')}</p>
           )}
+          <ExcelImportPanel
+            testId="v2-excel-visitors"
+            state={excelState.visitors}
+            campusLabel={headerLabel}
+            onChooseAnother={() => visitorFileRef.current?.click()}
+            onDismiss={() => setSection('visitors', {})}
+          />
+          {canReplaceFrom('visitors') && (
+            <button
+              type="button"
+              data-testid="v2-visitors-replace"
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => requestReplace('visitors')}
+            >
+              <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAll')}
+            </button>
+          )}
           {personTable(
             'visitors',
             visitorFields.fields,
@@ -519,7 +634,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           <button
             type="button"
             className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50 disabled:opacity-40"
-            disabled={visitorFields.fields.length >= 200}
+            disabled={visitorFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
             onClick={() => visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
           >
             <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addVisitor')}
@@ -531,7 +646,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.supportTeam')}
             <span className="text-xs font-medium text-slate-400">
-              {t('visitRequestV2:card.memberCount', { count: supportFields.fields.length, max: 200 })}
+              {t('visitRequestV2:card.memberCount', { count: supportFields.fields.length, max: V2_MAX_MEMBERS_PER_CAMPUS })}
             </span>
             <span className="ml-auto flex items-center gap-2">
               <button
@@ -543,7 +658,9 @@ export const CampusVisitCard: React.FC<Props> = ({
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                data-testid="v2-support-import"
+                disabled={!!excelState.supportTeam.loadingFileName}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => supportFileRef.current?.click()}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importForCampus')}
@@ -562,6 +679,23 @@ export const CampusVisitCard: React.FC<Props> = ({
               e.target.value = '';
             }}
           />
+          <ExcelImportPanel
+            testId="v2-excel-support"
+            state={excelState.supportTeam}
+            campusLabel={headerLabel}
+            onChooseAnother={() => supportFileRef.current?.click()}
+            onDismiss={() => setSection('supportTeam', {})}
+          />
+          {canReplaceFrom('supportTeam') && (
+            <button
+              type="button"
+              data-testid="v2-support-replace"
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => requestReplace('supportTeam')}
+            >
+              <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAll')}
+            </button>
+          )}
           {personTable(
             'supportTeam',
             supportFields.fields,
@@ -571,15 +705,44 @@ export const CampusVisitCard: React.FC<Props> = ({
           <button
             type="button"
             className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50 disabled:opacity-40"
-            disabled={supportFields.fields.length >= 200}
+            disabled={supportFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
             onClick={() => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
           >
             <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
           </button>
         </fieldset>
 
-        {excelMessage && (
-          <p role="status" className="text-sm font-semibold text-slate-700">{excelMessage}</p>
+        {/* Replacing a list is destructive and is never what "import" alone does — it asks first. */}
+        {pendingReplace && (
+          <div role="alertdialog" data-testid="v2-replace-confirm" className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+            <p className="text-sm font-bold text-amber-900">
+              {t('visitRequestV2:excel.replaceConfirmTitle')}
+            </p>
+            <p className="mt-1 text-sm text-amber-800">
+              {t('visitRequestV2:excel.replaceConfirmBody', {
+                fileName: pendingReplace.fileName,
+                count: pendingReplace.rows.length,
+                current: currentRows(pendingReplace.kind).filter(r => !isBlank(r)).length,
+              })}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="v2-replace-confirm-yes"
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                onClick={confirmReplace}
+              >
+                {t('visitRequestV2:excel.replaceConfirmYes')}
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                onClick={() => setPendingReplace(null)}
+              >
+                {t('visitRequestV2:excel.replaceConfirmNo')}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Operational contact (per-campus working contact — a snapshot, never a login) */}
@@ -590,10 +753,38 @@ export const CampusVisitCard: React.FC<Props> = ({
           </legend>
           <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
             <FormField label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
-              <input {...register(`${base}.operationalContact.fullName`)} className={inputCls(!!fieldError('operationalContact.fullName'), false, false)} />
+              <Controller
+                name={`${base}.operationalContact.fullName`}
+                control={control}
+                render={({ field }) => (
+                  <AutoGrowTextField
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    hasError={!!fieldError('operationalContact.fullName')}
+                    maxLength={MAX.contactName}
+                    ariaLabel={t('visitRequestV2:person.fullName')}
+                    testId="campus-opcontact-name"
+                  />
+                )}
+              />
             </FormField>
             <FormField label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
-              <input {...register(`${base}.operationalContact.organization`)} className={inputCls(!!fieldError('operationalContact.organization'), false, false)} />
+              <Controller
+                name={`${base}.operationalContact.organization`}
+                control={control}
+                render={({ field }) => (
+                  <AutoGrowTextField
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    hasError={!!fieldError('operationalContact.organization')}
+                    maxLength={MAX.contactOrganization}
+                    ariaLabel={t('visitRequestV2:person.organization')}
+                    testId="campus-opcontact-org"
+                  />
+                )}
+              />
             </FormField>
             <FormField label={t('visitRequestV2:card.phone')} required error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <input {...register(`${base}.operationalContact.phone`)} placeholder="+84…" className={inputCls(!!fieldError('operationalContact.phone'), false, false)} />
@@ -622,14 +813,53 @@ export const CampusVisitCard: React.FC<Props> = ({
             </FormField>
             {mediaConsent === 'AGREED' && (
               <FormField label={t('visitRequestV2:card.mediaNote')} error={fieldError('mediaConsentNote')} className="lg:col-span-2" showValidIcon={false}>
-                <input {...register(`${base}.mediaConsentNote`)} className={inputCls(!!fieldError('mediaConsentNote'), false, false)} />
+                <Controller
+                  name={`${base}.mediaConsentNote`}
+                  control={control}
+                  render={({ field }) => (
+                    <AutoGrowTextarea
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      hasError={!!fieldError('mediaConsentNote')}
+                      maxLength={MAX.mediaConsentNote}
+                      minRows={2}
+                    />
+                  )}
+                />
               </FormField>
             )}
             <FormField label={t('visitRequestV2:card.transportationNote')} error={fieldError('transportationNote')} showValidIcon={false}>
-              <input {...register(`${base}.transportationNote`)} className={inputCls(!!fieldError('transportationNote'), false, false)} />
+              <Controller
+                name={`${base}.transportationNote`}
+                control={control}
+                render={({ field }) => (
+                  <AutoGrowTextarea
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    hasError={!!fieldError('transportationNote')}
+                    maxLength={MAX.transportationNote}
+                    minRows={2}
+                  />
+                )}
+              />
             </FormField>
             <FormField label={t('visitRequestV2:card.notes')} error={fieldError('notes')} showValidIcon={false}>
-              <input {...register(`${base}.notes`)} className={inputCls(!!fieldError('notes'), false, false)} />
+              <Controller
+                name={`${base}.notes`}
+                control={control}
+                render={({ field }) => (
+                  <AutoGrowTextarea
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    hasError={!!fieldError('notes')}
+                    maxLength={MAX.notes}
+                    minRows={2}
+                  />
+                )}
+              />
             </FormField>
           </div>
 
