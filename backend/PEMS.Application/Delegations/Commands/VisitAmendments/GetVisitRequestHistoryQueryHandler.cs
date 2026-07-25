@@ -119,12 +119,9 @@ public sealed class GetVisitRequestHistoryQueryHandler
             .ToListAsync(cancellationToken);
         foreach (var r in instanceRevisions)
         {
-            // The first revision of a campus is its content being created; later ones are edits.
-            var code = r.FormRevision <= 1
-                ? VisitHistoryEventCodes.InstanceContentCreated
-                : VisitHistoryEventCodes.InstanceContentRevised;
             Add(new VisitHistoryEntryDto(
-                r.AppliedAt, code, r.VisitInstanceId, CampusOf(r.VisitInstanceId), null,
+                r.AppliedAt, InstanceRevisionCode(r.SourceType, r.FormRevision),
+                r.VisitInstanceId, CampusOf(r.VisitInstanceId), null,
                 r.FormRevision, r.ApprovalRevision, null, null, r.SourceType, null, null, null, null),
                 r.AppliedBy);
         }
@@ -139,9 +136,21 @@ public sealed class GetVisitRequestHistoryQueryHandler
             foreach (var r in requestRevisions)
             {
                 Add(new VisitHistoryEntryDto(
-                    r.AppliedAt, VisitHistoryEventCodes.RequestRevision, null, null, null,
+                    r.AppliedAt, RequestRevisionCode(r.SourceType), null, null, null,
                     r.RequestRevision, null, null, null, r.SourceType, null, null, null, null),
                     r.AppliedBy);
+            }
+
+            // Cancelling the whole request is recorded on the request row itself, not in a revision
+            // table — so without this the timeline simply stopped at the last edit and never said the
+            // request had been called off, by whom, or why.
+            if (visit.CancelledAt is { } requestCancelledAt)
+            {
+                Add(new VisitHistoryEntryDto(
+                    requestCancelledAt, VisitHistoryEventCodes.RequestCancelled, null, null, null,
+                    null, null, null, VisitRequestStatuses.Cancelled, null,
+                    visit.CancellationReason, null, null, null),
+                    visit.CancelledBy);
             }
         }
 
@@ -241,4 +250,31 @@ public sealed class GetVisitRequestHistoryQueryHandler
         return new VisitRequestHistoryResponse(
             visit.VisitRequestId, visit.RequestCode ?? string.Empty, ordered);
     }
+
+    /// <summary>
+    /// What a per-campus revision row MEANS, read from the reason it was written rather than from its
+    /// number. Both "sửa nhanh" and "gửi lại đơn" already write these rows — the timeline just collapsed
+    /// every one of them into "content created / revised", so a safe edit and a resubmit were
+    /// indistinguishable from an ordinary edit. Revision 1 is still a creation for rows written before
+    /// <c>source_type</c> was populated.
+    /// </summary>
+    private static string InstanceRevisionCode(string? sourceType, uint formRevision) => sourceType switch
+    {
+        FormRevisionSourceTypes.Create => VisitHistoryEventCodes.InstanceContentCreated,
+        FormRevisionSourceTypes.SafeEdit => VisitHistoryEventCodes.InstanceSafeEditApplied,
+        FormRevisionSourceTypes.Resubmit => VisitHistoryEventCodes.InstanceContentResubmitted,
+        FormRevisionSourceTypes.AmendmentApplied => VisitHistoryEventCodes.InstanceAmendmentApplied,
+        _ => formRevision <= 1
+            ? VisitHistoryEventCodes.InstanceContentCreated
+            : VisitHistoryEventCodes.InstanceContentRevised,
+    };
+
+    /// <summary>Same reading for the request-level (registrant + contact block) revisions.</summary>
+    private static string RequestRevisionCode(string? sourceType) => sourceType switch
+    {
+        FormRevisionSourceTypes.Create => VisitHistoryEventCodes.RequestCreated,
+        FormRevisionSourceTypes.SafeEdit => VisitHistoryEventCodes.RequestSafeEditApplied,
+        FormRevisionSourceTypes.Resubmit => VisitHistoryEventCodes.RequestResubmitted,
+        _ => VisitHistoryEventCodes.RequestRevision,
+    };
 }

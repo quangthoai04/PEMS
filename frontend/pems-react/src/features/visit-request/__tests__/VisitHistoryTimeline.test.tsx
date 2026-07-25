@@ -83,6 +83,60 @@ describe('VisitHistoryTimeline', () => {
     expect(screen.getByText('Not the content in force')).toBeInTheDocument();
   });
 
+  // The three events the timeline was blind to. They must read as what happened in business terms —
+  // not as "content revised", which is what a safe edit and a resubmit both used to produce.
+  it('says a request was cancelled, by whom, and why', async () => {
+    withEntries(entry({
+      eventCode: 'REQUEST_CANCELLED', visitInstanceId: null, campusName: null,
+      actorName: 'Kim Min Jae', statusCode: 'CANCELLED', formRevision: null,
+      reason: 'Đoàn thay đổi lịch bay',
+    }));
+    render(<VisitHistoryTimeline visitRequestId={1} />);
+    await screen.findByTestId('visit-history-timeline');
+
+    expect(screen.getByText('Kim Min Jae cancelled the request.')).toBeInTheDocument();
+    expect(screen.getByText('Reason: Đoàn thay đổi lịch bay')).toBeInTheDocument();
+    expect(screen.getByTestId('visit-history-timeline').textContent).not.toContain('CANCELLED');
+  });
+
+  it('distinguishes a quick update from an ordinary content revision', async () => {
+    withEntries(
+      entry({ eventCode: 'REQUEST_SAFE_EDIT_APPLIED', visitInstanceId: null, campusName: null, sourceType: 'SAFE_EDIT' }),
+      entry({ eventCode: 'INSTANCE_SAFE_EDIT_APPLIED', formRevision: 2, sourceType: 'SAFE_EDIT' }),
+    );
+    render(<VisitHistoryTimeline visitRequestId={1} />);
+    await screen.findByTestId('visit-history-timeline');
+
+    expect(screen.getByText("Kim Min Jae made a quick update to the request's information.")).toBeInTheDocument();
+    expect(screen.getByText(
+      'Kim Min Jae made a quick update to the content for FPT University Hà Nội — version 2.',
+    )).toBeInTheDocument();
+    expect(screen.getByTestId('visit-history-timeline').textContent).not.toContain('SAFE_EDIT');
+  });
+
+  it('reports a resubmission as such at both levels', async () => {
+    withEntries(
+      entry({ eventCode: 'REQUEST_RESUBMITTED', visitInstanceId: null, campusName: null, sourceType: 'RESUBMIT' }),
+      entry({ eventCode: 'INSTANCE_CONTENT_RESUBMITTED', formRevision: 2, sourceType: 'RESUBMIT' }),
+    );
+    render(<VisitHistoryTimeline visitRequestId={1} />);
+    await screen.findByTestId('visit-history-timeline');
+
+    expect(screen.getByText('Kim Min Jae resubmitted the request after it was rejected.')).toBeInTheDocument();
+    expect(screen.getByText(
+      'Kim Min Jae resubmitted the content for FPT University Hà Nội — version 2.',
+    )).toBeInTheDocument();
+    expect(screen.getByTestId('visit-history-timeline').textContent).not.toContain('RESUBMIT');
+  });
+
+  it('reads the first request revision as a submission, not an update', async () => {
+    withEntries(entry({ eventCode: 'REQUEST_CREATED', visitInstanceId: null, campusName: null }));
+    render(<VisitHistoryTimeline visitRequestId={1} />);
+    await screen.findByTestId('visit-history-timeline');
+
+    expect(screen.getByText('Kim Min Jae submitted the request.')).toBeInTheDocument();
+  });
+
   it('falls back to a neutral sentence for an event code it does not know', async () => {
     withEntries(entry({ eventCode: 'SOMETHING_NEW_ENTIRELY' }));
     render(<VisitHistoryTimeline visitRequestId={1} />);

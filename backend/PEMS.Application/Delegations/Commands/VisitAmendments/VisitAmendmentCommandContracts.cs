@@ -141,8 +141,21 @@ public sealed record VisitHistoryEntryDto(
 public static class VisitHistoryEventCodes
 {
     public const string RequestRevision = "REQUEST_REVISION";
+    public const string RequestCreated = "REQUEST_CREATED";
+    /// <summary>Request-level safe edit ("sửa nhanh") — the shared registrant/contact block changed.</summary>
+    public const string RequestSafeEditApplied = "REQUEST_SAFE_EDIT_APPLIED";
+    /// <summary>The whole request was sent in again after a rejection.</summary>
+    public const string RequestResubmitted = "REQUEST_RESUBMITTED";
+    /// <summary>The whole request was cancelled (who, when, why).</summary>
+    public const string RequestCancelled = "REQUEST_CANCELLED";
     public const string InstanceContentCreated = "INSTANCE_CONTENT_CREATED";
     public const string InstanceContentRevised = "INSTANCE_CONTENT_REVISED";
+    /// <summary>Per-campus safe edit — the campus content changed without an amendment.</summary>
+    public const string InstanceSafeEditApplied = "INSTANCE_SAFE_EDIT_APPLIED";
+    /// <summary>Per-campus content re-sent as part of a request resubmit.</summary>
+    public const string InstanceContentResubmitted = "INSTANCE_CONTENT_RESUBMITTED";
+    /// <summary>An approved amendment was written into the campus's active content.</summary>
+    public const string InstanceAmendmentApplied = "INSTANCE_AMENDMENT_APPLIED";
     public const string InstanceApproved = "INSTANCE_APPROVED";
     public const string InstanceRejected = "INSTANCE_REJECTED";
     public const string InstanceCancelled = "INSTANCE_CANCELLED";

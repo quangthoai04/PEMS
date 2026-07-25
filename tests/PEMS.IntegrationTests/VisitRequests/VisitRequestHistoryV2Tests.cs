@@ -238,6 +238,177 @@ public sealed class VisitRequestHistoryV2Tests
         await tx.RollbackAsync();
     }
 
+    // ── The three events the timeline used to be blind to ────────────────────
+    // The rows were already being written by VisitSafeEditService / VisitRequestV2EditService and the
+    // cancellation columns were already on the request — the handler simply collapsed every revision
+    // into "created / revised" by its NUMBER and never looked at the request row at all. So a quick
+    // update, a resubmission and a cancellation were invisible or indistinguishable.
+
+    /// <summary>
+    /// Adds a request-level revision with the given source type, plus the matching per-campus row when
+    /// an instance is supplied. `(visit_instance_id, form_revision)` is unique, so SeedAsync's own
+    /// revision 1 must never be re-used here.
+    /// </summary>
+    private static async Task SeedRevisionAsync(
+        ApplicationDbContext db, VisitRequest req, VisitRequestCampus? instance,
+        string sourceType, uint formRevision, uint requestRevision, ulong actorId)
+    {
+        var now = DateTime.Now;
+        if (instance is not null)
+        {
+            db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
+            {
+                VisitRequestId = req.VisitRequestId,
+                VisitInstanceId = instance.VisitInstanceId,
+                FormRevision = formRevision,
+                ApprovalRevision = 1,
+                SourceType = sourceType,
+                SnapshotJson = "{}",
+                AppliedBy = actorId,
+                AppliedAt = now,
+                // The writers store a correlation id here. It must never reach the reader as a "reason".
+                Reason = Guid.NewGuid().ToString("N"),
+            });
+        }
+        db.VisitRequestRevisionHistories.Add(new VisitRequestRevisionHistory
+        {
+            VisitRequestId = req.VisitRequestId,
+            RequestRevision = requestRevision,
+            SourceType = sourceType,
+            SnapshotJson = "{}",
+            AppliedBy = actorId,
+            AppliedAt = now,
+            Reason = Guid.NewGuid().ToString("N"),
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_safe_edit_is_reported_as_a_quick_update_at_both_levels()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedAsync(db);
+        await SeedRevisionAsync(db, req, instances[0], "SAFE_EDIT", 2, 2, VisitorOwner);
+
+        var result = await Handler(db, Owner()).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+
+        var instanceEdit = Assert.Single(result.Entries.Where(
+            e => e.EventCode == VisitHistoryEventCodes.InstanceSafeEditApplied));
+        Assert.Equal(instances[0].VisitInstanceId, instanceEdit.VisitInstanceId);
+        Assert.Equal(2u, instanceEdit.FormRevision);
+        Assert.False(string.IsNullOrWhiteSpace(instanceEdit.ActorName));
+        Assert.False(string.IsNullOrWhiteSpace(instanceEdit.CampusName));
+
+        var requestEdit = Assert.Single(result.Entries.Where(
+            e => e.EventCode == VisitHistoryEventCodes.RequestSafeEditApplied));
+        Assert.False(string.IsNullOrWhiteSpace(requestEdit.ActorName));
+
+        // The correlation id the writer parks in `reason` is plumbing, not a business reason.
+        Assert.Null(instanceEdit.Reason);
+        Assert.Null(requestEdit.Reason);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_resubmission_is_reported_once_for_the_request_and_once_per_campus()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedAsync(db);
+        await SeedRevisionAsync(db, req, instances[0], "RESUBMIT", 2, 2, VisitorOwner);
+        await SeedRevisionAsync(db, req, instances[1], "RESUBMIT", 2, 3, VisitorOwner);
+
+        var result = await Handler(db, Owner()).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+
+        // The request-level sentence is the one a reader is looking for ("đã gửi lại đơn"); the
+        // per-campus rows say WHICH content went back in.
+        Assert.Equal(2, result.Entries.Count(
+            e => e.EventCode == VisitHistoryEventCodes.RequestResubmitted));
+        var perCampus = result.Entries
+            .Where(e => e.EventCode == VisitHistoryEventCodes.InstanceContentResubmitted).ToList();
+        Assert.Equal(2, perCampus.Count);
+        Assert.Equal(2, perCampus.Select(e => e.VisitInstanceId).Distinct().Count());
+        Assert.All(perCampus, e => Assert.False(string.IsNullOrWhiteSpace(e.ActorName)));
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_cancelled_request_reports_who_cancelled_it_when_and_why()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedAsync(db);
+        var cancelledAt = DateTime.Now.AddMinutes(-5);
+        req.Status = VisitRequestStatuses.Cancelled;
+        req.CancelledBy = VisitorOwner;
+        req.CancelledAt = cancelledAt;
+        req.CancellationReason = "Đoàn thay đổi lịch bay";
+        await db.SaveChangesAsync();
+
+        var result = await Handler(db, Owner()).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+
+        var cancelled = Assert.Single(result.Entries.Where(
+            e => e.EventCode == VisitHistoryEventCodes.RequestCancelled));
+        Assert.False(string.IsNullOrWhiteSpace(cancelled.ActorName));
+        Assert.Equal("Đoàn thay đổi lịch bay", cancelled.Reason);
+        Assert.Equal(VisitRequestStatuses.Cancelled, cancelled.StatusCode);
+        Assert.Null(cancelled.VisitInstanceId); // request-level, not a campus event
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_scoped_leader_does_not_receive_the_request_level_cancellation()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedAsync(db);
+        req.Status = VisitRequestStatuses.Cancelled;
+        req.CancelledBy = VisitorOwner;
+        req.CancelledAt = DateTime.Now;
+        req.CancellationReason = "Lý do nội bộ của đoàn";
+        await db.SaveChangesAsync();
+
+        var result = await Handler(db, StaffLeader(SlCampus2, Campus2)).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+
+        // Request-level entries stay with the managers/HO — a campus leader's timeline is their campus.
+        Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.RequestCancelled);
+        Assert.DoesNotContain(result.Entries, e => e.Reason == "Lý do nội bộ của đoàn");
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task The_first_request_revision_reads_as_a_submission_not_an_update()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedAsync(db);
+        // Request level only: SeedAsync already wrote each campus's own CREATE revision 1.
+        await SeedRevisionAsync(db, req, null, "CREATE", 1, 1, VisitorOwner);
+
+        var result = await Handler(db, Owner()).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+
+        Assert.Contains(result.Entries, e => e.EventCode == VisitHistoryEventCodes.RequestCreated);
+        // "đã cập nhật thông tin chung" was the sentence a CREATE row used to produce.
+        Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.RequestRevision);
+        await tx.RollbackAsync();
+    }
+
     // ── Scope ────────────────────────────────────────────────────────────────
 
     [Fact]
