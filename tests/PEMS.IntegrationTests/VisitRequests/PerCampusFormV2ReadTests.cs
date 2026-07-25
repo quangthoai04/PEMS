@@ -391,6 +391,98 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    // ── 4b. Cancellation outcome metadata (UC-136) ───────────────────────────
+
+    [Fact]
+    public async Task Request_cancellation_metadata_is_mapped_with_the_actor_name()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var cancelledAt = DateTime.Now.AddDays(-1);
+        req.Status = "CANCELLED";
+        req.CancelledBy = VisitorOwner;
+        req.CancelledAt = cancelledAt;
+        req.CancellationReason = "Thay đổi lịch công tác của đoàn.";
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        Assert.Equal(VisitorOwner, dto.CancelledByUserId);
+        Assert.Equal(cancelledAt, dto.CancelledAt!.Value, TimeSpan.FromSeconds(1));
+        Assert.Equal("Thay đổi lịch công tác của đoàn.", dto.CancellationReason);
+        // The name is resolved server-side: the screen must not have to look a user id up itself.
+        Assert.False(string.IsNullOrWhiteSpace(dto.CancelledByName));
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Campus_cancellation_metadata_is_mapped_per_instance()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // A campus must be DECIDED before it can be cancelled on its own: a DB trigger enforces that a
+        // still-pending instance is only cancelled as part of cancelling the whole request (UC-136).
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true, host0: IcStaffC1);
+        var cancelledAt = DateTime.Now.AddDays(-2);
+        instances[0].Status = "CANCELLED";
+        // A HOST cancellation must be recorded against the instance's own official host — the schema
+        // refuses to attribute it to anybody else.
+        instances[0].CancelledBy = IcStaffC1;
+        instances[0].CancelledAt = cancelledAt;
+        // The schema allows only VISITOR|HOST and SELF_SERVICE|EXTERNAL_CONFIRMATION here.
+        instances[0].CancellationActorType = "HOST";
+        instances[0].CancellationSource = "EXTERNAL_CONFIRMATION";
+        instances[0].CancellationReason = "Cơ sở bận sự kiện khác.";
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var cancelled = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)instances[0].VisitInstanceId);
+        Assert.Equal(IcStaffC1, cancelled.CancelledByUserId);
+        Assert.Equal("HOST", cancelled.CancellationActorType);
+        Assert.Equal("EXTERNAL_CONFIRMATION", cancelled.CancellationSource);
+        Assert.Equal("Cơ sở bận sự kiện khác.", cancelled.CancellationReason);
+        Assert.False(string.IsNullOrWhiteSpace(cancelled.CancelledByName));
+
+        // The sibling was never cancelled and must not inherit any of it.
+        var other = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)instances[1].VisitInstanceId);
+        Assert.Null(other.CancelledAt);
+        Assert.Null(other.CancellationReason);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Hidden_campus_cancellation_never_reaches_a_scoped_leader()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Campus 1 is decided (so it CAN be cancelled alone) and then cancelled; campus 2 is untouched.
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true, host0: IcStaffC1);
+        instances[0].Status = "CANCELLED";
+        instances[0].CancelledBy = IcStaffC1;   // the instance's own host, per the schema guard
+        instances[0].CancelledAt = DateTime.Now.AddDays(-1);
+        instances[0].CancellationActorType = "HOST";
+        instances[0].CancellationSource = "EXTERNAL_CONFIRMATION";
+        instances[0].CancellationReason = "LÝ DO CỦA CƠ SỞ KHÁC";
+        await db.SaveChangesAsync();
+
+        // A Staff Leader scoped to campus 2 must not learn that campus 1 was cancelled, nor why.
+        var dto = await Resolver(db, StaffLeader(SlCampus2, Campus2)).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var only = Assert.Single(dto.CampusVisits);
+        Assert.Equal((long)Campus2, only.CampusId);
+        Assert.Null(only.CancellationReason);
+        Assert.DoesNotContain(dto.CampusVisits, c => c.CancellationReason == "LÝ DO CỦA CƠ SỞ KHÁC");
+        await tx.RollbackAsync();
+    }
+
     // ── 5. allowedActions (mirror the command-handler authorization) ─────────
 
     [Fact]

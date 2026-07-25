@@ -143,6 +143,13 @@ export interface ResolvedCampusVisit {
   decidedAt: string | null;
   decisionActorRole: string | null;
   decisionNote: string | null;
+  /** Per-campus cancellation (UC-136) — a campus can be cancelled without the whole request being. */
+  cancelledByUserId: number | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  cancellationActorType: string | null;
+  cancellationSource: string | null;
+  cancellationReason: string | null;
   delegationName: string;
   visitType: string;
   visitTypeOther: string | null;
@@ -183,6 +190,11 @@ export interface ResolvedVisitForm {
   createdSource: string;
   submittedAt: string;
   partnerId: number | null;
+  /** Request-level cancellation (UC-136) — set only when the whole request was cancelled. */
+  cancelledByUserId: number | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
   registrant: {
     fullName: string;
     organization: string;

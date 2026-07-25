@@ -110,8 +110,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 .Select(c => new { c.CampusId, c.CampusCode, c.Name })
                 .ToDictionaryAsync(c => c.CampusId, c => (Code: c.CampusCode, Name: c.Name), cancellationToken);
 
+        // Cancelling actors join the same batch: resolving them separately would mean a second query
+        // for a name the very next line already knows how to look up.
         var actorIds = visibleInstances
-            .SelectMany(c => new[] { c.CurrentHostUserId, c.DecidedBy })
+            .SelectMany(c => new[] { c.CurrentHostUserId, c.DecidedBy, c.CancelledBy })
+            .Concat(new[] { request.CancelledBy })
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
         var actorNames = actorIds.Count == 0
             ? new Dictionary<ulong, string>()
@@ -244,6 +247,12 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 DecidedAt = c.DecidedAt,
                 DecisionActorRole = c.DecisionActorRole,
                 DecisionNote = c.DecisionNote,
+                CancelledByUserId = c.CancelledBy,
+                CancelledByName = NameOf(c.CancelledBy),
+                CancelledAt = c.CancelledAt,
+                CancellationActorType = c.CancellationActorType,
+                CancellationSource = c.CancellationSource,
+                CancellationReason = c.CancellationReason,
                 DelegationName = delegationName,
                 VisitType = visitType,
                 VisitTypeOther = visitTypeOther,
@@ -294,6 +303,10 @@ public sealed class VisitFormReadService : IVisitFormReadService
             CreatedSource = request.CreatedSource,
             SubmittedAt = request.SubmittedAt,
             PartnerId = request.PartnerId.HasValue ? (long)request.PartnerId.Value : null,
+            CancelledByUserId = request.CancelledBy,
+            CancelledByName = NameOf(request.CancelledBy),
+            CancelledAt = request.CancelledAt,
+            CancellationReason = request.CancellationReason,
             Registrant = new ResolvedRegistrantDto
             {
                 FullName = request.RegistrantFullName,
