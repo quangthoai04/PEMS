@@ -77,8 +77,13 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
 
+        // Defence in depth: initiate already refuses a direct processing intent, but a snapshot could only
+        // ever have been bound without one — so a verify-time form carrying one is a forged retry. Reject
+        // before the OTP is consumed rather than dropping the intent silently.
+        RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form);
+
         var now = _clock.VietnamNow;
-        var email = form.Registrant.Email.Trim().ToLowerInvariant();
+        var email = RegistrantIdentityRules.Normalize(form.Registrant.Email);
         var currentFingerprint = V2PendingFormSnapshot.Fingerprint(form);
 
         // ── Idempotency pre-check (BEFORE OTP verify): a retry whose original submit already committed must
