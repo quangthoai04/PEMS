@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Search, ArrowDown, ChevronLeft, ChevronRight, FileText, Eye } from 'lucide-react';
 import { DocumentListItem } from '../types/documents.types';
+import { formatDocumentType, formatDocumentStatus } from '../../../shared/utils/domainLabels';
 import { formatFileSize } from '../../../shared/utils/fileUtils';
 
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
@@ -95,10 +96,10 @@ export function DocumentTable({
                 <td className="px-3 py-2.5 w-[130px] max-w-[130px]">
                   <div className="flex flex-col items-start gap-0.5">
                     <span className="inline-flex px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-600 border border-slate-200">
-                      {doc.ownerType}
+                      {formatDocumentType(doc.ownerType)}
                     </span>
-                    <span className="text-xs font-medium text-slate-700 truncate w-full" title={doc.ownerDisplayName || `${doc.ownerType} #${doc.ownerId || 'N/A'}`}>
-                      {doc.ownerDisplayName || `${doc.ownerType} #${doc.ownerId || 'N/A'}`}
+                    <span className="text-xs font-medium text-slate-700 truncate w-full" title={doc.ownerDisplayName || `${formatDocumentType(doc.ownerType)} #${doc.ownerId || 'N/A'}`}>
+                      {doc.ownerDisplayName || `${formatDocumentType(doc.ownerType)} #${doc.ownerId || 'N/A'}`}
                     </span>
                     {doc.documentCategory && (
                       <span className="text-[10px] text-slate-500 truncate w-full" title={doc.documentCategory}>{doc.documentCategory}</span>
@@ -113,7 +114,7 @@ export function DocumentTable({
                     doc.status === 'DRAFT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                     'bg-slate-100 text-slate-700 border-slate-200'
                   }`}>
-                    {doc.status}
+                    {formatDocumentStatus(doc.status)}
                   </span>
                 </td>
 

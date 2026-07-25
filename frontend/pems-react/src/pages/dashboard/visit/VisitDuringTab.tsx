@@ -93,8 +93,11 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
   const [selectedPartnerForDoc, setSelectedPartnerForDoc] = useState("");
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const [docError, setDocError] = useState("");
-  // Documents added THIS session. The real persistence is the backend (partnersApi.addDocument);
-  // this list is session-only display and is intentionally NOT cached in localStorage.
+  // Documents added THIS session. The real record is the backend (partnersApi.addDocument), but
+  // there is no "documents uploaded during visit X" query to rehydrate this list from — a document
+  // here can be linked to any partner name typed in, not just the visit's own delegation. So this
+  // display list is mirrored into localStorage keyed by visitInstanceId, purely to survive a page
+  // reload; it is not the source of truth for the document itself.
   const [uploadedDocuments, setUploadedDocuments] = useState<Array<{
     id: number;
     fileName: string;
@@ -102,6 +105,17 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     partner: string;
     uploadedAt: string;
   }>>([]);
+  const uploadedDocumentsStorageKey = visitInstanceId ? `visitDuringTab.uploadedDocuments.${visitInstanceId}` : null;
+
+  useEffect(() => {
+    if (!uploadedDocumentsStorageKey) return;
+    try {
+      const cached = localStorage.getItem(uploadedDocumentsStorageKey);
+      if (cached) setUploadedDocuments(JSON.parse(cached));
+    } catch {
+      // Corrupt cache entry — start from an empty list rather than crash the tab.
+    }
+  }, [uploadedDocumentsStorageKey]);
 
   const [selectedPartnerForContact, setSelectedPartnerForContact] = useState("");
   const [contactSaveSuccess, setContactSaveSuccess] = useState(false);
@@ -180,7 +194,13 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
         partner: selectedPartnerForDoc,
         uploadedAt: vietnamNowDateTimeLocal().replace('T', ' ')
       };
-      setUploadedDocuments(prev => [...prev, newDoc]);
+      setUploadedDocuments(prev => {
+        const next = [...prev, newDoc];
+        if (uploadedDocumentsStorageKey) {
+          try { localStorage.setItem(uploadedDocumentsStorageKey, JSON.stringify(next)); } catch {}
+        }
+        return next;
+      });
       setPartnerDocFile(null);
       if (docFileInputRef.current) {
         docFileInputRef.current.value = "";
@@ -412,7 +432,13 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                             </div>
                             <button
                               type="button"
-                              onClick={() => setUploadedDocuments(uploadedDocuments.filter(d => d.id !== doc.id))}
+                              onClick={() => setUploadedDocuments(prev => {
+                                const next = prev.filter(d => d.id !== doc.id);
+                                if (uploadedDocumentsStorageKey) {
+                                  try { localStorage.setItem(uploadedDocumentsStorageKey, JSON.stringify(next)); } catch {}
+                                }
+                                return next;
+                              })}
                               className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
                             >
                               <X className="w-4 h-4" />

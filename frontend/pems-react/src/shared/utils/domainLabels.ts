@@ -43,6 +43,11 @@ export const formatAttendanceStatus = (v: unknown) => labelFrom(ATTENDANCE_STATU
 const DOCUMENT_TYPE: Record<string, string> = {
   GENERAL: 'Tài liệu chung',
   VISIT: 'Theo đoàn tiếp khách',
+  PARTNER: 'Đối tác',
+  MINUTES: 'Biên bản',
+  NEWS: 'Tin tức',
+  LOGISTICS: 'Hậu cần',
+  REPORT: 'Báo cáo',
 };
 export const formatDocumentType = (v: unknown) => labelFrom(DOCUMENT_TYPE, v, 'documentType');
 

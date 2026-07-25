@@ -7,6 +7,8 @@ import { resolveFileUrl } from '../../../shared/utils/resolveFileUrl';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { formatDocumentType, formatDocumentStatus, formatVisitStatus, formatMinutesStatus, formatNewsStatus } from '../../../shared/utils/domainLabels';
+import { PROFILE_STATUS_LABELS } from '../../../features/partners/types/partners.types';
 
 interface DocumentDetailModalProps {
   documentId: number | null;
@@ -77,7 +79,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                 <>{ctx.expectedStartDate ? formatVietnamDateTime(ctx.expectedStartDate) : 'N/A'} -{' '}
                 {ctx.expectedEndDate ? formatVietnamDateTime(ctx.expectedEndDate) : 'N/A'}</>
               } />
-              <Row label="Trạng thái" value={ctx.requestStatus || 'N/A'} />
+              <Row label="Trạng thái" value={ctx.requestStatus ? formatVisitStatus(ctx.requestStatus) : 'N/A'} />
             </dl>
           </div>
         );
@@ -87,7 +89,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
             <p className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-1.5">Thông tin biên bản</p>
             <dl className="space-y-1">
               <Row label="Tên biên bản" value={ctx.minuteTitle || 'Chưa có'} />
-              <Row label="Trạng thái" value={ctx.status || 'N/A'} />
+              <Row label="Trạng thái" value={ctx.status ? formatMinutesStatus(ctx.status) : 'N/A'} />
               <Row label="Thuộc đoàn" value={`${ctx.visitTitle || 'Chưa có'} (REQ #${ctx.visitRequestId || 'N/A'})`} />
             </dl>
           </div>
@@ -99,7 +101,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
             <dl className="space-y-1">
               <Row label="Tên đối tác" value={ctx.partnerName || 'Chưa có'} />
               <Row label="Quốc gia" value={ctx.country || 'N/A'} />
-              <Row label="Trạng thái" value={ctx.status || 'N/A'} />
+              <Row label="Trạng thái" value={ctx.status ? (PROFILE_STATUS_LABELS[ctx.status as keyof typeof PROFILE_STATUS_LABELS] ?? ctx.status) : 'N/A'} />
               <Row label="Website" value={ctx.website ? <a href={ctx.website} target="_blank" rel="noreferrer" className="text-blue-600">{ctx.website}</a> : 'N/A'} />
               {ctx.profileSummary && <Row label="Ghi chú" value={<span className="italic text-xs">{ctx.profileSummary}</span>} />}
             </dl>
@@ -111,7 +113,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
             <p className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-1.5">Thông tin tin tức</p>
             <dl className="space-y-1">
               <Row label="Tiêu đề" value={ctx.title || 'Chưa có'} />
-              <Row label="Trạng thái" value={ctx.status || 'N/A'} />
+              <Row label="Trạng thái" value={ctx.status ? formatNewsStatus(ctx.status) : 'N/A'} />
               <Row label="Ngày xuất bản" value={ctx.publishedAt ? formatVietnamDateTime(ctx.publishedAt) : 'Chưa xuất bản'} />
               {ctx.summary && <Row label="Tóm tắt" value={<span className="italic text-xs">{ctx.summary}</span>} />}
             </dl>
@@ -183,7 +185,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                           detail.document.status === 'DRAFT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                           'bg-slate-100 text-slate-700 border-slate-200'
                         }`}>
-                          {detail.document.status}
+                          {formatDocumentStatus(detail.document.status)}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{detail.file.originalFilename}</p>
@@ -209,8 +211,8 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Thông tin tài liệu</p>
                         <dl className="space-y-1 text-sm">
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tên tài liệu:</dt><dd className="font-semibold text-slate-800 min-w-0 break-words">{detail.document.title}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Loại:</dt><dd className="font-semibold text-slate-800">{detail.document.ownerType}{detail.document.documentCategory ? ` · ${detail.document.documentCategory}` : ''}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{detail.document.status}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Loại:</dt><dd className="font-semibold text-slate-800">{formatDocumentType(detail.document.ownerType)}{detail.document.documentCategory ? ` · ${detail.document.documentCategory}` : ''}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{formatDocumentStatus(detail.document.status)}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">File:</dt><dd className="font-semibold text-slate-800 min-w-0 break-words">{detail.file.originalFilename}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Dung lượng:</dt><dd className="font-semibold text-slate-800">{detail.file.fileSize ? formatFileSize(detail.file.fileSize) : 'N/A'}</dd></div>
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Google Drive:</dt><dd className="font-semibold text-slate-800">{previewUrl ? 'Có liên kết hợp lệ' : 'Chưa có liên kết hợp lệ'}</dd></div>

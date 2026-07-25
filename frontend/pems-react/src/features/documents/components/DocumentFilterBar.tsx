@@ -1,6 +1,10 @@
 import React from 'react';
 import { Search } from 'lucide-react';
 import { DocumentOwnerType, DocumentStatus } from '../types/documents.types';
+import { formatDocumentType, formatDocumentStatus } from '../../../shared/utils/domainLabels';
+
+const OWNER_TYPE_OPTIONS: DocumentOwnerType[] = ['GENERAL', 'VISIT', 'PARTNER', 'MINUTES', 'NEWS', 'LOGISTICS', 'REPORT'];
+const STATUS_OPTIONS: DocumentStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED'];
 
 interface Props {
   searchQuery: string;
@@ -55,13 +59,9 @@ export function DocumentFilterBar({
         className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white"
       >
         <option value="All">Tất cả loại</option>
-        <option value="GENERAL">GENERAL</option>
-        <option value="VISIT">VISIT</option>
-        <option value="PARTNER">PARTNER</option>
-        <option value="MINUTES">MINUTES</option>
-        <option value="NEWS">NEWS</option>
-        <option value="LOGISTICS">LOGISTICS</option>
-        <option value="REPORT">REPORT</option>
+        {OWNER_TYPE_OPTIONS.map((type) => (
+          <option key={type} value={type}>{formatDocumentType(type)}</option>
+        ))}
       </select>
 
       <select
@@ -70,9 +70,9 @@ export function DocumentFilterBar({
         className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white"
       >
         <option value="All">Tất cả trạng thái</option>
-        <option value="DRAFT">DRAFT</option>
-        <option value="PUBLISHED">PUBLISHED</option>
-        <option value="ARCHIVED">ARCHIVED</option>
+        {STATUS_OPTIONS.map((status) => (
+          <option key={status} value={status}>{formatDocumentStatus(status)}</option>
+        ))}
       </select>
 
       {campusOptions && (
