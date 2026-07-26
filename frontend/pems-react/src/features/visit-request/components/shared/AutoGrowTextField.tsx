@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { isOverCharacterLimit, shouldShowCharacterCount } from './characterCount';
 
 interface Props {
   value: string;
@@ -35,7 +37,9 @@ export const AutoGrowTextField: React.FC<Props> = ({
   value, onChange, onBlur, hasError, maxLength, placeholder, ariaLabel,
   disabled, maxRows = 4, isCell, className = '', testId,
 }) => {
+  const { t } = useTranslation(['validation']);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [focused, setFocused] = useState(false);
 
   const resize = useCallback(() => {
     const el = ref.current;
@@ -65,9 +69,10 @@ export const AutoGrowTextField: React.FC<Props> = ({
     return () => observer.disconnect();
   }, [resize]);
 
-  const over = maxLength !== undefined && value.length > maxLength;
-  // A counter on every name field would be noise; it appears as the limit comes into view.
-  const showCounter = maxLength !== undefined && value.length >= maxLength * 0.8;
+  const over = isOverCharacterLimit(value, maxLength);
+  // A counter on every name field would be noise; it appears while the field is being worked in,
+  // or once the limit comes into view (plan §14).
+  const showCounter = shouldShowCharacterCount({ value, maxLength, focused, hasError });
 
   const base = isCell
     ? `w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-[#004c91] ${
@@ -102,13 +107,16 @@ export const AutoGrowTextField: React.FC<Props> = ({
             + value.slice(el.selectionEnd ?? value.length);
           onChange(next);
         }}
-        onBlur={onBlur}
-        onFocus={resize}
+        onBlur={() => { setFocused(false); onBlur?.(); }}
+        onFocus={() => { setFocused(true); resize(); }}
         className={`${base} ${className}`}
       />
       {showCounter && (
-        <p className={`mt-0.5 text-right text-[11px] ${over ? 'font-bold text-red-600' : 'text-slate-400'}`}>
-          {value.length}/{maxLength}
+        <p
+          data-testid={testId ? `${testId}-counter` : undefined}
+          className={`mt-0.5 text-right text-[11px] ${over ? 'font-bold text-red-600' : 'text-slate-400'}`}
+        >
+          {t('validation:characterCount', { current: value.length, max: maxLength })}
         </p>
       )}
     </div>

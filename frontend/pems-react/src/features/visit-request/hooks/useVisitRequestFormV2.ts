@@ -29,6 +29,7 @@ import {
   saveVisitRequestV2Draft,
   type VisitRequestV2OtpContext,
 } from '../utils/visitRequestV2DraftStorage';
+import { countFieldErrors } from '../utils/formErrorNavigation';
 import { visitRequestApi, type CampusProcessingChoice } from '../api/visitRequestApi';
 import {
   createVisitRequestV2,
@@ -215,6 +216,12 @@ export const useVisitRequestFormV2 = (
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Index of the campus card holding the first server/client error — the UI expands + focuses it. */
   const [firstErrorCampusIndex, setFirstErrorCampusIndex] = useState<number | null>(null);
+  /**
+   * Bumped every time a submit comes back invalid. The form watches it to move the caret to the
+   * first bad field — a plain boolean could not, because two failed submits in a row would not
+   * change it and the second one would leave the user staring at an unchanged screen.
+   */
+  const [focusErrorsToken, setFocusErrorsToken] = useState(0);
 
   // OTP phase state (public mode; server-driven presentation values, same as v1)
   const [sessionToken, setSessionToken] = useState<string | null>(null);
@@ -455,6 +462,9 @@ export const useVisitRequestFormV2 = (
         }
       }
       if (firstCampusIndex !== null) setFirstErrorCampusIndex(firstCampusIndex);
+      // A rejection from the SERVER lands on a field just like a client-side one, so it gets the
+      // same treatment: the user should not have to find it themselves.
+      if (mappedAny) setFocusErrorsToken(n => n + 1);
       return mappedAny;
     },
     [form],
@@ -583,7 +593,13 @@ export const useVisitRequestFormV2 = (
       const idx = campusErrors.findIndex(e => e != null);
       if (idx >= 0) setFirstErrorCampusIndex(idx);
     }
-    setSubmitError(t('validation:fixErrorsBeforeContinue'));
+    // "Fill in all required fields" says nothing about how much is left. A count does, and it is
+    // the difference between "one more box" and "I have barely started".
+    const count = countFieldErrors(errors);
+    setSubmitError(count > 0
+      ? t('validation:fixErrorsCount', { count })
+      : t('validation:fixErrorsBeforeContinue'));
+    setFocusErrorsToken(n => n + 1);
     onInvalid?.(errors);
   });
 
@@ -892,6 +908,8 @@ export const useVisitRequestFormV2 = (
     setSubmitError,
     firstErrorCampusIndex,
     setFirstErrorCampusIndex,
+    /** Increments on every invalid submit — the form moves the caret to the first bad field. */
+    focusErrorsToken,
     // OTP phase (public mode)
     sessionToken,
     maskedEmail,

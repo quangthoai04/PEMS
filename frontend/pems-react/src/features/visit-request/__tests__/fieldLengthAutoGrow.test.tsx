@@ -93,7 +93,12 @@ describe('length rules carry a real message (plan §18)', () => {
     expect(message, `${path} produced no message`).toBeTruthy();
     // Zod's untranslated default is the thing we are ruling out.
     expect(message).not.toMatch(/String must contain at most/i);
-    expect(message).toContain(String(max));
+    // The limit is stated in the reader's own digit grouping — "2,000" in English, "2.000" in
+    // Vietnamese — because "2000" beside a date-heavy form reads as a year.
+    expect(message).toContain(max.toLocaleString('en-US'));
+    // And it says WHICH field, so the user is not left hunting a long form for the full box.
+    expect(message).toMatch(/^\S/);
+    expect(message).not.toMatch(/^(Must not exceed|Không được vượt quá)/);
   });
 
   it.each(cases)('%s at exactly %i characters is accepted', (_path, max, apply) => {

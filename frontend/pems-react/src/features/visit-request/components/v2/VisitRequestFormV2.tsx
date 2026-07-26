@@ -15,9 +15,11 @@ import { V2_MAX_CAMPUSES } from '../../schema/visitRequestV2.schema';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import { campusVisitHasUserContent } from '../../utils/visitRequestV2Form';
+import { focusFirstInvalidField } from '../../utils/formErrorNavigation';
 import { hasMeaningfulV2Data } from '../../utils/visitRequestV2DraftStorage';
 import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
+import { PhoneField } from '../shared/PhoneField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
@@ -72,6 +74,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
+  const formRef = useRef<HTMLFormElement>(null);
 
   // ── Authenticated create: who processes each campus (backend re-authorizes everything). ──
   const { user } = useAuthContext();
@@ -137,9 +140,26 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     const cv = form.getValues('campusVisits')[vm.firstErrorCampusIndex];
     if (!cv) return;
     setOpenKeys(prev => new Set(prev).add(cv.clientKey));
-    cardRefs.current.get(cv.clientKey)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const card = cardRefs.current.get(cv.clientKey);
+    // Guarded because scrolling is a nicety and expanding the card is not: in a headless DOM
+    // `scrollIntoView` does not exist, and letting it throw here would abandon the effect before
+    // the state that actually matters had been applied.
+    if (typeof card?.scrollIntoView === 'function') {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     vm.setFirstErrorCampusIndex(null);
   }, [vm.firstErrorCampusIndex, form, vm]);
+
+  // …and then the caret lands ON the offending field (plan §19). Deferred by a tick because the
+  // card above may only just have been expanded, and a field inside a `hidden` body cannot take
+  // focus — running in the same commit would silently focus nothing.
+  useEffect(() => {
+    if (vm.focusErrorsToken === 0) return;
+    const timer = window.setTimeout(() => {
+      focusFirstInvalidField(formRef.current ?? document);
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [vm.focusErrorsToken]);
 
   const campusLabel = useCallback(
     (cv: VisitRequestV2Schema['campusVisits'][number], index: number): string => {
@@ -251,7 +271,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   }, [isSelfRegistrant]);
 
   return (
-    <form id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
+    <form ref={formRef} id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
       {/* ── Restore Draft Modal ── */}
       <AnimatePresence>
         {vm.draftAvailableAt !== null && (
@@ -462,7 +482,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
-            <input data-testid="v2-registrant-phone" {...register('registerInfo.phone')} placeholder="+84…" className={inputCls(!!regErr?.phone, false, false)} />
+            <PhoneField
+              field={register('registerInfo.phone')}
+              hasError={!!regErr?.phone}
+              error={regErr?.phone?.message}
+              testId="v2-registrant-phone"
+            />
           </FormField>
           <FormField label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
             <input type="email" data-testid="v2-registrant-email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
@@ -503,7 +528,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={cpErr?.phone?.message} showValidIcon={false}>
-            <input {...register('contactPoint.phone')} placeholder="+84…" className={inputCls(!!cpErr?.phone, false, false)} />
+            <PhoneField
+              field={register('contactPoint.phone')}
+              hasError={!!cpErr?.phone}
+              error={cpErr?.phone?.message}
+              testId="v2-contact-phone"
+            />
           </FormField>
           <FormField label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false}>
             <input type="email" {...register('contactPoint.email')} className={inputCls(!!cpErr?.email, false, false)} />

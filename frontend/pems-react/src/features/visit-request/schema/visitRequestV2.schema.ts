@@ -35,36 +35,75 @@ const defaultT: ValidationTranslator = (key, options) =>
   i18n.t(key, { ns: 'validation', ...options }) as string;
 
 /**
+ * "2000" reads as a year; "2.000" reads as a count. Grouped in the reader's own convention, since
+ * Vietnamese and English disagree about which separator means which.
+ */
+const groupDigits = (n: number): string =>
+  n.toLocaleString(i18n.language?.startsWith('en') ? 'en-US' : 'vi-VN');
+
+/**
+ * A bounded string whose over-limit message NAMES the field and says how far over it is
+ * (plan §15). "Vượt quá giới hạn" on its own leaves the user hunting through a long form for
+ * whichever box is too full, and pasted text is the usual way to get here — so the message states
+ * the field, the ceiling and the current length, and nothing is silently truncated to fit.
+ */
+const bounded = (base: z.ZodString, max: number, fieldLabel: string, t: ValidationTranslator) =>
+  base.superRefine((value, ctx) => {
+    if (value.length <= max) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: t('maxLengthFieldWithCurrent', {
+        field: fieldLabel, max: groupDigits(max), current: groupDigits(value.length),
+      }),
+    });
+  });
+
+/** Shorthand for fields where the exact overflow count adds nothing (email, nationality…). */
+const maxLenMessage = (t: ValidationTranslator, fieldLabel: string, max: number) =>
+  t('maxLengthField', { field: fieldLabel, max: groupDigits(max) });
+
+/**
  * Accepts "0912345678" as well as "+84912345678" — see `shared/utils/phoneNumber`, which mirrors
  * the backend rule. The value is normalized to E.164 on submit, not here, so the user keeps seeing
  * what they typed while the form is open.
+ *
+ * `fieldKey` names WHICH phone is wrong: a form carries three of them (registrant, primary contact,
+ * per-campus operational contact) and "Số điện thoại không hợp lệ" beside any of them left the user
+ * guessing. The message also states the accepted shapes, because "invalid" without an example is a
+ * guessing game the user loses several times before finding the rule (plan §17).
  */
-const buildPhoneSchema = (t: ValidationTranslator) => z
-  .string()
-  .trim()
-  .min(1, t('phoneRequired'))
-  .refine(isValidPhone, { message: t('phoneInvalid') });
+const buildPhoneSchema = (t: ValidationTranslator, fieldKey: string) => {
+  const label = t(`fields.${fieldKey}`);
+  return z
+    .string()
+    .trim()
+    .min(1, t('requiredField', { field: label }))
+    .refine(isValidPhone, { message: t('phoneInvalidField', { field: label }) });
+};
 
-const buildEmailSchema = (t: ValidationTranslator) => z
-  .string()
-  .trim()
-  .min(1, t('emailRequired'))
-  .email(t('emailInvalid'))
-  .max(150, t('maxLength', { max: 150 }));
+const buildEmailSchema = (t: ValidationTranslator, fieldKey: string) => {
+  const label = t(`fields.${fieldKey}`);
+  return z
+    .string()
+    .trim()
+    .min(1, t('requiredField', { field: label }))
+    .email(t('emailInvalidField', { field: label }))
+    .max(150, maxLenMessage(t, label, 150));
+};
 
-const buildPersonSchema = (t: ValidationTranslator) => z.object({
-  fullName: z.string().trim().min(1, t('fullNameRequired')).max(150, t('maxLength', { max: 150 })),
-  jobTitle: z.string().trim().min(1, t('jobTitleRequired')).max(150, t('maxLength', { max: 150 })),
-  organization: z.string().trim().min(1, t('organizationRequired')).max(200, t('maxLength', { max: 200 })),
-  nationality: z.string().trim().min(1, t('nationalityRequired')).max(100, t('maxLength', { max: 100 })),
-});
-
-/**
- * The support list may be EMPTY, but a row that EXISTS must be complete — the underlying
- * visit_guest_members columns are NOT NULL, so a half-filled row would fail at insert rather than
- * as a form message. Same shape as a guest.
- */
-const buildSupportPersonSchema = buildPersonSchema;
+const buildPersonSchema = (t: ValidationTranslator, role: 'visitor' | 'support') => {
+  const label = (field: string) => t(`fields.${role}${field}`);
+  return z.object({
+    fullName: bounded(
+      z.string().trim().min(1, t('requiredField', { field: label('FullName') })), 150, label('FullName'), t),
+    jobTitle: bounded(
+      z.string().trim().min(1, t('requiredField', { field: label('JobTitle') })), 150, label('JobTitle'), t),
+    organization: bounded(
+      z.string().trim().min(1, t('requiredField', { field: label('Organization') })), 200, label('Organization'), t),
+    nationality: bounded(
+      z.string().trim().min(1, t('requiredField', { field: label('Nationality') })), 100, label('Nationality'), t),
+  });
+};
 
 const noHtml = (t: ValidationTranslator) => (v: string | undefined) =>
   !v || (!v.includes('<') && !v.includes('>'));
@@ -84,39 +123,46 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
     startDatetime: z.string().min(1, t('startTimeRequired')),
     endDatetime: z.string().min(1, t('endTimeRequired')),
 
-    delegationName: z.string().trim().min(1, t('delegationNameRequired')).max(200, t('maxLength', { max: 200 })),
+    delegationName: bounded(
+      z.string().trim().min(1, t('delegationNameRequired')), 200, t('fields.delegationName'), t),
     visitType: z.enum(['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER']),
-    visitTypeOther: z.string().max(200, t('maxLength', { max: 200 })).optional().default(''),
-    purpose: z.string().trim().min(1, t('purposeRequired')).max(2000, t('maxLength', { max: 2000 })),
-    workingContent: z.string().trim().min(1, t('workingContentRequired')).max(4000, t('maxLength', { max: 4000 })),
+    visitTypeOther: bounded(z.string(), 200, t('fields.visitTypeOther'), t).optional().default(''),
+    purpose: bounded(z.string().trim().min(1, t('purposeRequired')), 2000, t('fields.purpose'), t),
+    workingContent: bounded(
+      z.string().trim().min(1, t('workingContentRequired')), 4000, t('fields.workingContent'), t),
 
     visitors: z
-      .array(buildPersonSchema(t))
+      .array(buildPersonSchema(t, 'visitor'))
       .min(1, t('atLeastOneVisitor'))
-      .max(V2_MAX_MEMBERS_PER_CAMPUS, t('maxLength', { max: V2_MAX_MEMBERS_PER_CAMPUS })),
+      .max(V2_MAX_MEMBERS_PER_CAMPUS, t('maxMembers', { max: V2_MAX_MEMBERS_PER_CAMPUS })),
+    // The support list may be EMPTY, but a row that EXISTS must be complete — the underlying
+    // visit_guest_members columns are NOT NULL, so a half-filled row would fail at insert rather
+    // than as a form message.
     supportTeam: z
-      .array(buildSupportPersonSchema(t))
-      .max(V2_MAX_MEMBERS_PER_CAMPUS, t('maxLength', { max: V2_MAX_MEMBERS_PER_CAMPUS })),
+      .array(buildPersonSchema(t, 'support'))
+      .max(V2_MAX_MEMBERS_PER_CAMPUS, t('maxMembers', { max: V2_MAX_MEMBERS_PER_CAMPUS })),
 
     // Every field is required: this is the person a campus actually calls on the day, and all four
     // columns are relied on downstream.
     operationalContact: z.object({
-      fullName: z.string().trim().min(1, t('fullNameRequired')).max(150, t('maxLength', { max: 150 })),
-      organization: z.string().trim().min(1, t('organizationRequired')).max(200, t('maxLength', { max: 200 })),
-      phone: buildPhoneSchema(t),
-      email: buildEmailSchema(t),
+      fullName: bounded(
+        z.string().trim().min(1, t('requiredField', { field: t('fields.operationalFullName') })),
+        150, t('fields.operationalFullName'), t),
+      organization: bounded(
+        z.string().trim().min(1, t('requiredField', { field: t('fields.operationalOrganization') })),
+        200, t('fields.operationalOrganization'), t),
+      phone: buildPhoneSchema(t, 'operationalPhone'),
+      email: buildEmailSchema(t, 'operationalEmail'),
     }),
 
     workingLanguage: z.enum(['EN', 'VI']),
-    transportationNote: z
-      .string()
-      .max(2000, t('transportationNoteMaxLength', { max: 2000 }))
+    transportationNote: bounded(z.string(), 2000, t('fields.transportationNote'), t)
       .refine(noHtml(t), { message: t('noHtmlChars') })
       .optional()
       .default(''),
     mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
-    mediaConsentNote: z.string().max(2000, t('maxLength', { max: 2000 })).optional().default(''),
-    notes: z.string().max(2000, t('maxLength', { max: 2000 })).optional().default(''),
+    mediaConsentNote: bounded(z.string(), 2000, t('fields.mediaConsentNote'), t).optional().default(''),
+    notes: bounded(z.string(), 2000, t('fields.notes'), t).optional().default(''),
   })
   .superRefine((data, ctx) => {
     if (data.visitType === 'OTHER' && (!data.visitTypeOther || data.visitTypeOther.trim() === '')) {
@@ -171,18 +217,26 @@ export const buildVisitRequestV2Schema = (
 ) => z
   .object({
     registerInfo: z.object({
-      fullName: z.string().trim().min(1, t('fullNameRequired')).max(150, t('maxLength', { max: 150 })),
-      organization: z.string().trim().min(1, t('organizationRequired')).max(200, t('maxLength', { max: 200 })),
-      jobTitle: z.string().trim().min(1, t('jobTitleOrDeptRequired')).max(150, t('maxLength', { max: 150 })),
-      phone: buildPhoneSchema(t),
-      email: buildEmailSchema(t),
-      nationality: z.string().trim().min(1, t('nationalityRequired')).max(100, t('maxLength', { max: 100 })),
+      fullName: bounded(
+        z.string().trim().min(1, t('fullNameRequired')), 150, t('fields.registrantFullName'), t),
+      organization: bounded(
+        z.string().trim().min(1, t('organizationRequired')), 200, t('fields.registrantOrganization'), t),
+      jobTitle: bounded(
+        z.string().trim().min(1, t('jobTitleOrDeptRequired')), 150, t('fields.registrantJobTitle'), t),
+      phone: buildPhoneSchema(t, 'registrantPhone'),
+      email: buildEmailSchema(t, 'registrantEmail'),
+      nationality: bounded(
+        z.string().trim().min(1, t('nationalityRequired')), 100, t('fields.registrantNationality'), t),
     }),
     contactPoint: z.object({
-      fullName: z.string().trim().min(1, t('fullNameRequired')).max(150, t('maxLength', { max: 150 })),
-      organization: z.string().trim().min(1, t('organizationRequired')).max(200, t('maxLength', { max: 200 })),
-      phone: buildPhoneSchema(t),
-      email: buildEmailSchema(t),
+      fullName: bounded(
+        z.string().trim().min(1, t('requiredField', { field: t('fields.contactFullName') })),
+        150, t('fields.contactFullName'), t),
+      organization: bounded(
+        z.string().trim().min(1, t('requiredField', { field: t('fields.contactOrganization') })),
+        200, t('fields.contactOrganization'), t),
+      phone: buildPhoneSchema(t, 'contactPhone'),
+      email: buildEmailSchema(t, 'contactEmail'),
     }),
     partnerSelectionMode: z.enum(['EXISTING_PARTNER', 'NEW_ORGANIZATION']).default('NEW_ORGANIZATION'),
     partnerId: z.number().nullable().optional(),

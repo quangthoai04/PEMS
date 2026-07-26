@@ -72,7 +72,7 @@ export default function ContactIdentityActions({
   allowedActions,
   onChanged,
 }: Props) {
-  const { t } = useTranslation(['visitRequestV2']);
+  const { t } = useTranslation(['visitRequestV2', 'validation']);
   const isPending = primaryContactAccessStatus === 'PENDING_CONFIRMATION';
 
   const can = useMemo(() => ({
@@ -177,7 +177,9 @@ export default function ContactIdentityActions({
       </label>
       <input
         id={`ci-${field}`}
-        type={field === 'email' ? 'email' : 'text'}
+        type={field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'}
+        inputMode={field === 'phone' ? 'tel' : undefined}
+        placeholder={field === 'phone' ? '0912345678' : undefined}
         required={required}
         maxLength={MAX[field]}
         className={fieldCls}
@@ -188,8 +190,19 @@ export default function ContactIdentityActions({
           if (field === 'email') setEmailError(null);
         }}
         aria-invalid={field === 'email' && emailError ? true : undefined}
-        aria-describedby={field === 'email' && emailError ? 'ci-email-error' : undefined}
+        aria-describedby={
+          field === 'email' && emailError ? 'ci-email-error'
+            : field === 'phone' ? 'ci-phone-hint'
+              : undefined
+        }
       />
+      {/* The accepted shapes, stated up front. This form is server-validated, so the alternative is
+          a round trip that comes back saying only "không hợp lệ" (plan §18). */}
+      {field === 'phone' && (
+        <p id="ci-phone-hint" className="mt-1 text-xs font-medium text-slate-500">
+          {t('validation:phoneHint')}
+        </p>
+      )}
       {field === 'email' && emailError && (
         <p id="ci-email-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">
           {emailError}

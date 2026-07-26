@@ -135,6 +135,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 setResult(null);
                 setFormGeneration(g => g + 1);
               }}
+              onClose={onClose}
             />
           ) : (
             <VisitRequestFormV2
@@ -158,24 +159,14 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
           )}
         </div>
 
-        {/* Sticky footer — the form portals its submit actions in here */}
+        {/* Sticky footer — the form portals its submit actions in here. Once the receipt is on
+            screen it stays empty: closing is one of the receipt's own actions, and a second
+            "done" button beside it only made the user wonder whether they differed. */}
         <div
           ref={setFooterEl}
           data-testid="v2-modal-footer"
           className="border-t border-slate-200 bg-white px-4 py-3 sm:px-6"
-        >
-          {result && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#003a6f]"
-              >
-                {t('visitRequestV2:modal.done')}
-              </button>
-            </div>
-          )}
-        </div>
+        />
       </div>
 
       <AnimatePresence>

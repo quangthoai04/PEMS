@@ -75,6 +75,12 @@ interface Props {
   hasError?: boolean;
   placeholder?: string;
   isCell?: boolean;
+  /** Wrapper test id — react-select does not forward arbitrary props to its input. */
+  testId?: string;
+  /** Accessible name for the search input (the visible label lives in the FormField). */
+  ariaLabel?: string;
+  /** `id` on the search input, so a `<label htmlFor>` can point at it. */
+  inputId?: string;
 }
 
 export const OrganizationCombobox: React.FC<Props> = ({
@@ -84,10 +90,21 @@ export const OrganizationCombobox: React.FC<Props> = ({
   hasError,
   placeholder,
   isCell,
+  testId,
+  ariaLabel,
+  inputId,
 }) => {
   const { t } = useTranslation(['visitRequest']);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputValue, setInputValue] = React.useState('');
+  /**
+   * True only while the CURRENT value is one the user picked from the results. It drives a light
+   * "already in the system" note — deliberately NOT the big green "Đã chọn đối tác có sẵn" badge,
+   * which belongs to the request-level partner field alone: these organizations are snapshots and
+   * may well belong to a different body than the request's partner. Repeating the badge everywhere
+   * would suggest they are all the same partner record.
+   */
+  const [pickedFromList, setPickedFromList] = React.useState(false);
 
   const loadOptions = useCallback(
     (inputValue: string): Promise<OrgOption[]> =>
@@ -113,46 +130,61 @@ export const OrganizationCombobox: React.FC<Props> = ({
   const selectedOption = value ? { value, label: value } : null;
 
   return (
-    <AsyncCreatableSelect<OrgOption>
-      cacheOptions
-      defaultOptions={true}
-      loadOptions={loadOptions}
-      value={selectedOption}
-      inputValue={inputValue}
-      onInputChange={(val, { action }) => {
-        if (action === 'input-change') {
-          setInputValue(val);
-          onChange(val);
-        } else if (action === 'set-value' || action === 'input-blur') {
+    <div data-testid={testId}>
+      <AsyncCreatableSelect<OrgOption>
+        cacheOptions
+        defaultOptions={true}
+        loadOptions={loadOptions}
+        value={selectedOption}
+        inputValue={inputValue}
+        inputId={inputId}
+        aria-label={ariaLabel}
+        onInputChange={(val, { action }) => {
+          if (action === 'input-change') {
+            setInputValue(val);
+            setPickedFromList(false);
+            onChange(val);
+          } else if (action === 'set-value' || action === 'input-blur') {
+            setInputValue('');
+          }
+        }}
+        onChange={(opt: SingleValue<OrgOption>, meta) => {
           setInputValue('');
-        }
-      }}
-      onChange={(opt: SingleValue<OrgOption>, meta) => {
-        if (meta.action === 'clear') {
-          setInputValue('');
-          onChange('');
-        } else {
-          setInputValue('');
+          if (meta.action === 'clear') {
+            setPickedFromList(false);
+            onChange('');
+            return;
+          }
+          // `create-option` is free text the user invented; only `select-option` is a real match.
+          setPickedFromList(meta.action === 'select-option');
           onChange(opt?.value ?? '');
-        }
-      }}
-      onBlur={() => {
-        if (inputValue.trim()) {
-          onChange(inputValue.trim());
-        }
-        setInputValue('');
-        if (onBlur) onBlur();
-      }}
-      placeholder={placeholder ?? t('visitRequest:select.orgComboPlaceholder')}
-      styles={buildStyles(hasError, isCell)}
-      isClearable={true}
-      noOptionsMessage={() => t('visitRequest:select.orgComboNoOptions')}
-      loadingMessage={() => t('visitRequest:select.searching')}
-      formatCreateLabel={(inputValue) => t('visitRequest:select.useInput', { input: inputValue })}
-      menuPortalTarget={document.body}
-      menuPosition="fixed"
-      closeMenuOnScroll={true}
-      maxMenuHeight={240}
-    />
+        }}
+        onBlur={() => {
+          if (inputValue.trim()) {
+            onChange(inputValue.trim());
+          }
+          setInputValue('');
+          if (onBlur) onBlur();
+        }}
+        placeholder={placeholder ?? t('visitRequest:select.orgComboPlaceholder')}
+        styles={buildStyles(hasError, isCell)}
+        isClearable={true}
+        noOptionsMessage={() => t('visitRequest:select.orgComboNoOptions')}
+        loadingMessage={() => t('visitRequest:select.searching')}
+        formatCreateLabel={(inputValue) => t('visitRequest:select.useInput', { input: inputValue })}
+        menuPortalTarget={document.body}
+        menuPosition="fixed"
+        closeMenuOnScroll={true}
+        maxMenuHeight={240}
+      />
+      {pickedFromList && !isCell && (
+        <p
+          data-testid={testId ? `${testId}-known` : undefined}
+          className="mt-1 text-xs font-medium text-green-700"
+        >
+          {t('visitRequest:select.orgKnown')}
+        </p>
+      )}
+    </div>
   );
 };

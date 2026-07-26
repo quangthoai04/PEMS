@@ -1,23 +1,31 @@
-import React from 'react';
-import { CheckCircle2, ExternalLink, FilePlus2, Info, List } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, CheckCircle2, ClipboardCopy, ExternalLink, FilePlus2, Info, List, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VisitRequestV2SubmittedSummary } from './VisitRequestV2SubmittedSummary';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
+import { showSuccessToast } from '../../../../shared/utils/toast';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 
 interface Props {
   response: V2CreateResponse;
+  /**
+   * The IMMUTABLE snapshot of what was submitted, deep-cloned before the request left the browser.
+   * "Xem lại thông tin đã gửi" renders from THIS and never re-reads the form or asks the server:
+   * the public flow has no session, so there is no detail endpoint it could legitimately call.
+   */
   values: VisitRequestV2Schema;
   /**
-   * The three actions of plan §8. Each is optional because not every surface can offer it: an
+   * Session-dependent actions. Each is optional because not every surface can honour it: an
    * anonymous visitor has no session, so sending them to a dashboard route would only bounce them
    * to a login screen. Offering an action that cannot work is worse than not offering it.
    */
   onViewRequest?: () => void;
   onGoToList?: () => void;
   onCreateAnother?: () => void;
-  /** Rendered under the actions — a link home on the public route, Close in the modal. */
+  /** Dismisses the receipt. The modal shell supplies it; the standalone route uses `footer`. */
+  onClose?: () => void;
+  /** Rendered under the actions — a link home on the public route. */
   footer?: React.ReactNode;
 }
 
@@ -25,21 +33,41 @@ const statusKey = (status: string) => `visitRequestV2:success.status.${status}`;
 
 /**
  * Post-submit receipt for a v2 create, shared by the standalone route and the modal shell so the
- * confirmation a user sees never depends on which surface they started from.
+ * confirmation a user sees never depends on which surface they started from. Only the ACTIONS
+ * differ, driven by what the caller can actually reach.
  *
  * This is deliberately a SCREEN and not a toast. The request code is the only handle the user has
  * on what they just filed — a notification that disappears after four seconds is not somewhere to
  * put it. The toast is a companion, not the record.
  */
 export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
-  response, values, onViewRequest, onGoToList, onCreateAnother, footer,
+  response, values, onViewRequest, onGoToList, onCreateAnother, onClose, footer,
 }) => {
   const { t } = useTranslation(['visitRequestV2']);
+  const [showSubmitted, setShowSubmitted] = useState(false);
+  /** null = not attempted; true = in the clipboard; false = the browser refused (no permission). */
+  const [copied, setCopied] = useState<boolean | null>(null);
 
   // The lookup-recovered receipt (an uncertain result that turned out COMPLETED) knows the request
   // exists but not its campus breakdown — it answered an anonymous caller. Show what is known.
   const recovered = response.recoveredByLookup === true;
   const campusCount = response.campusCount || response.instances.length;
+  const code = response.requestCode;
+
+  const copyCode = async () => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      showSuccessToast(t('visitRequestV2:success.codeCopied'), 'v2-code-copied');
+    } catch {
+      // Clipboard access can be denied outright (insecure origin, permission policy). Saying
+      // "copied" when nothing was copied is worse than admitting it — the code stays selectable.
+      setCopied(false);
+    }
+  };
+
+  const actionBtn = 'inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50';
 
   return (
     <>
@@ -49,7 +77,7 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
           <div className="min-w-0">
             <h2 className="text-lg font-extrabold text-green-900">{t('visitRequestV2:success.title')}</h2>
             <p data-testid="v2-success-code" className="text-sm text-green-800">
-              {t('visitRequestV2:success.requestCode', { code: response.requestCode })}
+              {t('visitRequestV2:success.requestCode', { code })}
             </p>
           </div>
         </div>
@@ -79,6 +107,7 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
         </dl>
 
         <p className="mt-4 text-sm font-semibold text-green-900">{t('visitRequestV2:success.saved')}</p>
+        <p className="mt-1 text-sm text-green-800">{t('visitRequestV2:success.keepCode')}</p>
         {response.idempotent && (
           <p className="mt-1 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
         )}
@@ -90,49 +119,78 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
           </div>
         )}
 
-        {(onViewRequest || onGoToList || onCreateAnother) && (
-          <div className="mt-6 flex flex-wrap gap-2">
-            {onViewRequest && (
-              <button
-                type="button"
-                data-testid="v2-success-view"
-                onClick={onViewRequest}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#003a6f]"
-              >
-                <ExternalLink className="h-4 w-4" /> {t('visitRequestV2:success.viewRequest')}
-              </button>
-            )}
-            {onGoToList && (
-              <button
-                type="button"
-                data-testid="v2-success-list"
-                onClick={onGoToList}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                <List className="h-4 w-4" /> {t('visitRequestV2:success.goToList')}
-              </button>
-            )}
-            {onCreateAnother && (
-              <button
-                type="button"
-                data-testid="v2-success-new"
-                onClick={onCreateAnother}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                <FilePlus2 className="h-4 w-4" /> {t('visitRequestV2:success.createAnother')}
-              </button>
-            )}
-          </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {onViewRequest && (
+            <button
+              type="button"
+              data-testid="v2-success-view"
+              onClick={onViewRequest}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#003a6f]"
+            >
+              <ExternalLink className="h-4 w-4" /> {t('visitRequestV2:success.viewRequest')}
+            </button>
+          )}
+          {onGoToList && (
+            <button type="button" data-testid="v2-success-list" onClick={onGoToList} className={actionBtn}>
+              <List className="h-4 w-4" /> {t('visitRequestV2:success.goToList')}
+            </button>
+          )}
+          {/* Available on EVERY surface, because it needs nothing but the snapshot already in
+              memory — this is how an anonymous visitor reads back what they sent. */}
+          {!recovered && (
+            <button
+              type="button"
+              data-testid="v2-success-review"
+              aria-expanded={showSubmitted}
+              aria-controls="v2-success-submitted"
+              onClick={() => setShowSubmitted(v => !v)}
+              className={onViewRequest ? actionBtn : 'inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#003a6f]'}
+            >
+              <List className="h-4 w-4" />
+              {showSubmitted
+                ? t('visitRequestV2:success.hideSubmitted')
+                : t('visitRequestV2:success.reviewSubmitted')}
+            </button>
+          )}
+          {code && (
+            <button type="button" data-testid="v2-success-copy" onClick={() => void copyCode()} className={actionBtn}>
+              {copied ? <Check className="h-4 w-4 text-green-600" /> : <ClipboardCopy className="h-4 w-4" />}
+              {t('visitRequestV2:success.copyCode')}
+            </button>
+          )}
+          {onCreateAnother && (
+            <button type="button" data-testid="v2-success-new" onClick={onCreateAnother} className={actionBtn}>
+              <FilePlus2 className="h-4 w-4" /> {t('visitRequestV2:success.createAnother')}
+            </button>
+          )}
+          {onClose && (
+            <button type="button" data-testid="v2-success-close" onClick={onClose} className={actionBtn}>
+              <X className="h-4 w-4" /> {t('visitRequestV2:success.close')}
+            </button>
+          )}
+        </div>
+
+        {copied !== null && (
+          <p
+            data-testid="v2-success-copy-status"
+            role="status"
+            className={`mt-2 text-sm font-semibold ${copied ? 'text-green-800' : 'text-amber-800'}`}
+          >
+            {copied
+              ? t('visitRequestV2:success.codeCopied')
+              : t('visitRequestV2:success.codeCopyFailed', { code })}
+          </p>
         )}
 
         {footer && <div className="mt-6">{footer}</div>}
       </div>
 
-      {/* Full per-campus summary from the immutable submitted snapshot. Skipped for a
-          lookup-recovered receipt: that path never received the per-campus response, and an
-          empty summary would read as "no campuses" rather than "not returned here". */}
-      {!recovered && (
-        <div className="mt-6">
+      {/* Full per-campus summary from the immutable submitted snapshot — revealed on request rather
+          than always on, so the receipt leads with the one thing the user must not lose (the code).
+          Skipped entirely for a lookup-recovered receipt: that path never received the per-campus
+          response, and an empty summary would read as "no campuses" rather than "not returned here". */}
+      {!recovered && showSubmitted && (
+        <div id="v2-success-submitted" className="mt-6">
           <VisitRequestV2SubmittedSummary response={response} values={values} />
         </div>
       )}

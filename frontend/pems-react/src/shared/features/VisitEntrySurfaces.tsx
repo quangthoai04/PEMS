@@ -23,7 +23,12 @@ export const VisitEntrySurfaces: React.FC<Props> = ({ cta, draftNamespace, onV2S
       onClose={cta.closeV2Modal}
       mode={cta.v2Mode}
       draftNamespace={draftNamespace}
-      onSuccess={() => { cta.closeV2Modal(); onV2Success?.(); }}
+      // Success does NOT close the modal. It used to call `cta.closeV2Modal()` here, which unmounted
+      // the shell in the same tick as it rendered the receipt — so on every public CTA (hero, final
+      // CTA, FAQ, Partners) the form simply vanished after the OTP and a four-second toast was the
+      // only evidence a request had been created. The user is the one who decides when they are done
+      // reading the request code; closing is `onClose`, and nothing else.
+      onSuccess={() => { onV2Success?.(); }}
     />
   </>
 );

@@ -15,7 +15,7 @@
  */
 import { test, expect, type Browser, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { fillSchedule } from './realstackHelpers';
+import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
 
 const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
 const SECRET = process.env.PEMS_E2E_AUTH_SECRET ?? '';
@@ -102,7 +102,7 @@ async function fillCampus0(page: Page, delegation: string) {
   await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');
 
   await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
-  await page.getByTestId('campus-opcontact-org').fill('Đơn vị đầu mối');
+  await fillOperationalOrganization(page, 0, 'Đơn vị đầu mối');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }

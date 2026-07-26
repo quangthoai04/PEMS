@@ -298,6 +298,7 @@
     "partnerPlaceholder": "Select an existing organization or choose a new one...",
     "partnerComboPlaceholder": "Type or search for an organization/partner...",
     "partnerSelected": "An existing partner is selected",
+    "orgKnown": "✓ Already in the system",
     "partnerFreeText": "This is a free-text organization (not linked to an existing partner).",
     "clear": "Clear",
     "phoneSearchPlaceholder": "Search country or code...",

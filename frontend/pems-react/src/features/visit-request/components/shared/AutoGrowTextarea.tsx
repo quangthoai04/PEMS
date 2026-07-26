@@ -1,13 +1,17 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { isOverCharacterLimit, shouldShowCharacterCount } from './characterCount';
 
 interface Props extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> {
   value: string;
   onChange: (value: string) => void;
   hasError?: boolean;
-  /** Shows a "typed / limit" counter under the field. Omit for no counter. */
+  /** The schema limit. Drives the counter; never truncates. */
   maxLength?: number;
   /** Never shrink below this many rows. */
   minRows?: number;
+  /** Test id for the counter, so a test can assert it is absent as well as present. */
+  counterTestId?: string;
 }
 
 /**
@@ -21,9 +25,12 @@ interface Props extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 
  * limit, whereas the schema should tell the user they are over it.
  */
 export const AutoGrowTextarea: React.FC<Props> = ({
-  value, onChange, hasError, maxLength, minRows = 3, className = '', onFocus, ...rest
+  value, onChange, hasError, maxLength, minRows = 3, className = '', onFocus, onBlur,
+  counterTestId, ...rest
 }) => {
+  const { t } = useTranslation(['validation']);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [focused, setFocused] = useState(false);
 
   const resize = useCallback(() => {
     const el = ref.current;
@@ -58,7 +65,8 @@ export const AutoGrowTextarea: React.FC<Props> = ({
     return () => observer.disconnect();
   }, [resize]);
 
-  const over = maxLength !== undefined && value.length > maxLength;
+  const over = isOverCharacterLimit(value, maxLength);
+  const showCounter = shouldShowCharacterCount({ value, maxLength, focused, hasError });
 
   return (
     <div>
@@ -67,7 +75,8 @@ export const AutoGrowTextarea: React.FC<Props> = ({
         rows={minRows}
         value={value}
         onChange={e => { onChange(e.target.value); resize(); }}
-        onFocus={e => { resize(); if (onFocus) onFocus(e); }}
+        onFocus={e => { setFocused(true); resize(); if (onFocus) onFocus(e); }}
+        onBlur={e => { setFocused(false); if (onBlur) onBlur(e); }}
         className={`w-full resize-none overflow-hidden rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-1 ${
           hasError
             ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
@@ -75,9 +84,12 @@ export const AutoGrowTextarea: React.FC<Props> = ({
         } ${className}`}
         {...rest}
       />
-      {maxLength !== undefined && (
-        <p className={`mt-1 text-right text-xs ${over ? 'font-bold text-red-600' : 'text-slate-400'}`}>
-          {value.length}/{maxLength}
+      {showCounter && (
+        <p
+          data-testid={counterTestId}
+          className={`mt-1 text-right text-xs ${over ? 'font-bold text-red-600' : 'text-slate-400'}`}
+        >
+          {t('validation:characterCount', { current: value.length, max: maxLength })}
         </p>
       )}
     </div>
