@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Policies;
 using PEMS.Shared;
@@ -117,16 +118,178 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         var now = _clock.VietnamNow;
+        var leaderCampusId = isStaffLeader ? _currentUser.PrimaryCampusId : null;
+
         foreach (var item in items)
         {
             item.AllowedActions = BuildAllowedActions(item, tab, userId, now);
+            item.Capabilities = BuildRowCapabilities(item, tab, leaderCampusId, now);
+            // The flat list stays the ENABLED subset, so a button can never appear for a verdict that
+            // refused it. Actions with no verdict (navigation, cancel, the approval decision) keep
+            // their existing booleans and are already in the list.
+            foreach (var capability in item.Capabilities)
+                if (capability.Enabled && !item.AllowedActions.Contains(capability.Code))
+                    item.AllowedActions.Add(capability.Code);
+
+            AttachCampusCapabilities(item, tab, leaderCampusId, now);
+
             item.TabType = ResolveTabType(tab, roleCode);
             item.CurrentUserRelation = ResolveRelation(item, tab, roleCode, isStaffLeader);
+            item.RelationLabel = VisitRowLabels.Relation(item.CurrentUserRelation);
+            item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, item.CampusStatus);
             // Read-only when no mutating action is available (only VIEW_DETAIL, or none).
-            item.IsReadOnly = !item.AllowedActions.Any(a => a != "VIEW_DETAIL");
+            item.IsReadOnly = !item.AllowedActions.Any(a => a != VisitListActions.ViewDetail);
         }
 
+        await AttachInstanceChangeSummariesAsync(items, userId, cancellationToken);
+        await AttachNextTasksAsync(items, tab, userId, leaderCampusId, now, cancellationToken);
+
         return PaginatedResult<VisitRequestManagementItemDto>.Create(items, request.Page, request.PageSize, totalItems);
+    }
+
+    /// <summary>
+    /// Attaches the change summary to INSTANCE-level rows (the campus actors' tabs).
+    ///
+    /// Only the request-level query did this, which meant the one audience whose job is to react to a
+    /// change — the campus Staff Leader looking at their own campus — was the only audience never shown
+    /// that something had changed. Scope is the row's OWN instance, so this cannot reveal a sibling.
+    /// Rows that already carry a summary (request-level) are left alone.
+    /// </summary>
+    private async Task AttachInstanceChangeSummariesAsync(
+        List<VisitRequestManagementItemDto> items, ulong userId, CancellationToken ct)
+    {
+        var pending = items.Where(i => i.VisitInstanceId is not null && i.ChangeSummary is null).ToList();
+        if (pending.Count == 0) return;
+
+        var visibleByRequest = new Dictionary<ulong, HashSet<ulong>>();
+        var campusNameByInstance = new Dictionary<ulong, string>();
+        foreach (var item in pending)
+        {
+            var instanceId = item.VisitInstanceId!.Value;
+            if (!visibleByRequest.TryGetValue(item.VisitRequestId, out var set))
+                visibleByRequest[item.VisitRequestId] = set = new HashSet<ulong>();
+            set.Add(instanceId);
+            if (item.CampusName is not null) campusNameByInstance[instanceId] = item.CampusName;
+        }
+
+        var summaries = await VisitChangeSummaryBuilder.BuildAsync(
+            _context, userId, visibleByRequest.Keys.ToList(), visibleByRequest, campusNameByInstance, ct);
+
+        foreach (var item in pending)
+            if (summaries.TryGetValue(item.VisitRequestId, out var summary))
+                item.ChangeSummary = summary;
+    }
+
+    /// <summary>
+    /// Mutation verdicts for the ROW itself. Today that means the Host handover, which is the action
+    /// §11 moves onto the list — and the one whose refusal ("chỉ được chuyển ít nhất 6 giờ trước")
+    /// the list has to be able to state rather than silently omit.
+    ///
+    /// A REQUEST-LEVEL row (multi-campus summary, <c>VisitInstanceId == null</c>) gets nothing: the
+    /// handover picks a campus, and a summary row cannot say which. Those verdicts live on the campus
+    /// progress items instead — see <see cref="AttachCampusCapabilities"/>.
+    /// </summary>
+    private List<VisitActionCapabilityDto> BuildRowCapabilities(
+        VisitRequestManagementItemDto item, string tab, ulong? leaderCampusId, DateTime now)
+    {
+        var capabilities = new List<VisitActionCapabilityDto>();
+        if (tab == TabAttending || tab == TabRegistered) return capabilities; // read-only relations
+        if (item.VisitInstanceId is null || item.CampusStatus is null) return capabilities;
+        if (leaderCampusId is null || item.CampusId != leaderCampusId) return capabilities;
+
+        capabilities.Add(TransferHostVerdict(
+            item.RequestStatus, item.CampusStatus, item.PlannedStartAt,
+            item.CurrentHostUserId, item.VisitInstanceId.Value, item.CampusName, now));
+        return capabilities;
+    }
+
+    /// <summary>
+    /// Per-campus verdicts for the multi-campus accordion. Each campus is measured on its own start
+    /// and its own status, so handing over the Host at one campus is never gated by a sibling — and a
+    /// campus this caller does not lead simply comes back refused with the reason, never enabled.
+    /// </summary>
+    private void AttachCampusCapabilities(
+        VisitRequestManagementItemDto item, string tab, ulong? leaderCampusId, DateTime now)
+    {
+        if (item.CampusProgressItems.Count == 0) return;
+        foreach (var campus in item.CampusProgressItems)
+        {
+            if (tab == TabAttending || tab == TabRegistered) continue;
+            if (leaderCampusId is null || campus.CampusId != leaderCampusId) continue;
+
+            var verdict = TransferHostVerdict(
+                item.RequestStatus, campus.InstanceStatus, campus.PlannedStartAt,
+                campus.HostUserId, campus.VisitInstanceId, campus.CampusName, now);
+            campus.Capabilities.Add(verdict);
+            campus.CanTransferHost = verdict.Enabled;
+        }
+    }
+
+    /// <summary>
+    /// One handover verdict, from the SAME policy the transfer command re-checks inside its
+    /// transaction — so the list cannot offer a handover the command would then refuse.
+    /// </summary>
+    private static VisitActionCapabilityDto TransferHostVerdict(
+        string requestStatus, string? instanceStatus, DateTime? plannedStartAt,
+        ulong? currentHostUserId, ulong visitInstanceId, string? campusName, DateTime now)
+    {
+        var start = plannedStartAt ?? now;
+        var decision = VisitMutationPolicy.Evaluate(new VisitMutationContext(
+            VisitMutationAction.TransferHost, requestStatus, instanceStatus ?? string.Empty,
+            start, now, VisitViewerRelations.CampusLeader));
+
+        // Handing the role over presupposes there IS one. Before approval the Host arrives WITH the
+        // decision, which is a different action — offering "chuyển" there would just confuse it.
+        var noHost = currentHostUserId is null;
+        var enabled = decision.Allowed && !noHost;
+
+        return new VisitActionCapabilityDto
+        {
+            Code = VisitFormActions.TransferHost,
+            Scope = VisitActionScopes.Instance,
+            VisitInstanceId = (long)visitInstanceId,
+            Enabled = enabled,
+            DisabledReasonCode = enabled
+                ? null
+                : noHost ? VisitMutationErrorCodes.LifecycleNotAllowed : decision.ErrorCode,
+            DisabledReason = enabled
+                ? null
+                : noHost ? "Cơ sở này chưa có người phụ trách để chuyển giao." : decision.DisabledReason,
+            CutoffAt = decision.CutoffAt,
+            PlannedStartAt = plannedStartAt,
+            CampusName = campusName,
+            RequiredLeadHours = decision.RequiredLeadHours,
+        };
+    }
+
+    /// <summary>
+    /// Attaches "what should I do next" to every row, batched over the page.
+    ///
+    /// Read-only relations (the attending and registered tabs) are handed the empty task rather than
+    /// skipped: "Không có nhiệm vụ cần xử lý" is an answer, and a missing field would leave the UI to
+    /// invent one from the status — the exact thing this contract exists to stop.
+    /// </summary>
+    private async Task AttachNextTasksAsync(
+        List<VisitRequestManagementItemDto> items, string tab, ulong userId,
+        ulong? leaderCampusId, DateTime now, CancellationToken ct)
+    {
+        if (items.Count == 0) return;
+
+        var rows = items.Select(item => new VisitNextTaskBuilder.Row(
+            item.VisitRequestId,
+            item.VisitInstanceId,
+            item.RequestStatus,
+            item.CampusStatus,
+            item.PlannedStartAt,
+            item.PlannedEndAt,
+            ViewerIsHost: tab != TabAttending && tab != TabRegistered && item.CurrentUserIsHost,
+            ViewerLeadsCampus: tab != TabAttending && tab != TabRegistered
+                && leaderCampusId is not null && item.CampusId == leaderCampusId,
+            item.AllowedActions)).ToList();
+
+        var tasks = await VisitNextTaskBuilder.BuildAsync(_context, userId, rows, now, ct);
+        for (var i = 0; i < items.Count; i++)
+            items[i].NextTask = tasks[i];
     }
 
     // â”€â”€ Instance-level (attending tab, or responsible tab for campus actors) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -334,6 +497,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.c.CampusId,
                 CampusStatus = x.c.Status,
                 x.c.CurrentHostUserId,
+                x.c.RowVersion,
 
                 x.c.PlannedStartAt,
                 x.c.PlannedEndAt,
@@ -466,6 +630,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 CreatedByUserId = r.CreatedBy,
                 CurrentHostUserId = r.CurrentHostUserId,
                 HostName = hostName,
+                RowVersion = r.RowVersion,
 
                 CurrentUserIsHost = r.CurrentHostUserId == userId,
                 VisitorUserId = r.VisitorUserId,
@@ -764,6 +929,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                         InstanceStatus = i.Status,
                         HostUserId = i.CurrentHostUserId,
                         HostName = i.CurrentHostUserId.HasValue && userNames.TryGetValue(i.CurrentHostUserId.Value, out var ihn) ? ihn : null,
+                        RowVersion = i.RowVersion,
                         DecisionNote = i.DecisionNote,
                         DecidedBy = i.DecidedBy,
                         DecidedByName = i.DecidedBy.HasValue && userNames.TryGetValue(i.DecidedBy.Value, out var idbn) ? idbn : null,

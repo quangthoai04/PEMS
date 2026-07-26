@@ -77,7 +77,9 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceGuestMember>();
         modelBuilder.Ignore<VisitRequestIdentityChange>();
         modelBuilder.Ignore<VisitRequestIdentityChangeEvent>();
-        modelBuilder.Ignore<VisitInstanceAmendment>();
+        // Amendments are NOT pruned either: the management list counts the ones awaiting a decision on
+        // the campuses the caller can see, which is what drives both the "cần duyệt thay đổi" badge and
+        // the REVIEW_AMENDMENT next task.
         modelBuilder.Ignore<VisitInstanceAmendmentChange>();
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
@@ -114,7 +116,9 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<EmailDraft>();
         modelBuilder.Ignore<EmailDraftRecipient>();
         modelBuilder.Ignore<EmailDraftAttachment>();
-        modelBuilder.Ignore<Notification>();
+        // Notifications are NOT pruned: the management-list query reads them to work out what has
+        // changed on a row since the caller last looked, so by this slice's own rule ("map what these
+        // handlers use") they belong in the model.
         modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<ApiConfiguration>();
         modelBuilder.Ignore<ApiUsageQuota>();
