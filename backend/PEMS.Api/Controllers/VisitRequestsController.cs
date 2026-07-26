@@ -546,6 +546,27 @@ public sealed class VisitRequestsController : ControllerBase
 
     public sealed record AmendmentDecisionBody(string? Note);
 
+    /// <summary>
+    /// Current campus Staff Leader hands this instance's Host role to a different eligible user, after
+    /// the campus was approved. Deliberately NOT the approve-and-assign endpoint: that one gives a
+    /// campus its first Host as part of the approval decision and refuses to run twice, so it cannot
+    /// express a handover — no before/after, no notification to the outgoing Host, and it would have to
+    /// re-open a settled approval to run at all.
+    /// </summary>
+    [HttpPost("/api/v2/visit-instances/{visitInstanceId}/host-transfer")]
+    [Authorize]
+    public async Task<IActionResult> TransferHost(
+        ulong visitInstanceId,
+        [FromBody] PEMS.Application.Delegations.Commands.TransferVisitHost.TransferVisitHostBody body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.TransferVisitHost.TransferVisitHostCommand(
+                visitInstanceId, body.NewHostUserId, body.Reason, body.ExpectedRowVersion),
+            cancellationToken);
+        return Ok(result);
+    }
+
     /// <summary>Scoped, masked business-history timeline of the request.</summary>
     [HttpGet("/api/v2/visit-requests/{visitRequestId}/history")]
     [Authorize]

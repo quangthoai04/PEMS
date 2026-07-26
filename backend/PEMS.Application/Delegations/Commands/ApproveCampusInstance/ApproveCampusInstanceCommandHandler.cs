@@ -81,37 +81,15 @@ public sealed class ApproveCampusInstanceCommandHandler
                 "Khi duyệt yêu cầu, bạn phải chọn host chính thức.",
                 VisitRequestErrorCodes.HostRequiredOnApproval);
 
-        // ── Host eligibility (mirrors trg_visit_campuses_assignment_validate_*):
-        //    an ACTIVE IC-department STAFF of the same campus, or the approving Staff
-        //    Leader themself (self-host). Another Staff Leader is never a valid host. ──
-        var host = await _db.Users
-            .Include(u => u.Role)
-            .FirstOrDefaultAsync(u => u.UserId == request.HostUserId, cancellationToken)
-            ?? throw new NotFoundException("User", request.HostUserId);
-
-        var hostDepartmentType = await _db.Departments
-            .Where(d => d.DepartmentId == host.DepartmentId)
-            .Select(d => d.DepartmentType)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var isIcStaff = host.Role.RoleCode == RoleCodes.Staff
-            && host.SubRole == UserSubRoles.Staff
-            && host.PrimaryCampusId == instance.CampusId
-            && host.Status == UserStatuses.Active
-            && hostDepartmentType == "IC";
-        var isSelfHost = host.UserId == actorId
-            && host.Role.RoleCode == RoleCodes.Staff
-            && host.SubRole == UserSubRoles.Leader
-            && host.PrimaryCampusId == instance.CampusId
-            && host.Status == UserStatuses.Active;
-
-        if (!isIcStaff && !isSelfHost)
-        {
-            throw new BusinessRuleException(
-                host.Role.RoleCode == RoleCodes.Staff && host.SubRole == UserSubRoles.Leader
-                    ? "Staff Leader chỉ được chọn chính mình làm host, không được chọn Staff Leader khác."
-                    : "Host được chọn phải là IC Staff đang hoạt động thuộc đúng cơ sở, hoặc chính bạn.");
-        }
+        // ── Host eligibility — the SHARED rule (VisitHostEligibility), so the transfer path that runs
+        //    after approval cannot admit somebody this path would refuse. ──
+        var (eligibility, host) = await VisitHostEligibility.EvaluateAsync(
+            _db, request.HostUserId, instance.CampusId, actorId, cancellationToken);
+        if (eligibility == HostEligibility.NotFound || host is null)
+            throw new NotFoundException("User", request.HostUserId);
+        if (eligibility != HostEligibility.Eligible)
+            throw new BusinessRuleException(VisitHostEligibility.MessageFor(eligibility));
+        var isSelfHost = host.UserId == actorId;
 
         //    this window. Calendar-event overlaps are surfaced as warnings by the host-candidate
         //    API and stay selectable; hosting two delegations at once is not blocked anymore,

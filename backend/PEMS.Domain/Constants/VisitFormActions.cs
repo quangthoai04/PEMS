@@ -57,3 +57,15 @@ public static class VisitActionScopes
     public const string Request = "REQUEST";
     public const string Instance = "INSTANCE";
 }
+
+/// <summary>
+/// audit_logs.action values for visit events that have no revision row of their own. The history read
+/// model maps from THESE (immutable, written once by the command) rather than from message text.
+/// </summary>
+public static class VisitAuditActions
+{
+    /// <summary>One campus's Host role was handed to a different user after approval.</summary>
+    public const string HostTransferred = "HOST_TRANSFERRED";
+    /// <summary>audit_logs.source_type for the handover — groups it apart from form revisions.</summary>
+    public const string HostTransferSourceType = "HOST_TRANSFER";
+}

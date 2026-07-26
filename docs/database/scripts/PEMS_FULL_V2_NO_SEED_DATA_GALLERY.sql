@@ -12829,6 +12829,7 @@ BEGIN
   DECLARE v_coord_sub_role VARCHAR(30);
   DECLARE v_coord_campus_id BIGINT UNSIGNED;
   DECLARE v_source VARCHAR(40);
+  DECLARE v_is_host_transfer TINYINT DEFAULT 0;
 
   SELECT status, registrant_user_id INTO v_request_status, v_registrant_user_id
   FROM visit_requests
@@ -12838,7 +12839,23 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot update campus instance to active status under a cancelled request';
   END IF;
 
-  IF OLD.current_host_user_id IS NOT NULL AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id) THEN
+  -- ── Host handover (2026-07-26): a deliberate re-assignment on an already-decided, not-yet-started
+  --    campus. The Host does change in real life — leave, transfer, someone leaving the university —
+  --    and every other path to changing it stays refused, so this cannot happen as a side effect. ──
+  IF OLD.current_host_user_id IS NOT NULL
+     AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
+     AND NEW.current_host_user_id IS NOT NULL
+     AND OLD.status IN ('ASSIGNED','BEFORE_VISIT')
+     AND NEW.status = OLD.status
+     AND NEW.host_assigned_by IS NOT NULL
+     AND NEW.host_assigned_at IS NOT NULL
+     AND NOT (NEW.host_assigned_at <=> OLD.host_assigned_at) THEN
+    SET v_is_host_transfer = 1;
+  END IF;
+
+  IF OLD.current_host_user_id IS NOT NULL
+     AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
+     AND v_is_host_transfer = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Official host cannot be changed after first assignment';
   END IF;
 
@@ -12917,8 +12934,11 @@ BEGIN
       IF v_registrant_user_id IS NULL OR v_registrant_user_id <> NEW.decided_by THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host decision is only valid on a request registered by that same Staff';
       END IF;
-      IF NEW.current_host_user_id IS NULL OR NEW.current_host_user_id <> NEW.decided_by
-         OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_by <> NEW.decided_by THEN
+      -- On a handover the campus keeps its original self-host DECISION but no longer its original
+      -- host, so this trio only has to hold while that decision is being recorded.
+      IF v_is_host_transfer = 0
+         AND (NEW.current_host_user_id IS NULL OR NEW.current_host_user_id <> NEW.decided_by
+              OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_by <> NEW.decided_by) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host requires decided_by = host_assigned_by = current_host_user_id';
       END IF;
     ELSE
@@ -12932,11 +12952,16 @@ BEGIN
   END IF;
 
   IF NEW.host_assigned_by IS NOT NULL THEN
-    IF NEW.decided_by IS NOT NULL AND NEW.decided_by <> NEW.host_assigned_by THEN
+    -- decided_by and host_assigned_by are the same act only while the decision is being MADE. On a
+    -- later handover the assigning leader need not be the one who approved the campus months ago, and
+    -- demanding it would force the transfer to overwrite who approved the visit.
+    IF OLD.decided_by IS NULL AND NEW.decided_by IS NOT NULL
+       AND NEW.decided_by <> NEW.host_assigned_by THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must match decided_by when approving a campus instance';
     END IF;
     IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'INTERNAL_SELF_HOST'
-            AND NEW.decision_actor_role = 'STAFF') THEN
+            AND NEW.decision_actor_role = 'STAFF'
+            AND v_is_host_transfer = 0) THEN
       SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
       FROM users u JOIN roles r ON r.role_id = u.role_id
       WHERE u.user_id = NEW.host_assigned_by;
@@ -12946,6 +12971,8 @@ BEGIN
     END IF;
   END IF;
 
+  -- Host eligibility is UNCHANGED by the handover work: IC Staff of this campus, or the assigning
+  -- Staff Leader themself. The backend applies the identical rule (VisitHostEligibility) first.
   IF NEW.current_host_user_id IS NOT NULL THEN
     SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_host_role_code, v_host_sub_role, v_host_campus_id
     FROM users u JOIN roles r ON r.role_id = u.role_id

@@ -175,6 +175,8 @@ public static class VisitHistoryEventCodes
     public const string AmendmentWithdrawn = "AMENDMENT_WITHDRAWN";
     public const string AmendmentDecided = "AMENDMENT_DECIDED";
     public const string ContactIdentityChanged = "CONTACT_IDENTITY_CHANGED";
+    /// <summary>One campus's Host role was handed to a different user after approval.</summary>
+    public const string HostTransferred = "HOST_TRANSFERRED";
 }
 
 public sealed record VisitRequestHistoryResponse(

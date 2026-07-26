@@ -217,6 +217,28 @@ public sealed class GetVisitRequestHistoryQueryHandler
             }
         }
 
+        // ── Host handovers. These live in audit_logs rather than a revision table: a transfer changes
+        //    who runs the visit, not what the visit IS, so it writes no form revision by design. The
+        //    entry is read from the immutable audit row, scoped to the instances this viewer may see. ──
+        if (visibleInstanceIds.Count > 0)
+        {
+            var transfers = await _db.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == visit.VisitRequestId
+                            && a.Action == VisitAuditActions.HostTransferred
+                            && a.VisitInstanceId != null
+                            && visibleInstanceIds.Contains(a.VisitInstanceId!.Value))
+                .Select(a => new { a.AuditLogId, a.VisitInstanceId, a.ActorUserId, a.Reason, a.CreatedAt })
+                .ToListAsync(cancellationToken);
+            foreach (var tr in transfers)
+            {
+                Add(new VisitHistoryEntryDto(
+                    tr.CreatedAt, VisitHistoryEventCodes.HostTransferred, tr.VisitInstanceId,
+                    CampusOf(tr.VisitInstanceId), null, null, null, null, null,
+                    VisitAuditActions.HostTransferSourceType, tr.Reason, null, null, null),
+                    tr.ActorUserId);
+            }
+        }
+
         // ── Identity timeline (managers + HO only; masked emails only) ──
         if (includeIdentity)
         {
