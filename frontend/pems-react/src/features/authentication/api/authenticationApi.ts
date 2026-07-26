@@ -4,7 +4,6 @@ import type {
   AuthResponse,
   CampusOption,
   ChangePasswordRequest,
-  LoginPortal,
   MessageResponse,
 
   ResetPasswordRequest,
@@ -12,62 +11,15 @@ import type {
 } from '../types/authentication.types';
 
 export const authenticationApi = {
-  // ── Portal-specific login methods ────────────────────────────────────
+  // ── Login (portal/campus are resolved server-side from the account) ──
 
-  async loginInternal(email: string, password: string, selectedCampusId: number): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
-      email,
-      password,
-      loginPortal: 'INTERNAL' as LoginPortal,
-      selectedCampusId,
-    });
+  async login(email: string, password: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, { email, password });
     return data;
   },
 
-  async loginVisitor(email: string, password: string): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
-      email,
-      password,
-      loginPortal: 'VISITOR' as LoginPortal,
-    });
-    return data;
-  },
-
-  async loginGoogleInternal(idToken: string, selectedCampusId: number): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
-      idToken,
-      loginPortal: 'INTERNAL' as LoginPortal,
-      selectedCampusId,
-    });
-    return data;
-  },
-
-  async loginGoogleVisitor(idToken: string): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
-      idToken,
-      loginPortal: 'VISITOR' as LoginPortal,
-    });
-    return data;
-  },
-
-  // ── Generic (kept for AuthContext backward compat) ───────────────────
-
-  async login(email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: number | null): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.login, {
-      email,
-      password,
-      loginPortal,
-      selectedCampusId: loginPortal === 'INTERNAL' ? (selectedCampusId ?? null) : null,
-    });
-    return data;
-  },
-
-  async loginWithGoogle(idToken: string, loginPortal: LoginPortal, selectedCampusId?: number | null): Promise<AuthResponse> {
-    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, {
-      idToken,
-      loginPortal,
-      selectedCampusId: loginPortal === 'INTERNAL' ? (selectedCampusId ?? null) : null,
-    });
+  async loginWithGoogle(idToken: string): Promise<AuthResponse> {
+    const { data } = await httpClient.post<AuthResponse>(API_ENDPOINTS.auth.google, { idToken });
     return data;
   },
 

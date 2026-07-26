@@ -18,8 +18,8 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
 
-  login: (email: string, password: string, loginPortal: LoginPortal, selectedCampusId?: number | null) => Promise<AuthUser>;
-  loginWithGoogle: (idToken: string, loginPortal: LoginPortal, selectedCampusId?: number | null) => Promise<AuthUser>;
+  login: (email: string, password: string) => Promise<AuthUser>;
+  loginWithGoogle: (idToken: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   changePassword: (payload: ChangePasswordRequest) => Promise<void>;
@@ -90,42 +90,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
   }, []);
 
-  const login = useCallback(
-    async (email: string, password: string, portal: LoginPortal, campusId?: number | null) => {
-      const result = await authenticationApi.login(email, password, portal, campusId);
-      authStorage.setTokens(result.accessToken, result.refreshToken);
+  // Portal/campus are no longer chosen by the caller — the backend resolves them from the
+  // account and returns them as part of the user (roleCode / primaryCampusId). Derive the
+  // local tracking state from that response instead of a client-supplied value.
+  const applyLoginResult = useCallback(
+    (result: AuthUser) => {
+      const portal: LoginPortal = result.roleCode === 'VISITOR' ? 'VISITOR' : 'INTERNAL';
       authStorage.setLoginPortal(portal);
-      if (portal === 'INTERNAL' && campusId) {
-        authStorage.setSelectedCampusId(campusId.toString());
-        setSelectedCampusId(campusId.toString());
+      if (portal === 'INTERNAL' && result.primaryCampusId) {
+        authStorage.setSelectedCampusId(result.primaryCampusId);
+        setSelectedCampusId(result.primaryCampusId);
       } else {
         authStorage.clearSelectedCampusId();
         setSelectedCampusId(null);
       }
       setLoginPortal(portal);
-      applySession(result.user);
-      return result.user;
+      applySession(result);
     },
     [applySession],
   );
 
-  const loginWithGoogle = useCallback(
-    async (idToken: string, portal: LoginPortal, campusId?: number | null) => {
-      const result = await authenticationApi.loginWithGoogle(idToken, portal, campusId);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const result = await authenticationApi.login(email, password);
       authStorage.setTokens(result.accessToken, result.refreshToken);
-      authStorage.setLoginPortal(portal);
-      if (portal === 'INTERNAL' && campusId) {
-        authStorage.setSelectedCampusId(campusId.toString());
-        setSelectedCampusId(campusId.toString());
-      } else {
-        authStorage.clearSelectedCampusId();
-        setSelectedCampusId(null);
-      }
-      setLoginPortal(portal);
-      applySession(result.user);
+      applyLoginResult(result.user);
       return result.user;
     },
-    [applySession],
+    [applyLoginResult],
+  );
+
+  const loginWithGoogle = useCallback(
+    async (idToken: string) => {
+      const result = await authenticationApi.loginWithGoogle(idToken);
+      authStorage.setTokens(result.accessToken, result.refreshToken);
+      applyLoginResult(result.user);
+      return result.user;
+    },
+    [applyLoginResult],
   );
 
   const logout = useCallback(async () => {
