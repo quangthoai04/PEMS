@@ -10222,9 +10222,12 @@ COMMIT;
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 3. Seed Google Document AI config (INACTIVE until Admin tests it)
+-- 3. Seed Google Document AI config with the real PEMS production values.
+-- Only Service Account JSON remains empty; Admin may paste it from the UI,
+-- or the backend may resolve GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT.
 -- ---------------------------------------------------------------------
 INSERT INTO api_configurations (
+  api_config_id,
   api_code,
   name,
   provider_name,
@@ -10233,49 +10236,121 @@ INSERT INTO api_configurations (
   default_method,
   auth_type,
   settings_json,
+  credentials_json_encrypted,
   secret_ref,
+  data_sensitivity,
+  allows_provider_training,
+  retention_days,
   rate_limit_per_minute,
   monthly_quota,
   retry_enabled,
   max_retries,
+  cache_ttl_seconds,
+  last_test_status,
+  last_tested_at,
+  last_test_message,
   timeout_seconds,
   status,
-  data_sensitivity,
-  allows_provider_training,
-  retention_days,
-  created_by
+  created_at,
+  created_by,
+  updated_at,
+  updated_by,
+  deleted_at,
+  deleted_by
 )
 SELECT
+  21007,
   'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
   'Google Document AI - Business Card OCR',
   'GOOGLE_DOCUMENT_AI',
   'BUSINESS_CARD_OCR',
-  'https://us-documentai.googleapis.com',
+  'https://asia-southeast1-documentai.googleapis.com',
   'POST',
   'CUSTOM',
   JSON_OBJECT(
-    'project_id', '',
-    'location', 'us',
-    'processor_id', '',
-    'endpoint', 'us-documentai.googleapis.com',
+    'project_id', 'pems-production',
+    'location', 'asia-southeast1',
+    'processor_id', '9f4642de7b8f8b25',
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
     'max_file_size_mb', 10,
-    'allowed_mime_types', JSON_ARRAY('image/jpeg', 'image/png', 'image/webp', 'application/pdf')
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
   ),
+  NULL,
   'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
+  'CONFIDENTIAL',
+  FALSE,
+  30,
   20,
   1000,
   TRUE,
   2,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
   60,
   'INACTIVE',
-  'CONFIDENTIAL',
-  FALSE,
-  30,
-  1
+  CURRENT_TIMESTAMP,
+  1,
+  NULL,
+  NULL,
+  NULL,
+  NULL
 FROM DUAL
 WHERE NOT EXISTS (
-  SELECT 1 FROM api_configurations WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI'
+  SELECT 1
+  FROM api_configurations
+  WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI'
 );
+
+-- Normalize an existing row as well. This avoids the old WHERE NOT EXISTS seed
+-- leaving project/location/processor values empty or pointing to the US endpoint.
+UPDATE api_configurations
+SET
+  name = 'Google Document AI - Business Card OCR',
+  provider_name = 'GOOGLE_DOCUMENT_AI',
+  purpose = 'BUSINESS_CARD_OCR',
+  base_url = 'https://asia-southeast1-documentai.googleapis.com',
+  default_method = 'POST',
+  auth_type = 'CUSTOM',
+  settings_json = JSON_OBJECT(
+    'project_id', 'pems-production',
+    'location', 'asia-southeast1',
+    'processor_id', '9f4642de7b8f8b25',
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
+    'max_file_size_mb', 10,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
+  ),
+  credentials_json_encrypted = NULL,
+  secret_ref = 'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
+  data_sensitivity = 'CONFIDENTIAL',
+  allows_provider_training = FALSE,
+  retention_days = 30,
+  rate_limit_per_minute = 20,
+  monthly_quota = 1000,
+  retry_enabled = TRUE,
+  max_retries = 2,
+  cache_ttl_seconds = NULL,
+  last_test_status = NULL,
+  last_tested_at = NULL,
+  last_test_message = NULL,
+  timeout_seconds = 60,
+  status = 'INACTIVE',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = 1,
+  deleted_at = NULL,
+  deleted_by = NULL
+WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI';
 
 -- ---------------------------------------------------------------------
 -- 4. Seed GLOBAL monthly quota for the OCR config (current month)
