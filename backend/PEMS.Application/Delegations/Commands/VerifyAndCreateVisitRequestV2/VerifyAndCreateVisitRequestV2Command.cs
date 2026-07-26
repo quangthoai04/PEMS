@@ -30,4 +30,12 @@ public sealed record VerifyAndCreateVisitRequestV2Response(
     bool ContactClaimPending,
     IReadOnlyList<CreateVisitRequestV2CampusRef> Instances,
     bool Idempotent,
-    string Message);
+    string Message,
+    // ── The receipt (plan §15) ──
+    // Read from the request that was just committed. The public flow has no session and no list to
+    // fall back on, so this response is the ONLY thing that can tell the visitor their request
+    // exists, what it is called, and where it stands.
+    string Status,
+    /// <summary>Vietnam wall-clock "yyyy-MM-ddTHH:mm:ss" — no offset, like every other DATETIME here.</summary>
+    string SubmittedAt,
+    int CampusCount);
