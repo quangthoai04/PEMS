@@ -52,10 +52,47 @@ const MYSQL_PW = process.env.MYSQL_PASSWORD ?? '123456';
 const MYSQL_HOST = process.env.MYSQL_HOST ?? 'localhost';
 const MYSQL_PORT = process.env.MYSQL_PORT ?? '3306';
 
-if (['pems_db', 'pems_test', 'pems_pr3_test'].includes(DB)) {
+// Databases that hold real work and must never be the target of this harness.
+const PROTECTED_DATABASES = ['pems_db', 'pems_test', 'pems_pr3_test'];
+
+if (PROTECTED_DATABASES.includes(DB)) {
   console.error(`Refusing to use a protected database name: ${DB}`);
   process.exit(2);
 }
+
+// State the target out loud, every run. The canonical script carries its own
+// `CREATE DATABASE pems_db` / `USE pems_db` header, so "which database is this actually writing to"
+// is not answerable by reading the command line — and getting it wrong resets a working database.
+console.log(`[e2e] target database : ${DB}`);
+console.log(`[e2e] protected (never touched): ${PROTECTED_DATABASES.join(', ')}`);
+
+/**
+ * Fail closed if the retarget missed anything.
+ *
+ * `replaceAll('pems_db', DB)` is only as good as the assumption that every reference is spelled
+ * exactly that way. A backtick-quoted variant, a differently-cased one, or a new statement added to
+ * the canonical script later would sail through and be executed against the real database — the
+ * script's own `USE` wins over whatever database argument mysql was given.
+ */
+const assertRetargeted = (sqlText) => {
+  const leaks = [
+    [/CREATE\s+DATABASE[^;]*pems_db/i, 'CREATE DATABASE pems_db'],
+    [/\bUSE\s+`?pems_db`?/i, 'USE pems_db'],
+    [/\bpems_db\b/i, 'a bare pems_db reference'],
+  ].filter(([re]) => re.test(sqlText)).map(([, label]) => label);
+
+  if (leaks.length > 0) {
+    console.error(
+      `[e2e] ABORT — the retargeted script still references the production database:\n` +
+      leaks.map(l => `        • ${l}`).join('\n') +
+      `\n      Running it would write to pems_db regardless of the target argument.`);
+    process.exit(3);
+  }
+  console.log('[e2e] retarget verified: no CREATE DATABASE / USE / bare reference to pems_db remains');
+};
+
+/** The canonical schema is ~80 tables; anything far below that means the import silently half-ran. */
+const MIN_EXPECTED_TABLES = 70;
 
 const workDir = mkdtempSync(join(tmpdir(), 'pems-e2e-'));
 const publishDir = join(workDir, 'api');
@@ -73,11 +110,35 @@ const mysql = (sql, db) => spawnSync(
   { encoding: 'utf8' });
 
 const importMaster = () => {
-  // Replace the seed db name and stream the master into mysql.
+  // Replace the seed db name and stream the master into mysql. The retargeted text is verified
+  // BEFORE it reaches the server — after that it is too late to be careful.
   const sqlText = readFileSync(MASTER, 'utf8').replaceAll('pems_db', DB);
+  assertRetargeted(sqlText);
   const r = spawnSync(MYSQL, [`-u${MYSQL_USER}`, `-p${MYSQL_PW}`, `-h${MYSQL_HOST}`, `-P${MYSQL_PORT}`,
     '--default-character-set=utf8mb4', DB], { input: sqlText, encoding: 'utf8', maxBuffer: 1 << 28 });
   if (r.status !== 0) throw new Error(`master import failed: ${r.stderr}`);
+};
+
+/**
+ * Prove the import landed where it was supposed to, before a single test runs.
+ *
+ * A zero-table target is the signature of the script having executed somewhere else entirely: the
+ * canonical file used to redirect itself with `USE pems_db`, so the target could be created, left
+ * empty, and every table written to the production database instead. Counting tables here turns
+ * that into an immediate abort rather than a confusing wall of test failures.
+ */
+const assertTargetPopulated = () => {
+  const q = spawnSync(MYSQL, [`-u${MYSQL_USER}`, `-p${MYSQL_PW}`, `-h${MYSQL_HOST}`, `-P${MYSQL_PORT}`,
+    '-N', '-B', '-e',
+    `SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = '${DB}'`],
+    { encoding: 'utf8' });
+  const tables = Number((q.stdout ?? '').trim());
+  if (!Number.isFinite(tables) || tables < MIN_EXPECTED_TABLES) {
+    throw new Error(
+      `import verification failed: ${DB} has ${tables || 0} tables (expected >= ${MIN_EXPECTED_TABLES}). ` +
+      `The script may have written somewhere else — check for an un-retargeted USE statement.`);
+  }
+  console.log(`[e2e] import verified: ${DB} has ${tables} tables`);
 };
 
 // Resolve the seeded identities (by stable email) and write the opaque-key → identity profile file. The
@@ -149,7 +210,14 @@ const run = (cmd, args, opts = {}) => new Promise((res, rej) => {
 
 function cleanup() {
   try { if (backend && !backend.killed) backend.kill(); } catch { /* ignore */ }
-  mysql(`DROP DATABASE IF EXISTS \`${DB}\``);
+  // Re-check the target at the moment of dropping. DB is a constant today, but a DROP is the one
+  // statement here that cannot be taken back, and it should not depend on a check made 200 lines up.
+  if (PROTECTED_DATABASES.includes(DB)) {
+    console.error(`[e2e] refusing to drop a protected database: ${DB}`);
+  } else {
+    console.log(`[e2e] cleanup: dropping ${DB}`);
+    mysql(`DROP DATABASE IF EXISTS \`${DB}\``);
+  }
   try { rmSync(workDir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
@@ -160,6 +228,7 @@ try {
   console.log(`[e2e] create disposable DB ${DB} from master`);
   mysql(`DROP DATABASE IF EXISTS \`${DB}\`; CREATE DATABASE \`${DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   importMaster();
+  assertTargetPopulated();
 
   console.log('[e2e] write server-side auth profiles from actual seeded IDs');
   writeAuthProfiles();

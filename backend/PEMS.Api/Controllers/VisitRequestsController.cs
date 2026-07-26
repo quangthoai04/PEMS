@@ -577,4 +577,21 @@ public sealed class VisitRequestsController : ControllerBase
             cancellationToken);
         return Ok(result);
     }
+
+    /// <summary>
+    /// What actually changed in ONE timeline event: field before/after plus who joined or left the
+    /// delegation. Same scoping as the timeline, and an event outside the caller's campuses answers
+    /// 404 rather than 403 — a refusal would confirm the campus exists.
+    /// </summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/history/{eventId}")]
+    [Authorize]
+    public async Task<IActionResult> GetHistoryDetail(
+        ulong visitRequestId, string eventId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.GetVisitHistoryDetailQuery(
+                visitRequestId, eventId),
+            cancellationToken);
+        return Ok(result);
+    }
 }

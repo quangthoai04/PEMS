@@ -568,6 +568,8 @@ export const rejectAmendment = (visitInstanceId: number, amendmentId: number, no
 export interface VisitHistoryEntry {
   at: string;
   eventCode: string;
+  /** Handle for the detail drawer. Null when the event has nothing more to show than its own line. */
+  eventId: string | null;
   visitInstanceId: number | null;
   campusName: string | null;
   actorName: string | null;
@@ -581,6 +583,43 @@ export interface VisitHistoryEntry {
   fromStatus: string | null;
   toStatus: string | null;
 }
+
+/** One field that moved. */
+export interface VisitHistoryFieldChange {
+  fieldCode: string;
+  labelKey: string;
+  beforeValue: string | null;
+  afterValue: string | null;
+}
+
+/** Someone joined the delegation, left it, or had their details corrected. */
+export interface VisitHistoryCollectionChange {
+  collectionCode: 'VISITORS' | 'SUPPORT_MEMBERS';
+  changeType: 'ADDED' | 'REMOVED' | 'UPDATED';
+  itemKey: string | null;
+  before: Record<string, string> | null;
+  after: Record<string, string> | null;
+}
+
+export interface VisitHistoryDetail {
+  eventId: string;
+  eventCode: string;
+  occurredAt: string;
+  actorName: string | null;
+  campusId: number | null;
+  campusName: string | null;
+  reason: string | null;
+  beforeRevision: number | null;
+  afterRevision: number | null;
+  fieldChanges: VisitHistoryFieldChange[];
+  collectionChanges: VisitHistoryCollectionChange[];
+}
+
+export const getVisitHistoryDetail = (visitRequestId: number, eventId: string) =>
+  httpClient
+    .get<VisitHistoryDetail>(
+      `/v2/visit-requests/${visitRequestId}/history/${encodeURIComponent(eventId)}`)
+    .then(r => r.data);
 
 export interface VisitRequestHistory {
   visitRequestId: number;

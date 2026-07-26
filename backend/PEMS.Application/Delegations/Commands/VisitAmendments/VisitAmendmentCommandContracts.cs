@@ -119,6 +119,12 @@ public sealed record GetVisitRequestHistoryQuery(ulong VisitRequestId)
 public sealed record VisitHistoryEntryDto(
     DateTime At,
     string EventCode,
+    /// <summary>
+    /// Opaque handle for GET …/history/{eventId}. Null when the event has no detail worth opening
+    /// (a campus decision or a cancellation says everything it has to say on the timeline line
+    /// itself) — the client hides the eye button rather than offering an empty drawer.
+    /// </summary>
+    string? EventId,
     ulong? VisitInstanceId,
     /// <summary>Campus of this entry — without it, multi-campus requests emit indistinguishable rows.</summary>
     string? CampusName,

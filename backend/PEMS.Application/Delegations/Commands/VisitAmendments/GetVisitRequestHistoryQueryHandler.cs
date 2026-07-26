@@ -115,12 +115,13 @@ public sealed class GetVisitRequestHistoryQueryHandler
         var instanceRevisions = await _db.VisitInstanceFormRevisionHistories.AsNoTracking()
             .Where(r => r.VisitRequestId == visit.VisitRequestId
                         && visibleInstanceIds.Contains(r.VisitInstanceId))
-            .Select(r => new { r.VisitInstanceId, r.FormRevision, r.ApprovalRevision, r.SourceType, r.AppliedBy, r.AppliedAt })
+            .Select(r => new { r.RevisionHistoryId, r.VisitInstanceId, r.FormRevision, r.ApprovalRevision, r.SourceType, r.AppliedBy, r.AppliedAt })
             .ToListAsync(cancellationToken);
         foreach (var r in instanceRevisions)
         {
             Add(new VisitHistoryEntryDto(
                 r.AppliedAt, InstanceRevisionCode(r.SourceType, r.FormRevision),
+                VisitHistoryEventSources.Build(VisitHistoryEventSources.InstanceRevision, r.RevisionHistoryId),
                 r.VisitInstanceId, CampusOf(r.VisitInstanceId), null,
                 r.FormRevision, r.ApprovalRevision, null, null, r.SourceType, null, null, null, null),
                 r.AppliedBy);
@@ -131,12 +132,14 @@ public sealed class GetVisitRequestHistoryQueryHandler
         {
             var requestRevisions = await _db.VisitRequestRevisionHistories.AsNoTracking()
                 .Where(r => r.VisitRequestId == visit.VisitRequestId)
-                .Select(r => new { r.RequestRevision, r.SourceType, r.AppliedBy, r.AppliedAt })
+                .Select(r => new { r.RequestRevisionHistoryId, r.RequestRevision, r.SourceType, r.AppliedBy, r.AppliedAt })
                 .ToListAsync(cancellationToken);
             foreach (var r in requestRevisions)
             {
                 Add(new VisitHistoryEntryDto(
-                    r.AppliedAt, RequestRevisionCode(r.SourceType), null, null, null,
+                    r.AppliedAt, RequestRevisionCode(r.SourceType),
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.RequestRevision, r.RequestRevisionHistoryId),
+                    null, null, null,
                     r.RequestRevision, null, null, null, r.SourceType, null, null, null, null),
                     r.AppliedBy);
             }
@@ -146,8 +149,10 @@ public sealed class GetVisitRequestHistoryQueryHandler
             // request had been called off, by whom, or why.
             if (visit.CancelledAt is { } requestCancelledAt)
             {
+                // No eventId: a cancellation carries its reason on the line itself, so an eye button
+                // would open a drawer that repeats what is already on screen.
                 Add(new VisitHistoryEntryDto(
-                    requestCancelledAt, VisitHistoryEventCodes.RequestCancelled, null, null, null,
+                    requestCancelledAt, VisitHistoryEventCodes.RequestCancelled, null, null, null, null,
                     null, null, null, VisitRequestStatuses.Cancelled, null,
                     visit.CancellationReason, null, null, null),
                     visit.CancelledBy);
@@ -158,12 +163,14 @@ public sealed class GetVisitRequestHistoryQueryHandler
         var amendments = await _db.VisitInstanceAmendments.AsNoTracking()
             .Where(a => a.VisitRequestId == visit.VisitRequestId
                         && visibleInstanceIds.Contains(a.VisitInstanceId))
-            .Select(a => new { a.VisitInstanceId, a.AmendmentNo, a.Status, a.RequestedBy, a.RequestedAt, a.DecidedBy, a.DecidedAt, a.DecisionNote })
+            .Select(a => new { a.AmendmentId, a.VisitInstanceId, a.AmendmentNo, a.Status, a.RequestedBy, a.RequestedAt, a.DecidedBy, a.DecidedAt, a.DecisionNote })
             .ToListAsync(cancellationToken);
         foreach (var a in amendments)
         {
             Add(new VisitHistoryEntryDto(
-                a.RequestedAt, VisitHistoryEventCodes.AmendmentSubmitted, a.VisitInstanceId,
+                a.RequestedAt, VisitHistoryEventCodes.AmendmentSubmitted,
+                VisitHistoryEventSources.Build(VisitHistoryEventSources.AmendmentSubmitted, a.AmendmentId),
+                a.VisitInstanceId,
                 CampusOf(a.VisitInstanceId), null, null, null, a.AmendmentNo,
                 null, null, null, null, null, null),
                 a.RequestedBy);
@@ -178,7 +185,9 @@ public sealed class GetVisitRequestHistoryQueryHandler
                     _ => VisitHistoryEventCodes.AmendmentDecided,
                 };
                 Add(new VisitHistoryEntryDto(
-                    decidedAt, code, a.VisitInstanceId, CampusOf(a.VisitInstanceId), null,
+                    decidedAt, code,
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.AmendmentDecided, a.AmendmentId),
+                    a.VisitInstanceId, CampusOf(a.VisitInstanceId), null,
                     null, null, a.AmendmentNo, a.Status, null, a.DecisionNote, null, null, null),
                     a.DecidedBy);
             }
@@ -200,8 +209,9 @@ public sealed class GetVisitRequestHistoryQueryHandler
                         => VisitHistoryEventCodes.InstanceApproved,
                     _ => VisitHistoryEventCodes.InstanceDecided,
                 };
+                // A decision states its own outcome and note inline — nothing further to open.
                 Add(new VisitHistoryEntryDto(
-                    decidedAt, code, c.VisitInstanceId, CampusOf(c.VisitInstanceId), null,
+                    decidedAt, code, null, c.VisitInstanceId, CampusOf(c.VisitInstanceId), null,
                     null, null, null, c.Status, null, c.DecisionNote, null, null, null),
                     c.DecidedBy);
             }
@@ -210,7 +220,7 @@ public sealed class GetVisitRequestHistoryQueryHandler
             if (c.CancelledAt is { } cancelledAt)
             {
                 Add(new VisitHistoryEntryDto(
-                    cancelledAt, VisitHistoryEventCodes.InstanceCancelled, c.VisitInstanceId,
+                    cancelledAt, VisitHistoryEventCodes.InstanceCancelled, null, c.VisitInstanceId,
                     CampusOf(c.VisitInstanceId), null, null, null, null,
                     VisitInstanceStatuses.Cancelled, c.CancellationSource, c.CancellationReason, null, null, null),
                     c.CancelledBy);
@@ -232,7 +242,9 @@ public sealed class GetVisitRequestHistoryQueryHandler
             foreach (var tr in transfers)
             {
                 Add(new VisitHistoryEntryDto(
-                    tr.CreatedAt, VisitHistoryEventCodes.HostTransferred, tr.VisitInstanceId,
+                    tr.CreatedAt, VisitHistoryEventCodes.HostTransferred,
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, tr.AuditLogId),
+                    tr.VisitInstanceId,
                     CampusOf(tr.VisitInstanceId), null, null, null, null, null,
                     VisitAuditActions.HostTransferSourceType, tr.Reason, null, null, null),
                     tr.ActorUserId);
@@ -249,7 +261,7 @@ public sealed class GetVisitRequestHistoryQueryHandler
             foreach (var e in identityEvents)
             {
                 Add(new VisitHistoryEntryDto(
-                    e.CreatedAt, VisitHistoryEventCodes.ContactIdentityChanged, null, null, null,
+                    e.CreatedAt, VisitHistoryEventCodes.ContactIdentityChanged, null, null, null, null,
                     null, null, null, e.EventType, null, null, e.EmailMasked, e.FromStatus, e.ToStatus),
                     e.ActorUserId);
             }

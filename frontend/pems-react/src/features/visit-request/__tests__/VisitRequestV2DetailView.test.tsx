@@ -265,7 +265,7 @@ describe('VisitRequestV2DetailView', () => {
       visitRequestId: 1,
       requestCode: 'VR-2026-001',
       entries: [{
-        at: '2026-07-16T10:00:00', eventCode: 'CONTACT_IDENTITY_CHANGED', visitInstanceId: null,
+        at: '2026-07-16T10:00:00', eventCode: 'CONTACT_IDENTITY_CHANGED', eventId: null, visitInstanceId: null,
         campusName: null, actorName: null, formRevision: null, approvalRevision: null,
         amendmentNo: null, statusCode: 'CLAIM_APPLIED', sourceType: null, reason: null,
         maskedEmail: 'd***@x.vn', fromStatus: 'PENDING', toStatus: 'APPLIED',

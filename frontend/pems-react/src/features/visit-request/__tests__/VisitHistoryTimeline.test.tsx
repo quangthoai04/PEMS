@@ -1,7 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
-vi.mock('../api/visitRequestV2Api', () => ({ getVisitRequestHistory: vi.fn() }));
+vi.mock('../api/visitRequestV2Api', () => ({
+  getVisitRequestHistory: vi.fn(),
+  getVisitHistoryDetail: vi.fn(),
+}));
 
 import VisitHistoryTimeline from '../components/VisitHistoryTimeline';
 import { getVisitRequestHistory, type VisitHistoryEntry } from '../api/visitRequestV2Api';
@@ -11,6 +14,8 @@ import { getVisitRequestHistory, type VisitHistoryEntry } from '../api/visitRequ
 const entry = (over: Partial<VisitHistoryEntry> = {}): VisitHistoryEntry => ({
   at: '2026-07-20T09:30:00',
   eventCode: 'INSTANCE_CONTENT_CREATED',
+  // Revision events carry a detail handle; decisions and cancellations pass eventId: null.
+  eventId: 'IREV:100',
   visitInstanceId: 10,
   campusName: 'FPT University Hà Nội',
   actorName: 'Kim Min Jae',

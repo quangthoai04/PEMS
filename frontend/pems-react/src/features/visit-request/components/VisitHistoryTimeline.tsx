@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Eye, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getVisitRequestHistory, type VisitHistoryEntry, type VisitRequestHistory } from '../api/visitRequestV2Api';
+import VisitHistoryDetailDrawer from './VisitHistoryDetailDrawer';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
@@ -13,6 +14,8 @@ const EMPHASISED_EVENTS = new Set([
   'INSTANCE_APPROVED', 'INSTANCE_REJECTED', 'INSTANCE_CANCELLED', 'INSTANCE_DECIDED',
   'AMENDMENT_APPROVED', 'AMENDMENT_REJECTED', 'AMENDMENT_DECIDED',
   'REQUEST_CANCELLED', 'REQUEST_RESUBMITTED',
+  // Who runs the visit changing is a turning point for everyone reading this timeline.
+  'HOST_TRANSFERRED',
 ]);
 
 /** Event codes the client knows how to phrase; anything else degrades to a neutral sentence. */
@@ -24,6 +27,9 @@ const KNOWN_EVENTS = new Set([
   'INSTANCE_APPROVED', 'INSTANCE_REJECTED', 'INSTANCE_CANCELLED', 'INSTANCE_CLOSED', 'INSTANCE_DECIDED',
   'AMENDMENT_SUBMITTED', 'AMENDMENT_APPROVED', 'AMENDMENT_REJECTED', 'AMENDMENT_WITHDRAWN',
   'AMENDMENT_DECIDED', 'CONTACT_IDENTITY_CHANGED',
+  // A full edit of a pending request is its own event — it used to be reported as a quick edit.
+  'REQUEST_PENDING_EDIT_APPLIED', 'INSTANCE_PENDING_EDIT_APPLIED',
+  'HOST_TRANSFERRED',
 ]);
 
 /**
@@ -43,6 +49,9 @@ export default function VisitHistoryTimeline({ visitRequestId }: Props) {
   const [history, setHistory] = useState<VisitRequestHistory | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  // The drawer carries the timeline's own sentence, so opening a detail keeps the same words on
+  // screen rather than re-describing the event in a second vocabulary.
+  const [openEvent, setOpenEvent] = useState<{ eventId: string; label: string } | null>(null);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -101,7 +110,8 @@ export default function VisitHistoryTimeline({ visitRequestId }: Props) {
   }
 
   return (
-    <ol
+    <>
+      <ol
       aria-label={t('visitRequestV2:detail.historyTitle')}
       data-testid="visit-history-timeline"
       className="relative space-y-4 border-l-2 border-[#004c91]/20 pl-5"
@@ -126,7 +136,24 @@ export default function VisitHistoryTimeline({ visitRequestId }: Props) {
                 </span>
               )}
             </div>
-            <p className="mt-0.5 break-words font-semibold text-slate-800">{describe(e)}</p>
+            <div className="mt-0.5 flex items-start gap-1.5">
+              <p className="min-w-0 break-words font-semibold text-slate-800">{describe(e)}</p>
+              {/* Offered ONLY where the backend has a diff to show. A decision or a cancellation
+                  states its outcome on this line, so an eye button there would open a drawer that
+                  repeats what the reader just read. */}
+              {e.eventId && (
+                <button
+                  type="button"
+                  data-testid={`history-detail-open-${e.eventId}`}
+                  onClick={() => setOpenEvent({ eventId: e.eventId!, label: describe(e) })}
+                  title={t('visitRequestV2:historyDetail.open')}
+                  aria-label={t('visitRequestV2:historyDetail.openFor', { event: describe(e) })}
+                  className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-[#004c91] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#004c91]"
+                >
+                  <Eye className="h-4 w-4" aria-hidden />
+                </button>
+              )}
+            </div>
             {e.reason && (
               <p className="break-words text-xs text-slate-500">
                 {t('visitRequestV2:history.reason')}: {e.reason}
@@ -135,6 +162,16 @@ export default function VisitHistoryTimeline({ visitRequestId }: Props) {
           </li>
         );
       })}
-    </ol>
+      </ol>
+
+      {openEvent && (
+        <VisitHistoryDetailDrawer
+          visitRequestId={visitRequestId}
+          eventId={openEvent.eventId}
+          eventLabel={openEvent.label}
+          onClose={() => setOpenEvent(null)}
+        />
+      )}
+    </>
   );
 }
