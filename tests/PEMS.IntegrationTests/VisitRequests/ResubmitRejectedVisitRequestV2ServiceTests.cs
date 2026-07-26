@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -275,8 +276,13 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
         });
     }
 
+    /// <summary>
+    /// A resubmit proposes a NEW schedule, and that schedule answers to the shared lead time. The
+    /// window used to be a local 24h here; it is now VisitMutationPolicy.RequiredLeadHours, so the
+    /// boundary is asserted against the policy rather than a number copied beside it.
+    /// </summary>
     [Fact]
-    public async Task Schedule_within_24h_is_rejected()
+    public async Task New_schedule_inside_the_lead_time_is_rejected()
     {
         await RunAsync(async (db, create, edit) =>
         {
@@ -284,10 +290,31 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             await RejectAllAsync(db, r);
             var hn = InstanceOf(r, "HN");
 
-            var soon = Campus("HN") with { PlannedStartAt = Now.AddHours(23), PlannedEndAt = Now.AddHours(25) };
+            var tooSoon = Now.AddHours(VisitMutationPolicy.RequiredLeadHours).AddMinutes(-1);
+            var soon = Campus("HN") with { PlannedStartAt = tooSoon, PlannedEndAt = tooSoon.AddHours(2) };
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, soon)), Registrant, Now, default));
             Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+        });
+    }
+
+    /// <summary>
+    /// The other half of the boundary: exactly on the lead time is INSIDE the window. Without this,
+    /// nothing would catch the rule quietly becoming "strictly more than N hours".
+    /// </summary>
+    [Fact]
+    public async Task New_schedule_exactly_on_the_lead_time_is_accepted()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            await RejectAllAsync(db, r);
+            var hn = InstanceOf(r, "HN");
+
+            var exactly = Now.AddHours(VisitMutationPolicy.RequiredLeadHours);
+            var slot = Campus("HN") with { PlannedStartAt = exactly, PlannedEndAt = exactly.AddHours(2) };
+            var result = await edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, slot)), Registrant, Now, default);
+            Assert.NotNull(result);
         });
     }
 

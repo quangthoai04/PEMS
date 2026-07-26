@@ -42,8 +42,17 @@ public static class CanonicalSqlScript
     /// visit-photo uploader trigger body to admit Host/Staff/Admin/Participant instead of Students only.
     /// No table, column or trigger was added or removed, so ExpectedBaseTableCount/ExpectedTriggerCount
     /// are unchanged — this bump records a deliberate behaviour change inside an existing trigger.
+    /// (2026-07-26, fourth bump) Re-pinned for the visit-mutation work, which changed the schema in
+    /// two deliberate places and nothing else:
+    ///   • both revision-history source_type ENUMs gained 'PENDING_EDIT', so a full edit of a pending
+    ///     request stops being recorded as a quick edit (migration 2026_07_26_visit_pending_edit_source_type);
+    ///   • trg_visit_campuses_assignment_validate_bu now admits a deliberate Host handover on an
+    ///     already-decided, not-yet-started campus, and applies the host_assigned_by = decided_by rule
+    ///     only while the decision is being made (migration 2026_07_26_visit_host_transfer).
+    /// No table, column, index or trigger was added or removed, so ExpectedBaseTableCount (82) and
+    /// ExpectedTriggerCount (32) are unchanged.
     public const string ExpectedSha256 =
-        "d609a08ee4c0a4f03fc2876257d91c15d764b70f0d94c5e12020c50fb371c071";
+        "e63629054c388a2005bf9a3ef99308e52c460e08370ba3da064e1020e4c5417c";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

@@ -10,6 +10,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Policies;
 using PEMS.Infrastructure.Persistence;
 using Xunit;
 
@@ -682,9 +683,20 @@ public sealed class PerCampusFormV2ReadTests
         var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
 
         Assert.Contains(VisitFormActions.EditPendingRequest, dto.Viewer.AllowedActions);
-        Assert.Contains(VisitFormActions.SubmitSafeEdit, dto.Viewer.AllowedActions);
         Assert.DoesNotContain(VisitFormActions.ResubmitRejectedRequest, dto.Viewer.AllowedActions);
         Assert.DoesNotContain(VisitFormActions.SubmitAmendment, dto.CampusVisits.Single().AllowedActions);
+
+        // Safe edit is NOT offered on a still-pending request. A pending request can be edited in
+        // full, so offering the narrow tool alongside only made it unclear which one to reach for —
+        // and the safe-edit handler now refuses a WAITING campus outright, so offering it here would
+        // be a button that fails.
+        Assert.DoesNotContain(VisitFormActions.SubmitSafeEdit, dto.Viewer.AllowedActions);
+
+        // The refused capability is still REPORTED, with the reason — that is what lets the screen
+        // explain itself rather than silently dropping the action.
+        var safeEdit = dto.Viewer.Capabilities.Single(c => c.Code == VisitFormActions.SubmitSafeEdit);
+        Assert.False(safeEdit.Enabled);
+        Assert.Equal(VisitMutationErrorCodes.LifecycleNotAllowed, safeEdit.DisabledReasonCode);
         await tx.RollbackAsync();
     }
 
@@ -774,11 +786,23 @@ public sealed class PerCampusFormV2ReadTests
         var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
         var entity = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == req.VisitRequestId);
         entity.Status = "REJECTED";
+        // The CAMPUS has to be rejected too, with the decision metadata the DB trigger requires. A
+        // request whose status says REJECTED while its only campus still says WAITING cannot exist —
+        // the aggregate trigger derives one from the other — and resubmit is now correctly refused
+        // for such a row, so seeding it that way was testing an impossible state.
+        var instance = await db.VisitRequestCampuses.FirstAsync(c => c.VisitRequestId == req.VisitRequestId);
+        instance.Status = VisitInstanceStatuses.Rejected;
+        instance.DecidedBy = SlCampus1;
+        instance.DecidedAt = DateTime.Now;
+        instance.DecisionActorRole = "STAFF_LEADER";
+        instance.DecisionNote = "Không đủ điều kiện tiếp đón.";
         await db.SaveChangesAsync();
 
         var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
         Assert.Contains(VisitFormActions.ResubmitRejectedRequest, dto.Viewer.AllowedActions);
         Assert.DoesNotContain(VisitFormActions.EditPendingRequest, dto.Viewer.AllowedActions);
+        // Nor the narrow tool: a rejected request is re-sent, not patched.
+        Assert.DoesNotContain(VisitFormActions.SubmitSafeEdit, dto.Viewer.AllowedActions);
         await tx.RollbackAsync();
     }
 

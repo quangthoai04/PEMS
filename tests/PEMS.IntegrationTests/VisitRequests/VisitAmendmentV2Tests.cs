@@ -14,6 +14,7 @@ using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -592,21 +593,31 @@ public sealed class VisitAmendmentV2Tests
                 var instance = await db.VisitRequestCampuses.AsNoTracking()
                     .Where(c => c.VisitRequestId == pendingRequest).Select(c => c.VisitInstanceId).SingleAsync();
                 var proposal = await BaselineProposalAsync(instance, b => b.Purpose = "Đổi");
-                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                // ThrowsAny: the refusal is a VisitMutationRefusedException — a BusinessRuleException
+                // that also names the campus and the deadline. The error CODE is what matters here.
+                var ex = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
                     Submit(db, Registrant).Handle(
                         new SubmitVisitAmendmentCommand(pendingRequest, instance, proposal), CancellationToken.None));
                 Assert.Equal(VisitFormV2ErrorCodes.AmendmentNotEditable, ex.ErrorCode);
+                // ...and it points at the right alternative rather than just saying no.
+                Assert.Contains("sửa đơn đang chờ duyệt", ex.Message);
             }
 
-            // A decided instance starting <24h from now → self-service window closed.
-            (lateRequest, var lateInstance, _) = await CreateApprovedAsync(Now.AddHours(10));
+            // A decided instance starting inside the shared lead time → self-service window closed.
+            // The refusal now carries the deadline and the start time, so the screen can say which
+            // campus closed and when rather than only that something is not allowed.
+            (lateRequest, var lateInstance, _) =
+                await CreateApprovedAsync(Now.AddHours(VisitMutationPolicy.RequiredLeadHours - 1));
             using (var db = NewContext())
             {
                 var proposal = await BaselineProposalAsync(lateInstance, b => b.Purpose = "Đổi gấp");
-                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
                     Submit(db, Registrant).Handle(
                         new SubmitVisitAmendmentCommand(lateRequest, lateInstance, proposal), CancellationToken.None));
-                Assert.Equal(VisitFormV2ErrorCodes.AmendmentWindowExpired, ex.ErrorCode);
+                Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
+                Assert.Equal(VisitMutationPolicy.RequiredLeadHours, ex.RequiredLeadHours);
+                Assert.NotNull(ex.CutoffAt);
+                Assert.NotNull(ex.PlannedStartAt);
             }
         }
         finally

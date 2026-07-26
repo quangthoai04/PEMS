@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -138,7 +139,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             Assert.Equal("Đoàn HN mới", hn.FormDetail.DelegationName);
             var hnRevisions = await db.VisitInstanceFormRevisionHistories
                 .Where(h => h.VisitInstanceId == hn.VisitInstanceId).ToListAsync();
-            Assert.Contains(hnRevisions, h => h.SourceType == "SAFE_EDIT" && h.FormRevision == 2);
+            Assert.Contains(hnRevisions, h => h.SourceType == FormRevisionSourceTypes.PendingEdit && h.FormRevision == 2);
 
             // B untouched: same revision, same row version, same member ids (sửa A không đổi B).
             Assert.Equal(hcmRevisionBefore, hcm.FormDetail!.FormRevision);
@@ -195,7 +196,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             Assert.Equal(rowVersionBefore, hn.RowVersion); // untouched instance
             Assert.Equal(memberIdsBefore, hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList());
             Assert.False(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
-                h.VisitInstanceId == hn.VisitInstanceId && h.SourceType == "SAFE_EDIT"));
+                h.VisitInstanceId == hn.VisitInstanceId && h.SourceType == FormRevisionSourceTypes.PendingEdit));
             // Request row version still bumps (the edit intent was applied).
             Assert.Equal(1, r.RowVersion);
         });
@@ -392,7 +393,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             Assert.Equal("Tên Mới", r.ContactPersonFullName);
             var revisions = await db.VisitRequestRevisionHistories
                 .Where(h => h.VisitRequestId == r.VisitRequestId).ToListAsync();
-            Assert.Contains(revisions, h => h.SourceType == "SAFE_EDIT" && h.RequestRevision == 2);
+            Assert.Contains(revisions, h => h.SourceType == FormRevisionSourceTypes.PendingEdit && h.RequestRevision == 2);
         });
     }
 

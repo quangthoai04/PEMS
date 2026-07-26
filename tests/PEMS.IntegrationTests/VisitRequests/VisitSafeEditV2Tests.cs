@@ -14,6 +14,7 @@ using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Domain.Enums;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -117,6 +118,37 @@ public sealed class VisitSafeEditV2Tests
         return created.VisitRequestId;
     }
 
+    /// <summary>
+    /// Drives every campus of a committed request to ASSIGNED, using the real transition order
+    /// (instances decided under the still-pending parent, then the parent flips).
+    ///
+    /// Safe edit is a POST-decision correction now: a still-pending campus belongs to pending-edit,
+    /// which can change everything, so these tests have to start from a decided campus to exercise it
+    /// at all.
+    /// </summary>
+    private static async Task ApproveAllAsync(ulong requestId)
+    {
+        using var db = NewContext();
+        var visit = await db.VisitRequests.Include(v => v.CampusInstances)
+            .SingleAsync(v => v.VisitRequestId == requestId);
+        foreach (var instance in visit.CampusInstances)
+        {
+            instance.Status = VisitInstanceStatuses.Assigned;
+            instance.CurrentHostUserId = instance.CoordinatorUserId; // leader self-hosts (valid seed user)
+            instance.HostAssignedBy = instance.CoordinatorUserId;
+            instance.HostAssignedAt = Now;
+            instance.DecidedBy = instance.CoordinatorUserId;
+            instance.DecidedAt = Now;
+            instance.DecisionActorRole = "STAFF_LEADER";
+            instance.DecisionSource = "STANDARD_CAMPUS_REVIEW";
+            instance.RowVersion += 1;
+        }
+        await db.SaveChangesAsync();
+        visit.Status = VisitRequestStatuses.Approved;
+        visit.RowVersion += 1;
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<(int RequestVersion, Dictionary<ulong, int> InstanceVersions)> VersionsAsync(ulong requestId)
     {
         using var db = NewContext();
@@ -189,6 +221,8 @@ public sealed class VisitSafeEditV2Tests
         {
             var start = Now.AddDays(20);
             requestId = await CreateAsync(Campus("HN", start), Campus("HCM", start.AddDays(1)));
+            // Safe edit only applies to a DECIDED campus now — a pending one belongs to pending-edit.
+            await ApproveAllAsync(requestId);
             var (reqV, instV) = await VersionsAsync(requestId);
             ulong instanceA;
             using (var db = NewContext())
@@ -210,7 +244,9 @@ public sealed class VisitSafeEditV2Tests
                         null,
                         new List<SafeInstancePatchDto>
                         {
-                            new(instanceA, instV[instanceA], "Xe 45 chỗ", "Ghi chú", "AGREED", null), // note changed on A only
+                            // Only the transport note is sent — the sparse patch carries what changed
+                            // and nothing else, so campus B is absent from the payload entirely.
+                            new(instanceA, instV[instanceA], "Xe 45 chỗ", null, null, null),
                         })), CancellationToken.None);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantPhone);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.TransportationNote
@@ -300,30 +336,40 @@ public sealed class VisitSafeEditV2Tests
         ulong requestId = 0;
         try
         {
-            requestId = await CreateAsync(Campus("HN", Now.AddHours(10))); // starts INSIDE the 24h window
+            // Decided (safe edit is a post-decision correction) and starting INSIDE the lead time.
+            requestId = await CreateAsync(Campus("HN", Now.AddHours(VisitMutationPolicy.RequiredLeadHours - 1)));
+            await ApproveAllAsync(requestId);
             var (reqV, instV) = await VersionsAsync(requestId);
             var instance = instV.Keys.Single();
 
-            // Normal safe change <24h → blocked.
+            // Normal safe change past the cutoff → blocked, and the refusal NAMES the campus and the
+            // deadline. On a multi-campus request "không thể sửa" alone leaves the user checking all
+            // of them to work out which one closed.
             using (var db = NewContext())
             {
-                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
                     Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                         new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
                         {
-                            new(instance, instV[instance], "Xe khác", "Ghi chú", "AGREED", null),
+                            new(instance, instV[instance], "Xe khác", "Ghi chú", null, null),
                         })), CancellationToken.None));
-                Assert.Equal(VisitRequestErrorCodes.VisitCancelWindowExpired, ex.ErrorCode);
+                Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
+                Assert.NotNull(ex.CampusName);
+                Assert.NotNull(ex.CutoffAt);
+                Assert.Equal(VisitMutationPolicy.RequiredLeadHours, ex.RequiredLeadHours);
             }
 
-            // Privacy-urgent media WITHDRAWAL (+ its note) → applies even <24h, URGENT notification.
+            // Privacy-urgent media WITHDRAWAL (+ its note) still applies past the cutoff, with an
+            // URGENT notification. Someone who no longer wants to be photographed must be able to say
+            // so late — that is what the privacy-urgent class is for. The DEADLINE is waived; the
+            // lifecycle gate above is not, so this can never reopen a finished visit.
             var notifications = new RecordingNotifications();
             using (var db = NewContext())
             {
                 var res = await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
                     {
-                        new(instance, instV[instance], "Xe 16 chỗ", "Ghi chú", "DECLINED", "Rút quyền hình ảnh"),
+                        new(instance, instV[instance], null, null, "DECLINED", "Rút quyền hình ảnh"),
                     })), CancellationToken.None);
                 Assert.Contains(res.AppliedChanges,
                     c => c.FieldPath == VisitFieldClassifier.MediaConsentStatus

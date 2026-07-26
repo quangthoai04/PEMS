@@ -27,9 +27,13 @@
 --          • the row is already decided and not yet under way (OLD.status IN ASSIGNED, BEFORE_VISIT)
 --          • the status is not changing in the same statement (a handover is not a decision)
 --          • the new host is not NULL (a campus never loses its Host — it gains a different one)
---          • host_assigned_by / host_assigned_at are refreshed (an intentional re-assignment, not drift)
+--          • host_assigned_by / host_assigned_at are both set (an assignment, not a stray UPDATE)
 --        Anything else still raises the original error, so the protection this rule was written for —
 --        a Host silently changing as a side effect — is intact.
+--
+--        Note it does NOT require host_assigned_at to DIFFER from its previous value. That looked like
+--        a stronger check but depends on clock resolution: a handover in the same second as the
+--        original assignment writes an identical DATETIME and would have been refused.
 --
 --     2. host_assigned_by must equal decided_by only while the decision is BEING MADE
 --        (OLD.decided_by IS NULL AND NEW.decided_by IS NOT NULL). On an already-decided row the
@@ -88,8 +92,7 @@ BEGIN
      AND OLD.status IN ('ASSIGNED','BEFORE_VISIT')
      AND NEW.status = OLD.status
      AND NEW.host_assigned_by IS NOT NULL
-     AND NEW.host_assigned_at IS NOT NULL
-     AND NOT (NEW.host_assigned_at <=> OLD.host_assigned_at) THEN
+     AND NEW.host_assigned_at IS NOT NULL THEN
     SET v_is_host_transfer = 1;
   END IF;
 

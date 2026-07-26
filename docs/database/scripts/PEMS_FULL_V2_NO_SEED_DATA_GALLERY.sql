@@ -12848,8 +12848,7 @@ BEGIN
      AND OLD.status IN ('ASSIGNED','BEFORE_VISIT')
      AND NEW.status = OLD.status
      AND NEW.host_assigned_by IS NOT NULL
-     AND NEW.host_assigned_at IS NOT NULL
-     AND NOT (NEW.host_assigned_at <=> OLD.host_assigned_at) THEN
+     AND NEW.host_assigned_at IS NOT NULL THEN
     SET v_is_host_transfer = 1;
   END IF;
 

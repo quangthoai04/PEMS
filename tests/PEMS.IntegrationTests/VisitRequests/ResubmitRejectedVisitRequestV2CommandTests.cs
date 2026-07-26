@@ -173,9 +173,12 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
                         new ResubmitRejectedVisitRequestV2Command(requestId, payload), CancellationToken.None));
 
             // Registrant on a NOT-fully-rejected request → VISIT_REQUEST_NOT_RESUBMITTABLE.
+            // ThrowsAny, not Throws: the refusal is a VisitMutationRefusedException, a
+            // BusinessRuleException that also carries the campus and the deadline. The code is what
+            // this test is about, and the code is unchanged.
             using (var db = NewContext())
             {
-                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                var ex = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
                     Handler(db, Registrant, notifications: notifications).Handle(
                         new ResubmitRejectedVisitRequestV2Command(requestId, payload), CancellationToken.None));
                 Assert.Equal(VisitRequestErrorCodes.VisitRequestNotResubmittable, ex.ErrorCode);
