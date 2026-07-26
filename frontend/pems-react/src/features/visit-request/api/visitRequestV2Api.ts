@@ -78,6 +78,17 @@ export interface V2CreateResponse {
   contactClaimPending: boolean;
   instances: V2CampusRef[];
   idempotent: boolean;
+  /** Request status straight from the committed row — never inferred client-side. */
+  status: string;
+  /** Vietnam wall-clock "yyyy-MM-ddTHH:mm:ss" (no offset). */
+  submittedAt: string;
+  campusCount: number;
+  /**
+   * Set only when the receipt was rebuilt from the submission LOOKUP after an uncertain result.
+   * The lookup answers an anonymous caller, so it carries no campus list — the UI uses this to
+   * show what it actually knows instead of an empty per-campus summary.
+   */
+  recoveredByLookup?: boolean;
 }
 
 export const createVisitRequestV2 = (payload: V2CreatePayload) =>
@@ -111,6 +122,29 @@ export const verifyAndCreateVisitRequestV2 = (
 ) => httpClient
   .post<V2CreateResponse>('/v2/visit-requests/verify', { form: payload, otpCode, sessionToken })
   .then(r => r.data);
+
+/**
+ * "Did my submission go through?" — the answer to a verify whose RESPONSE was lost.
+ *
+ * Keyed on the client-minted submissionId, never on email: one person legitimately files several
+ * requests, so "the newest one for this address" answers a different question. Read-only on the
+ * server, so it is safe to call while deciding whether to retry.
+ */
+export type VisitSubmissionState = 'COMPLETED' | 'PENDING' | 'FAILED' | 'NOT_FOUND';
+
+export interface VisitSubmissionLookup {
+  state: VisitSubmissionState;
+  visitRequestId: number | null;
+  requestCode: string | null;
+  status: string | null;
+  submittedAt: string | null;
+  campusCount: number | null;
+}
+
+export const getVisitSubmissionResult = (submissionId: string) =>
+  httpClient
+    .get<VisitSubmissionLookup>(`/v2/visit-requests/submissions/${encodeURIComponent(submissionId)}`)
+    .then(r => r.data);
 
 // ── Central v2 read model (GET /v2/visit-requests/{id}) ──────────────────────
 // The backend resolves v1 (projection dual-read) and v2 (per-campus details) into ONE

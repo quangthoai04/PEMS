@@ -26,6 +26,11 @@ interface Props {
   onResend: () => void;
   onRecover: (humanVerificationToken: string) => void;
   onCancel: () => void;
+  /**
+   * "Let me check the form first" — steps back to the form WITHOUT spending the challenge
+   * (plan §12). Omitted where there is no form behind the modal to go back to.
+   */
+  onReviewForm?: () => void;
 }
 
 /**
@@ -49,8 +54,9 @@ export const OtpVerificationModal: React.FC<Props> = ({
   onResend,
   onRecover,
   onCancel,
+  onReviewForm,
 }) => {
-  const { t } = useTranslation(['visitRequest']);
+  const { t } = useTranslation(['visitRequest', 'visitRequestV2']);
   const [code, setCode] = useState('');
   const [resendCountdown, setResendCountdown] = useState(resendAfterSeconds);
   const [retryCountdown, setRetryCountdown] = useState(0);
@@ -110,11 +116,18 @@ export const OtpVerificationModal: React.FC<Props> = ({
   }, [humanVerificationRequired]);
 
   const handleResend = () => {
-    if (resendCountdown > 0 || isResending) return;
+    if (resendCountdown > 0 || isResending || isVerifying) return;
     onResend();
     setResendCountdown(resendAfterSeconds);
     setCode('');
   };
+
+  /**
+   * While the verify is in flight the create may be committing THIS INSTANT. Leaving now — via the
+   * X, the backdrop or Back — would drop the session token and leave the user with no way to learn
+   * whether their request exists (plan §5).
+   */
+  const dismiss = () => { if (!isVerifying) onCancel(); };
 
   const confirmDisabled = code.length !== 6 || isVerifying || retryCountdown > 0;
 
@@ -144,7 +157,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onCancel}
+        onClick={dismiss}
       />
 
       {/* Dialog */}
@@ -161,9 +174,10 @@ export const OtpVerificationModal: React.FC<Props> = ({
         {/* Close button */}
         <button
           type="button"
-          onClick={onCancel}
+          onClick={dismiss}
+          disabled={isVerifying}
           aria-label={t('visitRequest:popup.cancel')}
-          className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         >
           <X className="w-5 h-5" />
         </button>
@@ -192,7 +206,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
 
             <button
               type="button"
-              onClick={onCancel}
+              onClick={dismiss}
               className="w-full px-4 py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-bold hover:bg-gray-50 transition-colors"
             >
               {t('visitRequest:otp.back')}
@@ -245,7 +259,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
 
             <button
               type="button"
-              onClick={onCancel}
+              onClick={dismiss}
               className="w-full px-4 py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-bold hover:bg-gray-50 transition-colors"
             >
               {t('visitRequest:otp.back')}
@@ -351,26 +365,42 @@ export const OtpVerificationModal: React.FC<Props> = ({
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={onCancel}
-                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-bold hover:bg-gray-50 transition-colors"
+                  onClick={dismiss}
+                  disabled={isVerifying}
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-bold hover:bg-gray-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t('visitRequest:otp.back')}
                 </button>
                 <button
                   type="submit"
+                  data-testid="otp-confirm"
                   disabled={confirmDisabled}
                   className="flex-1 px-4 py-3 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003d75] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                   {isVerifying ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      {t('visitRequest:otp.confirming')}
+                      {t('visitRequestV2:otpFlow.verifyingAndCreating')}
                     </>
                   ) : (
                     t('visitRequest:otp.confirm')
                   )}
                 </button>
               </div>
+
+              {/* Checking a date should not cost a new code: this keeps the challenge and simply
+                  steps back to the form (plan §12). */}
+              {onReviewForm && (
+                <button
+                  type="button"
+                  data-testid="otp-review-form"
+                  onClick={onReviewForm}
+                  disabled={isVerifying}
+                  className="w-full text-center text-sm font-bold text-[#004c91] hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+                >
+                  {t('visitRequestV2:otpFlow.reviewForm')}
+                </button>
+              )}
             </form>
 
             <p className="mt-4 text-xs text-gray-400 text-center">
