@@ -9,6 +9,7 @@ import type {
 } from '../../features/authentication/types/authentication.types';
 import { authStorage, AUTH_EXPIRED_EVENT } from './authStorage';
 import { hasRole } from './permissionChecker';
+import { markDeliberateLogout } from '../api/httpClient';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -131,6 +132,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    // Revoking the session server-side can make any OTHER request already in flight
+    // (e.g. notification polling) legitimately 401 a moment later — mark this a
+    // deliberate logout so httpClient doesn't surface a confusing "session expired"
+    // toast on top of the logout-success one below.
+    markDeliberateLogout();
     try {
       await authenticationApi.logout(authStorage.getRefreshToken());
       showSuccessToast(t('toast:auth.logoutSuccess'), 'auth-status', 2000);
