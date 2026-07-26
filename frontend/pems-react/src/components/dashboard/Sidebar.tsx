@@ -86,11 +86,15 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
 
 
   const handleLogout = async () => {
+    // Navigate away FIRST: /dashboard/* is wrapped by <ProtectedRoute>, and logout()'s
+    // state update flips isAuthenticated to false while we're still on that route —
+    // if we awaited logout() before navigating, ProtectedRoute's own redirect to
+    // /login can fire first and win the race against this navigate("/").
+    navigate("/");
+    if (onCloseMobile) onCloseMobile();
     // Clear the real session (token + pems_user + legacy currentUser) via the
     // auth context, otherwise the user stays authenticated after "logging out".
     await logout();
-    navigate("/");
-    if (onCloseMobile) onCloseMobile();
   };
 
 

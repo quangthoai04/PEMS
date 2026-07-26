@@ -51,6 +51,12 @@ export function Header() {
     // (có thể chậm nếu backend đang bận) mới đóng — tránh cảm giác nút bị treo.
     setIsProfileMenuOpen(false);
     setIsMobileMenuOpen(false);
+    // Navigate away BEFORE clearing the session: on a route wrapped by <ProtectedRoute>
+    // (e.g. /notifications), `logout()`'s state update flips isAuthenticated to false
+    // while we're still on that route, and ProtectedRoute's own redirect to /login can
+    // win the race against this navigate() if it runs after. Leaving the guarded route
+    // first means there's no ProtectedRoute left to redirect anywhere.
+    navigate('/');
     try {
       // Clear the real session (token + pems_user + legacy currentUser) via the auth
       // context — removing only the legacy `currentUser` key left `token`/`pems_user`
@@ -59,7 +65,6 @@ export function Header() {
       await logout();
     } finally {
       setIsLoggingOut(false);
-      navigate('/');
     }
   };
 

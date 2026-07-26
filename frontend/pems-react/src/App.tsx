@@ -128,7 +128,11 @@ export default function App() {
   return (
     <PerCampusV2CapabilityProvider>
     <div className="font-sans text-gray-900 bg-white min-h-screen flex flex-col">
-      <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
+      {/* top: 96 = Header's fixed h-20 (80px) + 16px gutter. Without this the toast
+          container overlaps the fixed header's nav links; since the toast itself has
+          pointer-events:auto, the mouse resting there while navigating triggers
+          react-hot-toast's built-in "pause on hover" and the toast never auto-dismisses. */}
+      <Toaster position="top-right" containerStyle={{ zIndex: 9999, top: 96 }} />
       <ScrollToTop />
 
       {/* Conditionally render Header and Footer based on route */}

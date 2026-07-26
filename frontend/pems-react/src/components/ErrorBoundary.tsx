@@ -41,7 +41,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   private handleLogout = () => {
     authStorage.clear();
-    window.location.assign('/login');
+    window.location.assign('/');
   };
 
   private handleReload = () => {

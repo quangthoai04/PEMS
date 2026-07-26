@@ -42,45 +42,6 @@ export interface MessageResponse {
   message: string;
 }
 
-export interface InternalLoginRequest {
-  email: string;
-  password: string;
-  loginPortal: 'INTERNAL';
-  selectedCampusId: string;
-}
-
-export interface VisitorLoginRequest {
-  email: string;
-  password: string;
-  loginPortal: 'VISITOR';
-}
-
-export interface InternalGoogleLoginRequest {
-  idToken: string;
-  loginPortal: 'INTERNAL';
-  selectedCampusId: string;
-}
-
-export interface VisitorGoogleLoginRequest {
-  idToken: string;
-  loginPortal: 'VISITOR';
-}
-
-/** @deprecated Use InternalLoginRequest or VisitorLoginRequest */
-export interface LoginRequest {
-  email: string;
-  password: string;
-  loginPortal: LoginPortal;
-  selectedCampusId?: string;
-}
-
-/** @deprecated Use InternalGoogleLoginRequest or VisitorGoogleLoginRequest */
-export interface GoogleLoginRequest {
-  idToken: string;
-  loginPortal: LoginPortal;
-  selectedCampusId?: string;
-}
-
 export interface ResetPasswordRequest {
   email: string;
   otpOrToken: string;

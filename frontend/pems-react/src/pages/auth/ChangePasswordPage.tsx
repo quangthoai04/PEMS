@@ -129,7 +129,17 @@ export function ChangePasswordPage() {
 
             <button
               type="button"
-              onClick={() => (forced ? logout().then(() => navigate('/login', { replace: true })) : navigate(-1))}
+              onClick={() => {
+                if (!forced) {
+                  navigate(-1);
+                  return;
+                }
+                // Navigate away BEFORE logout() clears the session: /change-password is
+                // wrapped by <ProtectedRoute>, so awaiting logout() first lets its own
+                // redirect to /login win the race against this navigate('/').
+                navigate('/', { replace: true });
+                logout();
+              }}
               className="w-full text-sm text-gray-500 hover:text-gray-700"
             >
               {forced ? t('loginModal:changePassword.logout') : t('loginModal:changePassword.cancel')}
