@@ -1,17 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2, UserCheck, X } from 'lucide-react';
-import {
-  transferVisitHost,
-  type ResolvedCampusVisit,
-} from '../api/visitRequestV2Api';
+import { transferVisitHost } from '../api/visitRequestV2Api';
 import { delegationsApi } from '../../delegations/api/delegationsApi';
 import type { HostCandidate } from '../../delegations/types/delegations.types';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
+/**
+ * Only what the handover actually needs. It used to take the whole per-campus read DTO, which meant the
+ * modal could be opened from the detail screen and nowhere else — the management list has the same four
+ * facts about a campus but not that DTO. Narrowing the contract is what lets one modal serve both.
+ */
+export interface HostTransferTarget {
+  visitInstanceId: number;
+  campusName: string;
+  currentHostUserId?: number | null;
+  currentHostName?: string | null;
+  plannedStartAt?: string | null;
+  /** Campus-instance concurrency token, echoed back so a stale form 409s instead of clobbering. */
+  rowVersion: number;
+  /** When the handover window closes, from the backend verdict. Shown so the deadline is not a surprise. */
+  cutoffAt?: string | null;
+  requiredLeadHours?: number | null;
+}
+
 interface Props {
-  campus: ResolvedCampusVisit;
+  campus: HostTransferTarget;
   onClose: () => void;
   onTransferred: () => void;
 }
@@ -36,6 +51,23 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Escape closes, focus starts inside the dialog, and focus returns to whatever opened it — the modal
+  // is now reachable from a row menu, where being dropped back at the top of a 50-row list is a real cost.
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    dialogRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      opener?.focus?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +122,11 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
       aria-modal="true"
       aria-label={t('visitRequestV2:hostTransfer.title')}
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl outline-none"
+      >
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-extrabold text-[#004c91]">
@@ -117,8 +153,24 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
           </div>
           <div className="mt-1 flex gap-2">
             <dt className="font-semibold text-slate-600">{t('visitRequestV2:hostTransfer.schedule')}</dt>
-            <dd className="text-slate-900">{formatVietnamDateTime(campus.plannedStartAt)}</dd>
+            <dd className="text-slate-900">
+              {campus.plannedStartAt ? formatVietnamDateTime(campus.plannedStartAt) : '—'}
+            </dd>
           </div>
+          {/* The deadline belongs on the form, not only in the error you get for missing it. */}
+          {campus.cutoffAt && (
+            <div className="mt-1 flex gap-2">
+              <dt className="font-semibold text-slate-600">{t('visitRequestV2:hostTransfer.cutoff')}</dt>
+              <dd data-testid="host-transfer-cutoff" className="text-slate-900">
+                {formatVietnamDateTime(campus.cutoffAt)}
+                <span className="ml-1 text-xs text-slate-500">
+                  {t('visitRequestV2:hostTransfer.cutoffHint', {
+                    hours: campus.requiredLeadHours ?? 6,
+                  })}
+                </span>
+              </dd>
+            </div>
+          )}
         </dl>
 
         {/* Approval, schedule and content are untouched by a handover — say so, because "chuyển Host"
