@@ -3,7 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getVisitRequestFormV2, type ResolvedCampusVisit, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
+import {
+  getVisitRequestFormV2,
+  markVisitChangesSeen,
+  type ResolvedCampusVisit,
+  type ResolvedVisitForm,
+} from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
 import ContactIdentityActions from '../ContactIdentityActions';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
@@ -61,6 +66,15 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Mark the request's changes seen once the detail has actually rendered. Deliberately here and not
+  // in the list: a badge cleared by a row scrolling past is a badge the reader never got to act on.
+  // Failure is silent — an unread count that stays up is a far smaller problem than an error toast
+  // on a screen the user opened to read something else.
+  useEffect(() => {
+    if (!data) return;
+    void markVisitChangesSeen(visitRequestId).catch(() => {});
+  }, [data, visitRequestId]);
 
   // The edit/resubmit page navigates here with its success message in router state. Nothing consumed
   // it, so a successful save landed on a silent screen. Show it exactly once and clear the state

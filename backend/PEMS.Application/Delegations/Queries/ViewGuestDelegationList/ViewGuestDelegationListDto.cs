@@ -164,6 +164,51 @@ public sealed class VisitRequestManagementItemDto
     /// authorized instance). Carries stable field CODES, never raw snippets or PII.
     /// </summary>
     public List<SearchMatchContextDto>? MatchedContexts { get; set; }
+
+    /// <summary>
+    /// What has happened on this row since the caller last looked. Null when there is nothing to
+    /// report, so a quiet row carries no payload at all.
+    /// </summary>
+    public VisitListChangeSummaryDto? ChangeSummary { get; set; }
+}
+
+/// <summary>
+/// The "something moved here" signal for a list row — kept SEPARATE from the row's status.
+///
+/// A request that is still "Chờ xử lý" after the visitor rewrote it is still, correctly, chờ xử lý;
+/// overwriting the status to say "Đã sửa" would lose the thing the Staff Leader is actually sorting
+/// by. So this is a second, additive signal: the status says where the request IS, this says what
+/// happened to it recently and whether the reader has seen it.
+/// </summary>
+public sealed class VisitListChangeSummaryDto
+{
+    public bool HasUnreadChanges { get; set; }
+    public int UnreadChangeCount { get; set; }
+    /// <summary>Event code of the most recent change — drives which badge the row shows.</summary>
+    public string? LatestEventCode { get; set; }
+    public DateTime? LatestChangedAt { get; set; }
+    /// <summary>Amendments awaiting a decision on campuses this caller can see.</summary>
+    public int PendingAmendmentCount { get; set; }
+    /// <summary>
+    /// True when at least one unread change is waiting on THIS person specifically — a Staff Leader
+    /// with an amendment to approve, not a Host being told the notes changed.
+    /// </summary>
+    public bool RequiresViewerAction { get; set; }
+    /// <summary>
+    /// Per-campus indicators, restricted to the campuses the caller may see. A campus outside their
+    /// scope contributes nothing here and nothing to the counts above — an unread badge must never
+    /// become a way to learn that a hidden campus exists.
+    /// </summary>
+    public List<VisitListCampusIndicatorDto> CampusIndicators { get; set; } = new();
+}
+
+public sealed class VisitListCampusIndicatorDto
+{
+    public ulong VisitInstanceId { get; set; }
+    public string? CampusName { get; set; }
+    public string EventCode { get; set; } = default!;
+    public DateTime OccurredAt { get; set; }
+    public bool RequiresAction { get; set; }
 }
 
 /// <summary>

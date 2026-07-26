@@ -615,6 +615,15 @@ export interface VisitHistoryDetail {
   collectionChanges: VisitHistoryCollectionChange[];
 }
 
+/**
+ * Clears the caller's unread-change badge for this request. Fired when the DETAIL screen has
+ * loaded — never on a list row appearing, which would spend the badge before it was read.
+ */
+export const markVisitChangesSeen = (visitRequestId: number) =>
+  httpClient
+    .post<{ markedCount: number }>(`/v2/visit-requests/${visitRequestId}/changes/seen`)
+    .then(r => r.data);
+
 export const getVisitHistoryDetail = (visitRequestId: number, eventId: string) =>
   httpClient
     .get<VisitHistoryDetail>(

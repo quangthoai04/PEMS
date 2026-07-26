@@ -53,6 +53,7 @@ import { useCampusFilterOptions } from '../../../features/campus-management/hook
 import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackApi';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
+import { VisitChangeBadges } from '../../../features/delegations/components/VisitChangeBadges';
 import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted';
@@ -1109,7 +1110,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     };
 
     statusText = labelByKind[kind];
-    return <span title={titleByKind[kind]} className={`${base} ${clsByKind[kind]}`}>{statusText}</span>;
+    return (
+      <span className="inline-flex flex-col items-start gap-1">
+        <span title={titleByKind[kind]} className={`${base} ${clsByKind[kind]}`}>{statusText}</span>
+        {/* BESIDE the status, never replacing it: the status is what people filter and sort by, and
+            a row that was edited is still at whatever stage it was at. */}
+        <VisitChangeBadges
+          summary={row.changeSummary}
+          data-testid={`change-badges-${row.visitRequestId}`}
+        />
+      </span>
+    );
   };
 
   const renderRowActions = (row: Row) => {

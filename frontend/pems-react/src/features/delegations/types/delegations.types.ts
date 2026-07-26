@@ -842,6 +842,38 @@ export interface VisitRequestManagementItem {
    * no raw matched text or PII is ever sent.
    */
   matchedContexts?: SearchMatchContext[] | null;
+
+  /** What moved on this row since the caller last looked. Absent when nothing has. */
+  changeSummary?: VisitListChangeSummary | null;
+}
+
+/** Badge vocabulary from the backend. An unrecognised code renders as a neutral "updated". */
+export type VisitListEventCode = 'CONTENT_UPDATED' | 'STATUS_CHANGED' | 'HOST_CHANGED' | 'DECIDED';
+
+/**
+ * The "something moved here" signal — deliberately SEPARATE from the row's status.
+ *
+ * A request still sitting at "Chờ xử lý" after the visitor rewrote it is still, correctly, chờ xử lý.
+ * Overwriting the status with "Đã sửa" would destroy the field people sort and filter by, so this
+ * rides alongside it instead.
+ */
+export interface VisitListChangeSummary {
+  hasUnreadChanges: boolean;
+  unreadChangeCount: number;
+  latestEventCode?: VisitListEventCode | string | null;
+  latestChangedAt?: string | null;
+  pendingAmendmentCount: number;
+  /** True when something here is waiting on THIS person, not merely informing them. */
+  requiresViewerAction: boolean;
+  campusIndicators: VisitListCampusIndicator[];
+}
+
+export interface VisitListCampusIndicator {
+  visitInstanceId: number;
+  campusName?: string | null;
+  eventCode: VisitListEventCode | string;
+  occurredAt: string;
+  requiresAction: boolean;
 }
 
 /** Scope discriminator for a {@link SearchMatchContext}. */

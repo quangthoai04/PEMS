@@ -14,6 +14,9 @@ vi.mock('../api/visitRequestV2Api', () => ({
   }),
   getActiveAmendment: vi.fn().mockResolvedValue(null),
   getVisitRequestHistory: vi.fn().mockResolvedValue({ visitRequestId: 1, requestCode: 'VR-1', entries: [] }),
+  getVisitHistoryDetail: vi.fn(),
+  // The detail view clears the caller's unread badge once it has rendered.
+  markVisitChangesSeen: vi.fn().mockResolvedValue({ markedCount: 0 }),
   resendContactClaim: vi.fn(),
   replacePendingContact: vi.fn(),
   initiateContactTransfer: vi.fn(),

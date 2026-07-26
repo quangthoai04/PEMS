@@ -579,6 +579,21 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Clears the caller's unread-change badge for this request. Called when the DETAIL screen opens,
+    /// never when a row appears in a list — a badge that clears itself on scroll spends the one signal
+    /// telling the reader to look, before they have looked.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/changes/seen")]
+    [Authorize]
+    public async Task<IActionResult> MarkChangesSeen(ulong visitRequestId, CancellationToken cancellationToken)
+    {
+        var marked = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.VisitAmendments.MarkVisitChangesSeenCommand(visitRequestId),
+            cancellationToken);
+        return Ok(new { markedCount = marked });
+    }
+
+    /// <summary>
     /// What actually changed in ONE timeline event: field before/after plus who joined or left the
     /// delegation. Same scoping as the timeline, and an event outside the caller's campuses answers
     /// 404 rather than 403 — a refusal would confirm the campus exists.

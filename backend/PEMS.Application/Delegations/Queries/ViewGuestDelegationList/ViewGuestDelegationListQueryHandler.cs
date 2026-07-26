@@ -7,7 +7,9 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
@@ -676,11 +678,14 @@ public sealed class ViewGuestDelegationListQueryHandler
 
             // ── Visitor edit / resubmit eligibility (spec "sửa đơn / gửi lại sau reject").
             // NEVER on the registered view — the registrant relation is strictly read-only. ──
+            // The lead time comes from VisitMutationPolicy — the same answer the detail screen and the
+            // command handler give. It used to be a local `AddHours(24)`, so the list and the detail
+            // could disagree about whether the same request was still editable.
             bool canEditPending = !registeredView
                 && vr.Status == VisitRequestStatuses.PendingApproval
                 && count > 0
                 && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval)
-                && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(24);
+                && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(VisitMutationPolicy.RequiredLeadHours);
             bool canResubmit = !registeredView
                 && vr.Status == VisitRequestStatuses.Rejected
                 && count > 0
@@ -689,6 +694,10 @@ public sealed class ViewGuestDelegationListQueryHandler
             // Cancel-eligibility (UC-136): REQUEST level.
             // Rule 1: Visitor can cancel the whole request only if ALL active campuses are cancellable
             // (i.e. status is Waiting/Assigned/BeforeVisit AND >= 24h).
+            //
+            // The 24h here is CANCELLATION, a different rule from the mutation window and deliberately
+            // left alone: calling off a visit obliges a campus to stand down people, rooms and security
+            // clearance, so it needs more notice than correcting a note does.
             var activeInstances = instances.Where(i => i.Status != VisitInstanceStatus.Cancelled && i.Status != VisitInstanceStatus.Rejected).ToList();
             bool hasStartedCampus = activeInstances.Any(i => i.Status == VisitInstanceStatus.DuringVisit || i.Status == VisitInstanceStatus.AfterVisit || i.Status == VisitInstanceStatus.Closed);
             
@@ -873,7 +882,57 @@ public sealed class ViewGuestDelegationListQueryHandler
             };
         }).ToList();
 
+        await AttachChangeSummariesAsync(items, requests, userId, campusNames, ct);
         return (items, total);
+    }
+
+    /// <summary>
+    /// Attaches the "something changed here" summary to each row, batched over the whole page.
+    ///
+    /// Scope is worked out here and passed in explicitly rather than inferred inside the builder: a
+    /// Staff Leader sees only their own campus, and an unread badge must never become a way to learn
+    /// that a campus they cannot see exists on this request.
+    /// </summary>
+    private async Task AttachChangeSummariesAsync(
+        List<VisitRequestManagementItemDto> items,
+        List<Domain.Entities.Delegations.VisitRequest> requests,
+        ulong userId,
+        Dictionary<ulong, string> campusNames,
+        CancellationToken ct)
+    {
+        if (items.Count == 0) return;
+
+        var roleCode = _currentUser.RoleCode?.ToUpperInvariant();
+        var isWholeRequestViewer = roleCode == RoleCodes.Ho || roleCode == RoleCodes.Visitor;
+        var isStaffLeader = roleCode == RoleCodes.Staff
+            && string.Equals(_currentUser.SubRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
+        var primaryCampusId = _currentUser.PrimaryCampusId;
+
+        var visibleByRequest = new Dictionary<ulong, HashSet<ulong>>();
+        var campusNameByInstance = new Dictionary<ulong, string>();
+        foreach (var vr in requests)
+        {
+            var visible = new HashSet<ulong>();
+            foreach (var instance in vr.CampusInstances)
+            {
+                var canSee = isWholeRequestViewer
+                    || (isStaffLeader && primaryCampusId == instance.CampusId)
+                    || instance.CurrentHostUserId == userId;
+                if (!canSee) continue;
+                visible.Add(instance.VisitInstanceId);
+                if (campusNames.TryGetValue(instance.CampusId, out var name))
+                    campusNameByInstance[instance.VisitInstanceId] = name;
+            }
+            visibleByRequest[vr.VisitRequestId] = visible;
+        }
+
+        var summaries = await VisitChangeSummaryBuilder.BuildAsync(
+            _context, userId, requests.Select(r => r.VisitRequestId).ToList(),
+            visibleByRequest, campusNameByInstance, ct);
+
+        foreach (var item in items)
+            if (summaries.TryGetValue(item.VisitRequestId, out var summary))
+                item.ChangeSummary = summary;
     }
 
     /// <summary>

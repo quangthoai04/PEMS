@@ -303,6 +303,18 @@
     "errGeneric": "Could not transfer the host. Please try again.",
     "submit": "Confirm transfer"
   },
+  "changeBadges": {
+    "pendingAmendment_one": "Change to approve",
+    "pendingAmendment_other": "{{count}} changes to approve",
+    "unreadCount_one": "{{count}} unseen change",
+    "unreadCount_other": "{{count}} unseen changes",
+    "event": {
+      "CONTENT_UPDATED": "Recently updated",
+      "STATUS_CHANGED": "Status changed",
+      "HOST_CHANGED": "Host changed",
+      "DECIDED": "Decision made"
+    }
+  },
   "mutationCutoff": {
     "forCampus": "Unavailable for {{campus}}.",
     "rule": "This action is only possible at least {{hours}} hours before the visit starts.",

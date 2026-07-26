@@ -303,6 +303,18 @@
     "errGeneric": "Không thể chuyển Host. Vui lòng thử lại.",
     "submit": "Xác nhận chuyển Host"
   },
+  "changeBadges": {
+    "pendingAmendment_one": "Cần duyệt thay đổi",
+    "pendingAmendment_other": "Cần duyệt {{count}} thay đổi",
+    "unreadCount_one": "{{count}} thay đổi chưa xem",
+    "unreadCount_other": "{{count}} thay đổi chưa xem",
+    "event": {
+      "CONTENT_UPDATED": "Mới cập nhật",
+      "STATUS_CHANGED": "Trạng thái đã đổi",
+      "HOST_CHANGED": "Host đã thay đổi",
+      "DECIDED": "Đã có quyết định"
+    }
+  },
   "mutationCutoff": {
     "forCampus": "Không thể thực hiện cho {{campus}}.",
     "rule": "Thao tác này chỉ được thực hiện ít nhất {{hours}} giờ trước khi chuyến thăm bắt đầu.",
