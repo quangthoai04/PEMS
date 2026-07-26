@@ -1,5 +1,4 @@
 using FluentValidation;
-using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Authentication.Commands.LoginviaCredentials;
 
@@ -14,10 +13,5 @@ public sealed class LoginviaCredentialsCommandValidator : AbstractValidator<Logi
 
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage("Password is required.");
-
-        RuleFor(x => x.LoginPortal)
-            .NotEmpty().WithMessage("Login portal is required.")
-            .Must(p => p == LoginPortals.Internal || p == LoginPortals.Visitor)
-            .WithMessage("Login portal must be INTERNAL or VISITOR.");
     }
 }
