@@ -20,3 +20,8 @@ export const VEHICLE_HANDOVER_CHECKLIST: { name: string; qty: string }[] = [
 /** Đơn yêu cầu mượn xe (điều phối di chuyển) dùng biên bản xe ô tô điện. */
 export const isVehicleHandover = (itemType?: string | null): boolean =>
   String(itemType || '').toUpperCase() === 'TRANSPORT';
+
+export type VehicleChecklistRow = { name: string; qty: string; giao: string; nhan: string };
+
+export const buildDefaultVehicleChecklist = (): VehicleChecklistRow[] =>
+  VEHICLE_HANDOVER_CHECKLIST.map(row => ({ name: row.name, qty: row.qty, giao: '', nhan: '' }));

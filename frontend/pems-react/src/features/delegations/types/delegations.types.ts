@@ -1345,6 +1345,8 @@ export interface LogisticsHandover {
   providerSignedAt?: string | null;
   itemCondition?: LogisticsItemCondition | null;
   conditionNote?: string | null;
+  /** JSON checklist xe điện (TRANSPORT, dòng BORROW) — null nếu không phải TRANSPORT. */
+  checklistJson?: string | null;
 }
 
 export interface SignHandoverBorrowerPayload {

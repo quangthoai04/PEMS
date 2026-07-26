@@ -120,7 +120,20 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
         foreach (var i in items)
         {
             if (handoversByItem.TryGetValue(i.LogisticsItemId, out var hs))
+            {
+                // TRANSPORT: condition_note của dòng BORROW đang giữ checklist JSON (phòng ban điền
+                // trực tiếp trên bảng checklist, không còn ô "Ghi chú" tự do) — tách sang ChecklistJson
+                // để Host render đúng bảng checklist, ConditionNote trả null để không hiện JSON thô.
+                if (i.ItemType == "TRANSPORT")
+                {
+                    foreach (var h in hs.Where(h => h.HandoverType == "BORROW"))
+                    {
+                        h.ChecklistJson = h.ConditionNote;
+                        h.ConditionNote = null;
+                    }
+                }
                 i.Handovers = hs;
+            }
             if (i.RequestedToDepartmentId.HasValue && deptNames.TryGetValue(i.RequestedToDepartmentId.Value, out var dn))
                 i.DepartmentName = dn;
             if (i.AssignedToUserId.HasValue && userNames.TryGetValue(i.AssignedToUserId.Value, out var un))

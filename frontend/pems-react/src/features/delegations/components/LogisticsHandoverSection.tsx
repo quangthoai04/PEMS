@@ -26,6 +26,7 @@ import {
   type LogisticsItemCondition,
   type VisitInstanceLogisticsItem,
 } from '../types/delegations.types';
+import { isVehicleHandover, buildDefaultVehicleChecklist, type VehicleChecklistRow } from '../../department-reception-tasks/constants/vehicleHandover';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -433,6 +434,20 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                 const hostName = b?.borrowerSignedByName || r?.borrowerSignedByName || 'Đại diện Host đón tiếp';
                 const providerName = b?.providerSignedByName || r?.providerSignedByName || signTarget.item.departmentName || 'Đại diện Phòng ban';
 
+                // Xe điện (TRANSPORT): render đúng bảng checklist 10 dòng phòng ban đã điền,
+                // không hiện dạng chuỗi gộp — parse từ JSON lưu trên dòng BORROW.
+                const isVehicle = isVehicleHandover(signTarget.item.itemType);
+                const vehicleRows: VehicleChecklistRow[] = (() => {
+                  if (!isVehicle) return [];
+                  if (b?.checklistJson) {
+                    try {
+                      const parsed = JSON.parse(b.checklistJson);
+                      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                    } catch { /* rơi về mặc định nếu JSON hỏng */ }
+                  }
+                  return buildDefaultVehicleChecklist();
+                })();
+
                 return (
                   <>
                     <div className="text-center space-y-1 mb-8">
@@ -463,7 +478,9 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                       </div>
                     </div>
 
-                    <p className="font-bold text-[15px] mb-2">Cùng bàn giao tài sản với tình trạng sau:</p>
+                    <p className="font-bold text-[15px] mb-2">
+                      {isVehicle ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+                    </p>
                     <div className="overflow-x-auto mb-6">
                       <table className="w-full border-collapse border border-slate-500 text-[14px]">
                         <thead>
@@ -471,36 +488,58 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                             <th className="border border-slate-500 p-2 text-center w-12">STT</th>
                             <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                             <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                            <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
-                            <th className="border border-slate-500 p-2 text-center">Tình Trạng nhận</th>
+                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
                             <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
                           </tr>
                         </thead>
                         <tbody>
-                          <tr>
-                            <td className="border border-slate-500 p-2 text-center">1</td>
-                            <td className="border border-slate-500 p-2 font-semibold">{signTarget.item.title}</td>
-                            <td className="border border-slate-500 p-2 text-center">{signTarget.item.quantity || 1}</td>
-                            <td className="border border-slate-500 p-2 text-center">
-                              {b?.conditionNote || ''}
-                            </td>
-                            <td className="border border-slate-500 p-2 text-center">
-                              {b?.borrowerSignedAt ? (signTarget.type === 'BORROW' ? note : 'Đã xác nhận') : ''}
-                            </td>
-                            <td className="border border-slate-500 p-2"></td>
-                          </tr>
+                          {isVehicle ? (
+                            vehicleRows.map((row, i) => (
+                              <tr key={i}>
+                                <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                                <td className="border border-slate-500 p-2">{row.name}</td>
+                                <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
+                                <td className="border border-slate-500 p-2 text-center">{row.giao}</td>
+                                <td className="border border-slate-500 p-2 text-center">{row.nhan}</td>
+                                <td className="border border-slate-500 p-2"></td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="border border-slate-500 p-2 text-center">1</td>
+                              <td className="border border-slate-500 p-2 font-semibold">{signTarget.item.title}</td>
+                              <td className="border border-slate-500 p-2 text-center">{signTarget.item.quantity || 1}</td>
+                              <td className="border border-slate-500 p-2 text-center">
+                                {b?.conditionNote || ''}
+                              </td>
+                              <td className="border border-slate-500 p-2 text-center">
+                                {b?.borrowerSignedAt ? (signTarget.type === 'BORROW' ? note : 'Đã xác nhận') : ''}
+                              </td>
+                              <td className="border border-slate-500 p-2"></td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
 
                     <div className="space-y-1 text-[14px] mb-8">
-                      <p className="font-bold">Quy định khi sử dụng tài sản:</p>
-                      <ul className="list-disc pl-8 space-y-1">
-                        <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
-                        <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
-                        <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
-                        <li>Ghi chú khác: ....................................................................................................................</li>
-                      </ul>
+                      <p className="font-bold">{isVehicle ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
+                      {isVehicle ? (
+                        <ul className="list-disc pl-8 space-y-1">
+                          <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
+                          <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                          <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
+                          <li>Ghi chú khác: ....................................................................................................................</li>
+                        </ul>
+                      ) : (
+                        <ul className="list-disc pl-8 space-y-1">
+                          <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                          <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                          <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                          <li>Ghi chú khác: ....................................................................................................................</li>
+                        </ul>
+                      )}
                       <p className="mt-4">
                         Tôi là <b>{hostName}</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
                       </p>
@@ -520,7 +559,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                         <div>
                           <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
                           <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
-                            {b?.conditionNote || 'Không có ghi chú.'}
+                            {isVehicle ? 'Ghi chú biên bản: xem tình trạng xe tại bảng checklist phía trên.' : (b?.conditionNote || 'Không có ghi chú.')}
                           </div>
                         </div>
                         <div className={`border-2 rounded-xl p-3 relative ${bg1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>

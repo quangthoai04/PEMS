@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Download, X, Loader2, PenLine, Plus } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
-import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { isVehicleHandover, buildDefaultVehicleChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import toast from 'react-hot-toast';
 
@@ -29,7 +29,15 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const [busy, setBusy] = useState(false);
   const [borrowNote, setBorrowNote] = useState('');
   const [returnNote, setReturnNote] = useState('');
-  const [extraRows, setExtraRows] = useState<{ id: number }[]>([]);
+  const [checklistRows, setChecklistRows] = useState<VehicleChecklistRow[]>(() => {
+    if (detailData?.ChecklistJson) {
+      try {
+        const parsed = JSON.parse(detailData.ChecklistJson);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch { /* rơi về mặc định nếu JSON hỏng */ }
+    }
+    return buildDefaultVehicleChecklist();
+  });
 
   if ((!isOpen && !inline) || !detailData) return null;
 
@@ -43,8 +51,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const canSignNT2 = isBorrowDone && nt1 && !nt2 && !readOnly; // Department is PROVIDER
 
   const isReturnStarted = nt1 || nt2;
-  const canEditFirst4Cols = !isBorrowDone && !isReturnStarted && !readOnly;
-  const canEditLastCol = isBorrowDone && !isReturnStarted && !readOnly;
+  // Checklist xe điện: phòng ban (PROVIDER) điền toàn bộ bảng TRƯỚC khi ký "Ký Giao" — ký xong
+  // khoá lại ngay (không chờ Host ký nhận), vì Host không dùng modal này để nhập checklist.
+  const canEditChecklist = !bg1 && !readOnly;
 
   // parse date for top section
   let handoverTime = "....";
@@ -72,8 +81,10 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const handleSign = async (type: 'BORROW' | 'RETURN') => {
     setBusy(true);
     try {
-      const note = type === 'BORROW' ? borrowNote : returnNote;
-      await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note.trim() || undefined);
+      const note = (type === 'BORROW' ? borrowNote : returnNote).trim();
+      // Checklist chỉ còn sửa được trước khi ký BORROW — gửi kèm đúng lúc đó, không gửi lại ở RETURN.
+      const checklistJson = isVehicle && type === 'BORROW' ? JSON.stringify(checklistRows) : undefined;
+      await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note || undefined, checklistJson);
       toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nhận lại'}`);
       onSuccess?.();
     } catch (e: any) {
@@ -192,31 +203,31 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                 <tbody>
                   {isVehicle ? (
                     <>
-                      {VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
+                      {checklistRows.map((row, i) => (
                         <tr key={i}>
                           <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" defaultValue={row.name} disabled={!canEditFirst4Cols} /></td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" defaultValue={row.qty} disabled={!canEditFirst4Cols} /></td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditLastCol} /></td>
+                          <td className="border border-slate-500 p-0">
+                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.name} disabled={!canEditChecklist}
+                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))} />
+                          </td>
+                          <td className="border border-slate-500 p-0">
+                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" value={row.qty} disabled={!canEditChecklist}
+                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} />
+                          </td>
+                          <td className="border border-slate-500 p-0">
+                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.giao} disabled={!canEditChecklist}
+                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, giao: e.target.value } : r))} />
+                          </td>
+                          <td className="border border-slate-500 p-0">
+                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.nhan} disabled={!canEditChecklist}
+                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, nhan: e.target.value } : r))} />
+                          </td>
                         </tr>
                       ))}
-                      {extraRows.map((row, idx) => {
-                        const i = VEHICLE_HANDOVER_CHECKLIST.length + idx;
-                        return (
-                          <tr key={row.id}>
-                            <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" disabled={!canEditFirst4Cols} /></td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditLastCol} /></td>
-                          </tr>
-                        );
-                      })}
-                      {canEditFirst4Cols && (
+                      {canEditChecklist && (
                         <tr className="print:hidden">
                           <td colSpan={5} className="border border-slate-500 p-0">
-                            <button type="button" onClick={() => setExtraRows(prev => [...prev, { id: Date.now() }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
+                            <button type="button" onClick={() => setChecklistRows(prev => [...prev, { name: '', qty: '', giao: '', nhan: '' }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
                               <Plus className="w-4 h-4" /> Thêm dòng
                             </button>
                           </td>
@@ -275,7 +286,11 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                 <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
-                    {canSignBG1 ? (
+                    {isVehicle ? (
+                      <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-500 italic flex items-center">
+                        Ghi chú biên bản: xem tình trạng xe tại bảng checklist phía trên.
+                      </div>
+                    ) : canSignBG1 ? (
                       <textarea rows={2} value={borrowNote} onChange={e => setBorrowNote(e.target.value)} disabled={busy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] focus:ring-1 focus:ring-blue-200 outline-none resize-none bg-slate-50/30" placeholder="Ghi nhận tình trạng trước khi giao..." />
                     ) : (
                       <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">

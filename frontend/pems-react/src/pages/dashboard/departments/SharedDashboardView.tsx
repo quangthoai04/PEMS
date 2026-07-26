@@ -41,7 +41,7 @@ import { getNotificationLink, timeAgo } from '../../../features/notifications/co
 import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
 import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { matchCalendarChangeNotifs } from '../../../features/notifications/utils/calendarChangeNotifs';
-import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { isVehicleHandover, buildDefaultVehicleChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
@@ -420,6 +420,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [safuriNT1Note, setSafuriNT1Note] = useState('Đã nhận lại chìa khóa, xe sạch sẽ.');
   const [safuriNT2Note, setSafuriNT2Note] = useState('Xe trả nguyên trạng, hoàn tất phiên bàn giao.');
 
+  // Checklist xe điện (TRANSPORT) — reset về mặc định mỗi khi mở 1 đơn khác (component này
+  // không unmount giữa các lần mở popover như TaskHandoverModal, nên phải tự reset theo rawId),
+  // rồi nạp lại đúng checklist đã lưu (nếu có) ngay khi activeEventDetail tải xong (xem effect
+  // hydrate bên dưới, đặt sau khai báo activeEventDetail).
+  const [vehicleChecklistRows, setVehicleChecklistRows] = useState<VehicleChecklistRow[]>(buildDefaultVehicleChecklist);
+  React.useEffect(() => {
+    setVehicleChecklistRows(buildDefaultVehicleChecklist());
+  }, [activePopoverEvent?.rawId]);
+
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     creator: false,
     guests: false,
@@ -446,9 +455,20 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   const [activeEventDetail, setActiveEventDetail] = useState<any>(null);
 
+  React.useEffect(() => {
+    if (!activeEventDetail?.checklistJson) return;
+    try {
+      const parsed = JSON.parse(activeEventDetail.checklistJson);
+      if (Array.isArray(parsed) && parsed.length > 0) setVehicleChecklistRows(parsed);
+    } catch { /* giữ nguyên mặc định nếu JSON hỏng */ }
+  }, [activeEventDetail?.checklistJson]);
+
   // Đơn mượn xe (TRANSPORT): biên bản dùng checklist xe ô tô điện cố định;
   // đơn yêu cầu chung chung giữ nguyên biên bản hiện tại.
   const isVehicleDoc = isVehicleHandover(activeEventDetail?.itemType);
+  // Phòng ban (PROVIDER) điền toàn bộ checklist TRƯỚC khi ký "Ký Giao" — ký xong khoá lại ngay,
+  // không chờ Host ký nhận (Host không dùng modal này để nhập checklist).
+  const canEditVehicleChecklist = !safuriBG1Signed;
 
   React.useEffect(() => {
     if (!activePopoverEvent || !activePopoverEvent.rawId) {
@@ -1239,11 +1259,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     signerSide: 'BORROWER' | 'PROVIDER',
     note: string,
     setSigned: React.Dispatch<React.SetStateAction<string | null>>,
-    successMessage: string
+    successMessage: string,
+    checklistJson?: string
   ) => {
     if (!activePopoverEvent?.rawId) return;
     try {
-      const result = await departmentReceptionTasksApi.signHandover(activePopoverEvent.rawId, handoverType, signerSide, note);
+      const result = await departmentReceptionTasksApi.signHandover(activePopoverEvent.rawId, handoverType, signerSide, note, checklistJson);
       setSigned(`${result.signedByName || user?.name || 'Người ký'} - ${formatDateTime(result.signedAt)}`);
       toast.success(successMessage);
       const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
@@ -3862,16 +3883,39 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </thead>
                           <tbody>
                             {isVehicleDoc ? (
-                              VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
-                                <tr key={i}>
-                                  <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                                  <td className="border border-slate-500 p-2">{row.name}</td>
-                                  <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
-                                  <td className="border border-slate-500 p-2"></td>
-                                  <td className="border border-slate-500 p-2"></td>
-                                  <td className="border border-slate-500 p-2"></td>
-                                </tr>
-                              ))
+                              <>
+                                {vehicleChecklistRows.map((row, i) => (
+                                  <tr key={i}>
+                                    <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                                    <td className="border border-slate-500 p-0">
+                                      <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.name} disabled={!canEditVehicleChecklist}
+                                        onChange={e => setVehicleChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))} />
+                                    </td>
+                                    <td className="border border-slate-500 p-0">
+                                      <input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" value={row.qty} disabled={!canEditVehicleChecklist}
+                                        onChange={e => setVehicleChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} />
+                                    </td>
+                                    <td className="border border-slate-500 p-0">
+                                      <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.giao} disabled={!canEditVehicleChecklist}
+                                        onChange={e => setVehicleChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, giao: e.target.value } : r))} />
+                                    </td>
+                                    <td className="border border-slate-500 p-0">
+                                      <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.nhan} disabled={!canEditVehicleChecklist}
+                                        onChange={e => setVehicleChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, nhan: e.target.value } : r))} />
+                                    </td>
+                                    <td className="border border-slate-500 p-2"></td>
+                                  </tr>
+                                ))}
+                                {canEditVehicleChecklist && (
+                                  <tr className="print:hidden">
+                                    <td colSpan={6} className="border border-slate-500 p-0">
+                                      <button type="button" onClick={() => setVehicleChecklistRows(prev => [...prev, { name: '', qty: '', giao: '', nhan: '' }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
+                                        <Plus className="w-4 h-4" /> Thêm dòng
+                                      </button>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
                             ) : (
                               <tr>
                                 <td className="border border-slate-500 p-2 text-center">1</td>
@@ -3931,14 +3975,20 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
                               Ghi chú Bên Giao
                             </label>
-                            <textarea
-                              rows={2}
-                              value={safuriBG1Note}
-                              onChange={e => setSafuriBG1Note(e.target.value)}
-                              className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-orange-200"
-                              disabled={!!safuriBG1Signed}
-                              placeholder="Nhập ý kiến Bên Giao đầu giờ..."
-                            />
+                            {isVehicleDoc ? (
+                              <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[54px] text-slate-500 italic flex items-center font-sans">
+                                Ghi chú biên bản: xem tình trạng xe tại bảng checklist phía trên.
+                              </div>
+                            ) : (
+                              <textarea
+                                rows={2}
+                                value={safuriBG1Note}
+                                onChange={e => setSafuriBG1Note(e.target.value)}
+                                className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-orange-200"
+                                disabled={!!safuriBG1Signed}
+                                placeholder="Nhập ý kiến Bên Giao đầu giờ..."
+                              />
+                            )}
                           </div>
 
                           {/* Horizontal Signature Box */}
@@ -3965,7 +4015,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleSignHandover('BORROW', 'PROVIDER', safuriBG1Note, setSafuriBG1Signed, 'Đã ký bàn giao. Đơn yêu cầu đã chuyển sang đang xử lý.')}
+                                  onClick={() => handleSignHandover('BORROW', 'PROVIDER', isVehicleDoc ? '' : safuriBG1Note, setSafuriBG1Signed, 'Đã ký bàn giao. Đơn yêu cầu đã chuyển sang đang xử lý.', isVehicleDoc ? JSON.stringify(vehicleChecklistRows) : undefined)}
                                   className="py-2 px-3 bg-orange-50 hover:bg-orange-100 hover:text-[#f37021] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
                                 >
                                   <FileText className="w-3.5 h-3.5" />

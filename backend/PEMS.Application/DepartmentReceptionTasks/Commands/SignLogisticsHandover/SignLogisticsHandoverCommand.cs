@@ -13,6 +13,8 @@ public class SignLogisticsHandoverCommand : IRequest<SignLogisticsHandoverRespon
     public string HandoverType { get; set; } = default!;
     public string SignerSide { get; set; } = default!;
     public string? Note { get; set; }
+    /// <summary>JSON checklist xe điện (TRANSPORT) — luôn lưu vào dòng BORROW bất kể đang ký loại nào.</summary>
+    public string? ChecklistJson { get; set; }
 }
 
 public sealed class SignLogisticsHandoverResponse
@@ -100,8 +102,22 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
             handover.ProviderSignedAt = now;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Note))
+        if (!string.IsNullOrWhiteSpace(request.ChecklistJson))
+        {
+            // Checklist xe điện (TRANSPORT) ghi đè thẳng condition_note — không qua MergeNote vì
+            // đây là dữ liệu có cấu trúc (JSON), không phải note tự do gắn nhãn Bên Giao/Bên Nhận.
+            // Luôn sống trên dòng BORROW; nếu đang ký RETURN thì dòng BORROW chắc chắn đã tồn tại
+            // (return chỉ mở khoá sau khi borrow xong) — không cần tạo cột DB mới.
+            var checklistTarget = handoverType == LogisticsHandoverTypes.Borrow
+                ? handover
+                : await _context.VisitLogisticsItemHandovers
+                    .FirstOrDefaultAsync(h => h.LogisticsItemId == request.LogisticsItemId && h.HandoverType == LogisticsHandoverTypes.Borrow, cancellationToken);
+            if (checklistTarget != null) checklistTarget.ConditionNote = request.ChecklistJson;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Note))
+        {
             handover.ConditionNote = MergeNote(handover.ConditionNote, signerSide!, request.Note.Trim());
+        }
 
         if (handoverType == LogisticsHandoverTypes.Borrow && signerSide == HandoverSignerSides.Provider)
         {

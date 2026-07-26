@@ -66,4 +66,6 @@ public sealed class LogisticsHandoverDto
     public string? ProviderSignedAt { get; set; }
     public string? ItemCondition { get; set; }             // GOOD | DAMAGED | MISSING | OTHER
     public string? ConditionNote { get; set; }
+    /// <summary>JSON checklist xe điện (TRANSPORT, dòng BORROW) — null nếu không phải TRANSPORT.</summary>
+    public string? ChecklistJson { get; set; }
 }

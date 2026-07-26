@@ -71,6 +71,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public HandoverSignatureDto? ReturnBorrowerSignature { get; set; }
         public string? BorrowNote { get; set; }
         public string? ReturnNote { get; set; }
+        /// <summary>JSON checklist xe điện (TRANSPORT) — null nếu đơn không phải TRANSPORT hoặc chưa ai lưu.</summary>
+        public string? ChecklistJson { get; set; }
 
         // Full Details
         public string RegistrantFullName { get; set; }
@@ -274,8 +276,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 BorrowBorrowerSignature = ToSignature(borrowHandover?.BorrowerSignedBy, borrowHandover?.BorrowerSignedAt, signerNames),
                 ReturnProviderSignature = ToSignature(returnHandover?.ProviderSignedBy, returnHandover?.ProviderSignedAt, signerNames),
                 ReturnBorrowerSignature = ToSignature(returnHandover?.BorrowerSignedBy, returnHandover?.BorrowerSignedAt, signerNames),
-                BorrowNote = borrowHandover?.ConditionNote,
+                // TRANSPORT: condition_note của dòng BORROW đang giữ checklist JSON (không phải note tự
+                // do) — tách riêng qua ChecklistJson, BorrowNote trả null để không hiện nhầm JSON thô.
+                BorrowNote = l.ItemType == "TRANSPORT" ? null : borrowHandover?.ConditionNote,
                 ReturnNote = returnHandover?.ConditionNote,
+                ChecklistJson = l.ItemType == "TRANSPORT" ? borrowHandover?.ConditionNote : null,
 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",
