@@ -286,23 +286,25 @@
     "sharedLocked": "Thông tin người đăng ký và đầu mối liên hệ dùng chung cho mọi cơ sở nên chỉ sửa được khi tất cả cơ sở đều còn trong thời hạn thay đổi. Anh/chị vẫn có thể sửa ghi chú của từng cơ sở bên dưới."
   },
   "hostTransfer": {
-    "open": "Chuyển Host",
-    "title": "Chuyển Host phụ trách",
-    "currentHost": "Host hiện tại:",
+    "open": "Chuyển người phụ trách",
+    "title": "Chuyển người phụ trách tiếp đón",
+    "currentHost": "Người phụ trách hiện tại:",
     "schedule": "Bắt đầu:",
-    "keepsApproval": "Chuyển Host không ảnh hưởng quyết định duyệt, lịch thăm hay nội dung chương trình. Đơn không phải duyệt lại.",
-    "newHost": "Chọn Host mới",
-    "selfOption": "(Tôi làm Host)",
-    "loadingCandidates": "Đang tải danh sách Host…",
-    "loadFailed": "Không tải được danh sách Host. Vui lòng thử lại.",
-    "noCandidates": "Cơ sở này chưa có nhân sự nào đủ điều kiện làm Host thay thế.",
-    "reason": "Lý do chuyển Host",
-    "reasonPlaceholder": "Ví dụ: Host hiện tại thay đổi lịch công tác.",
+    "cutoff": "Hạn chuyển:",
+    "cutoffHint": "(ít nhất {{hours}} giờ trước giờ bắt đầu)",
+    "keepsApproval": "Chuyển người phụ trách không ảnh hưởng quyết định duyệt, lịch thăm hay nội dung chương trình. Đơn không phải duyệt lại.",
+    "newHost": "Chọn người phụ trách mới",
+    "selfOption": "(Tôi nhận phụ trách)",
+    "loadingCandidates": "Đang tải danh sách nhân sự…",
+    "loadFailed": "Không tải được danh sách nhân sự. Vui lòng thử lại.",
+    "noCandidates": "Cơ sở này chưa có nhân sự nào đủ điều kiện nhận phụ trách tiếp đón.",
+    "reason": "Lý do chuyển người phụ trách",
+    "reasonPlaceholder": "Ví dụ: người phụ trách hiện tại thay đổi lịch công tác.",
     "conflictWarning": "Trùng lịch {{count}} hoạt động trong khung giờ này.",
     "conflictAck": "{{name}} đang có lịch trùng trong khung giờ này. Bạn vẫn có thể chọn, hệ thống chỉ cảnh báo.",
     "conflict": "Cơ sở này vừa được thay đổi bởi thao tác khác. Vui lòng tải lại trang và thử lại.",
-    "errGeneric": "Không thể chuyển Host. Vui lòng thử lại.",
-    "submit": "Xác nhận chuyển Host"
+    "errGeneric": "Không thể chuyển người phụ trách. Vui lòng thử lại.",
+    "submit": "Xác nhận chuyển người phụ trách"
   },
   "changeBadges": {
     "pendingAmendment_one": "Cần duyệt thay đổi",
@@ -312,7 +314,7 @@
     "event": {
       "CONTENT_UPDATED": "Mới cập nhật",
       "STATUS_CHANGED": "Trạng thái đã đổi",
-      "HOST_CHANGED": "Host đã thay đổi",
+      "HOST_CHANGED": "Người phụ trách đã thay đổi",
       "DECIDED": "Đã có quyết định"
     }
   },
@@ -335,14 +337,14 @@
       "PRIMARY_CONTACT": "Đầu mối liên hệ",
       "DELEGATION_NAME": "Tên đoàn",
       "CAMPUS": "Cơ sở",
-      "HOST": "Người phụ trách"
+      "HOST": "Người phụ trách tiếp đón"
     }
   },
   "detail": {
     "cardAria": "Chi tiết cơ sở {{campus}}",
     "amendmentBadge": "Đề xuất #{{no}} chờ duyệt",
     "peopleToggle": "Danh sách đoàn ({{visitors}} khách, {{support}} hỗ trợ)",
-    "host": "Người tiếp đón (Host)",
+    "host": "Người phụ trách tiếp đón",
     "decision": "Quyết định",
     "revision": "Phiên bản",
     "revisionValue": "Nội dung v{{form}} · Phê duyệt v{{approval}}",
@@ -361,7 +363,9 @@
     "retry": "Thử lại",
     "decidedBy": "Người quyết định",
     "decidedAt": "Thời điểm quyết định",
-    "decisionNote": "Lý do / Ghi chú",
+    "decisionNoteApproved": "Ghi chú phê duyệt",
+    "decisionNoteRejected": "Lý do từ chối",
+    "decisionNoteCancelled": "Lý do hủy",
     "contactAccessStatus": "Trạng thái xác nhận",
     "contactActive": "Đã xác nhận",
     "contactVerifiedAt": "Xác nhận lúc",
@@ -371,7 +375,7 @@
     "unknown": "Không xác định",
     "instance": {
       "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
-      "ASSIGNED": "Đã duyệt và gán Host",
+      "ASSIGNED": "Đã duyệt và phân công người phụ trách",
       "BEFORE_VISIT": "Đang chuẩn bị",
       "DURING_VISIT": "Đang tiếp khách",
       "AFTER_VISIT": "Sau tiếp khách",
@@ -437,7 +441,7 @@
       "CONTACT_IDENTITY_CHANGED": "Vai trò đầu mối liên hệ có thay đổi ({{email}}).",
       "REQUEST_PENDING_EDIT_APPLIED": "{{actor}} đã sửa đơn khi còn đang chờ duyệt.",
       "INSTANCE_PENDING_EDIT_APPLIED": "{{actor}} đã sửa nội dung tại {{campus}} khi còn đang chờ duyệt — phiên bản {{formRevision}}.",
-      "HOST_TRANSFERRED": "{{actor}} đã chuyển Host phụ trách tại {{campus}}.",
+      "HOST_TRANSFERRED": "{{actor}} đã chuyển người phụ trách tiếp đón tại {{campus}}.",
       "UNKNOWN": "Có một thay đổi khác được ghi nhận."
     }
   },
@@ -468,7 +472,7 @@
     },
     "field": {
       "unknown": "{{field}}",
-      "host": "Host phụ trách",
+      "host": "Người phụ trách tiếp đón",
       "fullName": "Họ và tên",
       "jobTitle": "Chức vụ",
       "organization": "Đơn vị công tác",

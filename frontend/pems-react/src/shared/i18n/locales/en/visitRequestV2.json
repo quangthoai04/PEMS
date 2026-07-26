@@ -286,22 +286,24 @@
     "sharedLocked": "The registrant and contact details are shared by every campus, so they can only be changed while all campuses are still within their change window. You can still edit each campus's notes below."
   },
   "hostTransfer": {
-    "open": "Transfer host",
-    "title": "Transfer the host",
-    "currentHost": "Current host:",
+    "open": "Transfer reception owner",
+    "title": "Transfer the reception owner",
+    "currentHost": "Current reception owner:",
     "schedule": "Starts:",
-    "keepsApproval": "Transferring the host does not affect the approval, the schedule or the programme. The request is not re-approved.",
-    "newHost": "Choose the new host",
-    "selfOption": "(I will host)",
-    "loadingCandidates": "Loading hosts…",
-    "loadFailed": "Could not load the host list. Please try again.",
-    "noCandidates": "This campus has nobody eligible to take over as host.",
+    "cutoff": "Transfer deadline:",
+    "cutoffHint": "(at least {{hours}} hours before the start)",
+    "keepsApproval": "Transferring the reception owner does not affect the approval, the schedule or the programme. The request is not re-approved.",
+    "newHost": "Choose the new reception owner",
+    "selfOption": "(I will take it on)",
+    "loadingCandidates": "Loading eligible staff…",
+    "loadFailed": "Could not load the list of eligible staff. Please try again.",
+    "noCandidates": "This campus has nobody eligible to take over the reception.",
     "reason": "Reason for the transfer",
-    "reasonPlaceholder": "For example: the current host's travel schedule changed.",
+    "reasonPlaceholder": "For example: the current owner's travel schedule changed.",
     "conflictWarning": "Overlaps {{count}} other activity in this time window.",
     "conflictAck": "{{name}} has an overlapping commitment in this window. You may still choose them — this is only a warning.",
     "conflict": "This campus was just changed by another action. Please reload and try again.",
-    "errGeneric": "Could not transfer the host. Please try again.",
+    "errGeneric": "Could not transfer the reception owner. Please try again.",
     "submit": "Confirm transfer"
   },
   "changeBadges": {
@@ -312,7 +314,7 @@
     "event": {
       "CONTENT_UPDATED": "Recently updated",
       "STATUS_CHANGED": "Status changed",
-      "HOST_CHANGED": "Host changed",
+      "HOST_CHANGED": "Reception owner changed",
       "DECIDED": "Decision made"
     }
   },
@@ -335,14 +337,14 @@
       "PRIMARY_CONTACT": "Primary contact",
       "DELEGATION_NAME": "Delegation name",
       "CAMPUS": "Campus",
-      "HOST": "Host"
+      "HOST": "Reception owner"
     }
   },
   "detail": {
     "cardAria": "Campus detail {{campus}}",
     "amendmentBadge": "Amendment #{{no}} pending",
     "peopleToggle": "Delegation list ({{visitors}} guests, {{support}} support)",
-    "host": "Host",
+    "host": "Reception owner",
     "decision": "Decision",
     "revision": "Revision",
     "revisionValue": "Content v{{form}} · Approval v{{approval}}",
@@ -361,7 +363,9 @@
     "retry": "Try again",
     "decidedBy": "Decided by",
     "decidedAt": "Decided at",
-    "decisionNote": "Reason / Note",
+    "decisionNoteApproved": "Approval note",
+    "decisionNoteRejected": "Rejection reason",
+    "decisionNoteCancelled": "Cancellation reason",
     "contactAccessStatus": "Confirmation status",
     "contactActive": "Confirmed",
     "contactVerifiedAt": "Confirmed at",
@@ -371,7 +375,7 @@
     "unknown": "Unknown",
     "instance": {
       "WAITING_REQUEST_APPROVAL": "Awaiting Staff Leader",
-      "ASSIGNED": "Approved — host assigned",
+      "ASSIGNED": "Approved — reception owner assigned",
       "BEFORE_VISIT": "Preparing",
       "DURING_VISIT": "Visit in progress",
       "AFTER_VISIT": "After the visit",
@@ -437,7 +441,7 @@
       "CONTACT_IDENTITY_CHANGED": "The contact role changed ({{email}}).",
       "REQUEST_PENDING_EDIT_APPLIED": "{{actor}} edited the request while it was still pending.",
       "INSTANCE_PENDING_EDIT_APPLIED": "{{actor}} edited the content at {{campus}} while it was still pending — version {{formRevision}}.",
-      "HOST_TRANSFERRED": "{{actor}} transferred the host at {{campus}}.",
+      "HOST_TRANSFERRED": "{{actor}} transferred the reception owner at {{campus}}.",
       "UNKNOWN": "Another change was recorded."
     }
   },
@@ -468,7 +472,7 @@
     },
     "field": {
       "unknown": "{{field}}",
-      "host": "Host",
+      "host": "Reception owner",
       "fullName": "Full name",
       "jobTitle": "Job title",
       "organization": "Organisation",

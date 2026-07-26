@@ -87,7 +87,7 @@ export type ParticipantRole = 'IC_HOST' | 'IC_SUPPORT' | 'DEPT_SUPPORT' | 'STUDE
 
 /** UI labels for the 4 participant roles ("Thành phần tham gia"). */
 export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
-  IC_HOST: 'Host',
+  IC_HOST: 'Người phụ trách tiếp đón',
   IC_SUPPORT: 'Staff hỗ trợ IC',
   DEPT_SUPPORT: 'Phòng ban hỗ trợ',
   STUDENT: 'Sinh viên hỗ trợ',
@@ -105,7 +105,14 @@ export const VISIT_ALLOWED_ACTIONS = {
   // per campus instance by its Staff Leader (approve luôn kèm gán host).
   APPROVE_AND_ASSIGN_HOST: 'APPROVE_AND_ASSIGN_HOST',
   CAMPUS_REJECT: 'CAMPUS_REJECT',
-  // NOTE: Host được gán MỘT lần (UC chốt). Không có TRANSFER_HOST / đổi host trong phase này.
+  /**
+   * Hand one campus's reception-owner role to a different eligible user (campus Staff Leader).
+   * Instance-scoped: a multi-campus SUMMARY row never carries it, because the handover picks a
+   * campus and the summary row cannot say which — those verdicts ride on campusProgressItems.
+   * Present in allowedActions only when the backend's verdict is ENABLED; a refused verdict still
+   * arrives in `capabilities` with its reason so the menu can show it disabled.
+   */
+  TRANSFER_HOST: 'TRANSFER_HOST',
   CANCEL_BY_HOST: 'CANCEL_BY_HOST',
   CANCEL_BY_VISITOR: 'CANCEL_BY_VISITOR',
   // Visitor sửa đơn khi còn chờ xử lý toàn bộ (PENDING + mọi campus WAITING, còn ≥ 24h).
@@ -143,6 +150,8 @@ export interface CampusProgressItem {
 
   hostUserId?: number | null;
   hostName?: string | null;
+  /** Campus-instance concurrency token, echoed back by an instance-scoped action started here. */
+  rowVersion?: number;
 
   // Per-campus decision (campus-independent approval): who approved/rejected and why.
   decisionNote?: string | null;
@@ -163,6 +172,64 @@ export interface CampusProgressItem {
   canViewCancelReason: boolean;
   /** True when this instance is REJECTED with a reason (show "Xem lý do từ chối"). */
   canViewRejectReason?: boolean;
+
+  /**
+   * Per-campus mutation verdicts, refused ones included. This is where an instance-scoped action on a
+   * multi-campus request belongs: the summary row above has no single campus to act on.
+   */
+  capabilities?: VisitActionCapability[];
+  /** Convenience mirror of an ENABLED TRANSFER_HOST verdict for this campus. */
+  canTransferHost?: boolean;
+}
+
+/**
+ * One action, one verdict, straight from the backend. The UI renders from this and never re-derives
+ * permission from role, relation or status — and because a refusal carries its reason and cutoff, a
+ * closed action can be shown disabled with an explanation instead of vanishing.
+ */
+export interface VisitActionCapability {
+  code: string;
+  scope: 'REQUEST' | 'INSTANCE';
+  visitInstanceId?: number | null;
+  enabled: boolean;
+  /** Stable code (VISIT_MUTATION_CUTOFF_REACHED, …). Match on this, never on the message. */
+  disabledReasonCode?: string | null;
+  disabledReason?: string | null;
+  /** When the window closes — present whether or not it has passed. */
+  cutoffAt?: string | null;
+  plannedStartAt?: string | null;
+  campusName?: string | null;
+  requiredLeadHours: number;
+}
+
+/** The closed vocabulary of next tasks. An unknown code still renders via its label. */
+export type VisitNextTaskCode =
+  | 'REVIEW_AND_ASSIGN'
+  | 'COMPLETE_PREPARATION'
+  | 'CONFIRM_PREPARATION'
+  | 'REVIEW_AMENDMENT'
+  | 'ACCEPT_HOST_HANDOVER'
+  | 'RUN_RECEPTION'
+  | 'COMPLETE_POST_VISIT'
+  | 'CLOSE_VISIT'
+  | 'NONE';
+
+/**
+ * What THIS reader should do next on a row — a third layer, next to the status and the relation.
+ *
+ * The frontend does not compute it: one campus status means different work to its host, its approver
+ * and the visitor who filed it, so any client-side status→task mapping is wrong for two of the three.
+ */
+export interface VisitNextTask {
+  code: VisitNextTaskCode | string;
+  label: string;
+  requiresAction: boolean;
+  scope: 'REQUEST' | 'INSTANCE';
+  visitInstanceId?: number | null;
+  dueAt?: string | null;
+  /** The allowedActions entry that performs it, when the list can perform it at all. */
+  actionCode?: string | null;
+  disabledReason?: string | null;
 }
 
 /**
@@ -769,6 +836,11 @@ export interface VisitRequestManagementItem {
   currentHostUserId: number | null;
   hostName: string | null;
   currentUserIsHost: boolean;
+  /**
+   * Concurrency token of the campus instance this row is about — null on a multi-campus summary row,
+   * which is not one instance. Echoed back by an instance-scoped action started from the list.
+   */
+  rowVersion?: number | null;
 
   visitorUserId: number | null;
   visitorName: string | null;
@@ -835,6 +907,17 @@ export interface VisitRequestManagementItem {
   campusProgressItems?: CampusProgressItem[];
 
   allowedActions: AllowedAction[];
+
+  /** Mutation verdicts for this row, refused ones included with their reason and cutoff. */
+  capabilities?: VisitActionCapability[];
+
+  // ── The three layers a row keeps apart: where it IS, what I am to it, what I should DO ──
+  /** Process status in Vietnamese, resolved server-side from the campus status (or the aggregate). */
+  statusLabel?: string | null;
+  /** What the signed-in user is to this row ("Bạn phụ trách tiếp đón", "Chỉ theo dõi", …). */
+  relationLabel?: string | null;
+  /** Backend-decided next task. NONE is a real answer, not an absent one. */
+  nextTask?: VisitNextTask | null;
 
   /**
    * Where the search keyword matched, scoped to the campuses this caller may see (a hidden campus never

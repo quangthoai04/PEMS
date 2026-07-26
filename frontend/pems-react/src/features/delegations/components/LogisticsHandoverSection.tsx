@@ -90,7 +90,7 @@ function HandoverStatusBadge({ borrow, ret, phase }: {
     if (borrow?.providerSignedAt && !borrow?.borrowerSignedAt) {
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-bold text-blue-700">
-          <PenLine className="w-3 h-3" /> Chờ Host ký nhận
+          <PenLine className="w-3 h-3" /> Chờ người phụ trách ký nhận
         </span>
       );
     }
@@ -316,12 +316,12 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                     {/* Chữ ký tóm tắt */}
                     <div className="mt-2 flex flex-wrap gap-3">
                       <SignChip
-                        label={handoverPhase === 'BORROW' ? 'Phòng ban ký giao' : 'Host ký trả'}
+                        label={handoverPhase === 'BORROW' ? 'Phòng ban ký giao' : 'Người phụ trách ký trả'}
                         at={handoverPhase === 'BORROW' ? borrow?.providerSignedAt : ret?.borrowerSignedAt}
                         name={handoverPhase === 'BORROW' ? borrow?.providerSignedByName : ret?.borrowerSignedByName}
                       />
                       <SignChip
-                        label={handoverPhase === 'BORROW' ? 'Host ký nhận' : 'Phòng ban ký nhận lại'}
+                        label={handoverPhase === 'BORROW' ? 'Người phụ trách ký nhận' : 'Phòng ban ký nhận lại'}
                         at={handoverPhase === 'BORROW' ? borrow?.borrowerSignedAt : ret?.providerSignedAt}
                         name={handoverPhase === 'BORROW' ? borrow?.borrowerSignedByName : ret?.providerSignedByName}
                       />
@@ -456,7 +456,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                         </div>
                         <div className="flex flex-wrap gap-x-8 gap-y-2">
                           <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
-                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>Host (Tiếp đón)</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>Người phụ trách tiếp đón</b></p>
                         </div>
                         <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
                         <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>

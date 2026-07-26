@@ -43,8 +43,8 @@ type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'
 
 // ── "Cảnh báo & Thông báo" (Part C): 4 independent configs = channel × target group. ──
 const REMINDER_CONFIGS = [
-  { key: 'sysHost', channel: 'IN_APP', targetGroup: 'HOST', title: 'Thông báo hệ thống cho Host', desc: 'Thông báo trên hệ thống tới Host phụ trách' },
-  { key: 'emailHost', channel: 'EMAIL', targetGroup: 'HOST', title: 'Email nhắc Host', desc: 'Gửi email nhắc nhở Host phụ trách' },
+  { key: 'sysHost', channel: 'IN_APP', targetGroup: 'HOST', title: 'Thông báo hệ thống cho người phụ trách', desc: 'Thông báo trên hệ thống tới người phụ trách tiếp đón' },
+  { key: 'emailHost', channel: 'EMAIL', targetGroup: 'HOST', title: 'Email nhắc người phụ trách', desc: 'Gửi email nhắc nhở người phụ trách tiếp đón' },
   { key: 'sysParticipants', channel: 'IN_APP', targetGroup: 'PARTICIPANTS', title: 'Thông báo hệ thống cho thành phần tham gia', desc: 'Thông báo trên hệ thống tới thành phần tham gia' },
   { key: 'emailParticipants', channel: 'EMAIL', targetGroup: 'PARTICIPANTS', title: 'Email nhắc thành phần tham gia', desc: 'Gửi email nhắc nhở thành phần tham gia' },
 ] as const;
@@ -745,7 +745,7 @@ export function VisitProcess() {
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
             {isReceptionDetail
               ? 'Bạn không có quyền xem chuyến thăm này hoặc đường dẫn không hợp lệ.'
-              : 'Bạn không có quyền thao tác trang Host Operation của đoàn này.'}
+              : 'Bạn không có quyền thao tác trang vận hành tiếp đón của đoàn này.'}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
             Quay lại danh sách tiếp khách
@@ -809,7 +809,7 @@ export function VisitProcess() {
           <p className="text-sm font-bold text-slate-700">
             {(currentStatus === 'Đã đóng đoàn' || currentStatus === 'Đã kết thúc')
               ? 'Hồ sơ lưu trữ: Đoàn khách này đã hoàn thành quy trình tiếp đón và đóng hồ sơ lịch sử. Dữ liệu đang hiển thị ở chế độ xem (Chỉ đọc).'
-              : 'Chỉ có HOST mới có thể chỉnh sửa thông tin'
+              : 'Chỉ người phụ trách tiếp đón mới có thể chỉnh sửa thông tin'
             }
           </p>
         </div>
@@ -1147,7 +1147,7 @@ export function VisitProcess() {
                             )}
                             {canEditAgenda && showNoSupportingCandidatesHint && (
                               <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                                Chưa có người tham gia nào đã chấp nhận lời mời. Hiện tại chỉ Host chính có thể được chọn làm người phụ trách.
+                                Chưa có người tham gia nào đã chấp nhận lời mời. Hiện tại chỉ người phụ trách tiếp đón có thể được chọn.
                               </p>
                             )}
                             {canEditAgenda && (

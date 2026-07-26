@@ -14,7 +14,7 @@ import ContactIdentityActions from '../ContactIdentityActions';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
 import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../VisitSafeEditModal';
-import VisitHostTransferModal from '../VisitHostTransferModal';
+import VisitHostTransferModal, { type HostTransferTarget } from '../VisitHostTransferModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
 import { VisitActionButton } from './shared/VisitActionButton';
 import { capabilityFor, hasAction, VisitV2Action } from '../../utils/visitV2Actions';
@@ -47,7 +47,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const [error, setError] = useState<'notfound' | 'forbidden' | 'generic' | null>(null);
   const [safeEditOpen, setSafeEditOpen] = useState(false);
   const [amendCampus, setAmendCampus] = useState<ResolvedCampusVisit | null>(null);
-  const [transferCampus, setTransferCampus] = useState<ResolvedCampusVisit | null>(null);
+  const [transferCampus, setTransferCampus] = useState<HostTransferTarget | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -313,7 +313,16 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                     <VisitActionButton
                       capability={transferCap}
                       granted={canTransferHost}
-                      onClick={() => setTransferCampus(cv)}
+                      onClick={() => setTransferCampus({
+                        visitInstanceId: cv.visitInstanceId,
+                        campusName: cv.campusName,
+                        currentHostUserId: cv.currentHostUserId,
+                        currentHostName: cv.currentHostName,
+                        plannedStartAt: cv.plannedStartAt,
+                        rowVersion: cv.rowVersion,
+                        cutoffAt: transferCap?.cutoffAt ?? null,
+                        requiredLeadHours: transferCap?.requiredLeadHours ?? null,
+                      })}
                       data-testid={`host-transfer-open-${cv.visitInstanceId}`}
                       icon={<UserCog className="h-4 w-4" aria-hidden />}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5"

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 
@@ -27,6 +29,14 @@ public sealed class VisitRequestManagementItemDto
     public ulong? CreatedByUserId { get; set; }
     public ulong? CurrentHostUserId { get; set; }
     public string? HostName { get; set; }
+
+    /// <summary>
+    /// Optimistic-concurrency token of the CAMPUS INSTANCE this row is about (null on a multi-campus
+    /// summary row, which is not a single instance). Carried so an instance-scoped action started from
+    /// the list — the Host handover — can echo it back and get a clean 409 instead of clobbering a
+    /// change somebody else made while the row was on screen.
+    /// </summary>
+    public int? RowVersion { get; set; }
 
     /// <summary>True when the signed-in user is the current host of this campus instance.</summary>
     public bool CurrentUserIsHost { get; set; }
@@ -89,8 +99,18 @@ public sealed class VisitRequestManagementItemDto
     public string? CancellationSource { get; set; }
     public ulong? CancelledBy { get; set; }
     public string? CancelledByName { get; set; }
-    public string? DisplayStatusLabel { get; set; }
-    public string? DisplayProgressLabel { get; set; }
+
+    // ── The three layers a row has to keep apart ──────────────────────────────────────────────
+    // Where the request IS (status), what the reader is TO it (relation), and what they should DO
+    // next (next task) are three different questions. They used to be answered by one status badge,
+    // which is why "Chờ xử lý tại cơ sở" had to double as an instruction and told the wrong half of
+    // the audience to do nothing.
+    /// <summary>Process status in Vietnamese, resolved from the campus status (or the request aggregate for request-level rows).</summary>
+    public string? StatusLabel { get; set; }
+    /// <summary>What the signed-in user is to this row ("Bạn phụ trách tiếp đón", "Chỉ theo dõi", …).</summary>
+    public string? RelationLabel { get; set; }
+    /// <summary>What this particular reader should do next. Never derived from status alone — see <see cref="VisitNextTaskDto"/>.</summary>
+    public VisitNextTaskDto? NextTask { get; set; }
 
     /// <summary>
     /// True when this row has at least one campus instance currently in a cancellable state:
@@ -152,10 +172,18 @@ public sealed class VisitRequestManagementItemDto
     /// Business actions the signed-in user may take on this row, computed by the backend
     /// (single source of truth). The frontend renders buttons from this list; every action
     /// is still re-validated server-side. Possible values: VIEW_DETAIL, HO_APPROVE, HO_REJECT,
-    /// APPROVE_AND_ASSIGN_HOST, CAMPUS_REJECT, CANCEL_BY_VISITOR, CANCEL_BY_HOST.
-    /// (Host is assigned ONCE — there is intentionally no TRANSFER_HOST / reassign action.)
+    /// APPROVE_AND_ASSIGN_HOST, CAMPUS_REJECT, CANCEL_BY_VISITOR, CANCEL_BY_HOST, TRANSFER_HOST.
+    /// Kept as the ENABLED subset of <see cref="Capabilities"/> for the actions that have a verdict,
+    /// so a button can never appear that the capability list says is refused.
     /// </summary>
     public List<string> AllowedActions { get; set; } = new();
+
+    /// <summary>
+    /// Mutation actions WITH their verdict — including refused ones, which carry why and until when.
+    /// This is what lets the list render a disabled "Chuyển người phụ trách" with a real reason instead
+    /// of hiding it and leaving the Staff Leader to guess. Same shape the detail screen uses.
+    /// </summary>
+    public List<VisitActionCapabilityDto> Capabilities { get; set; } = new();
 
     /// <summary>
     /// Where the search keyword matched, computed ONLY over the campuses this caller is authorized to see
@@ -170,6 +198,49 @@ public sealed class VisitRequestManagementItemDto
     /// report, so a quiet row carries no payload at all.
     /// </summary>
     public VisitListChangeSummaryDto? ChangeSummary { get; set; }
+}
+
+/// <summary>
+/// What this reader should do next on this row, decided by the backend.
+///
+/// Deliberately NOT a second name for the status: a campus sitting at ASSIGNED means "finish the
+/// preparation" to its Host, "nothing to do" to the visitor, and "nothing to do" to the Staff Leader
+/// who approved it. The status is one fact; the task is per-reader, so it cannot be derived on the
+/// client from the status alone without getting two of those three audiences wrong.
+///
+/// Emptiness is a real answer: <see cref="VisitNextTaskCodes.None"/> with requiresAction=false says
+/// "không có nhiệm vụ cần xử lý", which is more useful than an absent field the UI has to interpret.
+/// </summary>
+public sealed class VisitNextTaskDto
+{
+    /// <summary>One of <see cref="VisitNextTaskCodes"/>. Match on this, never on the label.</summary>
+    public string Code { get; set; } = VisitNextTaskCodes.None;
+    public string Label { get; set; } = "";
+    /// <summary>True when this reader is the one being waited on. False for a task shown as context.</summary>
+    public bool RequiresAction { get; set; }
+    /// <summary>REQUEST or INSTANCE — which thing the task is about.</summary>
+    public string Scope { get; set; } = VisitActionScopes.Request;
+    public ulong? VisitInstanceId { get; set; }
+    /// <summary>When it stops being useful to do this (planned start for pre-visit work, planned end after).</summary>
+    public DateTime? DueAt { get; set; }
+    /// <summary>The action in <see cref="VisitRequestManagementItemDto.AllowedActions"/> that performs it, when there is one.</summary>
+    public string? ActionCode { get; set; }
+    /// <summary>Set when the task is real but the action is currently refused (e.g. past the cutoff).</summary>
+    public string? DisabledReason { get; set; }
+}
+
+/// <summary>The closed vocabulary of next tasks. A code the client has not been taught renders as its label.</summary>
+public static class VisitNextTaskCodes
+{
+    public const string ReviewAndAssign = "REVIEW_AND_ASSIGN";
+    public const string CompletePreparation = "COMPLETE_PREPARATION";
+    public const string ConfirmPreparation = "CONFIRM_PREPARATION";
+    public const string ReviewAmendment = "REVIEW_AMENDMENT";
+    public const string AcceptHostHandover = "ACCEPT_HOST_HANDOVER";
+    public const string RunReception = "RUN_RECEPTION";
+    public const string CompletePostVisit = "COMPLETE_POST_VISIT";
+    public const string CloseVisit = "CLOSE_VISIT";
+    public const string None = "NONE";
 }
 
 /// <summary>
@@ -272,6 +343,9 @@ public sealed class CampusProgressItemDto
     public ulong? HostUserId { get; set; }
     public string? HostName { get; set; }
 
+    /// <summary>Optimistic-concurrency token of this campus instance — echoed back by an instance-scoped action.</summary>
+    public int RowVersion { get; set; }
+
     // ── Campus-level decision (campus-independent approval): who approved/rejected this
     // instance and why. REJECTED always carries a DecisionNote (mandatory reason). ──
     public string? DecisionNote { get; set; }
@@ -294,4 +368,15 @@ public sealed class CampusProgressItemDto
     public bool CanViewCancelReason { get; set; }
     /// <summary>True when this instance is REJECTED and a decision note exists (show "Xem lý do từ chối").</summary>
     public bool CanViewRejectReason { get; set; }
+
+    /// <summary>
+    /// Per-campus mutation verdicts. A multi-campus request has no single Host, so an action that
+    /// picks one — handing over the Host role above all — belongs HERE and never on the aggregate row:
+    /// a "Chuyển người phụ trách" on the summary row would have to guess which campus it meant.
+    /// Refused entries are included with their reason so the campus can show a disabled action.
+    /// </summary>
+    public List<VisitActionCapabilityDto> Capabilities { get; set; } = new();
+
+    /// <summary>Convenience mirror of the enabled TRANSFER_HOST verdict for this campus.</summary>
+    public bool CanTransferHost { get; set; }
 }

@@ -70,8 +70,8 @@ export function AssignHostModal({
 
   if (!isOpen) return null;
 
-  const title = customTitle || 'Duyệt & gán host';
-  const confirmLabel = 'Duyệt & gán host';
+  const title = customTitle || 'Duyệt & phân công người phụ trách';
+  const confirmLabel = 'Duyệt & phân công người phụ trách';
 
   const filtered = debouncedKeyword.trim()
     ? candidates.filter((c) =>
@@ -101,7 +101,7 @@ export function AssignHostModal({
       onConfirmed();
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
-      setSubmitError(`Không thể duyệt & gán host. ${msg}`);
+      setSubmitError(`Không thể duyệt & phân công người phụ trách. ${msg}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -133,8 +133,8 @@ export function AssignHostModal({
 
         <div className="p-5 flex-1 overflow-y-auto">
           <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[12px] text-[#004c91]">
-            Duyệt yêu cầu <span className="font-bold">bắt buộc chọn host chính thức</span> trong cùng một bước.
-            Bạn có thể chọn IC Staff của cơ sở hoặc chính mình làm host.
+            Duyệt yêu cầu <span className="font-bold">bắt buộc chọn người phụ trách tiếp đón</span> trong cùng một bước.
+            Bạn có thể chọn IC Staff của cơ sở hoặc chính mình phụ trách tiếp đón.
           </p>
 
           <div className="relative mb-3">
@@ -184,9 +184,9 @@ export function AssignHostModal({
                         <p className="text-sm font-bold text-slate-800 truncate">
                           {isSelfOption && <UserCheck className="mr-1 inline-block h-4 w-4 text-emerald-600" />}
                           {c.fullName}
-                          {isSelfOption && <span className="ml-2 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">Tôi làm host chính</span>}
+                          {isSelfOption && <span className="ml-2 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">Tôi nhận phụ trách</span>}
                           {!isSelfOption && c.subRole?.toUpperCase() === 'LEADER' && <span className="ml-2 text-[10px] font-semibold text-[#004c91] bg-blue-100 rounded px-1.5 py-0.5">Leader</span>}
-                          {isCurrent && <span className="ml-2 text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">Host hiện tại</span>}
+                          {isCurrent && <span className="ml-2 text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">Người phụ trách hiện tại</span>}
                         </p>
                         <p className="text-xs text-slate-500 truncate">
                           {c.email}
@@ -264,11 +264,11 @@ export function AssignHostModal({
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-100">
               <div className="px-5 py-4 bg-amber-500 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-white" />
-                <h4 className="text-base font-bold text-white">Xác nhận gán host trùng lịch</h4>
+                <h4 className="text-base font-bold text-white">Xác nhận phân công người trùng lịch</h4>
               </div>
               <div className="p-5 text-sm text-slate-700">
                 <p>
-                  Nhân sự <span className="font-bold text-slate-900">{selectedCandidate?.fullName}</span> đang có lịch trùng với thời gian đón đoàn. Bạn vẫn muốn duyệt và gán làm host?
+                  Nhân sự <span className="font-bold text-slate-900">{selectedCandidate?.fullName}</span> đang có lịch trùng với thời gian đón đoàn. Bạn vẫn muốn duyệt và phân công người này phụ trách tiếp đón?
                 </p>
               </div>
               <div className="px-5 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
@@ -287,7 +287,7 @@ export function AssignHostModal({
                   className="px-5 py-2 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 flex items-center gap-2"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Vẫn duyệt & gán host
+                  Vẫn duyệt & phân công
                 </button>
               </div>
             </div>

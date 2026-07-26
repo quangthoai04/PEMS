@@ -11,7 +11,7 @@ describe('CampusVisitDetailCard', () => {
     render(<CampusVisitDetailCard campus={campusFixture()} />);
 
     expect(screen.getByText('FPTU Hà Nội')).toBeInTheDocument();
-    expect(screen.getByText('Approved — host assigned')).toBeInTheDocument();
+    expect(screen.getByText('Approved — reception owner assigned')).toBeInTheDocument();
     expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
     expect(screen.getByText('Trao đổi hợp tác')).toBeInTheDocument();
     expect(screen.getByText('Nội dung làm việc HN')).toBeInTheDocument();

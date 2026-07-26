@@ -140,7 +140,7 @@ export function VisitParticipantInvitationDetail() {
     if (req === 'REJECTED') return 'Từ chối';
     if (req === 'PENDING_APPROVAL') return 'Chờ duyệt';
     if (req === 'APPROVED') {
-      if (camp === 'ASSIGNED') return 'Đã phân công Host';
+      if (camp === 'ASSIGNED') return 'Đã phân công người phụ trách';
       if (camp === 'BEFORE_VISIT') return 'Trước tiếp khách';
       if (camp === 'DURING_VISIT') return 'Trong tiếp khách';
       if (camp === 'AFTER_VISIT') return 'Chờ đóng đoàn';
@@ -339,7 +339,7 @@ export function VisitParticipantInvitationDetail() {
               <button type="button" disabled={submitting} onClick={() => setRejectOpen(false)} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6">
-              <p className="text-sm text-gray-500 mb-3">Vui lòng nhập lý do từ chối để Host/IC có thể nắm thông tin và điều phối lại.</p>
+              <p className="text-sm text-gray-500 mb-3">Vui lòng nhập lý do từ chối để người phụ trách tiếp đón có thể nắm thông tin và điều phối lại.</p>
               <label className="block text-sm font-bold text-gray-700 mb-2">Lý do từ chối <span className="text-red-500">*</span></label>
               <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Ví dụ: Tôi bận lịch cá nhân vào thời gian này..." disabled={submitting} maxLength={1000}
                 className={`w-full px-4 py-3 rounded-2xl border focus:ring-4 focus:ring-orange-500/10 outline-none transition-all text-sm min-h-[120px] resize-none bg-gray-50/50 focus:bg-white ${declineError ? 'border-red-300 focus:border-red-400' : 'border-gray-200 focus:border-[#F37021]'}`} />

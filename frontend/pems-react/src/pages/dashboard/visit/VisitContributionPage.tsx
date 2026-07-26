@@ -24,7 +24,7 @@ import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
-  ASSIGNED: 'Đã duyệt & gán Host',
+  ASSIGNED: 'Đã duyệt và phân công',
   BEFORE_VISIT: 'Trước tiếp khách',
   DURING_VISIT: 'Đang tiếp khách',
   AFTER_VISIT: 'Chờ đóng đoàn',
@@ -41,7 +41,7 @@ const INSTANCE_STATUS_CLASS: Record<string, string> = {
   CANCELLED: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 const RELATION_LABELS: Record<string, string> = {
-  HOST: 'Host chính',
+  HOST: 'Người phụ trách tiếp đón',
   IC_SUPPORT: 'Hỗ trợ IC',
   DEPARTMENT_RELATED: 'Phòng ban hỗ trợ',
   STUDENT_RELATED: 'Sinh viên hỗ trợ',
@@ -236,7 +236,7 @@ export function VisitContributionPage() {
               <Clock className="w-3.5 h-3.5 text-[#f37021] shrink-0" /> {fmtDateTime(summary.plannedStartAt)}
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-[#f37021] shrink-0" /> Host: {summary.hostName || 'Chưa phân công'}
+              <User className="w-3.5 h-3.5 text-[#f37021] shrink-0" /> Người phụ trách tiếp đón: {summary.hostName || 'Chưa phân công'}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-[#f37021] shrink-0" /> {summary.guestCount} khách
@@ -310,7 +310,7 @@ export function VisitContributionPage() {
                   <div key={p.participantId} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-800">
-                        {p.fullName}{p.isHost && <span className="ml-2 text-[10px] font-black text-emerald-600">(Host)</span>}
+                        {p.fullName}{p.isHost && <span className="ml-2 text-[10px] font-black text-emerald-600">(Phụ trách)</span>}
                         <span className="ml-2 text-xs text-slate-500 font-semibold">
                           {PARTICIPANT_ROLE_LABELS[p.participantRole] || p.participantRole}
                           {p.departmentName ? ` · ${p.departmentName}` : ''}

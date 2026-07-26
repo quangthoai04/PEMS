@@ -37,7 +37,7 @@ const getStatusColor = (status: string) => {
 
 const getStatusText = (status: string) => {
   switch (status) {
-    case 'ASSIGNED': return 'Đã phân công Host';
+    case 'ASSIGNED': return 'Đã phân công người phụ trách';
     case 'BEFORE_VISIT': return 'Trước tiếp khách';
     case 'DURING_VISIT': return 'Đang tiếp khách';
     case 'AFTER_VISIT': return 'Sau tiếp khách';
@@ -307,7 +307,7 @@ export function VisitProcessSummaryPage() {
                     <tr key={idx} className="hover:bg-slate-50">
                       <td className="p-3 text-sm font-extrabold text-slate-400 text-center text-xs">{idx + 1}</td>
                       <td className="p-3 text-sm font-medium text-gray-900">{p.fullName}</td>
-                      <td className="p-3 text-sm text-gray-600">{p.isHost ? 'Host' : p.participantRole}</td>
+                      <td className="p-3 text-sm text-gray-600">{p.isHost ? 'Người phụ trách tiếp đón' : p.participantRole}</td>
                       <td className="p-3 text-sm">
                         <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${
                           p.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :

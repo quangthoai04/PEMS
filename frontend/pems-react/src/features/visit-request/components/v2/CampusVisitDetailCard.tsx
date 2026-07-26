@@ -40,6 +40,14 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
     activeAmendmentNo: campus.activeAmendment?.amendmentNo ?? null,
   });
 
+  // One label for approving, rejecting and cancelling reads as an admin field, and it puts a
+  // rejection reason under a heading that says "note". decision_note carries a different KIND of
+  // sentence in each outcome, so it gets the heading that outcome actually earned.
+  const decisionNoteLabel =
+    campus.instanceStatus === 'REJECTED' ? t('visitRequestV2:detail.decisionNoteRejected')
+      : campus.instanceStatus === 'CANCELLED' ? t('visitRequestV2:detail.decisionNoteCancelled')
+        : t('visitRequestV2:detail.decisionNoteApproved');
+
   const contact = campus.operationalContact;
   const contactSummary = contact?.fullName
     ? [contact.fullName, contact.organization, contact.phone, contact.email].filter(Boolean).join(' · ')
@@ -137,7 +145,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
                 label: t('visitRequestV2:detail.decidedAt'),
                 value: campus.decidedAt ? formatVietnamDateTime(campus.decidedAt) : null,
               },
-              { label: t('visitRequestV2:detail.decisionNote'), value: campus.decisionNote },
+              { label: decisionNoteLabel, value: campus.decisionNote },
               {
                 label: t('visitRequestV2:revision.title'),
                 value: (

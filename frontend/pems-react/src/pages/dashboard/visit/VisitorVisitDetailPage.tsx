@@ -194,7 +194,7 @@ function VisitorContactStrip({ detail }: { detail: VisitProcessDetail }) {
   if (!host) {
     return (
       <section className="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 text-center">
-        <p className="text-slate-500 font-medium italic">Nhà trường đang sắp xếp người phụ trách phù hợp. Thông tin sẽ hiển thị tại đây khi được phân công.</p>
+        <p className="text-slate-500 font-medium italic">Nhà trường đang sắp xếp người phụ trách tiếp đón phù hợp. Thông tin sẽ hiển thị tại đây khi được phân công.</p>
       </section>
     );
   }
@@ -208,7 +208,7 @@ function VisitorContactStrip({ detail }: { detail: VisitProcessDetail }) {
 
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Người phụ trách chuyến thăm</SectionTitle>
+      <SectionTitle>Người phụ trách tiếp đón</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
         <KV label="Họ và tên" value={host.fullName} />
         <KV label="Đơn vị" value={host.departmentName} />

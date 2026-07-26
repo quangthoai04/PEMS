@@ -624,9 +624,9 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                     <div>
                       <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách gợi ý</label>
                       <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
-                        placeholder="VD: IC Host, IC Support, Student Support"
+                        placeholder="VD: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ"
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
-                      <p className="mt-1.5 text-xs font-medium text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: IC Host, IC Support, Student Support. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
+                      <p className="mt-1.5 text-xs font-medium text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
                     </div>
                   </div>
 

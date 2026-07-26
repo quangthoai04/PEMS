@@ -31,7 +31,7 @@ describe('VisitChangeBadges', () => {
 
   it('names the kind of change rather than showing a bare count', () => {
     render(<VisitChangeBadges summary={summary({ latestEventCode: 'HOST_CHANGED' })} />);
-    expect(screen.getByTestId('change-badge-latest')).toHaveTextContent('Host changed');
+    expect(screen.getByTestId('change-badge-latest')).toHaveTextContent('Reception owner changed');
   });
 
   it('leads with the approval badge when a change needs a decision', () => {
