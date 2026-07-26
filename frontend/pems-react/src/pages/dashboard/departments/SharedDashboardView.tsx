@@ -799,6 +799,31 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
   }, [searchParams, viewMode]);
 
+  // Notification "Có yêu cầu hậu cần mới" / "Lời mời tham gia" trỏ thẳng vào đây qua
+  // ?taskId=&itemType= (thay cho trang "Chi tiết nhiệm vụ điều phối" đứng riêng đã bỏ) —
+  // mở đúng popover như khi bấm 1 đơn trong Bảng lịch. Ưu tiên lấy từ `events` đã tải sẵn
+  // cho đủ trường hiển thị (host/guests/time/date); thiếu thì mở khung tối thiểu, phần chi
+  // tiết còn lại tự nạp qua activeEventDetail (effect fetchDetail theo rawId/itemType).
+  React.useEffect(() => {
+    const taskIdFromUrl = searchParams.get('taskId');
+    const itemTypeFromUrl = searchParams.get('itemType');
+    if (!taskIdFromUrl || (itemTypeFromUrl !== 'REQUEST' && itemTypeFromUrl !== 'INVITATION')) return;
+    if (events.length === 0) return;
+
+    const matched = events.find(e => String(e.rawId) === String(taskIdFromUrl) && e.itemType === itemTypeFromUrl);
+    setActivePopoverEvent(matched || {
+      id: `${itemTypeFromUrl.toLowerCase()}_${taskIdFromUrl}`,
+      rawId: taskIdFromUrl,
+      itemType: itemTypeFromUrl,
+      category: itemTypeFromUrl === 'INVITATION' ? 'Lời mời tham gia' : 'Đơn yêu cầu mượn đồ',
+    });
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('taskId');
+    next.delete('itemType');
+    setSearchParams(next, { replace: true });
+  }, [events, searchParams, setSearchParams]);
+
   const clearFocusFilter = () => {
     setFocusVisitRequestId(null);
     const next = new URLSearchParams(searchParams);

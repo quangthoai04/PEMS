@@ -37,8 +37,6 @@ import { PartnerEdit } from './pages/dashboard/partners/PartnerEdit';
 import { DepartmentManagement } from './pages/dashboard/departments/DepartmentManagement';
 import { DepartmentDetailDashboard } from './pages/dashboard/departments/DepartmentDetailDashboard';
 import { DeptReportManagement } from './pages/dashboard/reports/DeptReportManagement';
-import { TaskDetail } from './pages/dashboard/departments/TaskDetail';
-import { TaskInvitationDetail } from './pages/dashboard/departments/TaskInvitationDetail';
 import { VisitProcess } from './pages/dashboard/visit/VisitProcess';
 import { VisitContributionPage } from './pages/dashboard/visit/VisitContributionPage';
 import { VisitProcessSummaryPage } from './pages/dashboard/visit/VisitProcessSummaryPage';
@@ -190,8 +188,6 @@ export default function App() {
             <Route path="partners/:id" element={<PartnerDetail />} />
             <Route path="departments" element={<DepartmentManagement />} />
             <Route path="departments/:id" element={<DepartmentDetailDashboard />} />
-            <Route path="departments/:id/tasks/:taskId" element={<TaskDetail />} />
-            <Route path="departments/:id/invitations/:taskId" element={<TaskInvitationDetail />} />
             <Route path="accounts" element={<ProtectedRoute><AccountManagement /></ProtectedRoute>} />
             <Route path="campus" element={<ProtectedRoute><CampusManagement /></ProtectedRoute>} />
             <Route path="campus/:id" element={<ProtectedRoute><CampusDetail /></ProtectedRoute>} />
