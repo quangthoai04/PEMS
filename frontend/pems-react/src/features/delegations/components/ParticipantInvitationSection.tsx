@@ -348,7 +348,7 @@ export function ParticipantInvitationSection({
       {/* ── Host chính (read-only) ── */}
       <div className="rounded-xl border border-gray-200 border-l-[6px] border-l-[#004c91] bg-gradient-to-r from-[#004c91]/[0.03] to-transparent p-5 shadow-sm">
         <h4 className="mb-3 flex items-center gap-2 text-base font-bold text-[#004c91]">
-          <UserCheck className="w-5 h-5" /> Host chính
+          <UserCheck className="w-5 h-5" /> Người phụ trách tiếp đón
         </h4>
         {host ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -359,7 +359,7 @@ export function ParticipantInvitationSection({
               <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-[#004c91]">
                 {host.fullName}
                 {currentUserId != null && host.userId === currentUserId && (
-                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">Bạn là Host chính</span>
+                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">Bạn phụ trách tiếp đón</span>
                 )}
               </div>
               <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">

@@ -42,7 +42,7 @@ export function NewsContributionSection({ visitInstanceId, data, canView, isRead
       <div className="space-y-4">
         {data.newsNotRequired && (
           <p className="text-sm font-semibold text-slate-500 italic">
-            Chuyến thăm này không yêu cầu bài tin tức (theo xác nhận của Host).
+            Chuyến thăm này không yêu cầu bài tin tức (theo xác nhận của người phụ trách tiếp đón).
           </p>
         )}
 

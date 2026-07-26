@@ -36,7 +36,7 @@ const PAGE_SIZE = 10;
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
-  ASSIGNED: 'Đã duyệt & gán Host',
+  ASSIGNED: 'Đã duyệt và phân công',
   BEFORE_VISIT: 'Trước tiếp khách',
   DURING_VISIT: 'Đang tiếp khách',
   AFTER_VISIT: 'Chờ đóng đoàn',

@@ -300,7 +300,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
         {/* ── 2. Chi phí chung (Host) ── */}
         <div>
           <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-            <DollarSign className="w-3.5 h-3.5 text-[#f37021]" /> Chi phí chung (Host kê khai)
+            <DollarSign className="w-3.5 h-3.5 text-[#f37021]" /> Chi phí chung (người phụ trách kê khai)
           </h3>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
@@ -513,7 +513,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                   if (items.length > 0) {
                     rows.push(
                       <tr key="h-general" className="bg-slate-100/60">
-                        <td className="border border-slate-500 p-2 font-bold" colSpan={5}>Chi phí chung (Host)</td>
+                        <td className="border border-slate-500 p-2 font-bold" colSpan={5}>Chi phí chung (người phụ trách)</td>
                         <td className="border border-slate-500 p-2" colSpan={2}></td>
                       </tr>
                     );
