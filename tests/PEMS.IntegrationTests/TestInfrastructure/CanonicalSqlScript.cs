@@ -51,8 +51,14 @@ public static class CanonicalSqlScript
     ///     only while the decision is being made (migration 2026_07_26_visit_host_transfer).
     /// No table, column, index or trigger was added or removed, so ExpectedBaseTableCount (82) and
     /// ExpectedTriggerCount (32) are unchanged.
+    /// (2026-07-26, fifth bump) SEED TEXT ONLY. The 15 approved-campus rows carried a decision note
+    /// reading "Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus … cho …", which reads as if the
+    /// system had assessed the campus's resources — it is a human's approval note, typed in the approve
+    /// dialog and stored verbatim in visit_request_campuses.decision_note. Replaced with the short factual
+    /// "Campus {name} xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công." No DDL, no
+    /// trigger, no row count changed.
     public const string ExpectedSha256 =
-        "e63629054c388a2005bf9a3ef99308e52c460e08370ba3da064e1020e4c5417c";
+        "5ba7daac9667e1b06eee4e6c28c02b120472b4ad37e90732328966f87c8b24ce";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
