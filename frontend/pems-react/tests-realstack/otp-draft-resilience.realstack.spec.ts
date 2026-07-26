@@ -13,7 +13,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { fillSchedule } from './realstackHelpers';
+import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
 
 /** The FormField (label→control wrapper) whose visible label contains `label`. */
 function formField(page: Page, label: string): Locator {
@@ -79,7 +79,7 @@ async function fillCampus0(page: Page, delegation: string) {
   await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');
 
   await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
-  await page.getByTestId('campus-opcontact-org').fill('Đơn vị đầu mối');
+  await fillOperationalOrganization(page, 0, 'Đơn vị đầu mối');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }
@@ -193,7 +193,10 @@ test.describe('Real-stack: the draft survives the OTP round trip', () => {
 
     await enterOtp(page, second);
     await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Số cơ sở đăng ký:\s*1/)).toBeVisible();
+    // The receipt now states status and submitted time alongside the code, so assert the
+    // structured fields rather than one assembled sentence.
+    await expect(page.getByTestId('v2-success-code')).toContainText(/VR/);
+    await expect(page.getByTestId('v2-success-status')).toBeVisible();
   });
 
   test('journey D — changing the registrant email invalidates the code sent to the old one', async ({ page }) => {

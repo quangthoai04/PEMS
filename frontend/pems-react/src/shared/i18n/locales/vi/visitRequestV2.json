@@ -64,6 +64,13 @@
     "addSupport": "Thêm nhân sự hỗ trợ",
     "operationalContact": "Đầu mối phối hợp tại cơ sở",
     "operationalContactHint": "Chỉ dùng để phối hợp tại cơ sở này — không phải tài khoản đăng nhập",
+    "quickFillRegistrant": "Dùng người đăng ký",
+    "quickFillPrimaryContact": "Dùng đầu mối chính",
+    "quickFillCopiedRegistrant": "Đã sao chép thông tin người đăng ký.",
+    "quickFillCopiedContact": "Đã sao chép thông tin đầu mối chính.",
+    "quickFillIndependent": "Sau khi sao chép, thông tin này chỉnh sửa độc lập — sửa nguồn về sau không cập nhật lại đây.",
+    "quickFillReplaceTitle": "Thông tin đầu mối phối hợp hiện tại sẽ được thay thế.",
+    "quickFillReplaceYes": "Tiếp tục",
     "phone": "Số điện thoại",
     "email": "Email",
     "additional": "Yêu cầu bổ sung",
@@ -158,17 +165,41 @@
     "discardBody": "Bạn đã nhập dữ liệu trong biểu mẫu. Đóng bây giờ sẽ đóng cửa sổ này.",
     "keepEditing": "Tiếp tục nhập",
     "discardConfirm": "Đóng",
-    "done": "Hoàn tất",
     "saveDraftAndExit": "Lưu nháp và thoát"
   },
   "success": {
     "title": "Đã gửi yêu cầu tham quan",
     "requestCode": "Mã yêu cầu: {{code}}",
-    "campusCount": "Số cơ sở đăng ký: {{count}}",
     "mixedNote": "nội dung khác nhau theo cơ sở",
     "idempotentReplay": "Yêu cầu này đã được ghi nhận trước đó (gửi lại không tạo đơn mới).",
     "claimPending": "Đầu mối liên hệ khác người đăng ký: hệ thống đã gửi email mời xác nhận vai trò (hiệu lực 72 giờ). Việc duyệt của các cơ sở không phụ thuộc xác nhận này.",
-    "backHome": "Về trang chủ"
+    "backHome": "Về trang chủ",
+    "statusLabel": "Trạng thái:",
+    "submittedAtLabel": "Thời gian gửi:",
+    "campusCountLabel": "Số cơ sở:",
+    "saved": "Đơn của bạn đã được lưu thành công.",
+    "keepCode": "Vui lòng lưu lại mã đơn và kiểm tra email để theo dõi các bước tiếp theo.",
+    "viewRequest": "Xem đơn vừa tạo",
+    "goToList": "Về danh sách đơn",
+    "createAnother": "Tạo đơn mới",
+    "reviewSubmitted": "Xem lại thông tin đã gửi",
+    "hideSubmitted": "Ẩn thông tin đã gửi",
+    "copyCode": "Sao chép mã đơn",
+    "codeCopied": "Đã sao chép mã đơn.",
+    "codeCopyFailed": "Trình duyệt không cho phép sao chép tự động. Mã đơn của bạn: {{code}}",
+    "close": "Đóng",
+    "toast": "Đã tạo đơn {{code}} thành công.",
+    "status": {
+      "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
+      "PENDING_APPROVAL": "Chờ phê duyệt",
+      "PENDING": "Chờ xử lý",
+      "PARTIALLY_APPROVED": "Đã duyệt một phần",
+      "APPROVED": "Đã duyệt",
+      "REJECTED": "Đã từ chối",
+      "CANCELLED": "Đã hủy",
+      "CLOSED": "Đã đóng",
+      "UNKNOWN": "{{status}}"
+    }
   },
   "summary": {
     "heading": "Tóm tắt đơn đã gửi",
@@ -429,5 +460,26 @@
     "noEndSlots": "Không còn khung giờ trong ngày — hãy bật \"Kết thúc vào ngày khác\".",
     "rulesHint": "Đăng ký trước ít nhất {{hours}} giờ, mỗi buổi tối thiểu {{minutes}} phút.",
     "readableRange": "{{from}} → {{to}}"
+  },
+  "otpFlow": {
+    "codeSent": "Đã gửi mã xác minh đến {{email}}.",
+    "codeResent": "Đã gửi lại mã xác minh.",
+    "verifyingAndCreating": "Đang xác minh mã và tạo đơn...",
+    "reviewForm": "Xem lại thông tin đơn",
+    "reviewBannerTitle": "Mã xác minh đã được gửi đến {{email}}.",
+    "reviewBannerBody": "Anh/chị có thể kiểm tra lại đơn rồi tiếp tục nhập mã. Mã cũ vẫn còn hiệu lực.",
+    "continueVerification": "Tiếp tục xác minh OTP"
+  },
+  "uncertain": {
+    "title": "Chưa thể xác nhận kết quả tạo đơn",
+    "body": "Kết nối bị gián đoạn sau khi gửi mã xác minh, nên hệ thống chưa biết đơn đã được tạo hay chưa.",
+    "doNotResend": "Đừng gửi lại đơn mới ngay vì đơn có thể đã được tạo.",
+    "check": "Kiểm tra lại kết quả",
+    "checking": "Đang kiểm tra...",
+    "backToForm": "Quay lại form",
+    "checkFailed": "Chưa kiểm tra được trạng thái. Vui lòng thử lại sau giây lát.",
+    "statePending": "Đơn chưa được tạo — phiên xác minh vẫn còn hiệu lực. Anh/chị có thể quay lại form và nhập mã để hoàn tất.",
+    "stateFailed": "Phiên gửi đơn này đã kết thúc mà không tạo được đơn. Vui lòng quay lại form và gửi lại.",
+    "stateNotFound": "Không tìm thấy dấu vết của lần gửi này. Đơn chưa được tạo — anh/chị có thể quay lại form và gửi lại."
   }
 }

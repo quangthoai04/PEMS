@@ -7,15 +7,19 @@ import { useTranslation } from 'react-i18next';
 import {
   useVisitRequestFormV2,
   type UseVisitRequestFormV2Options,
+  type SubmissionStage,
 } from '../../hooks/useVisitRequestFormV2';
+import { VisitCreateUncertainPanel } from './VisitCreateUncertainPanel';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 import { V2_MAX_CAMPUSES } from '../../schema/visitRequestV2.schema';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import { campusVisitHasUserContent } from '../../utils/visitRequestV2Form';
+import { focusFirstInvalidField } from '../../utils/formErrorNavigation';
 import { hasMeaningfulV2Data } from '../../utils/visitRequestV2DraftStorage';
 import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
+import { PhoneField } from '../shared/PhoneField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
@@ -42,7 +46,13 @@ interface Props {
    * Hands the host the draft controls so a close prompt can offer "save draft and exit" and
    * "discard changes" without reimplementing draft storage.
    */
-  onDraftControls?: (controls: { saveDraftNow: () => void; discardDraft: () => void; isDirty: () => boolean }) => void;
+  onDraftControls?: (controls: {
+    saveDraftNow: () => void;
+    discardDraft: () => void;
+    isDirty: () => boolean;
+    /** True while a verify is in flight — the host must not tear the shell down mid-transaction. */
+    isBusy: () => boolean;
+  }) => void;
 }
 
 /**
@@ -59,9 +69,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const [showErrors, setShowErrors] = useState(false);
   /** Set when "continue verifying" found no usable challenge left (another tab, or storage cleared). */
   const [resumeFailed, setResumeFailed] = useState(false);
+  /** Mirrors the submission stage for callbacks the host keeps across renders. */
+  const stageRef = useRef<SubmissionStage>('EDITING');
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
+  const formRef = useRef<HTMLFormElement>(null);
 
   // ── Authenticated create: who processes each campus (backend re-authorizes everything). ──
   const { user } = useAuthContext();
@@ -100,6 +113,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     },
   });
   const { form, campusVisitFields } = vm;
+  useEffect(() => { stageRef.current = vm.stage; }, [vm.stage]);
 
   // Look for a saved draft once, but never apply it silently — the user is offered the choice.
   const hydratedRef = useRef(false);
@@ -126,9 +140,26 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     const cv = form.getValues('campusVisits')[vm.firstErrorCampusIndex];
     if (!cv) return;
     setOpenKeys(prev => new Set(prev).add(cv.clientKey));
-    cardRefs.current.get(cv.clientKey)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const card = cardRefs.current.get(cv.clientKey);
+    // Guarded because scrolling is a nicety and expanding the card is not: in a headless DOM
+    // `scrollIntoView` does not exist, and letting it throw here would abandon the effect before
+    // the state that actually matters had been applied.
+    if (typeof card?.scrollIntoView === 'function') {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     vm.setFirstErrorCampusIndex(null);
   }, [vm.firstErrorCampusIndex, form, vm]);
+
+  // …and then the caret lands ON the offending field (plan §19). Deferred by a tick because the
+  // card above may only just have been expanded, and a field inside a `hidden` body cannot take
+  // focus — running in the same commit would silently focus nothing.
+  useEffect(() => {
+    if (vm.focusErrorsToken === 0) return;
+    const timer = window.setTimeout(() => {
+      focusFirstInvalidField(formRef.current ?? document);
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [vm.focusErrorsToken]);
 
   const campusLabel = useCallback(
     (cv: VisitRequestV2Schema['campusVisits'][number], index: number): string => {
@@ -171,7 +202,14 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   const { saveDraftNow, discardDraft } = vm;
   useEffect(() => {
-    onDraftControls?.({ saveDraftNow, discardDraft, isDirty: () => hasMeaningfulV2Data(form.getValues()) });
+    onDraftControls?.({
+      saveDraftNow,
+      discardDraft,
+      isDirty: () => hasMeaningfulV2Data(form.getValues()),
+      // A ref, not the render-time value: the host holds this object across renders and would
+      // otherwise ask a stale closure whether the form is busy.
+      isBusy: () => stageRef.current === 'VERIFYING_OTP' || stageRef.current === 'SENDING_OTP',
+    });
   }, [onDraftControls, saveDraftNow, discardDraft, form]);
 
   const submitBar = (node: React.ReactNode) =>
@@ -233,7 +271,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   }, [isSelfRegistrant]);
 
   return (
-    <form id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
+    <form ref={formRef} id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
       {/* ── Restore Draft Modal ── */}
       <AnimatePresence>
         {vm.draftAvailableAt !== null && (
@@ -282,6 +320,40 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       {vm.migratedFromGlobalDraft && (
         <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800">
           {t('visitRequestV2:draft.migrated')}
+        </div>
+      )}
+
+      {/* ── The verify never came back ──
+          Shown INSTEAD of an error, because nobody knows yet whether the request exists. */}
+      {vm.stage === 'CREATE_UNCERTAIN' && (
+        <VisitCreateUncertainPanel
+          isChecking={vm.isCheckingResult}
+          lookup={vm.lastLookup}
+          error={vm.uncertainError}
+          onCheck={() => void vm.checkSubmissionResult()}
+          onBackToForm={vm.backToFormFromUncertain}
+        />
+      )}
+
+      {/* ── Reviewing the form with the challenge still in hand (plan §12) ──
+          The user stepped out of the modal to check something. The code in their inbox is still
+          valid and the session token is still held — going back in costs them nothing. */}
+      {vm.sessionToken && vm.stage === 'EDITING' && (
+        <div
+          role="status"
+          data-testid="v2-otp-review"
+          className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+        >
+          <p className="font-bold">{t('visitRequestV2:otpFlow.reviewBannerTitle', { email: vm.maskedEmail })}</p>
+          <p className="mt-1">{t('visitRequestV2:otpFlow.reviewBannerBody')}</p>
+          <button
+            type="button"
+            data-testid="v2-otp-review-continue"
+            onClick={() => vm.continueOtpAfterReview()}
+            className="mt-3 rounded-lg bg-[#004c91] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#003a6f]"
+          >
+            {t('visitRequestV2:otpFlow.continueVerification')}
+          </button>
         </div>
       )}
 
@@ -410,7 +482,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
-            <input data-testid="v2-registrant-phone" {...register('registerInfo.phone')} placeholder="+84…" className={inputCls(!!regErr?.phone, false, false)} />
+            <PhoneField
+              field={register('registerInfo.phone')}
+              hasError={!!regErr?.phone}
+              error={regErr?.phone?.message}
+              testId="v2-registrant-phone"
+            />
           </FormField>
           <FormField label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
             <input type="email" data-testid="v2-registrant-email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
@@ -451,7 +528,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
           </FormField>
           <FormField label={t('visitRequestV2:card.phone')} required error={cpErr?.phone?.message} showValidIcon={false}>
-            <input {...register('contactPoint.phone')} placeholder="+84…" className={inputCls(!!cpErr?.phone, false, false)} />
+            <PhoneField
+              field={register('contactPoint.phone')}
+              hasError={!!cpErr?.phone}
+              error={cpErr?.phone?.message}
+              testId="v2-contact-phone"
+            />
           </FormField>
           <FormField label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false}>
             <input type="email" {...register('contactPoint.email')} className={inputCls(!!cpErr?.email, false, false)} />
@@ -639,7 +721,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           Rendered whenever a challenge is live, not only in public mode: an authenticated user
           registering somebody else takes the same challenge, and gating this on `mode` would leave
           them with a pending session token and no way to enter the code. */}
-      {vm.sessionToken && (
+      {/* Held open by the STAGE, not merely by the presence of a token: stepping out to review the
+          form keeps the token (that is the point) while hiding the modal. */}
+      {vm.sessionToken && (vm.stage === 'OTP_PENDING' || vm.stage === 'VERIFYING_OTP') && (
         <OtpVerificationModal
           maskedEmail={vm.maskedEmail}
           otpError={vm.otpError}
@@ -655,6 +739,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           onResend={() => void vm.resendOtp()}
           onRecover={token => void vm.recoverOtp(token)}
           onCancel={vm.cancelOtp}
+          onReviewForm={vm.reviewFormDuringOtp}
         />
       )}
     </form>

@@ -29,6 +29,7 @@ import {
 } from '../../../features/visit-request/utils/visitRequestV2Form';
 import { CampusVisitCard } from '../../../features/visit-request/components/v2/CampusVisitCard';
 import { FormField, inputCls } from '../../../features/visit-request/components/shared/FormField';
+import { PhoneField } from '../../../features/visit-request/components/shared/PhoneField';
 import { FormSection } from '../../../features/visit-request/components/shared/FormSection';
 import { useRegistrationCampuses } from '../../../features/visit-request/hooks/useRegistrationCampuses';
 import { getApiErrorMessage } from '../../../shared/utils/toast';
@@ -278,7 +279,12 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
               <input {...register('registerInfo.nationality')} className={inputCls(!!regErr?.nationality, false, false)} />
             </FormField>
             <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
-              <input {...register('registerInfo.phone')} className={inputCls(!!regErr?.phone, false, false)} />
+              <PhoneField
+                field={register('registerInfo.phone')}
+                hasError={!!regErr?.phone}
+                error={regErr?.phone?.message}
+                testId="v2e-registrant-phone"
+              />
             </FormField>
             <FormField label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false} subtitle={t('visitRequestV2:edit.emailImmutable')}>
               <input type="email" readOnly aria-readonly {...register('registerInfo.email')} className={`${inputCls(!!regErr?.email, false, false)} bg-slate-50`} />
@@ -295,7 +301,12 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
               <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
             </FormField>
             <FormField label={t('visitRequestV2:card.phone')} required error={cpErr?.phone?.message} showValidIcon={false}>
-              <input {...register('contactPoint.phone')} className={inputCls(!!cpErr?.phone, false, false)} />
+              <PhoneField
+                field={register('contactPoint.phone')}
+                hasError={!!cpErr?.phone}
+                error={cpErr?.phone?.message}
+                testId="v2e-contact-phone"
+              />
             </FormField>
             <FormField label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false} subtitle={t('visitRequestV2:edit.emailImmutable')}>
               <input type="email" readOnly aria-readonly {...register('contactPoint.email')} className={`${inputCls(!!cpErr?.email, false, false)} bg-slate-50`} />

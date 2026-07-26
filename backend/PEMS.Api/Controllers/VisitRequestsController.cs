@@ -196,6 +196,28 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// "Did my submission go through?" (plan §10) — resolves a submit intent to COMPLETED / PENDING /
+    /// FAILED / NOT_FOUND. Exists because a connection dropped after the verify transaction commits looks,
+    /// from the browser, exactly like one that never arrived: without this the visitor's only recourse was
+    /// to submit again, which is how duplicate delegations are created.
+    ///
+    /// Anonymous by necessity (the public OTP flow has no session) and safe to be: the key is the caller's
+    /// OWN client-minted submissionId, and the response carries only the request code and status — no
+    /// registrant identity, no contact details, no form content. Read-only: it never verifies an OTP,
+    /// never creates anything and never changes challenge state, so polling it costs the user nothing.
+    /// </summary>
+    [HttpGet("/api/v2/visit-requests/submissions/{submissionId}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetSubmissionResultV2(
+        string submissionId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Queries.GetVisitSubmissionResult.GetVisitSubmissionResultQuery(submissionId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Per-campus form v2 PENDING EDIT — per-campus content/schedule/members (copy-on-write), add campus,
     /// remove pending campus; explicit optimistic concurrency (expected request + per-instance row versions →
     /// stable 409). Gated by BOTH flags like create-v2 (write OFF → 404). Editors: registrant or ACTIVE

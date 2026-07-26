@@ -92,6 +92,23 @@ export async function fillSchedule(page: Page, cardIndex: number, start: Date, e
   await expect(endTime).toHaveValue(timeKey(end));
 }
 
+/**
+ * Types a free-text organization into ONE campus card's operational-contact combobox.
+ *
+ * The field is a react-select now, not an input: typing already writes the value through
+ * `onInputChange`, and the blur is what settles the control back onto its rendered value. Enter is
+ * deliberately NOT pressed — a stray Enter in a combobox inside the registration form is exactly
+ * the kind of accident these journeys exist to catch.
+ */
+export async function fillOperationalOrganization(page: Page, cardIndex: number, text: string) {
+  const combobox = page.getByTestId('campus-opcontact-org').nth(cardIndex);
+  const input = combobox.locator('input').first();
+  await input.click();
+  await input.fill(text);
+  await input.blur();
+  await expect(combobox).toContainText(text);
+}
+
 /** A campus visit block for the v2 create payload (schedule well past the 24h/30-min rules). */
 export function campusBlock(code: string, dayOffset: number, delegation: string, tag: string) {
   const start = new Date();

@@ -282,7 +282,11 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
     {
         var head = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == visitRequestId)
-            .Select(v => new { v.RequestCode, v.VisitScope, v.HasMixedCampusDetails, v.PrimaryContactAccessStatus, v.VisitorUserId })
+            .Select(v => new
+            {
+                v.RequestCode, v.VisitScope, v.HasMixedCampusDetails, v.PrimaryContactAccessStatus,
+                v.VisitorUserId, v.Status, v.SubmittedAt,
+            })
             .FirstAsync(ct);
         var instances = await _db.VisitRequestCampuses.AsNoTracking()
             .Where(c => c.VisitRequestId == visitRequestId)
@@ -293,7 +297,8 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             visitRequestId, head.RequestCode ?? string.Empty, head.VisitScope, head.HasMixedCampusDetails,
             head.PrimaryContactAccessStatus,
             ContactClaimPending: head.VisitorUserId is null,
-            instances, idempotent, message);
+            instances, idempotent, message,
+            head.Status, head.SubmittedAt.ToString("yyyy-MM-ddTHH:mm:ss"), instances.Count);
     }
 
     /// <summary>Maps a failed challenge verification to the typed OTP error contract (same mapping as v1).</summary>

@@ -29,12 +29,15 @@ import {
   saveVisitRequestV2Draft,
   type VisitRequestV2OtpContext,
 } from '../utils/visitRequestV2DraftStorage';
+import { countFieldErrors } from '../utils/formErrorNavigation';
 import { visitRequestApi, type CampusProcessingChoice } from '../api/visitRequestApi';
 import {
   createVisitRequestV2,
   initiateVisitRequestV2,
   verifyAndCreateVisitRequestV2,
+  getVisitSubmissionResult,
   type V2CreateResponse,
+  type VisitSubmissionLookup,
 } from '../api/visitRequestV2Api';
 import { getApiErrorMessage, showInfoToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
@@ -90,6 +93,35 @@ const OTP_HUMAN_VERIFICATION_REQUIRED = 'OTP_HUMAN_VERIFICATION_REQUIRED';
  * stale intent is dropped and the next attempt starts a fresh one.
  */
 const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
+
+/**
+ * Where a submit intent has got to (plan §3). Exactly one of these is true at any moment.
+ *
+ * CREATE_UNCERTAIN is the one that did not exist before and matters most: when the verify call
+ * fails without an answer from the server — a timeout, a dropped connection, a gateway error — the
+ * request may well have been committed. Reporting that as a plain failure is what invites the user
+ * to send the whole thing again.
+ */
+export type SubmissionStage =
+  | 'EDITING'
+  | 'SENDING_OTP'
+  | 'OTP_PENDING'
+  | 'VERIFYING_OTP'
+  | 'CREATE_CONFIRMED'
+  | 'CREATE_UNCERTAIN'
+  | 'CREATE_FAILED';
+
+/**
+ * True when a failed request never got a verdict from the server, so the create may or may not have
+ * happened. An HTTP status means the server answered and decided; no status at all — or a 502/503/504
+ * from something in front of it — means nobody knows yet.
+ */
+const isUndecided = (error: unknown): boolean => {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  if (status === undefined) return true;              // timeout, abort, DNS, connection reset
+  return status === 502 || status === 503 || status === 504;
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function debounce<T extends (...args: any[]) => void>(fn: T, delay = 700) {
@@ -162,16 +194,39 @@ export const useVisitRequestFormV2 = (
 
   const { t, i18n } = useTranslation(['validation', 'toast', 'visitRequestV2']);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  /**
+   * ONE stage at a time (plan §3). Previously "where is this submission?" had to be reconstructed
+   * from four independent booleans plus a session token, and they could disagree: mid-verify the
+   * form was both `isVerifying` and still `isSubmitting`, and a dropped connection left every flag
+   * back at its resting value with nothing recording that a create might already have happened.
+   * `isSubmitting` / `isVerifying` are now DERIVED from this, so no caller can observe a
+   * combination the machine does not allow.
+   */
+  const [stage, setStage] = useState<SubmissionStage>('EDITING');
+  // Read inside async callbacks that must not close over a stale render (the double-submit guard).
+  const stageRef = useRef<SubmissionStage>('EDITING');
+  useEffect(() => { stageRef.current = stage; }, [stage]);
+
+  /** The submit intent whose outcome is unknown, plus the values that produced it. */
+  const [uncertain, setUncertain] =
+    useState<{ submissionId: string | null; values: VisitRequestV2Schema } | null>(null);
+  const [isCheckingResult, setIsCheckingResult] = useState(false);
+  const [lastLookup, setLastLookup] = useState<VisitSubmissionLookup | null>(null);
+  const [uncertainError, setUncertainError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Index of the campus card holding the first server/client error — the UI expands + focuses it. */
   const [firstErrorCampusIndex, setFirstErrorCampusIndex] = useState<number | null>(null);
+  /**
+   * Bumped every time a submit comes back invalid. The form watches it to move the caret to the
+   * first bad field — a plain boolean could not, because two failed submits in a row would not
+   * change it and the second one would leave the user staring at an unchanged screen.
+   */
+  const [focusErrorsToken, setFocusErrorsToken] = useState(0);
 
   // OTP phase state (public mode; server-driven presentation values, same as v1)
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
@@ -407,6 +462,9 @@ export const useVisitRequestFormV2 = (
         }
       }
       if (firstCampusIndex !== null) setFirstErrorCampusIndex(firstCampusIndex);
+      // A rejection from the SERVER lands on a field just like a client-side one, so it gets the
+      // same treatment: the user should not have to find it themselves.
+      if (mappedAny) setFocusErrorsToken(n => n + 1);
       return mappedAny;
     },
     [form],
@@ -424,7 +482,7 @@ export const useVisitRequestFormV2 = (
   // ── Submit ──
   const submitAuthenticated = useCallback(
     async (data: VisitRequestV2Schema) => {
-      setIsSubmitting(true);
+      setStage('SENDING_OTP');
       setSubmitError(null);
       setFirstErrorCampusIndex(null);
       try {
@@ -440,8 +498,17 @@ export const useVisitRequestFormV2 = (
         submissionIdRef.current = null;
         setPendingOtp(null);
         clearVisitRequestV2Draft(draftNamespace);
+        setStage('CREATE_CONFIRMED');
         onSuccess(result, submittedValues);
       } catch (error) {
+        // No verdict from the server: the create may already have committed, so this must NOT be
+        // reported as a failure the user should answer by submitting again.
+        if (isUndecided(error)) {
+          setUncertain({ submissionId: submissionIdRef.current, values: cloneValues(data) });
+          setStage('CREATE_UNCERTAIN');
+          saveDraftNow({ submissionId: submissionIdRef.current });
+          return;
+        }
         // The id is KEPT: the same submit intent is what makes the retry idempotent. The one
         // exception is an intent the server says is already spoken for.
         if (getApiErrorCode(error) === IDEMPOTENCY_KEY_REUSED) submissionIdRef.current = null;
@@ -452,12 +519,11 @@ export const useVisitRequestFormV2 = (
         } else {
           setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
         }
+        setStage('CREATE_FAILED');
         if (!mapped) console.error('v2 authenticated create failed', getApiErrorCode(error));
-      } finally {
-        setIsSubmitting(false);
       }
     },
-    [applyServerFieldErrors, draftNamespace, onSuccess, options, t],
+    [applyServerFieldErrors, draftNamespace, onSuccess, options, saveDraftNow, t],
   );
 
   const onSubmit = form.handleSubmit(async data => {
@@ -473,7 +539,7 @@ export const useVisitRequestFormV2 = (
     // Mint the OTP challenge through the v2 initiate endpoint. The FULL v2 form is
     // sent and its snapshot is bound server-side, so 30-minute / zero-support submissions
     // work and verify builds from exactly this form — no v1 projection, no silent fallback.
-    setIsSubmitting(true);
+    setStage('SENDING_OTP');
     setSubmitError(null);
     setFirstErrorCampusIndex(null);
     try {
@@ -502,6 +568,8 @@ export const useVisitRequestFormV2 = (
       setPendingOtp(otp);
       saveDraftNow({ submissionId, otp });
       saveOtpChallengeToken(submissionId, res.sessionToken, draftNamespace);
+      setStage('OTP_PENDING');
+      showSuccessToast(t('visitRequestV2:otpFlow.codeSent', { email: res.maskedEmail }), 'v2-otp-sent');
     } catch (error) {
       // Keep the id and the draft: the user has typed a whole form and the mail may simply have
       // failed to send. Clearing either would make them start over for a transport error.
@@ -514,8 +582,9 @@ export const useVisitRequestFormV2 = (
       } else {
         setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
       }
-    } finally {
-      setIsSubmitting(false);
+      // Initiate creates nothing, so a failure here is never "uncertain": there is no request to
+      // wonder about, only a code that did not arrive.
+      setStage('CREATE_FAILED');
     }
   }, errors => {
     // Expand + focus the first campus card with a client-side error.
@@ -524,18 +593,28 @@ export const useVisitRequestFormV2 = (
       const idx = campusErrors.findIndex(e => e != null);
       if (idx >= 0) setFirstErrorCampusIndex(idx);
     }
-    setSubmitError(t('validation:fixErrorsBeforeContinue'));
+    // "Fill in all required fields" says nothing about how much is left. A count does, and it is
+    // the difference between "one more box" and "I have barely started".
+    const count = countFieldErrors(errors);
+    setSubmitError(count > 0
+      ? t('validation:fixErrorsCount', { count })
+      : t('validation:fixErrorsBeforeContinue'));
+    setFocusErrorsToken(n => n + 1);
     onInvalid?.(errors);
   });
 
   const verifyOtp = useCallback(
     async (otpCode: string) => {
       if (!sessionToken || !submissionIdRef.current) return;
-      setIsVerifying(true);
+      // Guards the double-click AND the "confirm again while the first is still in flight" case,
+      // which would otherwise burn a second attempt against the same challenge.
+      if (stageRef.current === 'VERIFYING_OTP') return;
+      const submissionId = submissionIdRef.current;
+      setStage('VERIFYING_OTP');
       setOtpError(null);
       try {
         const submittedValues = cloneValues(form.getValues());
-        const payload = buildV2CreatePayload(submittedValues, submissionIdRef.current);
+        const payload = buildV2CreatePayload(submittedValues, submissionId);
         const result = await verifyAndCreateVisitRequestV2(payload, otpCode, sessionToken);
         // ONLY here — a confirmed create — is the draft allowed to disappear.
         setSessionToken(null);
@@ -543,11 +622,24 @@ export const useVisitRequestFormV2 = (
         setPendingOtp(null);
         resetOtpChallengeState();
         clearVisitRequestV2Draft(draftNamespace);
+        setStage('CREATE_CONFIRMED');
         onSuccess(result, submittedValues);
+        return;
       } catch (error) {
         // A wrong code, an expired challenge, a dropped connection: the form is untouched and stays
         // on disk with its submission intent. The user retries or asks for a new code.
         saveDraftNow();
+
+        // No verdict from the server. The backend consumes the OTP in the SAME transaction as the
+        // create, so "the connection died" genuinely can mean the request exists. Saying "failed"
+        // here is what makes somebody fill the form in a second time.
+        if (isUndecided(error)) {
+          setUncertain({ submissionId, values: cloneValues(form.getValues()) });
+          setStage('CREATE_UNCERTAIN');
+          setSessionToken(null);
+          return;
+        }
+
         const code = getApiErrorCode(error);
         const meta = getOtpErrorMeta(error);
         if (meta.remainingAttempts !== null) setRemainingAttempts(meta.remainingAttempts);
@@ -557,24 +649,87 @@ export const useVisitRequestFormV2 = (
           setHumanVerificationRequired(true);
         }
         // A non-OTP business rejection (e.g. campus deactivated meanwhile) closes the modal
-        // and surfaces on the form so the user can fix the data.
+        // and surfaces on the form so the user can fix the data. The code was RIGHT — presenting
+        // this as "wrong OTP" would send the user hunting through their inbox for nothing.
         if (axios.isAxiosError(error) && error.response?.status === 400 && getApiFieldErrors(error)) {
           setSessionToken(null);
           resetOtpChallengeState();
           applyServerFieldErrors(error);
           setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+          setStage('CREATE_FAILED');
         } else {
           setOtpError(getApiErrorMessage(error, t('toast:common.defaultError')));
+          // Still a live challenge with the modal open — not a terminal failure.
+          setStage('OTP_PENDING');
         }
-      } finally {
-        setIsVerifying(false);
       }
     },
     [sessionToken, form, draftNamespace, onSuccess, resetOtpChallengeState, applyServerFieldErrors, saveDraftNow, t],
   );
 
+  /**
+   * "Did it go through after all?" — the only correct answer to CREATE_UNCERTAIN (plan §10).
+   *
+   * Asks the server about the submit intent instead of re-sending it. COMPLETED promotes straight
+   * to the success screen; PENDING means the OTP was never completed, so the challenge is still
+   * the way forward; FAILED/NOT_FOUND hand the form back. Nothing here can create a request.
+   */
+  const checkSubmissionResult = useCallback(async (): Promise<VisitSubmissionLookup | null> => {
+    const submissionId = uncertain?.submissionId;
+    if (!submissionId || isCheckingResult) return null;
+    setIsCheckingResult(true);
+    setUncertainError(null);
+    try {
+      const lookup = await getVisitSubmissionResult(submissionId);
+      if (lookup.state === 'COMPLETED' && lookup.visitRequestId) {
+        const values = uncertain?.values ?? cloneValues(form.getValues());
+        submissionIdRef.current = null;
+        setPendingOtp(null);
+        resetOtpChallengeState();
+        clearVisitRequestV2Draft(draftNamespace);
+        setUncertain(null);
+        setStage('CREATE_CONFIRMED');
+        // The lookup is deliberately narrower than a create response — it answers "does this exist"
+        // for an anonymous caller, so it carries no campus list and no contact state. The receipt is
+        // rebuilt from what it DOES return; nothing is invented to fill the gaps.
+        onSuccess({
+          visitRequestId: lookup.visitRequestId,
+          requestCode: lookup.requestCode ?? '',
+          visitScope: (values.campusVisits?.length ?? 0) > 1 ? 'MULTI_CAMPUS' : 'SINGLE_CAMPUS',
+          hasMixedCampusDetails: false,
+          primaryContactAccessStatus: '',
+          contactClaimPending: false,
+          instances: [],
+          idempotent: true,
+          status: lookup.status ?? '',
+          submittedAt: lookup.submittedAt ?? '',
+          campusCount: lookup.campusCount ?? values.campusVisits?.length ?? 0,
+          recoveredByLookup: true,
+        }, values);
+      }
+      setLastLookup(lookup);
+      return lookup;
+    } catch (error) {
+      setUncertainError(getApiErrorMessage(error, t('visitRequestV2:uncertain.checkFailed')));
+      return null;
+    } finally {
+      setIsCheckingResult(false);
+    }
+  }, [uncertain, isCheckingResult, form, draftNamespace, resetOtpChallengeState, onSuccess, t]);
+
+  /** Abandons the uncertain panel and hands the form back, keeping the draft and the intent. */
+  const backToFormFromUncertain = useCallback(() => {
+    setUncertain(null);
+    setLastLookup(null);
+    setUncertainError(null);
+    setStage('EDITING');
+  }, []);
+
   const resendOtp = useCallback(async () => {
     if (!sessionToken || !submissionIdRef.current) return;
+    // Never while a verify is in flight: the reply would arrive against a challenge that no longer
+    // exists, and the user would be told their correct code was wrong.
+    if (stageRef.current === 'VERIFYING_OTP') return;
     const submissionId = submissionIdRef.current;
     setIsResending(true);
     setOtpError(null);
@@ -597,6 +752,7 @@ export const useVisitRequestFormV2 = (
       setPendingOtp(otp);
       saveDraftNow({ submissionId, otp });
       saveOtpChallengeToken(submissionId, res.sessionToken, draftNamespace);
+      showSuccessToast(t('visitRequestV2:otpFlow.codeResent'), 'v2-otp-resent');
     } catch (error) {
       const meta = getOtpErrorMeta(error);
       if (meta.humanVerificationRequired || getApiErrorCode(error) === OTP_HUMAN_VERIFICATION_REQUIRED) {
@@ -637,9 +793,13 @@ export const useVisitRequestFormV2 = (
    * accidental Esc looked exactly like losing the whole form.
    */
   const cancelOtp = useCallback(() => {
+    // Never mid-verify: the create may be committing right now, and dropping the session token here
+    // would leave the user with no way to learn the outcome.
+    if (stageRef.current === 'VERIFYING_OTP') return;
     setSessionToken(null);
     resetOtpChallengeState();
     saveDraftNow();
+    setStage('EDITING');
     if (hasMeaningfulV2Data(form.getValues())) {
       showInfoToast(t('visitRequestV2:draft.savedForLater'));
     }
@@ -658,8 +818,26 @@ export const useVisitRequestFormV2 = (
     setMaskedEmail(pendingOtp.maskedEmail);
     setSessionToken(token);
     resetOtpChallengeState();
+    setStage('OTP_PENDING');
     return true;
   }, [pendingOtp, draftNamespace, resetOtpChallengeState]);
+
+  /**
+   * "Let me look at the form again" from inside the OTP modal (plan §12). The challenge is KEPT —
+   * the session token, the submission id and the code already in the user's inbox all stay valid —
+   * so checking a date does not cost them a new code or their place in the rate limit.
+   */
+  const reviewFormDuringOtp = useCallback(() => {
+    if (stageRef.current === 'VERIFYING_OTP') return;
+    setOtpError(null);
+    setStage('EDITING');
+  }, []);
+
+  /** Back into the modal after a review; the challenge never left. */
+  const continueOtpAfterReview = useCallback((): boolean => {
+    if (sessionToken) { setStage('OTP_PENDING'); return true; }
+    return resumeOtp();
+  }, [sessionToken, resumeOtp]);
 
   /** Forgets the pending challenge (keeping the form) — "I will start the verification again". */
   const discardPendingOtp = useCallback(() => {
@@ -668,6 +846,7 @@ export const useVisitRequestFormV2 = (
     clearOtpChallengeToken(draftNamespace);
     saveDraftNow({ otp: null });
     resetOtpChallengeState();
+    setStage('EDITING');
   }, [draftNamespace, saveDraftNow, resetOtpChallengeState]);
 
   /**
@@ -697,6 +876,12 @@ export const useVisitRequestFormV2 = (
     setPendingOtp(null);
     resetOtpChallengeState();
     clearVisitRequestV2Draft(draftNamespace);
+    // A brand-new submit intent: the next submit mints a fresh submissionId, so it can never
+    // replay idempotently onto the request that was just completed.
+    setUncertain(null);
+    setLastLookup(null);
+    setUncertainError(null);
+    setStage('EDITING');
     autoSaveBlockedRef.current = false;
   }, [form, draftNamespace, resetOtpChallengeState]);
 
@@ -715,16 +900,21 @@ export const useVisitRequestFormV2 = (
     // Submit
     onSubmit,
     isSelfRegistration,
-    isSubmitting,
+    /** The single source of truth for "where is this submission" (plan §3). */
+    stage,
+    // Derived, never independently settable — a caller cannot observe "submitting AND verifying".
+    isSubmitting: stage === 'SENDING_OTP',
     submitError,
     setSubmitError,
     firstErrorCampusIndex,
     setFirstErrorCampusIndex,
+    /** Increments on every invalid submit — the form moves the caret to the first bad field. */
+    focusErrorsToken,
     // OTP phase (public mode)
     sessionToken,
     maskedEmail,
     otpError,
-    isVerifying,
+    isVerifying: stage === 'VERIFYING_OTP',
     isResending,
     remainingAttempts,
     retryAfterSeconds,
@@ -740,6 +930,15 @@ export const useVisitRequestFormV2 = (
     pendingOtp,
     resumeOtp,
     discardPendingOtp,
+    /** §12 — step out to the form and back WITHOUT spending the challenge. */
+    reviewFormDuringOtp,
+    continueOtpAfterReview,
+    // Uncertain result (§10)
+    isCheckingResult,
+    lastLookup,
+    uncertainError,
+    checkSubmissionResult,
+    backToFormFromUncertain,
     // Draft
     draftHydrated,
     hydrateDraft,

@@ -64,6 +64,13 @@
     "addSupport": "Add support member",
     "operationalContact": "Working contact at this campus",
     "operationalContactHint": "Coordination only at this campus — never a login account",
+    "quickFillRegistrant": "Use registrant",
+    "quickFillPrimaryContact": "Use primary contact",
+    "quickFillCopiedRegistrant": "Copied the registrant's details.",
+    "quickFillCopiedContact": "Copied the primary contact's details.",
+    "quickFillIndependent": "These details are now edited independently — later changes to the source do not flow back here.",
+    "quickFillReplaceTitle": "The current on-site contact details will be replaced.",
+    "quickFillReplaceYes": "Continue",
     "phone": "Phone",
     "email": "Email",
     "additional": "Additional requirements",
@@ -158,17 +165,41 @@
     "discardBody": "You have entered data in this form. Closing now will dismiss this window.",
     "keepEditing": "Keep editing",
     "discardConfirm": "Close",
-    "done": "Done",
     "saveDraftAndExit": "Save draft and exit"
   },
   "success": {
     "title": "Visit request submitted",
     "requestCode": "Request code: {{code}}",
-    "campusCount": "Campuses registered: {{count}}",
     "mixedNote": "content varies by campus",
     "idempotentReplay": "This request was already recorded (resubmitting did not create a duplicate).",
     "claimPending": "The contact person differs from the registrant: a confirmation email has been sent (valid 72 hours). Campus approvals do not wait for this confirmation.",
-    "backHome": "Back to home"
+    "backHome": "Back to home",
+    "statusLabel": "Status:",
+    "submittedAtLabel": "Submitted:",
+    "campusCountLabel": "Campuses:",
+    "saved": "Your request has been saved.",
+    "keepCode": "Please keep the request code and check your email for the next steps.",
+    "viewRequest": "View the request",
+    "goToList": "Back to the request list",
+    "createAnother": "Create another request",
+    "reviewSubmitted": "Review what you submitted",
+    "hideSubmitted": "Hide what you submitted",
+    "copyCode": "Copy request code",
+    "codeCopied": "Request code copied.",
+    "codeCopyFailed": "The browser blocked automatic copying. Your request code: {{code}}",
+    "close": "Close",
+    "toast": "Request {{code}} was created.",
+    "status": {
+      "WAITING_REQUEST_APPROVAL": "Waiting for the Staff Leader",
+      "PENDING_APPROVAL": "Waiting for approval",
+      "PENDING": "Pending",
+      "PARTIALLY_APPROVED": "Partially approved",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "CANCELLED": "Cancelled",
+      "CLOSED": "Closed",
+      "UNKNOWN": "{{status}}"
+    }
   },
   "summary": {
     "heading": "Submitted request summary",
@@ -429,5 +460,26 @@
     "noEndSlots": "No slots left on this day — switch on \"Ends on another day\".",
     "rulesHint": "Book at least {{hours}} hours ahead; each visit lasts at least {{minutes}} minutes.",
     "readableRange": "{{from}} → {{to}}"
+  },
+  "otpFlow": {
+    "codeSent": "A verification code was sent to {{email}}.",
+    "codeResent": "A new verification code was sent.",
+    "verifyingAndCreating": "Verifying the code and creating the request...",
+    "reviewForm": "Review the request details",
+    "reviewBannerTitle": "A verification code was sent to {{email}}.",
+    "reviewBannerBody": "Check the request and then carry on entering the code — the code you already have is still valid.",
+    "continueVerification": "Continue verification"
+  },
+  "uncertain": {
+    "title": "The result could not be confirmed",
+    "body": "The connection dropped after the verification code was sent, so it is not yet known whether the request was created.",
+    "doNotResend": "Do not submit a new request yet — this one may already exist.",
+    "check": "Check the result again",
+    "checking": "Checking...",
+    "backToForm": "Back to the form",
+    "checkFailed": "The status could not be checked. Please try again in a moment.",
+    "statePending": "No request was created — the verification session is still open. Go back to the form and enter the code to finish.",
+    "stateFailed": "This submission ended without creating a request. Go back to the form and submit again.",
+    "stateNotFound": "No trace of this submission was found. Nothing was created — go back to the form and submit again."
   }
 }

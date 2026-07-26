@@ -173,6 +173,15 @@ public sealed class VerifyAndCreateVisitRequestV2CommandTests
                 Assert.True(replay.Idempotent);
                 Assert.Equal(createdId, replay.VisitRequestId);
                 Assert.NotEmpty(replay.Instances);
+
+                // The receipt (plan §15). A replay must carry the SAME facts as the original create:
+                // the client that lost the first response has nothing else to rebuild its success
+                // screen from, and a blank status or timestamp would leave it unable to say where
+                // the request stands.
+                Assert.False(string.IsNullOrWhiteSpace(replay.RequestCode));
+                Assert.False(string.IsNullOrWhiteSpace(replay.Status));
+                Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$", replay.SubmittedAt);
+                Assert.Equal(replay.Instances.Count, replay.CampusCount);
             }
 
             using (var db = NewContext())

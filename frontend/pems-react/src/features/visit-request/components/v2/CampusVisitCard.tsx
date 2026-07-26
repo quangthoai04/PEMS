@@ -8,9 +8,12 @@ import type { RegistrationCampusOption } from '../../api/visitRequestApi';
 import { FormField, inputCls } from '../shared/FormField';
 import { AutoGrowTextarea } from '../shared/AutoGrowTextarea';
 import { AutoGrowTextField } from '../shared/AutoGrowTextField';
+import { PhoneField } from '../shared/PhoneField';
 import { VisitDateTimeRangePicker } from '../shared/VisitDateTimeRangePicker';
 import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
+import { showSuccessToast } from '../../../../shared/utils/toast';
+import { countFieldErrors } from '../../utils/formErrorNavigation';
 import { validatePersonExcel, canApplyImport, type ExcelTranslator, type PersonRow } from '../ExcelUpload/excelValidator';
 import { ExcelImportPanel, type ExcelImportState } from '../ExcelUpload/ExcelImportPanel';
 import { downloadVisitorTemplate, downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
@@ -20,6 +23,15 @@ import type { CampusProcessingChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
 
 const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER'] as const;
+
+/**
+ * What a quick-fill copies into the per-campus operational contact. This is a ONE-TIME copy, never
+ * a link: the registrant and the campus contact are frequently the same person on the day the form
+ * is filled and different people a week later, so keeping them in sync would silently undo an
+ * edit somebody made deliberately (plan §12).
+ */
+const QUICK_FILL_FIELDS = ['fullName', 'organization', 'phone', 'email'] as const;
+type QuickFillSource = 'registrant' | 'contact';
 
 /**
  * Per-field ceilings, mirroring `buildCampusVisitSchema` and the FluentValidation rules that
@@ -73,15 +85,6 @@ interface Props {
   };
 }
 
-/** Counts leaf errors under one campus card so the collapsed header can show a badge. */
-function countErrors(node: unknown): number {
-  if (!node || typeof node !== 'object') return 0;
-  if ('message' in (node as Record<string, unknown>) && typeof (node as { message?: unknown }).message === 'string') {
-    return 1;
-  }
-  return Object.values(node as Record<string, unknown>).reduce<number>((acc, v) => acc + countErrors(v), 0);
-}
-
 /**
  * ONE campus visit card (plan §9.1): a complete, independent snapshot — schedule, content,
  * people, operational contact and requirements. Collapsing only HIDES the body (CSS), the
@@ -109,7 +112,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   const { register, control, watch, formState: { errors } } = form;
   const base = `campusVisits.${index}` as const;
   const cardErrors = errors.campusVisits?.[index];
-  const errorCount = countErrors(cardErrors);
+  const errorCount = countFieldErrors(cardErrors);
 
   const visitorFields = useFieldArray({ control, name: `campusVisits.${index}.visitors` });
   const supportFields = useFieldArray({ control, name: `campusVisits.${index}.supportTeam` });
@@ -192,6 +195,55 @@ export const CampusVisitCard: React.FC<Props> = ({
     const fields = pendingReplace.kind === 'visitors' ? visitorFields : supportFields;
     fields.replace(pendingReplace.rows);
     setPendingReplace(null);
+  };
+
+  // ── Operational-contact quick fill (plan §11–§13) ──────────────────────────────────────────
+  // Watched, not read on click, so the buttons enable themselves as soon as the source block is
+  // usable rather than staying grey until something else re-renders the card.
+  const watchedRegistrant = watch('registerInfo');
+  const watchedPrimaryContact = watch('contactPoint');
+  const [pendingQuickFill, setPendingQuickFill] = useState<QuickFillSource | null>(null);
+  const [quickFilledFrom, setQuickFilledFrom] = useState<QuickFillSource | null>(null);
+
+  const quickFillValues = (kind: QuickFillSource) => {
+    const src = kind === 'registrant' ? watchedRegistrant : watchedPrimaryContact;
+    return {
+      fullName: src?.fullName ?? '',
+      organization: src?.organization ?? '',
+      phone: src?.phone ?? '',
+      email: src?.email ?? '',
+    };
+  };
+
+  /** A source with no name and no email cannot fill anything useful, so its button stays off. */
+  const canQuickFillFrom = (kind: QuickFillSource) => {
+    const v = quickFillValues(kind);
+    return v.fullName.trim().length > 0 && v.email.trim().length > 0;
+  };
+
+  const operationalContactHasData = () => {
+    const oc = form.getValues(`${base}.operationalContact`);
+    return QUICK_FILL_FIELDS.some(f => (oc?.[f] ?? '').trim().length > 0);
+  };
+
+  const applyQuickFill = (kind: QuickFillSource) => {
+    const v = quickFillValues(kind);
+    // Per-field setValue on THIS card only — a whole-object set on a shared path would have leaked
+    // into the other campus cards, which are independent snapshots by design.
+    for (const f of QUICK_FILL_FIELDS) {
+      form.setValue(`${base}.operationalContact.${f}`, v[f], { shouldDirty: true, shouldValidate: true });
+    }
+    setQuickFilledFrom(kind);
+    setPendingQuickFill(null);
+    showSuccessToast(t(kind === 'registrant'
+      ? 'visitRequestV2:card.quickFillCopiedRegistrant'
+      : 'visitRequestV2:card.quickFillCopiedContact'));
+  };
+
+  /** Never overwrites silently: anything already typed here is confirmed away first (plan §13). */
+  const requestQuickFill = (kind: QuickFillSource) => {
+    if (operationalContactHasData()) setPendingQuickFill(kind);
+    else applyQuickFill(kind);
   };
 
   const fieldError = (path: string): string | undefined => {
@@ -747,10 +799,75 @@ export const CampusVisitCard: React.FC<Props> = ({
 
         {/* Operational contact (per-campus working contact — a snapshot, never a login) */}
         <fieldset>
-          <legend className="mb-2 text-sm font-extrabold text-slate-900 flex items-center">
-            {t('visitRequestV2:card.operationalContact')}
-            <HelpTooltip content={t('visitRequestV2:card.operationalContactHint')} className="ml-1.5" />
+          <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
+            <span className="flex items-center">
+              {t('visitRequestV2:card.operationalContact')}
+              <HelpTooltip content={t('visitRequestV2:card.operationalContactHint')} className="ml-1.5" />
+            </span>
+            {/* Both sources are offered because both happen: sometimes the registrant coordinates the
+                campus themselves, sometimes the request's primary contact does, and they are often
+                two different people. One button could only ever serve half the cases. */}
+            <span className="flex flex-wrap items-center gap-2 sm:ml-auto">
+              <button
+                type="button"
+                data-testid={`campus-opcontact-use-registrant-${index}`}
+                disabled={!canQuickFillFrom('registrant')}
+                onClick={() => requestQuickFill('registrant')}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Copy className="h-3.5 w-3.5" /> {t('visitRequestV2:card.quickFillRegistrant')}
+              </button>
+              <button
+                type="button"
+                data-testid={`campus-opcontact-use-contact-${index}`}
+                disabled={!canQuickFillFrom('contact')}
+                onClick={() => requestQuickFill('contact')}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Copy className="h-3.5 w-3.5" /> {t('visitRequestV2:card.quickFillPrimaryContact')}
+              </button>
+            </span>
           </legend>
+
+          {quickFilledFrom && (
+            <p data-testid={`campus-opcontact-copied-${index}`} className="mb-2 text-xs font-medium text-slate-500">
+              {t(quickFilledFrom === 'registrant'
+                ? 'visitRequestV2:card.quickFillCopiedRegistrant'
+                : 'visitRequestV2:card.quickFillCopiedContact')}{' '}
+              {t('visitRequestV2:card.quickFillIndependent')}
+            </p>
+          )}
+
+          {/* Replacing what is already there is confirmed, never silent (plan §13). */}
+          {pendingQuickFill && (
+            <div
+              role="alertdialog"
+              data-testid={`campus-opcontact-replace-confirm-${index}`}
+              className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3"
+            >
+              <p className="text-sm font-bold text-amber-900">
+                {t('visitRequestV2:card.quickFillReplaceTitle')}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid={`campus-opcontact-replace-yes-${index}`}
+                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                  onClick={() => applyQuickFill(pendingQuickFill)}
+                >
+                  {t('visitRequestV2:card.quickFillReplaceYes')}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                  onClick={() => setPendingQuickFill(null)}
+                >
+                  {t('visitRequestV2:common.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
             <FormField label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <Controller
@@ -769,17 +886,21 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
+            {/* The same searchable organization control the guest rows use. The stored value is
+                still plain text — this contact is a snapshot and the schema has no relation to a
+                partner record, so picking a known organization links nothing and the request's own
+                partner selection is untouched. */}
             <FormField label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.organization`}
                 control={control}
                 render={({ field }) => (
-                  <AutoGrowTextField
+                  <OrganizationCombobox
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('operationalContact.organization')}
-                    maxLength={MAX.contactOrganization}
+                    placeholder={t('visitRequestV2:person.organization')}
                     ariaLabel={t('visitRequestV2:person.organization')}
                     testId="campus-opcontact-org"
                   />
@@ -787,7 +908,12 @@ export const CampusVisitCard: React.FC<Props> = ({
               />
             </FormField>
             <FormField label={t('visitRequestV2:card.phone')} required error={fieldError('operationalContact.phone')} showValidIcon={false}>
-              <input {...register(`${base}.operationalContact.phone`)} placeholder="+84…" className={inputCls(!!fieldError('operationalContact.phone'), false, false)} />
+              <PhoneField
+                field={register(`${base}.operationalContact.phone`)}
+                hasError={!!fieldError('operationalContact.phone')}
+                error={fieldError('operationalContact.phone')}
+                testId={`campus-opcontact-phone-${index}`}
+              />
             </FormField>
             <FormField label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
               <input type="email" {...register(`${base}.operationalContact.email`)} className={inputCls(!!fieldError('operationalContact.email'), false, false)} />

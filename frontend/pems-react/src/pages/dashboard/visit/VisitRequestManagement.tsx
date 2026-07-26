@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import SearchMatchContexts from '../../../features/visit-request/components/SearchMatchContexts';
 import { VisitRequestV2Modal } from '../../../features/visit-request/components/v2/VisitRequestV2Modal';
@@ -193,6 +194,28 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const { t } = useTranslation(['visitRequestV2']);
+
+  /**
+   * A one-shot "you just created VR-…" handed over in navigation state (plan §9, §16.20).
+   *
+   * It is consumed by REPLACING the history entry without the state, so a refresh or a Back does
+   * not announce a request that was filed minutes ago as if it had just happened. Keyed by request
+   * code so React's StrictMode double-effect cannot fire the same toast twice.
+   */
+  const consumedFlashRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    const flash = (location.state as { flash?: { kind?: string; requestCode?: string } } | null)?.flash;
+    if (flash?.kind !== 'v2-created' || !flash.requestCode) return;
+    if (consumedFlashRef.current === flash.requestCode) return;
+    consumedFlashRef.current = flash.requestCode;
+    showSuccessToast(
+      t('visitRequestV2:success.toast', { code: flash.requestCode }),
+      `v2-created-${flash.requestCode}`,
+    );
+    navigate(location.pathname + location.search, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const isTabAllowed = (tab: Tab | null): tab is Tab => {
     if (tab === 'responsible') return canUseResponsibleTab;
@@ -1908,6 +1931,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             onSuccess={() => {
               loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
             }}
+            onViewRequest={visitRequestId => navigate(`/dashboard/visit/v2/${visitRequestId}`)}
           />
         </>
       )}

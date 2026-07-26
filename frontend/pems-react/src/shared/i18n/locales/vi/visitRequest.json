@@ -299,6 +299,7 @@
     "partnerComboPlaceholder": "Nhập hoặc tìm tổ chức/đối tác...",
     "partnerSelected": "Đã chọn đối tác có sẵn",
     "partnerFreeText": "Đây là tổ chức nhập tự do (chưa liên kết đối tác có sẵn).",
+    "orgKnown": "✓ Có trong hệ thống",
     "clear": "Xóa",
     "phoneSearchPlaceholder": "Tìm quốc gia hoặc mã...",
     "partnerNoMatch": "Không tìm thấy đối tác phù hợp. Bạn có thể tiếp tục dùng tên đang nhập."

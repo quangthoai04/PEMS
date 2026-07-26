@@ -23,7 +23,15 @@ public sealed record CreateVisitRequestV2Response(
     string PrimaryContactAccessStatus,
     bool ContactClaimPending,
     IReadOnlyList<CreateVisitRequestV2CampusRef> Instances,
-    bool Idempotent);
+    bool Idempotent,
+    // ── The receipt (plan §15) ──
+    // Read from the request that was just committed, never inferred by the client. Without these the
+    // success screen could name the request but not say where it had got to or when it was sent, so
+    // the user had no way to tell a fresh create from an idempotent replay of an older one.
+    string Status,
+    /// <summary>Vietnam wall-clock "yyyy-MM-ddTHH:mm:ss" — no offset, like every other DATETIME here.</summary>
+    string SubmittedAt,
+    int CampusCount);
 
 /// <summary>Stable error codes for the create-v2 flag gate.</summary>
 public static class CreateVisitRequestV2ErrorCodes
