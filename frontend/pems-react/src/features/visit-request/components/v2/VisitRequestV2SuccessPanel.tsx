@@ -1,56 +1,141 @@
 import React from 'react';
-import { CheckCircle2, Info } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FilePlus2, Info, List } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VisitRequestV2SubmittedSummary } from './VisitRequestV2SubmittedSummary';
+import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 
 interface Props {
   response: V2CreateResponse;
   values: VisitRequestV2Schema;
-  /** Rendered under the receipt — a link home on the route, a Close button in the modal. */
+  /**
+   * The three actions of plan §8. Each is optional because not every surface can offer it: an
+   * anonymous visitor has no session, so sending them to a dashboard route would only bounce them
+   * to a login screen. Offering an action that cannot work is worse than not offering it.
+   */
+  onViewRequest?: () => void;
+  onGoToList?: () => void;
+  onCreateAnother?: () => void;
+  /** Rendered under the actions — a link home on the public route, Close in the modal. */
   footer?: React.ReactNode;
 }
+
+const statusKey = (status: string) => `visitRequestV2:success.status.${status}`;
 
 /**
  * Post-submit receipt for a v2 create, shared by the standalone route and the modal shell so the
  * confirmation a user sees never depends on which surface they started from.
+ *
+ * This is deliberately a SCREEN and not a toast. The request code is the only handle the user has
+ * on what they just filed — a notification that disappears after four seconds is not somewhere to
+ * put it. The toast is a companion, not the record.
  */
-export const VisitRequestV2SuccessPanel: React.FC<Props> = ({ response, values, footer }) => {
+export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
+  response, values, onViewRequest, onGoToList, onCreateAnother, footer,
+}) => {
   const { t } = useTranslation(['visitRequestV2']);
+
+  // The lookup-recovered receipt (an uncertain result that turned out COMPLETED) knows the request
+  // exists but not its campus breakdown — it answered an anonymous caller. Show what is known.
+  const recovered = response.recoveredByLookup === true;
+  const campusCount = response.campusCount || response.instances.length;
 
   return (
     <>
       <div className="rounded-2xl border border-green-200 bg-green-50 p-6">
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-8 w-8 shrink-0 text-green-600" />
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-extrabold text-green-900">{t('visitRequestV2:success.title')}</h2>
-            <p className="text-sm text-green-800">
+            <p data-testid="v2-success-code" className="text-sm text-green-800">
               {t('visitRequestV2:success.requestCode', { code: response.requestCode })}
             </p>
           </div>
         </div>
-        <ul className="mt-4 space-y-1 text-sm text-green-900">
-          <li>
-            {t('visitRequestV2:success.campusCount', { count: response.instances.length })}
-            {response.hasMixedCampusDetails ? ` — ${t('visitRequestV2:success.mixedNote')}` : ''}
-          </li>
-          {response.idempotent && <li>{t('visitRequestV2:success.idempotentReplay')}</li>}
-        </ul>
+
+        <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-green-900 sm:grid-cols-2">
+          {response.status && (
+            <div className="flex gap-2">
+              <dt className="font-semibold">{t('visitRequestV2:success.statusLabel')}</dt>
+              <dd data-testid="v2-success-status">
+                {t([statusKey(response.status), 'visitRequestV2:success.status.UNKNOWN'], { status: response.status })}
+              </dd>
+            </div>
+          )}
+          {response.submittedAt && (
+            <div className="flex gap-2">
+              <dt className="font-semibold">{t('visitRequestV2:success.submittedAtLabel')}</dt>
+              <dd data-testid="v2-success-submitted-at">{formatVietnamDateTime(response.submittedAt)}</dd>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <dt className="font-semibold">{t('visitRequestV2:success.campusCountLabel')}</dt>
+            <dd>
+              {campusCount}
+              {response.hasMixedCampusDetails ? ` — ${t('visitRequestV2:success.mixedNote')}` : ''}
+            </dd>
+          </div>
+        </dl>
+
+        <p className="mt-4 text-sm font-semibold text-green-900">{t('visitRequestV2:success.saved')}</p>
+        {response.idempotent && (
+          <p className="mt-1 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
+        )}
+
         {response.contactClaimPending && (
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <p>{t('visitRequestV2:success.claimPending')}</p>
           </div>
         )}
+
+        {(onViewRequest || onGoToList || onCreateAnother) && (
+          <div className="mt-6 flex flex-wrap gap-2">
+            {onViewRequest && (
+              <button
+                type="button"
+                data-testid="v2-success-view"
+                onClick={onViewRequest}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#003a6f]"
+              >
+                <ExternalLink className="h-4 w-4" /> {t('visitRequestV2:success.viewRequest')}
+              </button>
+            )}
+            {onGoToList && (
+              <button
+                type="button"
+                data-testid="v2-success-list"
+                onClick={onGoToList}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                <List className="h-4 w-4" /> {t('visitRequestV2:success.goToList')}
+              </button>
+            )}
+            {onCreateAnother && (
+              <button
+                type="button"
+                data-testid="v2-success-new"
+                onClick={onCreateAnother}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                <FilePlus2 className="h-4 w-4" /> {t('visitRequestV2:success.createAnother')}
+              </button>
+            )}
+          </div>
+        )}
+
         {footer && <div className="mt-6">{footer}</div>}
       </div>
 
-      {/* Full per-campus summary from the immutable submitted snapshot. */}
-      <div className="mt-6">
-        <VisitRequestV2SubmittedSummary response={response} values={values} />
-      </div>
+      {/* Full per-campus summary from the immutable submitted snapshot. Skipped for a
+          lookup-recovered receipt: that path never received the per-campus response, and an
+          empty summary would read as "no campuses" rather than "not returned here". */}
+      {!recovered && (
+        <div className="mt-6">
+          <VisitRequestV2SubmittedSummary response={response} values={values} />
+        </div>
+      )}
     </>
   );
 };

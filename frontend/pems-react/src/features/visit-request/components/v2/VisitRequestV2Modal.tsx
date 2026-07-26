@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
+import { showSuccessToast } from '../../../../shared/utils/toast';
 import { VisitRequestFormV2 } from './VisitRequestFormV2';
 import { VisitRequestV2SuccessPanel } from './VisitRequestV2SuccessPanel';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
@@ -14,6 +15,12 @@ interface Props {
   mode: UseVisitRequestFormV2Options['mode'];
   draftNamespace?: string;
   onSuccess: (result: V2CreateResponse, values: VisitRequestV2Schema) => void;
+  /**
+   * Opens the request that was just created. Supplied by the HOST rather than navigated here: this
+   * shell is a presentational container, and reaching for a router inside it would tie every
+   * consumer (and every test) to one.
+   */
+  onViewRequest?: (visitRequestId: number) => void;
 }
 
 /**
@@ -27,21 +34,32 @@ interface Props {
  * never slides under the site header, and the submit actions stay reachable in a long form.
  */
 export const VisitRequestV2Modal: React.FC<Props> = ({
-  isOpen, onClose, mode, draftNamespace, onSuccess,
+  isOpen, onClose, mode, draftNamespace, onSuccess, onViewRequest,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'common']);
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [result, setResult] = useState<{ response: V2CreateResponse; values: VisitRequestV2Schema } | null>(null);
-  const [draftControls, setDraftControls] =
-    useState<{ saveDraftNow: () => void; discardDraft: () => void; isDirty: () => boolean } | null>(null);
+  /** Bumped to remount the form for "create another", so nothing survives from the finished one. */
+  const [formGeneration, setFormGeneration] = useState(0);
+  const [draftControls, setDraftControls] = useState<{
+    saveDraftNow: () => void;
+    discardDraft: () => void;
+    isDirty: () => boolean;
+    isBusy: () => boolean;
+  } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Closing with typed data always asks first — an accidental Esc must not discard the form.
   const requestClose = useCallback(() => {
+    // A verify in flight may be committing the request right now; Esc must not tear the shell down
+    // while the only place the outcome can arrive is inside it (plan §5, §9).
+    if (draftControls?.isBusy?.()) return;
+    // Once the receipt is on screen there is nothing left to lose — closing is just closing.
+    if (result) { onClose(); return; }
     if (draftControls?.isDirty?.()) setConfirmClose(true);
     else onClose();
-  }, [draftControls, onClose]);
+  }, [draftControls, result, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -102,15 +120,36 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
         {/* The ONLY scrolling region */}
         <div className="overflow-y-auto overscroll-contain bg-slate-50/60 px-3 py-4 sm:px-6 sm:py-5">
           {result ? (
-            <VisitRequestV2SuccessPanel response={result.response} values={result.values} />
+            <VisitRequestV2SuccessPanel
+              response={result.response}
+              values={result.values}
+              onViewRequest={onViewRequest && result.response.visitRequestId
+                ? () => {
+                    // Close first: the detail lives on a route behind this modal, and leaving the
+                    // overlay mounted would put the page the user asked for underneath it.
+                    onClose();
+                    onViewRequest(result.response.visitRequestId);
+                  }
+                : undefined}
+              onCreateAnother={() => {
+                setResult(null);
+                setFormGeneration(g => g + 1);
+              }}
+            />
           ) : (
             <VisitRequestFormV2
+              key={formGeneration}
               mode={mode}
               draftNamespace={draftNamespace}
               onSuccess={(response, values) => {
                 // Stay open and show the receipt — closing here would hide the request code and,
-                // in the public flow, the whole point of completing OTP.
+                // in the public flow, the whole point of completing OTP. Nothing auto-closes: the
+                // user decides when they are done reading.
                 setResult({ response, values });
+                showSuccessToast(
+                  t('visitRequestV2:success.toast', { code: response.requestCode }),
+                  `v2-created-${response.visitRequestId}`,
+                );
                 onSuccess(response, values);
               }}
               footerSlot={footerEl}

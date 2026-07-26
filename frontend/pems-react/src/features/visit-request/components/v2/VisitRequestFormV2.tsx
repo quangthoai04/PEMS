@@ -7,7 +7,9 @@ import { useTranslation } from 'react-i18next';
 import {
   useVisitRequestFormV2,
   type UseVisitRequestFormV2Options,
+  type SubmissionStage,
 } from '../../hooks/useVisitRequestFormV2';
+import { VisitCreateUncertainPanel } from './VisitCreateUncertainPanel';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 import { V2_MAX_CAMPUSES } from '../../schema/visitRequestV2.schema';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
@@ -42,7 +44,13 @@ interface Props {
    * Hands the host the draft controls so a close prompt can offer "save draft and exit" and
    * "discard changes" without reimplementing draft storage.
    */
-  onDraftControls?: (controls: { saveDraftNow: () => void; discardDraft: () => void; isDirty: () => boolean }) => void;
+  onDraftControls?: (controls: {
+    saveDraftNow: () => void;
+    discardDraft: () => void;
+    isDirty: () => boolean;
+    /** True while a verify is in flight — the host must not tear the shell down mid-transaction. */
+    isBusy: () => boolean;
+  }) => void;
 }
 
 /**
@@ -59,6 +67,8 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const [showErrors, setShowErrors] = useState(false);
   /** Set when "continue verifying" found no usable challenge left (another tab, or storage cleared). */
   const [resumeFailed, setResumeFailed] = useState(false);
+  /** Mirrors the submission stage for callbacks the host keeps across renders. */
+  const stageRef = useRef<SubmissionStage>('EDITING');
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
@@ -100,6 +110,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     },
   });
   const { form, campusVisitFields } = vm;
+  useEffect(() => { stageRef.current = vm.stage; }, [vm.stage]);
 
   // Look for a saved draft once, but never apply it silently — the user is offered the choice.
   const hydratedRef = useRef(false);
@@ -171,7 +182,14 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   const { saveDraftNow, discardDraft } = vm;
   useEffect(() => {
-    onDraftControls?.({ saveDraftNow, discardDraft, isDirty: () => hasMeaningfulV2Data(form.getValues()) });
+    onDraftControls?.({
+      saveDraftNow,
+      discardDraft,
+      isDirty: () => hasMeaningfulV2Data(form.getValues()),
+      // A ref, not the render-time value: the host holds this object across renders and would
+      // otherwise ask a stale closure whether the form is busy.
+      isBusy: () => stageRef.current === 'VERIFYING_OTP' || stageRef.current === 'SENDING_OTP',
+    });
   }, [onDraftControls, saveDraftNow, discardDraft, form]);
 
   const submitBar = (node: React.ReactNode) =>
@@ -282,6 +300,40 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       {vm.migratedFromGlobalDraft && (
         <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800">
           {t('visitRequestV2:draft.migrated')}
+        </div>
+      )}
+
+      {/* ── The verify never came back ──
+          Shown INSTEAD of an error, because nobody knows yet whether the request exists. */}
+      {vm.stage === 'CREATE_UNCERTAIN' && (
+        <VisitCreateUncertainPanel
+          isChecking={vm.isCheckingResult}
+          lookup={vm.lastLookup}
+          error={vm.uncertainError}
+          onCheck={() => void vm.checkSubmissionResult()}
+          onBackToForm={vm.backToFormFromUncertain}
+        />
+      )}
+
+      {/* ── Reviewing the form with the challenge still in hand (plan §12) ──
+          The user stepped out of the modal to check something. The code in their inbox is still
+          valid and the session token is still held — going back in costs them nothing. */}
+      {vm.sessionToken && vm.stage === 'EDITING' && (
+        <div
+          role="status"
+          data-testid="v2-otp-review"
+          className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+        >
+          <p className="font-bold">{t('visitRequestV2:otpFlow.reviewBannerTitle', { email: vm.maskedEmail })}</p>
+          <p className="mt-1">{t('visitRequestV2:otpFlow.reviewBannerBody')}</p>
+          <button
+            type="button"
+            data-testid="v2-otp-review-continue"
+            onClick={() => vm.continueOtpAfterReview()}
+            className="mt-3 rounded-lg bg-[#004c91] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#003a6f]"
+          >
+            {t('visitRequestV2:otpFlow.continueVerification')}
+          </button>
         </div>
       )}
 
@@ -639,7 +691,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           Rendered whenever a challenge is live, not only in public mode: an authenticated user
           registering somebody else takes the same challenge, and gating this on `mode` would leave
           them with a pending session token and no way to enter the code. */}
-      {vm.sessionToken && (
+      {/* Held open by the STAGE, not merely by the presence of a token: stepping out to review the
+          form keeps the token (that is the point) while hiding the modal. */}
+      {vm.sessionToken && (vm.stage === 'OTP_PENDING' || vm.stage === 'VERIFYING_OTP') && (
         <OtpVerificationModal
           maskedEmail={vm.maskedEmail}
           otpError={vm.otpError}
@@ -655,6 +709,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           onResend={() => void vm.resendOtp()}
           onRecover={token => void vm.recoverOtp(token)}
           onCancel={vm.cancelOtp}
+          onReviewForm={vm.reviewFormDuringOtp}
         />
       )}
     </form>
