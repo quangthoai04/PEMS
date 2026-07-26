@@ -239,7 +239,14 @@
     "mediaNote": "Ghi chú truyền thông",
     "campusNote": "Ghi chú cho cơ sở",
     "instanceStatus": "Trạng thái cơ sở",
-    "none": "—"
+    "none": "—",
+    "colIndex": "STT",
+    "colFullName": "Họ và tên",
+    "colJobTitle": "Chức vụ",
+    "colOrganization": "Đơn vị công tác",
+    "colNationality": "Quốc tịch",
+    "notProvided": "Chưa cung cấp",
+    "noMembers": "Chưa có thành viên nào."
   },
   "amend": {
     "open": "Đề xuất thay đổi",
@@ -273,7 +280,34 @@
     "reload": "Tải lại",
     "appliedCount": "Đã áp dụng {{count}} thay đổi.",
     "errGeneric": "Không thể lưu thay đổi. Vui lòng thử lại.",
-    "save": "Lưu thay đổi"
+    "save": "Lưu thay đổi",
+    "noChanges": "Bạn chưa thay đổi thông tin nào.",
+    "lockedCampuses": "Không thể sửa nhanh cho: {{campuses}}. Các cơ sở này đang diễn ra, đã kết thúc, chưa được duyệt, hoặc đã quá hạn thay đổi."
+  },
+  "hostTransfer": {
+    "open": "Chuyển Host",
+    "title": "Chuyển Host phụ trách",
+    "currentHost": "Host hiện tại:",
+    "schedule": "Bắt đầu:",
+    "keepsApproval": "Chuyển Host không ảnh hưởng quyết định duyệt, lịch thăm hay nội dung chương trình. Đơn không phải duyệt lại.",
+    "newHost": "Chọn Host mới",
+    "selfOption": "(Tôi làm Host)",
+    "loadingCandidates": "Đang tải danh sách Host…",
+    "loadFailed": "Không tải được danh sách Host. Vui lòng thử lại.",
+    "noCandidates": "Cơ sở này chưa có nhân sự nào đủ điều kiện làm Host thay thế.",
+    "reason": "Lý do chuyển Host",
+    "reasonPlaceholder": "Ví dụ: Host hiện tại thay đổi lịch công tác.",
+    "conflictWarning": "Trùng lịch {{count}} hoạt động trong khung giờ này.",
+    "conflictAck": "{{name}} đang có lịch trùng trong khung giờ này. Bạn vẫn có thể chọn, hệ thống chỉ cảnh báo.",
+    "conflict": "Cơ sở này vừa được thay đổi bởi thao tác khác. Vui lòng tải lại trang và thử lại.",
+    "errGeneric": "Không thể chuyển Host. Vui lòng thử lại.",
+    "submit": "Xác nhận chuyển Host"
+  },
+  "mutationCutoff": {
+    "forCampus": "Không thể thực hiện cho {{campus}}.",
+    "rule": "Thao tác này chỉ được thực hiện ít nhất {{hours}} giờ trước khi chuyến thăm bắt đầu.",
+    "deadline": "Hạn cuối: {{at}}",
+    "startsAt": "Giờ bắt đầu: {{at}}"
   },
   "common": {
     "cancel": "Hủy"

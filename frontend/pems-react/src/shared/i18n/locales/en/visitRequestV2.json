@@ -239,7 +239,14 @@
     "mediaNote": "Media note",
     "campusNote": "Campus note",
     "instanceStatus": "Campus status",
-    "none": "—"
+    "none": "—",
+    "colIndex": "No.",
+    "colFullName": "Full name",
+    "colJobTitle": "Job title",
+    "colOrganization": "Organisation",
+    "colNationality": "Nationality",
+    "notProvided": "Not provided",
+    "noMembers": "No members yet."
   },
   "amend": {
     "open": "Propose change",
@@ -273,7 +280,34 @@
     "reload": "Reload",
     "appliedCount": "Applied {{count}} change(s).",
     "errGeneric": "Could not save the changes. Please try again.",
-    "save": "Save changes"
+    "save": "Save changes",
+    "noChanges": "You have not changed anything yet.",
+    "lockedCampuses": "Quick edit is unavailable for: {{campuses}}. These campuses are under way, finished, not yet approved, or past the change deadline."
+  },
+  "hostTransfer": {
+    "open": "Transfer host",
+    "title": "Transfer the host",
+    "currentHost": "Current host:",
+    "schedule": "Starts:",
+    "keepsApproval": "Transferring the host does not affect the approval, the schedule or the programme. The request is not re-approved.",
+    "newHost": "Choose the new host",
+    "selfOption": "(I will host)",
+    "loadingCandidates": "Loading hosts…",
+    "loadFailed": "Could not load the host list. Please try again.",
+    "noCandidates": "This campus has nobody eligible to take over as host.",
+    "reason": "Reason for the transfer",
+    "reasonPlaceholder": "For example: the current host's travel schedule changed.",
+    "conflictWarning": "Overlaps {{count}} other activity in this time window.",
+    "conflictAck": "{{name}} has an overlapping commitment in this window. You may still choose them — this is only a warning.",
+    "conflict": "This campus was just changed by another action. Please reload and try again.",
+    "errGeneric": "Could not transfer the host. Please try again.",
+    "submit": "Confirm transfer"
+  },
+  "mutationCutoff": {
+    "forCampus": "Unavailable for {{campus}}.",
+    "rule": "This action is only possible at least {{hours}} hours before the visit starts.",
+    "deadline": "Deadline: {{at}}",
+    "startsAt": "Starts at: {{at}}"
   },
   "common": {
     "cancel": "Cancel"

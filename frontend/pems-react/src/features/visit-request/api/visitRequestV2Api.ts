@@ -208,9 +208,30 @@ export interface ResolvedCampusVisit {
     changedFieldCount: number;
   } | null;
   /** Backend-derived mutation actions for THIS instance (SUBMIT_AMENDMENT / APPROVE_AMENDMENT /
-   * REJECT_AMENDMENT / WITHDRAW_AMENDMENT). The UI gates per-instance actions on this list.
-   * Optional so older cached payloads (no field) fail safe to "no actions". */
+   * REJECT_AMENDMENT / WITHDRAW_AMENDMENT / TRANSFER_HOST). The UI gates per-instance actions on this
+   * list. Optional so older cached payloads (no field) fail safe to "no actions". */
   allowedActions?: string[];
+  /** Per-campus verdicts INCLUDING refused ones — lets the UI disable with a real reason. */
+  capabilities?: VisitActionCapability[];
+}
+
+/**
+ * One action, one verdict, straight from the backend policy. The refused entries are the point: a
+ * hidden button leaves the user guessing whether the action exists at all, while a disabled one with
+ * "hạn cuối 08:00 ngày 21/08" tells them what happened and when it happened.
+ */
+export interface VisitActionCapability {
+  code: string;
+  scope: 'REQUEST' | 'INSTANCE';
+  visitInstanceId?: number | null;
+  enabled: boolean;
+  /** Stable code (VISIT_MUTATION_CUTOFF_REACHED / …). Match on this, never on the message. */
+  disabledReasonCode?: string | null;
+  disabledReason?: string | null;
+  cutoffAt?: string | null;
+  plannedStartAt?: string | null;
+  campusName?: string | null;
+  requiredLeadHours: number;
 }
 
 export interface ResolvedVisitForm {
@@ -251,6 +272,8 @@ export interface ResolvedVisitForm {
     canViewAllCampuses: boolean;
     isReadOnly: boolean;
     allowedActions: string[];
+    /** Request-scoped verdicts INCLUDING refused ones. */
+    capabilities?: VisitActionCapability[];
   };
 }
 
@@ -403,6 +426,14 @@ export const cancelContactTransfer = (visitRequestId: number, reason?: string) =
 
 // ── Safe edit (apply-now fields; backend classifier is authoritative) ────────
 
+/**
+ * A SPARSE patch: send only what actually changed. Omitting a field means "not part of this edit";
+ * sending "" clears it. A campus that changed nothing must NOT appear in `instances` at all.
+ *
+ * This used to be a full snapshot of every safe field of every campus, which meant a one-word note
+ * correction re-sent the media-consent decision of every other campus — dragging a campus whose
+ * window had closed into the payload and having the whole edit refused because of it.
+ */
 export interface SafeEditPayload {
   expectedRequestRowVersion: number;
   registrant?: { fullName: string; organization?: string | null; jobTitle?: string | null; phone?: string | null } | null;
@@ -412,7 +443,8 @@ export interface SafeEditPayload {
     expectedRowVersion: number;
     transportationNote?: string | null;
     noteToFptu?: string | null;
-    mediaConsentStatus: string; // AGREED | DECLINED (→ DECLINED applies even <24h)
+    /** AGREED | DECLINED, or omitted when unchanged. DECLINED applies even inside the cutoff. */
+    mediaConsentStatus?: string | null;
     mediaConsentNote?: string | null;
   }> | null;
 }
@@ -427,6 +459,33 @@ export interface SafeEditResponse {
 
 export const patchSafeDetails = (visitRequestId: number, patch: SafeEditPayload) =>
   httpClient.patch<SafeEditResponse>(`/v2/visit-requests/${visitRequestId}/safe-details`, patch).then(r => r.data);
+
+// ── Host transfer (post-approval handover of ONE campus) ─────────────────────
+
+export interface HostTransferPayload {
+  newHostUserId: number;
+  reason: string;
+  expectedRowVersion: number;
+}
+
+export interface HostTransferResponse {
+  visitInstanceId: number;
+  previousHostUserId: number;
+  previousHostName: string;
+  newHostUserId: number;
+  newHostName: string;
+  rowVersion: number;
+  message: string;
+}
+
+/**
+ * Hands one campus's Host role to a different eligible user. NOT the approve-and-assign endpoint:
+ * that one gives a campus its first Host as part of the approval and refuses to run twice.
+ */
+export const transferVisitHost = (visitInstanceId: number, payload: HostTransferPayload) =>
+  httpClient
+    .post<HostTransferResponse>(`/v2/visit-instances/${visitInstanceId}/host-transfer`, payload)
+    .then(r => r.data);
 
 // ── Amendments (per decided campus; active snapshot never moves before approval) ─
 

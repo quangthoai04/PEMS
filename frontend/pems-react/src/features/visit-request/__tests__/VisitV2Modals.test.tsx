@@ -113,11 +113,16 @@ describe('VisitAmendmentSubmitModal — member list', () => {
 describe('VisitSafeEditModal', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  /** Types into one campus's note, which is the smallest real edit. */
+  const editOneCampusNote = (value = 'Chuẩn bị phiên dịch.') =>
+    fireEvent.change(screen.getByTestId('safe-edit-transportation-10'), { target: { value } });
+
   it('sends expected row versions and reports a 409 conflict with a reload action', async () => {
     vi.mocked(patchSafeDetails).mockRejectedValue({ response: { status: 409, data: { errorCode: 'CONCURRENCY_CONFLICT' } } });
     const onSaved = vi.fn();
     render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={onSaved} />);
 
+    editOneCampusNote();
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
@@ -137,7 +142,67 @@ describe('VisitSafeEditModal', () => {
     });
     render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
 
+    editOneCampusNote();
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText(/Applied 1 change/i)).toBeInTheDocument();
+  });
+
+  // ── Changed-only payload (§6). The modal used to send a full snapshot of every safe field of every
+  //    campus, which dragged untouched campuses into the request and could overwrite a value that had
+  //    changed server-side since the form loaded. ──
+
+  it('submits ONLY the campus that changed, and no request-level block', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
+
+    editOneCampusNote('Xe 45 chỗ');
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.registrant).toBeNull();
+    expect(payload.contact).toBeNull();
+    expect(payload.instances).toHaveLength(1);
+    expect(payload.instances?.[0]).toMatchObject({ visitInstanceId: 10, transportationNote: 'Xe 45 chỗ' });
+    // The untouched fields of the touched campus are absent, not echoed back at their old values.
+    expect(payload.instances?.[0].mediaConsentStatus).toBeUndefined();
+    expect(payload.instances?.[0].noteToFptu).toBeUndefined();
+  });
+
+  it('sends instances: [] when only a request-level field changed', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const { container } = render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
+
+    // The registrant phone is the second input of the registrant fieldset.
+    const registrantInputs = container.querySelectorAll('fieldset input');
+    fireEvent.change(registrantInputs[1], { target: { value: '+84900000009' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances).toEqual([]);
+    expect(payload.registrant).toMatchObject({ phone: '+84900000009' });
+    expect(payload.contact).toBeNull();
+  });
+
+  it('refuses to call the API when nothing was edited', async () => {
+    render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/have not changed anything/i);
+    expect(patchSafeDetails).not.toHaveBeenCalled();
+  });
+
+  it('omits a campus the backend has closed, and names it', () => {
+    const closed = form();
+    closed.campusVisits = [campusFixture({ instanceStatus: 'DURING_VISIT', allowedActions: [] })];
+    render(<VisitSafeEditModal form={closed} onClose={() => {}} onSaved={() => {}} />);
+
+    expect(screen.queryByTestId('safe-edit-transportation-10')).toBeNull();
+    expect(screen.getByTestId('safe-edit-locked-campuses')).toHaveTextContent('FPTU Hà Nội');
   });
 });

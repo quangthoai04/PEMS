@@ -44,5 +44,9 @@ export const campusFixture = (overrides: Partial<ResolvedCampusVisit> = {}): Res
   approvalRevision: 1,
   rowVersion: 3,
   activeAmendment: null,
+  // ASSIGNED and well ahead of its start, so the backend would grant the per-campus mutations. The
+  // components gate on these codes, never on status, so a fixture without them models a campus the
+  // backend has closed — which is a case worth testing, but not the default one.
+  allowedActions: ['SUBMIT_SAFE_EDIT', 'SUBMIT_AMENDMENT'],
   ...overrides,
 });

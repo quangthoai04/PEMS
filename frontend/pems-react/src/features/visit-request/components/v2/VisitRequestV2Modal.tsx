@@ -50,13 +50,25 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
   } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Closing with typed data always asks first — an accidental Esc must not discard the form.
-  const requestClose = useCallback(() => {
-    // A verify in flight may be committing the request right now; Esc must not tear the shell down
-    // while the only place the outcome can arrive is inside it (plan §5, §9).
-    if (draftControls?.isBusy?.()) return;
-    // Once the receipt is on screen there is nothing left to lose — closing is just closing.
+  /**
+   * The ONE way this modal closes — X, the receipt's own button, Escape and the backdrop all come
+   * through here, so they cannot drift into behaving differently.
+   *
+   * Order matters, and getting it wrong is what froze the receipt. The busy check used to run FIRST,
+   * before the receipt check. `isBusy()` reads `stageRef` inside the form component — but the form
+   * unmounts in the very same commit that shows the receipt, so React never runs the effect that
+   * would have advanced that ref to CREATE_CONFIRMED. It stayed on VERIFYING_OTP forever, `isBusy()`
+   * kept returning true, and X / Escape / backdrop silently did nothing on a request that had
+   * already been created. Only the receipt's own "Đóng" worked, because it called onClose directly.
+   *
+   * Once a receipt exists the submission is finished by definition: nothing is in flight and there is
+   * no draft left to protect, so it closes immediately with no busy check and no dirty guard.
+   */
+  const requestCloseModal = useCallback((_source: 'X' | 'BUTTON' | 'ESCAPE' | 'BACKDROP') => {
     if (result) { onClose(); return; }
+    // No receipt yet: a verify in flight may be committing right now, and tearing the shell down
+    // would destroy the only place its outcome can arrive (plan §5, §9).
+    if (draftControls?.isBusy?.()) return;
     if (draftControls?.isDirty?.()) setConfirmClose(true);
     else onClose();
   }, [draftControls, result, onClose]);
@@ -64,7 +76,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); requestClose(); }
+      if (e.key === 'Escape') { e.stopPropagation(); requestCloseModal('ESCAPE'); }
     };
     document.addEventListener('keydown', onKeyDown);
     // The page behind must not scroll while a near-fullscreen modal is open.
@@ -74,7 +86,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [isOpen, requestClose]);
+  }, [isOpen, requestCloseModal]);
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.focus();
@@ -90,7 +102,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-2 sm:p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget) requestClose(); }}
+      onMouseDown={e => { if (e.target === e.currentTarget) requestCloseModal('BACKDROP'); }}
     >
       <div
         ref={dialogRef}
@@ -110,7 +122,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
             type="button"
             aria-label={t('visitRequestV2:modal.close')}
             data-testid="v2-modal-close"
-            onClick={requestClose}
+            onClick={() => requestCloseModal('X')}
             className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-5 w-5" />
@@ -135,7 +147,10 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 setResult(null);
                 setFormGeneration(g => g + 1);
               }}
-              onClose={onClose}
+              // Through the shared handler like every other close, not straight to onClose. It used
+              // to be the one path that worked while X and Escape were frozen, which is exactly how
+              // that bug stayed invisible in testing.
+              onClose={() => requestCloseModal('BUTTON')}
             />
           ) : (
             <VisitRequestFormV2

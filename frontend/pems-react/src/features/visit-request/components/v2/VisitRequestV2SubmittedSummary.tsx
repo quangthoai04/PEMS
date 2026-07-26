@@ -62,6 +62,112 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
   const person = (p: { fullName: string; organization?: string; jobTitle?: string; nationality?: string }) =>
     [p.fullName, p.organization, p.jobTitle, p.nationality].filter((x) => x && x.trim()).join(' — ');
 
+  /** A blank cell reads as "we lost this"; say plainly that it was not provided. */
+  const cell = (value?: string | null) =>
+    value && value.trim() ? value : <span className="text-slate-400">{t('visitRequestV2:summary.notProvided')}</span>;
+
+  /**
+   * The people on the visit, as a real table.
+   *
+   * They used to be a bulleted list with the four fields glued together by em dashes — "Nguyễn Văn A
+   * — FPT — Trưởng phòng — Việt Nam". Nobody can scan that for a nationality, a missing field just
+   * collapses the dashes so you cannot tell WHICH one is missing, and a receipt someone prints and
+   * carries to reception needs a row number to point at. Columns and an STT fix all three.
+   *
+   * Desktop gets the table; narrow screens get stacked cards that keep the same STT, because a
+   * five-column table on a phone is unreadable in a different way.
+   */
+  const PeopleTable = ({
+    people, label, testId,
+  }: {
+    people: Array<{ fullName: string; organization?: string; jobTitle?: string; nationality?: string }>;
+    label: string;
+    testId: string;
+  }) => {
+    if (people.length === 0) {
+      return (
+        <div className="sm:col-span-2">
+          <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+          <dd data-testid={`${testId}-empty`} className="mt-1 text-sm italic text-slate-400">
+            {t('visitRequestV2:summary.noMembers')}
+          </dd>
+        </div>
+      );
+    }
+    const headers = [
+      t('visitRequestV2:summary.colIndex'),
+      t('visitRequestV2:summary.colFullName'),
+      t('visitRequestV2:summary.colJobTitle'),
+      t('visitRequestV2:summary.colOrganization'),
+      t('visitRequestV2:summary.colNationality'),
+    ];
+    return (
+      <div className="sm:col-span-2">
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+
+        {/* Wide content scrolls inside its own box so the receipt never scrolls sideways. */}
+        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 sm:block">
+          <table data-testid={testId} className="w-full min-w-[520px] border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-left">
+                {headers.map((h, i) => (
+                  <th
+                    key={h}
+                    scope="col"
+                    className={`border-b border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 ${
+                      i === 0 ? 'w-12 text-right' : ''
+                    }`}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {people.map((p, i) => (
+                <tr key={i} className="odd:bg-white even:bg-slate-50/60">
+                  {/* STT restarts at 1 in EVERY table — guests and support are counted separately. */}
+                  <td className="border-b border-slate-100 px-3 py-2 text-right font-semibold text-slate-500">
+                    {i + 1}
+                  </td>
+                  <td className="border-b border-slate-100 px-3 py-2 font-medium text-slate-900">{cell(p.fullName)}</td>
+                  <td className="border-b border-slate-100 px-3 py-2 text-slate-700">{cell(p.jobTitle)}</td>
+                  <td className="border-b border-slate-100 px-3 py-2 text-slate-700">{cell(p.organization)}</td>
+                  <td className="border-b border-slate-100 px-3 py-2 text-slate-700">{cell(p.nationality)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <ul data-testid={`${testId}-mobile`} className="space-y-2 sm:hidden">
+          {people.map((p, i) => (
+            <li key={i} className="rounded-xl border border-slate-200 p-3">
+              <p className="flex items-baseline gap-2">
+                <span className="text-xs font-bold text-slate-500">{i + 1}.</span>
+                <span className="font-semibold text-slate-900">{cell(p.fullName)}</span>
+              </p>
+              <dl className="mt-1 space-y-0.5 pl-6 text-xs text-slate-600">
+                <div className="flex gap-1.5">
+                  <dt className="font-semibold">{t('visitRequestV2:summary.colJobTitle')}:</dt>
+                  <dd>{cell(p.jobTitle)}</dd>
+                </div>
+                <div className="flex gap-1.5">
+                  <dt className="font-semibold">{t('visitRequestV2:summary.colOrganization')}:</dt>
+                  <dd>{cell(p.organization)}</dd>
+                </div>
+                <div className="flex gap-1.5">
+                  <dt className="font-semibold">{t('visitRequestV2:summary.colNationality')}:</dt>
+                  <dd>{cell(p.nationality)}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-5">
       {/* Request-level */}
@@ -157,22 +263,18 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
                   <Field label={t('visitRequestV2:summary.workingContent')}>{cv.workingContent}</Field>
                 </div>
               ) : null}
-              <div className="sm:col-span-2">
-                <Field label={t('visitRequestV2:summary.visitors', { count: cv.visitors.length })}>
-                  <ul className="list-disc space-y-0.5 pl-5">
-                    {cv.visitors.map((v, i) => <li key={i}>{person(v)}</li>)}
-                  </ul>
-                </Field>
-              </div>
-              {cv.supportTeam.length > 0 && (
-                <div className="sm:col-span-2">
-                  <Field label={t('visitRequestV2:summary.supportTeam', { count: cv.supportTeam.length })}>
-                    <ul className="list-disc space-y-0.5 pl-5">
-                      {cv.supportTeam.map((v, i) => <li key={i}>{person(v)}</li>)}
-                    </ul>
-                  </Field>
-                </div>
-              )}
+              {/* Guests and support get SEPARATE tables, each numbered from 1 — they are different
+                  groups arriving under different rules, and one running count would imply otherwise. */}
+              <PeopleTable
+                people={cv.visitors}
+                label={t('visitRequestV2:summary.visitors', { count: cv.visitors.length })}
+                testId={`campus-${index}-visitors-table`}
+              />
+              <PeopleTable
+                people={cv.supportTeam}
+                label={t('visitRequestV2:summary.supportTeam', { count: cv.supportTeam.length })}
+                testId={`campus-${index}-support-table`}
+              />
               <div className="sm:col-span-2">
                 <Field label={t('visitRequestV2:summary.operationalContact')}>
                   {[cv.operationalContact.fullName, cv.operationalContact.organization]

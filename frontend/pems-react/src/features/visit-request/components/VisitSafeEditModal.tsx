@@ -4,9 +4,10 @@ import { X } from 'lucide-react';
 import {
   patchSafeDetails,
   type ResolvedVisitForm,
-  type SafeEditPayload,
   type SafeEditResponse,
 } from '../api/visitRequestV2Api';
+import { buildChangedOnlyPayload } from '../utils/safeEditDiff';
+import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 
 interface Props {
@@ -35,8 +36,16 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     organization: form.primaryContact.organization,
     phone: form.primaryContact.phone,
   });
+  // ONLY the campuses the backend says are editable right now. A campus that is under way, finished,
+  // or inside its window used to appear here as a normal editable block — the user would type into it
+  // and have the entire edit refused on save, including the campuses that were perfectly fine.
+  const editableCampuses = form.campusVisits.filter(c =>
+    hasAction(c.allowedActions, VisitV2Action.SubmitSafeEdit));
+  const lockedCampuses = form.campusVisits.filter(c =>
+    !hasAction(c.allowedActions, VisitV2Action.SubmitSafeEdit));
+
   const [instances, setInstances] = useState(
-    form.campusVisits.map(c => ({
+    editableCampuses.map(c => ({
       visitInstanceId: c.visitInstanceId,
       expectedRowVersion: c.rowVersion,
       campusName: c.campusName,
@@ -58,28 +67,12 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     setBusy(true);
     setError(null);
     setConflict(false);
-    const payload: SafeEditPayload = {
-      expectedRequestRowVersion: form.rowVersion,
-      registrant: {
-        fullName: registrant.fullName.trim(),
-        organization: registrant.organization.trim() || null,
-        jobTitle: registrant.jobTitle.trim() || null,
-        phone: registrant.phone.trim() || null,
-      },
-      contact: {
-        fullName: contact.fullName.trim(),
-        organization: contact.organization.trim() || null,
-        phone: contact.phone.trim(),
-      },
-      instances: instances.map(i => ({
-        visitInstanceId: i.visitInstanceId,
-        expectedRowVersion: i.expectedRowVersion,
-        transportationNote: i.transportationNote.trim() || null,
-        noteToFptu: i.noteToFptu.trim() || null,
-        mediaConsentStatus: i.mediaConsentStatus,
-        mediaConsentNote: i.mediaConsentNote.trim() || null,
-      })),
-    };
+    const payload = buildChangedOnlyPayload(form, registrant, contact, instances);
+    if (payload === null) {
+      setError(t('visitRequestV2:safeEdit.noChanges'));
+      setBusy(false);
+      return;
+    }
     try {
       const res = await patchSafeDetails(form.visitRequestId, payload);
       setApplied(res);
@@ -167,6 +160,19 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                 </label>
               </fieldset>
             ))}
+
+            {/* Named, not omitted: on a multi-campus request a user who cannot find a campus assumes
+                the page is broken. Saying which campus and why is shorter than the support thread. */}
+            {lockedCampuses.length > 0 && (
+              <p
+                data-testid="safe-edit-locked-campuses"
+                className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"
+              >
+                {t('visitRequestV2:safeEdit.lockedCampuses', {
+                  campuses: lockedCampuses.map(c => c.campusName).join(', '),
+                })}
+              </p>
+            )}
 
             {error && (
               <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">

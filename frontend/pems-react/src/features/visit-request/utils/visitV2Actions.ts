@@ -3,6 +3,7 @@
 // view renders mutation UI ONLY when the matching code is present — never from role,
 // relation, or status. Mirrors backend PEMS.Domain.Constants.VisitFormActions.
 // ──────────────────────────────────────────────────────────────────────────────
+import type { VisitActionCapability } from '../api/visitRequestV2Api';
 
 export const VisitV2Action = {
   View: 'VIEW',
@@ -23,6 +24,7 @@ export const VisitV2Action = {
   ApproveAmendment: 'APPROVE_AMENDMENT',
   RejectAmendment: 'REJECT_AMENDMENT',
   WithdrawAmendment: 'WITHDRAW_AMENDMENT',
+  TransferHost: 'TRANSFER_HOST',
 } as const;
 
 export type VisitV2ActionCode = (typeof VisitV2Action)[keyof typeof VisitV2Action];
@@ -30,6 +32,35 @@ export type VisitV2ActionCode = (typeof VisitV2Action)[keyof typeof VisitV2Actio
 /** True when the backend granted `action` in the given list. Undefined/empty → false (fail-safe). */
 export const hasAction = (actions: string[] | undefined | null, action: VisitV2ActionCode): boolean =>
   Array.isArray(actions) && actions.includes(action);
+
+// ── Structured capabilities ─────────────────────────────────────────────────
+// `allowedActions` answers "may I?"; a capability additionally answers "why not, and until when".
+// Both come from the same backend verdict, so they cannot disagree.
+
+/** The capability for `action`, refused ones included, or undefined if the backend sent none. */
+export const capabilityFor = (
+  capabilities: VisitActionCapability[] | undefined | null,
+  action: VisitV2ActionCode,
+): VisitActionCapability | undefined =>
+  Array.isArray(capabilities) ? capabilities.find(c => c.code === action) : undefined;
+
+/**
+ * Whether to render a REFUSED action as a disabled control with its reason, rather than hide it.
+ *
+ * Only for refusals the user can act on by waiting or by looking at the clock — a missed deadline.
+ * A lifecycle refusal ("the visit already happened") or a relation refusal is not a near miss: the
+ * action does not belong on this screen at all, and showing it greyed out implies it might come
+ * back. Those stay hidden.
+ */
+export const shouldShowDisabled = (capability: VisitActionCapability | undefined): boolean =>
+  capability?.enabled === false
+  && capability.disabledReasonCode === VisitMutationErrorCode.CutoffReached;
+
+export const VisitMutationErrorCode = {
+  CutoffReached: 'VISIT_MUTATION_CUTOFF_REACHED',
+  LifecycleNotAllowed: 'VISIT_MUTATION_LIFECYCLE_NOT_ALLOWED',
+  RelationNotAllowed: 'VISIT_MUTATION_RELATION_NOT_ALLOWED',
+} as const;
 
 // ── Amendment stable error codes (matched by code, never message text) ──────────
 export const AmendmentErrorCode = {

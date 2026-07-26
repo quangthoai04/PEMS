@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { AlertCircle, Loader2, PencilLine, RefreshCw } from 'lucide-react';
+import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getVisitRequestFormV2, type ResolvedCampusVisit, type ResolvedVisitForm } from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
@@ -9,8 +9,10 @@ import ContactIdentityActions from '../ContactIdentityActions';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
 import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../VisitSafeEditModal';
+import VisitHostTransferModal from '../VisitHostTransferModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
-import { hasAction, VisitV2Action } from '../../utils/visitV2Actions';
+import { VisitActionButton } from './shared/VisitActionButton';
+import { capabilityFor, hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { showSuccessToast } from '../../../../shared/utils/toast';
 import { VisitSectionCard } from './shared/VisitSectionCard';
@@ -40,6 +42,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const [error, setError] = useState<'notfound' | 'forbidden' | 'generic' | null>(null);
   const [safeEditOpen, setSafeEditOpen] = useState(false);
   const [amendCampus, setAmendCampus] = useState<ResolvedCampusVisit | null>(null);
+  const [transferCampus, setTransferCampus] = useState<ResolvedCampusVisit | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,6 +112,10 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const canEditPending = hasAction(viewer.allowedActions, VisitV2Action.EditPendingRequest);
   const canResubmit = hasAction(viewer.allowedActions, VisitV2Action.ResubmitRejectedRequest);
   const canSafeEdit = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
+  // The refused verdicts too — a missed deadline is shown as a disabled button with its reason
+  // rather than as an action that silently vanished.
+  const safeEditCap = capabilityFor(viewer.capabilities, VisitV2Action.SubmitSafeEdit);
+  const editPendingCap = capabilityFor(viewer.capabilities, VisitV2Action.EditPendingRequest);
 
   return (
     <div className="space-y-4">
@@ -130,22 +137,37 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             {/* These are NAVIGATION, not submits — they open the edit form. Labelling them
                 "Lưu thay đổi" / "Gửi lại đơn" claimed an action that only happens on the form's own
                 submit button, which still carries those labels. */}
-            {canEditPending && (
+            {canEditPending ? (
               <Link data-testid="pending-edit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/edit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5">
                 <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.openEdit')}
               </Link>
+            ) : (
+              <VisitActionButton
+                capability={editPendingCap}
+                granted={false}
+                onClick={() => {}}
+                data-testid="pending-edit-open"
+                icon={<PencilLine className="h-4 w-4" aria-hidden />}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91]"
+              >
+                {t('visitRequestV2:edit.openEdit')}
+              </VisitActionButton>
             )}
             {canResubmit && (
               <Link data-testid="resubmit-open" to={`/dashboard/visit/v2/${data.visitRequestId}/resubmit`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
                 <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:edit.openResubmit')}
               </Link>
             )}
-            {canSafeEdit && (
-              <button type="button" data-testid="safe-edit-open" onClick={() => setSafeEditOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:safeEdit.open')}
-              </button>
-            )}
+            <VisitActionButton
+              capability={safeEditCap}
+              granted={canSafeEdit}
+              onClick={() => setSafeEditOpen(true)}
+              data-testid="safe-edit-open"
+              icon={<PencilLine className="h-4 w-4" aria-hidden />}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+            >
+              {t('visitRequestV2:safeEdit.open')}
+            </VisitActionButton>
           </div>
         </div>
 
@@ -239,6 +261,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               const canDecide = hasAction(cv.allowedActions, VisitV2Action.ApproveAmendment);
               const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
               const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
+              const canTransferHost = hasAction(cv.allowedActions, VisitV2Action.TransferHost);
+              // Per-campus verdicts: these belong to THIS card, not to the request. A sibling that is
+              // under way says nothing about this campus, and a global button could not express that.
+              const amendCap = capabilityFor(cv.capabilities, VisitV2Action.SubmitAmendment);
+              const transferCap = capabilityFor(cv.capabilities, VisitV2Action.TransferHost);
               return (
                 <CampusVisitDetailCard key={cv.visitInstanceId} campus={cv}>
                   {cv.activeAmendment && (canDecide || canWithdraw) && (
@@ -250,12 +277,28 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       onChanged={() => void load()}
                     />
                   )}
-                  {canSubmitAmendment && (
-                    <button type="button" data-testid={`amendment-open-${cv.visitInstanceId}`} onClick={() => setAmendCampus(cv)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5">
-                      <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:amend.open')}
-                    </button>
-                  )}
+                  <div className="flex flex-wrap items-start gap-2">
+                    <VisitActionButton
+                      capability={amendCap}
+                      granted={canSubmitAmendment}
+                      onClick={() => setAmendCampus(cv)}
+                      data-testid={`amendment-open-${cv.visitInstanceId}`}
+                      icon={<PencilLine className="h-4 w-4" aria-hidden />}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5"
+                    >
+                      {t('visitRequestV2:amend.open')}
+                    </VisitActionButton>
+                    <VisitActionButton
+                      capability={transferCap}
+                      granted={canTransferHost}
+                      onClick={() => setTransferCampus(cv)}
+                      data-testid={`host-transfer-open-${cv.visitInstanceId}`}
+                      icon={<UserCog className="h-4 w-4" aria-hidden />}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5"
+                    >
+                      {t('visitRequestV2:hostTransfer.open')}
+                    </VisitActionButton>
+                  </div>
                 </CampusVisitDetailCard>
               );
             })}
@@ -286,6 +329,13 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           campus={amendCampus}
           onClose={() => setAmendCampus(null)}
           onSubmitted={() => { setAmendCampus(null); void load(); }}
+        />
+      )}
+      {transferCampus && (
+        <VisitHostTransferModal
+          campus={transferCampus}
+          onClose={() => setTransferCampus(null)}
+          onTransferred={() => { setTransferCampus(null); void load(); }}
         />
       )}
     </div>
