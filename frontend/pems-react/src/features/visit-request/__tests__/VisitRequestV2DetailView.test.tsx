@@ -199,10 +199,13 @@ describe('VisitRequestV2DetailView', () => {
   });
 
   it('mutation UI is driven ONLY by allowedActions (never relation/status)', async () => {
-    // REGISTRANT on a PENDING request but backend granted NO edit action → no edit link.
+    // REGISTRANT on a PENDING request but backend granted NO edit action ANYWHERE → no edit link.
+    // The campus list has to be cleared too: an instance-scoped safe edit is reachable on its own,
+    // so a campus that still granted it would legitimately keep the button on screen.
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
       requestStatus: 'PENDING_APPROVAL',
       viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({ allowedActions: [] })],
     }));
     const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();

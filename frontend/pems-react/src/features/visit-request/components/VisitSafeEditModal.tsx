@@ -44,6 +44,11 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
   const lockedCampuses = form.campusVisits.filter(c =>
     !hasAction(c.allowedActions, VisitV2Action.SubmitSafeEdit));
 
+  // The registrant/contact block is SHARED by every campus, so it has its own all-or-nothing verdict.
+  // On a mixed request one campus can be editable while this is not: the campus fields below still
+  // work, and these are shown read-only rather than accepting typing the backend would reject.
+  const canEditShared = hasAction(form.viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
+
   const [instances, setInstances] = useState(
     editableCampuses.map(c => ({
       visitInstanceId: c.visitInstanceId,
@@ -122,7 +127,10 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
           </div>
         ) : (
           <>
-            <fieldset className="mb-3">
+            {/* Shared across every campus, so it travels with the request-level verdict. Disabled
+                rather than hidden: the user still needs to SEE the details they cannot change, and
+                a section that vanishes reads as data loss. */}
+            <fieldset className="mb-3" disabled={!canEditShared} data-testid="safe-edit-shared-fields">
               <legend className="mb-1 text-sm font-bold text-slate-700">{t('visitRequestV2:summary.registrant')}</legend>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className={field} value={registrant.fullName} onChange={e => setRegistrant({ ...registrant, fullName: e.target.value })} />
@@ -131,7 +139,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                 <input className={field} value={registrant.jobTitle} onChange={e => setRegistrant({ ...registrant, jobTitle: e.target.value })} />
               </div>
             </fieldset>
-            <fieldset className="mb-3">
+            <fieldset className="mb-3" disabled={!canEditShared}>
               <legend className="mb-1 text-sm font-bold text-slate-700">{t('visitRequestV2:summary.primaryContact')}</legend>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className={field} value={contact.fullName} onChange={e => setContact({ ...contact, fullName: e.target.value })} />
@@ -140,6 +148,14 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
               </div>
               <p className="mt-1 text-[11px] text-slate-500">{t('visitRequestV2:safeEdit.emailImmutable')}</p>
             </fieldset>
+            {!canEditShared && (
+              <p
+                data-testid="safe-edit-shared-locked"
+                className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"
+              >
+                {t('visitRequestV2:safeEdit.sharedLocked')}
+              </p>
+            )}
             {instances.map(i => (
               <fieldset key={i.visitInstanceId} className="mb-3 rounded-xl border border-slate-200 p-3">
                 <legend className="px-1 text-sm font-bold text-[#004c91]">{i.campusName}</legend>

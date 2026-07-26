@@ -205,4 +205,37 @@ describe('VisitSafeEditModal', () => {
     expect(screen.queryByTestId('safe-edit-transportation-10')).toBeNull();
     expect(screen.getByTestId('safe-edit-locked-campuses')).toHaveTextContent('FPTU Hà Nội');
   });
+
+  it('keeps a campus editable when the SHARED block is not', async () => {
+    // A mixed request: HN is approved and well ahead, HCM is still pending. The registrant/contact
+    // block is shared by both so it is correctly locked — but HN's own notes must stay editable,
+    // and the modal must still be usable. Hiding the whole thing here is the bug this pins.
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const mixed = form();
+    mixed.viewer.allowedActions = ['VIEW']; // no request-level SUBMIT_SAFE_EDIT
+    mixed.campusVisits = [
+      campusFixture(),
+      campusFixture({
+        visitInstanceId: 11, campusId: 2, campusName: 'FPTU HCM',
+        instanceStatus: 'WAITING_REQUEST_APPROVAL', allowedActions: [],
+      }),
+    ];
+    render(<VisitSafeEditModal form={mixed} onClose={() => {}} onSaved={() => {}} />);
+
+    expect(screen.getByTestId('safe-edit-shared-fields')).toBeDisabled();
+    expect(screen.getByTestId('safe-edit-shared-locked')).toBeInTheDocument();
+    expect(screen.getByTestId('safe-edit-locked-campuses')).toHaveTextContent('FPTU HCM');
+
+    fireEvent.change(screen.getByTestId('safe-edit-transportation-10'), { target: { value: 'Xe 29 chỗ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.registrant).toBeNull();
+    expect(payload.contact).toBeNull();
+    expect(payload.instances).toHaveLength(1);
+    expect(payload.instances?.[0].visitInstanceId).toBe(10);
+  });
 });

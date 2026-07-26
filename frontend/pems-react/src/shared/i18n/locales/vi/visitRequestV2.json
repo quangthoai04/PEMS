@@ -282,7 +282,8 @@
     "errGeneric": "Không thể lưu thay đổi. Vui lòng thử lại.",
     "save": "Lưu thay đổi",
     "noChanges": "Bạn chưa thay đổi thông tin nào.",
-    "lockedCampuses": "Không thể sửa nhanh cho: {{campuses}}. Các cơ sở này đang diễn ra, đã kết thúc, chưa được duyệt, hoặc đã quá hạn thay đổi."
+    "lockedCampuses": "Không thể sửa nhanh cho: {{campuses}}. Các cơ sở này đang diễn ra, đã kết thúc, chưa được duyệt, hoặc đã quá hạn thay đổi.",
+    "sharedLocked": "Thông tin người đăng ký và đầu mối liên hệ dùng chung cho mọi cơ sở nên chỉ sửa được khi tất cả cơ sở đều còn trong thời hạn thay đổi. Anh/chị vẫn có thể sửa ghi chú của từng cơ sở bên dưới."
   },
   "hostTransfer": {
     "open": "Chuyển Host",

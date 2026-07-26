@@ -282,7 +282,8 @@
     "errGeneric": "Could not save the changes. Please try again.",
     "save": "Save changes",
     "noChanges": "You have not changed anything yet.",
-    "lockedCampuses": "Quick edit is unavailable for: {{campuses}}. These campuses are under way, finished, not yet approved, or past the change deadline."
+    "lockedCampuses": "Quick edit is unavailable for: {{campuses}}. These campuses are under way, finished, not yet approved, or past the change deadline.",
+    "sharedLocked": "The registrant and contact details are shared by every campus, so they can only be changed while all campuses are still within their change window. You can still edit each campus's notes below."
   },
   "hostTransfer": {
     "open": "Transfer host",

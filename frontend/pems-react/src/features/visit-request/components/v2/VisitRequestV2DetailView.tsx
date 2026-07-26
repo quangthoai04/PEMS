@@ -125,7 +125,15 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   // The contact identity workflow is the last one to join this rule: it used to read viewer.relation.
   const canEditPending = hasAction(viewer.allowedActions, VisitV2Action.EditPendingRequest);
   const canResubmit = hasAction(viewer.allowedActions, VisitV2Action.ResubmitRejectedRequest);
-  const canSafeEdit = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
+  // The shared registrant/contact block is all-or-nothing across campuses, so on a MIXED request
+  // this is correctly false.
+  const canSafeEditRequestLevel = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
+  // ...but an individual campus can still be editable while its siblings are not, and that campus
+  // must stay reachable. Opening the modal is offered when EITHER scope has something to edit;
+  // inside, each scope is gated on its own verdict.
+  const editableCampusCount = data.campusVisits
+    .filter(c => hasAction(c.allowedActions, VisitV2Action.SubmitSafeEdit)).length;
+  const canOpenSafeEdit = canSafeEditRequestLevel || editableCampusCount > 0;
   // The refused verdicts too — a missed deadline is shown as a disabled button with its reason
   // rather than as an action that silently vanished.
   const safeEditCap = capabilityFor(viewer.capabilities, VisitV2Action.SubmitSafeEdit);
@@ -174,7 +182,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             )}
             <VisitActionButton
               capability={safeEditCap}
-              granted={canSafeEdit}
+              granted={canOpenSafeEdit}
               onClick={() => setSafeEditOpen(true)}
               data-testid="safe-edit-open"
               icon={<PencilLine className="h-4 w-4" aria-hidden />}
