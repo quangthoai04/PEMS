@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 using PEMS.Domain.Entities.Users;
 
@@ -22,7 +23,9 @@ namespace PEMS.Infrastructure.Services;
 public sealed class VisitAmendmentService : IVisitAmendmentService
 {
     private const int MinDurationMinutes = 30;
-    private const int SelfServiceCutoffHours = 24;
+
+    /// <summary>Shared with every other self-service mutation — see <see cref="VisitMutationPolicy"/>.</summary>
+    private const int SelfServiceCutoffHours = VisitMutationPolicy.RequiredLeadHours;
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -45,17 +48,12 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             ?? throw new ConflictException("Thiếu dữ liệu biểu mẫu theo cơ sở.",
                 VisitFormV2ErrorCodes.VisitFormDetailMissing);
 
-        // ── Amendable lifecycle: a DECIDED, not-yet-started instance. Pending instances use pending-edit. ──
-        if (instance.Status is not (VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit))
-            throw new BusinessRuleException(
-                instance.Status == VisitInstanceStatuses.WaitingRequestApproval
-                    ? "Cơ sở này chưa được duyệt — hãy dùng chức năng sửa đơn đang chờ duyệt."
-                    : "Cơ sở này đã bắt đầu/kết thúc hoặc không còn hoạt động nên không thể đề xuất thay đổi.",
-                VisitFormV2ErrorCodes.AmendmentNotEditable);
-        if (instance.PlannedStartAt < now.AddHours(SelfServiceCutoffHours))
-            throw new BusinessRuleException(
-                "Lịch thăm bắt đầu trong vòng 24 giờ nên không thể tự đề xuất thay đổi. Vui lòng liên hệ FPTU.",
-                VisitFormV2ErrorCodes.AmendmentWindowExpired);
+        // ── Amendable lifecycle + window, from the shared policy: a DECIDED, not-yet-started instance
+        //    at least RequiredLeadHours out. Scoped to THIS campus, so a sibling that is under way
+        //    cannot block a proposal for a campus that is still a week away. ──
+        VisitMutationGuard.EnsureAllowed(
+            VisitMutationAction.SubmitAmendment, request.Status, instance, now,
+            VisitViewerRelations.Requester, VisitFormV2ErrorCodes.AmendmentNotEditable);
 
         // ── Concurrency + base state the requester saw ──
         if (proposal.ExpectedInstanceRowVersion != instance.RowVersion)
@@ -89,7 +87,7 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             || (proposal.PlannedEndAt - proposal.PlannedStartAt).TotalMinutes < MinDurationMinutes
             || proposal.PlannedStartAt < now.AddHours(SelfServiceCutoffHours))
             throw new BusinessRuleException(
-                "Lịch đề xuất không hợp lệ (tối thiểu 30 phút và cách hiện tại ít nhất 24 giờ).",
+                $"Lịch đề xuất không hợp lệ (tối thiểu {MinDurationMinutes} phút và cách hiện tại ít nhất {SelfServiceCutoffHours} giờ).",
                 VisitRequestErrorCodes.InvalidVisitTime);
 
         var amendmentNo = (await _db.VisitInstanceAmendments
@@ -181,10 +179,12 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             throw new ConflictException(
                 "Nội dung đang hiệu lực đã thay đổi sau khi đề xuất được gửi. Đề xuất cần được gửi lại.",
                 VisitFormV2ErrorCodes.AmendmentBaseRevisionConflict);
-        if (instance.Status is not (VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit))
-            throw new BusinessRuleException(
-                "Cơ sở này không còn ở trạng thái cho phép áp dụng đề xuất.",
-                VisitFormV2ErrorCodes.AmendmentNotEditable);
+        // Approving is itself a mutation of a live campus, so it answers to the same window: a proposal
+        // that is still pending when the campus is hours from starting must NOT be written in behind
+        // everyone's back — by then the campus has printed its list and briefed its Host.
+        VisitMutationGuard.EnsureAllowed(
+            VisitMutationAction.ApproveAmendment, request.Status, instance, now,
+            VisitViewerRelations.CampusLeader, VisitFormV2ErrorCodes.AmendmentNotEditable);
 
         // ── 1. The CURRENT active state is already snapshotted: revision history holds exactly one row per
         //       form_revision (unique key) written by whichever edit produced it (CREATE/SAFE_EDIT/RESUBMIT/

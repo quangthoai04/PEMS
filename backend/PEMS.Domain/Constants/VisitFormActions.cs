@@ -43,4 +43,17 @@ public static class VisitFormActions
     public const string RejectAmendment = "REJECT_AMENDMENT";
     /// <summary>Requester side may withdraw the instance's pending amendment.</summary>
     public const string WithdrawAmendment = "WITHDRAW_AMENDMENT";
+    /// <summary>
+    /// Current campus Staff Leader may hand this instance's Host role to a different eligible user.
+    /// Distinct from the approve-and-assign path: that one gives a campus its FIRST Host as part of the
+    /// approval decision and refuses to run twice, so it can never express "the Host has changed".
+    /// </summary>
+    public const string TransferHost = "TRANSFER_HOST";
+}
+
+/// <summary>Capability scopes — whether a verdict is about the whole request or one campus.</summary>
+public static class VisitActionScopes
+{
+    public const string Request = "REQUEST";
+    public const string Instance = "INSTANCE";
 }

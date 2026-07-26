@@ -6,6 +6,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Policies;
 
 namespace PEMS.Application.Delegations.Services.VisitFormRead;
 
@@ -20,8 +21,14 @@ public sealed class VisitFormReadService : IVisitFormReadService
     private readonly IDateTimeService? _clock;
     private readonly PerCampusFormV2WriteOptions? _writeFlag;
 
-    /// <summary>Self-service amendment cutoff — mirrors VisitAmendmentService.SelfServiceCutoffHours.</summary>
-    private const int SelfServiceCutoffHours = 24;
+    /// <summary>
+    /// Lead time for the primary-contact identity workflow (claim/transfer invitations). This is a
+    /// different clock from the form-mutation policy: handing the contact role to someone else has to
+    /// leave that person time to accept and read the request before the visit, which is why it stays
+    /// at a day rather than following <see cref="VisitMutationPolicy.RequiredLeadHours"/>. It mirrors
+    /// TransferGuards.EnsureTransferLifecycleOpen exactly.
+    /// </summary>
+    private const int ContactTransferLeadHours = 24;
 
     public VisitFormReadService(
         IApplicationDbContext db,
@@ -72,8 +79,9 @@ public sealed class VisitFormReadService : IVisitFormReadService
         var visibleInstances = instances.Where(c => scope.AuthorizedInstanceIds.Contains(c.VisitInstanceId)).ToList();
         var visibleInstanceIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
 
-        // Action computation (viewer.allowedActions + per-instance allowedActions). These MIRROR the
-        // authorization each command handler enforces — the handlers still re-authorize independently.
+        // Action computation (viewer.capabilities + per-instance capabilities). Every mutation verdict
+        // comes from VisitMutationPolicy — the SAME call each command handler makes inside its
+        // transaction — so the UI can no longer offer something the backend will refuse.
         var now = _clock?.VietnamNow ?? DateTime.Now;
         var requesterSide = request.RegistrantUserId == userId
             || (request.VisitorUserId == userId
@@ -82,27 +90,34 @@ public sealed class VisitFormReadService : IVisitFormReadService
             _currentUser.RoleCode == RoleCodes.Staff
             && _currentUser.SubRole == UserSubRoles.Leader
             && _currentUser.PrimaryCampusId == campusId;
-        // SUBMIT_AMENDMENT: requester side, ASSIGNED/BEFORE_VISIT, ≥24h out, no pending amendment
-        // (VisitAmendmentService.SubmitAsync rules). APPROVE/REJECT: current campus leader + pending.
-        // WITHDRAW: requester side + pending.
-        List<string> InstanceActions(VisitRequestCampus c, bool hasPendingAmendment)
+
+        VisitActionCapabilityDto Decide(
+            VisitMutationAction action, string code, VisitRequestCampus governing,
+            string relation, string? campusName, bool instanceScope, string? overrideReason = null)
         {
-            var actions = new List<string>();
-            if (requesterSide)
+            var decision = VisitMutationPolicy.Evaluate(new VisitMutationContext(
+                action, request.Status, governing.Status, governing.PlannedStartAt, now, relation));
+            // An extra business precondition (a pending amendment already exists, the campus has no
+            // Host to hand over) refuses on top of the policy — never overrides an allow into a
+            // different allow, only ever narrows.
+            var enabled = decision.Allowed && overrideReason is null;
+            return new VisitActionCapabilityDto
             {
-                var amendable = c.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit;
-                if (amendable && !hasPendingAmendment
-                    && c.PlannedStartAt >= now.AddHours(SelfServiceCutoffHours))
-                    actions.Add(VisitFormActions.SubmitAmendment);
-                if (hasPendingAmendment)
-                    actions.Add(VisitFormActions.WithdrawAmendment);
-            }
-            if (hasPendingAmendment && IsCurrentCampusLeader(c.CampusId))
-            {
-                actions.Add(VisitFormActions.ApproveAmendment);
-                actions.Add(VisitFormActions.RejectAmendment);
-            }
-            return actions;
+                Code = code,
+                Scope = instanceScope ? VisitActionScopes.Instance : VisitActionScopes.Request,
+                VisitInstanceId = instanceScope ? (long)governing.VisitInstanceId : null,
+                Enabled = enabled,
+                DisabledReasonCode = enabled
+                    ? null
+                    : overrideReason is not null
+                        ? VisitMutationErrorCodes.LifecycleNotAllowed
+                        : decision.ErrorCode,
+                DisabledReason = enabled ? null : overrideReason ?? decision.DisabledReason,
+                CutoffAt = decision.CutoffAt,
+                PlannedStartAt = governing.PlannedStartAt,
+                CampusName = campusName,
+                RequiredLeadHours = decision.RequiredLeadHours,
+            };
         }
 
         // 3. Batch-load display names, per-campus members (v2), and active amendments (v2).
@@ -235,6 +250,54 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     .OrderBy(x => x.LinkOrder).Select(x => MapMember(x.Member)).ToList();
             }
 
+            // ── Per-campus capabilities. Measured against THIS campus only: a sibling that is under
+            //    way must not close a campus that is still a week out (and vice versa). ──
+            var hasPendingAmendment = activeAmendmentByInstance.ContainsKey(c.VisitInstanceId);
+            var isLeaderHere = IsCurrentCampusLeader(c.CampusId);
+            var relationHere = requesterSide
+                ? VisitViewerRelations.Requester
+                : isLeaderHere ? VisitViewerRelations.CampusLeader : VisitViewerRelations.Other;
+            var instanceCapabilities = new List<VisitActionCapabilityDto>();
+
+            if (requesterSide)
+            {
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.SubmitSafeEdit, VisitFormActions.SubmitSafeEdit,
+                    c, VisitViewerRelations.Requester, name, instanceScope: true));
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.SubmitAmendment, VisitFormActions.SubmitAmendment,
+                    c, VisitViewerRelations.Requester, name, instanceScope: true,
+                    overrideReason: hasPendingAmendment
+                        ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
+                        : null));
+            }
+            if (isLeaderHere)
+            {
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.ApproveAmendment, VisitFormActions.ApproveAmendment,
+                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
+                    overrideReason: hasPendingAmendment ? null : "Cơ sở này không có đề xuất nào chờ duyệt."));
+                // Transferring the Host presupposes there IS one — before approval the Host arrives with
+                // the approval decision, which is a different action on a different screen.
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.TransferHost, VisitFormActions.TransferHost,
+                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
+                    overrideReason: c.CurrentHostUserId is null
+                        ? "Cơ sở này chưa có Host để chuyển giao."
+                        : null));
+            }
+
+            // The flat list stays the ENABLED subset, so it can never contradict the verdicts above.
+            var instanceActions = instanceCapabilities.Where(x => x.Enabled).Select(x => x.Code).ToList();
+            // Reject travels with approve (one decision, two outcomes); withdraw is the requester's own
+            // way out of a proposal and stays open regardless of the cutoff — cancelling a request for a
+            // change is never something to keep alive against the requester's wishes.
+            if (hasPendingAmendment && isLeaderHere
+                && instanceActions.Contains(VisitFormActions.ApproveAmendment))
+                instanceActions.Add(VisitFormActions.RejectAmendment);
+            if (hasPendingAmendment && requesterSide)
+                instanceActions.Add(VisitFormActions.WithdrawAmendment);
+
             campusVisits.Add(new ResolvedCampusVisitDto
             {
                 VisitInstanceId = (long)c.VisitInstanceId,
@@ -274,7 +337,8 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 ApprovalRevision = approvalRevision,
                 RowVersion = rowVersion,
                 ActiveAmendment = activeAmendmentByInstance.TryGetValue(c.VisitInstanceId, out var am) ? am : null,
-                AllowedActions = InstanceActions(c, activeAmendmentByInstance.ContainsKey(c.VisitInstanceId))
+                AllowedActions = instanceActions,
+                Capabilities = instanceCapabilities,
             });
         }
 
@@ -290,22 +354,62 @@ public sealed class VisitFormReadService : IVisitFormReadService
             ? await BuildContactActionsAsync(request, instances, userId, now, cancellationToken)
             : new List<string>();
 
-        // EDIT_PENDING: fully pending + ≥24h out. RESUBMIT: rejected. SUBMIT_SAFE_EDIT: v2 + not cancelled.
-        // (Mirrors UpdatePendingVisitRequestV2 / ResubmitRejectedVisitRequestV2 / SubmitVisitSafeEdit handlers.)
+        // ── Request-level capabilities ───────────────────────────────────────────────────────────
+        // A request-level action touches data every campus shares, so it needs BOTH halves of the
+        // multi-campus rule: refuse outright if any campus has passed the point of no return, and take
+        // the deadline from the earliest campus still ahead. Only the first half used to exist for
+        // pending-edit, and neither existed for safe-edit — which is why "Sửa nhanh" appeared on a
+        // request whose delegation was already inside the building.
+        var requestCapabilities = new List<VisitActionCapabilityDto>();
+        if (requesterSide && instances.Count > 0)
+        {
+            // A request-level action is ALL-OR-NOTHING across campuses (§13): it edits data every
+            // campus shares, so a request where only some campuses qualify offers nothing at request
+            // level — the qualifying campuses each keep their own instance-scoped action instead.
+            //
+            // So the governing campus is: the first one that DISAGREES with the action's requirement
+            // if there is one (the policy then refuses, naming that campus and its reason), otherwise
+            // the EARLIEST qualifying campus (whose start sets the deadline). Note that an empty
+            // qualifying set falls back to the earliest campus overall, never to "no campus, allow" —
+            // that hole is what let a request-level edit through when no campus was active.
+            VisitRequestCampus Governing(Func<VisitRequestCampus, bool> qualifies)
+            {
+                var dissenting = instances.Where(c => !qualifies(c)).OrderBy(c => c.PlannedStartAt).ToList();
+                if (dissenting.Count > 0)
+                {
+                    // Prefer a campus that has actually moved past the point of no return, so the
+                    // message says "đang diễn ra" rather than a milder reason that also applies.
+                    return dissenting.FirstOrDefault(c => VisitMutationPolicy.BlocksRequestLevel(c.Status))
+                        ?? dissenting[0];
+                }
+                return instances.OrderBy(c => c.PlannedStartAt).First();
+            }
+
+            void AddRequestCapability(VisitMutationAction action, string code, Func<VisitRequestCampus, bool> qualifies)
+            {
+                var governing = Governing(qualifies);
+                requestCapabilities.Add(Decide(
+                    action, code, governing, VisitViewerRelations.Requester,
+                    campuses.TryGetValue(governing.CampusId, out var gi) ? gi.Name : null,
+                    instanceScope: false));
+            }
+
+            AddRequestCapability(
+                VisitMutationAction.EditPendingRequest, VisitFormActions.EditPendingRequest,
+                c => c.Status == VisitInstanceStatuses.WaitingRequestApproval);
+            AddRequestCapability(
+                VisitMutationAction.ResubmitRejectedRequest, VisitFormActions.ResubmitRejectedRequest,
+                c => c.Status == VisitInstanceStatuses.Rejected);
+            AddRequestCapability(
+                VisitMutationAction.SubmitSafeEdit, VisitFormActions.SubmitSafeEdit,
+                c => c.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit);
+        }
+
         List<string> BuildRequestActions()
         {
             var actions = new List<string> { VisitFormActions.View };
             actions.AddRange(contactActions);
-            if (!requesterSide) return actions;
-            var fullyPending = instances.Count > 0
-                && request.Status == VisitRequestStatuses.PendingApproval
-                && instances.All(c => c.Status == VisitInstanceStatuses.WaitingRequestApproval);
-            if (fullyPending && instances.Min(c => c.PlannedStartAt) >= now.AddHours(SelfServiceCutoffHours))
-                actions.Add(VisitFormActions.EditPendingRequest);
-            if (request.Status == VisitRequestStatuses.Rejected)
-                actions.Add(VisitFormActions.ResubmitRejectedRequest);
-            if (request.Status != VisitRequestStatuses.Cancelled)
-                actions.Add(VisitFormActions.SubmitSafeEdit);
+            actions.AddRange(requestCapabilities.Where(x => x.Enabled).Select(x => x.Code));
             return actions;
         }
 
@@ -348,7 +452,8 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 Relation = scope.Relation,
                 CanViewAllCampuses = scope.CanViewAllCampuses,
                 IsReadOnly = scope.IsReadOnly,
-                AllowedActions = BuildRequestActions()
+                AllowedActions = BuildRequestActions(),
+                Capabilities = requestCapabilities,
             }
         };
     }
@@ -416,7 +521,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             .ToList();
         var lifecycleOpen = notCancelled
             && !visitStarted
-            && (activeStarts.Count == 0 || activeStarts.Min() >= now.AddHours(SelfServiceCutoffHours));
+            && (activeStarts.Count == 0 || activeStarts.Min() >= now.AddHours(ContactTransferLeadHours));
 
         if (pendingTransfer is null)
         {

@@ -119,6 +119,26 @@ public sealed class ExceptionHandlingMiddleware
                     conflict.ErrorCode ?? "n/a", context.Request.Path, traceId);
                 break;
 
+            // A mutation refused by VisitMutationPolicy answers "why not, and until when" — the client
+            // cannot render "Hạn cuối 21/08 08:00 · Giờ bắt đầu 21/08 14:00" from a message string, and
+            // parsing one would break the moment the wording changed.
+            case PEMS.Application.Delegations.Services.VisitMutationRefusedException refused:
+                status = StatusCodes.Status422UnprocessableEntity;
+                payload = new
+                {
+                    success = false,
+                    errorCode = refused.ErrorCode,
+                    message = refused.Message,
+                    campusName = refused.CampusName,
+                    cutoffAt = refused.CutoffAt,
+                    plannedStartAt = refused.PlannedStartAt,
+                    requiredLeadHours = refused.RequiredLeadHours,
+                    traceId,
+                };
+                _logger.LogInformation("Visit mutation refused ({Code}) on {Path} (traceId {TraceId}).",
+                    refused.ErrorCode ?? "n/a", context.Request.Path, traceId);
+                break;
+
             case BusinessRuleException business:
                 status = StatusCodes.Status422UnprocessableEntity;
                 payload = new { success = false, errorCode = business.ErrorCode, message = business.Message, traceId };

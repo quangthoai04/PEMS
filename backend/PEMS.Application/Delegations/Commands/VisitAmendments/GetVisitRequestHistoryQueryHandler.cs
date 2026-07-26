@@ -262,6 +262,7 @@ public sealed class GetVisitRequestHistoryQueryHandler
     {
         FormRevisionSourceTypes.Create => VisitHistoryEventCodes.InstanceContentCreated,
         FormRevisionSourceTypes.SafeEdit => VisitHistoryEventCodes.InstanceSafeEditApplied,
+        FormRevisionSourceTypes.PendingEdit => VisitHistoryEventCodes.InstancePendingEditApplied,
         FormRevisionSourceTypes.Resubmit => VisitHistoryEventCodes.InstanceContentResubmitted,
         FormRevisionSourceTypes.AmendmentApplied => VisitHistoryEventCodes.InstanceAmendmentApplied,
         _ => formRevision <= 1
@@ -274,6 +275,7 @@ public sealed class GetVisitRequestHistoryQueryHandler
     {
         FormRevisionSourceTypes.Create => VisitHistoryEventCodes.RequestCreated,
         FormRevisionSourceTypes.SafeEdit => VisitHistoryEventCodes.RequestSafeEditApplied,
+        FormRevisionSourceTypes.PendingEdit => VisitHistoryEventCodes.RequestPendingEditApplied,
         FormRevisionSourceTypes.Resubmit => VisitHistoryEventCodes.RequestResubmitted,
         _ => VisitHistoryEventCodes.RequestRevision,
     };

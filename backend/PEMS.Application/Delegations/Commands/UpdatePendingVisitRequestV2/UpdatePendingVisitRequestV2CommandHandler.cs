@@ -9,8 +9,10 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 
 namespace PEMS.Application.Delegations.Commands.UpdatePendingVisitRequestV2;
 
@@ -75,20 +77,16 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
         if (!isRegistrant && !isActiveContact)
             throw new ForbiddenException("Bạn không có quyền sửa đơn này.");
 
-        // ── Editable-lifecycle gate (v1 parity §2.1): fully pending + ≥ 24h before earliest start ──
-        if (visit.Status != VisitRequestStatuses.PendingApproval)
+        // ── Editable-lifecycle gate — the SAME policy call the read model made when it decided whether
+        //    to offer the button, so a capability can never promise what this refuses. ──
+        if (visit.CampusInstances.Count == 0)
             throw new BusinessRuleException(
-                "Chỉ có thể sửa đơn đang chờ xử lý (chưa cơ sở nào ra quyết định).",
+                "Đơn không có cơ sở nào nên không thể sửa.",
                 VisitRequestErrorCodes.VisitRequestNotEditable);
-        if (visit.CampusInstances.Count == 0
-            || visit.CampusInstances.Any(c => c.Status != VisitInstanceStatuses.WaitingRequestApproval))
-            throw new BusinessRuleException(
-                "Đơn đã có cơ sở được xử lý (duyệt/từ chối/hủy) nên không thể sửa.",
-                VisitRequestErrorCodes.VisitRequestNotEditable);
-        if (visit.CampusInstances.Min(c => c.PlannedStartAt) < now.AddHours(24))
-            throw new BusinessRuleException(
-                "Lịch thăm sắp diễn ra trong vòng 24 giờ nên không thể sửa. Vui lòng liên hệ FPTU để được hỗ trợ.",
-                VisitRequestErrorCodes.VisitCancelWindowExpired);
+        VisitMutationGuard.EnsureRequestLevelAllowed(
+            VisitMutationAction.EditPendingRequest, visit, now,
+            c => c.Status == VisitInstanceStatuses.WaitingRequestApproval,
+            VisitRequestErrorCodes.VisitRequestNotEditable);
 
         // Campuses involved BEFORE the edit (kept + removed) — their leaders are notified too.
         var campusIdsBefore = visit.CampusInstances.Select(c => c.CampusId).ToList();

@@ -74,8 +74,44 @@ public sealed class ResolvedViewerContextDto
     public bool CanViewAllCampuses { get; init; }
     /// <summary>True for HO — monitoring only, no business action.</summary>
     public bool IsReadOnly { get; init; }
-    /// <summary>Read capabilities only in PR-3 (e.g. "VIEW"). Write actions arrive in later PRs.</summary>
+    /// <summary>
+    /// The ENABLED subset of <see cref="Capabilities"/>, plus the contact-identity actions. Kept as a
+    /// flat list because most call sites only ask "may I?"; it is DERIVED from the capabilities rather
+    /// than computed separately, so the two can never disagree.
+    /// </summary>
     public List<string> AllowedActions { get; init; } = new();
+    /// <summary>
+    /// Request-scoped mutation capabilities WITH their verdict — including the ones that are refused.
+    /// A refused capability carries why and until when, which is what lets the UI show a disabled
+    /// button with a real reason instead of silently hiding the action and leaving the user to guess.
+    /// </summary>
+    public List<VisitActionCapabilityDto> Capabilities { get; init; } = new();
+}
+
+/// <summary>
+/// One action, one verdict. The backend is the authority: the frontend renders from this and never
+/// re-derives permission from status, role or relation, and every command handler re-checks the same
+/// policy inside its transaction.
+/// </summary>
+public sealed class VisitActionCapabilityDto
+{
+    /// <summary>EDIT_PENDING_REQUEST / RESUBMIT_REJECTED_REQUEST / SUBMIT_SAFE_EDIT / SUBMIT_AMENDMENT / APPROVE_AMENDMENT / TRANSFER_HOST.</summary>
+    public string Code { get; init; } = "";
+    /// <summary>REQUEST (applies to the whole request) or INSTANCE (applies to one campus).</summary>
+    public string Scope { get; init; } = "";
+    /// <summary>Set for INSTANCE scope — which campus this verdict is about.</summary>
+    public long? VisitInstanceId { get; init; }
+    public bool Enabled { get; init; }
+    /// <summary>Stable code (VISIT_MUTATION_CUTOFF_REACHED / …) — match on this, never on the message.</summary>
+    public string? DisabledReasonCode { get; init; }
+    public string? DisabledReason { get; init; }
+    /// <summary>The moment the window closes. Present whether or not it has passed.</summary>
+    public DateTime? CutoffAt { get; init; }
+    /// <summary>Start of the campus this verdict was measured against — pairs with CutoffAt in the UI.</summary>
+    public DateTime? PlannedStartAt { get; init; }
+    /// <summary>Campus the verdict was measured against (the governing one for a request-level action).</summary>
+    public string? CampusName { get; init; }
+    public int RequiredLeadHours { get; init; }
 }
 
 public sealed class ResolvedCampusVisitDto
@@ -134,8 +170,16 @@ public sealed class ResolvedCampusVisitDto
     /// Backend-derived mutation actions the caller may take on THIS instance (per-campus scoped) — e.g.
     /// SUBMIT_AMENDMENT / APPROVE_AMENDMENT / REJECT_AMENDMENT / WITHDRAW_AMENDMENT. The frontend gates
     /// per-instance UI on this list; command handlers re-authorize. Empty for read-only viewers.
+    /// Derived from <see cref="Capabilities"/> (plus the amendment decision actions), never computed twice.
     /// </summary>
     public List<string> AllowedActions { get; init; } = new();
+
+    /// <summary>
+    /// This campus's mutation capabilities WITH their verdict, refused ones included. A sibling campus
+    /// being under way says nothing about this one — every entry here was measured against THIS
+    /// instance's own status and start time.
+    /// </summary>
+    public List<VisitActionCapabilityDto> Capabilities { get; init; } = new();
 }
 
 public sealed class ResolvedMemberDto

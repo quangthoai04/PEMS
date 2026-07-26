@@ -6,6 +6,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Domain.Policies;
 
 namespace PEMS.Infrastructure.Services;
 
@@ -14,8 +15,6 @@ namespace PEMS.Infrastructure.Services;
 /// endpoint accepted structurally.</summary>
 public sealed class VisitSafeEditService : IVisitSafeEditService
 {
-    private const int CutoffHours = 24;
-
     private readonly IApplicationDbContext _db;
 
     public VisitSafeEditService(IApplicationDbContext db) => _db = db;
@@ -42,6 +41,13 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                 VisitFormV2ErrorCodes.VisitFormConcurrencyConflict);
 
         var changes = new List<Change>();
+
+        // Campus names for refusal messages — a multi-campus user needs to know WHICH campus closed the
+        // window, and "Không thể sửa" without a name sends them to look at all of them.
+        var campusIds = request.CampusInstances.Select(c => c.CampusId).Distinct().ToList();
+        var campusNames = await _db.Campuses.AsNoTracking()
+            .Where(c => campusIds.Contains(c.CampusId))
+            .ToDictionaryAsync(c => c.CampusId, c => c.Name, ct);
 
         // ── 1. Request-level safe subset (registrant display fields + contact snapshot, never emails) ──
         if (patch.Registrant is { } reg)
@@ -82,28 +88,45 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                 throw new ConflictException(
                     "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
                     VisitFormV2ErrorCodes.VisitFormConcurrencyConflict);
-            if (instance.Status is not (VisitInstanceStatuses.WaitingRequestApproval
-                or VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit))
-                throw new BusinessRuleException(
-                    "Cơ sở này đã bắt đầu/kết thúc hoặc không còn hoạt động nên không thể sửa.",
-                    VisitRequestErrorCodes.VisitRequestNotEditable);
+
+            // LIFECYCLE for THIS campus only — a sibling that is under way says nothing about a campus
+            // still days out, and coupling them is what let one campus's timing freeze another's notes.
+            // The cutoff is checked further down, once the changes are known, because a privacy-urgent
+            // media withdrawal is exempt from the deadline (but never from the lifecycle).
+            //
+            // WAITING_REQUEST_APPROVAL is deliberately NOT accepted here any more: a still-pending
+            // campus belongs to pending-edit, which can change anything. Offering the narrow tool as
+            // well only made it unclear which one to reach for.
+            VisitMutationGuard.EnsureAllowed(
+                VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
+                VisitViewerRelations.Requester, VisitRequestErrorCodes.VisitRequestNotEditable,
+                campusNames, skipCutoff: true);
+
             var detail = instance.FormDetail
                 ?? throw new ConflictException("Thiếu dữ liệu biểu mẫu theo cơ sở.",
                     VisitFormV2ErrorCodes.VisitFormDetailMissing);
 
-            if (ip.MediaConsentStatus is not ("AGREED" or "DECLINED"))
+            if (ip.MediaConsentStatus is not (null or "AGREED" or "DECLINED"))
                 throw new BusinessRuleException("Trạng thái truyền thông không hợp lệ.",
                     VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
 
+            // Every instance field is OPTIONAL: null means "not part of this edit", which is how the
+            // client sends only what changed. Previously all four were mandatory, so a one-word note
+            // correction re-submitted the media-consent decision of every campus in the request — and a
+            // stale value in the form would silently overwrite a newer one.
             var before = changes.Count;
-            Diff(changes, VisitFieldClassifier.TransportationNote, instance.VisitInstanceId,
-                detail.TransportationNote, Clean(ip.TransportationNote), v => detail.TransportationNote = v);
-            Diff(changes, VisitFieldClassifier.NoteToFptu, instance.VisitInstanceId,
-                detail.NoteToFptu, Clean(ip.NoteToFptu), v => detail.NoteToFptu = v);
-            Diff(changes, VisitFieldClassifier.MediaConsentNote, instance.VisitInstanceId,
-                detail.MediaConsentNote, Clean(ip.MediaConsentNote), v => detail.MediaConsentNote = v);
-            Diff(changes, VisitFieldClassifier.MediaConsentStatus, instance.VisitInstanceId,
-                detail.MediaConsentStatus, ip.MediaConsentStatus, v => detail.MediaConsentStatus = v!);
+            if (ip.TransportationNote is not null)
+                Diff(changes, VisitFieldClassifier.TransportationNote, instance.VisitInstanceId,
+                    detail.TransportationNote, Clean(ip.TransportationNote), v => detail.TransportationNote = v);
+            if (ip.NoteToFptu is not null)
+                Diff(changes, VisitFieldClassifier.NoteToFptu, instance.VisitInstanceId,
+                    detail.NoteToFptu, Clean(ip.NoteToFptu), v => detail.NoteToFptu = v);
+            if (ip.MediaConsentNote is not null)
+                Diff(changes, VisitFieldClassifier.MediaConsentNote, instance.VisitInstanceId,
+                    detail.MediaConsentNote, Clean(ip.MediaConsentNote), v => detail.MediaConsentNote = v);
+            if (ip.MediaConsentStatus is not null)
+                Diff(changes, VisitFieldClassifier.MediaConsentStatus, instance.VisitInstanceId,
+                    detail.MediaConsentStatus, ip.MediaConsentStatus, v => detail.MediaConsentStatus = v!);
             if (changes.Count > before)
                 touchedInstances.Add(instance);
         }
@@ -119,32 +142,38 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     $"Trường '{c.FieldPath}' không thuộc nhóm sửa nhanh. Vui lòng gửi đề xuất thay đổi (amendment).",
                     VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
 
-        // ── 4. 24h cutoff — privacy-urgent media withdrawal (plus its note, same instance) is exempt ──
+        // ── 4a. Per-instance cutoff — a privacy-urgent media withdrawal (plus its note, same instance)
+        //        stays exempt from the DEADLINE; the lifecycle gate above already ran unconditionally. ──
         foreach (var instance in touchedInstances)
         {
-            if (instance.PlannedStartAt >= now.AddHours(CutoffHours)) continue;
             var instanceChanges = changes.Where(c => c.InstanceId == instance.VisitInstanceId).ToList();
             var hasUrgent = instanceChanges.Any(c => c.Class == AmendmentChangeClasses.PrivacyUrgent);
             var nonExempt = instanceChanges.Where(c =>
                 c.Class != AmendmentChangeClasses.PrivacyUrgent
                 && !(hasUrgent && c.FieldPath == VisitFieldClassifier.MediaConsentNote)).ToList();
-            if (nonExempt.Count > 0)
-                throw new BusinessRuleException(
-                    "Lịch thăm bắt đầu trong vòng 24 giờ nên chỉ có thể rút quyền truyền thông; các thay đổi khác vui lòng liên hệ FPTU.",
-                    VisitRequestErrorCodes.VisitCancelWindowExpired);
+            if (nonExempt.Count == 0) continue;
+            VisitMutationGuard.EnsureAllowed(
+                VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
+                VisitViewerRelations.Requester, VisitRequestErrorCodes.VisitCancelWindowExpired,
+                campusNames);
         }
+
+        // ── 4b. Request-level scope. The registrant/contact block is SHARED by every campus, so it is
+        //        all-or-nothing: refused outright while any campus has passed the point of no return
+        //        (its delegation is already on site reading that name), and the deadline comes from the
+        //        earliest campus still ahead.
+        //
+        //        The old check asked only "is the earliest ACTIVE campus < 24h away", and skipped
+        //        entirely when that set was EMPTY — so once every campus had moved to DURING_VISIT the
+        //        guard evaluated `earliest is null` and let the edit straight through. An empty set now
+        //        falls back to the earliest campus overall, never to "no campus, allow".
         if (changes.Any(c => c.InstanceId is null))
         {
-            var earliest = request.CampusInstances
-                .Where(c => c.Status is VisitInstanceStatuses.WaitingRequestApproval
-                    or VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit)
-                .Select(c => (DateTime?)c.PlannedStartAt)
-                .DefaultIfEmpty(null)
-                .Min();
-            if (earliest is not null && earliest < now.AddHours(CutoffHours))
-                throw new BusinessRuleException(
-                    "Lịch thăm bắt đầu trong vòng 24 giờ nên không thể sửa thông tin chung. Vui lòng liên hệ FPTU.",
-                    VisitRequestErrorCodes.VisitCancelWindowExpired);
+            VisitMutationGuard.EnsureRequestLevelAllowed(
+                VisitMutationAction.SubmitSafeEdit, request, now,
+                c => c.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit,
+                VisitRequestErrorCodes.VisitRequestNotEditable,
+                campusNames);
         }
 
         // ── 5. Apply + revisions + audit, one commit ──

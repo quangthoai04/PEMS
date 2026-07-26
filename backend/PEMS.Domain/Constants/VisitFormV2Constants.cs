@@ -61,10 +61,23 @@ public static class AmendmentStatuses
     public const string Cancelled = "CANCELLED";
 }
 
+/// <summary>
+/// Why a revision row was written. Values MUST exist in the canonical SQL enums for
+/// <c>visit_instance_form_revision_history.source_type</c> and
+/// <c>visit_request_revision_history.source_type</c>.
+/// </summary>
 public static class FormRevisionSourceTypes
 {
     public const string Create = "CREATE";
+    /// <summary>Apply-now correction to the narrow safe field subset ("sửa nhanh").</summary>
     public const string SafeEdit = "SAFE_EDIT";
+    /// <summary>
+    /// Full edit of a still-pending request ("sửa đơn"). A DIFFERENT act from a safe edit: it can
+    /// rewrite content, add and drop campuses, and it exists only before any campus has decided.
+    /// It used to be written as SAFE_EDIT, so the timeline told users their full edit was a quick one.
+    /// Added to both source_type enums by 2026_07_26_visit_pending_edit_source_type.sql.
+    /// </summary>
+    public const string PendingEdit = "PENDING_EDIT";
     public const string AmendmentApplied = "AMENDMENT_APPLIED";
     public const string Migration = "MIGRATION";
     public const string Resubmit = "RESUBMIT";

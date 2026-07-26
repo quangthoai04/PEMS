@@ -37,8 +37,9 @@ public sealed class SubmitVisitSafeEditCommandValidator : AbstractValidator<Subm
                 .WithMessage("Nhận diện phương tiện di chuyển không được chứa HTML/script.");
             i.RuleFor(p => p.NoteToFptu).MaximumLength(2000);
             i.RuleFor(p => p.MediaConsentNote).MaximumLength(2000);
+            // null is legitimate — the field is simply not part of this sparse patch.
             i.RuleFor(p => p.MediaConsentStatus)
-                .Must(s => s is "AGREED" or "DECLINED")
+                .Must(s => s is null or "AGREED" or "DECLINED")
                 .WithMessage("Trạng thái truyền thông không hợp lệ.");
         }).When(x => x.Patch?.Instances is not null);
     }
@@ -144,6 +145,11 @@ public static class VisitHistoryEventCodes
     public const string RequestCreated = "REQUEST_CREATED";
     /// <summary>Request-level safe edit ("sửa nhanh") — the shared registrant/contact block changed.</summary>
     public const string RequestSafeEditApplied = "REQUEST_SAFE_EDIT_APPLIED";
+    /// <summary>
+    /// Request-level full edit of a still-pending request ("sửa đơn"). Distinct from the safe edit
+    /// above: it happens before any campus has decided and is not limited to the safe field subset.
+    /// </summary>
+    public const string RequestPendingEditApplied = "REQUEST_PENDING_EDIT_APPLIED";
     /// <summary>The whole request was sent in again after a rejection.</summary>
     public const string RequestResubmitted = "REQUEST_RESUBMITTED";
     /// <summary>The whole request was cancelled (who, when, why).</summary>
@@ -152,6 +158,8 @@ public static class VisitHistoryEventCodes
     public const string InstanceContentRevised = "INSTANCE_CONTENT_REVISED";
     /// <summary>Per-campus safe edit — the campus content changed without an amendment.</summary>
     public const string InstanceSafeEditApplied = "INSTANCE_SAFE_EDIT_APPLIED";
+    /// <summary>Per-campus content rewritten by a full pending edit, before any campus decided.</summary>
+    public const string InstancePendingEditApplied = "INSTANCE_PENDING_EDIT_APPLIED";
     /// <summary>Per-campus content re-sent as part of a request resubmit.</summary>
     public const string InstanceContentResubmitted = "INSTANCE_CONTENT_RESUBMITTED";
     /// <summary>An approved amendment was written into the campus's active content.</summary>

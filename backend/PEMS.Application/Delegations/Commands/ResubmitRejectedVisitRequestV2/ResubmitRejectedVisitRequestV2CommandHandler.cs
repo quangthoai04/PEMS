@@ -9,8 +9,10 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 
 namespace PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequestV2;
 
@@ -74,12 +76,17 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
             throw new ForbiddenException("Bạn không có quyền gửi lại đơn này.");
 
         // ── Resubmittable gate (pre-check; the service re-checks in-transaction under the row lock) ──
-        if (visit.Status != VisitRequestStatuses.Rejected
-            || visit.CampusInstances.Count == 0
-            || visit.CampusInstances.Any(c => c.Status != VisitInstanceStatuses.Rejected))
+        //    Same policy call the read model made, so RESUBMIT_REJECTED_REQUEST is offered exactly when
+        //    this admits it. The lead time is checked here against the OLD schedule and again inside the
+        //    service against each NEW start — a resubmit both leaves and enters a schedule.
+        if (visit.CampusInstances.Count == 0)
             throw new BusinessRuleException(
                 "Chỉ có thể gửi lại đơn khi toàn bộ yêu cầu đã bị từ chối ở tất cả các cơ sở.",
                 VisitRequestErrorCodes.VisitRequestNotResubmittable);
+        VisitMutationGuard.EnsureRequestLevelAllowed(
+            VisitMutationAction.ResubmitRejectedRequest, visit, now,
+            c => c.Status == VisitInstanceStatuses.Rejected,
+            VisitRequestErrorCodes.VisitRequestNotResubmittable);
 
         V2EditResult result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))

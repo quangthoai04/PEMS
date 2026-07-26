@@ -12,6 +12,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
@@ -30,7 +31,13 @@ namespace PEMS.Infrastructure.Services;
 public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 {
     private const int MinDurationMinutes = 30;
-    private const int EditWindowHours = 24; // Visitor edit window (v1 parity: sửa/hủy trước 24h)
+
+    /// <summary>
+    /// Minimum lead time a NEW or CHANGED schedule must leave. Shared with every other self-service
+    /// mutation via <see cref="VisitMutationPolicy.RequiredLeadHours"/> — a schedule the user may still
+    /// edit but may not schedule INTO would be a rule that contradicts itself.
+    /// </summary>
+    private const int EditWindowHours = VisitMutationPolicy.RequiredLeadHours;
 
     private readonly IApplicationDbContext _db;
 
@@ -121,7 +128,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
             if (cv.PlannedStartAt < now.AddHours(EditWindowHours))
                 throw new BusinessRuleException(
-                    "Thời gian bắt đầu mới phải cách hiện tại ít nhất 24 giờ.",
+                    $"Thời gian bắt đầu mới phải cách hiện tại ít nhất {EditWindowHours} giờ.",
                     VisitRequestErrorCodes.InvalidVisitTime);
         }
 
@@ -161,7 +168,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             EntityId = request.VisitRequestId,
             VisitRequestId = request.VisitRequestId,
             CorrelationId = correlationId,
-            SourceType = "SAFE_EDIT",
+            // A full edit of a pending request is NOT a safe edit — it can rewrite content and change
+            // the campus set. Writing SAFE_EDIT here is what made the timeline report it as "sửa nhanh".
+            SourceType = FormRevisionSourceTypes.PendingEdit,
             CreatedAt = now,
         };
         _db.AuditLogs.Add(audit);
@@ -334,7 +343,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 VisitInstanceId = instance.VisitInstanceId,
                 FormRevision = instance.FormDetail!.FormRevision,
                 ApprovalRevision = instance.FormDetail.ApprovalRevision,
-                SourceType = "SAFE_EDIT",
+                SourceType = FormRevisionSourceTypes.PendingEdit,
                 SnapshotJson = VisitRequestV2EditOps.SnapshotJson(instance.FormDetail, newMembers),
                 AppliedBy = actorId,
                 AppliedAt = now,
@@ -367,7 +376,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             {
                 VisitRequestId = request.VisitRequestId,
                 RequestRevision = nextRevision,
-                SourceType = "SAFE_EDIT",
+                SourceType = FormRevisionSourceTypes.PendingEdit,
                 SnapshotJson = VisitRequestV2EditOps.RequestSnapshotJson(request),
                 AppliedBy = actorId,
                 AppliedAt = now,
@@ -447,7 +456,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
             if (cv.PlannedStartAt < now.AddHours(EditWindowHours))
                 throw new BusinessRuleException(
-                    "Thời gian bắt đầu mới phải cách hiện tại ít nhất 24 giờ.",
+                    $"Thời gian bắt đầu mới phải cách hiện tại ít nhất {EditWindowHours} giờ.",
                     VisitRequestErrorCodes.InvalidVisitTime);
         }
 
