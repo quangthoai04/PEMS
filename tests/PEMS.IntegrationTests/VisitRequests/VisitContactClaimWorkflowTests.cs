@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
@@ -95,12 +96,19 @@ public sealed class VisitContactClaimWorkflowTests
             Sent.Add((toEmail, subject, htmlBody));
             return Task.CompletedTask;
         }
-        public Task SendAsync(OutboundEmail message, CancellationToken ct = default) => Task.CompletedTask;
+
+        // Recording the envelope-aware overload too keeps the token extraction above working once the
+        // claim/transfer mail is rendered from a template and sent as an OutboundEmail.
+        public Task<EmailDeliveryResult> TrySendAsync(OutboundEmail message, CancellationToken ct = default)
+        { Record(message); return Task.FromResult(EmailDeliveryResult.Sent()); }
+        public Task SendAsync(OutboundEmail message, CancellationToken ct = default)
+        { Record(message); return Task.CompletedTask; }
+
+        private void Record(OutboundEmail message)
+            => Sent.Add((message.To.Count > 0 ? message.To[0].Email : string.Empty,
+                         message.Subject ?? string.Empty, message.Body ?? string.Empty));
+
         public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.FromResult(EmailDeliveryResult.Sent());
-        public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendVisitorAccountCreatedOrLinkedEmailAsync(string toEmail, string contactName, string delegationName, string requestCode, string visitScope, string plannedTimeText, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendRegistrantConfirmationAsync(string toEmail, string registrantName, string contactName, string contactEmail, string delegationName, string requestCode, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class NoopNotifications : INotificationService
@@ -114,7 +122,7 @@ public sealed class VisitContactClaimWorkflowTests
     private static readonly IConfiguration EmptyConfig = new ConfigurationBuilder().Build();
     private static EmailActionTokenService Tokens() => new(EmptyConfig);
     private static VisitContactClaimService ClaimSvc(ApplicationDbContext db, FakeEmail? email = null)
-        => new(db, Tokens(), email ?? new FakeEmail(), new FixedClock(),
+        => new(db, Tokens(), new SystemEmailDispatcher(db, new EmailTemplateRenderer(db), email ?? new FakeEmail()), new FixedClock(),
             NullLogger<VisitContactClaimService>.Instance, EmptyConfig);
 
     private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };

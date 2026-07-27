@@ -27,29 +27,24 @@ public class CreateAccountStudentCodeTests
         public FakeCurrentUserService Actor { get; } = new();     // Staff Leader, id 900, campus 1
         public FakeDateTimeService Clock { get; } = new();
         public Mock<IPasswordHasher> Hasher { get; } = new();
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
         public Mock<INotificationService> Notifications { get; } = new();
         public Mock<PEMS.Application.Accounts.Common.IAccountEmailConfirmationService> Confirmations { get; } = new();
         public CreateAccountCommandHandler Handler { get; }
 
         public Harness()
         {
-            Email.Setup(e => e.SendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-            Email.Setup(e => e.TrySendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(EmailDeliveryResult.Sent());
             Confirmations.Setup(c => c.IssuePendingAsync(
                     It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("raw-token");
             Confirmations.Setup(c => c.BuildConfirmUrl(It.IsAny<string>()))
                 .Returns("http://localhost:5173/confirm-email?token=raw-token");
+            Confirmations.Setup(c => c.ExpiryHours).Returns(24);
             Notifications.Setup(n => n.CreateAsync(
                     It.IsAny<CreateNotificationRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
             Handler = new CreateAccountCommandHandler(
-                Db, Actor, Hasher.Object, Clock, new AuthOptions(), Email.Object, Notifications.Object, Confirmations.Object);
+                Db, Actor, Hasher.Object, Clock, new AuthOptions(), Dispatcher, Notifications.Object, Confirmations.Object);
         }
 
         public Task<CreateAccountResponse> Run(CreateAccountCommand cmd) => Handler.Handle(cmd, CancellationToken.None);

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 using PEMS.Domain.Entities.AgendaTemplates;
@@ -51,6 +52,10 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitRequestCampus> VisitRequestCampuses => Set<VisitRequestCampus>();
     public DbSet<VisitParticipant> VisitParticipants => Set<VisitParticipant>();
     public DbSet<VisitLogisticsItem> VisitLogisticsItems => Set<VisitLogisticsItem>();
+    public DbSet<VisitInstanceReminderSetting> ReminderSettings => Set<VisitInstanceReminderSetting>();
+    public DbSet<VisitLogisticsItemHandover> LogisticsHandovers => Set<VisitLogisticsItemHandover>();
+    public DbSet<VisitLogisticsAssignmentAttempt> LogisticsAssignmentAttempts => Set<VisitLogisticsAssignmentAttempt>();
+    public DbSet<VisitExpenseReport> ExpenseReports => Set<VisitExpenseReport>();
     // Student visit photo storage slice (upload/list/remove handlers + folder service).
     public DbSet<VisitPhotoFolder> VisitPhotoFolders => Set<VisitPhotoFolder>();
     public DbSet<VisitPhoto> VisitPhotos => Set<VisitPhoto>();
@@ -59,6 +64,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<SentEmail> SentEmails => Set<SentEmail>();
     public DbSet<SentEmailRecipient> SentEmailRecipients => Set<SentEmailRecipient>();
+    public DbSet<SentEmailAttachment> Attachments => Set<SentEmailAttachment>();
     public DbSet<EmailActionToken> EmailActionTokens => Set<EmailActionToken>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
@@ -84,12 +90,14 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
         modelBuilder.Ignore<VisitAgenda>();
-        modelBuilder.Ignore<VisitLogisticsItemHandover>();
-        modelBuilder.Ignore<VisitLogisticsAssignmentAttempt>();
-        modelBuilder.Ignore<VisitInstanceReminderSetting>();
+        // Handovers + assignment attempts are NOT pruned: the assignee-assignment and expense-reminder
+        // handlers read both to decide whether a task may still be reassigned and whether its expense
+        // entry is open, so by this slice's own rule ("map what these handlers use") they belong here.
+        // Reminder settings are NOT pruned: the reminder dispatch service reads and claims them.
         modelBuilder.Ignore<CalendarEventAttendee>();
         modelBuilder.Ignore<CalendarEventReminder>();
-        modelBuilder.Ignore<SentEmailAttachment>();
+        // Mapped, not ignored: the report senders (Batch 9) write a files row and link it here, and a
+        // test that cannot see that row cannot tell "attached" from "said it attached".
         modelBuilder.Ignore<AuditLogChange>();
         modelBuilder.Ignore<OtpToken>();
         modelBuilder.Ignore<LoginLog>();
@@ -109,7 +117,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<GalleryItem>();
         modelBuilder.Ignore<GalleryItemMedia>();
         modelBuilder.Ignore<GalleryItemContent>();
-        modelBuilder.Ignore<VisitExpenseReport>();
+        // Expense reports are read by the reminder handler to work out who has not filed one yet.
         modelBuilder.Ignore<VisitExpenseItem>();
         modelBuilder.Ignore<VisitExpenseReportEvent>();
         modelBuilder.Ignore<PhotoFaceTag>();
@@ -445,5 +453,133 @@ public sealed class DelegationsHandlerMocks
                 SentEmails.Add(mail);
                 return Task.CompletedTask;
             });
+    }
+
+    /// <summary>
+    /// A dispatcher bound to this test database. It writes the same <c>sent_emails</c> /
+    /// <c>sent_email_recipients</c> rows the real one writes, so a handler's in-transaction linkage —
+    /// <c>email_action_tokens.sent_email_id</c> — is exercised for real. What it does NOT do is read
+    /// <c>email_templates</c>: template content, the variable contract and the subject guard are proven
+    /// against a real database by the integration suite, not re-implemented here.
+    /// </summary>
+    public FakeDelegationsEmailDispatcher DispatcherFor(DelegationsTestDbContext db) => new(db, this);
+}
+
+/// <summary>
+/// See <see cref="DelegationsHandlerMocks.DispatcherFor"/>. Records every request so a test can assert
+/// WHICH TEMPLATE a handler asked for — a handler that quietly went back to composing its own content
+/// would name none.
+/// </summary>
+public sealed class FakeDelegationsEmailDispatcher : ISystemEmailDispatcher
+{
+    private readonly DelegationsTestDbContext _db;
+    private readonly DelegationsHandlerMocks _mocks;
+
+    public FakeDelegationsEmailDispatcher(DelegationsTestDbContext db, DelegationsHandlerMocks mocks)
+    {
+        _db = db;
+        _mocks = mocks;
+    }
+
+    /// <summary>Every request, in order, including ones whose delivery later failed.</summary>
+    public List<SystemEmailRequest> Requests { get; } = new();
+
+    public SystemEmailRequest Single(string templateCode)
+        => Requests.Single(r => r.TemplateCode == templateCode);
+
+    /// <summary>Every request made with this template code, in order.</summary>
+    public IReadOnlyList<SystemEmailRequest> All(string templateCode)
+        => Requests.Where(r => r.TemplateCode == templateCode).ToList();
+
+    public async Task<PreparedSystemEmail> PrepareAsync(
+        SystemEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        Requests.Add(request);
+
+        var now = _mocks.Clock.VietnamNow;
+        var sentEmail = new SentEmail
+        {
+            RelatedType = request.RelatedType,
+            RelatedId = request.RelatedId,
+            Subject = $"[{request.TemplateCode}]",
+            BodySnapshot = null,
+            BodyFormat = PEMS.Domain.Enums.EmailBodyFormat.HTML,
+            Status = "QUEUED",
+            SentBy = request.SentBy,
+            CreatedAt = now,
+            LastAttemptAt = now,
+        };
+        sentEmail.Recipients.Add(new SentEmailRecipient
+        {
+            RecipientEmail = request.To.Email,
+            RecipientName = request.To.DisplayName,
+            RecipientType = EmailRecipientTypes.To,
+            DeliveryStatus = "QUEUED",
+            CreatedAt = now,
+        });
+
+        _db.SentEmails.Add(sentEmail);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return new PreparedSystemEmail(
+            sentEmail.SentEmailId,
+            sentEmail.Recipients.First().SentEmailRecipientId,
+            EmailTemplateId: 1,
+            request.TemplateCode,
+            request.To,
+            sentEmail.Subject,
+            Body: string.Empty,
+            IsHtml: true)
+        {
+            Attachments = request.Attachments ?? Array.Empty<OutboundAttachment>(),
+        };
+    }
+
+    public async Task<EmailDeliveryResult> DeliverAsync(
+        PreparedSystemEmail prepared, CancellationToken cancellationToken = default)
+    {
+        var sentEmail = await _db.SentEmails
+            .FirstOrDefaultAsync(e => e.SentEmailId == prepared.SentEmailId, cancellationToken);
+        var recipient = await _db.SentEmailRecipients
+            .FirstOrDefaultAsync(r => r.SentEmailRecipientId == prepared.SentEmailRecipientId, cancellationToken);
+
+        var now = _mocks.Clock.VietnamNow;
+        if (sentEmail is not null) sentEmail.LastAttemptAt = now;
+
+        if (_mocks.FailEmail)
+        {
+            if (sentEmail is not null)
+            {
+                sentEmail.Status = "FAILED";
+                sentEmail.ErrorMessage = "SMTP down (test)";
+            }
+            if (recipient is not null) recipient.DeliveryStatus = "FAILED";
+            await _db.SaveChangesAsync(cancellationToken);
+            return EmailDeliveryResult.Failed("SMTP_DOWN", "SMTP down (test)");
+        }
+
+        _mocks.SentEmails.Add(new OutboundEmail
+        {
+            To = new[] { prepared.To },
+            Subject = prepared.Subject,
+            Body = prepared.Body,
+            IsHtml = prepared.IsHtml,
+            TemplateCode = prepared.TemplateCode,
+            Attachments = prepared.Attachments,
+        });
+
+        if (sentEmail is not null) { sentEmail.Status = "SENT"; sentEmail.SentAt = now; }
+        if (recipient is not null) { recipient.DeliveryStatus = "SENT"; recipient.SentAt = now; }
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return EmailDeliveryResult.Sent();
+    }
+
+    public async Task<SystemEmailDispatchResult> SendAsync(
+        SystemEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var prepared = await PrepareAsync(request, cancellationToken);
+        var delivery = await DeliverAsync(prepared, cancellationToken);
+        return new SystemEmailDispatchResult(delivery, prepared.SentEmailId, prepared.EmailTemplateId);
     }
 }

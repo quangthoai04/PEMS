@@ -58,6 +58,10 @@ public sealed class VerifyAndCreateVisitRequestV2CommandTests
     /// <summary>Fails loudly if any OTP method is consulted — proves the gate/replay paths never touch OTP.</summary>
     private sealed class ThrowingOtp : IOtpService
     {
+        // Plain settings, not decisions — reading them proves nothing about this path.
+        public int CodeMinutes => 15;
+        public int VisitRequestCodeMinutes => 5;
+
         public Task<string> CreateAsync(User user, string purpose, string? ipAddress, string? userAgent, CancellationToken ct = default)
             => throw new InvalidOperationException("OTP must not be consulted on this path.");
         public Task<string> CreateForEmailAsync(string email, string purpose, string? ipAddress, string? userAgent, CancellationToken ct = default)

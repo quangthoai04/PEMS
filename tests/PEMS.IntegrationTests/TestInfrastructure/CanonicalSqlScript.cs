@@ -57,8 +57,29 @@ public static class CanonicalSqlScript
     /// dialog and stored verbatim in visit_request_campuses.decision_note. Replaced with the short factual
     /// "Campus {name} xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công." No DDL, no
     /// trigger, no row count changed.
+    /// (2026-07-26, sixth bump) EMAIL TEMPLATE CATALOG. Seed data only — no DDL, no trigger, and
+    /// ExpectedBaseTableCount (82) / ExpectedTriggerCount (32) are both unchanged, verified by a fresh
+    /// import before this constant was touched. What changed:
+    ///   • the two legacy email_templates INSERT blocks (16 rows, hard-coded email_template_id 1..16)
+    ///     are replaced by ONE canonical block of 26 rows that writes no id at all;
+    ///   • the 16 follow-up "UPDATE … WHERE email_template_id = N" statements are gone, as is the later
+    ///     patch that set content by template_code for codes the seed never contained
+    ///     (VISIT_INVITATION, NEWS_REVIEW);
+    ///   • the 25 seeded sent_emails rows keep their id, subject, body_snapshot, recipients, status and
+    ///     provider/thread metadata, but their email_template_id becomes NULL, because every one of them
+    ///     referenced a template that is no longer part of the catalog. Nothing was re-pointed at a
+    ///     different template.
+    /// (2026-07-26, seventh bump) FOUR ACCOUNT TEMPLATES, seed text only. Reconciling the catalog with
+    /// behaviour the code already had:
+    ///   • ACCOUNT_EMAIL_CHANGED_OLD_NOTICE and ACCOUNT_PENDING_EMAIL_CHANGED_OLD_NOTICE now carry NO
+    ///     variables. They go to the address that was just unlinked, which may belong to somebody who
+    ///     mistyped their own — naming the account holder or the new address to them is a leak the
+    ///     handlers deliberately avoided, and the first draft of this catalog would have introduced it;
+    ///   • ACCOUNT_STAFF_LEADER_ASSIGNED and _REPLACED gained {{reason}}, which both emails already
+    ///     showed and which is a required input of the replace-leader command.
+    /// No DDL, no trigger, no row count changed.
     public const string ExpectedSha256 =
-        "5ba7daac9667e1b06eee4e6c28c02b120472b4ad37e90732328966f87c8b24ce";
+        "51e178bb5e56fc927fd896e2a87ed8015043a2ca4904b4e1d9df581b2caae8a1";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

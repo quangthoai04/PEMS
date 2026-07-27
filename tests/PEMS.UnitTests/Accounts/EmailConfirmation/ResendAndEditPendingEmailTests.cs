@@ -1,4 +1,4 @@
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -7,6 +7,7 @@ using PEMS.Application.Accounts.Commands.ResendAccountEmailConfirmation;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.UnitTests.TestInfrastructure;
@@ -31,7 +32,8 @@ public class ResendAndEditPendingEmailTests
         public FakeCurrentUserService Actor { get; } = new();   // Staff Leader, campus 1
         public FakeDateTimeService Clock { get; } = new();
         public Mock<IAccountEmailConfirmationService> Confirmations { get; } = new();
-        public Mock<IEmailService> Email { get; } = new();
+
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
 
         public Harness()
         {
@@ -39,13 +41,11 @@ public class ResendAndEditPendingEmailTests
                     It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("raw");
             Confirmations.Setup(c => c.BuildConfirmUrl(It.IsAny<string>())).Returns("http://x/confirm-email?token=raw");
-            Email.Setup(e => e.TrySendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(EmailDeliveryResult.Sent());
+            Confirmations.Setup(c => c.ExpiryHours).Returns(24);
         }
 
-        public ResendAccountEmailConfirmationCommandHandler Resend() => new(Db, Actor, Clock, Confirmations.Object, Email.Object);
-        public EditPendingAccountEmailCommandHandler Edit() => new(Db, Actor, Clock, Confirmations.Object, Email.Object);
+        public ResendAccountEmailConfirmationCommandHandler Resend() => new(Db, Actor, Clock, Confirmations.Object, Dispatcher);
+        public EditPendingAccountEmailCommandHandler Edit() => new(Db, Actor, Clock, Confirmations.Object, Dispatcher);
     }
 
     private static User SeedUser(Harness h, string? status = null, string email = OwnerEmail, ulong campus = CampusA)
@@ -134,6 +134,15 @@ public class ResendAndEditPendingEmailTests
         Assert.True(res.Success);
         Assert.Equal("SENT", res.EmailNotificationStatus);
         h.Confirmations.Verify(c => c.IssuePendingAsync(TargetUserId, OwnerEmail, true, It.IsAny<CancellationToken>()), Times.Once);
+
+        // The content is the template's, not the handler's.
+        var sent = Assert.Single(h.Dispatcher.Sent);
+        Assert.Equal(SystemEmailTemplates.AccountEmailConfirmation, sent.TemplateCode);
+        Assert.Equal(OwnerEmail, sent.To.Email);
+        Assert.Equal("24", sent.Variables["expiresInHours"]);
+        // The one-time link reaches the body only as a trusted block.
+        Assert.Contains("confirm-email?token=raw", sent.TrustedBlocks![EmailTrustedBlocks.ActionBlock]);
+        Assert.DoesNotContain(sent.Variables.Values, v => v.Contains("token=raw"));
     }
 
     // ── Edit email ─────────────────────────────────────────────────────────
@@ -200,5 +209,20 @@ public class ResendAndEditPendingEmailTests
         Assert.Equal("new.owner@fpt.edu.vn", user.Email);
         // A fresh token bound to the NEW email is issued (the old one is superseded / no longer matches).
         h.Confirmations.Verify(c => c.IssuePendingAsync(TargetUserId, "new.owner@fpt.edu.vn", false, It.IsAny<CancellationToken>()), Times.Once);
+
+        Assert.Equal(2, h.Dispatcher.Sent.Count);
+
+        var confirmation = h.Dispatcher.Sent[0];
+        Assert.Equal(SystemEmailTemplates.AccountEmailConfirmation, confirmation.TemplateCode);
+        Assert.Equal("new.owner@fpt.edu.vn", confirmation.To.Email);   // the link goes to the NEW address only
+
+        // The notice to the address being unlinked says nothing about whose account it was: no variables,
+        // and no display name in the To header either. That address may belong to an uninvolved stranger.
+        var notice = h.Dispatcher.Sent[1];
+        Assert.Equal(SystemEmailTemplates.AccountPendingEmailChangedOldNotice, notice.TemplateCode);
+        Assert.Equal(OwnerEmail, notice.To.Email);
+        Assert.Null(notice.To.DisplayName);
+        Assert.Empty(notice.Variables);
+        Assert.Null(notice.TrustedBlocks);
     }
 }

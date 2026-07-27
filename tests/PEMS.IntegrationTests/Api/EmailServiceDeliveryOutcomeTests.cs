@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Infrastructure.Email;
 using Xunit;
@@ -27,7 +28,9 @@ public sealed class EmailServiceDeliveryOutcomeTests
         public bool Dispatched { get; private set; }
 
         public TestEmailService(IConfiguration config, IHostEnvironment env, bool throwOnDispatch)
-            : base(config, NullLogger<EmailService>.Instance, env) => _throwOnDispatch = throwOnDispatch;
+            : base(config, NullLogger<EmailService>.Instance, env,
+                   Options.Create(new PEMS.Application.Emails.Common.EmailRecipientOptions()))
+            => _throwOnDispatch = throwOnDispatch;
 
         protected override Task DispatchAsync(MailMessage message, SmtpConfig config, CancellationToken cancellationToken)
         {

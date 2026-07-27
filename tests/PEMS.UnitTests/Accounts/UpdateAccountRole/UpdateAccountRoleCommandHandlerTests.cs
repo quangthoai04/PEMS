@@ -29,16 +29,13 @@ public class UpdateAccountRoleCommandHandlerTests
         public FakeCurrentUserService Actor { get; } = new();     // Staff Leader, id 900, campus 1
         public FakeDateTimeService Clock { get; } = new();
         public RecordingSessionService Sessions { get; }
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
         public UpdateAccountRoleCommandHandler Handler { get; }
 
         public Harness()
         {
             Sessions = new RecordingSessionService(Db);
-            Email.Setup(e => e.SendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-            Handler = new UpdateAccountRoleCommandHandler(Db, Actor, Sessions, Clock, Email.Object);
+            Handler = new UpdateAccountRoleCommandHandler(Db, Actor, Sessions, Clock, Dispatcher);
         }
 
         public Task<UpdateAccountRoleResponse> Run(UpdateAccountRoleCommand cmd)

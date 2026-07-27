@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using PEMS.Application.Accounts.Commands.ConfirmAccountEmail;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.UnitTests.TestInfrastructure;
@@ -26,6 +27,7 @@ public class ConfirmAccountEmailCommandHandlerTests
         public string BuildPublicActionUrl(string rawToken) => "http://x/" + rawToken;
         public string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId) => "http://x";
         public string BuildLogisticsDetailUrl(ulong logisticsItemId) => "http://x";
+        public string BuildVisitInstanceDetailUrl(ulong visitRequestId, ulong visitInstanceId) => "http://x";
     }
 
     private const ulong UserId = 700;
@@ -35,16 +37,15 @@ public class ConfirmAccountEmailCommandHandlerTests
     {
         public TestApplicationDbContext Db { get; } = TestApplicationDbContext.Create();
         public FakeDateTimeService Clock { get; } = new();
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
+        public Mock<PEMS.Application.Accounts.Common.IAccountEmailConfirmationService> Confirmations { get; } = new();
         public FakeTokens Tokens { get; } = new();
         public ConfirmAccountEmailCommandHandler Handler { get; }
 
         public Harness()
         {
-            Email.Setup(e => e.TrySendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(EmailDeliveryResult.Sent());
-            Handler = new ConfirmAccountEmailCommandHandler(Db, Tokens, Clock, Email.Object);
+            Confirmations.Setup(c => c.BuildLoginUrl()).Returns("http://x/login");
+            Handler = new ConfirmAccountEmailCommandHandler(Db, Tokens, Clock, Dispatcher, Confirmations.Object);
         }
 
         public Task<ConfirmAccountEmailResponse> Confirm(string token) =>
@@ -86,6 +87,22 @@ public class ConfirmAccountEmailCommandHandlerTests
         var row = await h.Db.AccountEmailConfirmations.SingleAsync();
         Assert.Equal(AccountEmailConfirmationStatuses.Confirmed, row.Status);
         Assert.NotNull(row.ConfirmedAt);
+
+        // The "you can sign in now" mail is sent ONLY here — after confirmation — and comes from the
+        // activated template, not from a string in this handler.
+        var sent = h.Dispatcher.Single(SystemEmailTemplates.AccountActivated);
+        Assert.Equal(Email, sent.To.Email);
+        Assert.Contains("http://x/login", sent.TrustedBlocks![EmailTrustedBlocks.ActionBlock]);
+    }
+
+    [Fact]
+    public async Task An_unusable_token_sends_no_activation_mail()
+    {
+        var h = Seed("valid", expiresAt: new FakeDateTimeService().VietnamNow.AddHours(-1));
+
+        await h.Confirm("valid");
+
+        Assert.Empty(h.Dispatcher.Sent);
     }
 
     [Fact]

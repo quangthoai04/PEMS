@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Infrastructure.Email;
 using Xunit;
 
@@ -80,7 +82,13 @@ public sealed class FileSinkEmailServiceGuardTests
             Environment.SetEnvironmentVariable(FileSinkEmailService.PathEnvVar, inbox);
             var sink = new FileSinkEmailService(NullLogger<FileSinkEmailService>.Instance);
 
-            await sink.SendVisitRequestOtpAsync("Reg@Example.com", "Reg", "654321");
+            await sink.SendAsync(new OutboundEmail
+            {
+                To = new[] { new EmailRecipient("Reg@Example.com") },
+                Subject = "[PEMS] Xác thực đăng ký tham quan",
+                Body = "<p>Mã: 654321</p>",
+                TemplateCode = SystemEmailTemplates.VisitRequestOtp,
+            });
             await sink.SendAsync("contact@example.com", "Lời mời",
                 "<a href=\"https://app.local/visit-contact-claim/RAW-TOKEN-123\">Xác nhận</a>");
 
@@ -90,11 +98,16 @@ public sealed class FileSinkEmailServiceGuardTests
             var otp = JsonSerializer.Deserialize<JsonElement>(lines[0]);
             Assert.Equal("VISIT_REQUEST_OTP", otp.GetProperty("kind").GetString());
             Assert.Equal("654321", otp.GetProperty("code").GetString());
-            Assert.Equal("reg@example.com", otp.GetProperty("to").GetString()); // normalized
+            // The envelope is recorded as three groups so an E2E can assert BCC privacy; addresses are
+            // normalized to lower case for matching.
+            Assert.Equal("reg@example.com", otp.GetProperty("to")[0].GetProperty("email").GetString());
+            Assert.Empty(otp.GetProperty("cc").EnumerateArray());
+            Assert.Empty(otp.GetProperty("bcc").EnumerateArray());
 
             var invite = JsonSerializer.Deserialize<JsonElement>(lines[1]);
             Assert.Equal("GENERIC", invite.GetProperty("kind").GetString());
             Assert.Contains("visit-contact-claim/RAW-TOKEN-123", invite.GetProperty("link").GetString());
+            Assert.Equal("contact@example.com", invite.GetProperty("to")[0].GetProperty("email").GetString());
         }
         finally
         {
