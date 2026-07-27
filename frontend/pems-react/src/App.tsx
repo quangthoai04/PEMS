@@ -73,7 +73,6 @@ import { SessionManagement } from './pages/dashboard/admin/SessionManagement';
 import { SecurityMonitoring } from './pages/dashboard/admin/SecurityMonitoring';
 import { AuditLogManagement } from './pages/dashboard/admin/AuditLogManagement';
 
-import { LoginPage } from './pages/auth/LoginPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
@@ -110,7 +109,7 @@ const PlaceholderPage = ({ title }: { title: string }) => (
   </div>
 );
 
-const BARE_ROUTES = ['/login', '/forgot-password', '/reset-password', '/change-password', '/403', '/invalid-account'];
+const BARE_ROUTES = ['/forgot-password', '/reset-password', '/change-password', '/403', '/invalid-account'];
 
 export default function App() {
   const location = useLocation();
@@ -150,7 +149,7 @@ export default function App() {
           <Route path="/faq" element={<FAQPage />} />
 
           {/* Authentication Routes */}
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/confirm-email" element={<ConfirmEmailPage />} />

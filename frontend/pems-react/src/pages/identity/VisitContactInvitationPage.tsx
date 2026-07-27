@@ -186,7 +186,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                 <button
                   type="button"
                   className="w-full rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700"
-                  onClick={() => navigate(`/login?returnUrl=${encodeURIComponent(window.location.pathname)}`)}
+                  onClick={() => navigate(`/?login=true&returnUrl=${encodeURIComponent(window.location.pathname)}`)}
                 >
                   Đăng nhập bằng Google
                 </button>

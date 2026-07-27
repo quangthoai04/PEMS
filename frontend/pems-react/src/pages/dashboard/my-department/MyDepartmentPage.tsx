@@ -90,7 +90,7 @@ export function MyDepartmentPage() {
   useEffect(() => {
     if (!list.scopeLost) return;
     toast.error('Bạn không còn quyền quản lý phòng ban. Vui lòng đăng nhập lại.');
-    void logout().finally(() => navigate('/login', { replace: true }));
+    void logout().finally(() => navigate('/', { replace: true }));
   }, [list.scopeLost, logout, navigate]);
 
   // ── Detail ──────────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ export function MyDepartmentPage() {
       // on a screen every request will now reject.
       if (result.actorMustSignInAgain) {
         await logout();
-        navigate('/login', { replace: true });
+        navigate('/', { replace: true });
       } else {
         await list.refreshAll();
       }
