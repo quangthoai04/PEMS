@@ -48,17 +48,17 @@ export function TransferLeadershipModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <Crown className="h-5 w-5 text-amber-500" />
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between bg-[#004c91] px-6 py-4">
+          <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+            <Crown className="h-5 w-5 text-amber-300" />
             Đổi trưởng phòng
           </h3>
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+            className="rounded-lg p-1 text-blue-200 outline-none transition hover:bg-white/15 hover:text-white disabled:opacity-50"
             aria-label="Đóng"
           >
             <X className="h-5 w-5" />
@@ -101,10 +101,10 @@ export function TransferLeadershipModal({
                   {items.map((candidate) => (
                     <label
                       key={candidate.userId}
-                      className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition ${
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition ${
                         selectedId === candidate.userId
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:bg-gray-50'
+                          ? 'border-[#004c91] bg-blue-50 ring-1 ring-[#004c91]/20'
+                          : 'border-gray-200 hover:border-[#004c91]/40 hover:bg-blue-50/40'
                       }`}
                     >
                       <input
@@ -114,10 +114,10 @@ export function TransferLeadershipModal({
                         checked={selectedId === candidate.userId}
                         onChange={() => setSelectedId(candidate.userId)}
                         disabled={submitting}
-                        className="h-4 w-4 text-blue-600"
+                        className="h-4 w-4 accent-[#004c91]"
                       />
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-gray-900">
+                        <span className="block truncate text-sm font-bold text-[#004c91]">
                           {candidate.fullName}
                         </span>
                         <span className="block truncate text-xs text-gray-500">{candidate.email}</span>
@@ -148,7 +148,7 @@ export function TransferLeadershipModal({
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 outline-none transition hover:bg-gray-50 disabled:opacity-50"
               >
                 Hủy
               </button>
@@ -157,7 +157,7 @@ export function TransferLeadershipModal({
                   type="button"
                   onClick={() => selectedId !== null && onConfirm(selectedId)}
                   disabled={submitting || selectedId === null}
-                  className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white outline-none transition hover:bg-amber-700 disabled:opacity-60"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                   Xác nhận đổi trưởng phòng

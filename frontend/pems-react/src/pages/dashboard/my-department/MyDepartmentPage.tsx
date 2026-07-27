@@ -14,15 +14,19 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Building2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Crown,
   Eye,
   Loader2,
+  Lock,
+  MailCheck,
   MapPin,
   Plus,
   Search,
   UserCheck,
+  UserMinus,
   Users,
 } from 'lucide-react';
 
@@ -174,6 +178,7 @@ export function MyDepartmentPage() {
     setResending(true);
     try {
       const result = await departmentLeaderPersonnelApi.resendEmailConfirmation(detail.userId);
+      // A 200 means the request was accepted, not that the mail left the server — report which.
       if (result.emailNotificationStatus === 'SENT') toast.success(result.message);
       else toast(result.message, { icon: '⚠️', duration: 6000 });
     } catch (error) {
@@ -267,108 +272,144 @@ export function MyDepartmentPage() {
   const startIndex = page ? (page.page - 1) * page.pageSize : 0;
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="space-y-6 p-4 pb-12 sm:p-6">
       {/* Breadcrumb */}
-      <nav className="text-sm text-gray-500">
-        <button type="button" onClick={() => navigate('/dashboard')} className="hover:text-gray-700">
+      <nav className="text-sm font-medium text-gray-500">
+        <button type="button" onClick={() => navigate('/dashboard')} className="hover:text-[#004c91]">
           Trang chủ
         </button>
-        <span className="mx-2">/</span>
-        <span className="font-medium text-gray-900">Phòng ban của tôi</span>
+        <span className="mx-2 text-gray-300">/</span>
+        <span className="font-semibold text-[#004c91]">Phòng ban của tôi</span>
       </nav>
 
-      {/* Department header */}
-      <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-        {list.isLoadingDepartment ? (
-          <div className="flex items-center gap-2 text-gray-500">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Đang tải thông tin phòng ban...</span>
-          </div>
-        ) : list.departmentError ? (
-          <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{list.departmentError}</p>
-        ) : (
-          department && (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h1 className="flex items-center gap-2 text-2xl font-semibold text-gray-900">
-                    <Building2 className="h-6 w-6 text-blue-600" />
-                    {department.departmentName}
-                  </h1>
-                  <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
-                    <span className="flex items-center gap-1.5">
-                      <MapPin className="h-4 w-4 text-gray-400" />
-                      {department.campusName}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Crown className="h-4 w-4 text-amber-500" />
-                      Trưởng phòng: {department.currentLeaderName ?? '—'}
-                    </span>
+      {/* Department header — navy hero. The statistics live inside it so the page opens on the brand
+          colour instead of a wall of white cards. */}
+      <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-[#004c91] to-[#00386b] p-6 shadow-[0_10px_35px_-10px_rgba(0,76,145,0.55)] sm:p-7">
+        {/* Decorative glow — purely cosmetic, kept behind the content. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/10 blur-2xl"
+        />
+
+        <div className="relative">
+          {list.isLoadingDepartment ? (
+            <div className="flex items-center gap-2 text-blue-100">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm font-medium">Đang tải thông tin phòng ban...</span>
+            </div>
+          ) : list.departmentError ? (
+            <p className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-red-700">
+              {list.departmentError}
+            </p>
+          ) : (
+            department && (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h1 className="flex items-center gap-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+                        <Building2 className="h-6 w-6 text-white" />
+                      </span>
+                      {department.departmentName}
+                    </h1>
+                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-sm font-medium text-blue-100">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="h-4 w-4 text-blue-200" />
+                        {department.campusName}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Crown className="h-4 w-4 text-amber-300" />
+                        Trưởng phòng:{' '}
+                        <strong className="font-bold text-white">
+                          {department.currentLeaderName ?? '—'}
+                        </strong>
+                      </span>
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void openTransfer(null)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2.5 text-sm font-bold text-white outline-none transition hover:bg-white/20 focus:ring-2 focus:ring-white/50"
+                  >
+                    <Crown className="h-4 w-4 text-amber-300" />
+                    Đổi trưởng phòng
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => void openTransfer(null)}
-                  className="inline-flex items-center gap-2 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
-                >
-                  <Crown className="h-4 w-4" />
-                  Đổi trưởng phòng
-                </button>
-              </div>
-
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                <StatCard
-                  label="Tổng nhân sự"
-                  value={department.totalPersonnelCount}
-                  icon={<Users className="h-5 w-5 text-blue-600" />}
-                />
-                <StatCard
-                  label="Hoạt động"
-                  value={department.activePersonnelCount}
-                  icon={<UserCheck className="h-5 w-5 text-green-600" />}
-                />
-                <StatCard label="Vô hiệu hóa" value={department.inactivePersonnelCount} />
-                <StatCard label="Chờ xác nhận email" value={department.pendingEmailConfirmationCount} />
-                <StatCard label="Bị khóa" value={department.lockedPersonnelCount} />
-              </div>
-            </>
-          )
-        )}
+                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  <StatCard
+                    label="Tổng nhân sự"
+                    value={department.totalPersonnelCount}
+                    icon={<Users className="h-4 w-4" />}
+                  />
+                  <StatCard
+                    label="Hoạt động"
+                    value={department.activePersonnelCount}
+                    icon={<UserCheck className="h-4 w-4" />}
+                    accent="text-emerald-300"
+                  />
+                  <StatCard
+                    label="Vô hiệu hóa"
+                    value={department.inactivePersonnelCount}
+                    icon={<UserMinus className="h-4 w-4" />}
+                    accent="text-slate-300"
+                  />
+                  <StatCard
+                    label="Chờ xác nhận email"
+                    value={department.pendingEmailConfirmationCount}
+                    icon={<MailCheck className="h-4 w-4" />}
+                    accent="text-amber-300"
+                  />
+                  <StatCard
+                    label="Bị khóa"
+                    value={department.lockedPersonnelCount}
+                    icon={<Lock className="h-4 w-4" />}
+                    accent="text-rose-300"
+                  />
+                </div>
+              </>
+            )
+          )}
+        </div>
       </section>
 
-      {/* Toolbar */}
-      <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 border-b p-4">
-          <div className="relative min-w-[220px] flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      {/* Toolbar + table */}
+      <section className="overflow-hidden rounded-[2rem] border border-[#004c91] bg-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)]">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[#00386b] bg-[#004c91] p-5">
+          <div className="relative min-w-[240px] flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-200" />
             <input
               type="text"
               value={list.keyword}
               onChange={(e) => list.setKeyword(e.target.value)}
               placeholder="Tìm theo tên, email hoặc số điện thoại..."
-              className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+              className="w-full rounded-2xl border-none bg-white/10 py-2.5 pl-11 pr-4 text-sm text-white shadow-inner outline-none transition placeholder:text-blue-200 focus:bg-white/20 focus:ring-2 focus:ring-white/50"
             />
           </div>
 
-          <select
-            value={list.status}
-            onChange={(e) => list.setStatus(e.target.value as PersonnelStatusFilter)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-          >
-            {STATUS_FILTER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={list.status}
+              onChange={(e) => list.setStatus(e.target.value as PersonnelStatusFilter)}
+              className="w-full appearance-none rounded-2xl border-none bg-white/10 py-2.5 pl-4 pr-10 text-sm font-medium text-white shadow-inner outline-none transition focus:bg-white/20 focus:ring-2 focus:ring-white/50"
+            >
+              {STATUS_FILTER_OPTIONS.map((option) => (
+                // Native option lists render on the OS surface, so they need their own dark text.
+                <option key={option.value} className="text-gray-900" value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white opacity-70" />
+          </div>
 
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#f37021] px-4 py-2.5 text-sm font-bold text-white shadow-sm shadow-orange-500/20 outline-none transition hover:bg-[#e85c0d] hover:shadow-md hover:shadow-orange-500/40 focus:ring-2 focus:ring-orange-300"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 stroke-[2.5]" />
             Thêm nhân sự
           </button>
         </div>
@@ -376,14 +417,14 @@ export function MyDepartmentPage() {
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <thead className="border-b border-gray-200 bg-[#f8fafc] text-[11px] uppercase tracking-widest text-gray-500">
               <tr>
-                <th className="px-4 py-3 font-medium">STT</th>
-                <th className="px-4 py-3 font-medium">Họ và tên</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Trạng thái</th>
-                <th className="px-4 py-3 font-medium">Chức vụ</th>
-                <th className="px-4 py-3 text-right font-medium">Hành động</th>
+                <th className="px-4 py-4 pl-6 font-black">STT</th>
+                <th className="px-4 py-4 font-black">Họ và tên</th>
+                <th className="px-4 py-4 font-black">Email</th>
+                <th className="px-4 py-4 font-black">Trạng thái</th>
+                <th className="px-4 py-4 font-black">Chức vụ</th>
+                <th className="px-4 py-4 pr-6 text-right font-black">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -403,7 +444,7 @@ export function MyDepartmentPage() {
                     <button
                       type="button"
                       onClick={() => void list.refreshList()}
-                      className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      className="rounded-xl border border-[#004c91] px-4 py-2 text-sm font-bold text-[#004c91] outline-none transition hover:bg-blue-50"
                     >
                       Thử lại
                     </button>
@@ -431,50 +472,64 @@ export function MyDepartmentPage() {
               {!list.isLoadingList &&
                 !list.listError &&
                 rows.map((row, index) => (
-                  <tr key={row.userId} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-500">{startIndex + index + 1}</td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-2 font-medium text-gray-900">
+                  <tr key={row.userId} className="transition-colors hover:bg-blue-50/40">
+                    <td className="px-4 py-3.5 pl-6 text-sm font-bold text-[#004c91]">
+                      {startIndex + index + 1}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="flex items-center gap-2 font-bold text-[#004c91]">
                         {row.fullName}
                         {row.subRole === 'LEADER' && (
                           <Crown className="h-4 w-4 text-amber-500" aria-label="Trưởng phòng" />
                         )}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{row.email}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5 text-gray-600">{row.email}</td>
+                    <td className="px-4 py-3.5">
                       <PersonnelStatusBadge status={row.status} />
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{row.position}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
+                    <td className="px-4 py-3.5 font-medium text-gray-600">{row.position}</td>
+                    <td className="px-4 py-3.5 pr-6">
+                      <div className="flex items-center justify-end gap-2">
                         {row.canView && (
                           <button
                             type="button"
                             onClick={() => void openDetail(row.userId)}
                             title="Xem chi tiết"
-                            className="rounded p-1.5 text-blue-600 hover:bg-blue-50"
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm outline-none transition-all hover:border-[#004c91] hover:bg-blue-50 hover:text-[#004c91]"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
                         )}
-                        {row.canDisable && (
-                          <button
-                            type="button"
-                            onClick={() => void openStatusImpact(row, 'INACTIVE')}
-                            className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                        {/* Enable/disable is one switch, not two buttons: the two actions are mutually
+                            exclusive per row, and `canDisable` is exactly "this account is on and you
+                            may turn it off". The switch never writes — it opens the impact preview,
+                            which is what actually confirms the change. */}
+                        {row.canDisable || row.canEnable ? (
+                          <label
+                            className="relative ml-1 flex cursor-pointer items-center"
+                            title={row.canDisable ? 'Vô hiệu hóa' : 'Kích hoạt'}
                           >
-                            Vô hiệu hóa
-                          </button>
-                        )}
-                        {row.canEnable && (
-                          <button
-                            type="button"
-                            onClick={() => void openStatusImpact(row, 'ACTIVE')}
-                            className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50"
-                          >
-                            Kích hoạt
-                          </button>
+                            <input
+                              type="checkbox"
+                              className="peer sr-only"
+                              checked={row.canDisable}
+                              onChange={() =>
+                                void openStatusImpact(row, row.canDisable ? 'INACTIVE' : 'ACTIVE')
+                              }
+                            />
+                            <div className="relative h-5 w-10 rounded-full bg-gray-200 transition-colors peer-checked:bg-[#004c91] peer-focus-visible:ring-2 peer-focus-visible:ring-[#004c91]/40">
+                              <div
+                                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                                  row.canDisable ? 'translate-x-5' : 'translate-x-0'
+                                }`}
+                              />
+                            </div>
+                          </label>
+                        ) : (
+                          // Leader, locked and pending rows have no status action — say so instead of
+                          // leaving a gap that reads as a missing control.
+                          <span className="ml-1 text-sm text-gray-300">—</span>
                         )}
                       </div>
                     </td>
@@ -486,22 +541,26 @@ export function MyDepartmentPage() {
 
         {/* Pagination */}
         {page && page.totalItems > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-sm">
-            <div className="flex items-center gap-2 text-gray-600">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/60 px-6 py-4 text-sm">
+            <div className="flex items-center gap-2 font-medium text-gray-500">
               <span>Hiển thị</span>
-              <select
-                value={list.pageSize}
-                onChange={(e) => list.setPageSize(Number(e.target.value))}
-                className="rounded-md border border-gray-300 px-2 py-1 outline-none focus:border-blue-500"
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={list.pageSize}
+                  onChange={(e) => list.setPageSize(Number(e.target.value))}
+                  className="appearance-none rounded-lg border border-gray-200 bg-white px-3 py-1.5 pr-8 font-bold text-gray-700 outline-none focus:ring-2 focus:ring-[#004c91]/20"
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              </div>
               <span>
-                / {page.totalItems} nhân sự — trang {page.page}/{page.totalPages}
+                / <strong className="font-bold text-[#004c91]">{page.totalItems}</strong> nhân sự — trang{' '}
+                <strong className="font-bold text-[#004c91]">{page.page}</strong>/{page.totalPages}
               </span>
             </div>
 
@@ -510,7 +569,7 @@ export function MyDepartmentPage() {
                 type="button"
                 onClick={() => list.setCurrentPage(page.page - 1)}
                 disabled={!page.hasPreviousPage || list.isLoadingList}
-                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-bold text-gray-600 outline-none transition-all hover:border-[#004c91] hover:bg-blue-50 hover:text-[#004c91] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:hover:text-gray-600"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Trước
@@ -519,7 +578,7 @@ export function MyDepartmentPage() {
                 type="button"
                 onClick={() => list.setCurrentPage(page.page + 1)}
                 disabled={!page.hasNextPage || list.isLoadingList}
-                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-bold text-gray-600 outline-none transition-all hover:border-[#004c91] hover:bg-blue-50 hover:text-[#004c91] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:hover:text-gray-600"
               >
                 Sau
                 <ChevronRight className="h-4 w-4" />
@@ -547,9 +606,7 @@ export function MyDepartmentPage() {
         resending={resending}
         onClose={() => setDetailOpen(false)}
         onEdit={openEdit}
-        onChangeStatus={(target) => detail && void openStatusImpact(detail, target)}
         onResendConfirmation={() => void handleResend()}
-        onTransferLeadership={() => void openTransfer(detail?.userId ?? null)}
       />
 
       <StatusImpactModal
@@ -578,22 +635,29 @@ export function MyDepartmentPage() {
   );
 }
 
+/**
+ * Statistic tile rendered on the navy hero, so it is translucent white rather than a card of its
+ * own. `accent` colours only the icon — the number stays white so the five tiles stay scannable as
+ * one row instead of reading as five unrelated statuses.
+ */
 function StatCard({
   label,
   value,
   icon,
+  accent = 'text-blue-200',
 }: {
   label: string;
   value: number;
   icon?: React.ReactNode;
+  accent?: string;
 }) {
   return (
-    <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
-        {icon}
-        <span>{label}</span>
+    <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm transition-colors hover:bg-white/15">
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-blue-100">
+        {icon && <span className={accent}>{icon}</span>}
+        <span className="truncate">{label}</span>
       </div>
-      <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
+      <p className="mt-1.5 text-2xl font-black leading-none tracking-tight text-white">{value}</p>
     </div>
   );
 }

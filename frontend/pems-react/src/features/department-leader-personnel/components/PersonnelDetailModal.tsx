@@ -15,17 +15,19 @@ interface Props {
   resending: boolean;
   onClose: () => void;
   onEdit: () => void;
-  onChangeStatus: (target: 'ACTIVE' | 'INACTIVE') => void;
   onResendConfirmation: () => void;
-  onTransferLeadership: () => void;
 }
 
 /**
  * Read-only detail view, loaded from the detail API rather than the list row — a row is a summary
  * and lacks fields (last login, updated-at, campus id) the modal shows and the edit form needs.
  *
- * Every action button is gated on the backend's `can*` flag. Those flags are a rendering hint only;
- * the corresponding command re-derives the same rule, so a hidden button is convenience, not the
+ * Only two actions live here. Enabling/disabling is the switch in the table row and handing over
+ * leadership is the header button, so neither is duplicated; resending the confirmation email has
+ * no other entry point in the product, so it stays.
+ *
+ * Both buttons are gated on the backend's `can*` flags. Those flags are a rendering hint only; the
+ * corresponding command re-derives the same rule, so a hidden button is convenience, not the
  * security boundary.
  */
 export function PersonnelDetailModal({
@@ -36,21 +38,19 @@ export function PersonnelDetailModal({
   resending,
   onClose,
   onEdit,
-  onChangeStatus,
   onResendConfirmation,
-  onTransferLeadership,
 }: Props) {
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">Thông tin nhân sự</h3>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between bg-[#004c91] px-6 py-4">
+          <h3 className="text-lg font-bold text-white">Thông tin nhân sự</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="rounded-lg p-1 text-blue-200 outline-none transition hover:bg-white/15 hover:text-white"
             aria-label="Đóng"
           >
             <X className="h-5 w-5" />
@@ -75,7 +75,7 @@ export function PersonnelDetailModal({
             <div className="space-y-5 px-6 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="flex items-center gap-2 text-xl font-semibold text-gray-900">
+                  <p className="flex items-center gap-2 text-xl font-bold text-[#004c91]">
                     {personnel.fullName}
                     {personnel.isCurrentDepartmentLeader && (
                       <Crown className="h-5 w-5 text-amber-500" aria-label="Trưởng phòng đương nhiệm" />
@@ -116,60 +116,39 @@ export function PersonnelDetailModal({
               )}
             </div>
 
-            <div className="flex flex-wrap justify-end gap-3 border-t px-6 py-4">
-              {personnel.canResendEmailConfirmation && (
-                <button
-                  type="button"
-                  onClick={onResendConfirmation}
-                  disabled={resending}
-                  className="inline-flex items-center gap-2 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-                >
-                  {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                  Gửi lại email xác nhận
-                </button>
-              )}
+            {/* Rendered only when there is something to put in it — an empty action bar reads as a
+                control that failed to load. Closing is the header's X. */}
+            {(personnel.canResendEmailConfirmation || personnel.canEdit) && (
+              <div className="flex flex-wrap justify-end gap-3 border-t bg-gray-50/60 px-6 py-4">
+                {/* Only true while the account is still waiting on email confirmation, and the only
+                    place in the product this can be triggered from. */}
+                {personnel.canResendEmailConfirmation && (
+                  <button
+                    type="button"
+                    onClick={onResendConfirmation}
+                    disabled={resending}
+                    className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-bold text-amber-700 outline-none transition hover:bg-amber-50 disabled:opacity-60"
+                  >
+                    {resending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mail className="h-4 w-4" />
+                    )}
+                    Gửi lại email xác nhận
+                  </button>
+                )}
 
-              {personnel.canTransferLeadershipTo && (
-                <button
-                  type="button"
-                  onClick={onTransferLeadership}
-                  className="inline-flex items-center gap-2 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
-                >
-                  <Crown className="h-4 w-4" />
-                  Chọn làm trưởng phòng
-                </button>
-              )}
-
-              {personnel.canDisable && (
-                <button
-                  type="button"
-                  onClick={() => onChangeStatus('INACTIVE')}
-                  className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-                >
-                  Vô hiệu hóa
-                </button>
-              )}
-
-              {personnel.canEnable && (
-                <button
-                  type="button"
-                  onClick={() => onChangeStatus('ACTIVE')}
-                  className="rounded-md border border-green-300 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-50"
-                >
-                  Kích hoạt lại
-                </button>
-              )}
-
-              {personnel.canEdit && (
-                <button
-                  type="button"
-                  onClick={onEdit}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  Chỉnh sửa
-                </button>
-              )}
-            </div>
+                {personnel.canEdit && (
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    className="rounded-xl bg-[#004c91] px-4 py-2 text-sm font-bold text-white outline-none transition hover:bg-[#00386b] focus:ring-2 focus:ring-[#004c91]/30"
+                  >
+                    Chỉnh sửa
+                  </button>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

@@ -49,14 +49,14 @@ export function StatusImpactModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between bg-[#004c91] px-6 py-4">
+          <h3 className="text-lg font-bold text-white">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+            className="rounded-lg p-1 text-blue-200 outline-none transition hover:bg-white/15 hover:text-white disabled:opacity-50"
             aria-label="Đóng"
           >
             <X className="h-5 w-5" />
@@ -82,16 +82,20 @@ export function StatusImpactModal({
               Nhân sự: <strong>{personnelName}</strong>
             </p>
 
-            <dl className="grid grid-cols-2 gap-3 rounded-md bg-gray-50 px-4 py-3 text-sm">
+            <dl className="grid grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm">
               <div>
-                <dt className="text-xs uppercase tracking-wide text-gray-500">Trạng thái hiện tại</dt>
-                <dd className="font-medium text-gray-900">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-[#004c91]/70">
+                  Trạng thái hiện tại
+                </dt>
+                <dd className="font-bold text-gray-900">
                   {PERSONNEL_STATUS_LABELS[impact.currentStatus]}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-gray-500">Trạng thái sau thay đổi</dt>
-                <dd className="font-medium text-gray-900">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-[#004c91]/70">
+                  Trạng thái sau thay đổi
+                </dt>
+                <dd className="font-bold text-[#004c91]">
                   {PERSONNEL_STATUS_LABELS[impact.targetStatus]}
                 </dd>
               </div>
@@ -136,7 +140,7 @@ export function StatusImpactModal({
                   disabled={submitting}
                   maxLength={MAX_REASON_LENGTH}
                   rows={3}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 disabled:bg-gray-100"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none transition focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-[#004c91]/25 disabled:bg-gray-100"
                   placeholder="Ví dụ: Nhân sự đã chuyển công tác."
                 />
                 <p className="mt-1 text-xs text-gray-500">
@@ -150,7 +154,7 @@ export function StatusImpactModal({
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 outline-none transition hover:bg-gray-50 disabled:opacity-50"
               >
                 {impact.canChangeStatus ? 'Hủy' : 'Đóng'}
               </button>
@@ -161,7 +165,7 @@ export function StatusImpactModal({
                   type="button"
                   onClick={() => onConfirm(reason.trim())}
                   disabled={submitting}
-                  className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
+                  className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white outline-none transition disabled:opacity-60 ${
                     isDisabling ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
                   }`}
                 >

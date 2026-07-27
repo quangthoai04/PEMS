@@ -106,16 +106,16 @@ export function PersonnelFormModal({ open, mode, personnel, submitting, onClose,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between bg-[#004c91] px-6 py-4">
+          <h3 className="text-lg font-bold text-white">
             {mode === 'create' ? 'Thêm nhân sự mới' : 'Chỉnh sửa thông tin nhân sự'}
           </h3>
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+            className="rounded-lg p-1 text-blue-200 outline-none transition hover:bg-white/15 hover:text-white disabled:opacity-50"
             aria-label="Đóng"
           >
             <X className="h-5 w-5" />
@@ -197,7 +197,7 @@ export function PersonnelFormModal({ open, mode, personnel, submitting, onClose,
             </Field>
 
             {mode === 'create' && (
-              <p className="rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              <p className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-[#004c91]">
                 Nhân sự mới được tạo với vai trò <strong>Nhân viên</strong> trong phòng ban của bạn và ở
                 trạng thái <strong>Chờ xác nhận email</strong> cho tới khi họ xác nhận email.
               </p>
@@ -215,14 +215,14 @@ export function PersonnelFormModal({ open, mode, personnel, submitting, onClose,
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 outline-none transition hover:bg-gray-50 disabled:opacity-50"
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-4 py-2 text-sm font-bold text-white outline-none transition hover:bg-[#00386b] focus:ring-2 focus:ring-[#004c91]/30 disabled:opacity-60"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                 {mode === 'create' ? 'Thêm nhân sự' : 'Lưu thay đổi'}
@@ -269,7 +269,7 @@ function EmailChangeConfirmation({
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Email mới</dt>
-          <dd className="break-all text-right font-medium text-blue-700">{newEmail}</dd>
+          <dd className="break-all text-right font-bold text-[#004c91]">{newEmail}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Trạng thái tài khoản</dt>
@@ -296,14 +296,14 @@ function EmailChangeConfirmation({
           type="button"
           onClick={onBack}
           disabled={submitting}
-          className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 outline-none transition hover:bg-gray-50 disabled:opacity-50"
         >
           Quay lại
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white outline-none transition hover:bg-amber-700 disabled:opacity-60"
         >
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           Xác nhận đổi email
@@ -343,8 +343,8 @@ function Field({
 
 function inputClass(error?: string): string {
   return [
-    'w-full rounded-md border px-3 py-2 text-sm outline-none transition',
-    'focus:ring-2 focus:ring-blue-500/30 disabled:bg-gray-100',
-    error ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-blue-500',
+    'w-full rounded-xl border bg-gray-50 px-3 py-2 text-sm outline-none transition focus:bg-white',
+    'focus:ring-2 focus:ring-[#004c91]/25 disabled:bg-gray-100',
+    error ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-[#004c91]',
   ].join(' ');
 }
