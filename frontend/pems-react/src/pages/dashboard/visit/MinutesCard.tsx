@@ -446,13 +446,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
-      {/* Header — mẫu cũ: nền xanh #004c91, badge số 2 màu cam */}
+      {/* Header — mẫu cũ: nền xanh #004c91, badge số 1 màu cam */}
       <div
         className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
         <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
-          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">2</span>
+          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">1</span>
           Biên bản cuộc họp
         </h2>
         <button type="button" className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">

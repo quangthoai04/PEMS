@@ -346,34 +346,37 @@ export function ParticipantInvitationSection({
   return (
     <div className="space-y-6">
       {/* ── Host chính (read-only) ── */}
-      <div className="rounded-xl border border-gray-200 border-l-[6px] border-l-[#004c91] bg-gradient-to-r from-[#004c91]/[0.03] to-transparent p-5 shadow-sm">
-        <h4 className="mb-3 flex items-center gap-2 text-base font-bold text-[#004c91]">
-          <UserCheck className="w-5 h-5" /> Người phụ trách tiếp đón
-        </h4>
+      <div className="rounded-xl border border-gray-200 border-l-[5px] border-l-[#004c91] bg-white px-4 py-3 shadow-sm">
         {host ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#004c91] font-bold text-white ring-2 ring-blue-100">
-              {host.fullName.charAt(0)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-[#004c91]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+              <span className="flex items-center gap-2 text-sm sm:text-base font-bold text-[#004c91] shrink-0">
+                <UserCheck className="w-5 h-5 text-[#004c91]" />
+                <span>Người phụ trách tiếp đón:</span>
+              </span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#004c91] text-xs font-extrabold text-white shrink-0">
+                {host.fullName.charAt(0)}
+              </div>
+              <span className="text-sm font-bold text-[#004c91] truncate" title={host.fullName}>
                 {host.fullName}
-                {currentUserId != null && host.userId === currentUserId && (
-                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">Bạn phụ trách tiếp đón</span>
-                )}
-              </div>
-              <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" /> {host.email}</span>
-                {host.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" /> {host.phone}</span>}
-                {host.departmentName && <span className="inline-flex items-center gap-1"><Building2 className="w-3 h-3" /> {host.departmentName}</span>}
-              </div>
+              </span>
+              {currentUserId != null && host.userId === currentUserId && (
+                <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">
+                  Bạn phụ trách tiếp đón
+                </span>
+              )}
+              {host.departmentName && (
+                <span className="text-xs text-gray-500 font-medium truncate">
+                  • {host.departmentName}
+                </span>
+              )}
             </div>
-            <span className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">
+            <span className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-[#004c91]">
               {host.statusLabel || 'Đã được phân công'}
             </span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
+          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700">
             <AlertCircle className="w-4 h-4 shrink-0" /> Chưa xác định Host chính cho cơ sở này.
           </div>
         )}
