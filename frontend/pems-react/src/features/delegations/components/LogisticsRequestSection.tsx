@@ -200,6 +200,7 @@ export function LogisticsRequestSection({
   // Mục 4 "Khác": dynamic list of independent create-cards (Part F).
   const otherIdRef = useRef(1);
   const [otherIds, setOtherIds] = useState<number[]>([1]);
+  const [firstOtherMode, setFirstOtherMode] = useState<'none' | 'system' | 'offline'>('none');
 
   const [preview, setPreview] = useState({
     open: false, loading: false, sending: false, restoring: false, error: null as string | null,
@@ -475,7 +476,7 @@ export function LogisticsRequestSection({
       {/* Mục 1: Welcome LED — 3 lựa chọn (none / hệ thống / trao đổi ngoài), state suy ra từ item đã lưu */}
       <MucCard title="Mục 1: Welcome LED" icon={<MonitorPlay className="w-5 h-5 text-[#f37021]" />}
         open={openSection[1]} onToggle={() => toggleSection(1)}>
-        <CategoryCard {...shared} cardKey="led" icon={<MonitorPlay className="w-6 h-6 text-[#f37021]" />}
+        <CategoryCard {...shared} cardKey="led" icon={<MonitorPlay className="w-5 h-5 text-[#f37021]" />}
           label="Welcome LED" itemType="LED" qtyLabel="Số lượng màn" activeItem={activeItem('LED', 'Welcome LED')}
           notePlaceholder="Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế..." />
       </MucCard>
@@ -484,11 +485,11 @@ export function LogisticsRequestSection({
       <MucCard title="Mục 2: Chuẩn bị cho Campus Tour" icon={<MapPin className="w-5 h-5 text-[#f37021]" />}
         open={openSection[2]} onToggle={() => toggleSection(2)}>
         <div className="space-y-8">
-          <CategoryCard {...shared} cardKey="electricCar" icon={<Car className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="electricCar" icon={<Car className="w-5 h-5 text-[#f37021]" />}
             label="Xe điện" itemType="TRANSPORT" qtyLabel="Số lượng cần mượn" activeItem={activeItem('TRANSPORT', 'Xe điện')}
             notePlaceholder="Ghi chú thêm..." />
           <hr className="border-t-[2px] border-gray-200" />
-          <CategoryCard {...shared} cardKey="driver" icon={<UserCheck className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="driver" icon={<UserCheck className="w-5 h-5 text-[#f37021]" />}
             label="Người lái" itemType="TRANSPORT" qtyLabel="Số lượng" activeItem={activeItem('TRANSPORT', 'Người lái')}
             notePlaceholder="Yêu cầu về tài xế, thời gian hỗ trợ..." />
         </div>
@@ -498,11 +499,11 @@ export function LogisticsRequestSection({
       <MucCard title="Mục 3: Chuẩn bị cho họp" icon={<Building2 className="w-5 h-5 text-[#f37021]" />}
         open={openSection[3]} onToggle={() => toggleSection(3)}>
         <div className="space-y-8">
-          <CategoryCard {...shared} cardKey="room" icon={<Building2 className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="room" icon={<Building2 className="w-5 h-5 text-[#f37021]" />}
             label="Phòng họp" itemType="ROOM" qtyLabel="Số phòng" activeItem={activeItem('ROOM', 'Phòng họp')}
             notePlaceholder="Tên phòng / vị trí (VD: Tòa Alpha, P.101), layout, thiết bị..." />
           <hr className="border-t-[2px] border-gray-200" />
-          <CategoryCard {...shared} cardKey="teabreak" icon={<Coffee className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="teabreak" icon={<Coffee className="w-5 h-5 text-[#f37021]" />}
             label="Teabreak" itemType="MEAL" qtyLabel="Số lượng (suất)" activeItem={activeItem('MEAL', 'Teabreak')}
             notePlaceholder="Layout, khăn trải bàn, biển tên, yêu cầu đặc biệt..." />
         </div>
@@ -516,10 +517,13 @@ export function LogisticsRequestSection({
             <div key={id} className={idx > 0 ? 'pt-6 border-t border-gray-100' : ''}>
               <OtherCard {...shared} cardKey={`other-${id}`}
                 label={`Yêu cầu khác ${otherIds.length > 1 ? `#${idx + 1}` : ''}`.trim()}
+                isExtra={idx > 0}
+                hideNoneOption={otherIds.length > 1}
+                onModeChange={idx === 0 ? setFirstOtherMode : undefined}
                 onRemove={otherIds.length > 1 ? () => setOtherIds((p) => p.filter((x) => x !== id)) : undefined} />
             </div>
           ))}
-          {canManage && (
+          {canManage && firstOtherMode !== 'none' && (
             <button type="button"
               onClick={() => { otherIdRef.current += 1; setOtherIds((p) => [...p, otherIdRef.current]); }}
               className="inline-flex items-center gap-1.5 rounded-xl border-2 border-dashed border-[#f37021]/40 px-4 py-2 text-sm font-bold text-[#f37021] outline-none hover:bg-orange-50">
@@ -993,9 +997,9 @@ function MucCard({ title, icon, open, onToggle, children }: {
   title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border-b border-gray-100 last:border-b-0 overflow-hidden">
+    <div className="bg-white border-b border-gray-100 last:border-b-0">
       <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between cursor-pointer group" onClick={onToggle}>
-        <h3 className="text-sm font-bold text-[#004c91] flex items-center gap-2 uppercase tracking-tight">
+        <h3 className="text-sm font-bold text-[#004c91] flex items-center gap-2">
           {icon}
           {title}
         </h3>
@@ -1125,6 +1129,16 @@ function ResourceCard({
   // Reset of an UNSAVED form returns to the planned-time defaults (not empty strings).
   const reset = () => { setForm(freshForm()); setErr(null); setLocalSubmitted(false); };
 
+  const noteRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (noteRef.current) {
+      noteRef.current.style.height = 'auto';
+      noteRef.current.style.height = `${Math.max(44, noteRef.current.scrollHeight)}px`;
+      noteRef.current.scrollTop = 0;
+    }
+  }, [form.note]);
+
   // Only a (re)appearing saved item overwrites the form. When there is no saved item we leave the
   // form alone so a re-render/refetch never clobbers values the host already edited.
   useEffect(() => {
@@ -1171,7 +1185,6 @@ function ResourceCard({
     if (form.usageStartAt < nowStr) return 'Thời gian bắt đầu không được trong quá khứ.';
     if (form.usageEndAt <= form.usageStartAt) return 'Thời gian kết thúc phải sau thời gian bắt đầu.';
 
-    // due_at: required for HIGH/URGENT, never in the past, and must be before the usage start.
     const highPriority = form.priority === 'HIGH' || form.priority === 'URGENT';
     if (highPriority && !form.dueAt) return 'Mức ưu tiên Cao/Khẩn cấp cần có hạn phản hồi.';
     if (form.dueAt && form.dueAt < nowStr) return 'Hạn phản hồi không được nằm trong quá khứ.';
@@ -1220,8 +1233,8 @@ function ResourceCard({
   };
 
   return (
-    <div>
-      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2 flex-wrap">
+    <div className="pl-5">
+      <h4 className="text-sm font-bold text-[#004c91] mb-3 flex items-center gap-2 flex-wrap">
         {icon} {label}
         {onRemove && canManage && (
           <button type="button" onClick={onRemove} title="Xóa dòng"
@@ -1238,8 +1251,9 @@ function ResourceCard({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* KHỐI TRÁI: Dòng 1 (Số lượng, Bắt đầu, Kết thúc), Dòng 2 (Chọn phòng ban), Dòng 3 (Ưu tiên, Hạn phản hồi) */}
+          <div className="lg:col-span-7 space-y-3.5">
             {editableTitle && (
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">Tiêu đề / nội dung công việc <span className="text-red-500">*</span></label>
@@ -1248,47 +1262,28 @@ function ResourceCard({
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
               </div>
             )}
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">{qtyLabel} <span className="font-normal text-gray-400">(dự kiến)</span></label>
-              <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
-                placeholder="VD: 2 (có thể điều chỉnh sau khi phòng ban phản hồi)"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian bắt đầu sử dụng <span className="text-red-500">*</span></label>
-              <input type="datetime-local" disabled={isFormDisabled} value={form.usageStartAt} onChange={(e) => set('usageStartAt', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian kết thúc sử dụng <span className="text-red-500">*</span></label>
-              <input type="datetime-local" disabled={isFormDisabled} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+
+            {/* Dòng 1: Số lượng (110px), Thời gian bắt đầu (1fr), Thời gian kết thúc (1fr) */}
+            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr_1fr] gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên <span className="text-red-500">*</span></label>
-                <select disabled={isFormDisabled} value={form.priority} onChange={(e) => set('priority', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-                  {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">
-                  Hạn phản hồi / hoàn thành {dueRequired && <span className="text-red-500">*</span>}
-                </label>
-                <input type="datetime-local" disabled={isFormDisabled} value={form.dueAt} onChange={(e) => set('dueAt', e.target.value)}
+                <label className="block text-xs font-bold text-gray-600 mb-1">Số lượng <span className="font-normal text-gray-400">(dự kiến)</span></label>
+                <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
+                  placeholder="VD: 2"
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-                <p className="mt-1 text-[11px] text-gray-400">Bắt buộc khi mức ưu tiên là Cao hoặc Khẩn cấp.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian bắt đầu <span className="text-red-500">*</span></label>
+                <input type="datetime-local" disabled={isFormDisabled} value={form.usageStartAt} onChange={(e) => set('usageStartAt', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian kết thúc <span className="text-red-500">*</span></label>
+                <input type="datetime-local" disabled={isFormDisabled} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
               </div>
             </div>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Mô tả chi tiết</label>
-              <textarea disabled={isFormDisabled} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={notePlaceholder ?? 'Nhập mô tả chi tiết yêu cầu cần chuẩn bị...'}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[120px] disabled:bg-gray-50 disabled:text-gray-400" />
-              <p className="mt-1 text-[11px] text-gray-400">Mô tả rõ yêu cầu, cách setup, lưu ý đặc biệt hoặc nội dung cần phòng ban xử lý.</p>
-            </div>
+
+            {/* Dòng 2: Chọn phòng ban xử lý */}
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Chọn phòng ban xử lý <span className="text-red-500">*</span></label>
               {!form.departmentId ? (
@@ -1311,7 +1306,6 @@ function ResourceCard({
                         <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
                         <div className="truncate text-xs text-gray-500">
                           {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
-                          {d.leaderEmail ? ` · ${d.leaderEmail}` : ''}
                         </div>
                         {!d.canReceiveLogistics && d.logisticsDisabledReason && (
                           <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.logisticsDisabledReason}</div>
@@ -1328,73 +1322,90 @@ function ResourceCard({
               ) : null}
 
               {form.departmentId && dept && (
-                <div className="mt-3 p-4 bg-white border border-gray-200 rounded-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate text-sm font-bold text-gray-800">{dept.departmentName}</div>
+                <div className="mt-2 p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between gap-3 shadow-sm">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-bold text-gray-800">{dept.departmentName}</div>
+                      {!isSubmitted && (
                         <button type="button" onClick={() => set('departmentId', '')} className="text-xs text-[#004c91] hover:underline font-semibold">
-                          Đổi phòng ban
+                          Đổi
                         </button>
-                      </div>
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 uppercase tracking-wider mt-1">
-                        <Building2 className="w-3 h-3 shrink-0" />
-                        <span>Phòng ban: GENERAL</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
-                        <UserCheck className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                        <span>Trưởng phòng: <span className="font-semibold">{dept.leaderName || 'Chưa có'}</span></span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 mt-0.5">
-                        <Mail className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                        {dept.leaderEmail ? <span className="break-all">{dept.leaderEmail}</span> : <span className="font-semibold text-red-500">Chưa có email</span>}
-                      </div>
-                      {!dept.canReceiveLogistics && dept.logisticsDisabledReason && (
-                        <div className="mt-1.5 text-[11px] font-medium text-amber-600 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {dept.logisticsDisabledReason}
-                        </div>
                       )}
                     </div>
-                    {canManage && !isSubmitted && (
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        {dept.canReceiveLogistics && (
-                          <button type="button" disabled={busy} onClick={doPreview}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-50"
-                            title="Xem trước & sửa email">
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button type="button" disabled={!dept.canReceiveLogistics || busy} onClick={doSend}
-                          className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
-                          title={!dept.canReceiveLogistics ? 'Không thể gửi yêu cầu' : undefined}>
-                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                          Gửi yêu cầu
-                        </button>
-                      </div>
-                    )}
-                    {/* Already submitted: no re-send (server dedupe guards anyway); offer soft-cancel. */}
-                    {canManage && isSubmitted && existingItem && (
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu
-                        </span>
-                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${PRIORITY_META[existingItem.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
-                          Ưu tiên: {PRIORITY_META[existingItem.priority]?.label ?? existingItem.priority}
-                        </span>
-                        {locked ? (
-                          <span className="text-[11px] italic text-gray-400">Phòng ban đang xử lý</span>
-                        ) : (
-                          <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
-                            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Hủy yêu cầu
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 text-xs text-gray-600 mt-0.5">
+                      <span>Trưởng phòng: <span className="font-semibold">{dept.leaderName || 'Chưa có'}</span></span>
+                    </div>
                   </div>
+                  {canManage && !isSubmitted && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      {dept.canReceiveLogistics && (
+                        <button type="button" disabled={busy} onClick={doPreview}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-50"
+                          title="Xem trước & sửa email">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button type="button" disabled={!dept.canReceiveLogistics || busy} onClick={doSend}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3.5 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40">
+                        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        Gửi yêu cầu
+                      </button>
+                    </div>
+                  )}
+                  {canManage && isSubmitted && existingItem && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu
+                      </span>
+                      {!locked && (
+                        <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
+                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Hủy
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Dòng 3: Mức ưu tiên & Hạn phản hồi */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên <span className="text-red-500">*</span></label>
+                <select disabled={isFormDisabled} value={form.priority} onChange={(e) => set('priority', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
+                  {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">
+                  Hạn phản hồi / hoàn thành {dueRequired && <span className="text-red-500">*</span>}
+                </label>
+                <input type="datetime-local" disabled={isFormDisabled} value={form.dueAt} onChange={(e) => set('dueAt', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+              </div>
+            </div>
+          </div>
+
+          {/* KHỐI PHẢI: Mô tả chi tiết (Tự động co giãn theo độ dài chữ) */}
+          <div className="lg:col-span-5 flex flex-col space-y-2">
+            <label className="block text-xs font-bold text-gray-600">Mô tả chi tiết</label>
+            <textarea
+              ref={noteRef}
+              disabled={isFormDisabled}
+              rows={1}
+              value={form.note}
+              onChange={(e) => {
+                set('note', e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.max(44, e.target.scrollHeight)}px`;
+                e.target.scrollTop = 0;
+              }}
+              placeholder={notePlaceholder ?? 'Nhập mô tả chi tiết yêu cầu cần chuẩn bị...'}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm leading-relaxed resize-none min-h-[44px] overflow-hidden disabled:bg-gray-50 disabled:text-gray-400"
+            />
+            <p className="text-[11px] text-gray-400">Mô tả rõ yêu cầu, cách setup, lưu ý đặc biệt hoặc nội dung cần phòng ban xử lý.</p>
           </div>
         </div>
 
@@ -1434,6 +1445,15 @@ function OfflineCard({
   const [localSubmitted, setLocalSubmitted] = useState(false);
   const busy = busyKey === cardKey;
 
+  const offlineNoteRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (offlineNoteRef.current) {
+      offlineNoteRef.current.style.height = 'auto';
+      offlineNoteRef.current.style.height = `${Math.max(42, offlineNoteRef.current.scrollHeight)}px`;
+    }
+  }, [note]);
+
   useEffect(() => {
     if (existingItem) {
       setNote(existingItem.offlineCoordinationNote || existingItem.description || '');
@@ -1471,7 +1491,7 @@ function OfflineCard({
   };
 
   return (
-    <div className="flex flex-col gap-4 p-5 bg-amber-50/40 border border-amber-200 rounded-xl shadow-sm">
+    <div className="ml-5 flex flex-col gap-4 p-5 bg-amber-50/40 border border-amber-200 rounded-xl shadow-sm">
       <div className="flex items-center gap-2 text-sm font-bold text-amber-800">
         <AlertCircle className="w-4 h-4" /> Đã trao đổi/xử lý bên ngoài hệ thống — chỉ lưu dấu vết, không gửi email.
         {onRemove && canManage && !isSubmitted && (
@@ -1481,6 +1501,7 @@ function OfflineCard({
           </button>
         )}
       </div>
+
       {editableTitle && (
         <div>
           <label className="block text-xs font-bold text-gray-600 mb-1">Tiêu đề / nội dung công việc <span className="text-red-500">*</span></label>
@@ -1489,57 +1510,78 @@ function OfflineCard({
             className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
         </div>
       )}
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên</label>
-        <select disabled={isFormDisabled} value={priority} onChange={(e) => setPriority(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-          {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-        </select>
+
+      {/* Dòng 1: Ghi chú trao đổi bên ngoài (trái) & Phòng ban liên quan (phải) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú trao đổi bên ngoài <span className="text-red-500">*</span></label>
+          <textarea
+            ref={offlineNoteRef}
+            rows={1}
+            disabled={isFormDisabled}
+            value={note}
+            onChange={(e) => {
+              setNote(e.target.value);
+              setErr(null);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.max(44, e.target.scrollHeight)}px`;
+              e.target.scrollTop = 0;
+            }}
+            maxLength={5000}
+            placeholder="VD: Đã liên hệ trực tiếp phòng Truyền thông qua điện thoại..."
+            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm leading-relaxed resize-none min-h-[44px] overflow-hidden disabled:bg-gray-50 disabled:text-gray-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban liên quan (tùy chọn)</label>
+          <select disabled={isFormDisabled} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
+            <option value="">-- Không gắn phòng ban --</option>
+            {departments.map((d) => (
+              <option key={d.departmentId} value={d.departmentId}>{d.departmentName}</option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú trao đổi bên ngoài <span className="text-red-500">*</span></label>
-        <textarea disabled={isFormDisabled} value={note} onChange={(e) => { setNote(e.target.value); setErr(null); }} maxLength={5000}
-          placeholder="VD: Đã liên hệ trực tiếp phòng Truyền thông qua điện thoại, ảnh LED gửi qua email nội bộ..."
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[100px] disabled:bg-gray-50 disabled:text-gray-400" />
+
+      {/* Dòng 2: Mức ưu tiên (trái) & Nút Lưu (phải) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-end">
+        <div>
+          <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên</label>
+          <select disabled={isFormDisabled} value={priority} onChange={(e) => setPriority(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
+            {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center justify-end">
+          {!isSubmitted && (
+            <button type="button" disabled={busy || isFormDisabled} onClick={doSave}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-5 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40">
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Lưu (đã trao đổi bên ngoài)
+            </button>
+          )}
+          {isSubmitted && (
+            <div className="flex items-center gap-3">
+              <button type="button" disabled
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-4 py-2 text-sm font-bold text-gray-500 outline-none">
+                <CheckCircle className="w-4 h-4" /> Đã lưu yêu cầu
+              </button>
+              {canManage && existingItem && !locked && onCancel && (
+                <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Hủy yêu cầu
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban liên quan (tùy chọn)</label>
-        <select disabled={isFormDisabled} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-          <option value="">-- Không gắn phòng ban --</option>
-          {departments.map((d) => (
-            <option key={d.departmentId} value={d.departmentId}>{d.departmentName}</option>
-          ))}
-        </select>
-      </div>
+
       {err && (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {err}
         </p>
-      )}
-      
-      {isSubmitted ? (
-        <div className="flex items-center justify-end gap-3 mt-2">
-          <button type="button" disabled
-            className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-500 outline-none">
-            <CheckCircle className="w-4 h-4" /> Đã lưu yêu cầu
-          </button>
-          {canManage && existingItem && !locked && onCancel && (
-            <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Hủy yêu cầu
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center justify-end mt-2">
-          {canManage && (
-            <button type="button" disabled={busy} onClick={doSave}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white outline-none transition-colors hover:bg-[#003d73] disabled:opacity-50">
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Lưu (đã trao đổi bên ngoài)
-            </button>
-          )}
-        </div>
       )}
     </div>
   );
@@ -1589,16 +1631,16 @@ function CategoryCard({
 
   return (
     <div>
-      <div className="space-y-3 mb-1">
+      <div className="grid grid-cols-1 lg:grid-cols-[230px_370px_1fr] gap-y-2.5 gap-x-4 mb-2 pl-5">
         {([
           ['none', `Không cần ${label}`],
           ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
           ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
         ] as const).map(([val, lbl]) => (
-          <label key={val} className="flex items-center gap-2.5 cursor-pointer">
+          <label key={val} className="flex items-center gap-2.5 cursor-pointer select-none">
             <input type="radio" name={`choice-${cardKey}`} checked={choice === val} disabled={!shared.canManage}
               onChange={() => setChoice(val)}
-              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
+              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91] shrink-0" />
             <span className="text-sm font-semibold text-gray-700">{lbl}</span>
           </label>
         ))}
@@ -1620,29 +1662,77 @@ function CategoryCard({
 }
 
 /** A "Mục 4: Khác" create row: pick coordination mode (system / offline), then the matching create form. */
-function OtherCard({ cardKey, label, onRemove, ...shared }: SharedCardProps & {
-  cardKey: string; label: string; onRemove?: () => void;
+function OtherCard({
+  cardKey, label, isExtra = false, hideNoneOption = false, onRemove, onModeChange, ...shared
+}: SharedCardProps & {
+  cardKey: string;
+  label: string;
+  isExtra?: boolean;
+  hideNoneOption?: boolean;
+  onRemove?: () => void;
+  onModeChange?: (mode: 'none' | 'system' | 'offline') => void;
 }) {
-  const [mode, setMode] = useState<'system' | 'offline'>('system');
+  const shouldHideNone = isExtra || hideNoneOption;
+  const [mode, setMode] = useState<'none' | 'system' | 'offline'>(shouldHideNone ? 'system' : 'none');
+
+  const handleModeChange = (newMode: 'none' | 'system' | 'offline') => {
+    setMode(newMode);
+    onModeChange?.(newMode);
+  };
+
+  useEffect(() => {
+    if (shouldHideNone && mode === 'none') {
+      handleModeChange('system');
+    } else {
+      onModeChange?.(mode);
+    }
+  }, [mode, shouldHideNone]);
+
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-        {([['system', 'Gửi yêu cầu qua hệ thống'], ['offline', 'Đã trao đổi bên ngoài']] as const).map(([val, lbl]) => (
-          <label key={val} className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
-              onChange={() => setMode(val)}
-              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-            <span className="text-sm font-bold text-gray-700">{lbl}</span>
-          </label>
-        ))}
+      <div className="grid grid-cols-1 lg:grid-cols-[230px_370px_1fr] gap-y-2.5 gap-x-4 mb-3 pl-5">
+        {shouldHideNone ? (
+          <>
+            <div className="hidden lg:block"></div>
+            {([
+              ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
+              ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
+            ] as const).map(([val, lbl]) => (
+              <label key={val} className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
+                  onChange={() => handleModeChange(val)}
+                  className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91] shrink-0" />
+                <span className="text-sm font-semibold text-gray-700">{lbl}</span>
+              </label>
+            ))}
+          </>
+        ) : (
+          ([
+            ['none', `Không cần ${label}`],
+            ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
+            ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
+          ] as const).map(([val, lbl]) => (
+            <label key={val} className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
+                onChange={() => handleModeChange(val)}
+                className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91] shrink-0" />
+              <span className="text-sm font-semibold text-gray-700">{lbl}</span>
+            </label>
+          ))
+        )}
       </div>
-      {mode === 'system' ? (
-        <ResourceCard {...shared} cardKey={cardKey} icon={<MoreHorizontal className="w-6 h-6 text-[#f37021]" />}
-          label={label} itemType="OTHER" qtyLabel="Số lượng" editableTitle existingItem={null}
-          notePlaceholder="Mô tả chi tiết công việc cần hỗ trợ..." onRemove={onRemove} />
-      ) : (
-        <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType="OTHER" label={label}
-          editableTitle existingItem={null} onRemove={onRemove} />
+      {mode === 'system' && (
+        <div className="pt-4 mt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+          <ResourceCard {...shared} cardKey={cardKey} icon={<MoreHorizontal className="w-5 h-5 text-[#f37021]" />}
+            label={label} itemType="OTHER" qtyLabel="Số lượng" editableTitle existingItem={null}
+            notePlaceholder="Mô tả chi tiết công việc cần hỗ trợ..." onRemove={onRemove} />
+        </div>
+      )}
+      {mode === 'offline' && (
+        <div className="pt-4 mt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+          <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType="OTHER" label={label}
+            editableTitle existingItem={null} onRemove={onRemove} />
+        </div>
       )}
     </div>
   );
@@ -1808,11 +1898,6 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
 
           {it.dueAt && (
             <div><span className="text-slate-400 font-medium">Hạn hoàn thành:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.dueAt)}</span></div>
-          )}
-          {it.description && !offline && (
-            <div className="italic text-slate-500 line-clamp-1" title={it.description}>
-              <span className="font-normal text-slate-400 not-italic">Mô tả:</span> {it.description}
-            </div>
           )}
           {offline && it.offlineCoordinationNote && (
             <div className="italic text-slate-500 line-clamp-1" title={it.offlineCoordinationNote}>

@@ -78,15 +78,15 @@ function ConflictBadge({ count, allPrivate }: { count: number; allPrivate: boole
  * - Parent can call `closeDropdown` (via `onCloseRef`) after a successful invite to close + clear.
  */
 export function SearchDropdown<T>({
-  placeholder, search, renderRow, emptyText, onCloseRef, disabled
+  placeholder, emptyText, search, disabled, onCloseRef, renderRow, dropUp = false,
 }: {
   placeholder: string;
-  search: (keyword: string) => Promise<T[]>;
-  renderRow: (item: T, index: number, close: () => void) => React.ReactNode;
   emptyText: string;
-  /** Optional: parent passes a ref that gets a close() function so it can close the dropdown after invite. */
-  onCloseRef?: React.MutableRefObject<(() => void) | null>;
+  search: (kw: string) => Promise<T[]>;
   disabled?: boolean;
+  onCloseRef?: React.RefObject<(() => void) | null>;
+  renderRow: (item: T, index: number, close: () => void) => React.ReactNode;
+  dropUp?: boolean;
 }) {
   const [kw, setKw] = useState('');
   const [open, setOpen] = useState(false);
@@ -154,7 +154,9 @@ export function SearchDropdown<T>({
         {loading && open && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />}
       </div>
       {showPanel && (
-        <div className="absolute left-0 top-full z-[100] mt-1.5 w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+        <div className={`absolute left-0 z-[100] w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl ${
+          dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+        }`}>
           {loading && items.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-400">Đang tải...</div>
           ) : error ? (

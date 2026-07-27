@@ -665,7 +665,8 @@ export function VisitProcess() {
   useEffect(() => {
     if (noteTextareaRef.current) {
       noteTextareaRef.current.style.height = 'auto';
-      noteTextareaRef.current.style.height = `${Math.max(44, noteTextareaRef.current.scrollHeight)}px`;
+      noteTextareaRef.current.style.height = `${Math.max(48, noteTextareaRef.current.scrollHeight)}px`;
+      noteTextareaRef.current.scrollTop = 0;
     }
   }, [preparationNote]);
 
@@ -1277,12 +1278,13 @@ export function VisitProcess() {
                             rows={1}
                             maxLength={5000}
                             placeholder="Ghi chú chuẩn bị nội bộ cho chuyến tiếp khách..."
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm min-h-[44px] resize-none overflow-hidden focus:bg-white focus:border-[#004c91] outline-none transition-all"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm leading-relaxed min-h-[48px] resize-none overflow-hidden focus:bg-white focus:border-[#004c91] outline-none transition-all"
                             value={preparationNote}
                             onChange={(e) => {
                               setPreparationNote(e.target.value);
                               e.target.style.height = 'auto';
-                              e.target.style.height = `${Math.max(44, e.target.scrollHeight)}px`;
+                              e.target.style.height = `${Math.max(48, e.target.scrollHeight)}px`;
+                              e.target.scrollTop = 0;
                             }}
                           ></textarea>
                           <div className="flex items-center justify-between mt-2">
