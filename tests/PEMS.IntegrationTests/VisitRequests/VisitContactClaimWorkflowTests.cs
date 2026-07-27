@@ -173,7 +173,7 @@ public sealed class VisitContactClaimWorkflowTests
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
-            new VisitRequestAggregateStatusService(db));
+            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
         var created = await handler.Handle(
             new CreateVisitRequestV2Command(Form("CL" + Guid.NewGuid().ToString("N"), contactEmail)),
             CancellationToken.None);

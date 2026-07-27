@@ -232,8 +232,11 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                     <span>Quản lý đối tác</span>
                   </NavLink>
                 )}
+              {/* Department Leader goes to /dashboard/my-department, which carries no department id:
+                  the old link built a URL from a locally-stored departmentId and fell back to '1',
+                  which both hard-coded a department and invited tampering with the id. */}
               {(((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && !isDeptStaff) && (
-                <NavLink to={roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT"} onClick={handleLinkClick}>
+                <NavLink to={isDeptLeader ? "/dashboard/my-department" : roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT" || isDeptLeader} onClick={handleLinkClick}>
                   <Building2 className="w-5 h-5 flex-shrink-0" />
                   <span>Quản lý phòng ban</span>
                 </NavLink>

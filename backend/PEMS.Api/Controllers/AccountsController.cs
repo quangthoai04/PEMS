@@ -121,7 +121,9 @@ namespace PEMS.Api.Controllers
         // UC-100-SL — role-assignment options for the Staff Leader "Chỉnh sửa vai trò" modal.
         // Campus is resolved server-side from the authenticated Staff Leader; only the target
         // account id is accepted. Returns the campus IC department + active GENERAL departments
-        // (each flagged with hasHead / isCurrentTargetHead / selectable).
+        // (each flagged with hasHead / isCurrentTargetHead / selectable), plus headedDepartment —
+        // the department the target currently leads and who may take it over — so the modal can ask
+        // for a successor in the same step as the role change.
         [HttpGet("role-assignment-options")]
         [EnableRateLimiting("accounts-read")]
         public async Task<IActionResult> GetRoleAssignmentOptions([FromQuery] ulong targetUserId, CancellationToken cancellationToken)

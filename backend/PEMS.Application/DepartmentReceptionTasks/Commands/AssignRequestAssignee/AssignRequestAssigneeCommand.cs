@@ -43,13 +43,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IFileStorageService _storage;
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+        private readonly IUserMutationLockService _lockService;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
             IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
             IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-            PEMS.Application.Notifications.Common.INotificationService notificationService)
+            PEMS.Application.Notifications.Common.INotificationService notificationService,
+            IUserMutationLockService lockService)
         {
+            _lockService = lockService;
             _context = context;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -133,6 +136,21 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
             await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
             {
+                // Shared lock protocol (see IUserMutationLockService): an assignment hands this
+                // account a live logistics responsibility, so it must serialize against a role change
+                // on the same account. The eligibility read above was unlocked — re-read the
+                // department/status under the lock before writing.
+                await _lockService.LockUsersAsync(new[] { request.AssigneeUserId }, cancellationToken);
+
+                var stillEligible = await _context.Users.AsNoTracking().AnyAsync(
+                    u => u.UserId == request.AssigneeUserId
+                         && u.DepartmentId == user.DepartmentId
+                         && u.Status == "ACTIVE",
+                    cancellationToken);
+                if (!stillEligible)
+                    throw new ConflictException(
+                        "Vai trò hoặc phòng ban của nhân sự này vừa thay đổi. Vui lòng tải lại và phân công lại.");
+
                 _context.VisitLogisticsAssignmentAttempts.Add(new VisitLogisticsAssignmentAttempt
                 {
                     LogisticsItemId = request.LogisticsItemId,

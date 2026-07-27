@@ -113,7 +113,7 @@ public sealed class CreateVisitRequestV2CommandTests
             new RecordingClaimService(), new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write },
-            new VisitRequestAggregateStatusService(db));
+            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
 
     private static VisitRequestFormDataV2 Form(string submissionId)
     {

@@ -55,6 +55,21 @@ export const API_ENDPOINTS = {
     relatedVisitors: '/accounts/related-visitors',
     relatedVisitorDetails: '/accounts/related-visitor-details',
   },
+  // Department Leader personnel management (/dashboard/my-department). Every route is scoped to the
+  // caller's OWN department server-side — deliberately no departmentId parameter anywhere, which is
+  // what closes the IDOR the older /departments/*personnel* endpoints had.
+  departmentLeader: {
+    department: '/department-leader/department',
+    personnel: '/department-leader/personnel',
+    personnelDetail: (userId: string | number) => `/department-leader/personnel/${userId}`,
+    personnelStatusImpact: (userId: string | number) =>
+      `/department-leader/personnel/${userId}/status-impact`,
+    personnelStatus: (userId: string | number) => `/department-leader/personnel/${userId}/status`,
+    personnelResendConfirmation: (userId: string | number) =>
+      `/department-leader/personnel/${userId}/resend-email-confirmation`,
+    leaderCandidates: '/department-leader/leader-candidates',
+    transferLeadership: '/department-leader/transfer-leadership',
+  },
   departments: {
     // UC-104 list (also serves UC-103 search/filter), UC-101 create, status toggle,
     // UC-105 details, UC-102 update name. Campus scope is resolved server-side from the Staff Leader.

@@ -46,7 +46,8 @@ public class InviteVisitParticipantCommandHandlerTests
                    as IReadOnlyDictionary<ulong, PEMS.Application.Delegations.Services.VisitFormRead.VisitCampusFormContent>);
         var handler = new InviteVisitParticipantCommandHandler(
             db, user, mocks.Clock, mocks.Email.Object, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object);
+            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object,
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
         return (db, handler, user, mocks);
     }
 

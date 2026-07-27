@@ -28,6 +28,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
     private readonly IVisitFormReadService _formReadService;
+    private readonly IUserMutationLockService _lockService;
 
     public AssignDepartmentStaffCommandHandler(
         IApplicationDbContext db,
@@ -37,8 +38,10 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IEmailActionTokenService tokens,
         IHtmlSanitizerService sanitizer,
         IFileStorageService storage,
-        IVisitFormReadService formReadService)
+        IVisitFormReadService formReadService,
+        IUserMutationLockService lockService)
     {
+        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -55,6 +58,12 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             throw new ForbiddenException();
 
         var userId = _currentUser.UserId.Value;
+
+        // Assigning the staff member creates an ASSIGNED participant row for them — a live
+        // responsibility. Lock the account first (see IUserMutationLockService) so this cannot
+        // interleave with a role change; every eligibility read below then sees committed state.
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await _lockService.LockUsersAsync(new[] { request.DepartmentStaffUserId }, cancellationToken);
 
         var leaderParticipant = await _db.VisitParticipants
             .FirstOrDefaultAsync(p => p.ParticipantId == request.ParticipantId, cancellationToken)
@@ -230,6 +239,8 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             CreatedAt = now,
         });
         await _db.SaveChangesAsync(cancellationToken);
+        // Durable before the email goes out: a transient SMTP failure must never lose the assignment.
+        await transaction.CommitAsync(cancellationToken);
 
         sentEmailId = sentEmail.SentEmailId;
         sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
