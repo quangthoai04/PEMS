@@ -13,7 +13,10 @@ public sealed record SignVisitLogisticsHandoverCommand(
     ulong LogisticsItemId,
     string HandoverType,        // BORROW | RETURN
     string? ItemCondition,      // GOOD | DAMAGED | MISSING | OTHER (optional; defaults GOOD on create)
-    string? Note) : IRequest<SignVisitLogisticsHandoverResponse>;
+    string? Note,
+    /// <summary>Cột "Tình trạng nghiệm thu" của checklist — Host (bên mượn) điền khi ký RETURN, sau
+    /// khi cả 2 bên đã ký xong BORROW. Luôn ghi vào dòng BORROW (nơi giữ checklist).</summary>
+    string? ChecklistJson = null) : IRequest<SignVisitLogisticsHandoverResponse>;
 
 public sealed class SignVisitLogisticsHandoverResponse
 {

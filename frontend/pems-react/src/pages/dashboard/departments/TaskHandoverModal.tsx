@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, Download, X, Loader2, PenLine, Plus } from 'lucide-react';
+import { FileText, Download, X, Loader2, PenLine, Plus, Trash2 } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
-import { isVehicleHandover, buildDefaultVehicleChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import toast from 'react-hot-toast';
 
@@ -36,7 +36,11 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch { /* rơi về mặc định nếu JSON hỏng */ }
     }
-    return buildDefaultVehicleChecklist();
+    // Xe điện: checklist mẫu giấy có sẵn danh mục. Hạng mục khác: chỉ 1 dòng khởi điểm lấy tên/số
+    // lượng từ chính đơn yêu cầu — cùng logic bảng, không list sẵn.
+    return isVehicleHandover(detailData?.ItemType)
+      ? buildDefaultVehicleChecklist()
+      : buildDefaultGenericChecklist(detailData?.Title, detailData?.Quantity);
   });
 
   if ((!isOpen && !inline) || !detailData) return null;
@@ -51,8 +55,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const canSignNT2 = isBorrowDone && nt1 && !nt2 && !readOnly; // Department is PROVIDER
 
   const isReturnStarted = nt1 || nt2;
-  // Checklist xe điện: phòng ban (PROVIDER) điền toàn bộ bảng TRƯỚC khi ký "Ký Giao" — ký xong
-  // khoá lại ngay (không chờ Host ký nhận), vì Host không dùng modal này để nhập checklist.
+  // Cột "bàn giao" do phòng ban (Dept) điền TRƯỚC khi ký "Ký Giao", khoá lại ngay sau đó. Cột
+  // "Tình trạng nghiệm thu" (cuối bảng) là việc của Host — chỉ Host điền khi ký nghiệm thu (NT1)
+  // trong LogisticsHandoverSection; Dept không sửa cột này ở modal này, kể cả lúc ký NT2.
   const canEditChecklist = !bg1 && !readOnly;
 
   // parse date for top section
@@ -82,8 +87,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
     setBusy(true);
     try {
       const note = (type === 'BORROW' ? borrowNote : returnNote).trim();
-      // Checklist chỉ còn sửa được trước khi ký BORROW — gửi kèm đúng lúc đó, không gửi lại ở RETURN.
-      const checklistJson = isVehicle && type === 'BORROW' ? JSON.stringify(checklistRows) : undefined;
+      // Checklist (cột "bàn giao") chỉ Dept gửi lúc ký BORROW — cột "Tình trạng nghiệm thu" là việc
+      // của Host, ký ở LogisticsHandoverSection, không gửi lại từ đây để tránh đè dữ liệu Host vừa điền.
+      const checklistJson = type === 'BORROW' ? JSON.stringify(checklistRows) : undefined;
       await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note || undefined, checklistJson);
       toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nhận lại'}`);
       onSuccess?.();
@@ -111,7 +117,15 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
             width: 100%;
             margin: 0;
             padding: 0;
+          }
+          /* flex/overflow-hidden trên khung modal chặn nội dung tràn nhiều trang khi in —
+             ép về block + overflow visible cho toàn bộ cây con để trình duyệt tự chia trang. */
+          #task-handover-modal, #task-handover-modal * {
             overflow: visible !important;
+            max-height: none !important;
+          }
+          #task-handover-modal > div {
+            display: block !important;
           }
         `}
       </style>
@@ -187,66 +201,71 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
             </div>
 
             <p className="font-bold text-[15px] mb-2">
-              {isVehicle ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+              {isVehicle
+                ? `Cùng bàn giao xe ${detailData.Quantity || 1} ô tô điện với tình trạng sau:`
+                : `Cùng bàn giao ${detailData.Quantity || 1} ${detailData.Title || 'hạng mục'} với tình trạng sau:`}
             </p>
             <div className="overflow-x-auto mb-6">
               <table className="w-full border-collapse border border-slate-500 text-[14px]">
                 <thead>
                   <tr className="bg-slate-50">
-                    <th className="border border-slate-500 p-2 text-center w-12">STT</th>
-                    <th className="border border-slate-500 p-2 text-center">Nội dung</th>
+                    <th className="border border-slate-500 p-2 text-center w-14">STT</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[160px]">Nội dung</th>
                     <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                    <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
-                    <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[140px]">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[140px]">Tình trạng nghiệm thu</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {isVehicle ? (
-                    <>
-                      {checklistRows.map((row, i) => (
-                        <tr key={i}>
-                          <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                          <td className="border border-slate-500 p-0">
-                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.name} disabled={!canEditChecklist}
-                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))} />
-                          </td>
-                          <td className="border border-slate-500 p-0">
-                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" value={row.qty} disabled={!canEditChecklist}
-                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} />
-                          </td>
-                          <td className="border border-slate-500 p-0">
-                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.giao} disabled={!canEditChecklist}
-                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, giao: e.target.value } : r))} />
-                          </td>
-                          <td className="border border-slate-500 p-0">
-                            <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.nhan} disabled={!canEditChecklist}
-                              onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, nhan: e.target.value } : r))} />
-                          </td>
-                        </tr>
-                      ))}
-                      {canEditChecklist && (
-                        <tr className="print:hidden">
-                          <td colSpan={5} className="border border-slate-500 p-0">
-                            <button type="button" onClick={() => setChecklistRows(prev => [...prev, { name: '', qty: '', giao: '', nhan: '' }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
-                              <Plus className="w-4 h-4" /> Thêm dòng
+                  {checklistRows.map((row, i) => (
+                    <tr key={i}>
+                      <td className="border border-slate-500 p-1 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <span>{i + 1}</span>
+                          {canEditChecklist && (
+                            <button type="button" onClick={() => setChecklistRows(prev => prev.filter((_, idx) => idx !== i))}
+                              className="text-slate-400 hover:text-rose-500 transition-colors print:hidden cursor-pointer" title="Xoá dòng">
+                              <Trash2 className="w-3 h-3" />
                             </button>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ) : (
-                    <tr>
-                      <td className="border border-slate-500 p-2 text-center">1</td>
-                      <td className="border border-slate-500 p-2 font-semibold">{detailData.Title}</td>
-                      <td className="border border-slate-500 p-2 text-center">{detailData.Quantity || 1}</td>
-                      <td className="border border-slate-500 p-2 text-center">
-                        {detailData.BorrowNote || (bg1 ? 'Tốt' : '')}
+                          )}
+                        </div>
                       </td>
-                      <td className="border border-slate-500 p-2 text-center">
-                        {bg2 ? 'Đã xác nhận' : ''}
+                      <td className="border border-slate-500 p-0 min-w-[160px]">
+                        <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.name} disabled={!canEditChecklist}
+                          onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))} />
+                      </td>
+                      <td className="border border-slate-500 p-0">
+                        <input type="text" placeholder="Nhập..." className="w-full min-h-[36px] bg-transparent outline-none text-center px-1 placeholder:text-slate-300" value={row.qty} disabled={!canEditChecklist}
+                          onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} />
+                      </td>
+                      <td className="border border-slate-500 p-0 min-w-[140px]">
+                        <input type="text" placeholder="Nhập..." className="w-full min-h-[36px] bg-transparent outline-none px-2 placeholder:text-slate-300" value={row.giao} disabled={!canEditChecklist}
+                          onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, giao: e.target.value } : r))} />
+                      </td>
+                      <td className="border border-slate-500 p-0 min-w-[140px] bg-slate-50">
+                        <input type="text" placeholder="Host điền khi nghiệm thu" className="w-full min-h-[36px] bg-transparent outline-none px-2 placeholder:text-slate-300 text-slate-600" value={row.nhan} disabled
+                          readOnly />
+                      </td>
+                    </tr>
+                  ))}
+                  {canEditChecklist && (
+                    <tr className="print:hidden">
+                      <td colSpan={5} className="border border-slate-500 p-0">
+                        <button type="button" onClick={() => setChecklistRows(prev => [...prev, { name: '', qty: '', giao: '', nhan: '' }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
+                          <Plus className="w-4 h-4" /> Thêm dòng
+                        </button>
                       </td>
                     </tr>
                   )}
+                  {/* Hàng ghi chú tổng — gộp ý kiến Bên Giao/Bên Nhận mỗi giai đoạn, cùng format
+                      "+ Nhãn: nội dung" (MergeNote), đặt cuối bảng. */}
+                  <tr>
+                    <td className="border border-slate-500 p-2 text-center font-semibold">{checklistRows.length + 1}</td>
+                    <td className="border border-slate-500 p-2 font-semibold">Ghi chú</td>
+                    <td className="border border-slate-500 p-2"></td>
+                    <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{detailData.BorrowNote || ''}</td>
+                    <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{detailData.ReturnNote || ''}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -286,11 +305,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                 <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
-                    {isVehicle ? (
-                      <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-500 italic flex items-center">
-                        Ghi chú biên bản: xem tình trạng xe tại bảng checklist phía trên.
-                      </div>
-                    ) : canSignBG1 ? (
+                    {canSignBG1 ? (
                       <textarea rows={2} value={borrowNote} onChange={e => setBorrowNote(e.target.value)} disabled={busy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] focus:ring-1 focus:ring-blue-200 outline-none resize-none bg-slate-50/30" placeholder="Ghi nhận tình trạng trước khi giao..." />
                     ) : (
                       <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">

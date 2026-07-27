@@ -215,6 +215,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
     AssigneeName: detail.assigneeName || detail.currentResponsibleName,
     BorrowNote: detail.borrowNote,
     ReturnNote: detail.returnNote,
+    ChecklistJson: detail.checklistJson,
     BorrowProviderSignature: toPascalSig(signatures.borrowProvider),
     BorrowBorrowerSignature: toPascalSig(signatures.borrowBorrower),
     ReturnBorrowerSignature: toPascalSig(signatures.returnBorrower),
@@ -307,8 +308,37 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4" onClick={onClose}>
-        <div className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      {/* Modal này bọc ngoài TaskHandoverModal (biên bản, id #task-handover-modal) bằng
+          overflow-y-auto/max-h/flex — CSS in của TaskHandoverModal chỉ xử lý bên trong nó, lớp cha
+          vẫn cắt nội dung khi in nếu không reset riêng (không đụng visibility, đã đúng bên trong). */}
+      <style type="text/css" media="print">
+        {`
+          /* position:static rơi về đúng vị trí trong luồng tài liệu — nội dung ẩn khác nằm TRƯỚC
+             modal này trên trang vẫn chiếm chỗ dù invisible, đẩy biên bản xuống thành khoảng trắng
+             lớn đầu trang. Ép absolute + top:0 để ghim lên đầu trang in, giống #task-handover-modal. */
+          #staff-task-modal-backdrop {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            /* class gốc "inset-0" gán luôn right/bottom: 0 — không reset nốt 2 cạnh này thì khung
+               vẫn bị ép đúng 1 màn hình cao, nội dung dư ra bị cắt dù overflow:visible. */
+            right: auto !important;
+            bottom: auto !important;
+            width: 100% !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          #staff-task-modal-backdrop, #staff-task-modal-card, #staff-task-modal-body {
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            display: block !important;
+          }
+        `}
+      </style>
+      <div id="staff-task-modal-backdrop" className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4" onClick={onClose}>
+        <div id="staff-task-modal-card" className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
           {/* Header compact */}
           <div className={`${isRequest && canShowHandover ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-5 py-3.5 text-white flex items-center justify-between gap-3`}>
             <div className="flex items-center gap-2.5 min-w-0">
@@ -326,7 +356,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div id="staff-task-modal-body" className="flex-1 overflow-y-auto px-5 py-4">
             {/* Thay đổi mới (thông báo chưa đọc gắn với đơn/thư mời này) */}
             {changeNotifs.length > 0 && (
               <div className="mb-4 bg-red-50/70 border border-red-200 rounded-2xl overflow-hidden">

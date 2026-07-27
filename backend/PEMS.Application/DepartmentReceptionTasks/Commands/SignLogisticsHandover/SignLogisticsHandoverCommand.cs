@@ -5,6 +5,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 
 using PEMS.Application.Common;
+using PEMS.Application.Common.Utils;
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.SignLogisticsHandover;
 
 public class SignLogisticsHandoverCommand : IRequest<SignLogisticsHandoverResponse>
@@ -102,21 +103,22 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
             handover.ProviderSignedAt = now;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.ChecklistJson))
+        if (!string.IsNullOrWhiteSpace(request.ChecklistJson) && handoverType == LogisticsHandoverTypes.Borrow)
         {
-            // Checklist xe điện (TRANSPORT) ghi đè thẳng condition_note — không qua MergeNote vì
-            // đây là dữ liệu có cấu trúc (JSON), không phải note tự do gắn nhãn Bên Giao/Bên Nhận.
-            // Luôn sống trên dòng BORROW; nếu đang ký RETURN thì dòng BORROW chắc chắn đã tồn tại
-            // (return chỉ mở khoá sau khi borrow xong) — không cần tạo cột DB mới.
-            var checklistTarget = handoverType == LogisticsHandoverTypes.Borrow
-                ? handover
-                : await _context.VisitLogisticsItemHandovers
-                    .FirstOrDefaultAsync(h => h.LogisticsItemId == request.LogisticsItemId && h.HandoverType == LogisticsHandoverTypes.Borrow, cancellationToken);
-            if (checklistTarget != null) checklistTarget.ConditionNote = request.ChecklistJson;
+            // Checklist ("Tình Trạng bàn giao") — Dept (bên cho mượn) điền khi ký BORROW, trước khi ai
+            // ký cả, sống trong envelope {rows, note} của condition_note dòng BORROW. Cột "Tình trạng
+            // nghiệm thu" chỉ Host điền lúc ký RETURN (SignVisitLogisticsHandoverCommand) — Dept không
+            // còn sửa checklist ở bước nghiệm thu nữa, chỉ nhập ghi chú tự do (nhánh Note bên dưới).
+            handover.ConditionNote = VehicleHandoverChecklistNote.MergeChecklist(handover.ConditionNote, request.ChecklistJson);
         }
-        else if (!string.IsNullOrWhiteSpace(request.Note))
+        if (!string.IsNullOrWhiteSpace(request.Note))
         {
-            handover.ConditionNote = MergeNote(handover.ConditionNote, signerSide!, request.Note.Trim());
+            // Dòng BORROW giữ checklist trong envelope — merge note qua envelope thay vì nối chuỗi
+            // thường, để không đè mất checklist. Dòng RETURN không có checklist, dùng MergeNote thường.
+            var label = signerSide == HandoverSignerSides.Borrower ? "Bên nhận" : "Bên giao";
+            handover.ConditionNote = handoverType == LogisticsHandoverTypes.Borrow
+                ? VehicleHandoverChecklistNote.MergeNote(handover.ConditionNote, label, request.Note.Trim())
+                : MergeNote(handover.ConditionNote, signerSide!, request.Note.Trim());
         }
 
         if (handoverType == LogisticsHandoverTypes.Borrow && signerSide == HandoverSignerSides.Provider)
@@ -169,7 +171,7 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
     private static string MergeNote(string? existing, string signerSide, string note)
     {
         var label = signerSide == HandoverSignerSides.Borrower ? "Bên nhận" : "Bên giao";
-        var line = $"{label}: {note}";
+        var line = $"+ {label}: {note}";
         return string.IsNullOrWhiteSpace(existing) ? line : $"{existing}\n{line}";
     }
 }

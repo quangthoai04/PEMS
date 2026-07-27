@@ -1353,6 +1353,8 @@ export interface SignHandoverBorrowerPayload {
   handoverType: LogisticsHandoverType;
   itemCondition?: LogisticsItemCondition | null;
   note?: string | null;
+  /** Cột "Tình trạng nghiệm thu" của checklist — chỉ gửi khi ký RETURN (Host điền sau khi bàn giao xong). */
+  checklistJson?: string | null;
 }
 
 export interface SignHandoverResult {

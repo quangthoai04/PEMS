@@ -23,10 +23,10 @@ import {
   LOGISTICS_STATUS_META,
   type LogisticsHandover,
   type LogisticsHandoverType,
-  type LogisticsItemCondition,
   type VisitInstanceLogisticsItem,
 } from '../types/delegations.types';
-import { isVehicleHandover, buildDefaultVehicleChecklist, type VehicleChecklistRow } from '../../department-reception-tasks/constants/vehicleHandover';
+import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../department-reception-tasks/constants/vehicleHandover';
+import { LogisticsExpensePanel } from '../../../pages/dashboard/departments/LogisticsExpensePanel';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -41,13 +41,6 @@ interface Props {
   theme?: 'default' | 'blue';
 }
 
-const CONDITION_OPTIONS: { value: LogisticsItemCondition; label: string }[] = [
-  { value: 'GOOD', label: 'Tốt' },
-  { value: 'DAMAGED', label: 'Hư hỏng' },
-  { value: 'MISSING', label: 'Thiếu / mất' },
-  { value: 'OTHER', label: 'Khác' },
-];
-const CONDITION_REQUIRES_NOTE = new Set<LogisticsItemCondition>(['DAMAGED', 'MISSING', 'OTHER']);
 const HANDOVER_STATUSES = new Set(['ACCEPTED', 'IN_PROGRESS', 'DONE']);
 
 function fmtDateTime(value?: string | null): string {
@@ -136,10 +129,12 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
   const [loading, setLoading] = useState(false);
   const [signTarget, setSignTarget] = useState<{ item: VisitInstanceLogisticsItem; type: LogisticsHandoverType } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [condition, setCondition] = useState<LogisticsItemCondition>('GOOD');
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
+  // Checklist bàn giao (mọi loại hạng mục — không chỉ xe điện): cột "Tình trạng nghiệm thu" là ô
+  // DUY NHẤT Host được sửa, và chỉ lúc ký RETURN (NT1) sau khi cả 2 bên đã ký xong BORROW.
+  const [checklistDraft, setChecklistDraft] = useState<VehicleChecklistRow[]>([]);
 
   const load = useCallback(async () => {
     if (!visitInstanceId) { setLoadedOnce(true); return; }
@@ -177,24 +172,35 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
 
   const openSignModal = (item: VisitInstanceLogisticsItem) => {
     setSignTarget({ item, type: handoverPhase });
-    setCondition('GOOD');
     setNote('');
     setErr(null);
+    const borrow = findHandover(item.handovers, 'BORROW');
+    const rows = (() => {
+      if (borrow?.checklistJson) {
+        try {
+          const parsed = JSON.parse(borrow.checklistJson);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch { /* rơi về mặc định nếu JSON hỏng */ }
+      }
+      return isVehicleHandover(item.itemType)
+        ? buildDefaultVehicleChecklist()
+        : buildDefaultGenericChecklist(item.title, item.quantity);
+    })();
+    setChecklistDraft(rows);
   };
   const closeSignModal = () => { if (!busy) { setSignTarget(null); setErr(null); } };
 
   const submit = async () => {
     if (!signTarget) return;
-    if (CONDITION_REQUIRES_NOTE.has(condition) && !note.trim()) {
-      const m = 'Vui lòng nhập ghi chú tình trạng tài sản.';
-      setErr(m); pushToast?.('error', m); return;
-    }
     if (!visitInstanceId) return;
     setBusy(true);
     try {
+      // Cột "Tình trạng nghiệm thu" chỉ gửi khi ký RETURN (Host vừa điền) — BORROW (BG2) không chạm
+      // vào checklist, tránh ghi đè phần "bàn giao" mà Dept đã điền.
+      const checklistJson = signTarget.type === 'RETURN' ? JSON.stringify(checklistDraft) : undefined;
       const res = await delegationsApi.signLogisticsHandoverBorrower(
         visitInstanceId, signTarget.item.logisticsItemId,
-        { handoverType: signTarget.type, itemCondition: condition, note: note.trim() || null },
+        { handoverType: signTarget.type, note: note.trim() || null, checklistJson },
       );
       pushToast?.('success', res.message || 'Đã ký biên bản.');
       setSignTarget(null);
@@ -375,7 +381,15 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                 width: 100%;
                 margin: 0;
                 padding: 0;
+              }
+              /* flex/overflow-hidden trên khung modal chặn nội dung tràn nhiều trang khi in —
+                 ép về block + overflow visible cho toàn bộ cây con để trình duyệt tự chia trang. */
+              #logistics-handover-modal, #logistics-handover-modal * {
                 overflow: visible !important;
+                max-height: none !important;
+              }
+              #logistics-handover-modal > div {
+                display: block !important;
               }
             `}
           </style>
@@ -434,19 +448,9 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                 const hostName = b?.borrowerSignedByName || r?.borrowerSignedByName || 'Đại diện Host đón tiếp';
                 const providerName = b?.providerSignedByName || r?.providerSignedByName || signTarget.item.departmentName || 'Đại diện Phòng ban';
 
-                // Xe điện (TRANSPORT): render đúng bảng checklist 10 dòng phòng ban đã điền,
-                // không hiện dạng chuỗi gộp — parse từ JSON lưu trên dòng BORROW.
+                // Bảng checklist bàn giao dùng chung 1 mẫu cho mọi loại hạng mục — chỉ xe điện có sẵn
+                // danh mục mẫu giấy; checklistDraft nạp ở openSignModal (đọc JSON lưu trên dòng BORROW).
                 const isVehicle = isVehicleHandover(signTarget.item.itemType);
-                const vehicleRows: VehicleChecklistRow[] = (() => {
-                  if (!isVehicle) return [];
-                  if (b?.checklistJson) {
-                    try {
-                      const parsed = JSON.parse(b.checklistJson);
-                      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-                    } catch { /* rơi về mặc định nếu JSON hỏng */ }
-                  }
-                  return buildDefaultVehicleChecklist();
-                })();
 
                 return (
                   <>
@@ -479,7 +483,9 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                     </div>
 
                     <p className="font-bold text-[15px] mb-2">
-                      {isVehicle ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+                      {isVehicle
+                        ? `Cùng bàn giao xe ${signTarget.item.quantity || 1} ô tô điện với tình trạng sau:`
+                        : `Cùng bàn giao ${signTarget.item.quantity || 1} ${signTarget.item.title || 'hạng mục'} với tình trạng sau:`}
                     </p>
                     <div className="overflow-x-auto mb-6">
                       <table className="w-full border-collapse border border-slate-500 text-[14px]">
@@ -489,36 +495,36 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                             <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                             <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
                             <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
-                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
-                            <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình trạng nghiệm thu</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {isVehicle ? (
-                            vehicleRows.map((row, i) => (
-                              <tr key={i}>
-                                <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                                <td className="border border-slate-500 p-2">{row.name}</td>
-                                <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
-                                <td className="border border-slate-500 p-2 text-center">{row.giao}</td>
-                                <td className="border border-slate-500 p-2 text-center">{row.nhan}</td>
-                                <td className="border border-slate-500 p-2"></td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td className="border border-slate-500 p-2 text-center">1</td>
-                              <td className="border border-slate-500 p-2 font-semibold">{signTarget.item.title}</td>
-                              <td className="border border-slate-500 p-2 text-center">{signTarget.item.quantity || 1}</td>
-                              <td className="border border-slate-500 p-2 text-center">
-                                {b?.conditionNote || ''}
+                          {checklistDraft.map((row, i) => (
+                            <tr key={i}>
+                              <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                              <td className="border border-slate-500 p-2">{row.name}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.giao}</td>
+                              <td className="border border-slate-500 p-0 bg-blue-50/20">
+                                {canSignNT1 ? (
+                                  <input type="text" placeholder="Nhập tình trạng nghiệm thu..." value={row.nhan}
+                                    className="w-full min-h-[36px] bg-transparent outline-none px-2 placeholder:text-slate-400"
+                                    onChange={e => setChecklistDraft(prev => prev.map((r, idx) => idx === i ? { ...r, nhan: e.target.value } : r))} />
+                                ) : (
+                                  <div className="min-h-[36px] flex items-center px-2 text-slate-600">{row.nhan}</div>
+                                )}
                               </td>
-                              <td className="border border-slate-500 p-2 text-center">
-                                {b?.borrowerSignedAt ? (signTarget.type === 'BORROW' ? note : 'Đã xác nhận') : ''}
-                              </td>
-                              <td className="border border-slate-500 p-2"></td>
                             </tr>
-                          )}
+                          ))}
+                          {/* Hàng ghi chú tổng — gộp ý kiến Bên Giao/Bên Nhận mỗi giai đoạn, cùng
+                              format "+ Nhãn: nội dung", đặt cuối bảng. */}
+                          <tr>
+                            <td className="border border-slate-500 p-2 text-center font-semibold">{checklistDraft.length + 1}</td>
+                            <td className="border border-slate-500 p-2 font-semibold">Ghi chú</td>
+                            <td className="border border-slate-500 p-2"></td>
+                            <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{b?.conditionNote || ''}</td>
+                            <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{r?.conditionNote || ''}</td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
@@ -558,8 +564,8 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                       <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
                         <div>
                           <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
-                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
-                            {isVehicle ? 'Ghi chú biên bản: xem tình trạng xe tại bảng checklist phía trên.' : (b?.conditionNote || 'Không có ghi chú.')}
+                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic whitespace-pre-line">
+                            {b?.conditionNote || 'Không có ghi chú.'}
                           </div>
                         </div>
                         <div className={`border-2 rounded-xl p-3 relative ${bg1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
@@ -650,9 +656,9 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                             <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Giao)</label>
                             {signTarget.type === 'RETURN' && !nt1 ? (
                               <>
-                                <select value={condition} onChange={e => setCondition(e.target.value as LogisticsItemCondition)} className="mb-2 w-full text-xs p-2 border border-slate-250 rounded-xl outline-none focus:border-[#004c91]">
-                                  {CONDITION_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                </select>
+                                {/* Tình trạng từng hạng mục đã có ở cột "Tình trạng nghiệm thu" của
+                                    checklist bên trên — nghiệm thu chỉ cần ghi chú + ký, mọi loại hạng
+                                    mục đều bỏ select phân loại tình trạng. */}
                                 <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} disabled={busy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] focus:ring-1 focus:ring-blue-200 outline-none resize-none bg-slate-50/30" placeholder="Ghi nhận hiện trạng lúc trả..." />
                               </>
                             ) : (
@@ -702,8 +708,8 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
                           <div>
                             <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Nhận)</label>
-                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-400 italic">
-                              Chờ phòng ban nhận xét tình trạng tài sản và xác nhận...
+                            <div className={`w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] italic whitespace-pre-line ${nt2 ? 'text-slate-600' : 'text-slate-400'}`}>
+                              {nt2 ? (r?.conditionNote || 'Đã nghiệm thu nhận lại tài sản.') : 'Chờ phòng ban nhận xét tình trạng tài sản và xác nhận...'}
                             </div>
                           </div>
                           <div className={`border-2 rounded-xl p-3 relative ${nt2 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
@@ -731,6 +737,10 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                         </div>
                       </div>
                     </div>
+
+                    {/* Ghi chú chi phí — chỉ hiện khi phòng ban đã lưu báo cáo chi phí (panel tự
+                        fetch, tự ẩn nếu chưa có báo cáo hoặc chưa được xem). Host chỉ xem, không sửa. */}
+                    <LogisticsExpensePanel logisticsItemId={signTarget.item.logisticsItemId} readOnly />
                     </div>
                   </>
                 );

@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using System;
@@ -276,11 +277,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 BorrowBorrowerSignature = ToSignature(borrowHandover?.BorrowerSignedBy, borrowHandover?.BorrowerSignedAt, signerNames),
                 ReturnProviderSignature = ToSignature(returnHandover?.ProviderSignedBy, returnHandover?.ProviderSignedAt, signerNames),
                 ReturnBorrowerSignature = ToSignature(returnHandover?.BorrowerSignedBy, returnHandover?.BorrowerSignedAt, signerNames),
-                // TRANSPORT: condition_note của dòng BORROW đang giữ checklist JSON (không phải note tự
-                // do) — tách riêng qua ChecklistJson, BorrowNote trả null để không hiện nhầm JSON thô.
-                BorrowNote = l.ItemType == "TRANSPORT" ? null : borrowHandover?.ConditionNote,
+                // condition_note của dòng BORROW là envelope {rows, note} cho MỌI loại hạng mục — tách
+                // checklist qua ChecklistJson và ghi chú tự do (Bên giao/Bên nhận, đã gộp) qua BorrowNote.
+                BorrowNote = VehicleHandoverChecklistNote.ExtractNote(borrowHandover?.ConditionNote),
                 ReturnNote = returnHandover?.ConditionNote,
-                ChecklistJson = l.ItemType == "TRANSPORT" ? borrowHandover?.ConditionNote : null,
+                ChecklistJson = VehicleHandoverChecklistNote.ExtractRowsJson(borrowHandover?.ConditionNote),
 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",

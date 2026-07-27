@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -110,11 +111,30 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
         handover.BorrowerSignedBy = actorId;
         handover.BorrowerSignedAt = now;
 
+        if (!string.IsNullOrWhiteSpace(request.ChecklistJson) && handoverType == LogisticsHandoverTypes.Return)
+        {
+            // Cột "Tình trạng nghiệm thu" — Host (bên mượn) điền khi ký RETURN, sau khi cả 2 bên đã ký
+            // xong BORROW. Luôn ghi vào dòng BORROW (nơi giữ checklist), không phải dòng RETURN.
+            var borrowRowForChecklist = await _db.VisitLogisticsItemHandovers
+                .FirstOrDefaultAsync(h => h.LogisticsItemId == item.LogisticsItemId && h.HandoverType == LogisticsHandoverTypes.Borrow, cancellationToken);
+            if (borrowRowForChecklist != null)
+                borrowRowForChecklist.ConditionNote = VehicleHandoverChecklistNote.MergeChecklist(borrowRowForChecklist.ConditionNote, request.ChecklistJson);
+        }
+
         if (note != null)
         {
-            var line = $"Bên nhận: {note}";
-            handover.ConditionNote = string.IsNullOrWhiteSpace(handover.ConditionNote)
-                ? line : $"{handover.ConditionNote}\n{line}";
+            // Dòng BORROW giữ checklist trong envelope {rows, note} — merge qua envelope để không đè
+            // mất checklist phòng ban đã điền. Dòng RETURN (nghiệm thu) không có checklist, nối chuỗi thường.
+            if (handoverType == LogisticsHandoverTypes.Borrow)
+            {
+                handover.ConditionNote = VehicleHandoverChecklistNote.MergeNote(handover.ConditionNote, "Bên nhận", note);
+            }
+            else
+            {
+                var line = $"+ Bên nhận: {note}";
+                handover.ConditionNote = string.IsNullOrWhiteSpace(handover.ConditionNote)
+                    ? line : $"{handover.ConditionNote}\n{line}";
+            }
         }
 
         // Borrower signing RETURN closes the item (mirrors SignLogisticsHandoverCommand).

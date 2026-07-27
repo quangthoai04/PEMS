@@ -6,6 +6,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Common;
 
 namespace PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
@@ -121,16 +122,14 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
         {
             if (handoversByItem.TryGetValue(i.LogisticsItemId, out var hs))
             {
-                // TRANSPORT: condition_note của dòng BORROW đang giữ checklist JSON (phòng ban điền
-                // trực tiếp trên bảng checklist, không còn ô "Ghi chú" tự do) — tách sang ChecklistJson
-                // để Host render đúng bảng checklist, ConditionNote trả null để không hiện JSON thô.
-                if (i.ItemType == "TRANSPORT")
+                // condition_note của dòng BORROW là envelope {rows, note} cho MỌI loại hạng mục — tách
+                // checklist qua ChecklistJson để Host render đúng bảng, và ghi chú tự do (đã gộp Bên
+                // giao/Bên nhận) qua ConditionNote.
+                foreach (var h in hs.Where(h => h.HandoverType == "BORROW"))
                 {
-                    foreach (var h in hs.Where(h => h.HandoverType == "BORROW"))
-                    {
-                        h.ChecklistJson = h.ConditionNote;
-                        h.ConditionNote = null;
-                    }
+                    var rawConditionNote = h.ConditionNote;
+                    h.ChecklistJson = VehicleHandoverChecklistNote.ExtractRowsJson(rawConditionNote);
+                    h.ConditionNote = VehicleHandoverChecklistNote.ExtractNote(rawConditionNote);
                 }
                 i.Handovers = hs;
             }
