@@ -18,13 +18,16 @@ public sealed class CreateEmailDraftCommandHandler : IRequestHandler<CreateEmail
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly EmailRecipientOptions _recipientOptions;
 
     public CreateEmailDraftCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IHtmlSanitizerService sanitizer)
+        IApplicationDbContext db, ICurrentUserService currentUser, IHtmlSanitizerService sanitizer,
+        Microsoft.Extensions.Options.IOptions<EmailRecipientOptions> recipientOptions)
     {
         _db = db;
         _currentUser = currentUser;
         _sanitizer = sanitizer;
+        _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
     }
 
     public async Task<EmailDraftDto> Handle(CreateEmailDraftCommand request, CancellationToken cancellationToken)
@@ -38,7 +41,11 @@ public sealed class CreateEmailDraftCommandHandler : IRequestHandler<CreateEmail
             ? _sanitizer.SanitizeEmailHtml(request.BodyContent)
             : request.BodyContent;
 
-        // Validate attachments BEFORE inserting anything (no orphan draft on a bad file).
+        // Validate recipients and attachments BEFORE inserting anything (no orphan draft on a bad file or
+        // an envelope that could never be sent). A draft may legitimately have no TO yet — it is being
+        // written — but a duplicate or a cross-group address is a mistake to report now, not at send.
+        var envelope = EmailDraftWriter.ValidateRecipients(
+            request.Recipients, _recipientOptions.MaxRecipients, requireTo: false);
         var attachmentInputs = request.Attachments ?? new();
         await EmailDraftWriter.ValidateAndLoadFilesAsync(_db, userId, attachmentInputs, cancellationToken);
 
@@ -58,20 +65,8 @@ public sealed class CreateEmailDraftCommandHandler : IRequestHandler<CreateEmail
         _db.EmailDrafts.Add(draft);
         await _db.SaveChangesAsync(cancellationToken);
 
-        foreach (var r in request.Recipients ?? new())
-        {
-            var email = r.Email?.Trim();
-            if (string.IsNullOrWhiteSpace(email)) continue;
-            _db.EmailDraftRecipients.Add(new EmailDraftRecipient
-            {
-                EmailDraftId = draft.EmailDraftId,
-                RecipientEmail = email,
-                RecipientName = string.IsNullOrWhiteSpace(r.Name) ? null : r.Name.Trim(),
-                RecipientType = EmailDraftWriter.NormalizeRecipientType(r.RecipientType),
-                DisplayOrder = (uint)Math.Max(0, r.DisplayOrder),
-                CreatedAt = now,
-            });
-        }
+        foreach (var row in EmailDraftWriter.ToDraftRows(draft.EmailDraftId, envelope, now))
+            _db.EmailDraftRecipients.Add(row);
 
         foreach (var a in attachmentInputs)
         {

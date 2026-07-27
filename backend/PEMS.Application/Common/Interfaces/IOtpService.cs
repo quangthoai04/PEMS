@@ -41,6 +41,20 @@ public sealed record OtpChallengeVerification(
 public interface IOtpService
 {
     /// <summary>
+    /// How long a code issued by <see cref="CreateAsync"/> stays valid, in minutes
+    /// (<c>Otp:CodeMinutes</c>). Exposed because the email that carries the code has to state the same
+    /// number the token was actually created with — a hard-coded "15 phút" in a template silently
+    /// becomes a lie the moment the setting changes.
+    /// </summary>
+    int CodeMinutes { get; }
+
+    /// <summary>
+    /// How long a visit-request challenge stays valid, in minutes (<c>Otp:VisitRequestCodeMinutes</c>).
+    /// Deliberately shorter than <see cref="CodeMinutes"/>, and stated in the email for the same reason.
+    /// </summary>
+    int VisitRequestCodeMinutes { get; }
+
+    /// <summary>
     /// Creates an OTP tied to an existing <see cref="User"/> (e.g. password reset).
     /// Enforces hourly resend limit and invalidates previous active codes.
     /// </summary>

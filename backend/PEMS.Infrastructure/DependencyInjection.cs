@@ -44,6 +44,33 @@ public static class DependencyInjection
         // Cross-cutting
         services.AddSingleton<IDateTimeService, DateTimeService>();
         services.AddScoped<IEmailService, EmailService>();
+        // The one renderer for system email — preview and real send share it, so what an operator
+        // previews is what the recipient receives. Scoped because it reads the DbContext per request.
+        services.AddScoped<IEmailTemplateRenderer, EmailTemplateRenderer>();
+        // Render → record in email history → send → record the outcome, in one place, so those four
+        // steps cannot drift apart across the handlers that send system mail.
+        services.AddScoped<PEMS.Application.Emails.Common.ISystemEmailDispatcher,
+            PEMS.Application.Emails.Common.SystemEmailDispatcher>();
+        services.Configure<PEMS.Application.Emails.Common.EmailRecipientOptions>(
+            configuration.GetSection(PEMS.Application.Emails.Common.EmailRecipientOptions.SectionName));
+        // Report/invoice mail: store the PDF, record the message AND its attachment linkage, deliver, and
+        // fail the command when delivery did not happen. Shared by all six report senders so none of them
+        // can send a "see attached" message with nothing attached.
+        services.AddScoped<PEMS.Application.Reports.Common.IReportEmailSender,
+            PEMS.Application.Reports.Common.ReportEmailSender>();
+        // Manual mail (compose / draft-send / reply): record one message, send one MIME for the whole
+        // TO+CC+BCC envelope, write back the outcome that actually happened. Shared so the three handlers
+        // cannot disagree again about what a CC is.
+        services.AddScoped<PEMS.Application.Emails.Common.IManualEmailSender,
+            PEMS.Application.Emails.Common.ManualEmailSender>();
+        // Whether a reader who was not on a message may still open it because of the business object it is
+        // attached to. Borrowed from the visit access rule — never granted by role alone.
+        services.AddScoped<PEMS.Application.Emails.Common.ISentEmailObjectScope,
+            PEMS.Application.Emails.Common.SentEmailObjectScope>();
+        // A file is readable because of what references it. Resolves those references and asks each
+        // module's own rule, so /api/files/{id} can no longer be used to walk around a screen's scope.
+        services.AddScoped<PEMS.Application.Files.Common.IFileAccessAuthorizationService,
+            PEMS.Application.Files.Common.FileAccessAuthorizationService>();
         services.AddScoped<IEmailActionTokenService, EmailActionTokenService>();
         services.AddScoped<PEMS.Application.Accounts.Common.IAccountEmailConfirmationService,
             PEMS.Infrastructure.Email.AccountEmailConfirmationService>();
@@ -124,6 +151,9 @@ public static class DependencyInjection
             PEMS.Infrastructure.FaceDetection.InMemoryFaceScanThrottle>();
 
         // Background jobs — scheduled visit reminder dispatch (visit_instance_reminder_settings).
+        // The decisions live in the scoped service; the hosted service only wakes it up.
+        services.AddScoped<PEMS.Application.Delegations.Reminders.IVisitReminderDispatchService,
+            PEMS.Application.Delegations.Reminders.VisitReminderDispatchService>();
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitReminderDispatchHostedService>();
 
         // Background job — HO visibility alert for multi-campus requests with an unprocessed

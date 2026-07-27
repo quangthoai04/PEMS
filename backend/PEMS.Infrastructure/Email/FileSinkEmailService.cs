@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -7,9 +8,12 @@ namespace PEMS.Infrastructure.Email;
 
 /// <summary>
 /// TESTING-ONLY email sink for real-stack E2E. Instead of sending mail, it appends a redacted JSON record
-/// (recipient + kind + the OTP code or the invitation link/token + a timestamp) to a process-shared file
-/// inbox so a Playwright harness can read the OTP / claim / transfer link without any public endpoint or
-/// production backdoor.
+/// (the full TO/CC/BCC envelope, the template, the subject/body and either the OTP code or the
+/// invitation link/token) to a process-shared file inbox, so a Playwright harness can read what was sent
+/// without any public endpoint or production backdoor.
+///
+/// Recording all three recipient groups is what lets an E2E assert the property that matters most here:
+/// that a BCC address received the mail while never appearing anywhere a TO/CC recipient could see.
 ///
 /// Registration is DOUBLE-GATED (see Program.cs): only when <c>ASPNETCORE_ENVIRONMENT=Testing</c> AND
 /// <c>PEMS_E2E_TEST_SINK_ENABLED=true</c>. It is NEVER registered in Development/Staging/Production. It is
@@ -48,19 +52,94 @@ public sealed class FileSinkEmailService : IEmailService
            && string.Equals(Environment.GetEnvironmentVariable(EnabledEnvVar), "true", StringComparison.OrdinalIgnoreCase)
            && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathEnvVar));
 
-    private void Append(string to, string kind, string? code, string? link, string? subject)
+    public Task<EmailDeliveryResult> TrySendAsync(
+        OutboundEmail message, CancellationToken cancellationToken = default)
     {
+        Append(message);
+        return Task.FromResult(EmailDeliveryResult.Sent());
+    }
+
+    public Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default)
+    {
+        Append(message);
+        return Task.CompletedTask;
+    }
+
+    private void Append(OutboundEmail message)
+    {
+        var body = message.Body ?? string.Empty;
+
         var record = JsonSerializer.Serialize(new
         {
-            to = to.Trim().ToLowerInvariant(),
-            kind,
-            code,
-            link,
-            subject,
+            to = Project(message.To),
+            cc = Project(message.Cc),
+            bcc = Project(message.Bcc),
+            templateCode = message.TemplateCode,
+            subject = message.Subject,
+            body,
+            bodyFormat = message.IsHtml ? "HTML" : "PLAIN_TEXT",
+            attachments = message.Attachments.Select(a => new
+            {
+                fileName = a.FileName,
+                contentType = a.ContentType,
+                isInline = a.IsInline,
+                contentId = a.ContentId,
+                sizeBytes = a.Content.Length,
+            }).ToArray(),
+            headers = message.Headers,
+
+            // Kept for the existing Playwright harness, which reads the OTP / claim link from here.
+            // These values live ONLY in this file, never in the application log.
+            kind = ClassifyKind(message),
+            code = ExtractOtp(body),
+            link = ExtractLink(body),
+
             at = DateTime.UtcNow.ToString("O"),
+            status = "SENT",
         }, Json);
 
-        // Cross-process/thread safe append: retry briefly on transient share-violations.
+        WithRetry(record);
+    }
+
+    private static object[] Project(IReadOnlyList<EmailRecipient> recipients)
+        => recipients
+            .Select(r => (object)new { email = r.Email.Trim().ToLowerInvariant(), displayName = r.DisplayName })
+            .ToArray();
+
+    /// <summary>
+    /// A coarse label the harness filters on. Derived from the template code where there is one, so it
+    /// stays correct as templates are added, instead of a per-method constant that goes stale.
+    /// </summary>
+    private static string ClassifyKind(OutboundEmail message)
+        => message.TemplateCode ?? "GENERIC";
+
+    /// <summary>
+    /// Extracts the actionable link for the E2E inbox: a claim/transfer invitation link, or the account
+    /// email-confirmation link (<c>/confirm-email?token=…</c>), if present.
+    /// </summary>
+    private static string? ExtractLink(string body)
+    {
+        var m = Regex.Match(
+            body,
+            @"https?://[^\s""'<>]*(?:visit-contact-(?:claim|transfer)/|confirm-email\?token=|public/email-actions/)[^\s""'<>]+");
+        return m.Success ? m.Value : null;
+    }
+
+    /// <summary>
+    /// Recovers the 6-digit OTP from a rendered body. Previously the code was handed in as a method
+    /// argument; now that OTP mail is rendered from a template like everything else, the sink reads it
+    /// back out of the message the recipient would actually get.
+    /// </summary>
+    private static string? ExtractOtp(string body)
+    {
+        var text = Regex.Replace(body, "<[^>]+>", " ");
+        var m = Regex.Match(text, @"(?<!\d)(\d{6})(?!\d)");
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    /// <summary>Cross-process/thread safe append: retry briefly on transient share-violations.</summary>
+    private void WithRetry(string record)
+    {
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -78,60 +157,27 @@ public sealed class FileSinkEmailService : IEmailService
         }
     }
 
-    /// <summary>
-    /// Extracts the actionable link from an email body for the E2E inbox: a claim/transfer invitation link,
-    /// or the account email-confirmation link (<c>/confirm-email?token=…</c>), if present.
-    /// </summary>
-    private static string? ExtractLink(string body)
-    {
-        var m = Regex.Match(body, @"https?://[^\s""'<>]*(?:visit-contact-(?:claim|transfer)/|confirm-email\?token=)[^\s""'<>]+");
-        return m.Success ? m.Value : null;
-    }
+    // ── Legacy surface — removed once Giai đoạn 4 finishes migrating callers ──
 
+    [Obsolete("Render from email_templates and use SendAsync(OutboundEmail).")]
     public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
-    {
-        Append(toEmail, "GENERIC", code: null, link: ExtractLink(htmlBody), subject);
-        return Task.CompletedTask;
-    }
+        => SendAsync(Legacy(toEmail, subject, htmlBody), cancellationToken);
 
-    /// <summary>Truthful contract for the file sink: the record is always captured, so the outcome is Sent.</summary>
+    [Obsolete("Render from email_templates and use TrySendAsync(OutboundEmail).")]
     public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
-    {
-        Append(toEmail, "GENERIC", code: null, link: ExtractLink(htmlBody), subject);
-        return Task.FromResult(EmailDeliveryResult.Sent());
-    }
+        => TrySendAsync(Legacy(toEmail, subject, htmlBody), cancellationToken);
 
-    public Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default)
-    {
-        Append(message.ToEmail, "GENERIC_MIME", code: null, link: ExtractLink(message.Body ?? string.Empty), message.Subject);
-        return Task.CompletedTask;
-    }
+    // This one still carries its template code even before the content moves into email_templates, so
+    // the `kind` the E2E harness filters on stays the same value either side of that migration.
 
-    public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken cancellationToken = default)
-    {
-        Append(toEmail, "PASSWORD_RESET", code, link: null, subject: null);
-        return Task.CompletedTask;
-    }
 
-    public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken cancellationToken = default)
-    {
-        Append(toEmail, "VISIT_REQUEST_OTP", code, link: null, subject: null);
-        return Task.CompletedTask;
-    }
-
-    public Task SendVisitorAccountCreatedOrLinkedEmailAsync(
-        string toEmail, string contactFullName, string delegationName, string requestCode, string visitScope,
-        string plannedTime, CancellationToken cancellationToken = default)
-    {
-        Append(toEmail, "VISITOR_ACCOUNT", code: null, link: null, subject: requestCode);
-        return Task.CompletedTask;
-    }
-
-    public Task SendRegistrantConfirmationAsync(
-        string toEmail, string registrantFullName, string contactFullName, string contactEmail,
-        string delegationName, string requestCode, CancellationToken cancellationToken = default)
-    {
-        Append(toEmail, "REGISTRANT_CONFIRMATION", code: null, link: null, subject: requestCode);
-        return Task.CompletedTask;
-    }
+    private static OutboundEmail Legacy(string toEmail, string subject, string htmlBody, string? templateCode = null)
+        => new()
+        {
+            To = new[] { new EmailRecipient(toEmail) },
+            Subject = subject,
+            Body = htmlBody,
+            IsHtml = true,
+            TemplateCode = templateCode,
+        };
 }

@@ -19,13 +19,16 @@ public sealed class UpdateEmailDraftCommandHandler : IRequestHandler<UpdateEmail
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IHtmlSanitizerService _sanitizer;
+    private readonly EmailRecipientOptions _recipientOptions;
 
     public UpdateEmailDraftCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IHtmlSanitizerService sanitizer)
+        IApplicationDbContext db, ICurrentUserService currentUser, IHtmlSanitizerService sanitizer,
+        Microsoft.Extensions.Options.IOptions<EmailRecipientOptions> recipientOptions)
     {
         _db = db;
         _currentUser = currentUser;
         _sanitizer = sanitizer;
+        _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
     }
 
     public async Task<EmailDraftDto> Handle(UpdateEmailDraftCommand request, CancellationToken cancellationToken)
@@ -48,6 +51,10 @@ public sealed class UpdateEmailDraftCommandHandler : IRequestHandler<UpdateEmail
             ? _sanitizer.SanitizeEmailHtml(request.BodyContent)
             : request.BodyContent;
 
+        // Both sets are checked before ANY mutation: a rejected update must leave the saved draft exactly
+        // as it was, not half-replaced.
+        var envelope = EmailDraftWriter.ValidateRecipients(
+            request.Recipients, _recipientOptions.MaxRecipients, requireTo: false);
         var attachmentInputs = request.Attachments ?? new();
         await EmailDraftWriter.ValidateAndLoadFilesAsync(_db, userId, attachmentInputs, cancellationToken);
 
@@ -68,20 +75,8 @@ public sealed class UpdateEmailDraftCommandHandler : IRequestHandler<UpdateEmail
             .Where(a => a.EmailDraftId == draft.EmailDraftId).ToListAsync(cancellationToken);
         _db.EmailDraftAttachments.RemoveRange(oldAttachments);
 
-        foreach (var r in request.Recipients ?? new())
-        {
-            var email = r.Email?.Trim();
-            if (string.IsNullOrWhiteSpace(email)) continue;
-            _db.EmailDraftRecipients.Add(new EmailDraftRecipient
-            {
-                EmailDraftId = draft.EmailDraftId,
-                RecipientEmail = email,
-                RecipientName = string.IsNullOrWhiteSpace(r.Name) ? null : r.Name.Trim(),
-                RecipientType = EmailDraftWriter.NormalizeRecipientType(r.RecipientType),
-                DisplayOrder = (uint)Math.Max(0, r.DisplayOrder),
-                CreatedAt = now,
-            });
-        }
+        foreach (var row in EmailDraftWriter.ToDraftRows(draft.EmailDraftId, envelope, now))
+            _db.EmailDraftRecipients.Add(row);
 
         foreach (var a in attachmentInputs)
         {

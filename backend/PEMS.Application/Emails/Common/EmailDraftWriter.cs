@@ -37,6 +37,65 @@ public static class EmailDraftWriter
         return v;
     }
 
+    /// <summary>
+    /// Splits the flat recipient input into TO/CC/BCC and runs the shared envelope rules over it.
+    ///
+    /// <para>
+    /// The draft screen used to accept anything: two identical addresses, the same mailbox in TO and BCC
+    /// (which leaks the blind copy the moment the TO header is read), a display name with a newline in it.
+    /// None of that failed until dispatch, by which point the sender had left the compose screen. Checking
+    /// here means the draft cannot hold an envelope that could not be sent.
+    /// </para>
+    /// <para>
+    /// <paramref name="requireTo"/> is false while a draft is being edited — an autosave of a message
+    /// whose TO has not been typed yet is a normal state, not an error — and true at send.
+    /// </para>
+    /// </summary>
+    public static ValidatedEnvelope ValidateRecipients(
+        IReadOnlyList<EmailDraftRecipientInput>? inputs, int maxRecipients, bool requireTo)
+    {
+        var to = new List<EmailRecipient>();
+        var cc = new List<EmailRecipient>();
+        var bcc = new List<EmailRecipient>();
+
+        foreach (var r in inputs ?? new List<EmailDraftRecipientInput>())
+        {
+            if (r is null) continue;
+            var recipient = new EmailRecipient(r.Email ?? string.Empty, r.Name);
+            switch (NormalizeRecipientType(r.RecipientType))
+            {
+                case EmailRecipientTypes.Cc: cc.Add(recipient); break;
+                case EmailRecipientTypes.Bcc: bcc.Add(recipient); break;
+                default: to.Add(recipient); break;
+            }
+        }
+
+        return EmailRecipientValidator.Validate(to, cc, bcc, maxRecipients, requireTo);
+    }
+
+    /// <summary>
+    /// Turns a checked envelope into draft rows, keeping each group's order and its type. Display order is
+    /// assigned per group so the three lists come back out in the order they went in.
+    /// </summary>
+    public static IEnumerable<EmailDraftRecipient> ToDraftRows(
+        ulong draftId, ValidatedEnvelope envelope, DateTime now)
+    {
+        foreach (var row in Rows(envelope.To, EmailRecipientTypes.To)) yield return row;
+        foreach (var row in Rows(envelope.Cc, EmailRecipientTypes.Cc)) yield return row;
+        foreach (var row in Rows(envelope.Bcc, EmailRecipientTypes.Bcc)) yield return row;
+
+        IEnumerable<EmailDraftRecipient> Rows(IReadOnlyList<EmailRecipient> group, string type)
+            => group.Select((r, i) => new EmailDraftRecipient
+            {
+                EmailDraftId = draftId,
+                RecipientEmail = r.Email,
+                RecipientName = r.DisplayName,
+                RecipientType = type,
+                DisplayOrder = (uint)i,
+                CreatedAt = now,
+            });
+    }
+
     public static EmailAttachmentType ParseAttachmentType(string? value)
     {
         var v = string.IsNullOrWhiteSpace(value) ? "ATTACHMENT" : value.Trim().ToUpperInvariant();
