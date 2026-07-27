@@ -205,24 +205,20 @@ export function LogisticsRequestSection({
   const activeItem = (itemType: LogisticsItemType, title: string): VisitInstanceLogisticsItem | null =>
     items.find((i) => i.itemType === itemType && i.title === title && isActive(i)) ?? null;
 
+  // Exactly the nine variables LOGISTICS_REQUEST_TO_DEPARTMENT declares. The preview shares the send's
+  // renderer, which rejects an undeclared or missing key instead of substituting a placeholder — so the
+  // display value for an empty field is decided here, by the caller, and is the same wording the send
+  // would use.
   const ctxFor = (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null) => ({
-    visitName: delegationName,
-    campusName: campusName,
-    hostName: hostName,
+    departmentLeaderName: dept?.leaderName || 'Trưởng phòng',
     requesterName: hostName,
-    departmentName: dept?.departmentName || '',
-    departmentHeadName: dept?.leaderName || '',
-    departmentLeaderName: dept?.leaderName || '',
-    departmentHeadEmail: dept?.leaderEmail || '',
     logisticsTitle: payload.title,
-    logisticsItemTitle: payload.title,
     logisticsItemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
-    itemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
-    logisticsDescription: payload.description || '',
-    quantity: payload.quantity != null ? String(payload.quantity) : '',
-    usageStartAt: fmtDateTime(payload.usageStartAt) || '',
-    usageEndAt: fmtDateTime(payload.usageEndAt) || '',
-    coordinationNote: payload.offlineCoordinationNote || '',
+    quantity: payload.quantity != null ? String(payload.quantity) : 'Chưa nhập',
+    usageStartAt: fmtDateTime(payload.usageStartAt) || 'Chưa chọn thời gian',
+    usageEndAt: fmtDateTime(payload.usageEndAt) || 'Chưa chọn thời gian',
+    dueAt: fmtDateTime(payload.dueAt) || 'Chưa đặt hạn',
+    coordinationNote: payload.offlineCoordinationNote || 'Không có ghi chú phối hợp.',
   });
 
   const submitRequest = async (key: string, payload: PrepareVisitLogisticsPayload): Promise<boolean> => {

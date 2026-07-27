@@ -1,4 +1,4 @@
-/**
+﻿/**
  * REAL-STACK E2E — registrant identity on the authenticated create (plan §32 journeys A, B and E).
  *
  * real Chromium → real React (Vite) → real .NET API (Testing, flags ON, fail-closed E2E auth) → disposable
@@ -15,6 +15,7 @@
  */
 import { test, expect, type Browser, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { type SinkRecord, sinkAddressed } from './sinkRecord';
 import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
 
 const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
@@ -73,8 +74,8 @@ async function readOtpFromSink(email: string): Promise<string> {
     } catch { /* file may not exist yet */ }
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
-        const rec = JSON.parse(lines[i]) as { to?: string; kind?: string; code?: string };
-        if (rec.kind === 'VISIT_REQUEST_OTP' && rec.to === target && rec.code) return rec.code;
+        const rec = JSON.parse(lines[i]) as SinkRecord;
+        if (rec.kind === 'VISIT_REQUEST_OTP' && sinkAddressed(rec, target) && rec.code) return rec.code;
       } catch { /* skip malformed */ }
     }
     await new Promise(r => setTimeout(r, 250));

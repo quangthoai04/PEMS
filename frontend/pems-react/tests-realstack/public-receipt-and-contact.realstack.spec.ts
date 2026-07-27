@@ -1,4 +1,4 @@
-/**
+﻿/**
  * REAL-STACK E2E — plan §24: the receipt an anonymous visitor actually sees, and the per-campus
  * operational contact.
  *
@@ -13,6 +13,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { type SinkRecord, sinkAddressed } from './sinkRecord';
 import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
 
 const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
@@ -37,8 +38,8 @@ function otpCodesFor(email: string): string[] {
   const codes: string[] = [];
   for (const line of lines) {
     try {
-      const rec = JSON.parse(line) as { to?: string; kind?: string; code?: string };
-      if (rec.kind === 'VISIT_REQUEST_OTP' && rec.to === target && rec.code) codes.push(rec.code);
+      const rec = JSON.parse(line) as SinkRecord;
+      if (rec.kind === 'VISIT_REQUEST_OTP' && sinkAddressed(rec, target) && rec.code) codes.push(rec.code);
     } catch { /* skip malformed */ }
   }
   return codes;
