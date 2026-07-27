@@ -37,7 +37,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
         private readonly IDateTimeService _clock;
-        private readonly IEmailService _email;
+        private readonly ISystemEmailDispatcher _dispatcher;
         private readonly IEmailActionTokenService _tokens;
         private readonly IHtmlSanitizerService _sanitizer;
         private readonly IFileStorageService _storage;
@@ -46,14 +46,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
-            IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
+            ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
             IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
             PEMS.Application.Notifications.Common.INotificationService notificationService)
         {
             _context = context;
             _currentUserService = currentUserService;
             _clock = clock;
-            _email = email;
+            _dispatcher = dispatcher;
             _tokens = tokens;
             _sanitizer = sanitizer;
             _storage = storage;
@@ -115,7 +115,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 }
             }
 
-            var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+            var content = await ResolveContentAsync(request.EmailOverride, cancellationToken);
             var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
             await OutboundEmailAttachments.ValidateAsync(_context, userId, attachInputs, cancellationToken);
             var now = _clock.VietnamNow;
@@ -123,13 +123,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             var delegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
                 .ForInstancesAsync(_context, new[] { l.VisitInstanceId }, cancellationToken))
                 .GetValueOrDefault(l.VisitInstanceId) ?? "FPT University";
-            var templateId = await _context.EmailTemplates
-                .Where(t => t.TemplateCode == EmailActionTemplates.LogisticsAssigneeAssignment)
-                .Select(t => (ulong?)t.EmailTemplateId)
-                .FirstOrDefaultAsync(cancellationToken);
+            // The assignee is told WHERE the visit is, which the previous hard-coded body never said.
+            var campusName = campus is null ? "FPT University" : await _context.Campuses
+                .Where(c => c.CampusId == campus.CampusId).Select(c => c.Name)
+                .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
 
-            ulong sentEmailId, sentEmailRecipientId;
-            string finalSubject, finalBody;
+            PreparedSystemEmail prepared;
 
             await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
             {
@@ -164,52 +163,35 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
                 var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
 
-                if (editedContent != null)
-                {
-                    finalSubject = request.EmailOverride!.Subject!.Trim();
-                    var content = EmailComposition.StripActionArtifacts(editedContent);
-                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.LogisticsAssigneeActionBlock(acceptUrl, declineUrl, detailUrl));
-                }
-                else
-                {
-                    finalSubject = $"[PEMS] Bạn được phân công xử lý hậu cần — {l.Title}";
-                    finalBody = EmailComposition.BrandedShell(
-                        DefaultContentHtml(assignee.FullName, delegationName, l) + EmailComposition.LogisticsAssigneeActionBlock(acceptUrl, declineUrl, detailUrl));
-                }
+                prepared = await _dispatcher.PrepareAsync(
+                    new SystemEmailRequest(
+                        SystemEmailTemplates.LogisticsAssigneeAssignment,
+                        new EmailRecipient(assignee.Email, assignee.FullName),
+                        new System.Collections.Generic.Dictionary<string, string>
+                        {
+                            ["assigneeName"] = assignee.FullName,
+                            ["logisticsTitle"] = l.Title,
+                            ["dueAt"] = l.DueAt?.ToString("HH:mm dd/MM/yyyy") ?? "Chưa đặt hạn",
+                            ["campusName"] = campusName,
+                            ["delegationName"] = delegationName,
+                        },
+                        TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>
+                        {
+                            [EmailTrustedBlocks.ActionBlock] =
+                                EmailComposition.LogisticsAssigneeActionBlock(acceptUrl, declineUrl, detailUrl),
+                        },
+                        RelatedType: EmailActionTargetTypes.LogisticsItem,
+                        RelatedId: l.LogisticsItemId,
+                        SentBy: userId)
+                    {
+                        Content = content,
+                    },
+                    cancellationToken);
 
-                finalSubject = LogisticsPriorityText.ApplySubjectPrefix(l.Priority, finalSubject);
-                finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
+                AttachTo(prepared.SentEmailId, attachInputs, now);
 
-                var sentEmail = new SentEmail
-                {
-                    EmailTemplateId = templateId,
-                    RelatedType = EmailActionTargetTypes.LogisticsItem,
-                    RelatedId = l.LogisticsItemId,
-                    Subject = finalSubject,
-                    BodySnapshot = finalBody,
-                    Status = "QUEUED",
-                    SentBy = userId,
-                    CreatedAt = now,
-                };
-                // Inline images + file attachments (cascade-insert with the sent_emails row).
-                OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
-                _context.SentEmails.Add(sentEmail);
-                await _context.SaveChangesAsync(cancellationToken);
-
-                var sentRecipient = new SentEmailRecipient
-                {
-                    SentEmailId = sentEmail.SentEmailId,
-                    RecipientEmail = assignee.Email,
-                    RecipientName = assignee.FullName,
-                    RecipientType = "TO",
-                    DeliveryStatus = "QUEUED",
-                    CreatedAt = now,
-                };
-                _context.SentEmailRecipients.Add(sentRecipient);
-                await _context.SaveChangesAsync(cancellationToken);
-
-                _context.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
-                _context.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+                _context.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
+                _context.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, l.LogisticsItemId, assignee.UserId, assignee.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
 
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
@@ -231,8 +213,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 );
                 await _context.SaveChangesAsync(cancellationToken);
 
-                sentEmailId = sentEmail.SentEmailId;
-                sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
                 await transaction.CommitAsync(cancellationToken);
             }
 
@@ -240,57 +220,73 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             {
                 // Real MIME path with the leader's inline images (cid) + file attachments.
                 var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_context, _storage, attachInputs, cancellationToken);
-                await _email.SendAsync(new OutboundEmail
-                {
-                    ToEmail = assignee.Email,
-                    Subject = finalSubject,
-                    Body = finalBody,
-                    IsHtml = true,
-                    Attachments = outboundAttachments,
-                }, cancellationToken);
-                await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", userId, now, null, cancellationToken);
+                await _dispatcher.DeliverAsync(
+                    prepared with { Attachments = outboundAttachments }, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", userId, now, ex.Message, cancellationToken);
+                // The exception text is not recorded: a storage failure can name a path or a signed URL.
+                await MarkDeliveryFailedAsync(
+                    prepared, "Không đọc được tệp đính kèm khi gửi email.", now, cancellationToken);
             }
 
             return true;
         }
 
-        private string? ValidateAndSanitizeOverride(EmailOverride? ov)
+        /// <summary>
+        /// Turns the optional Leader edit into a content mode. Validation and sanitising happen inside
+        /// <see cref="SystemEmailContent.AuthoredByUser.Create"/>, the only way to build the type.
+        /// </summary>
+        private async Task<SystemEmailContent> ResolveContentAsync(EmailOverride? ov, CancellationToken ct)
         {
-            if (ov is null || !ov.UseEditedContent) return null;
-            if (string.IsNullOrWhiteSpace(ov.Subject))
-                throw new ValidationException("Tiêu đề email không được để trống.");
-            if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
-                throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
-            if (string.IsNullOrWhiteSpace(ov.BodyHtml))
-                throw new ValidationException("Nội dung email không được để trống.");
-            if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
-                throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
-            // Email-profile sanitize so inline-image <img src="cid:..."> + data-* refs survive.
-            var sanitized = _sanitizer.SanitizeEmailHtml(ov.BodyHtml);
-            if (string.IsNullOrWhiteSpace(sanitized))
-                throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
-            return sanitized;
+            if (ov is null || !ov.UseEditedContent) return SystemEmailContent.FromTemplate.Instance;
+
+            var rawHtml = await _normalizer.NormalizeHtmlAsync(EmailComposition.ResolveEditableHtml(ov), ct);
+            return SystemEmailContent.AuthoredByUser.Create(ov.Subject, rawHtml, _sanitizer);
         }
 
-        private static string DefaultContentHtml(string assigneeName, string delegationName, VisitLogisticsItem l)
+        /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
+        private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput> inputs, DateTime now)
         {
-            string HE(string? s) => EmailComposition.HE(s);
-            var prio = $"<li><strong>Mức ưu tiên:</strong> {HE(LogisticsPriorityText.LabelVi(l.Priority))}</li>";
-            var due = l.DueAt.HasValue ? $"<li><strong>Hạn xử lý:</strong> {HE(l.DueAt.Value.ToString("HH:mm dd/MM/yyyy"))}</li>" : string.Empty;
-            return $@"<p>Xin chào <strong>{HE(assigneeName)}</strong>,</p>
-<p>Bạn được phân công xử lý hạng mục hậu cần <strong>{HE(l.Title)}</strong> cho đoàn <strong>{HE(delegationName)}</strong>.</p>
-<div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
-  <ul style=""margin:0;padding-left:20px;line-height:1.7"">
-    <li><strong>Hạng mục:</strong> {HE(l.Title)} ({HE(l.ItemType)})</li>
-    {prio}
-    {due}
-  </ul>
-</div>
-<p>Vui lòng phản hồi bằng một trong các nút dưới đây.</p>";
+            var order = 0;
+            foreach (var a in inputs)
+            {
+                _context.SentEmailAttachments.Add(new SentEmailAttachment
+                {
+                    SentEmailId = sentEmailId,
+                    FileId = a.FileId,
+                    AttachmentType = EmailDraftWriter.ParseAttachmentType(a.AttachmentType),
+                    ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId!.Trim(),
+                    DisplayName = a.DisplayName,
+                    DisplayOrder = a.DisplayOrder > 0 ? (uint)a.DisplayOrder : (uint)order,
+                    CreatedAt = now,
+                });
+                order++;
+            }
+        }
+
+        /// <summary>Records a failure that happened before the sender was reached at all.</summary>
+        private async Task MarkDeliveryFailedAsync(
+            PreparedSystemEmail prepared, string safeMessage, DateTime now, CancellationToken ct)
+        {
+            var sentEmail = await _context.SentEmails
+                .FirstOrDefaultAsync(e => e.SentEmailId == prepared.SentEmailId, ct);
+            if (sentEmail is not null)
+            {
+                sentEmail.Status = "FAILED";
+                sentEmail.LastAttemptAt = now;
+                sentEmail.ErrorMessage = safeMessage;
+            }
+
+            var rec = await _context.SentEmailRecipients
+                .FirstOrDefaultAsync(r => r.SentEmailRecipientId == prepared.SentEmailRecipientId, ct);
+            if (rec is not null)
+            {
+                rec.DeliveryStatus = "FAILED";
+                rec.ErrorMessage = safeMessage;
+            }
+
+            await _context.SaveChangesAsync(ct);
         }
 
         private static EmailActionToken NewToken(
@@ -313,30 +309,5 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 CreatedAt = now,
             };
 
-        private async Task UpdateEmailStatusAsync(
-            ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
-            string? error, CancellationToken ct)
-        {
-            var sentEmail = await _context.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
-            if (sentEmail != null)
-            {
-                sentEmail.Status = status;
-                sentEmail.LastAttemptAt = now;
-                sentEmail.RetryCount += 1;
-                if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
-                else { sentEmail.ErrorMessage = Truncate(error, 1000); }
-            }
-            var rec = await _context.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
-            if (rec != null)
-            {
-                rec.DeliveryStatus = status;
-                if (status == "SENT") rec.SentAt = now;
-                else rec.ErrorMessage = Truncate(error, 1000);
-            }
-            await _context.SaveChangesAsync(ct);
-        }
-
-        private static string? Truncate(string? s, int max)
-            => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
     }
 }

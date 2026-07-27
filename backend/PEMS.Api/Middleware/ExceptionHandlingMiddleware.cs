@@ -64,8 +64,16 @@ public sealed class ExceptionHandlingMiddleware
         {
             case ValidationException validation:
                 status = StatusCodes.Status400BadRequest;
-                payload = new { success = false, message = validation.Message, errors = validation.Errors, traceId };
-                _logger.LogInformation("Validation failed: {Message}", validation.Message);
+                payload = new
+                {
+                    success = false,
+                    errorCode = validation.ErrorCode,
+                    message = validation.Message,
+                    errors = validation.Errors,
+                    traceId,
+                };
+                _logger.LogInformation(
+                    "Validation failed ({Code}): {Message}", validation.ErrorCode ?? "n/a", validation.Message);
                 break;
 
             case AuthBusinessException authBiz:
@@ -87,7 +95,7 @@ public sealed class ExceptionHandlingMiddleware
 
             case NotFoundException notFound:
                 status = StatusCodes.Status404NotFound;
-                payload = new { success = false, message = notFound.Message, traceId };
+                payload = new { success = false, errorCode = notFound.ErrorCode, message = notFound.Message, traceId };
                 break;
 
             case OtpChallengeException otp:

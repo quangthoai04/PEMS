@@ -1,8 +1,10 @@
+using System.Collections.Generic;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Authentication.Models;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Authentication.Commands.ForgotPassword;
@@ -14,20 +16,20 @@ public sealed class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswor
 
     private readonly IApplicationDbContext _db;
     private readonly IOtpService _otpService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly ISecurityAuditService _audit;
     private readonly ILogger<ForgotPasswordCommandHandler> _logger;
 
     public ForgotPasswordCommandHandler(
         IApplicationDbContext db,
         IOtpService otpService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         ISecurityAuditService audit,
         ILogger<ForgotPasswordCommandHandler> logger)
     {
         _db = db;
         _otpService = otpService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _audit = audit;
         _logger = logger;
     }
@@ -49,12 +51,20 @@ public sealed class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswor
 
             if (user is not null && hasLocalPassword && user.Status == UserStatuses.Active)
             {
+                // CreateAsync persists the token itself, so the code exists before anything is emailed:
+                // a send failure below leaves a usable token rather than an account that was told to
+                // expect a code that was never issued.
                 var code = await _otpService.CreateAsync(
                     user, OtpPurposes.ChangeSensitiveAction, request.IpAddress, request.UserAgent, cancellationToken);
 
-                await _emailService.SendPasswordResetAsync(user.Email, user.FullName, code, cancellationToken);
-
-
+                await _dispatcher.SendAsync(new SystemEmailRequest(
+                    SystemEmailTemplates.AuthPasswordResetOtp,
+                    new EmailRecipient(user.Email, user.FullName),
+                    // The lifetime is read from the OTP service rather than written here, so the email
+                    // states the one the token was actually given.
+                    OtpEmailVariables.For(user.FullName, code, _otpService.CodeMinutes),
+                    RelatedType: "User",
+                    RelatedId: user.UserId), cancellationToken);
             }
         }
         catch (Exception ex)

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Departments;
 using PEMS.Domain.Entities.Users;
@@ -28,20 +29,20 @@ public sealed class AddDepartmentPersonnelCommandHandler : IRequestHandler<AddDe
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IAccountEmailConfirmationService _confirmations;
     private readonly IDateTimeService _clock;
 
     public AddDepartmentPersonnelCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUserService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IAccountEmailConfirmationService confirmations,
         IDateTimeService clock)
     {
         _context = context;
         _currentUserService = currentUserService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _confirmations = confirmations;
         _clock = clock;
     }
@@ -144,19 +145,27 @@ public sealed class AddDepartmentPersonnelCommandHandler : IRequestHandler<AddDe
             throw;
         }
 
-        // Send the confirmation link (truthful outcome). A non-Sent result never rolls back the pending
-        // account — the operator can resend.
-        var result = await _emailService.TrySendAsync(
-            email, AccountConfirmationEmail.Subject,
-            AccountConfirmationEmail.BuildHtml(fullName, _confirmations.BuildConfirmUrl(confirmationToken)),
-            cancellationToken);
+        // Send the confirmation link (truthful outcome), strictly after the commit above. A non-Sent result
+        // never rolls back the pending account — the operator can resend.
+        var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailConfirmation,
+            new EmailRecipient(email, fullName),
+            // The role is not read back from the database here because the shape resolved above IS what was
+            // just written: a DEPARTMENT account with this sub-role and campus.
+            await AccountEmailVariables.ForConfirmationAsync(
+                _context, fullName, RoleCodes.Department, shape.SubRole,
+                shape.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
+            TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(_confirmations.BuildConfirmUrl(confirmationToken)),
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: actorId), cancellationToken);
 
         return new AddDepartmentPersonnelResponse
         {
             Success = true,
             Message = "Đã tạo nhân sự phòng ban; tài khoản đang chờ xác nhận email.",
             UserId = user.UserId,
-            EmailNotificationStatus = AccountConfirmationEmail.MapStatus(result.Status),
+            EmailNotificationStatus = result.NotificationStatus,
         };
     }
 
