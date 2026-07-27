@@ -86,12 +86,44 @@ public sealed class GetRoleAssignmentOptionsQueryHandler
             };
         }).ToList();
 
+        // ── Successor picker data. The role change refuses to leave a department headless, so when
+        //    the target holds a seat the modal has to offer a replacement in the same step; the
+        //    write side re-validates every candidate it is given. ──
+        var headed = generals.FirstOrDefault(d => d.HeadUserId == request.TargetUserId);
+        HeadedDepartmentDto? headedDepartment = null;
+        if (headed is not null)
+        {
+            var candidates = await _db.Users.AsNoTracking()
+                .Where(u => u.DepartmentId == headed.DepartmentId
+                            && u.UserId != request.TargetUserId
+                            && u.Role!.RoleCode == RoleCodes.Department
+                            && u.SubRole == UserSubRoles.Staff
+                            && u.Status == UserStatuses.Active
+                            && u.PrimaryCampusId == actorCampusId)
+                .OrderBy(u => u.FullName)
+                .Select(u => new HeadReplacementCandidateDto
+                {
+                    UserId = u.UserId,
+                    FullName = u.FullName,
+                    Email = u.Email,
+                })
+                .ToListAsync(cancellationToken);
+
+            headedDepartment = new HeadedDepartmentDto
+            {
+                DepartmentId = headed.DepartmentId,
+                Name = headed.Name,
+                ReplacementCandidates = candidates,
+            };
+        }
+
         return new RoleAssignmentOptionsDto
         {
             CampusId = actorCampusId,
             CampusName = campusName,
             IcDepartment = ic,
             GeneralDepartments = generalOptions,
+            HeadedDepartment = headedDepartment,
         };
     }
 }
