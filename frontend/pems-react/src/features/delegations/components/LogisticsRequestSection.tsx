@@ -1690,50 +1690,59 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
   const canSign = canSignItem(it);
 
   return (
-    <div className={`rounded-2xl border bg-white px-4 py-4 shadow-sm transition-colors hover:bg-slate-50 ${proposed ? 'border-violet-200 bg-violet-50/30 hover:bg-violet-50' : 'border-slate-200'}`}>
-      <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)_190px] gap-4 lg:gap-5 items-start">
-        {/* Vùng A */}
-        <div className="min-w-0 w-full">
-          <h4 className="text-sm font-bold text-slate-900 line-clamp-1" title={it.title}>{it.title}</h4>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
-            <span className="truncate">{ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}</span>
-            {it.quantity != null && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span>SL dự kiến: {it.quantity}</span>
-              </>
-            )}
-            {it.proposedQuantity != null && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="font-semibold text-violet-700">đề xuất: {it.proposedQuantity}</span>
-              </>
-            )}
-            {it.proposalResponse && finalQty != null && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="font-semibold text-emerald-700">chốt: {finalQty}</span>
-              </>
+    <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-all hover:shadow-md ${proposed ? 'border-violet-200 bg-violet-50/20' : 'border-slate-200 hover:border-slate-300'}`}>
+      {/* Top Header: Title + All Status Badges in a clean horizontal layout */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        {/* Title & Quantity */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h4 className="text-base font-bold text-slate-900 truncate" title={it.title}>{it.title}</h4>
+          <span className="inline-flex items-center rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
+            {ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}
+          </span>
+          {it.quantity != null && (
+            <span className="inline-flex items-center text-xs font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+              SL dự kiến: <b className="ml-1 text-slate-800">{it.quantity}</b>
+            </span>
+          )}
+          {it.proposedQuantity != null && (
+            <span className="inline-flex items-center text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded border border-violet-200">
+              Đề xuất: {it.proposedQuantity}
+            </span>
+          )}
+          {it.proposalResponse && finalQty != null && (
+            <span className="inline-flex items-center text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              Chốt: {finalQty}
+            </span>
+          )}
+        </div>
+
+        {/* Badges Bar (Horizontal) */}
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          {isHandoverEligible && (
+            <HandoverStatusBadge borrow={borrow} />
+          )}
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${statusCls}`}>
+            {meta.label}
+          </span>
+          {it.coordinationMode && (
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+              {COORD_LABEL[it.coordinationMode]}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Card Body: Structured in 3 exact rows specified by user */}
+      <div className="space-y-2 pt-3 text-xs text-slate-600">
+        {/* Dòng 1: Tên phòng ban (Bên trái) + 2 Trạng thái ký (Bên phải) */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            {it.departmentName && (
+              <div><span className="text-slate-400 font-medium">Phòng ban:</span> <b className="text-slate-800">{it.departmentName}</b></div>
             )}
           </div>
-          {offline && it.offlineCoordinationNote && (
-            <div className="mt-2 text-xs italic text-slate-500 line-clamp-2" title={it.offlineCoordinationNote}>
-              <span className="font-semibold text-amber-700/80 mr-1">Ghi chú ngoài:</span>
-              {it.offlineCoordinationNote}
-            </div>
-          )}
-          {it.description && !offline && (
-            <div className="mt-2 text-xs italic text-slate-500 line-clamp-2" title={it.description}>
-              {it.description}
-            </div>
-          )}
-          {it.proposalResponseNote && (
-            <div className="mt-1 text-xs italic text-slate-500 line-clamp-2">
-              <span className="font-semibold mr-1">Phản hồi:</span>{it.proposalResponseNote}
-            </div>
-          )}
           {isHandoverEligible && (
-            <div className="mt-2.5 flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
               <SignChip
                 label="Phòng ban ký giao"
                 at={borrow?.providerSignedAt}
@@ -1748,123 +1757,112 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
           )}
         </div>
 
-        {/* Vùng B - Xử lý */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100 lg:bg-transparent lg:p-0 lg:border-none">
-          <div className="space-y-3">
-            {it.departmentName && (
+        {/* Dòng 2: Thời gian (Bên trái, trải dài) + 2 Nút hành động (Bên phải) */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            {(it.usageStartAt || it.usageEndAt) && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Phòng ban</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.departmentName}>{it.departmentName}</p>
-              </div>
-            )}
-            {it.requestedByName && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Người gửi</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.requestedByName}>{it.requestedByName}</p>
-              </div>
-            )}
-            {it.assignedToName && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Nhân sự</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.assignedToName}>{it.assignedToName}</p>
+                <span className="text-slate-400 font-medium">Thời gian:</span>{' '}
+                <span className="font-semibold text-slate-800">{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>
               </div>
             )}
           </div>
-          <div className="space-y-3">
-            {(it.usageStartAt || it.usageEndAt) && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Thời gian sử dụng</p>
-                <div className="mt-0.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
-                  {it.usageStartAt && <div>Từ: {fmtDateTime(it.usageStartAt)}</div>}
-                  {it.usageEndAt && <div>Đến: {fmtDateTime(it.usageEndAt)}</div>}
-                </div>
-              </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {isHandoverEligible && (
+              <button
+                type="button"
+                onClick={() => onOpenSign(it)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold outline-none transition-colors shadow-sm ${
+                  canSign
+                    ? 'border-[#004c91] bg-[#004c91] text-white hover:bg-[#003b70]'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {canSign ? 'Ký nhận' : 'Xem biên bản'}
+              </button>
             )}
-            {it.dueAt && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hạn hoàn thành</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate">{fmtDateTime(it.dueAt)}</p>
-              </div>
+            {it.coordinationMode === 'SYSTEM_REQUEST' && (
+              <button type="button" onClick={() => onViewSent(it)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-1.5 text-xs font-bold text-[#004c91] outline-none hover:bg-blue-100 transition-colors shadow-sm">
+                <Mail className="w-3.5 h-3.5" /> Mail đã gửi
+              </button>
             )}
           </div>
         </div>
 
-        {/* Vùng C - Trạng thái & Action */}
-        <div className="w-full flex flex-row flex-wrap lg:flex-col items-start lg:items-end gap-2 shrink-0">
-          {isHandoverEligible && (
-            <HandoverStatusBadge borrow={borrow} />
+        {/* Dòng 3: Người gửi • Nhân sự + Ghi chú phụ */}
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {it.requestedByName && (
+              <div><span className="text-slate-400 font-medium">Người gửi:</span> <span className="font-semibold text-slate-700">{it.requestedByName}</span></div>
+            )}
+            {it.assignedToName && (
+              <div className="flex items-center gap-1.5">
+                {it.requestedByName && <span className="text-slate-300">•</span>}
+                <span className="text-slate-400 font-medium">Nhân sự:</span>{' '}
+                <span className="font-semibold text-slate-700">{it.assignedToName}</span>
+              </div>
+            )}
+          </div>
+
+          {it.dueAt && (
+            <div><span className="text-slate-400 font-medium">Hạn hoàn thành:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.dueAt)}</span></div>
           )}
-          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${statusCls}`}>
-            {meta.label}
-          </span>
-          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${PRIORITY_META[it.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
-            Ưu tiên: {PRIORITY_META[it.priority]?.label ?? it.priority}
-          </span>
-          {it.coordinationMode && (
-            <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-              {COORD_LABEL[it.coordinationMode]}
-            </span>
+          {it.description && !offline && (
+            <div className="italic text-slate-500 line-clamp-1" title={it.description}>
+              <span className="font-normal text-slate-400 not-italic">Mô tả:</span> {it.description}
+            </div>
           )}
-          {isHandoverEligible && (
-            <button
-              type="button"
-              onClick={() => onOpenSign(it)}
-              className={`mt-1 inline-flex items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold outline-none transition-colors ${
-                canSign
-                  ? 'border-[#004c91] bg-[#004c91] text-white hover:bg-[#003b70]'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              {canSign ? 'Ký nhận' : 'Xem biên bản'}
-            </button>
+          {offline && it.offlineCoordinationNote && (
+            <div className="italic text-slate-500 line-clamp-1" title={it.offlineCoordinationNote}>
+              <span className="font-semibold text-amber-700/80 not-italic">Ghi chú ngoài:</span> {it.offlineCoordinationNote}
+            </div>
           )}
-          {it.coordinationMode === 'SYSTEM_REQUEST' && (
-            <button type="button" onClick={() => onViewSent(it)}
-              className="mt-1 lg:mt-2 inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-100 bg-white px-3 py-1.5 text-[11px] font-bold text-[#004c91] outline-none hover:bg-blue-50 transition-colors">
-              <Mail className="w-3.5 h-3.5" /> Mail đã gửi
-            </button>
+          {it.proposalResponseNote && (
+            <div className="italic text-slate-500 line-clamp-1">
+              <span className="font-semibold text-slate-600 not-italic">Phản hồi:</span> {it.proposalResponseNote}
+            </div>
           )}
         </div>
       </div>
 
       {isTerminal && it.status !== 'DONE' && reasonText && (
-        <div className="mt-4 rounded-xl border border-red-100 bg-red-50/70 p-3 text-sm text-red-700">
-          <div className="mb-1 font-bold">{reasonLabel}:</div>
-          <div className="text-xs">{reasonText}</div>
+        <div className="mt-3 rounded-xl border border-red-100 bg-red-50/70 p-3 text-xs text-red-700">
+          <span className="font-bold">{reasonLabel}:</span> {reasonText}
         </div>
       )}
 
       {proposed && (
-        <div className="mt-4 rounded-xl border border-violet-200 bg-white p-3 lg:p-4">
-          <div className="text-xs font-bold uppercase tracking-wide text-violet-700 mb-3">Phòng ban đề xuất thay đổi</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+        <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/30 p-3">
+          <div className="text-xs font-bold uppercase tracking-wide text-violet-700 mb-2">Phòng ban đề xuất thay đổi</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
             {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className="text-violet-900">{it.proposedQuantity}</b></div>}
             {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div><span className="text-slate-500">Thời gian đề xuất:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</span></div>}
             {it.proposedDescription && <div className="sm:col-span-2"><span className="text-slate-500">Nội dung đề xuất:</span> {it.proposedDescription}</div>}
             {it.proposalNote && <div className="sm:col-span-2 text-violet-800 font-medium">Lý do: {it.proposalNote}</div>}
           </div>
           {canManage && (!rejecting ? (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button type="button" disabled={busy} onClick={() => onRespond(it, true, '')}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white outline-none hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-emerald-700 transition-colors disabled:opacity-50">
                 {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Chấp nhận đề xuất
               </button>
               <button type="button" disabled={busy} onClick={() => setRejecting(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 outline-none hover:bg-red-50 transition-colors disabled:opacity-50">
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none hover:bg-red-50 transition-colors disabled:opacity-50">
                 <X className="w-3.5 h-3.5" /> Từ chối đề xuất
               </button>
             </div>
           ) : (
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-2">
               <textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} maxLength={1000}
                 placeholder="Lý do từ chối đề xuất (bắt buộc)..."
-                className="w-full h-[80px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 transition-colors" />
+                className="w-full h-[70px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:border-red-400 transition-colors" />
               <div className="flex items-center justify-end gap-2">
                 <button type="button" disabled={busy} onClick={() => { setRejecting(false); setRejectNote(''); }}
-                  className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 transition-colors disabled:opacity-50">Hủy</button>
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 transition-colors disabled:opacity-50">Hủy</button>
                 <button type="button" disabled={busy || !rejectNote.trim()} onClick={() => onRespond(it, false, rejectNote.trim())}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white outline-none hover:bg-red-700 transition-colors disabled:opacity-50">
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-red-700 transition-colors disabled:opacity-50">
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />} Xác nhận từ chối
                 </button>
               </div>
