@@ -36,6 +36,7 @@ import { PartnerDetail } from './pages/dashboard/partners/PartnerDetail';
 import { PartnerEdit } from './pages/dashboard/partners/PartnerEdit';
 import { DepartmentManagement } from './pages/dashboard/departments/DepartmentManagement';
 import { DepartmentDetailDashboard } from './pages/dashboard/departments/DepartmentDetailDashboard';
+import { MyDepartmentPage } from './pages/dashboard/my-department/MyDepartmentPage';
 import { DeptReportManagement } from './pages/dashboard/reports/DeptReportManagement';
 import { TaskDetail } from './pages/dashboard/departments/TaskDetail';
 import { TaskInvitationDetail } from './pages/dashboard/departments/TaskInvitationDetail';
@@ -189,6 +190,13 @@ export default function App() {
             <Route path="partners/:id/edit" element={<PartnerEdit />} />
             <Route path="partners/:id" element={<PartnerDetail />} />
             <Route path="departments" element={<DepartmentManagement />} />
+            {/* Department Leader personnel management. No :id — the department is resolved from the
+                signed-in Leader server-side, so there is no id in the URL to tamper with. Non-Leaders
+                are bounced here and refused again by the API. */}
+            <Route
+              path="my-department"
+              element={isDeptLeader ? <MyDepartmentPage /> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="departments/:id" element={<DepartmentDetailDashboard />} />
             <Route path="departments/:id/tasks/:taskId" element={<TaskDetail />} />
             <Route path="departments/:id/invitations/:taskId" element={<TaskInvitationDetail />} />
