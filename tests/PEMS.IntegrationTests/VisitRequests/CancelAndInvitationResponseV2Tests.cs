@@ -123,7 +123,7 @@ public sealed class CancelAndInvitationResponseV2Tests
 
     private static RespondVisitParticipantInvitationCommandHandler RespondHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
-        => new(db, actor, new FixedClock(), notifications);
+        => new(db, actor, new FixedClock(), notifications, new MySqlUserMutationLockService(db));
 
     private static CampusVisitFormDto Campus(string code, DateTime start, string delegationName)
         => new(code, start, start.AddMinutes(120), delegationName, "MEETING", null,
@@ -142,7 +142,7 @@ public sealed class CancelAndInvitationResponseV2Tests
             new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db));
+            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "CX" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
@@ -166,7 +166,7 @@ public sealed class CancelAndInvitationResponseV2Tests
         var actor = new FakeUser(leaderId, RoleCodes.Staff, UserSubRoles.Leader, campusId);
         var handler = new ApproveCampusInstanceCommandHandler(
             db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), new RecordingNotifications(),
-            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()));
+            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()), new MySqlUserMutationLockService(db));
         await handler.Handle(new ApproveCampusInstanceCommand(requestId, instanceId, hostId, null), CancellationToken.None);
     }
 

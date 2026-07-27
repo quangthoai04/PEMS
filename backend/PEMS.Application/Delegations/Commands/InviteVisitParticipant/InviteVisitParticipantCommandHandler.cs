@@ -38,14 +38,17 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
     private readonly PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService _formReadService;
+    private readonly IUserMutationLockService _lockService;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
         IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
         PEMS.Application.Notifications.Common.INotificationService notificationService,
-        PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formReadService)
+        PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formReadService,
+        IUserMutationLockService lockService)
     {
+        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -138,6 +141,19 @@ public sealed class InviteVisitParticipantCommandHandler
 
         await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
         {
+            // ── 0) Shared lock protocol (see IUserMutationLockService). The invitee's eligibility
+            //    was resolved above without a lock; a role change could have committed in between,
+            //    which would leave an INVITED row on an account that no longer has the permissions
+            //    the invitation implies. Lock the account, then re-resolve against the committed
+            //    state — a Staff Leader's role change either lost the race and now sees this
+            //    invitation as a blocker, or won it and this invite is refused. ──
+            await _lockService.LockUsersAsync(new[] { targetUserId }, cancellationToken);
+
+            var reconfirmed = await ResolveInviteeAsync(type, request, instance, cancellationToken);
+            if (reconfirmed.UserId != targetUserId || reconfirmed.ParticipantRole != participantRole)
+                throw new ConflictException(
+                    "Vai trò của nhân sự này vừa thay đổi. Vui lòng tải lại danh sách và mời lại.");
+
             // 1) participant row (reuse a previously DECLINED/REMOVED row, else create new).
             if (existing != null)
             {
