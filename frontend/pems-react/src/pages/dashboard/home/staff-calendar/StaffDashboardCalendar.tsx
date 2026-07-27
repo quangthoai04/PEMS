@@ -123,7 +123,8 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   // View Ngày có thể mở từ lưới Tháng hoặc Tuần — nút "Quay lại" trả về đúng nơi xuất phát.
   const [dayViewReturnMode, setDayViewReturnMode] = useState<'Tháng' | 'Tuần'>('Tháng');
   const [anchorDate, setAnchorDate] = useState<Date>(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())));
-  const [calendarType, setCalendarType] = useState<CalendarType>('mine');
+  // Staff Leader mặc định xem lịch văn phòng; Staff thường mặc định xem lịch của tôi.
+  const [calendarType, setCalendarType] = useState<CalendarType>(isStaffLeader ? 'office' : 'mine');
   const [showModeDropdown, setShowModeDropdown] = useState(false);
 
   // ── Data ──

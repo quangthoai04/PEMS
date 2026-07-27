@@ -874,7 +874,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [displayMode, setDisplayMode] = useState<'Ngày' | 'Tuần' | 'Tháng' | 'Năm'>('Tháng');
 
   // New states for Calendar Type ("Trong văn phòng", "Lịch của tôi")
-  const [calendarType, setCalendarType] = useState<'Trong văn phòng' | 'Lịch của tôi'>('Lịch của tôi');
+  // Dept Leader mặc định xem lịch văn phòng; Dept Staff/Student/Visitor mặc định xem lịch của tôi.
+  const [calendarType, setCalendarType] = useState<'Trong văn phòng' | 'Lịch của tôi'>(isDeptLeader ? 'Trong văn phòng' : 'Lịch của tôi');
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
 
   // Filter events based on type
