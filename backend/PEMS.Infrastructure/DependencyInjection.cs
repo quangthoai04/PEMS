@@ -24,6 +24,10 @@ public static class DependencyInjection
         // Expose the EF Core context through the Application abstraction.
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
+        // Shared pessimistic row locks (role change vs. responsibility-creating flows — see
+        // IUserMutationLockService). Scoped: it must join the ambient DbContext transaction.
+        services.AddScoped<IUserMutationLockService, PEMS.Infrastructure.Persistence.MySqlUserMutationLockService>();
+
         // Repositories
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<ICampusRepository, CampusRepository>();
