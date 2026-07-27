@@ -14,10 +14,11 @@
  * API — no mock, no hard-coded department/leader.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Loader2, Send, Eye, Plus, Trash2, ChevronUp, ChevronDown, CheckCircle, CheckCircle2, AlertCircle, X,
-  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail,
+  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail, FileText, PenLine, Clock, Download,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
@@ -32,7 +33,11 @@ import {
   type PrepareVisitLogisticsPayload,
   type SupportDepartment,
   type VisitInstanceLogisticsItem,
+  type LogisticsHandover,
+  type LogisticsHandoverType,
 } from '../types/delegations.types';
+import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../department-reception-tasks/constants/vehicleHandover';
+import { LogisticsExpensePanel } from '../../../pages/dashboard/departments/LogisticsExpensePanel';
 import { toVietnamDateTimeLocalInput, vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
@@ -76,6 +81,57 @@ const PRIORITY_META: Record<LogisticsPriority, { label: string; cls: string }> =
 const LOCKED_STATUSES = new Set(['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']);
 // Statuses whose decision/decline reason should surface as the closing reason.
 const REASON_STATUSES = new Set(['REJECTED', 'CANCELLED', 'DECLINED']);
+const HANDOVER_STATUSES = new Set(['ACCEPTED', 'IN_PROGRESS', 'DONE']);
+
+const findHandover = (hs: LogisticsHandover[] | undefined, t: LogisticsHandoverType) =>
+  hs?.find((h) => h.handoverType === t) ?? null;
+
+const fullySigned = (h: LogisticsHandover | null) =>
+  !!(h && h.borrowerSignedAt && h.providerSignedAt);
+
+function HandoverStatusBadge({ borrow }: { borrow: LogisticsHandover | null }) {
+  if (fullySigned(borrow)) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+        <CheckCircle2 className="w-3 h-3" /> Đã ký nhận đủ 2 bên
+      </span>
+    );
+  }
+  if (borrow?.providerSignedAt && !borrow?.borrowerSignedAt) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+        <PenLine className="w-3 h-3" /> Chờ người phụ trách ký nhận
+      </span>
+    );
+  }
+  if (!borrow?.providerSignedAt) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+        <Clock className="w-3 h-3" /> Chờ phòng ban ký bàn giao
+      </span>
+    );
+  }
+  return null;
+}
+
+function SignChip({ label, at, name }: { label: string; at?: string | null; name?: string | null }) {
+  const signed = !!at;
+  return (
+    <div className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold ${
+      signed
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        : 'border-slate-200 bg-white text-slate-400'
+    }`}>
+      {signed
+        ? <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+        : <Clock className="w-3 h-3 text-slate-300 shrink-0" />}
+      <span>{label}: </span>
+      {signed
+        ? <span className="font-bold">{name || 'Đã ký'} • {fmtDateTime(at)}</span>
+        : <span className="italic">Chưa ký</span>}
+    </div>
+  );
+}
 
 type ResourceForm = {
   quantity: string;
@@ -165,6 +221,60 @@ export function LogisticsRequestSection({
     { open: false, item: null });
   const openSentEmails = (item: VisitInstanceLogisticsItem) => setSentModal({ open: true, item });
   const closeSentEmails = () => setSentModal((s) => ({ ...s, open: false }));
+
+  // Asset handover signing modal state (BORROW phase in Before Visit tab).
+  const [signTarget, setSignTarget] = useState<{ item: VisitInstanceLogisticsItem; type: LogisticsHandoverType } | null>(null);
+  const [signBusy, setSignBusy] = useState(false);
+  const [signNote, setSignNote] = useState('');
+  const [signErr, setSignErr] = useState<string | null>(null);
+  const [checklistDraft, setChecklistDraft] = useState<VehicleChecklistRow[]>([]);
+
+  const canSignItem = useCallback((item: VisitInstanceLogisticsItem): boolean => {
+    if (!canManage) return false;
+    const borrow = findHandover(item.handovers, 'BORROW');
+    return !!(borrow?.providerSignedAt) && !borrow?.borrowerSignedAt;
+  }, [canManage]);
+
+  const openSignModal = (item: VisitInstanceLogisticsItem) => {
+    setSignTarget({ item, type: 'BORROW' });
+    setSignNote('');
+    setSignErr(null);
+    const borrow = findHandover(item.handovers, 'BORROW');
+    const rows = (() => {
+      if (borrow?.checklistJson) {
+        try {
+          const parsed = JSON.parse(borrow.checklistJson);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch { }
+      }
+      return isVehicleHandover(item.itemType)
+        ? buildDefaultVehicleChecklist()
+        : buildDefaultGenericChecklist(item.title, item.quantity);
+    })();
+    setChecklistDraft(rows);
+  };
+  const closeSignModal = () => { if (!signBusy) { setSignTarget(null); setSignErr(null); } };
+
+  const submitHandover = async () => {
+    if (!signTarget || !visitInstanceId) return;
+    setSignBusy(true);
+    try {
+      const res = await delegationsApi.signLogisticsHandoverBorrower(
+        visitInstanceId, signTarget.item.logisticsItemId,
+        { handoverType: 'BORROW', note: signNote.trim() || null }
+      );
+      pushToast('success', res.message || 'Đã ký biên bản.');
+      setSignTarget(null);
+      setSignNote('');
+      await loadList();
+    } catch (e: any) {
+      const m = apiError(e, 'Không thể ký biên bản. Vui lòng thử lại.');
+      setSignErr(m);
+      pushToast('error', m);
+    } finally {
+      setSignBusy(false);
+    }
+  };
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -442,6 +552,8 @@ export function LogisticsRequestSection({
                 busy={busyKey === `proposal-${it.logisticsItemId}`}
                 onRespond={respondToProposal}
                 onViewSent={openSentEmails}
+                onOpenSign={openSignModal}
+                canSignItem={canSignItem}
               />
             ))
           )}
@@ -517,6 +629,357 @@ export function LogisticsRequestSection({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal biên bản ký mượn/bàn giao (BORROW phase trong Trước tiếp khách) */}
+      {signTarget && createPortal(
+        <>
+          <style type="text/css" media="print">
+            {`
+              body * {
+                visibility: hidden;
+              }
+              #logistics-handover-modal, #logistics-handover-modal * {
+                visibility: visible;
+              }
+              #logistics-handover-modal {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+              }
+              #logistics-handover-modal, #logistics-handover-modal * {
+                overflow: visible !important;
+                max-height: none !important;
+              }
+              #logistics-handover-modal > div {
+                display: block !important;
+              }
+            `}
+          </style>
+          <div id="logistics-handover-modal" className="fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={closeSignModal} />
+            <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
+            {/* Modal header */}
+            <div className="bg-[#004c91] text-white px-6 py-4 flex items-center justify-between shrink-0 print:hidden">
+              <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
+                <FileText className="w-5 h-5 opacity-80" />
+                BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+              </h3>
+              <div className="flex items-center gap-4">
+                <button 
+                  type="button" 
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors outline-none"
+                >
+                  <Download className="w-4 h-4" /> Tải PDF
+                </button>
+                <button type="button" onClick={closeSignModal} disabled={signBusy}
+                  className="text-white/70 hover:text-white outline-none transition-colors" aria-label="Đóng">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal body (scrollable) */}
+            <div className="p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)] print:overflow-visible print:shadow-none">
+              {(() => {
+                const b = findHandover(signTarget.item.handovers, 'BORROW');
+                const r = findHandover(signTarget.item.handovers, 'RETURN');
+                const bg1 = b?.providerSignedAt ? `${b.providerSignedByName || 'Phòng ban'}` : null;
+                const bg2 = b?.borrowerSignedAt ? `${b.borrowerSignedByName || 'Host'}` : null;
+                const nt1 = r?.borrowerSignedAt ? `${r.borrowerSignedByName || 'Host'}` : null;
+                const nt2 = r?.providerSignedAt ? `${r.providerSignedByName || 'Phòng ban'}` : null;
+
+                const canSignBG2 = bg1 && !bg2;
+                const isBorrowDone = bg1 && bg2;
+
+                // parse date for top section
+                let handoverTime = "....";
+                let handoverDate = "..../..../20.....";
+                if (b?.providerSignedAt) {
+                  const [d, t] = b.providerSignedAt.replace(' ', 'T').split('T');
+                  if (d && t) {
+                    const hm = t.slice(0, 5);
+                    const [y, m, day] = d.split('-');
+                    handoverTime = `${hm}`;
+                    handoverDate = `${day}/${m}/${y}`;
+                  }
+                }
+
+                // Host and Provider names
+                const hostName = b?.borrowerSignedByName || r?.borrowerSignedByName || 'Đại diện Host đón tiếp';
+                const providerName = b?.providerSignedByName || r?.providerSignedByName || signTarget.item.departmentName || 'Đại diện Phòng ban';
+
+                const isVehicle = isVehicleHandover(signTarget.item.itemType);
+
+                return (
+                  <>
+                    <div className="text-center space-y-1 mb-8">
+                      <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-wide">
+                        BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+                      </h4>
+                      <p className="text-lg font-bold uppercase">
+                        TÀI SẢN / TRANG THIẾT BỊ
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 text-[15px] leading-relaxed mb-6">
+                      <p>
+                        Hôm nay, lúc: <b>{handoverTime}</b> giờ, ngày <b>{handoverDate}</b>, tại: <b>Trường Đại học FPT Hòa Lạc</b>.
+                      </p>
+                      <p>Chúng tôi gồm:</p>
+                      <div className="space-y-2 pl-4">
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          <p className="flex-1 min-w-[250px]">Người bàn giao: <b>{providerName}</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>{signTarget.item.departmentName || '................'}</b></p>
+                        </div>
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>Người phụ trách tiếp đón</b></p>
+                        </div>
+                        <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
+                        <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>
+                      </div>
+                    </div>
+
+                    <p className="font-bold text-[15px] mb-2">
+                      {isVehicle
+                        ? `Cùng bàn giao xe ${signTarget.item.quantity || 1} ô tô điện với tình trạng sau:`
+                        : `Cùng bàn giao ${signTarget.item.quantity || 1} ${signTarget.item.title || 'hạng mục'} với tình trạng sau:`}
+                    </p>
+                    <div className="overflow-x-auto mb-6">
+                      <table className="w-full border-collapse border border-slate-500 text-[14px]">
+                        <thead>
+                          <tr className="bg-slate-50">
+                            <th className="border border-slate-500 p-2 text-center w-12">STT</th>
+                            <th className="border border-slate-500 p-2 text-center">Nội dung</th>
+                            <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
+                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình trạng nghiệm thu</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {checklistDraft.map((row, i) => (
+                            <tr key={i}>
+                              <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                              <td className="border border-slate-500 p-2">{row.name}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.giao}</td>
+                              <td className="border border-slate-500 p-0 bg-blue-50/20">
+                                <div className="min-h-[36px] flex items-center px-2 text-slate-600">{row.nhan}</div>
+                              </td>
+                            </tr>
+                          ))}
+                          <tr>
+                            <td className="border border-slate-500 p-2 text-center font-semibold">{checklistDraft.length + 1}</td>
+                            <td className="border border-slate-500 p-2 font-semibold">Ghi chú</td>
+                            <td className="border border-slate-500 p-2"></td>
+                            <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{b?.conditionNote || ''}</td>
+                            <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{r?.conditionNote || ''}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="space-y-1 text-[14px] mb-8">
+                      <p className="font-bold">{isVehicle ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
+                      {isVehicle ? (
+                        <ul className="list-disc pl-8 space-y-1">
+                          <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
+                          <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                          <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
+                          <li>Ghi chú khác: ....................................................................................................................</li>
+                        </ul>
+                      ) : (
+                        <ul className="list-disc pl-8 space-y-1">
+                          <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                          <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                          <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                          <li>Ghi chú khác: ....................................................................................................................</li>
+                        </ul>
+                      )}
+                      <p className="mt-4">
+                        Tôi là <b>{hostName}</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
+                      </p>
+                    </div>
+
+                    {/* KHỐI BÀN GIAO */}
+                    <div className="space-y-8">
+                    <div className="relative my-7">
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true"><div className="w-full border-t border-slate-300"></div></div>
+                      <div className="relative flex justify-center"><span className="bg-white px-4 py-1.5 text-[10px] font-black text-slate-900 uppercase tracking-widest border border-slate-200 rounded-full shadow-sm">BÀN GIAO</span></div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50/70 p-4.5 rounded-2xl border border-slate-200">
+                      {/* Bên Giao */}
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
+                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic whitespace-pre-line">
+                            {b?.conditionNote || 'Không có ghi chú.'}
+                          </div>
+                        </div>
+                        <div className={`border-2 rounded-xl p-3 relative ${bg1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                          {bg1 ? (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
+                                <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{bg1}</p>
+                                <p className="text-[9px] text-slate-500">{fmtDateTime(b?.providerSignedAt)}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-[#004c91]/80 shrink-0" />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                  <span className="text-[9px] text-slate-450">Chờ phòng ban ký</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bên Nhận */}
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-[#f37021] uppercase tracking-wider mb-2">Ghi chú Bên Nhận</label>
+                          {!bg2 ? (
+                            <textarea rows={2} value={signNote} onChange={e => setSignNote(e.target.value)} disabled={!canSignBG2 || signBusy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] focus:ring-1 focus:ring-orange-200 outline-none resize-none bg-slate-50/30" placeholder={canSignBG2 ? "Nhập ý kiến xác nhận nhận..." : "Chờ phòng ban ký trước..."} />
+                          ) : (
+                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                              {b?.conditionNote || 'Đã xác nhận nhận tài sản.'}
+                            </div>
+                          )}
+                        </div>
+                        <div className={`border-2 rounded-xl p-3 relative ${bg2 ? 'border-emerald-500 bg-emerald-50/20' : canSignBG2 ? 'border-dashed border-[#f37021]/50 bg-orange-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                          {bg2 ? (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
+                                <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{bg2}</p>
+                                <p className="text-[9px] text-slate-500">{fmtDateTime(b?.borrowerSignedAt)}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full">
+                              <div className="flex items-center gap-2">
+                                <FileText className={`w-4 h-4 shrink-0 ${canSignBG2 ? 'text-[#f37021]' : 'text-slate-400'}`} />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                  <span className="text-[9px] text-slate-450">{canSignBG2 ? 'Nhấp để xác nhận' : 'Chờ PB ký trước'}</span>
+                                </div>
+                              </div>
+                              <button type="button" onClick={submitHandover} disabled={!canSignBG2 || signBusy} className="py-2 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm print:hidden">
+                                {signBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Ký xác nhận (BG2)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* KHỐI NGHIỆM THU */}
+                    <div className={`transition-opacity pt-4 ${!isBorrowDone ? 'opacity-40 pointer-events-none' : ''}`}>
+                      <div className="relative my-7">
+                        <div className="absolute inset-0 flex items-center" aria-hidden="true"><div className="w-full border-t border-slate-300"></div></div>
+                        <div className="relative flex justify-center"><span className="bg-white px-4 py-1.5 text-[10px] font-black text-slate-900 uppercase tracking-widest border border-slate-200 rounded-full shadow-sm">NGHIỆM THU</span></div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-[#f8fbfe] p-4.5 rounded-2xl border border-blue-200/50">
+                        {/* Bên Giao (Host trả) */}
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Giao)</label>
+                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                              {r?.conditionNote || 'Chưa ký trả.'}
+                            </div>
+                          </div>
+                          <div className={`border-2 rounded-xl p-3 relative ${nt1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                            {nt1 ? (
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                                <div>
+                                  <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
+                                  <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{nt1}</p>
+                                  <p className="text-[9px] text-slate-500">{fmtDateTime(r?.borrowerSignedAt)}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                    <span className="text-[9px] text-slate-450">Chưa ký trả</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bên Nhận (Phòng ban nhận lại) */}
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Nhận)</label>
+                            <div className={`w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] italic whitespace-pre-line ${nt2 ? 'text-slate-600' : 'text-slate-400'}`}>
+                              {nt2 ? (r?.conditionNote || 'Đã nghiệm thu nhận lại tài sản.') : 'Chờ phòng ban nhận xét tình trạng tài sản và xác nhận...'}
+                            </div>
+                          </div>
+                          <div className={`border-2 rounded-xl p-3 relative ${nt2 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                            {nt2 ? (
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                                <div>
+                                  <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
+                                  <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{nt2}</p>
+                                  <p className="text-[9px] text-slate-500">{fmtDateTime(r?.providerSignedAt)}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                    <span className="text-[9px] text-slate-450">Chờ PB nghiệm thu lại</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <LogisticsExpensePanel logisticsItemId={signTarget.item.logisticsItemId} readOnly />
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Footer controls inside modal */}
+            <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row justify-between items-center border-t border-slate-200 gap-4 shrink-0 rounded-b-2xl">
+              <span className="text-[11px] text-slate-500 font-medium italic">
+                {signErr ? <span className="text-red-500 flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {signErr}</span> : 'Vui lòng kiểm tra kỹ hiện trạng trước khi ký xác nhận.'}
+              </span>
+              <button onClick={closeSignModal} className="px-6 py-2.5 bg-[#004c91] text-white hover:bg-[#003b70] text-[12px] font-bold rounded-xl transition-colors shadow-sm w-full sm:w-auto outline-none">
+                Đóng biên bản
+              </button>
+            </div>
+          </div>
+        </div>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -1198,12 +1661,14 @@ function getStatusBadgeCls(status: string, fallback: string) {
   return fallback;
 }
 
-function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
+function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSign, canSignItem }: {
   it: VisitInstanceLogisticsItem;
   canManage: boolean;
   busy: boolean;
   onRespond: (item: VisitInstanceLogisticsItem, accepted: boolean, note: string) => void;
   onViewSent: (item: VisitInstanceLogisticsItem) => void;
+  onOpenSign: (item: VisitInstanceLogisticsItem) => void;
+  canSignItem: (item: VisitInstanceLogisticsItem) => boolean;
 }) {
   const meta = LOGISTICS_STATUS_META[it.status] ?? { label: it.status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   const statusCls = getStatusBadgeCls(it.status, meta.cls);
@@ -1219,6 +1684,10 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
   if (it.status === 'CANCELLED') { reasonLabel = 'Lý do hủy'; reasonText = it.decisionNote || ''; }
   else if (it.status === 'REJECTED') { reasonLabel = 'Lý do từ chối'; reasonText = it.decisionNote || ''; }
   else if (it.status === 'DECLINED') { reasonLabel = 'Lý do từ chối nhận nhiệm vụ'; reasonText = it.assigneeResponseNote || ''; }
+
+  const isHandoverEligible = it.coordinationMode === 'SYSTEM_REQUEST' && HANDOVER_STATUSES.has(it.status);
+  const borrow = findHandover(it.handovers, 'BORROW');
+  const canSign = canSignItem(it);
 
   return (
     <div className={`rounded-2xl border bg-white px-4 py-4 shadow-sm transition-colors hover:bg-slate-50 ${proposed ? 'border-violet-200 bg-violet-50/30 hover:bg-violet-50' : 'border-slate-200'}`}>
@@ -1261,6 +1730,20 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
           {it.proposalResponseNote && (
             <div className="mt-1 text-xs italic text-slate-500 line-clamp-2">
               <span className="font-semibold mr-1">Phản hồi:</span>{it.proposalResponseNote}
+            </div>
+          )}
+          {isHandoverEligible && (
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <SignChip
+                label="Phòng ban ký giao"
+                at={borrow?.providerSignedAt}
+                name={borrow?.providerSignedByName}
+              />
+              <SignChip
+                label="Người phụ trách ký nhận"
+                at={borrow?.borrowerSignedAt}
+                name={borrow?.borrowerSignedByName}
+              />
             </div>
           )}
         </div>
@@ -1308,6 +1791,9 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
 
         {/* Vùng C - Trạng thái & Action */}
         <div className="w-full flex flex-row flex-wrap lg:flex-col items-start lg:items-end gap-2 shrink-0">
+          {isHandoverEligible && (
+            <HandoverStatusBadge borrow={borrow} />
+          )}
           <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${statusCls}`}>
             {meta.label}
           </span>
@@ -1318,6 +1804,20 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
             <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
               {COORD_LABEL[it.coordinationMode]}
             </span>
+          )}
+          {isHandoverEligible && (
+            <button
+              type="button"
+              onClick={() => onOpenSign(it)}
+              className={`mt-1 inline-flex items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold outline-none transition-colors ${
+                canSign
+                  ? 'border-[#004c91] bg-[#004c91] text-white hover:bg-[#003b70]'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              {canSign ? 'Ký nhận' : 'Xem biên bản'}
+            </button>
           )}
           {it.coordinationMode === 'SYSTEM_REQUEST' && (
             <button type="button" onClick={() => onViewSent(it)}
