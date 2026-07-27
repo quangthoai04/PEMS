@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -5,6 +6,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -26,7 +28,7 @@ public sealed class UpdateBasicAccountInfoCommandHandler
     private readonly IRoleAccessPolicy _accessPolicy;
     private readonly ISessionService _sessionService;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
 
     public UpdateBasicAccountInfoCommandHandler(
         IApplicationDbContext db,
@@ -34,14 +36,14 @@ public sealed class UpdateBasicAccountInfoCommandHandler
         IRoleAccessPolicy accessPolicy,
         ISessionService sessionService,
         IDateTimeService clock,
-        IEmailService emailService)
+        ISystemEmailDispatcher dispatcher)
     {
         _db = db;
         _currentUser = currentUser;
         _accessPolicy = accessPolicy;
         _sessionService = sessionService;
         _clock = clock;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
     }
 
     public async Task<UpdateBasicAccountInfoResponse> Handle(
@@ -57,14 +59,12 @@ public sealed class UpdateBasicAccountInfoCommandHandler
         if (_currentUser.RoleCode != RoleCodes.Ho || !_accessPolicy.CanAccessAccountManagement(_currentUser))
             throw new ForbiddenException("Chỉ Head Office mới được chỉnh sửa thông tin tài khoản này.");
 
-        // 4. Target exists (role loaded from DB — never trusted from the client).
-        // Campus/Department are included for the notification email only — the account snapshot it
-        // shows must come from the database, never from the request.
+        // 4. Target exists (role loaded from DB — never trusted from the client). Campus and department
+        // used to be loaded here for the notification email; the change notice no longer restates the
+        // account snapshot, so nothing needs them.
         var user = await _db.Users
             .Include(u => u.Role)
             .Include(u => u.AuthProviders)
-            .Include(u => u.PrimaryCampus)
-            .Include(u => u.Department)
             .FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken)
             ?? throw new NotFoundException("Account", request.UserId);
 
@@ -194,18 +194,41 @@ public sealed class UpdateBasicAccountInfoCommandHandler
     }
 
     /// <summary>
-    /// Sends a removal notice to the OLD email and the updated account snapshot to the NEW email.
-    /// Returns SENT (both ok), PARTIAL (only one ok) or FAILED (both failed). Never throws — the two
-    /// sends are independently guarded so a failure on the first still attempts the second.
+    /// Sends a removal notice to the OLD email and the change notice to the NEW email.
+    /// Returns SENT (both ok), PARTIAL (only one ok) or FAILED (both failed) — the same three values
+    /// this endpoint has always returned. Never throws: the two sends are independently guarded so a
+    /// failure on the first still attempts the second, and neither can roll back the saved account.
+    ///
+    /// <para>
+    /// The notice to the OLD address stays deliberately anonymous. That address may have been a typo
+    /// belonging to an uninvolved person, so it carries no variables at all — no holder name, no new
+    /// address, no role/campus — and no display name on the envelope either.
+    /// </para>
     /// </summary>
     private async Task<string> SendEmailChangeMailsAsync(
         User user, string oldEmail, string newEmail, CancellationToken cancellationToken)
     {
-        var oldOk = await TrySendAsync(
-            oldEmail, OldAddressSubject, BuildOldAddressBody(), cancellationToken);
+        var oldOk = await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailChangedOldNotice,
+            new EmailRecipient(oldEmail),
+            new Dictionary<string, string>(),
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: _currentUser.UserId), cancellationToken);
 
-        var newOk = await TrySendAsync(
-            newEmail, NewAddressSubject, BuildNewAddressBody(user, newEmail), cancellationToken);
+        var newOk = await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailChangedNewNotice,
+            new EmailRecipient(newEmail, user.FullName),
+            new Dictionary<string, string>
+            {
+                ["fullName"] = user.FullName,
+                // Masked, not in full: the holder is entitled to know WHICH address was unlinked, and
+                // seeing part of it is enough to recognise it.
+                ["oldEmailMasked"] = AccountEmailVariables.MaskEmail(oldEmail),
+            },
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: _currentUser.UserId), cancellationToken);
 
         return (oldOk, newOk) switch
         {
@@ -215,89 +238,21 @@ public sealed class UpdateBasicAccountInfoCommandHandler
         };
     }
 
-    private const string OldAddressSubject = "Địa chỉ email này đã được gỡ khỏi một tài khoản PEMS";
-    private const string NewAddressSubject = "Email đăng nhập tài khoản PEMS của bạn đã được cập nhật";
-
-    private async Task<bool> TrySendAsync(
-        string toEmail, string subject, string html, CancellationToken cancellationToken)
+    /// <summary>
+    /// True unless the message definitely did not go out. A SKIPPED send (SMTP disabled outside
+    /// production) counts as ok exactly as it did before this call site moved onto the dispatcher —
+    /// this endpoint's response contract has only SENT / PARTIAL / FAILED to say it with.
+    /// </summary>
+    private async Task<bool> TrySendAsync(SystemEmailRequest request, CancellationToken cancellationToken)
     {
         try
         {
-            await _emailService.SendAsync(toEmail, subject, html, cancellationToken);
-            return true;
+            var result = await _dispatcher.SendAsync(request, cancellationToken);
+            return result.Delivery.Status != EmailDeliveryStatus.Failed;
         }
         catch
         {
             return false; // non-fatal: the account is already saved and must not be rolled back
         }
     }
-
-    /// <summary>
-    /// Notice for the address that was just unlinked. Deliberately anonymous: the old address may
-    /// have been a typo belonging to an uninvolved person, so it reveals nothing about the account —
-    /// no holder name, no new address, no role/campus/department, no internal id, and no
-    /// "changed from A to B" phrasing that would leak the new address to a stranger.
-    /// </summary>
-    private static string BuildOldAddressBody() =>
-        "<p>Xin chào,</p>" +
-        "<p>Địa chỉ email này không còn được sử dụng để đăng nhập vào tài khoản PEMS đã liên kết trước đó.</p>" +
-        "<p>Mọi phiên đăng nhập đang hoạt động bằng địa chỉ email này đã được thu hồi. " +
-        "Bạn không cần thực hiện thêm thao tác nào.</p>" +
-        "<p>Nếu bạn không biết về tài khoản này hoặc cho rằng đây là sự nhầm lẫn, vui lòng liên hệ " +
-        "Head Office, Staff Leader phụ trách hoặc bộ phận quản trị hệ thống PEMS để được hỗ trợ.</p>" +
-        "<p>Trân trọng,<br/>PEMS System</p>";
-
-    /// <summary>
-    /// Account snapshot for the new address. Every value is read from the database entity (never from
-    /// the request) and HTML-encoded. The department line is omitted entirely when the account has no
-    /// department, so the email never renders an empty row or the text "null".
-    /// </summary>
-    private static string BuildNewAddressBody(User user, string newEmail)
-    {
-        var nameEnc = HtmlEncode(user.FullName);
-        var emailEnc = HtmlEncode(newEmail);
-        var roleEnc = HtmlEncode(AccountRoleDisplayNames.Resolve(user.Role.RoleCode, user.SubRole));
-
-        // A missing campus must not break the email — show a dash instead.
-        var campusName = user.PrimaryCampus?.Name;
-        var campusEnc = HtmlEncode(string.IsNullOrWhiteSpace(campusName) ? "—" : campusName);
-
-        var departmentName = user.Department?.Name;
-        var departmentLine = string.IsNullOrWhiteSpace(departmentName)
-            ? string.Empty
-            : $"<li>Phòng ban: <strong>{HtmlEncode(departmentName)}</strong></li>";
-
-        return
-            $"<p>Xin chào {nameEnc},</p>" +
-            "<p>Email đăng nhập của tài khoản PEMS của bạn đã được cập nhật thành công.</p>" +
-            "<p><strong>Thông tin tài khoản hiện tại:</strong></p>" +
-            "<ul>" +
-            $"<li>Email đăng nhập: <strong>{emailEnc}</strong></li>" +
-            $"<li>Vai trò: <strong>{roleEnc}</strong></li>" +
-            $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
-            departmentLine +
-            "</ul>" +
-            "<p>Từ bây giờ, bạn vui lòng sử dụng địa chỉ email trên để đăng nhập vào Internal Portal " +
-            "của PEMS thông qua SSO, Google hoặc FEID.</p>" +
-            "<p>Các phiên đăng nhập trước đó đã được thu hồi. Trong lần đăng nhập tiếp theo bằng email mới, " +
-            "hệ thống sẽ liên kết lại phương thức đăng nhập với tài khoản của bạn.</p>" +
-            "<p>Nếu bạn không mong đợi thay đổi này hoặc nhận thấy thông tin tài khoản chưa chính xác, " +
-            "vui lòng liên hệ Head Office, Staff Leader phụ trách hoặc bộ phận quản trị hệ thống PEMS " +
-            "để được hỗ trợ.</p>" +
-            "<p>Trân trọng,<br/>PEMS System</p>";
-    }
-
-    /// <summary>
-    /// Escapes the five characters that could break out of HTML element text (&amp; &lt; &gt; and both
-    /// quotes) while leaving Vietnamese diacritics intact — every dynamic value here lands in element
-    /// content (inside &lt;p&gt;/&lt;li&gt;/&lt;strong&gt;), so this is enough to stop injection, and
-    /// it keeps the email readable rather than turning every accented letter into a numeric entity the
-    /// way WebUtility.HtmlEncode would.
-    /// </summary>
-    private static string HtmlEncode(string? value) => (value ?? string.Empty)
-        .Replace("&", "&amp;")
-        .Replace("<", "&lt;")
-        .Replace(">", "&gt;")
-        .Replace("\"", "&quot;")
-        .Replace("'", "&#39;");
 }

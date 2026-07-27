@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -15,20 +17,20 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
     private readonly ICurrentUserService _currentUser;
     private readonly ISessionService _sessionService;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
 
     public UpdateAccountRoleCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         ISessionService sessionService,
         IDateTimeService clock,
-        IEmailService emailService)
+        ISystemEmailDispatcher dispatcher)
     {
         _db = db;
         _currentUser = currentUser;
         _sessionService = sessionService;
         _clock = clock;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
     }
 
     public async Task<UpdateAccountRoleResponse> Handle(UpdateAccountRoleCommand request, CancellationToken cancellationToken)
@@ -247,7 +249,8 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             user.UserId, SessionRevokeReasons.RoleChanged, actorId, cancellationToken);
 
         // ── UC-100-SL BR-100SL-08: notify the user their role changed. Non-fatal. ──
-        await SendRoleChangedNotificationAsync(user, shape, cancellationToken);
+        await SendRoleChangedNotificationAsync(
+            user, shape, oldRoleCode, oldSubRole, actorId, cancellationToken);
 
         return new UpdateAccountRoleResponse
         {
@@ -259,7 +262,8 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
     }
 
     private async Task SendRoleChangedNotificationAsync(
-        User user, AccountProvisioningRules.ResolvedShape shape, CancellationToken cancellationToken)
+        User user, AccountProvisioningRules.ResolvedShape shape,
+        string oldRoleCode, string? oldSubRole, ulong? actorId, CancellationToken cancellationToken)
     {
         var campusName = shape.PrimaryCampusId is null
             ? null
@@ -268,39 +272,23 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
                 .Select(c => c.Name)
                 .FirstOrDefaultAsync(cancellationToken);
 
-        var departmentName = shape.DepartmentId is null
-            ? null
-            : await _db.Departments.AsNoTracking()
-                .Where(d => d.DepartmentId == shape.DepartmentId)
-                .Select(d => d.Name)
-                .FirstOrDefaultAsync(cancellationToken);
-
-        var name = System.Net.WebUtility.HtmlEncode(user.FullName);
-        var emailEnc = System.Net.WebUtility.HtmlEncode(user.Email);
-        var roleEnc = System.Net.WebUtility.HtmlEncode(ResolveRoleDisplayName(shape.RoleCode, shape.SubRole));
-        var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
-
-        var html =
-            $"<p>Xin chào {name},</p>" +
-            "<p>Vai trò tài khoản PEMS của bạn đã được cập nhật.</p>" +
-            "<p><strong>Thông tin mới:</strong></p>" +
-            "<ul>" +
-            $"<li>Email đăng nhập: <strong>{emailEnc}</strong></li>" +
-            $"<li>Vai trò mới: <strong>{roleEnc}</strong></li>" +
-            $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
-            (departmentName is null ? "" : $"<li>Phòng ban: <strong>{System.Net.WebUtility.HtmlEncode(departmentName)}</strong></li>") +
-            (shape.RoleCode == RoleCodes.Student && !string.IsNullOrWhiteSpace(user.StudentCode)
-                ? $"<li>Mã số sinh viên: <strong>{System.Net.WebUtility.HtmlEncode(user.StudentCode)}</strong></li>"
-                : "") +
-            "</ul>" +
-            "<p>Thay đổi này có thể yêu cầu bạn đăng nhập lại để hệ thống áp dụng quyền truy cập mới.</p>" +
-            "<p>Nếu bạn cho rằng thông tin này chưa chính xác, vui lòng liên hệ Staff Leader hoặc quản trị hệ thống để được hỗ trợ.</p>" +
-            "<p>Trân trọng,<br/>PEMS System</p>";
-
         try
         {
-            await _emailService.SendAsync(
-                user.Email, "Vai trò tài khoản của bạn đã được cập nhật", html, cancellationToken);
+            await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountRoleChanged,
+                new EmailRecipient(user.Email, user.FullName),
+                new Dictionary<string, string>
+                {
+                    ["fullName"] = user.FullName,
+                    // Both sides are stated: "your role changed" is not actionable without saying from
+                    // what. The labels are the same ones the account screens show.
+                    ["oldRoleName"] = ResolveRoleDisplayName(oldRoleCode, oldSubRole),
+                    ["newRoleName"] = ResolveRoleDisplayName(shape.RoleCode, shape.SubRole),
+                    ["campusName"] = string.IsNullOrWhiteSpace(campusName) ? "—" : campusName,
+                },
+                RelatedType: "User",
+                RelatedId: user.UserId,
+                SentBy: actorId), cancellationToken);
         }
         catch
         {

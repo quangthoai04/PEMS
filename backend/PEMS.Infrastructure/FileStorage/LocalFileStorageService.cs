@@ -32,9 +32,23 @@ public sealed class LocalFileStorageService : IFileStorageService
         _serviceProvider = serviceProvider;
         _logger = logger;
         var configured = configuration["FileStorage:LocalRoot"];
-        _root = string.IsNullOrWhiteSpace(configured)
+        // Resolved once, so the containment check in OpenReadAsync compares two absolute paths rather
+        // than a mix of relative and absolute ones.
+        _root = Path.GetFullPath(string.IsNullOrWhiteSpace(configured)
             ? Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "uploads")
-            : configured;
+            : configured);
+    }
+
+    /// <summary>
+    /// True when an already-resolved absolute path sits inside the storage root. Compared with a trailing
+    /// separator so a sibling directory whose name merely starts with the root's ("…/uploads-old") is not
+    /// mistaken for a child of it.
+    /// </summary>
+    private bool IsUnderRoot(string fullPath)
+    {
+        var root = _root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                   + Path.DirectorySeparatorChar;
+        return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<StoredFileInfo> SaveAsync(
@@ -72,7 +86,22 @@ public sealed class LocalFileStorageService : IFileStorageService
         var isLocal = string.Equals(file.StorageProvider, "LOCAL", StringComparison.OrdinalIgnoreCase);
         if (isLocal && !string.IsNullOrWhiteSpace(file.ObjectKey))
         {
-            var fullPath = Path.Combine(_root, file.ObjectKey.Replace('/', Path.DirectorySeparatorChar));
+            // The key is generated here (an opaque GUID under a purpose/date folder) and a caller only
+            // ever supplies a numeric file id, so a traversal sequence should not be able to reach this
+            // point. The containment check runs anyway: a stored key is data, and data that decides which
+            // path to open is worth verifying rather than trusting. A key that resolves outside the
+            // storage root is treated as a missing file — never opened, and never echoed back.
+            var fullPath = Path.GetFullPath(
+                Path.Combine(_root, file.ObjectKey.Replace('/', Path.DirectorySeparatorChar)));
+
+            if (!IsUnderRoot(fullPath))
+            {
+                _logger.LogError(
+                    "Rejected a stored object key that resolves outside the storage root: fileId={FileId}",
+                    file.FileId);
+                return null;
+            }
+
             if (File.Exists(fullPath))
                 return File.OpenRead(fullPath);
             _logger.LogWarning("Local file missing on disk: fileId={FileId} objectKey={ObjectKey}", file.FileId, file.ObjectKey);

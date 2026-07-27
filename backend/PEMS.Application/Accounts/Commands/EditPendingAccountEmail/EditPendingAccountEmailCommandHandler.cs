@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -5,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Accounts.Commands.EditPendingAccountEmail;
@@ -22,17 +25,17 @@ public sealed class EditPendingAccountEmailCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly IAccountEmailConfirmationService _confirmations;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
 
     public EditPendingAccountEmailCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IAccountEmailConfirmationService confirmations, IEmailService email)
+        IAccountEmailConfirmationService confirmations, ISystemEmailDispatcher dispatcher)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _confirmations = confirmations;
-        _email = email;
+        _dispatcher = dispatcher;
     }
 
     public async Task<EditPendingAccountEmailResponse> Handle(
@@ -67,17 +70,39 @@ public sealed class EditPendingAccountEmailCommandHandler
         var rawToken = await _confirmations.IssuePendingAsync(user.UserId, newEmail, isResend: false, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
-        var result = await _email.TrySendAsync(
-            newEmail, AccountConfirmationEmail.Subject,
-            AccountConfirmationEmail.BuildHtml(user.FullName, _confirmations.BuildConfirmUrl(rawToken)),
-            cancellationToken);
+        // The confirmation email states the account's role, so resolve it by id rather than relying on a
+        // navigation the caller may not have loaded.
+        var roleCode = await _db.Roles.AsNoTracking()
+            .Where(r => r.RoleId == user.RoleId)
+            .Select(r => r.RoleCode)
+            .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
+
+        var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailConfirmation,
+            new EmailRecipient(newEmail, user.FullName),
+            await AccountEmailVariables.ForConfirmationAsync(
+                _db, user.FullName, roleCode, user.SubRole,
+                user.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
+            TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(_confirmations.BuildConfirmUrl(rawToken)),
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: _currentUser.UserId), cancellationToken);
 
         // Neutral notice to the previous address — best-effort, never blocks.
+        //
+        // Deliberately anonymous: the address being unlinked may have been a typo and belong to somebody
+        // with no connection to this account. No variables, and no display name on the recipient either —
+        // a To header reading "Nguyễn Văn A <stranger@…>" would name the holder just as effectively as
+        // the body would.
         try
         {
-            await _email.TrySendAsync(
-                oldEmail, AccountConfirmationEmail.EmailChangedNoticeSubject,
-                AccountConfirmationEmail.BuildEmailChangedNoticeHtml(), cancellationToken);
+            await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountPendingEmailChangedOldNotice,
+                new EmailRecipient(oldEmail),
+                new Dictionary<string, string>(),
+                RelatedType: "User",
+                RelatedId: user.UserId,
+                SentBy: _currentUser.UserId), cancellationToken);
         }
         catch { /* notice is best-effort */ }
 
@@ -85,7 +110,7 @@ public sealed class EditPendingAccountEmailCommandHandler
         {
             Success = true,
             Email = newEmail,
-            EmailNotificationStatus = AccountConfirmationEmail.MapStatus(result.Status),
+            EmailNotificationStatus = result.NotificationStatus,
             Message = "Đã cập nhật email và gửi lại xác nhận.",
         };
     }

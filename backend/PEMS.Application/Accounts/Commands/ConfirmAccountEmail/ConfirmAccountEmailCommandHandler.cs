@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -25,15 +27,18 @@ public sealed class ConfirmAccountEmailCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly IEmailActionTokenService _tokens;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
+    private readonly IAccountEmailConfirmationService _confirmations;
 
     public ConfirmAccountEmailCommandHandler(
-        IApplicationDbContext db, IEmailActionTokenService tokens, IDateTimeService clock, IEmailService email)
+        IApplicationDbContext db, IEmailActionTokenService tokens, IDateTimeService clock,
+        ISystemEmailDispatcher dispatcher, IAccountEmailConfirmationService confirmations)
     {
         _db = db;
         _tokens = tokens;
         _clock = clock;
-        _email = email;
+        _dispatcher = dispatcher;
+        _confirmations = confirmations;
     }
 
     public async Task<ConfirmAccountEmailResponse> Handle(
@@ -130,13 +135,21 @@ public sealed class ConfirmAccountEmailCommandHandler
         // already active). Never blocks or fails the confirmation.
         try
         {
-            var name = System.Net.WebUtility.HtmlEncode(user.FullName);
-            var html =
-                $"<p>Xin chào {name},</p>" +
-                "<p>Tài khoản nội bộ PEMS của bạn đã được kích hoạt. " +
-                "Bạn có thể đăng nhập vào Internal Portal bằng chính địa chỉ email này qua SSO/Google/FEID.</p>" +
-                "<p>Trân trọng,<br/>PEMS System</p>";
-            await _email.TrySendAsync(user.Email, "PEMS — Tài khoản đã được kích hoạt", html, cancellationToken);
+            // The role is read by id: the account row is tracked here but its Role navigation is not
+            // necessarily loaded, and the email states the role the owner now holds.
+            var roleCode = await _db.Roles.AsNoTracking()
+                .Where(r => r.RoleId == user.RoleId)
+                .Select(r => r.RoleCode)
+                .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
+
+            await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountActivated,
+                new EmailRecipient(user.Email, user.FullName),
+                await AccountEmailVariables.ForActivatedAsync(
+                    _db, user, roleCode, user.SubRole, cancellationToken),
+                TrustedBlocks: AccountEmailVariables.LoginBlocks(_confirmations.BuildLoginUrl()),
+                RelatedType: "User",
+                RelatedId: user.UserId), cancellationToken);
         }
         catch { /* welcome is best-effort */ }
 

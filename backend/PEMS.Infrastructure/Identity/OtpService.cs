@@ -51,6 +51,12 @@ public sealed class OtpService : IOtpService
     private static int ReadInt(IConfiguration configuration, string key, int fallback)
         => int.TryParse(configuration[key], out var value) ? value : fallback;
 
+    /// <inheritdoc />
+    public int CodeMinutes => _codeMinutes;
+
+    /// <inheritdoc />
+    public int VisitRequestCodeMinutes => _visitRequestCodeMinutes;
+
     // ── Legacy email/purpose flow (password reset, sensitive actions) ─────────────
 
     public Task<string> CreateAsync(

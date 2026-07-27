@@ -7,6 +7,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -19,7 +20,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
     private readonly IPasswordHasher _passwordHasher;
     private readonly IDateTimeService _clock;
     private readonly AuthOptions _options;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
     private readonly IAccountEmailConfirmationService _confirmations;
 
@@ -29,7 +30,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         IPasswordHasher passwordHasher,
         IDateTimeService clock,
         AuthOptions options,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         PEMS.Application.Notifications.Common.INotificationService notificationService,
         IAccountEmailConfirmationService confirmations)
     {
@@ -38,7 +39,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         _passwordHasher = passwordHasher;
         _clock = clock;
         _options = options;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _notificationService = notificationService;
         _confirmations = confirmations;
     }
@@ -398,7 +399,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         //    confirms). Failure/skip does not roll back the already-committed pending account; we report
         //    it truthfully via EmailNotificationStatus so the operator can resend. ──
         var emailStatus = await SendConfirmationEmailAsync(
-            user, shape, _confirmations.BuildConfirmUrl(confirmationToken), cancellationToken);
+            user, shape, _confirmations.BuildConfirmUrl(confirmationToken), actorId, cancellationToken);
 
         return new CreateAccountResponse
         {
@@ -412,60 +413,35 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
     }
 
     private async Task<string> SendConfirmationEmailAsync(
-        User user, AccountProvisioningRules.ResolvedShape shape, string confirmUrl, CancellationToken cancellationToken)
+        User user, AccountProvisioningRules.ResolvedShape shape, string confirmUrl,
+        ulong? actorId, CancellationToken cancellationToken)
     {
-        var campusName = shape.PrimaryCampusId is null
-            ? null
-            : await _db.Campuses.AsNoTracking()
-                .Where(c => c.CampusId == shape.PrimaryCampusId)
-                .Select(c => c.Name)
-                .FirstOrDefaultAsync(cancellationToken);
-
-        var name = System.Net.WebUtility.HtmlEncode(user.FullName);
-        var emailEnc = System.Net.WebUtility.HtmlEncode(user.Email);
-        var roleEnc = System.Net.WebUtility.HtmlEncode(ResolveRoleDisplayName(shape.RoleCode, shape.SubRole));
-        var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
-        var urlEnc = System.Net.WebUtility.HtmlEncode(confirmUrl);
-
-        var html =
-            $"<p>Xin chào {name},</p>" +
-            "<p>Một tài khoản nội bộ PEMS đã được tạo với địa chỉ email này. " +
-            "Để kích hoạt tài khoản, vui lòng xác nhận rằng bạn là chủ sở hữu email.</p>" +
-            "<p><strong>Thông tin tài khoản:</strong></p>" +
-            "<ul>" +
-            $"<li>Email đăng nhập: <strong>{emailEnc}</strong></li>" +
-            $"<li>Vai trò: <strong>{roleEnc}</strong></li>" +
-            $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
-            "</ul>" +
-            $"<p><a href=\"{urlEnc}\" style=\"display:inline-block;background:#004c91;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold\">Xác nhận email &amp; kích hoạt tài khoản</a></p>" +
-            $"<p>Hoặc mở liên kết: <br/>{urlEnc}</p>" +
-            "<p>Liên kết có hiệu lực trong <strong>24 giờ</strong>. Trước khi xác nhận, tài khoản chưa thể đăng nhập.</p>" +
-            "<p><strong>Lưu ý:</strong> Nếu bạn không yêu cầu tài khoản này, vui lòng bỏ qua email — tài khoản sẽ không được kích hoạt nếu không có xác nhận.</p>" +
-            "<p>Trân trọng,<br/>PEMS System</p>";
-
+        // This handler used to compose its own version of the confirmation mail — a second copy of the
+        // message the resend/edit paths sent, which had already drifted from it. There is now one
+        // template in the database and one code that names it.
         try
         {
             // TRUTHFUL status: only report SENT when the provider accepted the message. A disabled SMTP in
             // dev/testing is SKIPPED (not "sent"); a provider/prod failure is FAILED. The account is already
             // committed (pending), so a non-Sent outcome never rolls it back — the operator can resend.
-            var result = await _emailService.TrySendAsync(
-                user.Email, "PEMS — Xác nhận email để kích hoạt tài khoản", html, cancellationToken);
-            return result.Status switch
-            {
-                EmailDeliveryStatus.Sent => "SENT",
-                EmailDeliveryStatus.Skipped => "SKIPPED",
-                _ => "FAILED",
-            };
+            var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountEmailConfirmation,
+                new EmailRecipient(user.Email, user.FullName),
+                await AccountEmailVariables.ForConfirmationAsync(
+                    _db, user.FullName, shape.RoleCode, shape.SubRole,
+                    shape.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
+                TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(confirmUrl),
+                RelatedType: "User",
+                RelatedId: user.UserId,
+                SentBy: actorId), cancellationToken);
+
+            return result.NotificationStatus;
         }
         catch
         {
             return "FAILED";
         }
     }
-
-    /// <summary>Human-readable role label shown in the account-created email.</summary>
-    private static string ResolveRoleDisplayName(string roleCode, string? subRole)
-        => AccountRoleDisplayNames.Resolve(roleCode, subRole);
 
     private static string? Clean(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

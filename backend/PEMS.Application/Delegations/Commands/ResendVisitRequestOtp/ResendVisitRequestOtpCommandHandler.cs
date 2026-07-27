@@ -1,5 +1,6 @@
 using MediatR;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 using PEMS.Domain.Constants;
 
@@ -9,18 +10,18 @@ public sealed class ResendVisitRequestOtpCommandHandler
     : IRequestHandler<ResendVisitRequestOtpCommand, InitiateVisitRequestResponse>
 {
     private readonly IOtpService _otpService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IRequestMetadataService _requestMetadata;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
     public ResendVisitRequestOtpCommandHandler(
         IOtpService otpService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IRequestMetadataService requestMetadata,
         Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         _otpService   = otpService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _requestMetadata = requestMetadata;
         _configuration = configuration;
     }
@@ -38,18 +39,10 @@ public sealed class ResendVisitRequestOtpCommandHandler
             _requestMetadata.UserAgent,
             cancellationToken);
 
-        try
-        {
-            await _emailService.SendVisitRequestOtpAsync(
-                issue.Email,
-                request.RegistrantFullName,
-                issue.Code,
-                cancellationToken);
-        }
-        catch (Exception)
-        {
-            throw new PEMS.Application.Common.Exceptions.BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.", "OTP_SEND_FAILED");
-        }
+        // The address comes from the stored challenge row, never from the request body — resending must
+        // not become a way to redirect somebody else's code.
+        await VisitRequestOtpMail.SendAsync(
+            _dispatcher, _otpService, issue.Email, request.RegistrantFullName, issue.Code, cancellationToken);
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;
         var msg = isEmailEnabled

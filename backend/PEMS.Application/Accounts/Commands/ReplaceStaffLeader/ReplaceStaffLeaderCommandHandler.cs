@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -23,7 +24,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
     private readonly ISessionService _sessionService;
     private readonly ISecurityAuditService _audit;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IAccountEmailConfirmationService _confirmations;
 
     public ReplaceStaffLeaderCommandHandler(
@@ -32,7 +33,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
         ISessionService sessionService,
         ISecurityAuditService audit,
         IDateTimeService clock,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IAccountEmailConfirmationService confirmations)
     {
         _db = db;
@@ -40,7 +41,7 @@ public sealed class ReplaceStaffLeaderCommandHandler
         _sessionService = sessionService;
         _audit = audit;
         _clock = clock;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _confirmations = confirmations;
     }
 
@@ -268,8 +269,10 @@ public sealed class ReplaceStaffLeaderCommandHandler
         // ── Notifications after commit (non-fatal). New-leader email outcome surfaced to the UI.
         //    The replacement reason is included in both emails. ──
         var emailStatus = await SendNewLeaderEmailAsync(
-            newLeader, avail.CampusName, avail.IcDepartmentName, reason, newLeaderConfirmationToken, cancellationToken);
-        await SendOldLeaderEmailAsync(oldLeaderEmail, oldLeaderName, avail.CampusName, reason, cancellationToken);
+            newLeader, avail.CampusName, reason, now, newLeaderConfirmationToken, cancellationToken);
+        await SendOldLeaderEmailAsync(
+            oldLeaderId, oldLeaderEmail, oldLeaderName, avail.CampusName,
+            newLeader.FullName, reason, now, cancellationToken);
 
         return new ReplaceStaffLeaderResponse
         {
@@ -283,45 +286,43 @@ public sealed class ReplaceStaffLeaderCommandHandler
     }
 
     private async Task<string> SendNewLeaderEmailAsync(
-        User newLeader, string? campusName, string? departmentName, string reason,
+        User newLeader, string? campusName, string reason, DateTime effectiveAt,
         string? confirmationToken, CancellationToken cancellationToken)
     {
         // Brand-new leader (PENDING) → confirmation link ONLY, never a "log in now" email pre-activation.
         if (confirmationToken is not null)
         {
-            var result = await _emailService.TrySendAsync(
-                newLeader.Email, AccountConfirmationEmail.Subject,
-                AccountConfirmationEmail.BuildHtml(newLeader.FullName, _confirmations.BuildConfirmUrl(confirmationToken)),
-                cancellationToken);
-            return AccountConfirmationEmail.MapStatus(result.Status);
+            var confirmation = await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountEmailConfirmation,
+                new EmailRecipient(newLeader.Email, newLeader.FullName),
+                // The account was just written as STAFF/LEADER on this campus — that is the shape the
+                // email describes, so there is nothing to read back.
+                await AccountEmailVariables.ForConfirmationAsync(
+                    _db, newLeader.FullName, RoleCodes.Staff, newLeader.SubRole,
+                    newLeader.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
+                TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(_confirmations.BuildConfirmUrl(confirmationToken)),
+                RelatedType: "User",
+                RelatedId: newLeader.UserId,
+                SentBy: _currentUser.UserId), cancellationToken);
+
+            return confirmation.NotificationStatus;
         }
 
         // Promoted existing (already active + confirmed) leader → role-change notification.
-        var name = System.Net.WebUtility.HtmlEncode(newLeader.FullName);
-        var emailEnc = System.Net.WebUtility.HtmlEncode(newLeader.Email);
-        var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
-        var deptEnc = System.Net.WebUtility.HtmlEncode(departmentName ?? "Phòng Hợp tác Quốc tế");
-        var reasonEnc = System.Net.WebUtility.HtmlEncode(reason);
-
-        var html =
-            $"<p>Xin chào {name},</p>" +
-            $"<p>Bạn đã được phân công làm <strong>Trưởng phòng Hợp tác Quốc tế</strong> của {campusEnc} trên hệ thống PEMS.</p>" +
-            "<p><strong>Thông tin tài khoản:</strong></p>" +
-            "<ul>" +
-            $"<li>Email đăng nhập: <strong>{emailEnc}</strong></li>" +
-            "<li>Vai trò: <strong>Staff Leader — Trưởng phòng IC</strong></li>" +
-            $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
-            $"<li>Phòng ban: <strong>{deptEnc}</strong></li>" +
-            "</ul>" +
-            $"<p><strong>Lý do thay thế:</strong> {reasonEnc}</p>" +
-            "<p>Vui lòng đăng nhập Internal Portal bằng email trên thông qua SSO/Google/FEID.</p>" +
-            "<p>Trân trọng,<br/>PEMS System</p>";
-
+        // The catch preserves this call site's pre-existing behaviour: the replacement is already
+        // committed, so nothing about the notification may turn a successful swap into a failed request.
         try
         {
-            await _emailService.SendAsync(
-                newLeader.Email, "[PEMS] Bạn đã được phân công làm Trưởng phòng IC", html, cancellationToken);
-            return "SENT";
+            var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountStaffLeaderAssigned,
+                new EmailRecipient(newLeader.Email, newLeader.FullName),
+                AccountEmailVariables.ForStaffLeaderAssigned(
+                    newLeader.FullName, campusName, effectiveAt, reason),
+                RelatedType: "User",
+                RelatedId: newLeader.UserId,
+                SentBy: _currentUser.UserId), cancellationToken);
+
+            return result.NotificationStatus;
         }
         catch
         {
@@ -330,25 +331,19 @@ public sealed class ReplaceStaffLeaderCommandHandler
     }
 
     private async Task SendOldLeaderEmailAsync(
-        string email, string fullName, string? campusName, string reason, CancellationToken cancellationToken)
+        ulong oldLeaderId, string email, string fullName, string? campusName, string successorName,
+        string reason, DateTime effectiveAt, CancellationToken cancellationToken)
     {
-        var name = System.Net.WebUtility.HtmlEncode(fullName);
-        var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
-        var reasonEnc = System.Net.WebUtility.HtmlEncode(reason);
-
-        var html =
-            $"<p>Xin chào {name},</p>" +
-            $"<p>Vai trò Trưởng phòng Hợp tác Quốc tế của bạn tại {campusEnc} đã được cập nhật.</p>" +
-            "<p>Bạn không còn là Staff Leader của cơ sở này trên hệ thống PEMS. " +
-            "Tài khoản của bạn hiện được chuyển về vai trò Staff thuộc Phòng Hợp tác Quốc tế.</p>" +
-            $"<p><strong>Lý do thay thế:</strong> {reasonEnc}</p>" +
-            "<p>Nếu thông tin này chưa chính xác, vui lòng liên hệ HO hoặc quản trị hệ thống.</p>" +
-            "<p>Trân trọng,<br/>PEMS System</p>";
-
         try
         {
-            await _emailService.SendAsync(
-                email, "[PEMS] Vai trò Trưởng phòng IC của bạn đã được thay đổi", html, cancellationToken);
+            await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountStaffLeaderReplaced,
+                new EmailRecipient(email, fullName),
+                AccountEmailVariables.ForStaffLeaderReplaced(
+                    fullName, campusName, successorName, effectiveAt, reason),
+                RelatedType: "User",
+                RelatedId: oldLeaderId,
+                SentBy: _currentUser.UserId), cancellationToken);
         }
         catch
         {

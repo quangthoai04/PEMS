@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Accounts.Commands.ResendAccountEmailConfirmation;
@@ -26,17 +27,17 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly IAccountEmailConfirmationService _confirmations;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
 
     public ResendAccountEmailConfirmationCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IAccountEmailConfirmationService confirmations, IEmailService email)
+        IAccountEmailConfirmationService confirmations, ISystemEmailDispatcher dispatcher)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _confirmations = confirmations;
-        _email = email;
+        _dispatcher = dispatcher;
     }
 
     public async Task<ResendAccountEmailConfirmationResponse> Handle(
@@ -70,17 +71,30 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
         var rawToken = await _confirmations.IssuePendingAsync(user.UserId, user.Email, isResend: true, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
-        var result = await _email.TrySendAsync(
-            user.Email, AccountConfirmationEmail.Subject,
-            AccountConfirmationEmail.BuildHtml(user.FullName, _confirmations.BuildConfirmUrl(rawToken)),
-            cancellationToken);
+        // The confirmation email states the account's role, so resolve it by id rather than relying on a
+        // navigation the caller may not have loaded.
+        var roleCode = await _db.Roles.AsNoTracking()
+            .Where(r => r.RoleId == user.RoleId)
+            .Select(r => r.RoleCode)
+            .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
+
+        var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailConfirmation,
+            new EmailRecipient(user.Email, user.FullName),
+            await AccountEmailVariables.ForConfirmationAsync(
+                _db, user.FullName, roleCode, user.SubRole,
+                user.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
+            TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(_confirmations.BuildConfirmUrl(rawToken)),
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: _currentUser.UserId), cancellationToken);
 
         var newResendCount = (latest?.Status == AccountEmailConfirmationStatuses.Pending ? latest.ResendCount : 0) + 1;
 
         return new ResendAccountEmailConfirmationResponse
         {
             Success = true,
-            EmailNotificationStatus = AccountConfirmationEmail.MapStatus(result.Status),
+            EmailNotificationStatus = result.NotificationStatus,
             ResendCount = newResendCount,
             Message = "Đã gửi lại email xác nhận.",
         };

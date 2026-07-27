@@ -1,6 +1,7 @@
 using MediatR;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Commands.VisitRequestOtp;
 using PEMS.Domain.Constants;
 
@@ -11,20 +12,20 @@ public sealed class RecoverVisitRequestOtpCommandHandler
 {
     private readonly IOtpService _otpService;
     private readonly IHumanVerificationService _humanVerification;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IRequestMetadataService _requestMetadata;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
     public RecoverVisitRequestOtpCommandHandler(
         IOtpService otpService,
         IHumanVerificationService humanVerification,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IRequestMetadataService requestMetadata,
         Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         _otpService        = otpService;
         _humanVerification = humanVerification;
-        _emailService      = emailService;
+        _dispatcher = dispatcher;
         _requestMetadata   = requestMetadata;
         _configuration     = configuration;
     }
@@ -58,18 +59,9 @@ public sealed class RecoverVisitRequestOtpCommandHandler
             _requestMetadata.UserAgent,
             cancellationToken);
 
-        try
-        {
-            await _emailService.SendVisitRequestOtpAsync(
-                issue.Email,
-                request.RegistrantFullName,
-                issue.Code,
-                cancellationToken);
-        }
-        catch (Exception)
-        {
-            throw new BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.", "OTP_SEND_FAILED");
-        }
+        // As with resend: the address is the one stored on the challenge, not one supplied by the caller.
+        await VisitRequestOtpMail.SendAsync(
+            _dispatcher, _otpService, issue.Email, request.RegistrantFullName, issue.Code, cancellationToken);
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;
         var msg = isEmailEnabled
