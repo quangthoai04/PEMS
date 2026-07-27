@@ -734,7 +734,7 @@ export function VisitProcess() {
 
   if (!hasNumericId || permLoadFailed || detailLoadError) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+      <div className="w-full py-4 pb-24">
         <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
@@ -761,7 +761,7 @@ export function VisitProcess() {
     }
     // Lỡ lot xuống đây mà không đủ quyền
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+      <div className="w-full py-4 pb-24">
         <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
@@ -779,7 +779,7 @@ export function VisitProcess() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 w-full pb-24">
+    <div className="w-full flex flex-col pb-24 animate-in fade-in duration-300">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
         <span className="mx-2">/</span>
