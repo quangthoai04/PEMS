@@ -29,9 +29,37 @@ public class AssignDepartmentStaffCommandHandlerTests
     private const ulong OtherDeptStaffId = 203;
     private const ulong LeaderParticipantId = 600;
 
+    /// <summary>
+    /// Records what the handler locked, so a test can assert the lock was taken at all.
+    ///
+    /// <para>
+    /// This is not decoration. The merge of Dev into Cảnh-Iter1 dropped this handler's
+    /// <see cref="IUserMutationLockService"/> call and its transaction while the XML documentation went
+    /// on describing both; every unit test here still passed, because none of them looked. A human
+    /// reviewer found it (C-1). The assertion below is what makes the next removal fail a test.
+    /// </para>
+    /// </summary>
+    private sealed class RecordingLockService : IUserMutationLockService
+    {
+        public List<ulong[]> UserLockCalls { get; } = new();
+        public List<ulong[]> DepartmentLockCalls { get; } = new();
+
+        public Task LockUsersAsync(IReadOnlyCollection<ulong> userIds, CancellationToken ct = default)
+        {
+            UserLockCalls.Add(userIds.ToArray());
+            return Task.CompletedTask;
+        }
+
+        public Task LockDepartmentsAsync(IReadOnlyCollection<ulong> departmentIds, CancellationToken ct = default)
+        {
+            DepartmentLockCalls.Add(departmentIds.ToArray());
+            return Task.CompletedTask;
+        }
+    }
+
     private static (DelegationsTestDbContext Db, AssignDepartmentStaffCommandHandler Handler,
         FakeDelegationsCurrentUser User, DelegationsHandlerMocks Mocks,
-        FakeDelegationsEmailDispatcher Dispatcher) CreateSut()
+        FakeDelegationsEmailDispatcher Dispatcher, RecordingLockService Locks) CreateSut()
     {
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db);
@@ -73,11 +101,12 @@ public class AssignDepartmentStaffCommandHandlerTests
                    as IReadOnlyDictionary<ulong, PEMS.Application.Delegations.Services.VisitFormRead.VisitCampusFormContent>);
 
         var dispatcher = mocks.DispatcherFor(db);
+        var locks = new RecordingLockService();
         var handler = new AssignDepartmentStaffCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, formRead.Object);
+            mocks.Storage.Object, formRead.Object, locks);
 
-        return (db, handler, user, mocks, dispatcher);
+        return (db, handler, user, mocks, dispatcher, locks);
     }
 
     private static AssignDepartmentStaffCommand Command(
@@ -89,7 +118,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task The_assignment_uses_the_assignment_template_not_the_invitation_one()
     {
-        var (db, handler, _, _, dispatcher) = CreateSut();
+        var (db, handler, _, _, dispatcher, _locks) = CreateSut();
 
         var participantId = await handler.Handle(Command(), default);
 
@@ -119,7 +148,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task Both_response_tokens_point_at_the_message_that_carried_them()
     {
-        var (db, handler, _, _, _) = CreateSut();
+        var (db, handler, _, _, _, _locks) = CreateSut();
 
         var participantId = await handler.Handle(Command(), default);
 
@@ -145,7 +174,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task The_action_block_carries_the_real_links_and_the_leader_never_supplies_them()
     {
-        var (_, handler, _, _, dispatcher) = CreateSut();
+        var (_, handler, _, _, dispatcher, _locks) = CreateSut();
 
         await handler.Handle(Command(), default);
 
@@ -162,7 +191,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task A_leader_edit_is_a_named_content_mode_and_changes_only_the_words()
     {
-        var (_, handler, _, _, dispatcher) = CreateSut();
+        var (_, handler, _, _, dispatcher, _locks) = CreateSut();
 
         await handler.Handle(
             Command(emailOverride: new EmailOverride(
@@ -186,7 +215,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task A_leader_may_not_hand_write_the_action_block()
     {
-        var (db, handler, _, _, _) = CreateSut();
+        var (db, handler, _, _, _, _locks) = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
             Command(emailOverride: new EmailOverride(
@@ -205,7 +234,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task An_empty_edited_subject_is_refused_before_the_assignment_is_written()
     {
-        var (db, handler, _, _, _) = CreateSut();
+        var (db, handler, _, _, _, _locks) = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
             Command(emailOverride: new EmailOverride(
@@ -221,7 +250,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task Only_a_department_leader_may_assign()
     {
-        var (db, handler, user, _, _) = CreateSut();
+        var (db, handler, user, _, _, _locks) = CreateSut();
         user.SubRole = UserSubRoles.Staff;
 
         await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(Command(), default));
@@ -231,7 +260,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task A_leader_may_not_assign_somebody_from_another_department()
     {
-        var (db, handler, _, _, _) = CreateSut();
+        var (db, handler, _, _, _, _locks) = CreateSut();
 
         await Assert.ThrowsAsync<ConflictException>(
             () => handler.Handle(Command(staffUserId: OtherDeptStaffId), default));
@@ -248,7 +277,7 @@ public class AssignDepartmentStaffCommandHandlerTests
         // Role and department alone were not enough: a deactivated, locked or not-yet-confirmed
         // account holds no effective authority, so assigning it a live visit responsibility creates a
         // task nobody can act on. The sibling logistics-assignment flow already re-checked status.
-        var (db, handler, _, _, _) = CreateSut();
+        var (db, handler, _, _, _, _locks) = CreateSut();
         var staff = db.Users.Single(u => u.UserId == StaffId);
         staff.Status = status;
         db.SaveChanges();
@@ -261,12 +290,58 @@ public class AssignDepartmentStaffCommandHandlerTests
         Assert.Empty(db.EmailActionTokens);
     }
 
+    // ── The account is locked before it is judged (C-1) ──────────────────────
+
+    /// <summary>
+    /// The assignment must take the shared user lock, exactly once, on the account being assigned.
+    ///
+    /// <para>
+    /// <c>UpdateAccountRole</c> takes the same lock and relies on assignment flows contending on it; a
+    /// handler that skips it makes the exclusion one-sided, so a role change can commit in the gap
+    /// between this handler's eligibility checks and its commit. That is what happened when the merge
+    /// dropped the call — nothing failed, because nothing asserted it.
+    /// </para>
+    /// <para>
+    /// Ordering relative to the reads is proved against real MySQL in
+    /// <c>AssignDepartmentStaffConcurrencyTests</c>; a lock with no row-level semantics cannot show it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_assigned_account_is_locked_exactly_once_before_it_is_judged()
+    {
+        var (_, handler, _, _, _, locks) = CreateSut();
+
+        await handler.Handle(Command(), default);
+
+        var call = Assert.Single(locks.UserLockCalls);
+        Assert.Equal(new[] { StaffId }, call);
+        Assert.Empty(locks.DepartmentLockCalls);
+    }
+
+    /// <summary>
+    /// A refusal still locks first. The check that rejects the account has to run against committed
+    /// state, so the lock cannot be conditional on the outcome of the very checks it protects.
+    /// </summary>
+    [Fact]
+    public async Task An_account_refused_for_status_was_still_locked_before_the_check()
+    {
+        var (db, handler, _, _, _, locks) = CreateSut();
+        var staff = db.Users.Single(u => u.UserId == StaffId);
+        staff.Status = UserStatuses.Inactive;
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(Command(), default));
+
+        var call = Assert.Single(locks.UserLockCalls);
+        Assert.Equal(new[] { StaffId }, call);
+    }
+
     // ── Reassignment supersedes the previous response links ─────────────────
 
     [Fact]
     public async Task Reassigning_invalidates_the_pending_tokens_of_the_previous_round()
     {
-        var (db, handler, _, _, _) = CreateSut();
+        var (db, handler, _, _, _, _locks) = CreateSut();
 
         var firstId = await handler.Handle(Command(), default);
         var firstRoundHashes = db.EmailActionTokens
@@ -292,7 +367,7 @@ public class AssignDepartmentStaffCommandHandlerTests
     [Fact]
     public async Task An_email_failure_leaves_the_assignment_in_place_and_records_the_failure()
     {
-        var (db, handler, _, mocks, _) = CreateSut();
+        var (db, handler, _, mocks, _, _locks) = CreateSut();
         mocks.FailEmail = true;
 
         var participantId = await handler.Handle(Command(), default);
