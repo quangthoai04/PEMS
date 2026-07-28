@@ -182,6 +182,25 @@ jobs:
       - name: Integration tests
         run: dotnet test tests/PEMS.IntegrationTests/PEMS.IntegrationTests.csproj --logger "trx;LogFileName=integration.trx"
 
+      # A failing integration test reports only "expected OK, actual InternalServerError". That names the
+      # symptom and hides the cause: the exception that produced the 500 was logged inside the in-process
+      # test host and discarded. Re-running the failures with the app's own logging turned up is what turns
+      # "something threw" into a stack trace — the same reason PEMS_E2E_API_LOG exists for the real-stack
+      # suite. Only runs when something already failed, so it costs nothing on a green build.
+      - name: Diagnose failures (server-side exceptions)
+        if: failure()
+        env:
+          Logging__LogLevel__Default: 'Information'
+          Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: 'Information'
+        run: |
+          trx=$(find . -name 'integration.trx' | head -1)
+          failed=$(grep -oE 'testName="[^"]+"[^>]*outcome="Failed"' "$trx" \
+                   | sed -E 's/testName="([^"]+)".*/\1/' | sed -E 's/\(.*//' | sort -u | head -40)
+          echo "re-running $(echo "$failed" | wc -l) failed test(s) with logging enabled"
+          filter=$(echo "$failed" | sed 's/^/FullyQualifiedName=/' | paste -sd'|' -)
+          dotnet test tests/PEMS.IntegrationTests/PEMS.IntegrationTests.csproj \
+            --filter "$filter" --logger "console;verbosity=detailed" 2>&1 | tail -400
+
       # A suite that discovers nothing still exits 0. That is precisely how a broken preflight passed
       # for green on Dev, so the executed count is asserted rather than assumed.
       - name: Assert the suite actually ran
