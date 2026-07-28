@@ -1,0 +1,251 @@
+name: merge-validation
+
+# The gates this repository has been validating by hand. Nothing here is new policy: each job runs the
+# same command the closure report ran locally, so a red job means the same thing it would mean on a
+# developer machine.
+#
+# Deliberately NOT included: any job that reaches Google Drive. Those paths need real credentials, and a
+# job that silently degrades to "no upload happened" while still reporting green would be worse than no
+# job at all. Drive-backed behaviour stays a manual gate — see docs/merge-audit.
+
+on:
+  pull_request:
+    branches:
+      - 'Cảnh-Iter1'
+  push:
+    branches:
+      - 'merge/dev-into-canh-iter1'
+      - 'merge/dev-into-canh-iter1-final-closure'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20.x'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  # Test-only credentials for the MySQL service container. Never a production secret: the database is
+  # created by the job, thrown away with the runner, and reachable only from inside it.
+  MYSQL_ROOT_PASSWORD: '123456'
+
+jobs:
+  backend:
+    name: backend build + unit + architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - run: dotnet restore
+
+      # Built one project at a time, in dependency order, because there is no solution file.
+      - name: Build (4 projects)
+        run: |
+          for p in Domain Application Infrastructure Api; do
+            dotnet build "backend/PEMS.$p/PEMS.$p.csproj" --no-restore
+          done
+
+      - name: Unit tests
+        run: dotnet test tests/PEMS.UnitTests/PEMS.UnitTests.csproj --logger "trx;LogFileName=unit.trx"
+
+      - name: Architecture tests
+        run: dotnet test tests/PEMS.ArchitectureTests/PEMS.ArchitectureTests.csproj --logger "trx;LogFileName=arch.trx"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: backend-trx
+          path: '**/TestResults/*.trx'
+
+  canonical-sql:
+    name: canonical SQL fresh import
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: '123456'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p123456"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the ONE canonical script
+        id: canon
+        run: |
+          shopt -s nullglob
+          files=(docs/database/scripts/PEMS_FULL_*.sql)
+          if [ ${#files[@]} -ne 1 ]; then
+            echo "Expected exactly one canonical PEMS_FULL_*.sql, found ${#files[@]}: ${files[*]}" >&2
+            exit 1
+          fi
+          echo "path=${files[0]}" >> "$GITHUB_OUTPUT"
+          echo "Canonical: ${files[0]}"
+          sha256sum "${files[0]}"
+
+      # The pin lives in the test suite; a schema change without a matching bump must fail here too,
+      # not only in the integration job.
+      - name: Hash matches the pinned value
+        run: |
+          expected=$(grep -A2 'public const string ExpectedSha256' \
+            tests/PEMS.IntegrationTests/TestInfrastructure/CanonicalSqlScript.cs \
+            | grep -oE '[0-9a-f]{64}' | head -1)
+          actual=$(sha256sum "${{ steps.canon.outputs.path }}" | cut -d' ' -f1)
+          echo "expected $expected"
+          echo "actual   $actual"
+          [ "$expected" = "$actual" ]
+
+      # Retarget onto a disposable database and PROVE the retarget worked before executing anything:
+      # the script carries its own USE statement, which wins over the database argument given to mysql.
+      - name: Fresh import into a disposable database
+        run: |
+          set -euo pipefail
+          DB=pems_ci_validation
+          node -e "
+            const fs=require('fs');
+            const t=fs.readFileSync(process.argv[1],'utf8').split('pems_db').join('$DB');
+            if (/\bpems_db\b/i.test(t)) { console.error('ABORT: pems_db still referenced'); process.exit(3); }
+            fs.writeFileSync('/tmp/retargeted.sql', t);
+            console.log('retarget verified: no pems_db reference remains');
+          " "${{ steps.canon.outputs.path }}"
+          mysql -h127.0.0.1 -uroot -p123456 -e "CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+          mysql -h127.0.0.1 -uroot -p123456 --default-character-set=utf8mb4 "$DB" < /tmp/retargeted.sql
+
+          q() { mysql -h127.0.0.1 -uroot -p123456 -N -B -e "$1"; }
+          tables=$(q "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$DB' AND TABLE_TYPE='BASE TABLE'")
+          triggers=$(q "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='$DB'")
+          fks=$(q "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='$DB' AND CONSTRAINT_TYPE='FOREIGN KEY'")
+          templates=$(q "SELECT COUNT(*) FROM $DB.email_templates")
+          dups=$(q "SELECT COUNT(*) FROM (SELECT template_code FROM $DB.email_templates GROUP BY template_code HAVING COUNT(*)>1) d")
+          echo "tables=$tables triggers=$triggers fks=$fks templates=$templates duplicate_codes=$dups"
+
+          [ "$tables" -eq 82 ] && [ "$triggers" -eq 32 ] && [ "$fks" -eq 252 ] && [ "$dups" -eq 0 ]
+
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: '123456'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p123456"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Gitignored local config the suite fails closed without. Writing it here is what makes the job
+      # reproducible; the connection string points at the throwaway service container.
+      - name: Provide appsettings.Testing.json
+        run: |
+          cp backend/PEMS.Api/appsettings.Testing.example.json backend/PEMS.Api/appsettings.Testing.json
+          node -e "
+            const fs=require('fs');
+            const p='backend/PEMS.Api/appsettings.Testing.json';
+            const c=JSON.parse(fs.readFileSync(p,'utf8'));
+            c.ConnectionStrings = c.ConnectionStrings || {};
+            c.ConnectionStrings.DefaultConnection =
+              'server=127.0.0.1;port=3306;database=pems_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None';
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+          "
+          mysql -h127.0.0.1 -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS pems_test CHARACTER SET utf8mb4"
+
+      - name: Integration tests
+        run: dotnet test tests/PEMS.IntegrationTests/PEMS.IntegrationTests.csproj --logger "trx;LogFileName=integration.trx"
+
+      # A suite that discovers nothing still exits 0. That is precisely how a broken preflight passed
+      # for green on Dev, so the executed count is asserted rather than assumed.
+      - name: Assert the suite actually ran
+        run: |
+          trx=$(find . -name 'integration.trx' | head -1)
+          [ -n "$trx" ] || { echo "no trx produced"; exit 1; }
+          total=$(grep -oE 'total="[0-9]+"' "$trx" | head -1 | grep -oE '[0-9]+')
+          echo "executed tests: $total"
+          [ "${total:-0}" -gt 0 ]
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-trx
+          path: '**/TestResults/*.trx'
+
+  frontend:
+    name: frontend typecheck + build + unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/pems-react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/pems-react/package-lock.json
+
+      - run: npm ci
+      # `lint` IS the typecheck here (tsc --noEmit); there is no separate typecheck script.
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:unit
+
+  real-stack:
+    name: real-stack E2E
+    # Opt-in rather than on every push: it boots the whole stack and takes minutes. Runs on pull
+    # requests into the release branch, where it is the gate that matters, and on demand.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: '123456'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p123456"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/pems-react/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/pems-react
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend/pems-react
+        run: npx playwright install --with-deps chromium
+
+      # The orchestrator creates its own disposable database, refuses to touch pems_db/pems_test/
+      # pems_pr3_test, runs with SMTP disabled against a FileSink inbox, and drops everything on exit.
+      - name: Real-stack suite
+        working-directory: frontend/pems-react
+        env:
+          MYSQL_HOST: '127.0.0.1'
+          MYSQL_USER: 'root'
+          MYSQL_PASSWORD: '123456'
+          PEMS_E2E_API_LOG: '${{ runner.temp }}/api.log'
+        run: npm run test:e2e:realstack
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: realstack-diagnostics
+          path: |
+            ${{ runner.temp }}/api.log
+            frontend/pems-react/test-results/**
