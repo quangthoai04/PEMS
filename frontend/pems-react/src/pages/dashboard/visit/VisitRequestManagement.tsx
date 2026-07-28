@@ -201,6 +201,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const attendingTabLabel = (isDept && subRole === 'STAFF') ? 'Nhiệm vụ được giao' : 'Lời mời tham dự';
   const registeredTabLabel = isVisitor ? 'Tôi là người đăng ký' : 'Đơn tôi đăng ký';
   const hostedTabLabel = 'Đoàn tôi phụ trách';
+  const tabOptions = ([
+    { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
+    { key: 'hosted' as Tab, label: hostedTabLabel, show: canUseHostedTab },
+    { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
+    { key: 'registered' as Tab, label: registeredTabLabel, show: canUseRegisteredTab },
+  ]).filter((t) => t.show);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -286,16 +292,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     [campusFilterOptions],
   );
 
-  // Desktop (xl) single-row grid template — column count MUST match the rendered filter
-  // children, which varies by role: showScope (Visitor/HO/Staff Leader) and showCampus (HO
-  // only) toggle extra columns. Static literal strings so Tailwind JIT picks them up. Search
-  // uses minmax(0,1fr) so it absorbs leftover space yet shrinks (never forces horizontal
-  // scroll) on the tight 1366px + 290px-sidebar layout; long values truncate via span/truncate.
-  const filterGridClass = filterConfig.showCampus
-    ? 'xl:grid-cols-[minmax(0,1fr)_200px_150px_160px_185px_112px_44px]' // search·status·scope·campus·date·apply·reset
-    : filterConfig.showScope
-      ? 'xl:grid-cols-[minmax(0,1fr)_210px_160px_200px_112px_44px]'     // search·status·scope·date·apply·reset
-      : 'xl:grid-cols-[minmax(0,1fr)_220px_200px_112px_44px]';          // search·status·date·apply·reset
+  const showTabFilter = showTabs && !isEmbedded;
 
   const getUrlFilters = () => ({
     keyword: searchParams.get('keyword') || '',
@@ -318,6 +315,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isCampusFilterOpen, setIsCampusFilterOpen] = useState(false);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
+  const [isTabFilterOpen, setIsTabFilterOpen] = useState(false);
 
   // Đến từ 1 thông báo cụ thể (?visitRequestId=...): chỉ hiển thị đúng đơn đó thay vì cả
   // danh sách, để người dùng không phải tự tìm. "Reset" (nút có sẵn) xoá filter này để xem
@@ -1711,36 +1709,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* UC-27: pending invitations entry point (removed per user request to declutter) */}
 
-      {/* Tabs */}
-      {showTabs && !isEmbedded && (
-        <div className="flex w-full sm:w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
-          {([
-            { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
-            { key: 'hosted' as Tab, label: hostedTabLabel, show: canUseHostedTab },
-            { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
-            { key: 'registered' as Tab, label: registeredTabLabel, show: canUseRegisteredTab },
-          ]).filter(t => t.show).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                if (activeTab !== t.key) {
-                  const nextEmptyFilters = createEmptyFilters();
-                  setActiveTab(t.key);
-                  setDraftFilters(nextEmptyFilters);
-                  setAppliedFilters(nextEmptyFilters);
-                  setCurrentPage(1);
-                  updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
-                  loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
-                }
-              }}
-              className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-colors outline-none cursor-pointer ${activeTab === t.key ? 'bg-white text-[#004c91] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Summary Chips */}
       {summaryStats && (
         <div className="flex flex-wrap items-center mb-4 text-sm font-medium text-slate-700">
@@ -1798,8 +1766,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* Filters */}
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-visible">
-        <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${filterGridClass} xl:items-end`}>
-          <div className="min-w-0 md:col-span-2 xl:col-span-1">
+        <div className="flex flex-wrap gap-3 xl:items-end">
+          {/* Search — first, grows to take leftover space */}
+          <div className="min-w-[160px] flex-1 basis-40">
             <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Tìm kiếm</label>
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 shrink-0" />
@@ -1812,20 +1781,59 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             </div>
           </div>
 
-          {/* Status */}
+          {/* Loại đơn (filter button thay cho tabs) — width fits its own label */}
+          {showTabFilter && (
+            <div className="relative shrink-0">
+              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Loại đơn</label>
+              <button onClick={() => setIsTabFilterOpen(!isTabFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+                <span className="truncate">{tabOptions.find((t) => t.key === activeTab)?.label ?? 'Chọn loại đơn'}</span>
+                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
+              </button>
+              {isTabFilterOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setIsTabFilterOpen(false)} />
+                  <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                    {tabOptions.map((t) => (
+                      <div
+                        key={t.key}
+                        className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center gap-4 ${activeTab === t.key ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
+                        onClick={() => {
+                          setIsTabFilterOpen(false);
+                          if (activeTab !== t.key) {
+                            const nextEmptyFilters = createEmptyFilters();
+                            setActiveTab(t.key);
+                            setDraftFilters(nextEmptyFilters);
+                            setAppliedFilters(nextEmptyFilters);
+                            setCurrentPage(1);
+                            updateUrlParams(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
+                            loadDelegations(t.key, 1, pageSize, nextEmptyFilters, sortOrder);
+                          }
+                        }}
+                      >
+                        {t.label}
+                        {activeTab === t.key && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Status — width fits its own label */}
           {filterConfig.showStatus && (
-            <div className="relative min-w-0">
+            <div className="relative shrink-0">
               <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.statusLabel || 'Trạng thái'}</label>
-              <button onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
-                <span className="min-w-0 truncate">{filterConfig.statusOptions.find((o) => o.value === draftFilters.status)?.label ?? 'Tất cả trạng thái'}</span>
-                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
+              <button onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+                <span className="truncate">{filterConfig.statusOptions.find((o) => o.value === draftFilters.status)?.label ?? 'Tất cả trạng thái'}</span>
+                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
               </button>
               {isStatusFilterOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsStatusFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                  <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
                     {filterConfig.statusOptions.map((option) => (
-                      <div key={option.value} title={option.description} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.status === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
+                      <div key={option.value} title={option.description} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center gap-4 ${draftFilters.status === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ status: option.value }); setIsStatusFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.status === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
@@ -1837,20 +1845,20 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             </div>
           )}
 
-          {/* Scope */}
+          {/* Scope — width fits its own label */}
           {filterConfig.showScope && (
-            <div className="relative min-w-0">
+            <div className="relative shrink-0">
               <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.scopeLabel || 'Phạm vi đơn'}</label>
-              <button onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
-                <span className="min-w-0 truncate">{filterConfig.scopeOptions?.find((o) => o.value === draftFilters.visitScope)?.label ?? 'Tất cả phạm vi'}</span>
-                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
+              <button onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+                <span className="truncate">{filterConfig.scopeOptions?.find((o) => o.value === draftFilters.visitScope)?.label ?? 'Tất cả phạm vi'}</span>
+                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
               </button>
               {isTypeFilterOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsTypeFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                  <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
                     {filterConfig.scopeOptions?.map((option) => (
-                      <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.visitScope === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
+                      <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center gap-4 ${draftFilters.visitScope === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ visitScope: option.value }); setIsTypeFilterOpen(false); }}>
                         {option.label}
                         {draftFilters.visitScope === option.value && <Check className="w-4 h-4 ml-auto text-[#004c91]" />}
@@ -1864,7 +1872,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Campus */}
           {filterConfig.showCampus && (
-            <div className="relative min-w-0">
+            <div className="relative w-[190px] shrink-0">
               <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Cơ sở</label>
               <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{campusOptions.find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
@@ -1889,7 +1897,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Relation */}
           {filterConfig.showRelation && (
-            <div className="relative min-w-0">
+            <div className="relative w-[170px] shrink-0">
               <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.relationLabel || 'Loại xử lý'}</label>
               <button onClick={() => setIsRelationFilterOpen(!isRelationFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{filterConfig.relationOptions.find((o) => o.value === draftFilters.relation)?.label ?? 'Tất cả'}</span>
@@ -1912,17 +1920,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             </div>
           )}
 
-          {/* Date range */}
-          <div className="relative min-w-0">
+          {/* Date range — width fits its own label */}
+          <div className="relative shrink-0">
             <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Khoảng ngày</label>
-            <button onClick={() => setIsDateFilterOpen(!isDateFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
-              <span className="min-w-0 truncate">
+            <button onClick={() => setIsDateFilterOpen(!isDateFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+              <span className="truncate">
                 {!draftFilters.fromDate && !draftFilters.toDate ? 'Chọn khoảng ngày'
                   : draftFilters.fromDate && !draftFilters.toDate ? `Từ ${formatDateOnly(draftFilters.fromDate)}`
                     : !draftFilters.fromDate && draftFilters.toDate ? `Đến ${formatDateOnly(draftFilters.toDate)}`
                       : `${formatDateOnly(draftFilters.fromDate)} - ${formatDateOnly(draftFilters.toDate)}`}
               </span>
-              <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
+              <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
             </button>
             {isDateFilterOpen && (
               <>
@@ -1944,7 +1952,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             )}
           </div>
 
-          <div className="flex md:col-span-2 xl:contents">
+          {/* Reset — pushed to the far right */}
+          <div className="ml-auto flex shrink-0 items-end">
             <button
               onClick={handleResetFilters}
               disabled={
@@ -1958,7 +1967,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 !draftFilters.toDate &&
                 !notificationVisitRequestId
               }
-              className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed outline-none w-full xl:w-auto transition-colors"
+              className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed outline-none transition-colors"
             >
               Reset
             </button>
