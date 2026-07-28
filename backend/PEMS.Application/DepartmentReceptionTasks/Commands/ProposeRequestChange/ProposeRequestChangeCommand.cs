@@ -63,6 +63,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
 
             if (l == null) throw new Exception("Không tìm thấy đơn yêu cầu");
 
+            // Phòng ban chỉ được đề xuất số lượng THẤP HƠN số lượng dự kiến mượn của Host (đàm phán
+            // giảm khi không đáp ứng đủ) — không được đề xuất tăng số lượng.
+            if (request.ProposedQuantity is { } pqCheck && l.Quantity.HasValue && pqCheck >= l.Quantity.Value)
+                throw new Exception($"Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({l.Quantity.Value}).");
+
             ulong userId = _currentUserService.UserId.Value;
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId)
@@ -82,6 +87,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 throw new Exception("Thời gian kết thúc đề xuất phải sau thời gian bắt đầu.");
 
             var now = VietnamTime.Now();
+
+            // "Ai đề xuất, người đó phụ trách": nếu đơn chưa có ai phụ trách (thường là Trưởng phòng
+            // đề xuất thẳng trước khi phân công cho Staff), người gửi đề xuất tự động trở thành người
+            // phụ trách — tránh tình trạng đơn "đang xử lý" mà không ai đứng tên. Không cướp việc khỏi
+            // Staff đã được giao trước đó (chỉ gán khi đang trống).
+            if (l.AssignedToUserId == null)
+            {
+                l.AssignedToUserId = userId;
+                l.AssignedBy = userId;
+                l.AssignedAt = now;
+            }
 
             // Never overwrite the original quantity (the PLANNED figure) — only the proposed_* columns.
             l.ProposedQuantity = request.ProposedQuantity;
