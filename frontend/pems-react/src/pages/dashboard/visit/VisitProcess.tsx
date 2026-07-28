@@ -900,10 +900,10 @@ export function VisitProcess() {
             <AnimatePresence>
               {isInfoExpanded && (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="border-t border-gray-100 overflow-hidden"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="border-t border-gray-100"
                 >
                   <div className={`p-6 space-y-4 ${!isInfoEditable ? 'bg-slate-50/50 opacity-90' : 'bg-white'}`}>
                     {/* Section 1: Thông tin người đăng ký */}
@@ -989,9 +989,9 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection3Expanded && (
                           <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
                           >
                             <div className="p-0 bg-white border-t border-gray-100">
 
@@ -1273,7 +1273,21 @@ export function VisitProcess() {
                             4. Ghi chú chung
                           </h3>
                           <textarea
-                            ref={noteTextareaRef}
+                            ref={(el) => {
+                              // Any refetch of `detail` (invite participant, save reminders/agenda...)
+                              // flips `detailLoading` true→false, which early-returns a bare spinner
+                              // and unmounts this whole tree — so this textarea gets a BRAND NEW DOM
+                              // node on remount. The [preparationNote]-keyed effect below won't re-run
+                              // for it (the note text itself didn't change), leaving the fresh node at
+                              // its default ~48px height and clipping long notes. Resizing here, right
+                              // when the node is (re)attached, covers that case too.
+                              noteTextareaRef.current = el;
+                              if (el) {
+                                el.style.height = 'auto';
+                                el.style.height = `${Math.max(48, el.scrollHeight)}px`;
+                                el.scrollTop = 0;
+                              }
+                            }}
                             readOnly={!canConfigurePrep}
                             rows={1}
                             maxLength={5000}
