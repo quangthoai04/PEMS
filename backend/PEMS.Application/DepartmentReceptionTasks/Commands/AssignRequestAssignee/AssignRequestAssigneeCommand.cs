@@ -73,7 +73,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
-            if (l == null) throw new NotFoundException("VisitLogisticsItem", request.LogisticsItemId);
+            if (l == null)
+                throw new NotFoundException(
+                    "Không tìm thấy yêu cầu hậu cần.", LogisticsTaskErrorCodes.RequestNotFound);
 
             // Check department scope
             if (l.RequestedToDepartmentId != user.DepartmentId)
@@ -91,7 +93,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             bool hasPendingAttempt = await _context.VisitLogisticsAssignmentAttempts
                 .AnyAsync(a => a.LogisticsItemId == request.LogisticsItemId && a.Status == "PENDING", cancellationToken);
             if (hasPendingAttempt)
-                throw new ConflictException("Nhiệm vụ đã được phân công và đang chờ phản hồi hoặc đã được nhận.");
+                throw new ConflictException(
+                    "Nhiệm vụ đã được phân công và đang chờ phản hồi hoặc đã được nhận.",
+                    LogisticsTaskErrorCodes.AssignmentAlreadyPending);
 
             bool hasSigned = await _context.VisitLogisticsItemHandovers
                 .AnyAsync(h => h.LogisticsItemId == request.LogisticsItemId &&

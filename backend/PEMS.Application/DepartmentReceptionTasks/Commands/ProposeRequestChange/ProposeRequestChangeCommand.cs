@@ -79,7 +79,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
-            if (l == null) throw new NotFoundException("VisitLogisticsItem", request.LogisticsItemId);
+            if (l == null)
+                throw new NotFoundException(
+                    "Không tìm thấy yêu cầu hậu cần.", LogisticsTaskErrorCodes.RequestNotFound);
 
             // Phòng ban chỉ được đề xuất số lượng THẤP HƠN số lượng dự kiến mượn của Host (đàm phán
             // giảm khi không đáp ứng đủ) — không được đề xuất tăng số lượng.
