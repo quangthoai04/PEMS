@@ -37,6 +37,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string StartTime { get; set; }
         public string EndTime { get; set; }
         public string Date { get; set; }
+        /// <summary>Mốc đầy đủ (ISO, giữ nguyên offset +07:00) — dùng để FE phát hiện đoàn khách
+        /// diễn ra nhiều ngày (StartTime/EndTime/Date ở trên chỉ có giờ + 1 ngày bắt đầu).</summary>
+        public string? UsageStartAt { get; set; }
+        public string? UsageEndAt { get; set; }
         public string Title { get; set; }
         public string Description { get; set; }
         public int Quantity { get; set; }
@@ -52,6 +56,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public ulong VisitInstanceId { get; set; }
         public ulong VisitRequestId { get; set; }
         public string? CancelReason { get; set; }
+        public int? ProposedQuantity { get; set; }
         public string? ProposedUsageStartAt { get; set; }
         public string? ProposedUsageEndAt { get; set; }
         public string? ProposedDescription { get; set; }
@@ -244,6 +249,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 StartTime = l.UsageStartAt?.ToString("HH:mm") ?? "",
                 EndTime = l.UsageEndAt?.ToString("HH:mm") ?? "",
                 Date = l.UsageStartAt?.ToString("dd-MM-yyyy") ?? "",
+                UsageStartAt = l.UsageStartAt?.ToString("O"),
+                UsageEndAt = l.UsageEndAt?.ToString("O"),
                 Title = l.Title,
                 Description = l.Description ?? "",
                 Quantity = l.Quantity ?? 1,
@@ -257,6 +264,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 VisitInstanceId = camp.VisitInstanceId,
                 VisitRequestId = camp.VisitRequestId,
                 CancelReason = camp.CancellationReason ?? camp.VisitRequest.CancellationReason,
+                ProposedQuantity = l.ProposedQuantity,
                 ProposedUsageStartAt = l.ProposedUsageStartAt?.ToString("O"),
                 ProposedUsageEndAt = l.ProposedUsageEndAt?.ToString("O"),
                 ProposedDescription = l.ProposedDescription,
