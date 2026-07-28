@@ -17,6 +17,11 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
+  getOverdueResponses: async () => {
+    const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.overdueResponses);
+    return data;
+  },
+
   getInvitationDetail: async (participantId: number | string) => {
     const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.invitationDetail(participantId));
     return data;
@@ -135,12 +140,14 @@ export const departmentReceptionTasksApi = {
     logisticsItemId: number | string,
     handoverType: 'BORROW' | 'RETURN',
     signerSide: 'BORROWER' | 'PROVIDER',
-    note?: string
+    note?: string,
+    checklistJson?: string
   ) => {
     const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.signHandover(logisticsItemId), {
       handoverType,
       signerSide,
-      note
+      note,
+      checklistJson
     });
     return data;
   }

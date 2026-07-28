@@ -78,15 +78,15 @@ function ConflictBadge({ count, allPrivate }: { count: number; allPrivate: boole
  * - Parent can call `closeDropdown` (via `onCloseRef`) after a successful invite to close + clear.
  */
 export function SearchDropdown<T>({
-  placeholder, search, renderRow, emptyText, onCloseRef, disabled
+  placeholder, emptyText, search, disabled, onCloseRef, renderRow, dropUp = false,
 }: {
   placeholder: string;
-  search: (keyword: string) => Promise<T[]>;
-  renderRow: (item: T, index: number, close: () => void) => React.ReactNode;
   emptyText: string;
-  /** Optional: parent passes a ref that gets a close() function so it can close the dropdown after invite. */
-  onCloseRef?: React.MutableRefObject<(() => void) | null>;
+  search: (kw: string) => Promise<T[]>;
   disabled?: boolean;
+  onCloseRef?: React.RefObject<(() => void) | null>;
+  renderRow: (item: T, index: number, close: () => void) => React.ReactNode;
+  dropUp?: boolean;
 }) {
   const [kw, setKw] = useState('');
   const [open, setOpen] = useState(false);
@@ -154,7 +154,9 @@ export function SearchDropdown<T>({
         {loading && open && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />}
       </div>
       {showPanel && (
-        <div className="absolute left-0 top-full z-[100] mt-1.5 w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+        <div className={`absolute left-0 z-[100] w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl ${
+          dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+        }`}>
           {loading && items.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-400">Đang tải...</div>
           ) : error ? (
@@ -350,34 +352,37 @@ export function ParticipantInvitationSection({
   return (
     <div className="space-y-6">
       {/* ── Host chính (read-only) ── */}
-      <div className="rounded-xl border border-gray-200 border-l-[6px] border-l-[#004c91] bg-gradient-to-r from-[#004c91]/[0.03] to-transparent p-5 shadow-sm">
-        <h4 className="mb-3 flex items-center gap-2 text-base font-bold text-[#004c91]">
-          <UserCheck className="w-5 h-5" /> Người phụ trách tiếp đón
-        </h4>
+      <div className="rounded-xl border border-gray-200 border-l-[5px] border-l-[#004c91] bg-white px-4 py-3 shadow-sm">
         {host ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#004c91] font-bold text-white ring-2 ring-blue-100">
-              {host.fullName.charAt(0)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-[#004c91]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+              <span className="flex items-center gap-2 text-sm sm:text-base font-bold text-[#004c91] shrink-0">
+                <UserCheck className="w-5 h-5 text-[#004c91]" />
+                <span>Người phụ trách tiếp đón:</span>
+              </span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#004c91] text-xs font-extrabold text-white shrink-0">
+                {host.fullName.charAt(0)}
+              </div>
+              <span className="text-sm font-bold text-[#004c91] truncate" title={host.fullName}>
                 {host.fullName}
-                {currentUserId != null && host.userId === currentUserId && (
-                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">Bạn phụ trách tiếp đón</span>
-                )}
-              </div>
-              <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" /> {host.email}</span>
-                {host.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" /> {host.phone}</span>}
-                {host.departmentName && <span className="inline-flex items-center gap-1"><Building2 className="w-3 h-3" /> {host.departmentName}</span>}
-              </div>
+              </span>
+              {currentUserId != null && host.userId === currentUserId && (
+                <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">
+                  Bạn phụ trách tiếp đón
+                </span>
+              )}
+              {host.departmentName && (
+                <span className="text-xs text-gray-500 font-medium truncate">
+                  • {host.departmentName}
+                </span>
+              )}
             </div>
-            <span className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-[#004c91]">
+            <span className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-[#004c91]">
               {host.statusLabel || 'Đã được phân công'}
             </span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
+          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700">
             <AlertCircle className="w-4 h-4 shrink-0" /> Chưa xác định Host chính cho cơ sở này.
           </div>
         )}
@@ -394,7 +399,7 @@ export function ParticipantInvitationSection({
         <Panel title="Staff hỗ trợ IC" icon={<Users className="w-5 h-5" />}>
           {canManage && (
             <SearchDropdown<ParticipantCandidate>
-              placeholder="Tìm theo tên / email..."
+              placeholder="Tìm theo tên..."
               emptyText="Không tìm thấy nhân sự phù hợp."
               search={(kw) => delegationsApi.getParticipantCandidates(visitInstanceId, 'IC_SUPPORT', kw)}
               onCloseRef={closeStaffDropdown}
@@ -425,7 +430,7 @@ export function ParticipantInvitationSection({
         <Panel title="Sinh viên hỗ trợ" icon={<GraduationCap className="w-5 h-5" />}>
           {canManage && (
             <SearchDropdown<ParticipantCandidate>
-              placeholder="Tìm theo tên / email / mã SV..."
+              placeholder="Tìm theo tên / mã SV..."
               emptyText="Không tìm thấy sinh viên hợp lệ trong campus này."
               search={(kw) => delegationsApi.getParticipantCandidates(visitInstanceId, 'STUDENT', kw)}
               onCloseRef={closeStudentDropdown}
@@ -457,7 +462,7 @@ export function ParticipantInvitationSection({
         <Panel title="Phòng ban hỗ trợ" icon={<Building2 className="w-5 h-5" />} wide>
           {canManage && (
             <SearchDropdown<SupportDepartment>
-              placeholder="Tìm phòng ban (GENERAL) cùng cơ sở..."
+              placeholder="Tìm phòng ban..."
               emptyText="Không tìm thấy phòng ban phù hợp."
               search={(kw) => delegationsApi.getSupportDepartments(visitInstanceId, kw)}
               onCloseRef={closeDeptDropdown}
@@ -467,7 +472,6 @@ export function ParticipantInvitationSection({
                     <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
                     <div className="truncate text-xs text-gray-500">
                       {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
-                      {d.leaderEmail ? ` · ${d.leaderEmail}` : ''}
                     </div>
                     {!d.canInviteParticipant && d.participantDisabledReason && (
                       <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.participantDisabledReason}</div>
@@ -616,15 +620,9 @@ function CandidateRow({
     <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
       <div className="min-w-0">
         <div className="truncate text-sm font-bold text-gray-800">{candidate.fullName}</div>
-        {/* Full email shown (not truncated away) so the host knows exactly who they email. */}
-        <div className="flex items-center gap-1 text-xs text-gray-600">
-          <Mail className="w-3 h-3 shrink-0 text-gray-400" />
-          {hasEmail ? <span className="break-all">{candidate.email}</span> : <span className="font-semibold text-red-500">Chưa có email</span>}
-        </div>
         <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
           {roleLabel && <span>{roleLabel}</span>}
           {candidate.departmentName && <span>{candidate.departmentName}</span>}
-          {candidate.campusName && <span>{candidate.campusName}</span>}
           {subtitle && <span>{subtitle}</span>}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -634,7 +632,7 @@ function CandidateRow({
           />
           {!hasEmail && (
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500">
-              <AlertCircle className="w-3 h-3" /> Không thể gửi lời mời
+              <AlertCircle className="w-3 h-3" /> Chưa có email
             </span>
           )}
         </div>
@@ -697,9 +695,6 @@ function ParticipantList({
         <div key={p.participantId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white p-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-gray-800">{p.fullName}</div>
-            <div className="flex items-center gap-1 text-xs text-gray-500">
-              <Mail className="w-3 h-3 shrink-0 text-gray-400" /> <span className="break-all">{p.email}</span>
-            </div>
             {p.invitedAt && (
               <div className="mt-0.5 text-[11px] text-gray-400">Đã gửi email lúc {fmtDateTime(p.invitedAt)}</div>
             )}

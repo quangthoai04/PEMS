@@ -131,14 +131,12 @@ const SAVED_LED_ITEM = {
   description: 'đã lưu',
   quantity: 2,
   status: 'REQUESTED',
-  priority: 'MEDIUM',
   coordinationMode: 'SYSTEM_REQUEST',
   requestedToDepartmentId: 20,
   departmentName: 'Phòng Hành chính Test',
   // Saved times differ from the planned window on purpose (AC-06).
   usageStartAt: '2026-08-02T13:00:00+07:00',
   usageEndAt: '2026-08-02T15:00:00+07:00',
-  dueAt: null,
 };
 
 async function mockApp(page: Page, opts?: { logisticsItems?: unknown[] }) {
@@ -248,7 +246,6 @@ test.describe('capability split + time defaults (one page)', () => {
     const inputs = card.locator('input[type="datetime-local"]');
     await expect(inputs.nth(0)).toHaveValue('2026-08-01T09:00');
     await expect(inputs.nth(1)).toHaveValue('2026-08-01T11:00');
-    await expect(inputs.nth(2)).toHaveValue(''); // dueAt stays empty — no invented time
 
     // ── Default is editable and the edit survives unrelated re-renders. ──
     const start = inputs.nth(0);

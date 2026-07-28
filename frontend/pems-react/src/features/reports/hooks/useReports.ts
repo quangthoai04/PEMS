@@ -248,7 +248,6 @@ export const DEFAULT_DEPT_LEADER_FILTERS: DeptLeaderReportFilters = {
   toDate: undefined,
   logisticsStatus: 'ALL',
   itemType: 'ALL',
-  priority: 'ALL',
   assignedUserId: 'ALL',
   dueStatus: 'ALL',
   handoverStatus: 'ALL',

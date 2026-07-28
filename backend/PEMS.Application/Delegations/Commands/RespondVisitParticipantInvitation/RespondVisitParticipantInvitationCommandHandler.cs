@@ -16,14 +16,18 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IUserMutationLockService _lockService;
 
     public RespondVisitParticipantInvitationCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IUserMutationLockService lockService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _notificationService = notificationService;
+        _lockService = lockService;
     }
 
     public async Task<RespondVisitParticipantInvitationResponse> Handle(
@@ -33,6 +37,13 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             throw new ForbiddenException();
 
         var userId = _currentUser.UserId.Value;
+
+        // Accepting turns a pending invitation into an active participation. Both already block a
+        // role change, so this transition creates no new blocker — but the flow still joins the
+        // shared lock protocol (see IUserMutationLockService) so every participant write in the
+        // system serializes against role changes the same way (spec §14).
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
 
         var participant = await _db.VisitParticipants
             .Include(p => p.VisitInstance).ThenInclude(v => v.VisitRequest)
@@ -108,6 +119,7 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             _db, EmailActionTargetTypes.VisitParticipant, participant.ParticipantId, "Lời mời này đã được phản hồi.", now, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         if (participant.VisitInstance?.CurrentHostUserId != null)
         {

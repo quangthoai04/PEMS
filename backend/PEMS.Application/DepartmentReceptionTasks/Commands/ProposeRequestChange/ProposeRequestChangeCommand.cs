@@ -29,6 +29,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
     {
         private static readonly TimeSpan TokenTtl = TimeSpan.FromDays(14);
 
+        /// <summary>
+        /// Shown for a proposal field the department left alone. The template renders every row, so an
+        /// omitted field has to say so — a blank cell reads as "they propose nothing here", which is the
+        /// opposite of "they propose no change here".
+        /// </summary>
+        private const string Unchanged = "Không đổi";
+
+        private static string FormatMoment(DateTime? moment)
+            => moment?.ToString("HH:mm dd/MM/yyyy") ?? Unchanged;
+
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemEmailDispatcher _dispatcher;
@@ -63,6 +73,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
 
             if (l == null) throw new Exception("Không tìm thấy đơn yêu cầu");
 
+            // Phòng ban chỉ được đề xuất số lượng THẤP HƠN số lượng dự kiến mượn của Host (đàm phán
+            // giảm khi không đáp ứng đủ) — không được đề xuất tăng số lượng.
+            if (request.ProposedQuantity is { } pqCheck && l.Quantity.HasValue && pqCheck >= l.Quantity.Value)
+                throw new Exception($"Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({l.Quantity.Value}).");
+
             ulong userId = _currentUserService.UserId.Value;
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId)
@@ -82,6 +97,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 throw new Exception("Thời gian kết thúc đề xuất phải sau thời gian bắt đầu.");
 
             var now = VietnamTime.Now();
+
+            // "Ai đề xuất, người đó phụ trách": nếu đơn chưa có ai phụ trách (thường là Trưởng phòng
+            // đề xuất thẳng trước khi phân công cho Staff), người gửi đề xuất tự động trở thành người
+            // phụ trách — tránh tình trạng đơn "đang xử lý" mà không ai đứng tên. Không cướp việc khỏi
+            // Staff đã được giao trước đó (chỉ gán khi đang trống).
+            if (l.AssignedToUserId == null)
+            {
+                l.AssignedToUserId = userId;
+                l.AssignedBy = userId;
+                l.AssignedAt = now;
+            }
 
             // Never overwrite the original quantity (the PLANNED figure) — only the proposed_* columns.
             l.ProposedQuantity = request.ProposedQuantity;
@@ -152,6 +178,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                             ["hostName"] = host.FullName,
                             ["logisticsTitle"] = l.Title,
                             ["departmentName"] = departmentName,
+                            ["delegationName"] = delegationName,
+                            // A proposal is a counter-offer, so the mail states WHAT is being proposed,
+                            // not just why. Sending the rationale alone forced the Host into the portal
+                            // to discover the numbers they were being asked to approve.
+                            ["originalQuantity"] = l.Quantity?.ToString() ?? Unchanged,
+                            ["proposedQuantity"] = l.ProposedQuantity?.ToString() ?? Unchanged,
+                            ["proposedUsageStartAt"] = FormatMoment(l.ProposedUsageStartAt),
+                            ["proposedUsageEndAt"] = FormatMoment(l.ProposedUsageEndAt),
+                            ["proposedDescription"] = string.IsNullOrWhiteSpace(l.ProposedDescription)
+                                ? Unchanged
+                                : l.ProposedDescription!,
                             // Guaranteed non-empty by the caller: the rationale is mandatory, and falls
                             // back to the proposed description before this point.
                             ["proposalNote"] = l.ProposalNote ?? string.Empty,
@@ -177,8 +214,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: host.UserId,
-                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
-                        Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
+                        Title: "Phòng ban đề xuất thay đổi hậu cần",
+                        Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" của đoàn {delegationName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: l.LogisticsItemId,

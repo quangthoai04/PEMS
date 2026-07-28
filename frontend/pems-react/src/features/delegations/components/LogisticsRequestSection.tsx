@@ -14,10 +14,11 @@
  * API — no mock, no hard-coded department/leader.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Loader2, Send, Eye, Plus, Trash2, ChevronUp, ChevronDown, CheckCircle, CheckCircle2, AlertCircle, X,
-  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail,
+  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail, FileText, PenLine, Clock, Download,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
@@ -28,11 +29,14 @@ import {
   LOGISTICS_STATUS_META,
   type LogisticsItemType,
   type LogisticsCoordinationMode,
-  type LogisticsPriority,
   type PrepareVisitLogisticsPayload,
   type SupportDepartment,
   type VisitInstanceLogisticsItem,
+  type LogisticsHandover,
+  type LogisticsHandoverType,
 } from '../types/delegations.types';
+import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../department-reception-tasks/constants/vehicleHandover';
+import { LogisticsExpensePanel } from '../../../pages/dashboard/departments/LogisticsExpensePanel';
 import { toVietnamDateTimeLocalInput, vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
@@ -59,30 +63,66 @@ const COORD_LABEL: Record<LogisticsCoordinationMode, string> = {
   SYSTEM_REQUEST: 'Xử lý qua hệ thống',
   OFFLINE_COORDINATED: 'Trao đổi bên ngoài',
 };
-// Priority dropdown options + read-only badge styling (visit_logistics_items.priority).
-const PRIORITY_OPTIONS: { value: LogisticsPriority; label: string }[] = [
-  { value: 'LOW', label: 'Thấp' },
-  { value: 'MEDIUM', label: 'Trung bình' },
-  { value: 'HIGH', label: 'Cao' },
-  { value: 'URGENT', label: 'Khẩn cấp' },
-];
-const PRIORITY_META: Record<LogisticsPriority, { label: string; cls: string }> = {
-  LOW:    { label: 'Thấp', cls: 'border-slate-200 bg-slate-50 text-slate-600' },
-  MEDIUM: { label: 'Trung bình', cls: 'border-slate-200 bg-slate-50 text-slate-600' },
-  HIGH:   { label: 'Cao', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
-  URGENT: { label: 'Khẩn cấp', cls: 'border-red-200 bg-red-50 text-red-700' },
-};
 // Statuses where the department has taken the item → host can no longer cancel/replace it.
 const LOCKED_STATUSES = new Set(['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']);
 // Statuses whose decision/decline reason should surface as the closing reason.
 const REASON_STATUSES = new Set(['REJECTED', 'CANCELLED', 'DECLINED']);
+const HANDOVER_STATUSES = new Set(['ACCEPTED', 'IN_PROGRESS', 'DONE']);
+
+const findHandover = (hs: LogisticsHandover[] | undefined, t: LogisticsHandoverType) =>
+  hs?.find((h) => h.handoverType === t) ?? null;
+
+const fullySigned = (h: LogisticsHandover | null) =>
+  !!(h && h.borrowerSignedAt && h.providerSignedAt);
+
+function HandoverStatusBadge({ borrow }: { borrow: LogisticsHandover | null }) {
+  if (fullySigned(borrow)) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+        <CheckCircle2 className="w-3 h-3" /> Đã ký nhận đủ 2 bên
+      </span>
+    );
+  }
+  if (borrow?.providerSignedAt && !borrow?.borrowerSignedAt) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+        <PenLine className="w-3 h-3" /> Chờ người phụ trách ký nhận
+      </span>
+    );
+  }
+  if (!borrow?.providerSignedAt) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+        <Clock className="w-3 h-3" /> Chờ phòng ban ký bàn giao
+      </span>
+    );
+  }
+  return null;
+}
+
+function SignChip({ label, at, name }: { label: string; at?: string | null; name?: string | null }) {
+  const signed = !!at;
+  return (
+    <div className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold ${
+      signed
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        : 'border-slate-200 bg-white text-slate-400'
+    }`}>
+      {signed
+        ? <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+        : <Clock className="w-3 h-3 text-slate-300 shrink-0" />}
+      <span>{label}: </span>
+      {signed
+        ? <span className="font-bold">{name || 'Đã ký'} • {fmtDateTime(at)}</span>
+        : <span className="italic">Chưa ký</span>}
+    </div>
+  );
+}
 
 type ResourceForm = {
   quantity: string;
   usageStartAt: string;  // datetime-local "YYYY-MM-DDTHH:mm"
   usageEndAt: string;
-  dueAt: string;         // optional response/completion deadline
-  priority: string;      // LOW | MEDIUM | HIGH | URGENT (default MEDIUM)
   note: string;
   departmentId: string;
   title: string;         // editable only for "Khác"
@@ -90,7 +130,7 @@ type ResourceForm = {
 /** Fresh create-form. `defaultStart`/`defaultEnd` are the campus-instance planned times (already in
  * datetime-local form, '' when unknown) — a DEFAULT the host can edit, never a lock. */
 const emptyForm = (title = '', defaultStart = '', defaultEnd = ''): ResourceForm =>
-  ({ quantity: '', usageStartAt: defaultStart, usageEndAt: defaultEnd, dueAt: '', priority: 'MEDIUM', note: '', departmentId: '', title });
+  ({ quantity: '', usageStartAt: defaultStart, usageEndAt: defaultEnd, note: '', departmentId: '', title });
 
 // datetime-local string of Vietnam "now" (minute precision) for past-date guards —
 // fixed Asia/Ho_Chi_Minh, independent of the browser timezone.
@@ -120,6 +160,22 @@ function fmtDateTime(value?: string | null): string {
   return hm ? `${hm} ${day}/${m}/${y}` : `${day}/${m}/${y}`;
 }
 
+/**
+ * The response deadline the BACKEND will compute for a SYSTEM_REQUEST: 24h before the usage window
+ * opens (PrepareVisitLogisticsCommandHandler). The Host no longer sets a due date — the field was
+ * removed from the request — so the preview reproduces the server's rule rather than echoing an input
+ * that no longer exists. Showing a placeholder here would preview a different email from the one sent.
+ */
+function deadlineFor(usageStartAt?: string | null): string | null {
+  if (!usageStartAt) return null;
+  const start = new Date(usageStartAt.replace(' ', 'T'));
+  if (Number.isNaN(start.getTime())) return null;
+  start.setHours(start.getHours() - 24);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+    + `T${pad(start.getHours())}:${pad(start.getMinutes())}`;
+}
+
 export function LogisticsRequestSection({
   visitInstanceId, relation, instanceStatus, delegationName, campusName, hostName,
   plannedStartAt, plannedEndAt, pushToast,
@@ -144,6 +200,7 @@ export function LogisticsRequestSection({
   // Mục 4 "Khác": dynamic list of independent create-cards (Part F).
   const otherIdRef = useRef(1);
   const [otherIds, setOtherIds] = useState<number[]>([1]);
+  const [firstOtherMode, setFirstOtherMode] = useState<'none' | 'system' | 'offline'>('none');
 
   const [preview, setPreview] = useState({
     open: false, loading: false, sending: false, restoring: false, error: null as string | null,
@@ -165,6 +222,60 @@ export function LogisticsRequestSection({
     { open: false, item: null });
   const openSentEmails = (item: VisitInstanceLogisticsItem) => setSentModal({ open: true, item });
   const closeSentEmails = () => setSentModal((s) => ({ ...s, open: false }));
+
+  // Asset handover signing modal state (BORROW phase in Before Visit tab).
+  const [signTarget, setSignTarget] = useState<{ item: VisitInstanceLogisticsItem; type: LogisticsHandoverType } | null>(null);
+  const [signBusy, setSignBusy] = useState(false);
+  const [signNote, setSignNote] = useState('');
+  const [signErr, setSignErr] = useState<string | null>(null);
+  const [checklistDraft, setChecklistDraft] = useState<VehicleChecklistRow[]>([]);
+
+  const canSignItem = useCallback((item: VisitInstanceLogisticsItem): boolean => {
+    if (!canManage) return false;
+    const borrow = findHandover(item.handovers, 'BORROW');
+    return !!(borrow?.providerSignedAt) && !borrow?.borrowerSignedAt;
+  }, [canManage]);
+
+  const openSignModal = (item: VisitInstanceLogisticsItem) => {
+    setSignTarget({ item, type: 'BORROW' });
+    setSignNote('');
+    setSignErr(null);
+    const borrow = findHandover(item.handovers, 'BORROW');
+    const rows = (() => {
+      if (borrow?.checklistJson) {
+        try {
+          const parsed = JSON.parse(borrow.checklistJson);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch { }
+      }
+      return isVehicleHandover(item.itemType)
+        ? buildDefaultVehicleChecklist()
+        : buildDefaultGenericChecklist(item.title, finalQuantity(item));
+    })();
+    setChecklistDraft(rows);
+  };
+  const closeSignModal = () => { if (!signBusy) { setSignTarget(null); setSignErr(null); } };
+
+  const submitHandover = async () => {
+    if (!signTarget || !visitInstanceId) return;
+    setSignBusy(true);
+    try {
+      const res = await delegationsApi.signLogisticsHandoverBorrower(
+        visitInstanceId, signTarget.item.logisticsItemId,
+        { handoverType: 'BORROW', note: signNote.trim() || null }
+      );
+      pushToast('success', res.message || 'Đã ký biên bản.');
+      setSignTarget(null);
+      setSignNote('');
+      await loadList();
+    } catch (e: any) {
+      const m = apiError(e, 'Không thể ký biên bản. Vui lòng thử lại.');
+      setSignErr(m);
+      pushToast('error', m);
+    } finally {
+      setSignBusy(false);
+    }
+  };
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -217,7 +328,7 @@ export function LogisticsRequestSection({
     quantity: payload.quantity != null ? String(payload.quantity) : 'Chưa nhập',
     usageStartAt: fmtDateTime(payload.usageStartAt) || 'Chưa chọn thời gian',
     usageEndAt: fmtDateTime(payload.usageEndAt) || 'Chưa chọn thời gian',
-    dueAt: fmtDateTime(payload.dueAt) || 'Chưa đặt hạn',
+    dueAt: fmtDateTime(deadlineFor(payload.usageStartAt)) || 'Chưa đặt hạn',
     coordinationNote: payload.offlineCoordinationNote || 'Không có ghi chú phối hợp.',
   });
 
@@ -361,7 +472,7 @@ export function LogisticsRequestSection({
       {/* Mục 1: Welcome LED — 3 lựa chọn (none / hệ thống / trao đổi ngoài), state suy ra từ item đã lưu */}
       <MucCard title="Mục 1: Welcome LED" icon={<MonitorPlay className="w-5 h-5 text-[#f37021]" />}
         open={openSection[1]} onToggle={() => toggleSection(1)}>
-        <CategoryCard {...shared} cardKey="led" icon={<MonitorPlay className="w-6 h-6 text-[#f37021]" />}
+        <CategoryCard {...shared} cardKey="led" icon={<MonitorPlay className="w-5 h-5 text-[#f37021]" />}
           label="Welcome LED" itemType="LED" qtyLabel="Số lượng màn" activeItem={activeItem('LED', 'Welcome LED')}
           notePlaceholder="Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế..." />
       </MucCard>
@@ -370,11 +481,11 @@ export function LogisticsRequestSection({
       <MucCard title="Mục 2: Chuẩn bị cho Campus Tour" icon={<MapPin className="w-5 h-5 text-[#f37021]" />}
         open={openSection[2]} onToggle={() => toggleSection(2)}>
         <div className="space-y-8">
-          <CategoryCard {...shared} cardKey="electricCar" icon={<Car className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="electricCar" icon={<Car className="w-5 h-5 text-[#f37021]" />}
             label="Xe điện" itemType="TRANSPORT" qtyLabel="Số lượng cần mượn" activeItem={activeItem('TRANSPORT', 'Xe điện')}
             notePlaceholder="Ghi chú thêm..." />
           <hr className="border-t-[2px] border-gray-200" />
-          <CategoryCard {...shared} cardKey="driver" icon={<UserCheck className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="driver" icon={<UserCheck className="w-5 h-5 text-[#f37021]" />}
             label="Người lái" itemType="TRANSPORT" qtyLabel="Số lượng" activeItem={activeItem('TRANSPORT', 'Người lái')}
             notePlaceholder="Yêu cầu về tài xế, thời gian hỗ trợ..." />
         </div>
@@ -384,11 +495,11 @@ export function LogisticsRequestSection({
       <MucCard title="Mục 3: Chuẩn bị cho họp" icon={<Building2 className="w-5 h-5 text-[#f37021]" />}
         open={openSection[3]} onToggle={() => toggleSection(3)}>
         <div className="space-y-8">
-          <CategoryCard {...shared} cardKey="room" icon={<Building2 className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="room" icon={<Building2 className="w-5 h-5 text-[#f37021]" />}
             label="Phòng họp" itemType="ROOM" qtyLabel="Số phòng" activeItem={activeItem('ROOM', 'Phòng họp')}
             notePlaceholder="Tên phòng / vị trí (VD: Tòa Alpha, P.101), layout, thiết bị..." />
           <hr className="border-t-[2px] border-gray-200" />
-          <CategoryCard {...shared} cardKey="teabreak" icon={<Coffee className="w-6 h-6 text-[#f37021]" />}
+          <CategoryCard {...shared} cardKey="teabreak" icon={<Coffee className="w-5 h-5 text-[#f37021]" />}
             label="Teabreak" itemType="MEAL" qtyLabel="Số lượng (suất)" activeItem={activeItem('MEAL', 'Teabreak')}
             notePlaceholder="Layout, khăn trải bàn, biển tên, yêu cầu đặc biệt..." />
         </div>
@@ -402,10 +513,13 @@ export function LogisticsRequestSection({
             <div key={id} className={idx > 0 ? 'pt-6 border-t border-gray-100' : ''}>
               <OtherCard {...shared} cardKey={`other-${id}`}
                 label={`Yêu cầu khác ${otherIds.length > 1 ? `#${idx + 1}` : ''}`.trim()}
+                isExtra={idx > 0}
+                hideNoneOption={otherIds.length > 1}
+                onModeChange={idx === 0 ? setFirstOtherMode : undefined}
                 onRemove={otherIds.length > 1 ? () => setOtherIds((p) => p.filter((x) => x !== id)) : undefined} />
             </div>
           ))}
-          {canManage && (
+          {canManage && firstOtherMode !== 'none' && (
             <button type="button"
               onClick={() => { otherIdRef.current += 1; setOtherIds((p) => [...p, otherIdRef.current]); }}
               className="inline-flex items-center gap-1.5 rounded-xl border-2 border-dashed border-[#f37021]/40 px-4 py-2 text-sm font-bold text-[#f37021] outline-none hover:bg-orange-50">
@@ -434,10 +548,13 @@ export function LogisticsRequestSection({
               <LogisticsListRow
                 key={it.logisticsItemId}
                 it={it}
+                delegationName={delegationName}
                 canManage={canManage}
                 busy={busyKey === `proposal-${it.logisticsItemId}`}
                 onRespond={respondToProposal}
                 onViewSent={openSentEmails}
+                onOpenSign={openSignModal}
+                canSignItem={canSignItem}
               />
             ))
           )}
@@ -514,6 +631,360 @@ export function LogisticsRequestSection({
           </div>
         </div>
       )}
+
+      {/* Modal biên bản ký mượn/bàn giao (BORROW phase trong Trước tiếp khách) */}
+      {signTarget && createPortal(
+        <>
+          <style type="text/css" media="print">
+            {`
+              body * {
+                visibility: hidden;
+              }
+              #logistics-handover-modal, #logistics-handover-modal * {
+                visibility: visible;
+              }
+              #logistics-handover-modal {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+              }
+              #logistics-handover-modal, #logistics-handover-modal * {
+                overflow: visible !important;
+                max-height: none !important;
+              }
+              #logistics-handover-modal > div {
+                display: block !important;
+              }
+            `}
+          </style>
+          <div id="logistics-handover-modal" className="fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={closeSignModal} />
+            <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
+            {/* Modal header */}
+            <div className="bg-[#004c91] text-white px-6 py-4 flex items-center justify-between shrink-0 print:hidden">
+              <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
+                <FileText className="w-5 h-5 opacity-80" />
+                BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+              </h3>
+              <div className="flex items-center gap-4">
+                <button 
+                  type="button" 
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors outline-none"
+                >
+                  <Download className="w-4 h-4" /> Tải PDF
+                </button>
+                <button type="button" onClick={closeSignModal} disabled={signBusy}
+                  className="text-white/70 hover:text-white outline-none transition-colors" aria-label="Đóng">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal body (scrollable) */}
+            <div className="p-6 md:p-12 overflow-y-auto bg-white flex-1 text-slate-900 shadow-[inset_0_0_20px_rgba(0,0,0,0.02)] print:overflow-visible print:shadow-none">
+              {(() => {
+                const b = findHandover(signTarget.item.handovers, 'BORROW');
+                const r = findHandover(signTarget.item.handovers, 'RETURN');
+                const bg1 = b?.providerSignedAt ? `${b.providerSignedByName || 'Phòng ban'}` : null;
+                const bg2 = b?.borrowerSignedAt ? `${b.borrowerSignedByName || 'Host'}` : null;
+                const nt1 = r?.borrowerSignedAt ? `${r.borrowerSignedByName || 'Host'}` : null;
+                const nt2 = r?.providerSignedAt ? `${r.providerSignedByName || 'Phòng ban'}` : null;
+
+                const canSignBG2 = bg1 && !bg2;
+                const isBorrowDone = bg1 && bg2;
+
+                // parse date for top section
+                let handoverTime = "....";
+                let handoverDate = "..../..../20.....";
+                if (b?.providerSignedAt) {
+                  const [d, t] = b.providerSignedAt.replace(' ', 'T').split('T');
+                  if (d && t) {
+                    const hm = t.slice(0, 5);
+                    const [y, m, day] = d.split('-');
+                    handoverTime = `${hm}`;
+                    handoverDate = `${day}/${m}/${y}`;
+                  }
+                }
+
+                // Host and Provider names
+                const hostName = b?.borrowerSignedByName || r?.borrowerSignedByName || 'Đại diện Host đón tiếp';
+                const providerName = b?.providerSignedByName || r?.providerSignedByName || signTarget.item.departmentName || 'Đại diện Phòng ban';
+
+                const isVehicle = isVehicleHandover(signTarget.item.itemType);
+
+                return (
+                  <>
+                    <div className="text-center space-y-1 mb-8">
+                      <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-wide">
+                        BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
+                      </h4>
+                      <p className="text-lg font-bold uppercase">
+                        TÀI SẢN / TRANG THIẾT BỊ
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 text-[15px] leading-relaxed mb-6">
+                      <p>
+                        Hôm nay, lúc: <b>{handoverTime}</b> giờ, ngày <b>{handoverDate}</b>, tại: <b>Trường Đại học FPT Hòa Lạc</b>.
+                      </p>
+                      <p>Chúng tôi gồm:</p>
+                      <div className="space-y-2 pl-4">
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          <p className="flex-1 min-w-[250px]">Người bàn giao: <b>{providerName}</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>{signTarget.item.departmentName || '................'}</b></p>
+                        </div>
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
+                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>Người phụ trách tiếp đón</b></p>
+                        </div>
+                        {signTarget.item.description && (
+                          <p>Mô tả: <b>{signTarget.item.description}</b></p>
+                        )}
+                        <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
+                        <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>
+                      </div>
+                    </div>
+
+                    <p className="font-bold text-[15px] mb-2">
+                      {isVehicle
+                        ? `Cùng bàn giao xe ${finalQuantity(signTarget.item) || 1} ô tô điện với tình trạng sau:`
+                        : `Cùng bàn giao ${finalQuantity(signTarget.item) || 1} ${signTarget.item.title || 'hạng mục'} với tình trạng sau:`}
+                    </p>
+                    <div className="overflow-x-auto mb-6">
+                      <table className="w-full border-collapse border border-slate-500 text-[14px]">
+                        <thead>
+                          <tr className="bg-slate-50">
+                            <th className="border border-slate-500 p-2 text-center w-12">STT</th>
+                            <th className="border border-slate-500 p-2 text-center">Nội dung</th>
+                            <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
+                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình trạng nghiệm thu</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {checklistDraft.map((row, i) => (
+                            <tr key={i}>
+                              <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
+                              <td className="border border-slate-500 p-2">{row.name}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
+                              <td className="border border-slate-500 p-2 text-center">{row.giao}</td>
+                              <td className="border border-slate-500 p-0 bg-blue-50/20">
+                                <div className="min-h-[36px] flex items-center px-2 text-slate-600">{row.nhan}</div>
+                              </td>
+                            </tr>
+                          ))}
+                          <tr>
+                            <td className="border border-slate-500 p-2 text-center font-semibold">{checklistDraft.length + 1}</td>
+                            <td className="border border-slate-500 p-2 font-semibold">Ghi chú</td>
+                            <td className="border border-slate-500 p-2"></td>
+                            <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{b?.conditionNote || ''}</td>
+                            <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{r?.conditionNote || ''}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="space-y-1 text-[14px] mb-8">
+                      <p className="font-bold">{isVehicle ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
+                      {isVehicle ? (
+                        <ul className="list-disc pl-8 space-y-1">
+                          <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
+                          <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                          <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
+                          <li>Ghi chú khác: ....................................................................................................................</li>
+                        </ul>
+                      ) : (
+                        <ul className="list-disc pl-8 space-y-1">
+                          <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
+                          <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
+                          <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
+                          <li>Ghi chú khác: ....................................................................................................................</li>
+                        </ul>
+                      )}
+                      <p className="mt-4">
+                        Tôi là <b>{hostName}</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
+                      </p>
+                    </div>
+
+                    {/* KHỐI BÀN GIAO */}
+                    <div className="space-y-8">
+                    <div className="relative my-7">
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true"><div className="w-full border-t border-slate-300"></div></div>
+                      <div className="relative flex justify-center"><span className="bg-white px-4 py-1.5 text-[10px] font-black text-slate-900 uppercase tracking-widest border border-slate-200 rounded-full shadow-sm">BÀN GIAO</span></div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50/70 p-4.5 rounded-2xl border border-slate-200">
+                      {/* Bên Giao */}
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Bên Giao</label>
+                          <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic whitespace-pre-line">
+                            {b?.conditionNote || 'Không có ghi chú.'}
+                          </div>
+                        </div>
+                        <div className={`border-2 rounded-xl p-3 relative ${bg1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                          {bg1 ? (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
+                                <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{bg1}</p>
+                                <p className="text-[9px] text-slate-500">{fmtDateTime(b?.providerSignedAt)}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-[#004c91]/80 shrink-0" />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                  <span className="text-[9px] text-slate-450">Chờ phòng ban ký</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bên Nhận */}
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-[#f37021] uppercase tracking-wider mb-2">Ghi chú Bên Nhận</label>
+                          {!bg2 ? (
+                            <textarea rows={2} value={signNote} onChange={e => setSignNote(e.target.value)} disabled={!canSignBG2 || signBusy} className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] focus:ring-1 focus:ring-orange-200 outline-none resize-none bg-slate-50/30" placeholder={canSignBG2 ? "Nhập ý kiến xác nhận nhận..." : "Chờ phòng ban ký trước..."} />
+                          ) : (
+                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                              {b?.conditionNote || 'Đã xác nhận nhận tài sản.'}
+                            </div>
+                          )}
+                        </div>
+                        <div className={`border-2 rounded-xl p-3 relative ${bg2 ? 'border-emerald-500 bg-emerald-50/20' : canSignBG2 ? 'border-dashed border-[#f37021]/50 bg-orange-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                          {bg2 ? (
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
+                                <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{bg2}</p>
+                                <p className="text-[9px] text-slate-500">{fmtDateTime(b?.borrowerSignedAt)}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-row items-center justify-between gap-3 w-full">
+                              <div className="flex items-center gap-2">
+                                <FileText className={`w-4 h-4 shrink-0 ${canSignBG2 ? 'text-[#f37021]' : 'text-slate-400'}`} />
+                                <div className="text-left">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                  <span className="text-[9px] text-slate-450">{canSignBG2 ? 'Nhấp để xác nhận' : 'Chờ PB ký trước'}</span>
+                                </div>
+                              </div>
+                              <button type="button" onClick={submitHandover} disabled={!canSignBG2 || signBusy} className="py-2 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm print:hidden">
+                                {signBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} Ký xác nhận (BG2)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* KHỐI NGHIỆM THU */}
+                    <div className={`transition-opacity pt-4 ${!isBorrowDone ? 'opacity-40 pointer-events-none' : ''}`}>
+                      <div className="relative my-7">
+                        <div className="absolute inset-0 flex items-center" aria-hidden="true"><div className="w-full border-t border-slate-300"></div></div>
+                        <div className="relative flex justify-center"><span className="bg-white px-4 py-1.5 text-[10px] font-black text-slate-900 uppercase tracking-widest border border-slate-200 rounded-full shadow-sm">NGHIỆM THU</span></div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-[#f8fbfe] p-4.5 rounded-2xl border border-blue-200/50">
+                        {/* Bên Giao (Host trả) */}
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Giao)</label>
+                            <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
+                              {r?.conditionNote || 'Chưa ký trả.'}
+                            </div>
+                          </div>
+                          <div className={`border-2 rounded-xl p-3 relative ${nt1 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                            {nt1 ? (
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                                <div>
+                                  <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
+                                  <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{nt1}</p>
+                                  <p className="text-[9px] text-slate-500">{fmtDateTime(r?.borrowerSignedAt)}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
+                                    <span className="text-[9px] text-slate-450">Chưa ký trả</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bên Nhận (Phòng ban nhận lại) */}
+                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-2">Ghi chú Nghiệm thu (Bên Nhận)</label>
+                            <div className={`w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] italic whitespace-pre-line ${nt2 ? 'text-slate-600' : 'text-slate-400'}`}>
+                              {nt2 ? (r?.conditionNote || 'Đã nghiệm thu nhận lại tài sản.') : 'Chờ phòng ban nhận xét tình trạng tài sản và xác nhận...'}
+                            </div>
+                          </div>
+                          <div className={`border-2 rounded-xl p-3 relative ${nt2 ? 'border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
+                            {nt2 ? (
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-emerald-100">✓</div>
+                                <div>
+                                  <span className="text-[9px] font-black uppercase text-emerald-800 block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
+                                  <p className="text-[11px] font-extrabold text-slate-800 leading-snug truncate">{nt2}</p>
+                                  <p className="text-[9px] text-slate-500">{fmtDateTime(r?.providerSignedAt)}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <div className="text-left">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
+                                    <span className="text-[9px] text-slate-450">Chờ PB nghiệm thu lại</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <LogisticsExpensePanel logisticsItemId={signTarget.item.logisticsItemId} readOnly />
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Footer controls inside modal */}
+            <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row justify-between items-center border-t border-slate-200 gap-4 shrink-0 rounded-b-2xl">
+              <span className="text-[11px] text-slate-500 font-medium italic">
+                {signErr ? <span className="text-red-500 flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {signErr}</span> : 'Vui lòng kiểm tra kỹ hiện trạng trước khi ký xác nhận.'}
+              </span>
+              <button onClick={closeSignModal} className="px-6 py-2.5 bg-[#004c91] text-white hover:bg-[#003b70] text-[12px] font-bold rounded-xl transition-colors shadow-sm w-full sm:w-auto outline-none">
+                Đóng biên bản
+              </button>
+            </div>
+          </div>
+        </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
@@ -526,9 +997,9 @@ function MucCard({ title, icon, open, onToggle, children }: {
   title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border-b border-gray-100 last:border-b-0 overflow-hidden">
+    <div className="bg-white border-b border-gray-100 last:border-b-0">
       <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between cursor-pointer group" onClick={onToggle}>
-        <h3 className="text-sm font-bold text-[#004c91] flex items-center gap-2 uppercase tracking-tight">
+        <h3 className="text-sm font-bold text-[#004c91] flex items-center gap-2">
           {icon}
           {title}
         </h3>
@@ -644,8 +1115,6 @@ function ResourceCard({
     quantity: it.quantity?.toString() || '',
     usageStartAt: toVietnamDateTimeLocalInput(it.usageStartAt),
     usageEndAt: toVietnamDateTimeLocalInput(it.usageEndAt),
-    dueAt: toVietnamDateTimeLocalInput(it.dueAt),
-    priority: it.priority || 'MEDIUM',
     note: it.description || '',
     departmentId: it.requestedToDepartmentId?.toString() || '',
   });
@@ -657,6 +1126,16 @@ function ResourceCard({
   const set = (k: keyof ResourceForm, v: string) => { setForm((f) => ({ ...f, [k]: v })); setErr(null); };
   // Reset of an UNSAVED form returns to the planned-time defaults (not empty strings).
   const reset = () => { setForm(freshForm()); setErr(null); setLocalSubmitted(false); };
+
+  const noteRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (noteRef.current) {
+      noteRef.current.style.height = 'auto';
+      noteRef.current.style.height = `${Math.max(44, noteRef.current.scrollHeight)}px`;
+      noteRef.current.scrollTop = 0;
+    }
+  }, [form.note]);
 
   // Only a (re)appearing saved item overwrites the form. When there is no saved item we leave the
   // form alone so a re-render/refetch never clobbers values the host already edited.
@@ -704,13 +1183,6 @@ function ResourceCard({
     if (form.usageStartAt < nowStr) return 'Thời gian bắt đầu không được trong quá khứ.';
     if (form.usageEndAt <= form.usageStartAt) return 'Thời gian kết thúc phải sau thời gian bắt đầu.';
 
-    // due_at: required for HIGH/URGENT, never in the past, and must be before the usage start.
-    const highPriority = form.priority === 'HIGH' || form.priority === 'URGENT';
-    if (highPriority && !form.dueAt) return 'Mức ưu tiên Cao/Khẩn cấp cần có hạn phản hồi.';
-    if (form.dueAt && form.dueAt < nowStr) return 'Hạn phản hồi không được nằm trong quá khứ.';
-    if (form.dueAt && form.usageStartAt && form.dueAt > form.usageStartAt)
-      return 'Hạn phản hồi phải trước thời gian bắt đầu sử dụng.';
-
     return null;
   };
 
@@ -730,12 +1202,8 @@ function ResourceCard({
     quantity: form.quantity ? Number(form.quantity) : null,
     usageStartAt: form.usageStartAt || null,
     usageEndAt: form.usageEndAt || null,
-    dueAt: form.dueAt || null,
-    priority: (form.priority || 'MEDIUM') as LogisticsPriority,
     coordinationMode: 'SYSTEM_REQUEST',
   });
-
-  const dueRequired = form.priority === 'HIGH' || form.priority === 'URGENT';
 
   // Inline error stays at the field; a single toast surfaces the first error (no spam).
   const doSend = async () => {
@@ -753,8 +1221,8 @@ function ResourceCard({
   };
 
   return (
-    <div>
-      <h4 className="text-lg font-bold text-[#004c91] mb-3 flex items-center gap-2 flex-wrap">
+    <div className="pl-5">
+      <h4 className="text-sm font-bold text-[#004c91] mb-3 flex items-center gap-2 flex-wrap">
         {icon} {label}
         {onRemove && canManage && (
           <button type="button" onClick={onRemove} title="Xóa dòng"
@@ -771,8 +1239,9 @@ function ResourceCard({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* KHỐI TRÁI: Dòng 1 (Số lượng, Bắt đầu, Kết thúc), Dòng 2 (Chọn phòng ban), Dòng 3 (Ưu tiên, Hạn phản hồi) */}
+          <div className="lg:col-span-7 space-y-3.5">
             {editableTitle && (
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">Tiêu đề / nội dung công việc <span className="text-red-500">*</span></label>
@@ -781,47 +1250,28 @@ function ResourceCard({
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
               </div>
             )}
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">{qtyLabel} <span className="font-normal text-gray-400">(dự kiến)</span></label>
-              <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
-                placeholder="VD: 2 (có thể điều chỉnh sau khi phòng ban phản hồi)"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian bắt đầu sử dụng <span className="text-red-500">*</span></label>
-              <input type="datetime-local" disabled={isFormDisabled} value={form.usageStartAt} onChange={(e) => set('usageStartAt', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian kết thúc sử dụng <span className="text-red-500">*</span></label>
-              <input type="datetime-local" disabled={isFormDisabled} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+
+            {/* Dòng 1: Số lượng (110px), Thời gian bắt đầu (1fr), Thời gian kết thúc (1fr) */}
+            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr_1fr] gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên <span className="text-red-500">*</span></label>
-                <select disabled={isFormDisabled} value={form.priority} onChange={(e) => set('priority', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-                  {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">
-                  Hạn phản hồi / hoàn thành {dueRequired && <span className="text-red-500">*</span>}
-                </label>
-                <input type="datetime-local" disabled={isFormDisabled} value={form.dueAt} onChange={(e) => set('dueAt', e.target.value)}
+                <label className="block text-xs font-bold text-gray-600 mb-1">Số lượng <span className="font-normal text-gray-400">(dự kiến)</span></label>
+                <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
+                  placeholder="VD: 2"
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-                <p className="mt-1 text-[11px] text-gray-400">Bắt buộc khi mức ưu tiên là Cao hoặc Khẩn cấp.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian bắt đầu <span className="text-red-500">*</span></label>
+                <input type="datetime-local" disabled={isFormDisabled} value={form.usageStartAt} onChange={(e) => set('usageStartAt', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Thời gian kết thúc <span className="text-red-500">*</span></label>
+                <input type="datetime-local" disabled={isFormDisabled} value={form.usageEndAt} onChange={(e) => set('usageEndAt', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
               </div>
             </div>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Mô tả chi tiết</label>
-              <textarea disabled={isFormDisabled} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={notePlaceholder ?? 'Nhập mô tả chi tiết yêu cầu cần chuẩn bị...'}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[120px] disabled:bg-gray-50 disabled:text-gray-400" />
-              <p className="mt-1 text-[11px] text-gray-400">Mô tả rõ yêu cầu, cách setup, lưu ý đặc biệt hoặc nội dung cần phòng ban xử lý.</p>
-            </div>
+
+            {/* Dòng 2: Chọn phòng ban xử lý */}
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">Chọn phòng ban xử lý <span className="text-red-500">*</span></label>
               {!form.departmentId ? (
@@ -844,7 +1294,6 @@ function ResourceCard({
                         <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
                         <div className="truncate text-xs text-gray-500">
                           {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
-                          {d.leaderEmail ? ` · ${d.leaderEmail}` : ''}
                         </div>
                         {!d.canReceiveLogistics && d.logisticsDisabledReason && (
                           <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.logisticsDisabledReason}</div>
@@ -861,73 +1310,72 @@ function ResourceCard({
               ) : null}
 
               {form.departmentId && dept && (
-                <div className="mt-3 p-4 bg-white border border-gray-200 rounded-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate text-sm font-bold text-gray-800">{dept.departmentName}</div>
+                <div className="mt-2 p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between gap-3 shadow-sm">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-bold text-gray-800">{dept.departmentName}</div>
+                      {!isSubmitted && (
                         <button type="button" onClick={() => set('departmentId', '')} className="text-xs text-[#004c91] hover:underline font-semibold">
-                          Đổi phòng ban
+                          Đổi
                         </button>
-                      </div>
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 uppercase tracking-wider mt-1">
-                        <Building2 className="w-3 h-3 shrink-0" />
-                        <span>Phòng ban: GENERAL</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
-                        <UserCheck className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                        <span>Trưởng phòng: <span className="font-semibold">{dept.leaderName || 'Chưa có'}</span></span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 mt-0.5">
-                        <Mail className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                        {dept.leaderEmail ? <span className="break-all">{dept.leaderEmail}</span> : <span className="font-semibold text-red-500">Chưa có email</span>}
-                      </div>
-                      {!dept.canReceiveLogistics && dept.logisticsDisabledReason && (
-                        <div className="mt-1.5 text-[11px] font-medium text-amber-600 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {dept.logisticsDisabledReason}
-                        </div>
                       )}
                     </div>
-                    {canManage && !isSubmitted && (
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        {dept.canReceiveLogistics && (
-                          <button type="button" disabled={busy} onClick={doPreview}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-50"
-                            title="Xem trước & sửa email">
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button type="button" disabled={!dept.canReceiveLogistics || busy} onClick={doSend}
-                          className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40"
-                          title={!dept.canReceiveLogistics ? 'Không thể gửi yêu cầu' : undefined}>
-                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                          Gửi yêu cầu
-                        </button>
-                      </div>
-                    )}
-                    {/* Already submitted: no re-send (server dedupe guards anyway); offer soft-cancel. */}
-                    {canManage && isSubmitted && existingItem && (
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu
-                        </span>
-                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${PRIORITY_META[existingItem.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
-                          Ưu tiên: {PRIORITY_META[existingItem.priority]?.label ?? existingItem.priority}
-                        </span>
-                        {locked ? (
-                          <span className="text-[11px] italic text-gray-400">Phòng ban đang xử lý</span>
-                        ) : (
-                          <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
-                            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Hủy yêu cầu
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 text-xs text-gray-600 mt-0.5">
+                      <span>Trưởng phòng: <span className="font-semibold">{dept.leaderName || 'Chưa có'}</span></span>
+                    </div>
                   </div>
+                  {canManage && !isSubmitted && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      {dept.canReceiveLogistics && (
+                        <button type="button" disabled={busy} onClick={doPreview}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50 disabled:opacity-50"
+                          title="Xem trước & sửa email">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button type="button" disabled={!dept.canReceiveLogistics || busy} onClick={doSend}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#004c91] px-3.5 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40">
+                        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        Gửi yêu cầu
+                      </button>
+                    </div>
+                  )}
+                  {canManage && isSubmitted && existingItem && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi yêu cầu
+                      </span>
+                      {!locked && (
+                        <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
+                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Hủy
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+          </div>
+
+          {/* KHỐI PHẢI: Mô tả chi tiết (Tự động co giãn theo độ dài chữ) */}
+          <div className="lg:col-span-5 flex flex-col space-y-2">
+            <label className="block text-xs font-bold text-gray-600">Mô tả chi tiết</label>
+            <textarea
+              ref={noteRef}
+              disabled={isFormDisabled}
+              rows={1}
+              value={form.note}
+              onChange={(e) => {
+                set('note', e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.max(44, e.target.scrollHeight)}px`;
+                e.target.scrollTop = 0;
+              }}
+              placeholder={notePlaceholder ?? 'Nhập mô tả chi tiết yêu cầu cần chuẩn bị...'}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm leading-relaxed resize-none min-h-[44px] overflow-hidden disabled:bg-gray-50 disabled:text-gray-400"
+            />
+            <p className="text-[11px] text-gray-400">Mô tả rõ yêu cầu, cách setup, lưu ý đặc biệt hoặc nội dung cần phòng ban xử lý.</p>
           </div>
         </div>
 
@@ -962,17 +1410,24 @@ function OfflineCard({
   const [note, setNote] = useState(() => existingItem?.offlineCoordinationNote || existingItem?.description || '');
   const [departmentId, setDepartmentId] = useState(() => existingItem?.requestedToDepartmentId?.toString() || '');
   const [titleVal, setTitleVal] = useState(() => existingItem?.title || '');
-  const [priority, setPriority] = useState<string>(() => existingItem?.priority || 'MEDIUM');
   const [err, setErr] = useState<string | null>(null);
   const [localSubmitted, setLocalSubmitted] = useState(false);
   const busy = busyKey === cardKey;
+
+  const offlineNoteRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (offlineNoteRef.current) {
+      offlineNoteRef.current.style.height = 'auto';
+      offlineNoteRef.current.style.height = `${Math.max(42, offlineNoteRef.current.scrollHeight)}px`;
+    }
+  }, [note]);
 
   useEffect(() => {
     if (existingItem) {
       setNote(existingItem.offlineCoordinationNote || existingItem.description || '');
       setDepartmentId(existingItem.requestedToDepartmentId?.toString() || '');
       setTitleVal(existingItem.title || '');
-      setPriority(existingItem.priority || 'MEDIUM');
       setErr(null);
       setLocalSubmitted(true);
     } else {
@@ -995,7 +1450,6 @@ function OfflineCard({
       description: note.trim(),
       coordinationMode: 'OFFLINE_COORDINATED',
       offlineCoordinationNote: note.trim(),
-      priority: (priority || 'MEDIUM') as LogisticsPriority,
     };
     if (await onSubmit(cardKey, payload)) {
       setLocalSubmitted(true);
@@ -1004,7 +1458,7 @@ function OfflineCard({
   };
 
   return (
-    <div className="flex flex-col gap-4 p-5 bg-amber-50/40 border border-amber-200 rounded-xl shadow-sm">
+    <div className="ml-5 flex flex-col gap-4 p-5 bg-amber-50/40 border border-amber-200 rounded-xl shadow-sm">
       <div className="flex items-center gap-2 text-sm font-bold text-amber-800">
         <AlertCircle className="w-4 h-4" /> Đã trao đổi/xử lý bên ngoài hệ thống — chỉ lưu dấu vết, không gửi email.
         {onRemove && canManage && !isSubmitted && (
@@ -1014,6 +1468,7 @@ function OfflineCard({
           </button>
         )}
       </div>
+
       {editableTitle && (
         <div>
           <label className="block text-xs font-bold text-gray-600 mb-1">Tiêu đề / nội dung công việc <span className="text-red-500">*</span></label>
@@ -1022,57 +1477,70 @@ function OfflineCard({
             className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
         </div>
       )}
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên</label>
-        <select disabled={isFormDisabled} value={priority} onChange={(e) => setPriority(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-          {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-        </select>
+
+      {/* Dòng 1: Ghi chú trao đổi bên ngoài (trái) & Phòng ban liên quan (phải) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú trao đổi bên ngoài <span className="text-red-500">*</span></label>
+          <textarea
+            ref={offlineNoteRef}
+            rows={1}
+            disabled={isFormDisabled}
+            value={note}
+            onChange={(e) => {
+              setNote(e.target.value);
+              setErr(null);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.max(44, e.target.scrollHeight)}px`;
+              e.target.scrollTop = 0;
+            }}
+            maxLength={5000}
+            placeholder="VD: Đã liên hệ trực tiếp phòng Truyền thông qua điện thoại..."
+            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm leading-relaxed resize-none min-h-[44px] overflow-hidden disabled:bg-gray-50 disabled:text-gray-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban liên quan (tùy chọn)</label>
+          <select disabled={isFormDisabled} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
+            <option value="">-- Không gắn phòng ban --</option>
+            {departments.map((d) => (
+              <option key={d.departmentId} value={d.departmentId}>{d.departmentName}</option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-1">Ghi chú trao đổi bên ngoài <span className="text-red-500">*</span></label>
-        <textarea disabled={isFormDisabled} value={note} onChange={(e) => { setNote(e.target.value); setErr(null); }} maxLength={5000}
-          placeholder="VD: Đã liên hệ trực tiếp phòng Truyền thông qua điện thoại, ảnh LED gửi qua email nội bộ..."
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm resize-none h-[100px] disabled:bg-gray-50 disabled:text-gray-400" />
+
+      <div className="flex items-end">
+        <div className="flex items-center justify-end w-full">
+          {!isSubmitted && (
+            <button type="button" disabled={busy || isFormDisabled} onClick={doSave}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-5 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40">
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Lưu (đã trao đổi bên ngoài)
+            </button>
+          )}
+          {isSubmitted && (
+            <div className="flex items-center gap-3">
+              <button type="button" disabled
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-4 py-2 text-sm font-bold text-gray-500 outline-none">
+                <CheckCircle className="w-4 h-4" /> Đã lưu yêu cầu
+              </button>
+              {canManage && existingItem && !locked && onCancel && (
+                <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Hủy yêu cầu
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-1">Phòng ban liên quan (tùy chọn)</label>
-        <select disabled={isFormDisabled} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-          <option value="">-- Không gắn phòng ban --</option>
-          {departments.map((d) => (
-            <option key={d.departmentId} value={d.departmentId}>{d.departmentName}</option>
-          ))}
-        </select>
-      </div>
+
       {err && (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {err}
         </p>
-      )}
-      
-      {isSubmitted ? (
-        <div className="flex items-center justify-end gap-3 mt-2">
-          <button type="button" disabled
-            className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-500 outline-none">
-            <CheckCircle className="w-4 h-4" /> Đã lưu yêu cầu
-          </button>
-          {canManage && existingItem && !locked && onCancel && (
-            <button type="button" disabled={busy} onClick={() => onCancel(cardKey, existingItem)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 outline-none transition-colors hover:bg-red-50 disabled:opacity-50">
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Hủy yêu cầu
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center justify-end mt-2">
-          {canManage && (
-            <button type="button" disabled={busy} onClick={doSave}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white outline-none transition-colors hover:bg-[#003d73] disabled:opacity-50">
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Lưu (đã trao đổi bên ngoài)
-            </button>
-          )}
-        </div>
       )}
     </div>
   );
@@ -1122,16 +1590,16 @@ function CategoryCard({
 
   return (
     <div>
-      <div className="space-y-3 mb-1">
+      <div className="grid grid-cols-1 lg:grid-cols-[230px_370px_1fr] gap-y-2.5 gap-x-4 mb-2 pl-5">
         {([
           ['none', `Không cần ${label}`],
           ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
           ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
         ] as const).map(([val, lbl]) => (
-          <label key={val} className="flex items-center gap-2.5 cursor-pointer">
+          <label key={val} className="flex items-center gap-2.5 cursor-pointer select-none">
             <input type="radio" name={`choice-${cardKey}`} checked={choice === val} disabled={!shared.canManage}
               onChange={() => setChoice(val)}
-              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
+              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91] shrink-0" />
             <span className="text-sm font-semibold text-gray-700">{lbl}</span>
           </label>
         ))}
@@ -1153,29 +1621,77 @@ function CategoryCard({
 }
 
 /** A "Mục 4: Khác" create row: pick coordination mode (system / offline), then the matching create form. */
-function OtherCard({ cardKey, label, onRemove, ...shared }: SharedCardProps & {
-  cardKey: string; label: string; onRemove?: () => void;
+function OtherCard({
+  cardKey, label, isExtra = false, hideNoneOption = false, onRemove, onModeChange, ...shared
+}: SharedCardProps & {
+  cardKey: string;
+  label: string;
+  isExtra?: boolean;
+  hideNoneOption?: boolean;
+  onRemove?: () => void;
+  onModeChange?: (mode: 'none' | 'system' | 'offline') => void;
 }) {
-  const [mode, setMode] = useState<'system' | 'offline'>('system');
+  const shouldHideNone = isExtra || hideNoneOption;
+  const [mode, setMode] = useState<'none' | 'system' | 'offline'>(shouldHideNone ? 'system' : 'none');
+
+  const handleModeChange = (newMode: 'none' | 'system' | 'offline') => {
+    setMode(newMode);
+    onModeChange?.(newMode);
+  };
+
+  useEffect(() => {
+    if (shouldHideNone && mode === 'none') {
+      handleModeChange('system');
+    } else {
+      onModeChange?.(mode);
+    }
+  }, [mode, shouldHideNone]);
+
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-        {([['system', 'Gửi yêu cầu qua hệ thống'], ['offline', 'Đã trao đổi bên ngoài']] as const).map(([val, lbl]) => (
-          <label key={val} className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
-              onChange={() => setMode(val)}
-              className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91]" />
-            <span className="text-sm font-bold text-gray-700">{lbl}</span>
-          </label>
-        ))}
+      <div className="grid grid-cols-1 lg:grid-cols-[230px_370px_1fr] gap-y-2.5 gap-x-4 mb-3 pl-5">
+        {shouldHideNone ? (
+          <>
+            <div className="hidden lg:block"></div>
+            {([
+              ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
+              ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
+            ] as const).map(([val, lbl]) => (
+              <label key={val} className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
+                  onChange={() => handleModeChange(val)}
+                  className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91] shrink-0" />
+                <span className="text-sm font-semibold text-gray-700">{lbl}</span>
+              </label>
+            ))}
+          </>
+        ) : (
+          ([
+            ['none', `Không cần ${label}`],
+            ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
+            ['offline', `Cần ${label} — đã trao đổi bên ngoài`],
+          ] as const).map(([val, lbl]) => (
+            <label key={val} className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="radio" name={`mode-${cardKey}`} checked={mode === val} disabled={!shared.canManage}
+                onChange={() => handleModeChange(val)}
+                className="w-4 h-4 border-gray-300 text-[#004c91] focus:ring-[#004c91] shrink-0" />
+              <span className="text-sm font-semibold text-gray-700">{lbl}</span>
+            </label>
+          ))
+        )}
       </div>
-      {mode === 'system' ? (
-        <ResourceCard {...shared} cardKey={cardKey} icon={<MoreHorizontal className="w-6 h-6 text-[#f37021]" />}
-          label={label} itemType="OTHER" qtyLabel="Số lượng" editableTitle existingItem={null}
-          notePlaceholder="Mô tả chi tiết công việc cần hỗ trợ..." onRemove={onRemove} />
-      ) : (
-        <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType="OTHER" label={label}
-          editableTitle existingItem={null} onRemove={onRemove} />
+      {mode === 'system' && (
+        <div className="pt-4 mt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+          <ResourceCard {...shared} cardKey={cardKey} icon={<MoreHorizontal className="w-5 h-5 text-[#f37021]" />}
+            label={label} itemType="OTHER" qtyLabel="Số lượng" editableTitle existingItem={null}
+            notePlaceholder="Mô tả chi tiết công việc cần hỗ trợ..." onRemove={onRemove} />
+        </div>
+      )}
+      {mode === 'offline' && (
+        <div className="pt-4 mt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+          <OfflineCard {...shared} cardKey={`${cardKey}-offline`} itemType="OTHER" label={label}
+            editableTitle existingItem={null} onRemove={onRemove} />
+        </div>
       )}
     </div>
   );
@@ -1186,6 +1702,15 @@ function finalQuantity(it: VisitInstanceLogisticsItem): number | null | undefine
   return it.proposalResponse === 'ACCEPTED' && it.proposedQuantity != null ? it.proposedQuantity : it.quantity;
 }
 
+// Tiêu đề tự nhập đôi khi lặp lại tên đoàn khách (vd "Phòng họp HN cho Đoàn X") dù cả trang đã
+// scope theo đúng đoàn đó — cắt hậu tố " cho {tên đoàn}" khi hiển thị cho gọn, không đụng dữ liệu
+// gốc. Chỉ cắt khi khớp CHÍNH XÁC tên đoàn hiện tại, tránh cắt nhầm nội dung hợp lệ chứa " cho ".
+function displayItemTitle(title: string, delegationName?: string): string {
+  if (!delegationName) return title;
+  const suffix = ` cho ${delegationName}`;
+  return title.toLowerCase().endsWith(suffix.toLowerCase()) ? title.slice(0, title.length - suffix.length).trim() : title;
+}
+
 function getStatusBadgeCls(status: string, fallback: string) {
   if (['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS'].includes(status)) return 'bg-blue-50 text-blue-700 border-blue-200';
   if (status === 'DONE') return 'bg-green-50 text-green-700 border-green-200';
@@ -1194,18 +1719,22 @@ function getStatusBadgeCls(status: string, fallback: string) {
   return fallback;
 }
 
-function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
+function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onViewSent, onOpenSign, canSignItem }: {
   it: VisitInstanceLogisticsItem;
+  delegationName?: string;
   canManage: boolean;
   busy: boolean;
   onRespond: (item: VisitInstanceLogisticsItem, accepted: boolean, note: string) => void;
   onViewSent: (item: VisitInstanceLogisticsItem) => void;
+  onOpenSign: (item: VisitInstanceLogisticsItem) => void;
+  canSignItem: (item: VisitInstanceLogisticsItem) => boolean;
 }) {
   const meta = LOGISTICS_STATUS_META[it.status] ?? { label: it.status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   const statusCls = getStatusBadgeCls(it.status, meta.cls);
   const offline = it.coordinationMode === 'OFFLINE_COORDINATED';
   const proposed = it.status === 'CHANGE_PROPOSED';
   const finalQty = finalQuantity(it);
+  const displayTitle = displayItemTitle(it.title, delegationName);
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -1216,151 +1745,178 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent }: {
   else if (it.status === 'REJECTED') { reasonLabel = 'Lý do từ chối'; reasonText = it.decisionNote || ''; }
   else if (it.status === 'DECLINED') { reasonLabel = 'Lý do từ chối nhận nhiệm vụ'; reasonText = it.assigneeResponseNote || ''; }
 
+  const isHandoverEligible = it.coordinationMode === 'SYSTEM_REQUEST' && HANDOVER_STATUSES.has(it.status);
+  const borrow = findHandover(it.handovers, 'BORROW');
+  const canSign = canSignItem(it);
+
   return (
-    <div className={`rounded-2xl border bg-white px-4 py-4 shadow-sm transition-colors hover:bg-slate-50 ${proposed ? 'border-violet-200 bg-violet-50/30 hover:bg-violet-50' : 'border-slate-200'}`}>
-      <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)_190px] gap-4 lg:gap-5 items-start">
-        {/* Vùng A */}
-        <div className="min-w-0 w-full">
-          <h4 className="text-sm font-bold text-slate-900 line-clamp-1" title={it.title}>{it.title}</h4>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
-            <span className="truncate">{ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}</span>
-            {it.quantity != null && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span>SL dự kiến: {it.quantity}</span>
-              </>
-            )}
-            {it.proposedQuantity != null && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="font-semibold text-violet-700">đề xuất: {it.proposedQuantity}</span>
-              </>
-            )}
-            {it.proposalResponse && finalQty != null && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="font-semibold text-emerald-700">chốt: {finalQty}</span>
-              </>
-            )}
-          </div>
-          {offline && it.offlineCoordinationNote && (
-            <div className="mt-2 text-xs italic text-slate-500 line-clamp-2" title={it.offlineCoordinationNote}>
-              <span className="font-semibold text-amber-700/80 mr-1">Ghi chú ngoài:</span>
-              {it.offlineCoordinationNote}
-            </div>
+    <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-all hover:shadow-md ${proposed ? 'border-violet-200 bg-violet-50/20' : 'border-slate-200 hover:border-slate-300'}`}>
+      {/* Top Header: Title + All Status Badges in a clean horizontal layout */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        {/* Title & Quantity */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h4 className="text-base font-bold text-slate-900 truncate" title={it.title}>{displayTitle}</h4>
+          <span className="inline-flex items-center rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
+            {ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}
+          </span>
+          {it.quantity != null && (
+            <span className="inline-flex items-center text-xs font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+              SL dự kiến: <b className="ml-1 text-slate-800">{it.quantity}</b>
+            </span>
           )}
-          {it.description && !offline && (
-            <div className="mt-2 text-xs italic text-slate-500 line-clamp-2" title={it.description}>
-              {it.description}
-            </div>
+          {it.proposedQuantity != null && it.proposalResponse !== 'ACCEPTED' && (
+            <span className="inline-flex items-center text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded border border-violet-200">
+              Đề xuất: {it.proposedQuantity}
+            </span>
           )}
-          {it.proposalResponseNote && (
-            <div className="mt-1 text-xs italic text-slate-500 line-clamp-2">
-              <span className="font-semibold mr-1">Phản hồi:</span>{it.proposalResponseNote}
-            </div>
+          {it.proposalResponse && finalQty != null && (
+            <span className="inline-flex items-center text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              Chốt: {finalQty}
+            </span>
           )}
         </div>
 
-        {/* Vùng B - Xử lý */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100 lg:bg-transparent lg:p-0 lg:border-none">
-          <div className="space-y-3">
-            {it.departmentName && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Phòng ban</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.departmentName}>{it.departmentName}</p>
-              </div>
-            )}
-            {it.requestedByName && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Người gửi</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.requestedByName}>{it.requestedByName}</p>
-              </div>
-            )}
-            {it.assignedToName && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Nhân sự</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate" title={it.assignedToName}>{it.assignedToName}</p>
-              </div>
-            )}
-          </div>
-          <div className="space-y-3">
-            {(it.usageStartAt || it.usageEndAt) && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Thời gian sử dụng</p>
-                <div className="mt-0.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
-                  {it.usageStartAt && <div>Từ: {fmtDateTime(it.usageStartAt)}</div>}
-                  {it.usageEndAt && <div>Đến: {fmtDateTime(it.usageEndAt)}</div>}
-                </div>
-              </div>
-            )}
-            {it.dueAt && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hạn hoàn thành</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate">{fmtDateTime(it.dueAt)}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Vùng C - Trạng thái & Action */}
-        <div className="w-full flex flex-row flex-wrap lg:flex-col items-start lg:items-end gap-2 shrink-0">
-          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${statusCls}`}>
+        {/* Badges Bar (Horizontal) */}
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          {isHandoverEligible && (
+            <HandoverStatusBadge borrow={borrow} />
+          )}
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${statusCls}`}>
             {meta.label}
           </span>
-          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${PRIORITY_META[it.priority]?.cls ?? PRIORITY_META.MEDIUM.cls}`}>
-            Ưu tiên: {PRIORITY_META[it.priority]?.label ?? it.priority}
-          </span>
           {it.coordinationMode && (
-            <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${offline ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
               {COORD_LABEL[it.coordinationMode]}
             </span>
           )}
-          {it.coordinationMode === 'SYSTEM_REQUEST' && (
-            <button type="button" onClick={() => onViewSent(it)}
-              className="mt-1 lg:mt-2 inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-100 bg-white px-3 py-1.5 text-[11px] font-bold text-[#004c91] outline-none hover:bg-blue-50 transition-colors">
-              <Mail className="w-3.5 h-3.5" /> Mail đã gửi
-            </button>
+        </div>
+      </div>
+
+      {/* Card Body: Structured in 3 exact rows specified by user */}
+      <div className="space-y-2 pt-3 text-xs text-slate-600">
+        {/* Dòng 1: Tên phòng ban (Bên trái) + 2 Trạng thái ký (Bên phải) */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            {it.departmentName && (
+              <div><span className="text-slate-400 font-medium">Phòng ban:</span> <b className="text-slate-800">{it.departmentName}</b></div>
+            )}
+          </div>
+          {isHandoverEligible && (
+            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              <SignChip
+                label="Phòng ban ký giao"
+                at={borrow?.providerSignedAt}
+                name={borrow?.providerSignedByName}
+              />
+              <SignChip
+                label="Người phụ trách ký nhận"
+                at={borrow?.borrowerSignedAt}
+                name={borrow?.borrowerSignedByName}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Dòng 2: Thời gian (Bên trái, trải dài) + 2 Nút hành động (Bên phải) */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            {(it.usageStartAt || it.usageEndAt) && (
+              <div>
+                <span className="text-slate-400 font-medium">Thời gian:</span>{' '}
+                <span className="font-semibold text-slate-800">{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {isHandoverEligible && (
+              <button
+                type="button"
+                onClick={() => onOpenSign(it)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold outline-none transition-colors shadow-sm ${
+                  canSign
+                    ? 'border-[#004c91] bg-[#004c91] text-white hover:bg-[#003b70]'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {canSign ? 'Ký nhận' : 'Xem biên bản'}
+              </button>
+            )}
+            {it.coordinationMode === 'SYSTEM_REQUEST' && (
+              <button type="button" onClick={() => onViewSent(it)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-1.5 text-xs font-bold text-[#004c91] outline-none hover:bg-blue-100 transition-colors shadow-sm">
+                <Mail className="w-3.5 h-3.5" /> Mail đã gửi
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dòng 3: Người gửi • Nhân sự + Ghi chú phụ */}
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {it.requestedByName && (
+              <div><span className="text-slate-400 font-medium">Người gửi:</span> <span className="font-semibold text-slate-700">{it.requestedByName}</span></div>
+            )}
+            {it.assignedToName && (
+              <div className="flex items-center gap-1.5">
+                {it.requestedByName && <span className="text-slate-300">•</span>}
+                <span className="text-slate-400 font-medium">Nhân sự:</span>{' '}
+                <span className="font-semibold text-slate-700">{it.assignedToName}</span>
+              </div>
+            )}
+          </div>
+
+          {offline && it.offlineCoordinationNote && (
+            <div className="italic text-slate-500 line-clamp-1" title={it.offlineCoordinationNote}>
+              <span className="font-semibold text-amber-700/80 not-italic">Ghi chú ngoài:</span> {it.offlineCoordinationNote}
+            </div>
+          )}
+          {it.proposalResponseNote && (
+            <div className="italic text-slate-500 line-clamp-1">
+              <span className="font-semibold text-slate-600 not-italic">Phản hồi:</span> {it.proposalResponseNote}
+            </div>
           )}
         </div>
       </div>
 
       {isTerminal && it.status !== 'DONE' && reasonText && (
-        <div className="mt-4 rounded-xl border border-red-100 bg-red-50/70 p-3 text-sm text-red-700">
-          <div className="mb-1 font-bold">{reasonLabel}:</div>
-          <div className="text-xs">{reasonText}</div>
+        <div className="mt-3 rounded-xl border border-red-100 bg-red-50/70 p-3 text-xs text-red-700">
+          <span className="font-bold">{reasonLabel}:</span> {reasonText}
         </div>
       )}
 
-      {proposed && (
-        <div className="mt-4 rounded-xl border border-violet-200 bg-white p-3 lg:p-4">
-          <div className="text-xs font-bold uppercase tracking-wide text-violet-700 mb-3">Phòng ban đề xuất thay đổi</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
-            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className="text-violet-900">{it.proposedQuantity}</b></div>}
+      {(proposed || it.proposalResponse === 'ACCEPTED') && (
+        <div className={`mt-3 rounded-xl border p-3 ${proposed ? 'border-violet-200 bg-violet-50/30' : 'border-emerald-200 bg-emerald-50/30'}`}>
+          <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${proposed ? 'text-violet-700' : 'text-emerald-700'}`}>
+            {proposed ? 'Phòng ban đề xuất thay đổi' : 'Đã chấp nhận đề xuất thay đổi'}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
+            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className={proposed ? 'text-violet-900' : 'text-emerald-900'}>{it.proposedQuantity}</b></div>}
             {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div><span className="text-slate-500">Thời gian đề xuất:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</span></div>}
             {it.proposedDescription && <div className="sm:col-span-2"><span className="text-slate-500">Nội dung đề xuất:</span> {it.proposedDescription}</div>}
-            {it.proposalNote && <div className="sm:col-span-2 text-violet-800 font-medium">Lý do: {it.proposalNote}</div>}
+            {it.proposalNote && <div className={`sm:col-span-2 font-medium ${proposed ? 'text-violet-800' : 'text-emerald-800'}`}>Lý do: {it.proposalNote}</div>}
           </div>
-          {canManage && (!rejecting ? (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+          {proposed && canManage && (!rejecting ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button type="button" disabled={busy} onClick={() => onRespond(it, true, '')}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white outline-none hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-emerald-700 transition-colors disabled:opacity-50">
                 {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Chấp nhận đề xuất
               </button>
               <button type="button" disabled={busy} onClick={() => setRejecting(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 outline-none hover:bg-red-50 transition-colors disabled:opacity-50">
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 outline-none hover:bg-red-50 transition-colors disabled:opacity-50">
                 <X className="w-3.5 h-3.5" /> Từ chối đề xuất
               </button>
             </div>
           ) : (
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-2">
               <textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} maxLength={1000}
                 placeholder="Lý do từ chối đề xuất (bắt buộc)..."
-                className="w-full h-[80px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 transition-colors" />
+                className="w-full h-[70px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:border-red-400 transition-colors" />
               <div className="flex items-center justify-end gap-2">
                 <button type="button" disabled={busy} onClick={() => { setRejecting(false); setRejectNote(''); }}
-                  className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 transition-colors disabled:opacity-50">Hủy</button>
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 outline-none hover:bg-gray-50 transition-colors disabled:opacity-50">Hủy</button>
                 <button type="button" disabled={busy || !rejectNote.trim()} onClick={() => onRespond(it, false, rejectNote.trim())}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white outline-none hover:bg-red-700 transition-colors disabled:opacity-50">
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-red-700 transition-colors disabled:opacity-50">
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />} Xác nhận từ chối
                 </button>
               </div>

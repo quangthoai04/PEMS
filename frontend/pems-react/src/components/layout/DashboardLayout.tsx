@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../dashboard/Sidebar';
 import { NotificationBellButton } from '../../features/notifications/components/NotificationBellButton';
+import { ForcedResponseGate } from '../../features/department-reception-tasks/components/ForcedResponseGate';
 import { Menu } from 'lucide-react';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
@@ -28,7 +29,22 @@ export function DashboardLayout() {
     });
 
   return (
-    <div className="flex h-screen bg-[#fafafa] overflow-hidden flex-col lg:flex-row shadow-inner">
+    <div id="dashboard-root" className="flex h-screen bg-[#fafafa] overflow-hidden flex-col lg:flex-row shadow-inner">
+      <ForcedResponseGate />
+      {/* Khung layout tổng (h-screen/overflow-hidden trên #dashboard-root, max-h-screen/overflow-y-auto
+          trên #dashboard-main) ép cứng đúng 1 màn hình — bất kỳ nội dung nào in bên trong (biên bản
+          nhúng inline, không dùng portal) đều bị cắt ở ranh giới đó dù trang con đã tự reset overflow.
+          Reset riêng 2 khung này cho print, không đụng lúc xem màn hình bình thường. */}
+      <style type="text/css" media="print">
+        {`
+          #dashboard-root, #dashboard-main {
+            display: block !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+        `}
+      </style>
       {/* Mobile top app bar */}
       <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between w-full h-16 shrink-0 z-30">
         <div className="flex items-center gap-3">
@@ -56,7 +72,7 @@ export function DashboardLayout() {
       />
 
       {/* Main dashboard content container */}
-      <main className="flex-1 max-h-screen overflow-y-auto bg-[#F8FAFC] relative flex flex-col">
+      <main id="dashboard-main" className="flex-1 max-h-screen overflow-y-auto bg-[#F8FAFC] relative flex flex-col">
         {/* Desktop notification bell: floating overlay in top right corner */}
         <div className="hidden lg:flex absolute top-3 right-6 z-40 pointer-events-none">
           <div className="pointer-events-auto bg-white/80 backdrop-blur-md shadow-sm rounded-full border border-gray-100 p-1">

@@ -276,7 +276,6 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 ItemType = l.ItemType,
                 Title = l.Title,
                 Status = l.Status,
-                Priority = l.Priority,
                 RequestedToDepartmentId = l.RequestedToDepartmentId,
                 AssignedToUserId = l.AssignedToUserId,
             })

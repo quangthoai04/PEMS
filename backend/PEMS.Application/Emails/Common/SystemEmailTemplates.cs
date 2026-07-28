@@ -71,6 +71,12 @@ public static class SystemEmailTemplates
     public const string AccountStaffLeaderAssigned = "ACCOUNT_STAFF_LEADER_ASSIGNED";
     public const string AccountStaffLeaderReplaced = "ACCOUNT_STAFF_LEADER_REPLACED";
 
+    // ── DEPARTMENT PERSONNEL (Department Leader manages their own staff) ──────
+    public const string DeptPersonnelAccountDisabled = "DEPT_PERSONNEL_ACCOUNT_DISABLED";
+    public const string DeptPersonnelAccountEnabled = "DEPT_PERSONNEL_ACCOUNT_ENABLED";
+    public const string DeptLeadershipGranted = "DEPT_LEADERSHIP_GRANTED";
+    public const string DeptLeadershipHandedOver = "DEPT_LEADERSHIP_HANDED_OVER";
+
     // ── AUTH ─────────────────────────────────────────────────────────────────
     public const string AuthPasswordResetOtp = "AUTH_PASSWORD_RESET_OTP";
 
@@ -127,6 +133,18 @@ public static class SystemEmailTemplates
             Single(AccountStaffLeaderReplaced, EmailTemplatePurposes.Account, sensitive: false,
                 "fullName", "campusName", "successorName", "effectiveDate", "reason"),
 
+            // DEPARTMENT PERSONNEL — the Department Leader's own staff lifecycle. Same purpose as the
+            // other account notices because that is what they are; the recipient is always the single
+            // account holder the change happened to, so none of them may be copied.
+            Single(DeptPersonnelAccountDisabled, EmailTemplatePurposes.Account, sensitive: false,
+                "fullName", "departmentName", "reason"),
+            Single(DeptPersonnelAccountEnabled, EmailTemplatePurposes.Account, sensitive: false,
+                "fullName", "departmentName"),
+            Single(DeptLeadershipGranted, EmailTemplatePurposes.Account, sensitive: false,
+                "fullName", "departmentName"),
+            Single(DeptLeadershipHandedOver, EmailTemplatePurposes.Account, sensitive: false,
+                "fullName", "departmentName"),
+
             // AUTH — carries the reset OTP.
             Single(AuthPasswordResetOtp, EmailTemplatePurposes.Auth, sensitive: true,
                 "fullName", "otpCode", "expireMinutes"),
@@ -162,8 +180,13 @@ public static class SystemEmailTemplates
                 "usageStartAt", "usageEndAt", "dueAt", "coordinationNote"),
             Single(LogisticsAssigneeAssignment, EmailTemplatePurposes.Logistics, sensitive: true,
                 "assigneeName", "logisticsTitle", "dueAt", "campusName", "delegationName"),
+            // A proposal is a counter-offer, so the mail states WHAT is proposed against what was asked
+            // for — not the rationale alone, which made the Host open the portal to find the numbers
+            // they were being asked to approve.
             Single(LogisticsChangeProposalToHost, EmailTemplatePurposes.Logistics, sensitive: true,
-                "hostName", "logisticsTitle", "departmentName", "proposalNote"),
+                "hostName", "logisticsTitle", "departmentName", "delegationName",
+                "originalQuantity", "proposedQuantity", "proposedUsageStartAt", "proposedUsageEndAt",
+                "proposedDescription", "proposalNote"),
             CallerControlledTemplate(LogisticsExpenseReportReminder, EmailTemplatePurposes.Logistics,
                 "recipientName", "itemTitle", "dueAt", "delegationName"),
 

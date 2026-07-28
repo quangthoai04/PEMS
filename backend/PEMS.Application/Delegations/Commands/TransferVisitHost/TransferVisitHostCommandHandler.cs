@@ -34,12 +34,15 @@ public sealed class TransferVisitHostCommandHandler
     private readonly INotificationService _notificationService;
     private readonly IVisitFormReadService _formReadService;
     private readonly ILogger<TransferVisitHostCommandHandler> _logger;
+    private readonly IUserMutationLockService _lockService;
 
     public TransferVisitHostCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         INotificationService notificationService, IVisitFormReadService formReadService,
-        ILogger<TransferVisitHostCommandHandler> logger)
+        ILogger<TransferVisitHostCommandHandler> logger,
+        IUserMutationLockService lockService)
     {
+        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -100,6 +103,14 @@ public sealed class TransferVisitHostCommandHandler
                 "Cơ sở này đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
                 VisitFormV2ErrorCodes.VisitFormConcurrencyConflict);
 
+        // ── Transaction + shared lock BEFORE eligibility (see IUserMutationLockService). A handover
+        //    hands the incoming Host a live responsibility, so it must serialize against a role
+        //    change on that same account. Both ids are handed to the lock service together, which
+        //    orders them ascending — locking "outgoing then incoming" here and the reverse elsewhere
+        //    is exactly the deadlock spec §13.4 rules out. ──
+        await using var tx = await _db.BeginTransactionAsync(ct);
+        await _lockService.LockUsersAsync(new[] { previousHostId, command.NewHostUserId }, ct);
+
         var (eligibility, newHost) = await VisitHostEligibility.EvaluateAsync(
             _db, command.NewHostUserId, instance.CampusId, actorId, ct);
         if (eligibility == HostEligibility.NotFound || newHost is null)
@@ -116,8 +127,6 @@ public sealed class TransferVisitHostCommandHandler
 
         var reason = command.Reason?.Trim();
         var campusName = campusNames.TryGetValue(instance.CampusId, out var cn) ? cn : $"#{instance.CampusId}";
-
-        await using var tx = await _db.BeginTransactionAsync(ct);
 
         // ── The handover itself. Status, decision and revisions are untouched by construction. ──
         instance.CurrentHostUserId = command.NewHostUserId;

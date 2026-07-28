@@ -83,7 +83,6 @@ public sealed class ContributionLogisticsItemDto
     public string? ItemType { get; set; }
     public string Title { get; set; } = default!;
     public string Status { get; set; } = default!;
-    public string? Priority { get; set; }
     public ulong? RequestedToDepartmentId { get; set; }
     public string? DepartmentName { get; set; }
     public ulong? AssignedToUserId { get; set; }

@@ -24,4 +24,13 @@ public sealed class UpdateAccountRoleCommand : IRequest<UpdateAccountRoleRespons
     // ignores it). A null value means "leave unchanged".
     public string? FullName { get; set; }
     public string? Email { get; set; }
+
+    // ── Department-head handover (Staff Leader flow) ─────────────────────────────────────────────
+    // Set when the target currently heads a GENERAL department AND this change moves them out of
+    // that seat. The handover runs in the SAME transaction as the role change, so the account never
+    // passes through an in-between state that nobody is allowed to manage: without it the target
+    // would be demoted to DEPARTMENT/STAFF by the separate reassign-lead flow and fall outside the
+    // Staff Leader's manageable set (spec §3.3), leaving the role change unreachable.
+    // Null when the target heads nothing — supplying it anyway is an error, never ignored.
+    public ulong? ReplacementDepartmentHeadUserId { get; set; }
 }

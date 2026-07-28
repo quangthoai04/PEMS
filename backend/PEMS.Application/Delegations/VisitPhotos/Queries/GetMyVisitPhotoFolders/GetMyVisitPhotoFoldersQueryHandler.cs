@@ -47,24 +47,40 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
                 .Select(p => p.VisitInstanceId)
                 .ToListAsync(cancellationToken);
         }
+        else if (roleCode == RoleCodes.Ho)
+        {
+            // HO (Head Office): toàn bộ đoàn khách, mọi cơ sở — cùng phạm vi org-wide mà
+            // VisitInstanceAccess/ViewGuestDelegationList đã dùng cho vai trò này trong domain visit.
+            instanceIds = await _db.VisitRequestCampuses
+                .Select(c => c.VisitInstanceId)
+                .ToListAsync(cancellationToken);
+        }
         else
         {
-            var isLeaderOrAdmin = roleCode == RoleCodes.Admin || (roleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader);
-            if (isLeaderOrAdmin)
+            // Staff / Staff Leader: CHỈ đoàn khách thuộc đúng cơ sở (campus) của mình — never a
+            // sibling campus's, dù là Staff Leader (trước đây bị gộp chung với Admin, thấy nhầm mọi
+            // cơ sở). Cùng nguồn campus với StaffLeaderGalleryScope (primary_campus_id trong JWT).
+            var campusId = _currentUser.PrimaryCampusId
+                ?? throw new ForbiddenException("Tài khoản chưa được gán cơ sở.");
+
+            var isLeader = roleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader;
+            if (isLeader)
             {
                 instanceIds = await _db.VisitRequestCampuses
+                    .Where(c => c.CampusId == campusId)
                     .Select(c => c.VisitInstanceId)
                     .ToListAsync(cancellationToken);
             }
             else
             {
                 var hosted = await _db.VisitRequestCampuses
-                    .Where(c => c.CurrentHostUserId == userId)
+                    .Where(c => c.CurrentHostUserId == userId && c.CampusId == campusId)
                     .Select(c => c.VisitInstanceId)
                     .ToListAsync(cancellationToken);
                 var participated = await _db.VisitParticipants
                     .Where(p => p.UserId == userId && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned))
-                    .Select(p => p.VisitInstanceId)
+                    .Join(_db.VisitRequestCampuses.Where(c => c.CampusId == campusId),
+                        p => p.VisitInstanceId, c => c.VisitInstanceId, (p, c) => p.VisitInstanceId)
                     .ToListAsync(cancellationToken);
                 instanceIds = hosted.Union(participated).ToList();
             }

@@ -24,7 +24,7 @@ public static class CanonicalSqlScript
 {
     /// <summary>The only accepted schema script. No wildcards, no fallback to historical names.</summary>
     public const string FileName =
-        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY.sql";
+        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql";
 
     /// <summary>
     /// SHA-256 of the canonical script this test suite is written against. Changing the schema is allowed,
@@ -78,8 +78,26 @@ public static class CanonicalSqlScript
     ///   • ACCOUNT_STAFF_LEADER_ASSIGNED and _REPLACED gained {{reason}}, which both emails already
     ///     showed and which is a required input of the replace-leader command.
     /// No DDL, no trigger, no row count changed.
+    /// (2026-07-28, eighth bump) MERGE of Dev into Cảnh-Iter1. Two things happened at once, and this is
+    /// the first bump where the FILE ITSELF changed identity:
+    ///   • Dev renamed the canonical script to PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql
+    ///     while Cảnh-Iter1 was editing the old name — a rename/modify conflict. The renamed file is the
+    ///     canonical one; FileName above moves with it and the old name no longer exists on disk;
+    ///   • the merged file carries BOTH sides: Dev's Document-AI/OCR fixes, Department-Leader personnel
+    ///     support and logistics proposed_quantity/proposed_usage_* columns, and Cảnh-Iter1's whole email
+    ///     schema (email_templates, sent_email*, email_draft*, email_action_tokens,
+    ///     account_email_confirmations) plus the template catalog.
+    /// Seed text also changed in two deliberate places:
+    ///   • LOGISTICS_CHANGE_PROPOSAL_TO_HOST now renders the proposal ITSELF — proposed quantity against
+    ///     the original, the proposed window, the proposed content — instead of the rationale alone, which
+    ///     forced the Host into the portal to see what they were approving;
+    ///   • four DEPT_* templates were added (personnel disabled/enabled, leadership granted/handed over)
+    ///     when the Department-Leader module stopped composing its own HTML and moved onto the dispatcher.
+    ///     The catalog is 30 codes, and the code-side registry is asserted equal to it in both directions.
+    /// ExpectedBaseTableCount (82) and ExpectedTriggerCount (32) are unchanged, verified by a fresh import
+    /// into a disposable database before this constant was touched.
     public const string ExpectedSha256 =
-        "51e178bb5e56fc927fd896e2a87ed8015043a2ca4904b4e1d9df581b2caae8a1";
+        "322a8a94c2dc61192e46d14769acb41af287c486b8e942fbf5850655702d68a0";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

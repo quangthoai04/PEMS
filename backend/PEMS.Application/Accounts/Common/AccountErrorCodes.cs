@@ -82,6 +82,30 @@ public static class AccountErrorCodes
     /// <summary>The chosen replacement user is not a valid IC Staff for this campus. → 422.</summary>
     public const string InvalidReplacementCandidate = "INVALID_REPLACEMENT_CANDIDATE";
 
+    // ── Safe account role change (active responsibilities) — see
+    //    27_07_26_PEMS_SAFE_ACCOUNT_ROLE_CHANGE_ACTIVE_RESPONSIBILITY spec §11. ──
+
+    /// <summary>
+    /// The target account (or the requested new role) is outside the Staff Leader's managed set:
+    /// only STAFF/STAFF, DEPARTMENT/LEADER and STUDENT may be role-changed here (spec §3). → 403.
+    /// </summary>
+    public const string AccountRoleTargetNotManageable = "ACCOUNT_ROLE_TARGET_NOT_MANAGEABLE";
+
+    /// <summary>
+    /// The account still holds at least one active responsibility (host / coordinator / participant /
+    /// logistics / department head), so its role cannot change yet (spec §8). Carries the blocker
+    /// breakdown under <c>data</c>. → 409.
+    /// </summary>
+    public const string AccountRoleChangeBlockedByActiveResponsibilities =
+        "ACCOUNT_ROLE_CHANGE_BLOCKED_BY_ACTIVE_RESPONSIBILITIES";
+
+    /// <summary>
+    /// The replacement department head supplied with a role change is not usable — not a member of
+    /// the department being handed over, not active, or supplied when no handover is needed
+    /// (spec §8.6). → 422.
+    /// </summary>
+    public const string InvalidDepartmentHeadReplacement = "INVALID_DEPARTMENT_HEAD_REPLACEMENT";
+
     // ── Related Visitor Accounts tab (Staff Leader) — see UC_StaffLeader_Related_Visitor_Accounts_Tab. ──
 
     /// <summary>Caller is not an active Staff Leader (STAFF/LEADER + campus) for this tab. → 403.</summary>
