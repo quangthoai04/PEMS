@@ -45,6 +45,7 @@ import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 import { formatVietnamDateTime, toVietnamCalendarDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
+
 interface Event {
   id: string;
   title: string;
@@ -169,6 +170,20 @@ const INITIAL_EVENTS: Event[] = [
     vipLevel: 'VIP',
     contactPerson: 'Trần Văn Tuyến (Điều hành xe - 0914.555.666)'
   }];
+
+/** Dòng key-value gọn cho khối thông tin — thay cho các "khung" bento to trước đây. */
+function InfoLine({ icon: Icon, label, value, emphasize }: { icon: React.ElementType; label: string; value: React.ReactNode; emphasize?: boolean }) {
+  if (value == null || value === '') return null;
+  return (
+    <div className="flex items-start gap-2 py-1">
+      <Icon className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-0.5">{label}</span>
+        <span className={emphasize ? 'text-sm font-black text-[#004c91]' : 'text-sm font-semibold text-gray-800'}>{value}</span>
+      </div>
+    </div>
+  );
+}
 
 export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor, initialVisitInstanceId, viewMode = 'calendar' }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean, initialVisitInstanceId?: number | null, viewMode?: 'calendar' | 'assignments' }) {
   // "Hôm nay" theo lịch Việt Nam — không lệch ngày ở browser nước ngoài.
@@ -370,10 +385,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [requestRejectReason, setRequestRejectReason] = useState('');
   const [requestRejectSignature, setRequestRejectSignature] = useState<{ name: string, time: string } | null>(null);
   const [isProposing, setIsProposing] = useState(false);
+  const [proposalContent, setProposalContent] = useState('');
   const [proposalNote, setProposalNote] = useState('');
   const [proposalStartTime, setProposalStartTime] = useState('');
   const [proposalEndTime, setProposalEndTime] = useState('');
+  const [proposalQuantity, setProposalQuantity] = useState('');
   const [proposalSubmitted, setProposalSubmitted] = useState(false);
+  const [proposalSubmitting, setProposalSubmitting] = useState(false);
 
   // Dept preliminary states
   const [deptPreliminaryStatus, setDeptPreliminaryStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted'>('pending');
@@ -1321,10 +1339,32 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     };
   };
 
+  // Đoàn khách diễn ra nhiều ngày (so ngày của usageStartAt/usageEndAt theo giờ VN) → ô đề xuất
+  // giờ cần cả ngày lẫn giờ (datetime-local); trong 1 ngày → chỉ cần giờ (time), như trước.
+  const usageStartDatePart = toVietnamDateTimeLocalInput(activeEventDetail?.usageStartAt || undefined).slice(0, 10) || undefined;
+  const usageEndDatePart = toVietnamDateTimeLocalInput(activeEventDetail?.usageEndAt || undefined).slice(0, 10) || undefined;
+  const isMultiDay = !!(usageStartDatePart && usageEndDatePart && usageStartDatePart !== usageEndDatePart);
+
+  // "Chốt": số lượng Host đã CHẤP NHẬN đề xuất — hiển thị số này ở mọi chỗ chỉ có 1 ô "Số lượng"
+  // (không tách 3 cột dự kiến/đề xuất/chốt như card Host); số dự kiến gốc (activeEventDetail.quantity)
+  // không đổi, chỉ dùng để tính toán (vd ép "đề xuất mới phải nhỏ hơn").
+  const finalQuantityDisplay = activeEventDetail?.proposalResponse === 'ACCEPTED' && activeEventDetail?.proposedQuantity != null
+    ? activeEventDetail.proposedQuantity : activeEventDetail?.quantity;
+  const quantityTooHigh = proposalQuantity.trim() !== '' && activeEventDetail?.quantity != null && Number(proposalQuantity) >= activeEventDetail.quantity;
+
   const handleOpenProposal = () => {
-    const current = extractTimeRange();
-    setProposalStartTime(current.start);
-    setProposalEndTime(current.end);
+    if (isMultiDay) {
+      setProposalStartTime(toVietnamDateTimeLocalInput(activeEventDetail?.proposedUsageStartAt || activeEventDetail?.usageStartAt || undefined));
+      setProposalEndTime(toVietnamDateTimeLocalInput(activeEventDetail?.proposedUsageEndAt || activeEventDetail?.usageEndAt || undefined));
+    } else {
+      const current = extractTimeRange();
+      setProposalStartTime(current.start);
+      setProposalEndTime(current.end);
+    }
+    // Không seed từ quantity gốc — số lượng đề xuất phải NHỎ HƠN số lượng dự kiến, để trống mặc
+    // định, chỉ khôi phục đề xuất dở dang nếu có.
+    setProposalQuantity(activeEventDetail?.proposedQuantity != null ? String(activeEventDetail.proposedQuantity) : '');
+    setProposalContent(activeEventDetail?.proposedDescription || '');
     setIsProposing(true);
   };
 
@@ -3231,193 +3271,336 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
                 {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && (
                   <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
+                    {!isProposing ? (
+                      <>
+                        {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Tiêu đề/Số lượng, Thời gian sử dụng) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-                    {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian sử dụng) */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <User className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
-                        </div>
-                        <div className="text-sm font-black text-[#004c91]">{activePopoverEvent.host}</div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <Clock className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
-                        </div>
-                        <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
-                      </div>
-
-                      {activePopoverEvent.guests && (
-                        <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
-                          <div className="flex items-center gap-2 text-gray-400 mb-2">
-                            <Users className="w-4 h-4" />
-                            <span className="text-[11px] font-bold uppercase tracking-wider">Đoàn khách</span>
+                          <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                            <div className="flex items-center gap-2 text-gray-400 mb-2">
+                              <User className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
+                            </div>
+                            <div className="text-sm font-black text-[#004c91]">{activePopoverEvent.host}</div>
                           </div>
-                          <div className="text-base font-black text-[#004c91] border-l-4 border-[#f37021] pl-3 py-1 bg-transparent leading-none flex items-center uppercase">
-                            {activePopoverEvent.guests}
+
+                          <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                            <div className="flex items-center gap-2 text-gray-400 mb-2">
+                              <Clock className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
+                            </div>
+                            <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
+                          </div>
+
+                          {activePopoverEvent.guests && (
+                            <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
+                              <div className="flex items-center gap-2 text-gray-400 mb-2">
+                                <Users className="w-4 h-4" />
+                                <span className="text-[11px] font-bold uppercase tracking-wider">Đoàn khách</span>
+                              </div>
+                              <div className="text-base font-black text-[#004c91] border-l-4 border-[#f37021] pl-3 py-1 bg-transparent leading-none flex items-center uppercase">
+                                {activePopoverEvent.guests}
+                              </div>
+                            </div>
+                          )}
+
+                          {((activeEventDetail?.title || activePopoverEvent?.title) || activeEventDetail?.quantity != null) && (
+                            <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex items-center gap-8">
+                              {(activeEventDetail?.title || activePopoverEvent?.title) && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                                    <FileText className="w-4 h-4" />
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Tiêu đề</span>
+                                  </div>
+                                  <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.title || activePopoverEvent?.title}</div>
+                                </div>
+                              )}
+                              {activeEventDetail?.quantity != null && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                                    <FileText className="w-4 h-4" />
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Số lượng</span>
+                                  </div>
+                                  <div className="text-sm font-black text-[#004c91]">{finalQuantityDisplay}</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default relative overflow-hidden flex flex-col justify-center">
+                            <div className="flex items-center gap-2 text-gray-400 mb-2 relative z-10">
+                              <Calendar className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng</span>
+                            </div>
+                            <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
+                              {isMultiDay ? (
+                                <>
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.usageStartAt)}</span>
+                                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.usageEndAt)}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
+                                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
+                                  <span className="text-sm text-[#004c91] ml-2 font-black">{activePopoverEvent.date.split('-').reverse().join('-')}</span>
+                                </>
+                              )}
+                            </div>
+                            <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none scale-150 mr-4">
+                              <Calendar className="w-24 h-24 text-gray-900" />
+                            </div>
+                          </div>
+
+                        </div>
+
+                        <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <FileText className="w-4 h-4" />
+                            <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
+                          </div>
+                          <div className="p-6 bg-[#f8fafc] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 transition-all relative">
+                            {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line, idx) => (
+                              <p key={idx} className={idx > 0 && line.startsWith('*') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
+                                {line}
+                              </p>
+                            ))}
                           </div>
                         </div>
-                      )}
 
-                      <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default relative overflow-hidden flex flex-col justify-center">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2 relative z-10">
-                          <Calendar className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng</span>
-                        </div>
-                        <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
-                          <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                          <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
-                          <span className="text-sm text-[#004c91] ml-2 font-black">{activePopoverEvent.date.split('-').reverse().join('-')}</span>
-                        </div>
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none scale-150 mr-4">
-                          <Calendar className="w-24 h-24 text-gray-900" />
-                        </div>
-                      </div>
-
-                      {isProposing && !proposalSubmitted && (
-                        <div className="col-span-1 sm:col-span-2 p-4 bg-orange-50/50 rounded-2xl border border-orange-200 cursor-default relative overflow-hidden flex flex-col justify-center animate-fade-in-quick mt-[-4px]">
-                          <div className="flex items-center gap-2 text-[#de703b] mb-2 relative z-10">
-                            <Calendar className="w-4 h-4" />
-                            <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng (Đề xuất)</span>
+                        {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && !proposalSubmitted && (
+                          <div className="flex justify-end pt-2">
+                            <button
+                              onClick={handleOpenProposal}
+                              disabled={!!assignedPerson}
+                              className={`px-5 py-2.5 rounded-xl border border-orange-200 text-[#f37021] bg-orange-50 font-bold text-xs flex items-center gap-2 transition-colors ${(!!assignedPerson) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-100'}`}>
+                              <Edit2 className="w-4 h-4" />
+                              Đề xuất thay đổi
+                            </button>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
-                            <input
-                              type="time"
-                              value={proposalStartTime}
-                              onChange={(e) => setProposalStartTime(e.target.value)}
-                              className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
-                            />
-                            <span className="text-center text-[#de703b] font-black">-</span>
-                            <input
-                              type="time"
-                              value={proposalEndTime}
-                              onChange={(e) => setProposalEndTime(e.target.value)}
-                              className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
-                            />
+                        )}
+
+                        {proposalSubmitted && (
+                          <div className="mt-4 animate-fade-in-quick">
+                            <div className="bg-[#de703b] text-white rounded-2xl p-5 flex flex-col items-center justify-center text-center shadow-md border border-[#c9602c]">
+                              <div className="flex items-center gap-2.5 mb-2.5">
+                                <Clock className="w-5 h-5" />
+                                <span className="font-extrabold text-sm uppercase tracking-wider">Chờ xác nhận (Đề xuất thay đổi)</span>
+                              </div>
+                              <div className="bg-black/15 px-4 py-1.5 rounded-full inline-block">
+                                <span className="text-white/95 text-xs font-medium">
+                                  bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
+                                  {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
+                                  {' - '}
+                                  {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : formatVietnamDateTime(new Date())}
+                                </span>
+                                <div className="mt-2 space-y-1 text-white/95 text-xs">
+                                  {activeEventDetail?.proposedQuantity != null && (
+                                    <p>Đề xuất số lượng: {activeEventDetail.proposedQuantity}</p>
+                                  )}
+                                  {activeEventDetail?.proposedUsageStartAt && activeEventDetail?.proposedUsageEndAt && (
+                                    <p>Đề xuất giờ: {formatDateTime(activeEventDetail.proposedUsageStartAt)} - {formatDateTime(activeEventDetail.proposedUsageEndAt)}</p>
+                                  )}
+                                  {activeEventDetail?.proposedDescription && (
+                                    <p>Nội dung đề xuất: {activeEventDetail.proposedDescription}</p>
+                                  )}
+                                  <p>Lý do: {activeEventDetail?.proposalNote || proposalNote}</p>
+                                </div>
+                              </div>
+                            </div>
                           </div>
+                        )}
+                      </>
+                    ) : (
+                      /* Đang đề xuất thay đổi: tách 2 khối — trái = đề xuất mượn của Host (đối chiếu), phải = đề xuất thay đổi của mình */
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+
+                        <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+                          <h4 className="text-[11px] font-black uppercase tracking-wider text-gray-500 flex items-center gap-1.5 pb-2 mb-1 border-b border-gray-200">
+                            <User className="w-3.5 h-3.5" /> Đề xuất mượn của Host
+                          </h4>
+                          <InfoLine icon={User} label="Người gửi" value={activePopoverEvent.host} />
+                          <InfoLine icon={Clock} label="Thời gian gửi" value={formatDateTimeDisplay(activeEventDetail?.requestedAt)} />
+                          <InfoLine icon={Users} label="Đoàn khách" value={activePopoverEvent.guests} emphasize />
+                          <InfoLine icon={FileText} label="Tiêu đề" value={activeEventDetail?.title || activePopoverEvent?.title} />
+                          <InfoLine icon={FileText} label="Số lượng" value={finalQuantityDisplay} />
+                          <InfoLine
+                            icon={Calendar}
+                            label="Thời gian sử dụng"
+                            value={isMultiDay
+                              ? `${formatDateTimeDisplay(activeEventDetail?.usageStartAt)} - ${formatDateTimeDisplay(activeEventDetail?.usageEndAt)}`
+                              : `${activePopoverEvent.time || ''}${activePopoverEvent.date ? ` · ${activePopoverEvent.date.split('-').reverse().join('-')}` : ''}`}
+                          />
+                          {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.trim() && (
+                            <div className="flex items-start gap-2 py-1 pt-2 mt-1 border-t border-gray-200">
+                              <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-1">Nội dung chi tiết công việc</span>
+                                {activePopoverEvent.purpose.split('\n').map((line: string, idx: number) => (
+                                  <p key={idx} className={`text-sm text-gray-700 leading-relaxed ${idx > 0 && line.startsWith('*') ? 'mt-2 font-bold text-gray-900' : ''}`}>
+                                    {line}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
 
-                    </div>
+                        <div className="rounded-xl border border-orange-200 bg-orange-50/40 p-4">
+                          <h4 className="text-[11px] font-black uppercase tracking-wider text-[#de703b] flex items-center gap-1.5 pb-2 mb-1 border-b border-orange-200">
+                            <Edit2 className="w-3.5 h-3.5" /> Đề xuất thay đổi của tôi
+                          </h4>
 
-                    <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
-                      <div className="flex items-center gap-2 text-gray-400">
-                        <FileText className="w-4 h-4" />
-                        <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
-                      </div>
-                      <div className="p-6 bg-[#f8fafc] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 transition-all relative">
-                        {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line, idx) => (
-                          <p key={idx} className={idx > 0 && line.startsWith('*') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
-                            {line}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
+                          <div className="flex flex-col gap-2.5 animate-fade-in-quick">
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Số lượng mới</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={activeEventDetail?.quantity != null ? activeEventDetail.quantity - 1 : undefined}
+                                step={1}
+                                value={proposalQuantity}
+                                onChange={(e) => setProposalQuantity(e.target.value)}
+                                className={`w-full text-sm px-3 py-2 border rounded-lg outline-none bg-white font-bold text-slate-800 ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-orange-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200'}`}
+                              />
+                              {quantityTooHigh && (
+                                <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({activeEventDetail.quantity}).</p>
+                              )}
+                            </div>
 
-                    {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
-                      <div className="flex justify-end pt-2">
-                        <button
-                          onClick={handleOpenProposal}
-                          disabled={!!assignedPerson}
-                          className={`px-5 py-2.5 rounded-xl border border-orange-200 text-[#f37021] bg-orange-50 font-bold text-xs flex items-center gap-2 transition-colors ${(!!assignedPerson) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-100'}`}>
-                          <Edit2 className="w-4 h-4" />
-                          Đề xuất thay đổi
-                        </button>
-                      </div>
-                    )}
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Thời gian sử dụng mới</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type={isMultiDay ? 'datetime-local' : 'time'}
+                                  value={proposalStartTime}
+                                  onChange={(e) => setProposalStartTime(e.target.value)}
+                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                                />
+                                <span className="text-[#de703b] font-black shrink-0">-</span>
+                                <input
+                                  type={isMultiDay ? 'datetime-local' : 'time'}
+                                  value={proposalEndTime}
+                                  onChange={(e) => setProposalEndTime(e.target.value)}
+                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                                />
+                              </div>
+                            </div>
 
-                    {isProposing && (
-                      <div className="flex flex-col gap-3 transition-all cursor-default relative z-10 animate-fade-in-quick mt-2">
-                        <div className="flex items-center gap-2 text-[#de703b] mt-2">
-                          <FileText className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc (Đề xuất)</span>
-                        </div>
-                        <textarea
-                          rows={4}
-                          className="w-full text-sm p-5 border border-orange-200 rounded-2xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none bg-orange-50/50 font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
-                          placeholder="Nhập đề xuất nội dung..."
-                          value={proposalNote}
-                          onChange={(e) => setProposalNote(e.target.value)}
-                          autoFocus
-                        />
-                        <div className="flex justify-end gap-3 mt-1">
-                          <button
-                            onClick={() => {
-                              setIsProposing(false);
-                              setProposalNote('');
-                              setProposalStartTime('');
-                              setProposalEndTime('');
-                            }}
-                            className="px-5 py-2.5 rounded-xl text-gray-500 hover:bg-gray-100 font-bold text-xs"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                if (activePopoverEvent?.rawId) {
-                                  if (proposalStartTime && proposalEndTime && proposalStartTime >= proposalEndTime) {
-                                    toast.error('Giờ kết thúc phải sau giờ bắt đầu');
-                                    return;
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Nội dung chi tiết công việc (đề xuất)</label>
+                              <textarea
+                                ref={(el) => {
+                                  if (el) {
+                                    el.style.height = 'auto';
+                                    el.style.height = `${Math.max(38, el.scrollHeight)}px`;
                                   }
-                                  if (!proposalNote.trim()) {
-                                    toast.error('Vui lòng nhập lý do/ghi chú đề xuất.');
-                                    return;
+                                }}
+                                rows={1}
+                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
+                                placeholder="Nhập nội dung công việc đề xuất (nếu có thay đổi)..."
+                                value={proposalContent}
+                                onChange={(e) => {
+                                  setProposalContent(e.target.value);
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = `${Math.max(38, e.target.scrollHeight)}px`;
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Lý do đề xuất *</label>
+                              <textarea
+                                ref={(el) => {
+                                  if (el) {
+                                    el.style.height = 'auto';
+                                    el.style.height = `${Math.max(38, el.scrollHeight)}px`;
                                   }
-                                  await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, {
-                                    proposedUsageStartAt: buildProposalDateTime(proposalStartTime),
-                                    proposedUsageEndAt: buildProposalDateTime(proposalEndTime),
-                                    proposalNote: proposalNote.trim(),
-                                  });
-                                  toast.success('Đã gửi đề xuất thay đổi');
+                                }}
+                                rows={1}
+                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
+                                placeholder="Lý do đề xuất thay đổi..."
+                                value={proposalNote}
+                                onChange={(e) => {
+                                  setProposalNote(e.target.value);
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = `${Math.max(38, e.target.scrollHeight)}px`;
+                                }}
+                                autoFocus
+                              />
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-1">
+                              <button
+                                onClick={() => {
                                   setIsProposing(false);
-                                  setProposalSubmitted(true);
+                                  setProposalContent('');
+                                  setProposalNote('');
                                   setProposalStartTime('');
                                   setProposalEndTime('');
-                                  await refetchAfterTaskAction();
-                                  const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
-                                  setActiveEventDetail(detail);
-                                }
-                              } catch (e: any) {
-                                toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Gửi đề xuất thất bại');
-                              }
-                            }}
-                            disabled={!proposalNote.trim() || !proposalStartTime || !proposalEndTime}
-                            className="px-5 py-2.5 rounded-xl bg-[#de703b] text-white hover:bg-[#c9602c] font-bold text-xs disabled:opacity-50"
-                          >
-                            Gửi đề xuất
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {proposalSubmitted && (
-                      <div className="mt-4 animate-fade-in-quick">
-                        <div className="bg-[#de703b] text-white rounded-2xl p-5 flex flex-col items-center justify-center text-center shadow-md border border-[#c9602c]">
-                          <div className="flex items-center gap-2.5 mb-2.5">
-                            <Clock className="w-5 h-5" />
-                            <span className="font-extrabold text-sm uppercase tracking-wider">Chờ xác nhận (Đề xuất thay đổi)</span>
-                          </div>
-                          <div className="bg-black/15 px-4 py-1.5 rounded-full inline-block">
-                            <span className="text-white/95 text-xs font-medium">
-                              bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
-                              {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
-                              {' - '}
-                              {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : formatVietnamDateTime(new Date())}
-                            </span>
-                            <div className="mt-2 space-y-1 text-white/95 text-xs">
-                              {activeEventDetail?.proposedUsageStartAt && activeEventDetail?.proposedUsageEndAt && (
-                                <p>Đề xuất giờ: {formatDateTime(activeEventDetail.proposedUsageStartAt)} - {formatDateTime(activeEventDetail.proposedUsageEndAt)}</p>
-                              )}
-                              <p>Ghi chú: {activeEventDetail?.proposedDescription || proposalNote}</p>
+                                  setProposalQuantity('');
+                                }}
+                                className="px-4 py-2 rounded-lg text-gray-500 hover:bg-gray-100 font-bold text-xs"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (proposalSubmitting) return; // chặn double-submit khi bấm liên tục
+                                  try {
+                                    if (activePopoverEvent?.rawId) {
+                                      if (proposalStartTime && proposalEndTime && proposalStartTime >= proposalEndTime) {
+                                        toast.error('Thời gian kết thúc phải sau thời gian bắt đầu');
+                                        return;
+                                      }
+                                      if (!proposalNote.trim()) {
+                                        toast.error('Vui lòng nhập lý do đề xuất.');
+                                        return;
+                                      }
+                                      const qty = proposalQuantity.trim() ? Number(proposalQuantity) : null;
+                                      if (qty != null && (!Number.isInteger(qty) || qty < 1)) {
+                                        toast.error('Số lượng đề xuất phải là số nguyên ≥ 1');
+                                        return;
+                                      }
+                                      if (qty != null && activeEventDetail?.quantity != null && qty >= activeEventDetail.quantity) {
+                                        toast.error(`Số lượng đề xuất phải nhỏ hơn số lượng dự kiến (${activeEventDetail.quantity})`);
+                                        return;
+                                      }
+                                      setProposalSubmitting(true);
+                                      await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, {
+                                        proposedQuantity: qty,
+                                        proposedUsageStartAt: isMultiDay ? `${proposalStartTime}:00` : buildProposalDateTime(proposalStartTime),
+                                        proposedUsageEndAt: isMultiDay ? `${proposalEndTime}:00` : buildProposalDateTime(proposalEndTime),
+                                        proposedDescription: proposalContent.trim() || undefined,
+                                        proposalNote: proposalNote.trim(),
+                                      });
+                                      toast.success('Đã gửi đề xuất thay đổi');
+                                      setIsProposing(false);
+                                      setProposalSubmitted(true);
+                                      setProposalContent('');
+                                      setProposalStartTime('');
+                                      setProposalEndTime('');
+                                      setProposalQuantity('');
+                                      await refetchAfterTaskAction();
+                                      const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
+                                      setActiveEventDetail(detail);
+                                    }
+                                  } catch (e: any) {
+                                    toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Gửi đề xuất thất bại');
+                                  } finally {
+                                    setProposalSubmitting(false);
+                                  }
+                                }}
+                                disabled={proposalSubmitting || !proposalNote.trim() || !proposalStartTime || !proposalEndTime || quantityTooHigh}
+                                className="px-4 py-2 rounded-lg bg-[#de703b] text-white hover:bg-[#c9602c] font-bold text-xs disabled:opacity-50"
+                              >
+                                {proposalSubmitting ? 'Đang gửi...' : 'Gửi đề xuất'}
+                              </button>
                             </div>
                           </div>
                         </div>
+
                       </div>
                     )}
 
@@ -3688,10 +3871,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   const toPascalSig = (sig: any) => sig?.name ? { Name: sig.name, SignedAt: sig.signedAt } : null;
                   const isAssignedToOther = activeEventDetail.assigneeId && activeEventDetail.assigneeId !== currentUserId;
                   const readOnlyHandover = isDeptLeader && isAssignedToOther;
+                  // "Chốt": số lượng đã được Host CHẤP NHẬN đề xuất thay proposedQuantity cho
+                  // quantity gốc — biên bản bàn giao phải dùng số này, không phải số dự kiến ban đầu.
+                  const finalQuantity = activeEventDetail.proposalResponse === 'ACCEPTED' && activeEventDetail.proposedQuantity != null
+                    ? activeEventDetail.proposedQuantity : activeEventDetail.quantity;
                   const handoverDto = {
                     LogisticsItemId: activePopoverEvent.rawId,
                     Title: activeEventDetail.title,
-                    Quantity: activeEventDetail.quantity,
+                    Quantity: finalQuantity,
+                    Description: activeEventDetail.description,
                     ItemType: activeEventDetail.itemType,
                     UsageEndTime: activeEventDetail.endTime,
                     UsageDate: activeEventDetail.date,
