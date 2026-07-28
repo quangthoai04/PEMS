@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Download, X, Loader2, PenLine, Plus, Trash2 } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
@@ -42,6 +42,17 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
       ? buildDefaultVehicleChecklist()
       : buildDefaultGenericChecklist(detailData?.Title, detailData?.Quantity);
   });
+
+  // Chỉ seed 1 lần lúc mount (useState initializer) — nếu Quantity "chốt" đổi sau đó (vd Host vừa
+  // chấp nhận đề xuất số lượng mới trong khi biên bản này đã mở), cột Số Lượng của dòng mặc định
+  // tự sinh (chưa có checklistJson đã lưu) bị kẹt ở giá trị cũ. Đồng bộ lại riêng cột qty, không
+  // đụng Giao/Nhận người dùng có thể đã gõ.
+  useEffect(() => {
+    if (detailData?.ChecklistJson) return; // đã có checklist lưu sẵn, không tự ý sửa
+    if (isVehicleHandover(detailData?.ItemType)) return; // checklist xe điện là danh mục cố định
+    const qty = detailData?.Quantity ? String(detailData.Quantity) : '';
+    setChecklistRows((rows) => rows.map((r) => (r.name === (detailData?.Title || '') ? { ...r, qty } : r)));
+  }, [detailData?.Quantity, detailData?.Title, detailData?.ChecklistJson, detailData?.ItemType]);
 
   if ((!isOpen && !inline) || !detailData) return null;
 
@@ -190,6 +201,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                   <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
                   <p className="flex-1 min-w-[200px]">Bộ phận: <b>Host (Tiếp đón)</b></p>
                 </div>
+                {detailData.Description && (
+                  <p>Mô tả: <b>{detailData.Description}</b></p>
+                )}
                 <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
                 <p>Đoàn khách: <b>{detailData.DelegationName}</b></p>
                 {isVehicle ? (
