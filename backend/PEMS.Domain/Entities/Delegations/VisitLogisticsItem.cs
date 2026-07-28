@@ -74,6 +74,8 @@ public class VisitLogisticsItem
     [Column("assignee_response_note")]
     public string? AssigneeResponseNote { get; set; }
 
+    // Not user-editable — auto-computed on create as UsageStartAt minus 24h for SYSTEM_REQUEST items
+    // (null for OFFLINE_COORDINATED, which has no department workflow to meet a deadline for).
     [Column("due_at")]
     public DateTime? DueAt { get; set; }
 

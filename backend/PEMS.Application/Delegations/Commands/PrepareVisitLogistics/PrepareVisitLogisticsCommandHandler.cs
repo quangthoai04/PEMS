@@ -150,6 +150,11 @@ public sealed class PrepareVisitLogisticsCommandHandler
         var usageEnd = ParseLocal(request.UsageEndAt);
         var title = request.Title.Trim();
 
+        // Not user-facing: response deadline defaults to 24h before the item is due to be used.
+        // OFFLINE_COORDINATED items are recorded DONE immediately — no department workflow to meet a
+        // deadline for.
+        var dueAt = offline ? (DateTime?)null : usageStart?.AddHours(-24);
+
         // One active item per fixed category. The "Chuẩn bị chi tiết" screen identifies a fixed
         // category by (item_type, title) and shows a single active card each (Welcome LED, Xe điện,
         // Người lái, Phòng họp, Teabreak…); only "OTHER" may have many. We re-check on the server so a
@@ -197,6 +202,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 RequestedToDepartmentId = requestedDeptId,
                 RequestedAt = now,
                 CompletedAt = offline ? now : (DateTime?)null,
+                DueAt = dueAt,
                 CreatedAt = now,
                 CreatedBy = actorId,
             };
