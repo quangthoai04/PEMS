@@ -79,7 +79,7 @@ public class UploadVisitInstancePhotosCommandHandlerTests
             .Setup(s => s.EnsureUploadTargetAsync(
                 It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), "C1",
                 VisitPhotoTestSeed.StudentUserId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, CampusFolderExternalId = CampusFolderId });
+            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, PhotoFolderExternalId = CampusFolderId });
 
         var drive = new Mock<IGoogleDriveStorageService>();
 
@@ -194,7 +194,7 @@ public class UploadVisitInstancePhotosCommandHandlerTests
             .Setup(s => s.EnsureUploadTargetAsync(
                 It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), "C1",
                 DelegationsTestData.HostUserId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, CampusFolderExternalId = CampusFolderId });
+            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, PhotoFolderExternalId = CampusFolderId });
 
         // Default FakeDelegationsCurrentUser = the seeded instance Host, role STAFF / sub_role STAFF.
         var handler = new UploadVisitInstancePhotosCommandHandler(
@@ -238,7 +238,7 @@ public class UploadVisitInstancePhotosCommandHandlerTests
             .Setup(s => s.EnsureUploadTargetAsync(
                 It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), "C1",
                 leaderUserId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, CampusFolderExternalId = CampusFolderId });
+            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, PhotoFolderExternalId = CampusFolderId });
 
         // Not the Host and never added as a participant of this instance — universal Staff/Admin
         // access is the only reason this succeeds.
@@ -429,7 +429,7 @@ public class UploadVisitInstancePhotosCommandHandlerTests
             .Setup(s => s.EnsureUploadTargetAsync(
                 It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), It.IsAny<string>(),
                 It.IsAny<ulong>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, CampusFolderExternalId = CampusFolderId });
+            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, PhotoFolderExternalId = CampusFolderId });
         var drive = new Mock<IGoogleDriveStorageService>();
 
         var handler = new UploadVisitInstancePhotosCommandHandler(
