@@ -110,6 +110,8 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             RequireImageMagicBytes = false,
         },
 
+        // Also backs the VisitDuringTab "Tài liệu" upload widget, whose own label promises
+        // "pdf, docx, xlsx" (plus images) — xlsx is included here to match.
         FilePurpose.VisitRequestAttachment => new FileValidationRule
         {
             MaxSizeBytes = 10 * Mb,
@@ -117,11 +119,12 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             {
                 "application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "image/jpeg",
                 "image/png",
             },
             AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".pdf", ".docx", ".jpg", ".jpeg", ".png" },
+            { ".pdf", ".docx", ".xlsx", ".jpg", ".jpeg", ".png" },
             RequireImageMagicBytes = false,
         },
 
@@ -137,6 +140,21 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
             },
             AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".pdf", ".jpg", ".jpeg", ".png", ".webp" },
+            RequireImageMagicBytes = false,
+        },
+
+        // Server-generated report exports (PDF via QuestPDF, Excel via ClosedXML, or CSV) — never
+        // user-uploaded, but IFileUploadService still runs every purpose through this same rule.
+        FilePurpose.ReportDocument => new FileValidationRule
+        {
+            MaxSizeBytes = 25 * Mb,
+            AllowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "text/csv",
+            },
+            AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".pdf", ".xlsx", ".csv" },
             RequireImageMagicBytes = false,
         },
 

@@ -3884,6 +3884,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     ? activeEventDetail.proposedQuantity : activeEventDetail.quantity;
                   const handoverDto = {
                     LogisticsItemId: activePopoverEvent.rawId,
+                    VisitInstanceId: activeEventDetail.visitInstanceId,
                     Title: activeEventDetail.title,
                     Quantity: finalQuantity,
                     Description: activeEventDetail.description,

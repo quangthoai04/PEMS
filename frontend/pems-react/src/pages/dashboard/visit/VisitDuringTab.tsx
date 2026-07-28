@@ -33,7 +33,7 @@ import { businessCardOcrApi } from '../../../features/business-card-ocr/api/busi
 import { showLoadingToast, updateToastSuccess, updateToastError, showMessageErrorToast } from '../../../shared/utils/toast';
 import type { VisitProcessGuestMember } from '../../../features/delegations/types/delegations.types';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
-import { filesApi } from '../../../shared/api/filesApi';
+import { visitDocumentsApi } from '../../../features/delegations/api/visitDocumentsApi';
 
 export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstanceId, guestMembers = [], supportMembers = [] }: { isReadOnly?: boolean, isDept?: boolean, visitInstanceId?: number, guestMembers?: VisitProcessGuestMember[], supportMembers?: VisitProcessGuestMember[] }) {
   const navigate = useNavigate();
@@ -89,10 +89,11 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
   // Document and Contact Linkage States
   const [partnerDocFile, setPartnerDocFile] = useState<{ name: string; size: string; type: string } | null>(null);
-  const [selectedPartnerForDoc, setSelectedPartnerForDoc] = useState("");
+  // 0..N partners tagged to the document being prepared. Empty = saved as "Theo đoàn khách" (VISIT).
+  const [selectedPartnersForDoc, setSelectedPartnersForDoc] = useState<string[]>([]);
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const [docError, setDocError] = useState("");
-  // Documents added THIS session. The real record is the backend (partnersApi.addDocument), but
+  // Documents added THIS session. The real record is the backend (visitDocumentsApi.upload), but
   // there is no "documents uploaded during visit X" query to rehydrate this list from — a document
   // here can be linked to any partner name typed in, not just the visit's own delegation. So this
   // display list is mirrored into localStorage keyed by visitInstanceId, purely to survive a page
@@ -101,7 +102,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
     id: number;
     fileName: string;
     fileSize: string;
-    partner: string;
+    partners: string[];
     uploadedAt: string;
   }>>([]);
   const uploadedDocumentsStorageKey = visitInstanceId ? `visitDuringTab.uploadedDocuments.${visitInstanceId}` : null;
@@ -150,47 +151,33 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
   };
 
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const toggleSelectedPartnerForDoc = (name: string) => {
+    setSelectedPartnersForDoc(prev =>
+      prev.includes(name) ? prev.filter(p => p !== name) : [...prev, name]);
+  };
   const handleAddDocument = async () => {
     if (!partnerDocFile || !docFileInputRef.current?.files?.[0]) {
       setDocError("Vui lòng tải lên tài liệu / ảnh.");
       return;
     }
-    if (!selectedPartnerForDoc) {
-      setDocError("Vui lòng chọn đối tác liên kết.");
+    if (!visitInstanceId) {
+      setDocError("Không xác định được chuyến tiếp khách.");
       return;
     }
     setDocError("");
     setIsUploadingDoc(true);
     const toastId = showLoadingToast('Đang tải lên tài liệu...', 'upload-doc');
     try {
-      // 1. Resolve partner ID
-      let partnerId: number | null = null;
-      const searchRes = await partnersApi.getPartners({ search: selectedPartnerForDoc, pageSize: 1 });
-      if (searchRes.items.length > 0 && searchRes.items[0].name.toLowerCase() === selectedPartnerForDoc.toLowerCase()) {
-        partnerId = searchRes.items[0].partnerId;
-      } else {
-        const newP = await partnersApi.createPartner({
-          name: selectedPartnerForDoc,
-          source: 'MANUAL'
-        });
-        partnerId = newP.partnerId;
-      }
-
-      // 2. Upload file
-      const uploadedFile = await filesApi.upload(docFileInputRef.current.files[0], 'PARTNER_DOCUMENT');
-
-      // 3. Save document to partner
-      await partnersApi.addDocument(partnerId, {
-         fileId: uploadedFile.fileId,
-         title: partnerDocFile.name,
-         documentCategory: 'MOU_MOA_AGREEMENT'
-      });
+      // Backend resolves/creates từng đối tác theo tên và lưu 1 file, N document (mỗi đối tác 1
+      // document trỏ cùng fileId) — hoặc 1 document loại "Theo đoàn khách" nếu không chọn đối tác nào.
+      const result = await visitDocumentsApi.upload(
+        visitInstanceId, docFileInputRef.current.files[0], partnerDocFile.name, selectedPartnersForDoc);
 
       const newDoc = {
         id: Date.now(),
-        fileName: partnerDocFile.name,
+        fileName: result.fileName || partnerDocFile.name,
         fileSize: partnerDocFile.size,
-        partner: selectedPartnerForDoc,
+        partners: result.partners.map(p => p.partnerName),
         uploadedAt: vietnamNowDateTimeLocal().replace('T', ' ')
       };
       setUploadedDocuments(prev => {
@@ -201,6 +188,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
         return next;
       });
       setPartnerDocFile(null);
+      setSelectedPartnersForDoc([]);
       if (docFileInputRef.current) {
         docFileInputRef.current.value = "";
       }
@@ -214,7 +202,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
 
   const handleCancelDocument = () => {
     setPartnerDocFile(null);
-    setSelectedPartnerForDoc("");
+    setSelectedPartnersForDoc([]);
     setDocError("");
     if (docFileInputRef.current) {
       docFileInputRef.current.value = "";
@@ -354,24 +342,47 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                     </div>
 
                     <div className="space-y-1.5 font-sans">
-                      <label className="block text-sm font-bold text-gray-700">Chọn đối tác liên kết tài liệu này</label>
-                      <select
-                        value={selectedPartnerForDoc}
-                        onChange={(e) => setSelectedPartnerForDoc(e.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none bg-white focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all"
-                      >
-                        <option value="">-- Chọn đối tác --</option>
-                        <optgroup label="Đối tác Draft (tạo ở trên)">
-                          {getAvailablePartners().drafts.map((org, idx) => (
-                            <option key={`doc-draft-${idx}`} value={org}>{org}</option>
+                      <label className="block text-sm font-bold text-gray-700">
+                        Chọn đối tác liên kết tài liệu này <span className="font-normal text-gray-400 normal-case">(có thể chọn nhiều, để trống = Theo đoàn khách)</span>
+                      </label>
+                      {selectedPartnersForDoc.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-1.5">
+                          {selectedPartnersForDoc.map((name) => (
+                            <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#004c91]/10 text-[#004c91] text-[11px] font-bold rounded-full">
+                              {name}
+                              <button type="button" onClick={() => toggleSelectedPartnerForDoc(name)} className="hover:text-red-600 cursor-pointer outline-none">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
                           ))}
-                        </optgroup>
-                        <optgroup label="Đối tác đã có trên hệ thống">
-                          {getAvailablePartners().existing.map((org, idx) => (
-                            <option key={`doc-existing-${idx}`} value={org}>{org}</option>
-                          ))}
-                        </optgroup>
-                      </select>
+                        </div>
+                      )}
+                      <div className="border border-gray-300 rounded-xl bg-white max-h-40 overflow-y-auto divide-y divide-gray-100">
+                        {getAvailablePartners().drafts.length === 0 && getAvailablePartners().existing.length === 0 ? (
+                          <p className="px-3 py-2.5 text-xs text-gray-400">Chưa có đối tác gợi ý — để trống sẽ lưu theo đoàn khách.</p>
+                        ) : (
+                          <>
+                            {getAvailablePartners().drafts.length > 0 && (
+                              <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Đối tác Draft (tạo ở trên)</div>
+                            )}
+                            {getAvailablePartners().drafts.map((org, idx) => (
+                              <label key={`doc-draft-${idx}`} className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" checked={selectedPartnersForDoc.includes(org)} onChange={() => toggleSelectedPartnerForDoc(org)} className="accent-[#004c91]" />
+                                {org}
+                              </label>
+                            ))}
+                            {getAvailablePartners().existing.length > 0 && (
+                              <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Đối tác đã có trên hệ thống</div>
+                            )}
+                            {getAvailablePartners().existing.map((org, idx) => (
+                              <label key={`doc-existing-${idx}`} className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" checked={selectedPartnersForDoc.includes(org)} onChange={() => toggleSelectedPartnerForDoc(org)} className="accent-[#004c91]" />
+                                {org}
+                              </label>
+                            ))}
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {docError && (
@@ -404,7 +415,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                     
                     {uploadedDocuments.length === 0 ? (
                       <div className="p-4 sm:p-6 md:p-8 text-center border-2 border-dashed border-gray-200 rounded-xl text-gray-400 text-xs bg-white">
-                        Chưa có tài liệu nào thuộc đối tác này được tải lên trong phiên.
+                        Chưa có tài liệu nào được tải lên trong phiên này.
                       </div>
                     ) : (
                       <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
@@ -415,7 +426,13 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                                 <FileText className="w-4 h-4 text-orange-500 shrink-0" />
                                 {doc.fileName}
                               </div>
-                              <div className="text-[10px] text-gray-500 font-medium">Đối tác: <span className="font-bold text-[#004c91]">{doc.partner}</span> • {doc.fileSize}</div>
+                              <div className="text-[10px] text-gray-500 font-medium">
+                                {doc.partners.length > 0 ? (
+                                  <>Đối tác: <span className="font-bold text-[#004c91]">{doc.partners.join(', ')}</span></>
+                                ) : (
+                                  <span className="font-bold text-[#004c91]">Theo đoàn khách</span>
+                                )} • {doc.fileSize}
+                              </div>
                               <div className="text-[9px] text-gray-400">{doc.uploadedAt}</div>
                             </div>
                             <button

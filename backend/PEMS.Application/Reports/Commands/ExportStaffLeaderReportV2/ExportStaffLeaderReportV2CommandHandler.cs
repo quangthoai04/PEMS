@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using ClosedXML.Excel;
 using MediatR;
 using PEMS.Application.Common;
+using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -28,10 +29,15 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
     private static readonly string[] AllSections = { "VISITS", "PERSONNEL", "DEPARTMENTS" };
 
     private readonly IMediator _mediator;
+    private readonly ICurrentUserService _currentUser;
+    private readonly Reports.Common.IReportArchiveService _reportArchive;
 
-    public ExportStaffLeaderReportV2CommandHandler(IMediator mediator)
+    public ExportStaffLeaderReportV2CommandHandler(
+        IMediator mediator, ICurrentUserService currentUser, Reports.Common.IReportArchiveService reportArchive)
     {
         _mediator = mediator;
+        _currentUser = currentUser;
+        _reportArchive = reportArchive;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -57,7 +63,7 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
         };
         var baseName = $"PEMS_BaoCao_Campus_{VietnamTime.Now():yyyyMMdd_HHmm}";
 
-        return format switch
+        var result = format switch
         {
             "CSV" => new ExportStaffLeaderReportV2Result
             {
@@ -78,6 +84,15 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                 FileName = baseName + ".xlsx",
             },
         };
+
+        if (_currentUser.UserId is { } userId)
+        {
+            await _reportArchive.ArchiveAsync(
+                result.Content, result.FileName, result.ContentType, "STAFF_LEADER_REPORT_V2",
+                _currentUser.PrimaryCampusId, userId, cancellationToken);
+        }
+
+        return result;
     }
 
     private static string RoleLabel(string role) => role switch

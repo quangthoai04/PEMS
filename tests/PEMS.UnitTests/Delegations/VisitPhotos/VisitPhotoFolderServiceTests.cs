@@ -44,13 +44,15 @@ public class VisitPhotoFolderServiceTests
             .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-vr", WebViewUrl = "https://drive/vr" });
         drive.Setup(d => d.EnsureChildFolderAsync("C1", "drv-vr", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-campus" });
+        drive.Setup(d => d.EnsureChildFolderAsync("Ảnh", "drv-campus", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-photo" });
 
         var service = new VisitPhotoFolderService(
             db, drive.Object, Resolver().Object, NullLogger<VisitPhotoFolderService>.Instance);
 
         var target = await service.EnsureUploadTargetAsync(instance, "C1", 200, default);
 
-        Assert.Equal("drv-campus", target.CampusFolderExternalId);
+        Assert.Equal("drv-photo", target.PhotoFolderExternalId);
         var row = Assert.Single(db.VisitPhotoFolders.ToList());
         Assert.Equal($"VR-{instance.VisitRequestId}", row.FolderName);
         Assert.Equal("drv-vr", row.ExternalFolderId);
@@ -68,6 +70,8 @@ public class VisitPhotoFolderServiceTests
         var drive = new Mock<IGoogleDriveStorageService>(MockBehavior.Strict);
         drive.Setup(d => d.EnsureChildFolderAsync("C1", existing.ExternalFolderId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-campus" });
+        drive.Setup(d => d.EnsureChildFolderAsync("Ảnh", "drv-campus", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-photo" });
 
         var service = new VisitPhotoFolderService(
             db, drive.Object, Resolver().Object, NullLogger<VisitPhotoFolderService>.Instance);
@@ -75,9 +79,9 @@ public class VisitPhotoFolderServiceTests
         var target = await service.EnsureUploadTargetAsync(instance, "C1", 200, default);
 
         Assert.Equal(existing.VisitPhotoFolderId, target.Folder.VisitPhotoFolderId);
-        Assert.Equal("drv-campus", target.CampusFolderExternalId);
+        Assert.Equal("drv-photo", target.PhotoFolderExternalId);
         Assert.Single(db.VisitPhotoFolders.ToList());
-        drive.VerifyAll(); // strict: only the campus ensure ran — no second VR folder was created
+        drive.VerifyAll(); // strict: only the campus + Ảnh ensures ran — no second VR folder was created
     }
 
     /// <summary>Simulates the uq_visit_photo_folders_request duplicate-key failure the InMemory
@@ -129,6 +133,8 @@ public class VisitPhotoFolderServiceTests
             });
         drive.Setup(d => d.EnsureChildFolderAsync("C1", "drv-winner", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-campus" });
+        drive.Setup(d => d.EnsureChildFolderAsync("Ảnh", "drv-campus", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleDriveFolderResult { ExternalFolderId = "drv-photo" });
 
         var service = new VisitPhotoFolderService(
             db, drive.Object, Resolver().Object, NullLogger<VisitPhotoFolderService>.Instance);
@@ -137,7 +143,7 @@ public class VisitPhotoFolderServiceTests
 
         // The loser adopted the winner's folder and dropped its own duplicate Drive folder.
         Assert.Equal("drv-winner", target.Folder.ExternalFolderId);
-        Assert.Equal("drv-campus", target.CampusFolderExternalId);
+        Assert.Equal("drv-photo", target.PhotoFolderExternalId);
         drive.Verify(d => d.DeleteAsync("drv-loser", It.IsAny<CancellationToken>()), Times.Once);
 
         using var verifyDb = new DelegationsTestDbContext(Options(dbName));

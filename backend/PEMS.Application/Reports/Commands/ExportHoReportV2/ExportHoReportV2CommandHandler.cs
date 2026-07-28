@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using ClosedXML.Excel;
 using MediatR;
 using PEMS.Application.Common;
+using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Reports.Queries.GetHoReportV2;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -28,10 +29,15 @@ public sealed class ExportHoReportV2CommandHandler
     private static readonly string[] AllSections = { "OVERVIEW", "PARTNERS" };
 
     private readonly IMediator _mediator;
+    private readonly ICurrentUserService _currentUser;
+    private readonly Reports.Common.IReportArchiveService _reportArchive;
 
-    public ExportHoReportV2CommandHandler(IMediator mediator)
+    public ExportHoReportV2CommandHandler(
+        IMediator mediator, ICurrentUserService currentUser, Reports.Common.IReportArchiveService reportArchive)
     {
         _mediator = mediator;
+        _currentUser = currentUser;
+        _reportArchive = reportArchive;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -57,7 +63,7 @@ public sealed class ExportHoReportV2CommandHandler
         };
         var baseName = $"PEMS_BaoCao_HeThong_{VietnamTime.Now():yyyyMMdd_HHmm}";
 
-        return format switch
+        var result = format switch
         {
             "CSV" => new ExportHoReportV2Result
             {
@@ -78,6 +84,15 @@ public sealed class ExportHoReportV2CommandHandler
                 FileName = baseName + ".xlsx",
             },
         };
+
+        if (_currentUser.UserId is { } userId)
+        {
+            await _reportArchive.ArchiveAsync(
+                result.Content, result.FileName, result.ContentType, "HO_REPORT_V2",
+                _currentUser.PrimaryCampusId, userId, cancellationToken);
+        }
+
+        return result;
     }
 
     private static string Fb(double? avg, int count) => avg != null ? $"{avg.Value.ToString("0.0", Vi)}★ ({count})" : "—";

@@ -277,6 +277,10 @@ export const API_ENDPOINTS = {
     // VisitProcess "Đang/Sau tiếp khách": Host signs the BORROWER side of a borrow/return handover.
     signLogisticsHandoverBorrower: (visitInstanceId: string | number, logisticsItemId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/handovers/sign-borrower`,
+    // "Lưu vào hệ thống" — generates the handover PDF server-side and archives it as a document.
+    saveLogisticsHandoverDocument: (
+      visitInstanceId: string | number, logisticsItemId: string | number, handoverType: string,
+    ) => `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/handovers/${handoverType}/save-document`,
     // Host responds to a Department's change proposal (accept commits effective; reject keeps planned).
     confirmChangeProposal: '/delegations/confirmthechangeproposal',
     // "Xem mail đã gửi": sent-email history for one target (participant invitation / logistics request).
@@ -310,6 +314,11 @@ export const API_ENDPOINTS = {
     faceScanDetail: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}`,
     taggableGuests: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/taggable-guests`,
     confirmFaceTags: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}/confirm`,
+  },
+  // "Tài liệu" upload widget of a visit-in-progress (VisitDuringTab) — documents/documents rows,
+  // routed into the delegation's Drive folder (Theo đoàn khách / Đối tác / Hậu cần subfolders).
+  visitDocuments: {
+    upload: (visitInstanceId: string | number) => `/visit-documents/instances/${visitInstanceId}/upload`,
   },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {
