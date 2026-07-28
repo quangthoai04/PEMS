@@ -132,6 +132,19 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
+  const [savingDocType, setSavingDocType] = useState<LogisticsHandoverType | null>(null);
+  const handleSaveDocument = async (type: LogisticsHandoverType, logisticsItemId: number) => {
+    if (!visitInstanceId) return;
+    setSavingDocType(type);
+    try {
+      await delegationsApi.saveLogisticsHandoverDocument(visitInstanceId, logisticsItemId, type);
+      pushToast?.('success', 'Đã lưu biên bản vào hệ thống.');
+    } catch (e: any) {
+      pushToast?.('error', apiError(e, 'Không thể lưu biên bản vào hệ thống.'));
+    } finally {
+      setSavingDocType(null);
+    }
+  };
   // Checklist bàn giao (mọi loại hạng mục — không chỉ xe điện): cột "Tình trạng nghiệm thu" là ô
   // DUY NHẤT Host được sửa, và chỉ lúc ký RETURN (NT1) sau khi cả 2 bên đã ký xong BORROW.
   const [checklistDraft, setChecklistDraft] = useState<VehicleChecklistRow[]>([]);
@@ -737,6 +750,36 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                         </div>
                       </div>
                     </div>
+
+                    {/* "Lưu vào hệ thống" — sinh PDF thật phía backend (khác nút Tải PDF ở trên,
+                        chỉ in trang hiện tại) và lưu vào Quản lý tài liệu (loại Hậu cần). Chỉ bật
+                        khi đủ 2 chữ ký và người xem có quyền quản lý (Host). */}
+                    {canManage && (isBorrowDone || (nt1 && nt2)) && (
+                      <div className="flex flex-wrap gap-3 print:hidden">
+                        {isBorrowDone && (
+                          <button
+                            type="button"
+                            disabled={savingDocType !== null}
+                            onClick={() => handleSaveDocument('BORROW', signTarget.item.logisticsItemId)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {savingDocType === 'BORROW' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                            Lưu biên bản bàn giao vào hệ thống
+                          </button>
+                        )}
+                        {nt1 && nt2 && (
+                          <button
+                            type="button"
+                            disabled={savingDocType !== null}
+                            onClick={() => handleSaveDocument('RETURN', signTarget.item.logisticsItemId)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {savingDocType === 'RETURN' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                            Lưu biên bản nghiệm thu vào hệ thống
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Ghi chú chi phí — chỉ hiện khi phòng ban đã lưu báo cáo chi phí (panel tự
                         fetch, tự ẩn nếu chưa có báo cáo hoặc chưa được xem). Host chỉ xem, không sửa. */}

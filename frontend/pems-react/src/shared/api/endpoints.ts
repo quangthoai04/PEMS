@@ -277,6 +277,10 @@ export const API_ENDPOINTS = {
     // VisitProcess "Đang/Sau tiếp khách": Host signs the BORROWER side of a borrow/return handover.
     signLogisticsHandoverBorrower: (visitInstanceId: string | number, logisticsItemId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/handovers/sign-borrower`,
+    // "Lưu vào hệ thống" — generates the handover PDF server-side and archives it as a document.
+    saveLogisticsHandoverDocument: (
+      visitInstanceId: string | number, logisticsItemId: string | number, handoverType: string,
+    ) => `/delegations/visit-instances/${visitInstanceId}/logistics/${logisticsItemId}/handovers/${handoverType}/save-document`,
     // Host responds to a Department's change proposal (accept commits effective; reject keeps planned).
     confirmChangeProposal: '/delegations/confirmthechangeproposal',
     // "Xem mail đã gửi": sent-email history for one target (participant invitation / logistics request).
