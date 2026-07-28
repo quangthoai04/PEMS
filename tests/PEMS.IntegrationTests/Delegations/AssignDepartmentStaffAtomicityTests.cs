@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -272,8 +273,12 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
     [Fact]
     public async Task A_concurrent_role_change_cannot_slip_under_the_eligibility_checks()
     {
+        // A holds the lock this long after B has been released to call the handler; B cannot finish
+        // sooner than that unless it skipped the lock entirely.
+        var hold = TimeSpan.FromMilliseconds(750);
+        var blockedFloor = TimeSpan.FromMilliseconds(400);
+
         var roleChangeHoldsLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var roleChangeCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Transaction A: lock the staff account and re-role it out of the department.
         var roleChange = Task.Run(async () =>
@@ -287,7 +292,7 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
 
             roleChangeHoldsLock.SetResult();
             // Hold it long enough that the assignment is definitely queued behind the lock.
-            await Task.Delay(750);
+            await Task.Delay(hold);
 
             var studentRoleId = await db.Roles.AsNoTracking()
                 .Where(r => r.RoleCode == RoleCodes.Student).Select(r => r.RoleId).FirstAsync();
@@ -297,7 +302,6 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
                 studentRoleId, _staffUserId);
 
             await tx.CommitAsync();
-            roleChangeCommitted.SetResult();
         });
 
         // Transaction B: the real assignment handler, wanting the same account.
@@ -308,15 +312,20 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             using var scope = _factory.Services.CreateScope();
             var handler = CreateHandler(scope, scope.ServiceProvider.GetRequiredService<ISystemEmailDispatcher>());
 
-            return await Record.ExceptionAsync(() => handler.Handle(NewCommand(), CancellationToken.None));
+            var blocked = Stopwatch.StartNew();
+            var error = await Record.ExceptionAsync(() => handler.Handle(NewCommand(), CancellationToken.None));
+            blocked.Stop();
+            return (Error: error, Waited: blocked.Elapsed);
         });
 
         await roleChange.WaitAsync(LockWait);
-        var thrown = await assignment.WaitAsync(LockWait);
+        var (thrown, waited) = await assignment.WaitAsync(LockWait);
 
-        // It waited for the lock rather than racing past it.
-        Assert.True(roleChangeCommitted.Task.IsCompletedSuccessfully,
-            "The assignment finished before the role change committed — it is not contending on the user lock.");
+        // It waited for the lock rather than racing past it. Measured, not inferred from a signal: the
+        // handler cannot return while another transaction holds the row it must lock first.
+        Assert.True(waited >= blockedFloor,
+            $"The assignment returned after only {waited.TotalMilliseconds:F0} ms while the role change held "
+            + $"the user lock for {hold.TotalMilliseconds:F0} ms — it is not contending on the user lock.");
 
         // Having waited, it saw the committed STUDENT role and refused.
         Assert.NotNull(thrown);
