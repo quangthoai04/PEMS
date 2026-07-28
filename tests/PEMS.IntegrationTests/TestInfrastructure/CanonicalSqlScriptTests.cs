@@ -31,7 +31,7 @@ public sealed class CanonicalSqlScriptTests
     public void Canonical_script_hash_matches_the_pinned_value()
     {
         var path = CanonicalSqlScript.ResolvePath();
-        var actual = CanonicalSqlScript.ComputeSha256(path);
+        var actual = CanonicalSqlScript.ComputeNormalizedSha256(path);
 
         Assert.True(
             string.Equals(actual, CanonicalSqlScript.ExpectedSha256, StringComparison.OrdinalIgnoreCase),
