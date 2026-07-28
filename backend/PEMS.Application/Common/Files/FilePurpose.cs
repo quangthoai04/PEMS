@@ -43,6 +43,12 @@ public enum FilePurpose
     PartnerDocument,
     LogisticsAttachment,
     BusinessCard,
+    /// <summary>
+    /// Staff Leader/Dept Leader/HO report export (PDF/Excel/CSV) — a date-range/campus aggregate
+    /// across many delegations, so it archives into the flat "Report" Drive folder (never nested
+    /// under a delegation), created by <see cref="Reports.Common.IReportArchiveService"/>.
+    /// </summary>
+    ReportDocument,
     Other,
 }
 
@@ -74,6 +80,7 @@ public static class FilePurposeDbValues
     public const string PartnerDocument = "PARTNER_DOCUMENT";
     public const string LogisticsAttachment = "LOGISTICS_ATTACHMENT";
     public const string BusinessCard = "BUSINESS_CARD";
+    public const string ReportDocument = "REPORT_DOCUMENT";
     public const string Other = "OTHER";
 }
 
@@ -103,6 +110,7 @@ public static class FilePurposeExtensions
         FilePurpose.PartnerDocument => FilePurposeDbValues.PartnerDocument,
         FilePurpose.LogisticsAttachment => FilePurposeDbValues.LogisticsAttachment,
         FilePurpose.BusinessCard => FilePurposeDbValues.BusinessCard,
+        FilePurpose.ReportDocument => FilePurposeDbValues.ReportDocument,
         _ => FilePurposeDbValues.Other,
     };
 
@@ -128,6 +136,7 @@ public static class FilePurposeExtensions
         FilePurpose.PartnerDocument => "partners",
         FilePurpose.LogisticsAttachment => "logistics",
         FilePurpose.BusinessCard => "business-cards",
+        FilePurpose.ReportDocument => "reports",
         _ => "other",
     };
 }

@@ -55,6 +55,10 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService,
             PEMS.Application.Delegations.VisitPhotos.VisitPhotoFolderService>();
 
+        // Archives report exports (PDF/Excel/CSV) to the flat "Report" Drive folder + documents row.
+        services.AddScoped<PEMS.Application.Reports.Common.IReportArchiveService,
+            PEMS.Application.Reports.Common.ReportArchiveService>();
+
         return services;
     }
 }
