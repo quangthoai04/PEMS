@@ -234,7 +234,7 @@ export function LogisticsRequestSection({
       }
       return isVehicleHandover(item.itemType)
         ? buildDefaultVehicleChecklist()
-        : buildDefaultGenericChecklist(item.title, item.quantity);
+        : buildDefaultGenericChecklist(item.title, finalQuantity(item));
     })();
     setChecklistDraft(rows);
   };
@@ -536,6 +536,7 @@ export function LogisticsRequestSection({
               <LogisticsListRow
                 key={it.logisticsItemId}
                 it={it}
+                delegationName={delegationName}
                 canManage={canManage}
                 busy={busyKey === `proposal-${it.logisticsItemId}`}
                 onRespond={respondToProposal}
@@ -728,6 +729,9 @@ export function LogisticsRequestSection({
                           <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
                           <p className="flex-1 min-w-[200px]">Bộ phận: <b>Người phụ trách tiếp đón</b></p>
                         </div>
+                        {signTarget.item.description && (
+                          <p>Mô tả: <b>{signTarget.item.description}</b></p>
+                        )}
                         <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
                         <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>
                       </div>
@@ -735,8 +739,8 @@ export function LogisticsRequestSection({
 
                     <p className="font-bold text-[15px] mb-2">
                       {isVehicle
-                        ? `Cùng bàn giao xe ${signTarget.item.quantity || 1} ô tô điện với tình trạng sau:`
-                        : `Cùng bàn giao ${signTarget.item.quantity || 1} ${signTarget.item.title || 'hạng mục'} với tình trạng sau:`}
+                        ? `Cùng bàn giao xe ${finalQuantity(signTarget.item) || 1} ô tô điện với tình trạng sau:`
+                        : `Cùng bàn giao ${finalQuantity(signTarget.item) || 1} ${signTarget.item.title || 'hạng mục'} với tình trạng sau:`}
                     </p>
                     <div className="overflow-x-auto mb-6">
                       <table className="w-full border-collapse border border-slate-500 text-[14px]">
@@ -1686,6 +1690,15 @@ function finalQuantity(it: VisitInstanceLogisticsItem): number | null | undefine
   return it.proposalResponse === 'ACCEPTED' && it.proposedQuantity != null ? it.proposedQuantity : it.quantity;
 }
 
+// Tiêu đề tự nhập đôi khi lặp lại tên đoàn khách (vd "Phòng họp HN cho Đoàn X") dù cả trang đã
+// scope theo đúng đoàn đó — cắt hậu tố " cho {tên đoàn}" khi hiển thị cho gọn, không đụng dữ liệu
+// gốc. Chỉ cắt khi khớp CHÍNH XÁC tên đoàn hiện tại, tránh cắt nhầm nội dung hợp lệ chứa " cho ".
+function displayItemTitle(title: string, delegationName?: string): string {
+  if (!delegationName) return title;
+  const suffix = ` cho ${delegationName}`;
+  return title.toLowerCase().endsWith(suffix.toLowerCase()) ? title.slice(0, title.length - suffix.length).trim() : title;
+}
+
 function getStatusBadgeCls(status: string, fallback: string) {
   if (['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS'].includes(status)) return 'bg-blue-50 text-blue-700 border-blue-200';
   if (status === 'DONE') return 'bg-green-50 text-green-700 border-green-200';
@@ -1694,8 +1707,9 @@ function getStatusBadgeCls(status: string, fallback: string) {
   return fallback;
 }
 
-function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSign, canSignItem }: {
+function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onViewSent, onOpenSign, canSignItem }: {
   it: VisitInstanceLogisticsItem;
+  delegationName?: string;
   canManage: boolean;
   busy: boolean;
   onRespond: (item: VisitInstanceLogisticsItem, accepted: boolean, note: string) => void;
@@ -1708,6 +1722,7 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
   const offline = it.coordinationMode === 'OFFLINE_COORDINATED';
   const proposed = it.status === 'CHANGE_PROPOSED';
   const finalQty = finalQuantity(it);
+  const displayTitle = displayItemTitle(it.title, delegationName);
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -1728,7 +1743,7 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
         {/* Title & Quantity */}
         <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h4 className="text-base font-bold text-slate-900 truncate" title={it.title}>{it.title}</h4>
+          <h4 className="text-base font-bold text-slate-900 truncate" title={it.title}>{displayTitle}</h4>
           <span className="inline-flex items-center rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
             {ITEM_TYPE_LABEL[it.itemType] ?? it.itemType}
           </span>
@@ -1737,7 +1752,7 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
               SL dự kiến: <b className="ml-1 text-slate-800">{it.quantity}</b>
             </span>
           )}
-          {it.proposedQuantity != null && (
+          {it.proposedQuantity != null && it.proposalResponse !== 'ACCEPTED' && (
             <span className="inline-flex items-center text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded border border-violet-200">
               Đề xuất: {it.proposedQuantity}
             </span>
@@ -1858,16 +1873,18 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
         </div>
       )}
 
-      {proposed && (
-        <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/30 p-3">
-          <div className="text-xs font-bold uppercase tracking-wide text-violet-700 mb-2">Phòng ban đề xuất thay đổi</div>
+      {(proposed || it.proposalResponse === 'ACCEPTED') && (
+        <div className={`mt-3 rounded-xl border p-3 ${proposed ? 'border-violet-200 bg-violet-50/30' : 'border-emerald-200 bg-emerald-50/30'}`}>
+          <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${proposed ? 'text-violet-700' : 'text-emerald-700'}`}>
+            {proposed ? 'Phòng ban đề xuất thay đổi' : 'Đã chấp nhận đề xuất thay đổi'}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
-            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className="text-violet-900">{it.proposedQuantity}</b></div>}
+            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className={proposed ? 'text-violet-900' : 'text-emerald-900'}>{it.proposedQuantity}</b></div>}
             {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div><span className="text-slate-500">Thời gian đề xuất:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</span></div>}
             {it.proposedDescription && <div className="sm:col-span-2"><span className="text-slate-500">Nội dung đề xuất:</span> {it.proposedDescription}</div>}
-            {it.proposalNote && <div className="sm:col-span-2 text-violet-800 font-medium">Lý do: {it.proposalNote}</div>}
+            {it.proposalNote && <div className={`sm:col-span-2 font-medium ${proposed ? 'text-violet-800' : 'text-emerald-800'}`}>Lý do: {it.proposalNote}</div>}
           </div>
-          {canManage && (!rejecting ? (
+          {proposed && canManage && (!rejecting ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button type="button" disabled={busy} onClick={() => onRespond(it, true, '')}
                 className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white outline-none hover:bg-emerald-700 transition-colors disabled:opacity-50">
