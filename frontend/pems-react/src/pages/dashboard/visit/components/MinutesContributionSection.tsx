@@ -54,8 +54,10 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
 
       <div className="space-y-4">
         {data.content ? (
+          // ql-editor (không phải "prose" — chưa cài @tailwindcss/typography) để bullet/số thứ
+          // tự/indent hiện đúng như lúc gõ trong RichTextEditor, dùng chung CSS Quill.
           <div
-            className="prose prose-sm max-w-none w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 max-h-[180px] overflow-y-auto text-sm text-slate-700"
+            className="ql-editor !h-auto !min-h-0 w-full rounded-xl border border-slate-200 bg-slate-50/60 !px-4 !py-3 max-h-[180px] overflow-y-auto text-sm text-slate-700"
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.content) }}
           />
         ) : (
