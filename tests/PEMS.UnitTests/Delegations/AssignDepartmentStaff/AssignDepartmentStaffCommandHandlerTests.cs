@@ -75,8 +75,7 @@ public class AssignDepartmentStaffCommandHandlerTests
         var dispatcher = mocks.DispatcherFor(db);
         var handler = new AssignDepartmentStaffCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, formRead.Object,
-            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
+            mocks.Storage.Object, formRead.Object);
 
         return (db, handler, user, mocks, dispatcher);
     }
@@ -236,6 +235,28 @@ public class AssignDepartmentStaffCommandHandlerTests
 
         await Assert.ThrowsAsync<ConflictException>(
             () => handler.Handle(Command(staffUserId: OtherDeptStaffId), default));
+        Assert.Empty(db.SentEmails);
+        Assert.Empty(db.EmailActionTokens);
+    }
+
+    [Theory]
+    [InlineData(UserStatuses.Inactive)]
+    [InlineData(UserStatuses.Locked)]
+    [InlineData(UserStatuses.PendingEmailConfirmation)]
+    public async Task A_leader_may_not_assign_an_account_that_is_not_active(string status)
+    {
+        // Role and department alone were not enough: a deactivated, locked or not-yet-confirmed
+        // account holds no effective authority, so assigning it a live visit responsibility creates a
+        // task nobody can act on. The sibling logistics-assignment flow already re-checked status.
+        var (db, handler, _, _, _) = CreateSut();
+        var staff = db.Users.Single(u => u.UserId == StaffId);
+        staff.Status = status;
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(Command(), default));
+
+        // Refused before anything was written.
+        Assert.Empty(db.VisitParticipants.Where(p => p.UserId == StaffId));
         Assert.Empty(db.SentEmails);
         Assert.Empty(db.EmailActionTokens);
     }

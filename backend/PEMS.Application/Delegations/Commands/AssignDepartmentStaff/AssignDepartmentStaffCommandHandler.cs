@@ -25,10 +25,11 @@ namespace PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
 /// buttons so the reception owner learns whether the person can actually come.
 /// </para>
 /// <para>
-/// <b>The write ordering here is unchanged from before this handler used the dispatcher</b> — a sequence
-/// of saves with no explicit transaction. Recording the message before the tokens is what keeps
-/// <c>email_action_tokens.sent_email_id</c> pointing at a row that exists; making the whole sequence
-/// atomic would be a change to this command's lifecycle, which is a separate decision.
+/// The whole sequence runs inside one transaction that opens by locking the staff account (see
+/// <see cref="IUserMutationLockService"/>), so an assignment cannot interleave with a role change on
+/// the same account. Recording the message before the tokens is what keeps
+/// <c>email_action_tokens.sent_email_id</c> pointing at a row that exists, and the transaction commits
+/// before anything is handed to SMTP — a transient delivery failure never loses the assignment.
 /// </para>
 /// </summary>
 public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<AssignDepartmentStaffCommand, ulong>
@@ -43,7 +44,6 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
     private readonly IVisitFormReadService _formReadService;
-    private readonly IUserMutationLockService _lockService;
 
     public AssignDepartmentStaffCommandHandler(
         IApplicationDbContext db,
@@ -53,10 +53,8 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IEmailActionTokenService tokens,
         IHtmlSanitizerService sanitizer,
         IFileStorageService storage,
-        IVisitFormReadService formReadService,
-        IUserMutationLockService lockService)
+        IVisitFormReadService formReadService)
     {
-        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -73,12 +71,6 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             throw new ForbiddenException();
 
         var userId = _currentUser.UserId.Value;
-
-        // Assigning the staff member creates an ASSIGNED participant row for them — a live
-        // responsibility. Lock the account first (see IUserMutationLockService) so this cannot
-        // interleave with a role change; every eligibility read below then sees committed state.
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
-        await _lockService.LockUsersAsync(new[] { request.DepartmentStaffUserId }, cancellationToken);
 
         var leaderParticipant = await _db.VisitParticipants
             .FirstOrDefaultAsync(p => p.ParticipantId == request.ParticipantId, cancellationToken)
@@ -103,6 +95,13 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         // Kiểm tra target user cũng phải là DEPT và cùng department
         if (targetStaff.Role?.RoleCode != RoleCodes.Department || targetStaff.DepartmentId != _currentUser.DepartmentId)
             throw new ConflictException("Người được phân công phải thuộc cùng phòng ban.");
+
+        // Read under the lock taken above, so this sees committed state. Role and department alone are
+        // not enough: a deactivated, locked or not-yet-confirmed account holds no effective authority
+        // (see UserStatuses), and assigning it a live visit responsibility would create a task nobody
+        // can act on. Every sibling assignment flow already re-checks status here.
+        if (targetStaff.Status != UserStatuses.Active)
+            throw new ConflictException("Người được phân công phải là tài khoản đang hoạt động.");
 
         var now = _clock.VietnamNow;
         var content = ResolveContent(request.EmailOverride);
@@ -244,8 +243,6 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             CreatedAt = now,
         });
         await _db.SaveChangesAsync(cancellationToken);
-        // Durable before the email goes out: a transient SMTP failure must never lose the assignment.
-        await transaction.CommitAsync(cancellationToken);
 
         // Attachment bytes are streamed after the rows are saved, so a slow file store cannot delay the
         // assignment itself; a failure here leaves the message FAILED and resendable.
