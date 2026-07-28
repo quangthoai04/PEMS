@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -194,8 +195,16 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
     [Fact]
     public async Task RoleChangeHoldsTheLock_AssignmentWaitsThenSeesTheNewRole()
     {
-        var roleChangeCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var assignmentStartedWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // A holds the lock for this long AFTER B is known to be contending for it, so B's wait is
+        // caused by the lock rather than by B simply starting late.
+        var hold = TimeSpan.FromMilliseconds(500);
+
+        // Scheduling noise is single-digit milliseconds; an unlocked SELECT returns in ~0. A floor at
+        // half the hold separates "genuinely blocked" from "not blocked" without depending on runner speed.
+        var blockedFloor = TimeSpan.FromMilliseconds(250);
+
+        var roleChangeHoldsTheLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var assignmentIsContending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Transaction A: lock the account, change its role, commit.
         var roleChange = Task.Run(async () =>
@@ -206,10 +215,11 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
 
             await using var tx = await db.Database.BeginTransactionAsync();
             await locks.LockUsersAsync(new[] { _targetUserId }, CancellationToken.None);
+            roleChangeHoldsTheLock.SetResult();
 
-            // Hold the lock until B has definitely started contending for it.
-            assignmentStartedWaiting.SetResult();
-            await Task.Delay(500);
+            // Keep holding until B has asked for the same lock, then a while longer.
+            await assignmentIsContending.Task.WaitAsync(LockWait);
+            await Task.Delay(hold);
 
             var studentRoleId = await db.Roles.AsNoTracking()
                 .Where(r => r.RoleCode == RoleCodes.Student).Select(r => r.RoleId).FirstAsync();
@@ -218,24 +228,25 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
                 studentRoleId, _targetUserId);
 
             await tx.CommitAsync();
-            roleChangeCommitted.SetResult();
         });
 
         // Transaction B: wants the same lock in order to assign a Host.
         var assignment = Task.Run(async () =>
         {
-            await assignmentStartedWaiting.Task;
+            await roleChangeHoldsTheLock.Task.WaitAsync(LockWait);
 
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var locks = new MySqlUserMutationLockService(db);
 
+            // Open the transaction before announcing, so the announcement means "asking for the lock now"
+            // and not "still opening a connection".
             await using var tx = await db.Database.BeginTransactionAsync();
-            await locks.LockUsersAsync(new[] { _targetUserId }, CancellationToken.None);
 
-            // Reaching here means A already committed — the lock is what serialized us.
-            Assert.True(roleChangeCommitted.Task.IsCompletedSuccessfully,
-                "The assignment acquired the user lock before the role change committed — the lock is not serializing the two flows.");
+            assignmentIsContending.SetResult();
+            var startedWaiting = Stopwatch.StartNew();
+            await locks.LockUsersAsync(new[] { _targetUserId }, CancellationToken.None);
+            startedWaiting.Stop();
 
             // Eligibility is re-read AFTER the lock, so it observes the committed role.
             var roleCode = await db.Users.AsNoTracking()
@@ -244,13 +255,18 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
                 .FirstAsync();
 
             await tx.RollbackAsync();
-            return roleCode;
+            return (RoleCode: roleCode, Waited: startedWaiting.Elapsed);
         });
 
         await roleChange.WaitAsync(LockWait);
-        var observedRole = await assignment.WaitAsync(LockWait);
+        var (observedRole, waited) = await assignment.WaitAsync(LockWait);
 
-        // The assignment flow sees STUDENT and refuses to make this account a Host.
+        // B was blocked while A held the row: the lock really is what serialized the two flows.
+        Assert.True(waited >= blockedFloor,
+            $"The assignment acquired the user lock after only {waited.TotalMilliseconds:F0} ms while the role " +
+            $"change held it for {hold.TotalMilliseconds:F0} ms — the lock is not serializing the two flows.");
+
+        // And having waited, it reads committed state: STUDENT, so it refuses to make this account a Host.
         Assert.Equal(RoleCodes.Student, observedRole);
     }
 
