@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Download, X, Loader2, PenLine, Plus, Trash2 } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import toast from 'react-hot-toast';
@@ -93,6 +94,20 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const vehicleReturnTime = detailData.UsageEndTime && detailData.UsageDate
     ? `${detailData.UsageEndTime} ngày ${detailData.UsageDate}`
     : '............................................';
+
+  const [savingDocType, setSavingDocType] = useState<'BORROW' | 'RETURN' | null>(null);
+  const handleSaveDocument = async (type: 'BORROW' | 'RETURN') => {
+    if (!detailData.VisitInstanceId || !detailData.LogisticsItemId) return;
+    setSavingDocType(type);
+    try {
+      await delegationsApi.saveLogisticsHandoverDocument(detailData.VisitInstanceId, detailData.LogisticsItemId, type);
+      toast.success('Đã lưu biên bản vào hệ thống.');
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Không thể lưu biên bản vào hệ thống.');
+    } finally {
+      setSavingDocType(null);
+    }
+  };
 
   const handleSign = async (type: 'BORROW' | 'RETURN') => {
     setBusy(true);
@@ -470,6 +485,33 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* "Lưu vào hệ thống" — sinh PDF thật phía backend (khác nút Tải PDF ở trên, chỉ in
+                  trang hiện tại) và lưu vào Quản lý tài liệu (loại Hậu cần). Chỉ bật khi đủ 2 chữ ký. */}
+              <div className="flex flex-wrap gap-3 print:hidden">
+                {!readOnly && isBorrowDone && (
+                  <button
+                    type="button"
+                    disabled={savingDocType !== null}
+                    onClick={() => handleSaveDocument('BORROW')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {savingDocType === 'BORROW' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    Lưu biên bản bàn giao vào hệ thống
+                  </button>
+                )}
+                {!readOnly && nt1 && nt2 && (
+                  <button
+                    type="button"
+                    disabled={savingDocType !== null}
+                    onClick={() => handleSaveDocument('RETURN')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {savingDocType === 'RETURN' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    Lưu biên bản nghiệm thu vào hệ thống
+                  </button>
+                )}
               </div>
 
               {/* Ghi chú chi phí — hiện khi biên bản đã ký nghiệm thu đủ 2 bên; nằm trong vùng in

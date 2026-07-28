@@ -305,6 +305,18 @@ export const delegationsApi = {
     return data;
   },
 
+  /** "Lưu vào hệ thống" trong TaskHandoverModal — sinh PDF biên bản đã ký đủ 2 bên, upload Drive +
+   * lưu document (Hậu cần). Chỉ gọi được khi cả 2 chữ ký (bên giao/bên nhận) đã có. */
+  async saveLogisticsHandoverDocument(
+    visitInstanceId: number | string,
+    logisticsItemId: number | string,
+    handoverType: 'BORROW' | 'RETURN',
+  ): Promise<{ documentId: number; fileId: number; webViewUrl?: string | null; downloadUrl?: string | null }> {
+    const { data } = await httpClient.post(
+      API_ENDPOINTS.delegations.saveLogisticsHandoverDocument(visitInstanceId, logisticsItemId, handoverType));
+    return data;
+  },
+
   /** "Xem mail đã gửi": sent-email history for one invited participant (subject/body/recipients/status). */
   async getParticipantSentEmails(
     visitInstanceId: number | string,

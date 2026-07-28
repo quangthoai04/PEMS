@@ -68,7 +68,7 @@ public sealed class UploadVisitInstancePhotosCommandHandler
             var result = await _fileUpload.UploadBusinessFileAsync(
                 stream, file.FileName, file.ContentType, file.Content.LongLength,
                 FilePurpose.VisitRequestPhoto, (long)scope.UserId,
-                target.CampusFolderExternalId, cancellationToken);
+                target.PhotoFolderExternalId, cancellationToken);
 
             var photo = new VisitPhoto
             {

@@ -227,6 +227,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   const quantityTooHigh = proposalQuantity.trim() !== '' && detail?.quantity != null && Number(proposalQuantity) >= detail.quantity;
   const handoverDto = detail ? {
     LogisticsItemId: item?.rawId,
+    VisitInstanceId: detail.visitInstanceId,
     Title: detail.title || item?.title,
     Quantity: finalQuantity,
     Description: detail.description,

@@ -39,11 +39,14 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
 
     private readonly IMediator _mediator;
     private readonly ICurrentUserService _currentUser;
+    private readonly Reports.Common.IReportArchiveService _reportArchive;
 
-    public ExportHoReportCommandHandler(IMediator mediator, ICurrentUserService currentUser)
+    public ExportHoReportCommandHandler(
+        IMediator mediator, ICurrentUserService currentUser, Reports.Common.IReportArchiveService reportArchive)
     {
         _mediator = mediator;
         _currentUser = currentUser;
+        _reportArchive = reportArchive;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -78,7 +81,7 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
         var stampVn = VietnamTime.Now();
         var baseName = $"PEMS_HO_Report_{stampVn:yyyyMMdd_HHmm}";
 
-        return format switch
+        var result = format switch
         {
             "CSV" => new ExportHoReportResult
             {
@@ -99,6 +102,15 @@ public sealed class ExportHoReportCommandHandler : IRequestHandler<ExportHoRepor
                 FileName = baseName + ".xlsx",
             },
         };
+
+        if (_currentUser.UserId is { } userId)
+        {
+            await _reportArchive.ArchiveAsync(
+                result.Content, result.FileName, result.ContentType, "HO_REPORT",
+                request.CampusId, userId, cancellationToken);
+        }
+
+        return result;
     }
 
     // ─────────────────────────── Shared label helpers ───────────────────────────
