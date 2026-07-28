@@ -222,5 +222,24 @@ permits. The assertions themselves were not weakened.
 | Old canonical SQL path | **0** |
 | `IEmailService` in Application | only the interface + `SystemEmailDispatcher` / `ManualEmailSender` — no business handler |
 | `IUserMutationLockService` | 14 handlers |
+| Real-stack E2E (§12.6) | **44 / 44 passed** (2.1 min) |
 
-**Not run:** §12.6 real-stack journeys. See the final report.
+### Real-stack evidence (§12.6)
+
+`npm run test:e2e:realstack` — real Chromium → real React (Vite) → real .NET API (Testing profile,
+v2 flags on) → **disposable** `pems_e2e_realstack` imported from the merged canonical script → Testing-only
+FileSink OTP inbox. No network mock on the primary journeys, and no real email left the machine.
+
+* The orchestrator's own preflight reported `import verified: pems_e2e_realstack has 82 tables` and
+  `retarget verified: no CREATE DATABASE / USE / bare reference to pems_db remains`.
+* It also resolves the canonical script by glob and **fails closed unless exactly one**
+  `PEMS_FULL_*.sql` exists — independent confirmation that the rename/modify left a single canonical file.
+* 44 journeys green, covering public per-campus v2 create with a real OTP from the sink, the OTP draft/
+  resilience set, authenticated registrant identity, per-campus pending-edit / resubmit / safe-edit /
+  amendment submit-approve-reject-withdraw, wrong-campus denial (403), scope-safe search, Excel import,
+  and the list terminology / scoped-handover set.
+* Teardown dropped the disposable database. `pems_db` was never created, selected or written at any point.
+
+Not covered by this harness, and therefore **not** claimed as verified: the Department-Leader personnel
+screens and the logistics proposal/handover journeys have no real-stack spec, so they rest on unit +
+integration coverage only.
