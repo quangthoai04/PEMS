@@ -1,5 +1,6 @@
 ﻿using Moq;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.DepartmentReceptionTasks.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssignee;
 using PEMS.Application.Emails.Common;
@@ -177,7 +178,11 @@ public class AssignRequestAssigneeCommandHandlerTests
     {
         var (db, handler, _, _, _) = CreateSut();
 
-        await Assert.ThrowsAsync<Exception>(() => handler.Handle(Command(assigneeId: OutsiderId), default));
+        // A refusal, not a fault: the caller is told WHY with a stable code, and the middleware turns
+        // this into a 409 rather than a 500.
+        var outsider = await Assert.ThrowsAsync<ConflictException>(
+            () => handler.Handle(Command(assigneeId: OutsiderId), default));
+        Assert.Equal(LogisticsTaskErrorCodes.AssigneeNotEligible, outsider.ErrorCode);
         Assert.Equal("REQUESTED", db.VisitLogisticsItems.Single().Status);
         Assert.Empty(db.SentEmails);
     }
@@ -191,7 +196,9 @@ public class AssignRequestAssigneeCommandHandlerTests
     {
         var (db, handler, _, _, _) = CreateSut(itemStatus: status);
 
-        await Assert.ThrowsAsync<Exception>(() => handler.Handle(Command(), default));
+        var inFlight = await Assert.ThrowsAsync<ConflictException>(
+            () => handler.Handle(Command(), default));
+        Assert.Equal(LogisticsTaskErrorCodes.AssignmentStatusNotAssignable, inFlight.ErrorCode);
         Assert.Empty(db.SentEmails);
         Assert.Empty(db.EmailActionTokens);
     }

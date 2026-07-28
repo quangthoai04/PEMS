@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.DepartmentReceptionTasks.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Security;
 using PEMS.Application.Emails.Common;
@@ -68,20 +69,24 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         {
             ulong userId = _currentUserService.UserId.Value;
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
-            if (user == null) throw new Exception("Không xác định được người dùng hiện tại");
+            if (user == null) throw new ForbiddenException("Không xác định được người dùng hiện tại.");
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
-            if (l == null) throw new Exception("Không tìm thấy đơn yêu cầu");
+            if (l == null) throw new NotFoundException("VisitLogisticsItem", request.LogisticsItemId);
 
             // Check department scope
             if (l.RequestedToDepartmentId != user.DepartmentId)
-                throw new Exception("Không có quyền phân công đơn yêu cầu của phòng ban khác");
+                throw new AuthBusinessException(
+                    LogisticsTaskErrorCodes.AssignmentOutOfDepartmentScope,
+                    "Không có quyền phân công đơn yêu cầu của phòng ban khác.");
 
             // Block assignment in terminal/in-flight statuses.
             var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED", "DECLINED" };
             if (blockedStatuses.Contains(l.Status))
-                throw new Exception("Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status);
+                throw new ConflictException(
+                    "Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status,
+                    LogisticsTaskErrorCodes.AssignmentStatusNotAssignable);
 
             bool hasPendingAttempt = await _context.VisitLogisticsAssignmentAttempts
                 .AnyAsync(a => a.LogisticsItemId == request.LogisticsItemId && a.Status == "PENDING", cancellationToken);
@@ -92,7 +97,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 .AnyAsync(h => h.LogisticsItemId == request.LogisticsItemId &&
                                (h.BorrowerSignedAt != null || h.ProviderSignedAt != null), cancellationToken);
             if (hasSigned)
-                throw new Exception("Nhiệm vụ đã được xử lý hoặc đã có ký biên bản, không thể đổi người phụ trách.");
+                throw new ConflictException(
+                    "Nhiệm vụ đã được xử lý hoặc đã có ký biên bản, không thể đổi người phụ trách.",
+                    LogisticsTaskErrorCodes.AssignmentHandoverSigned);
 
             var assignee = await _context.Users.FirstOrDefaultAsync(
                 u => u.UserId == request.AssigneeUserId
@@ -100,7 +107,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                      && u.Status == "ACTIVE",
                 cancellationToken);
             if (assignee == null)
-                throw new Exception("Người phụ trách không hợp lệ hoặc không thuộc phòng ban");
+                throw new ConflictException(
+                    "Người phụ trách không hợp lệ hoặc không thuộc phòng ban.",
+                    LogisticsTaskErrorCodes.AssigneeNotEligible);
 
             // Database time conflict check for target assignee
             var campus = await _context.VisitRequestCampuses.AsNoTracking()
@@ -114,7 +123,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                     _context, assignee.UserId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
                 if (hasConflict)
                 {
-                    throw new Exception($"Nhân sự {assignee.FullName} đã bị trùng lịch làm việc vào khung giờ của đơn này. Vui lòng chọn nhân sự khác.");
+                    throw new ConflictException(
+                        $"Nhân sự {assignee.FullName} đã bị trùng lịch làm việc vào khung giờ của đơn này. Vui lòng chọn nhân sự khác.",
+                        LogisticsTaskErrorCodes.AssigneeScheduleConflict);
                 }
             }
 

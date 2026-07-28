@@ -1,4 +1,6 @@
-﻿using PEMS.Application.Common.Interfaces;
+﻿using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.DepartmentReceptionTasks.Common;
 using PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChange;
 using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
@@ -156,7 +158,9 @@ public class ProposeRequestChangeCommandHandlerTests
     {
         var (db, handler, _, _, _) = CreateSut();
 
-        await Assert.ThrowsAsync<Exception>(() => handler.Handle(Command(note: "   "), default));
+        var missing = await Assert.ThrowsAsync<ValidationException>(
+            () => handler.Handle(Command(note: "   "), default));
+        Assert.Equal(LogisticsTaskErrorCodes.ProposalNoteRequired, missing.ErrorCode);
 
         Assert.Equal("ACCEPTED", db.VisitLogisticsItems.Single().Status);
         Assert.Empty(db.SentEmails);
