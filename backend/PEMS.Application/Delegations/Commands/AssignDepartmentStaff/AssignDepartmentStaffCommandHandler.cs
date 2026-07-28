@@ -31,6 +31,16 @@ namespace PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
 /// <c>email_action_tokens.sent_email_id</c> pointing at a row that exists, and the transaction commits
 /// before anything is handed to SMTP — a transient delivery failure never loses the assignment.
 /// </para>
+/// <para>
+/// The transaction and the lock were lost when Dev was merged into Cảnh-Iter1 and restored only after a
+/// human review caught it (finding C-1); this paragraph had gone on describing them the whole time.
+/// <c>AssignDepartmentStaffAtomicityTests</c> exists so a future removal fails a test rather than
+/// needing a reviewer to notice: it asserts that a failure after the participant is written leaves no
+/// participant, token, notification or sent-email row behind, and it drives a real second connection to
+/// prove the lock actually serialises this flow against <c>UpdateAccountRole</c>. Both assertions were
+/// verified to FAIL against the handler as the merge left it, and neither can pass without a genuine
+/// transaction and a genuine row lock — which is precisely what the unit suite cannot see.
+/// </para>
 /// </summary>
 public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<AssignDepartmentStaffCommand, ulong>
 {
@@ -44,6 +54,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
     private readonly IVisitFormReadService _formReadService;
+    private readonly IUserMutationLockService _lockService;
 
     public AssignDepartmentStaffCommandHandler(
         IApplicationDbContext db,
@@ -53,7 +64,8 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IEmailActionTokenService tokens,
         IHtmlSanitizerService sanitizer,
         IFileStorageService storage,
-        IVisitFormReadService formReadService)
+        IVisitFormReadService formReadService,
+        IUserMutationLockService lockService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -63,6 +75,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         _sanitizer = sanitizer;
         _storage = storage;
         _formReadService = formReadService;
+        _lockService = lockService;
     }
 
     public async Task<ulong> Handle(AssignDepartmentStaffCommand request, CancellationToken cancellationToken)
@@ -71,6 +84,19 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             throw new ForbiddenException();
 
         var userId = _currentUser.UserId.Value;
+
+        // Assigning the staff member creates an ASSIGNED participant row for them — a live
+        // responsibility. Lock the account first (see IUserMutationLockService) so this cannot
+        // interleave with a role change; every eligibility read below then sees committed state.
+        //
+        // Restored from Dev after a human review found the merge had dropped both the transaction and
+        // this lock while the documentation continued to describe them (finding C-1). Without the lock
+        // the status/role/department re-checks below are not serialised against UpdateAccountRole,
+        // which takes the same lock and expects assignment flows to contend on it; without the
+        // transaction the participant row, tokens and notification commit separately, so a failure
+        // part-way through can leave somebody assigned with no way to accept or decline.
+        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await _lockService.LockUsersAsync(new[] { request.DepartmentStaffUserId }, cancellationToken);
 
         var leaderParticipant = await _db.VisitParticipants
             .FirstOrDefaultAsync(p => p.ParticipantId == request.ParticipantId, cancellationToken)
@@ -96,7 +122,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         if (targetStaff.Role?.RoleCode != RoleCodes.Department || targetStaff.DepartmentId != _currentUser.DepartmentId)
             throw new ConflictException("Người được phân công phải thuộc cùng phòng ban.");
 
-        // Read under the lock taken above, so this sees committed state. Role and department alone are
+        // Read under the lock taken at the top of Handle, so this sees committed state. Role and department alone are
         // not enough: a deactivated, locked or not-yet-confirmed account holds no effective authority
         // (see UserStatuses), and assigning it a live visit responsibility would create a task nobody
         // can act on. Every sibling assignment flow already re-checks status here.
@@ -244,8 +270,15 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         });
         await _db.SaveChangesAsync(cancellationToken);
 
-        // Attachment bytes are streamed after the rows are saved, so a slow file store cannot delay the
-        // assignment itself; a failure here leaves the message FAILED and resendable.
+        // Durable before the email goes out: a transient SMTP failure must never lose the assignment.
+        // Everything above — participant row, invalidated tokens, sent_emails, attachments, the new
+        // accept/decline tokens and the notification — becomes visible in this single commit, so there
+        // is no window in which the recipient is assigned but has no way to answer.
+        await transaction.CommitAsync(cancellationToken);
+
+        // Attachment bytes are streamed after the commit, so a slow file store cannot delay the
+        // assignment itself; a failure here leaves the message FAILED and resendable, and the
+        // assignment stays durable because it is already committed.
         try
         {
             var outboundAttachments = await OutboundEmailAttachments.LoadAsync(
