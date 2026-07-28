@@ -311,6 +311,11 @@ export const API_ENDPOINTS = {
     taggableGuests: (visitInstanceId: string | number) => `/visit-photos/instances/${visitInstanceId}/taggable-guests`,
     confirmFaceTags: (faceScanId: string | number) => `/visit-photos/face-scans/${faceScanId}/confirm`,
   },
+  // "Tài liệu" upload widget of a visit-in-progress (VisitDuringTab) — documents/documents rows,
+  // routed into the delegation's Drive folder (Theo đoàn khách / Đối tác / Hậu cần subfolders).
+  visitDocuments: {
+    upload: (visitInstanceId: string | number) => `/visit-documents/instances/${visitInstanceId}/upload`,
+  },
   // Phase 4: news (tin tức) attached to a visit_instance — many posts per instance.
   visitNews: {
     byInstance: (visitInstanceId: string | number) => `/news/visit-instances/${visitInstanceId}`,
