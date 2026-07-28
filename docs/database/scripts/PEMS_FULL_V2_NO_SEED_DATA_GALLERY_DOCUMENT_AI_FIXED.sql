@@ -5601,6 +5601,87 @@ VALUES
      '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
    'HTML', 'fullName, campusName, successorName, effectiveDate, reason', CURRENT_TIMESTAMP),
 
+-- ── DEPARTMENT PERSONNEL (Trưởng phòng quản lý nhân sự phòng mình) ────────
+  ('DEPT_PERSONNEL_ACCOUNT_DISABLED',
+   'Thông báo tài khoản bị vô hiệu hóa',
+   'ACCOUNT', NULL,
+   'Gửi cho nhân sự khi Trưởng phòng vô hiệu hóa tài khoản của họ.',
+   'ACTIVE',
+   '[PEMS] Tài khoản PEMS của bạn đã bị vô hiệu hóa',
+   CONCAT(
+     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
+     '<p>Tài khoản PEMS của bạn thuộc phòng ban <strong>{{departmentName}}</strong> đã được vô hiệu hóa. Bạn sẽ không thể đăng nhập cho tới khi tài khoản được kích hoạt lại.</p>',
+     '<p><strong>Lý do:</strong> {{reason}}</p>',
+     '<p>Mọi phiên đăng nhập đang hoạt động đã được thu hồi.</p>',
+     '<p>Nếu bạn cho rằng đây là sự nhầm lẫn, vui lòng liên hệ Trưởng phòng phụ trách.</p>',
+     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
+   '[PEMS] Your PEMS account has been deactivated',
+   CONCAT(
+     '<p>Hello <strong>{{fullName}}</strong>,</p>',
+     '<p>Your PEMS account in the <strong>{{departmentName}}</strong> department has been deactivated. You will not be able to sign in until it is re-enabled.</p>',
+     '<p><strong>Reason:</strong> {{reason}}</p>',
+     '<p>All active sessions have been revoked.</p>',
+     '<p>If you believe this is a mistake, please contact your Department Leader.</p>',
+     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
+   'HTML', 'fullName, departmentName, reason', CURRENT_TIMESTAMP),
+
+  ('DEPT_PERSONNEL_ACCOUNT_ENABLED',
+   'Thông báo tài khoản được kích hoạt lại',
+   'ACCOUNT', NULL,
+   'Gửi cho nhân sự khi Trưởng phòng kích hoạt lại tài khoản của họ.',
+   'ACTIVE',
+   '[PEMS] Tài khoản PEMS của bạn đã được kích hoạt lại',
+   CONCAT(
+     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
+     '<p>Tài khoản PEMS của bạn thuộc phòng ban <strong>{{departmentName}}</strong> đã được kích hoạt lại.</p>',
+     '<p>Vui lòng đăng nhập lại để tiếp tục sử dụng hệ thống.</p>',
+     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
+   '[PEMS] Your PEMS account has been re-enabled',
+   CONCAT(
+     '<p>Hello <strong>{{fullName}}</strong>,</p>',
+     '<p>Your PEMS account in the <strong>{{departmentName}}</strong> department has been re-enabled.</p>',
+     '<p>Please sign in again to continue using the system.</p>',
+     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
+   'HTML', 'fullName, departmentName', CURRENT_TIMESTAMP),
+
+  ('DEPT_LEADERSHIP_GRANTED',
+   'Thông báo được bổ nhiệm Trưởng phòng',
+   'ACCOUNT', NULL,
+   'Gửi cho người nhận vai trò Trưởng phòng sau khi bàn giao được ghi nhận.',
+   'ACTIVE',
+   '[PEMS] Bạn đã được bổ nhiệm làm Trưởng phòng',
+   CONCAT(
+     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
+     '<p>Bạn đã được bổ nhiệm làm <strong>Trưởng phòng</strong> của phòng ban <strong>{{departmentName}}</strong>.</p>',
+     '<p>Các phiên đăng nhập hiện tại đã được thu hồi. Vui lòng đăng nhập lại để nhận quyền quản lý mới.</p>',
+     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
+   '[PEMS] You have been appointed Department Leader',
+   CONCAT(
+     '<p>Hello <strong>{{fullName}}</strong>,</p>',
+     '<p>You have been appointed <strong>Department Leader</strong> of the <strong>{{departmentName}}</strong> department.</p>',
+     '<p>Your current sessions have been revoked. Please sign in again to receive the new management permissions.</p>',
+     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
+   'HTML', 'fullName, departmentName', CURRENT_TIMESTAMP),
+
+  ('DEPT_LEADERSHIP_HANDED_OVER',
+   'Thông báo đã bàn giao vai trò Trưởng phòng',
+   'ACCOUNT', NULL,
+   'Gửi cho Trưởng phòng cũ sau khi bàn giao được ghi nhận.',
+   'ACTIVE',
+   '[PEMS] Bạn đã bàn giao vai trò Trưởng phòng',
+   CONCAT(
+     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
+     '<p>Bạn đã bàn giao vai trò Trưởng phòng của phòng ban <strong>{{departmentName}}</strong> và hiện là nhân viên của phòng ban này.</p>',
+     '<p>Các phiên đăng nhập hiện tại đã được thu hồi. Vui lòng đăng nhập lại để hệ thống áp dụng quyền mới.</p>',
+     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
+   '[PEMS] You have handed over the Department Leader role',
+   CONCAT(
+     '<p>Hello <strong>{{fullName}}</strong>,</p>',
+     '<p>You have handed over the Department Leader role for the <strong>{{departmentName}}</strong> department and are now a staff member of it.</p>',
+     '<p>Your current sessions have been revoked. Please sign in again so the system applies your new permissions.</p>',
+     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
+   'HTML', 'fullName, departmentName', CURRENT_TIMESTAMP),
+
 -- ── AUTH ─────────────────────────────────────────────────────────────────
   ('AUTH_PASSWORD_RESET_OTP',
    'Mã đặt lại mật khẩu',
@@ -5968,20 +6049,32 @@ VALUES
    '[PEMS] Đề xuất thay đổi yêu cầu hậu cần — {{logisticsTitle}}',
    CONCAT(
      '<p>Xin chào <strong>{{hostName}}</strong>,</p>',
-     '<p><strong>{{departmentName}}</strong> đề xuất thay đổi đối với hạng mục hậu cần <strong>{{logisticsTitle}}</strong>.</p>',
-     '<p><strong>Nội dung đề xuất:</strong> {{proposalNote}}</p>',
+     '<p><strong>{{departmentName}}</strong> đề xuất thay đổi đối với hạng mục hậu cần <strong>{{logisticsTitle}}</strong> của đoàn <strong>{{delegationName}}</strong>.</p>',
+     '<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:16px 20px;margin:20px 0">',
+     '<ul style="margin:0;padding-left:20px;line-height:1.7">',
+     '<li><strong>Số lượng đề xuất:</strong> {{proposedQuantity}} (dự kiến ban đầu: {{originalQuantity}})</li>',
+     '<li><strong>Thời gian đề xuất:</strong> {{proposedUsageStartAt}} – {{proposedUsageEndAt}}</li>',
+     '<li><strong>Nội dung đề xuất:</strong> {{proposedDescription}}</li>',
+     '<li><strong>Lý do:</strong> {{proposalNote}}</li>',
+     '</ul></div>',
      '<p>Vui lòng phản hồi để phòng ban tiếp tục xử lý:</p>',
      '{{actionBlock}}',
      '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
    '[PEMS] Change proposal for a logistics request — {{logisticsTitle}}',
    CONCAT(
      '<p>Hello <strong>{{hostName}}</strong>,</p>',
-     '<p><strong>{{departmentName}}</strong> has proposed a change to the logistics item <strong>{{logisticsTitle}}</strong>.</p>',
-     '<p><strong>Proposal:</strong> {{proposalNote}}</p>',
+     '<p><strong>{{departmentName}}</strong> has proposed a change to the logistics item <strong>{{logisticsTitle}}</strong> for the delegation <strong>{{delegationName}}</strong>.</p>',
+     '<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:16px 20px;margin:20px 0">',
+     '<ul style="margin:0;padding-left:20px;line-height:1.7">',
+     '<li><strong>Proposed quantity:</strong> {{proposedQuantity}} (originally requested: {{originalQuantity}})</li>',
+     '<li><strong>Proposed usage window:</strong> {{proposedUsageStartAt}} – {{proposedUsageEndAt}}</li>',
+     '<li><strong>Proposed content:</strong> {{proposedDescription}}</li>',
+     '<li><strong>Reason:</strong> {{proposalNote}}</li>',
+     '</ul></div>',
      '<p>Please respond so the department can continue:</p>',
      '{{actionBlock}}',
      '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'hostName, logisticsTitle, departmentName, proposalNote', CURRENT_TIMESTAMP),
+   'HTML', 'hostName, logisticsTitle, departmentName, delegationName, originalQuantity, proposedQuantity, proposedUsageStartAt, proposedUsageEndAt, proposedDescription, proposalNote', CURRENT_TIMESTAMP),
 
   ('LOGISTICS_EXPENSE_REPORT_REMINDER',
    'Nhắc kê khai chi phí hậu cần',
@@ -10551,9 +10644,12 @@ COMMIT;
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 3. Seed Google Document AI config (INACTIVE until Admin tests it)
+-- 3. Seed Google Document AI config with the real PEMS production values.
+-- Only Service Account JSON remains empty; Admin may paste it from the UI,
+-- or the backend may resolve GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT.
 -- ---------------------------------------------------------------------
 INSERT INTO api_configurations (
+  api_config_id,
   api_code,
   name,
   provider_name,
@@ -10562,49 +10658,121 @@ INSERT INTO api_configurations (
   default_method,
   auth_type,
   settings_json,
+  credentials_json_encrypted,
   secret_ref,
+  data_sensitivity,
+  allows_provider_training,
+  retention_days,
   rate_limit_per_minute,
   monthly_quota,
   retry_enabled,
   max_retries,
+  cache_ttl_seconds,
+  last_test_status,
+  last_tested_at,
+  last_test_message,
   timeout_seconds,
   status,
-  data_sensitivity,
-  allows_provider_training,
-  retention_days,
-  created_by
+  created_at,
+  created_by,
+  updated_at,
+  updated_by,
+  deleted_at,
+  deleted_by
 )
 SELECT
+  21007,
   'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
   'Google Document AI - Business Card OCR',
   'GOOGLE_DOCUMENT_AI',
   'BUSINESS_CARD_OCR',
-  'https://us-documentai.googleapis.com',
+  'https://asia-southeast1-documentai.googleapis.com',
   'POST',
   'CUSTOM',
   JSON_OBJECT(
-    'project_id', '',
-    'location', 'us',
-    'processor_id', '',
-    'endpoint', 'us-documentai.googleapis.com',
+    'project_id', 'pems-production',
+    'location', 'asia-southeast1',
+    'processor_id', '9f4642de7b8f8b25',
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
     'max_file_size_mb', 10,
-    'allowed_mime_types', JSON_ARRAY('image/jpeg', 'image/png', 'image/webp', 'application/pdf')
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
   ),
+  NULL,
   'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
+  'CONFIDENTIAL',
+  FALSE,
+  30,
   20,
   1000,
   TRUE,
   2,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
   60,
   'INACTIVE',
-  'CONFIDENTIAL',
-  FALSE,
-  30,
-  1
+  CURRENT_TIMESTAMP,
+  1,
+  NULL,
+  NULL,
+  NULL,
+  NULL
 FROM DUAL
 WHERE NOT EXISTS (
-  SELECT 1 FROM api_configurations WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI'
+  SELECT 1
+  FROM api_configurations
+  WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI'
 );
+
+-- Normalize an existing row as well. This avoids the old WHERE NOT EXISTS seed
+-- leaving project/location/processor values empty or pointing to the US endpoint.
+UPDATE api_configurations
+SET
+  name = 'Google Document AI - Business Card OCR',
+  provider_name = 'GOOGLE_DOCUMENT_AI',
+  purpose = 'BUSINESS_CARD_OCR',
+  base_url = 'https://asia-southeast1-documentai.googleapis.com',
+  default_method = 'POST',
+  auth_type = 'CUSTOM',
+  settings_json = JSON_OBJECT(
+    'project_id', 'pems-production',
+    'location', 'asia-southeast1',
+    'processor_id', '9f4642de7b8f8b25',
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
+    'max_file_size_mb', 10,
+    'allowed_mime_types', JSON_ARRAY(
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf'
+    )
+  ),
+  credentials_json_encrypted = NULL,
+  secret_ref = 'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
+  data_sensitivity = 'CONFIDENTIAL',
+  allows_provider_training = FALSE,
+  retention_days = 30,
+  rate_limit_per_minute = 20,
+  monthly_quota = 1000,
+  retry_enabled = TRUE,
+  max_retries = 2,
+  cache_ttl_seconds = NULL,
+  last_test_status = NULL,
+  last_tested_at = NULL,
+  last_test_message = NULL,
+  timeout_seconds = 60,
+  status = 'INACTIVE',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = 1,
+  deleted_at = NULL,
+  deleted_by = NULL
+WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI';
 
 -- ---------------------------------------------------------------------
 -- 4. Seed GLOBAL monthly quota for the OCR config (current month)

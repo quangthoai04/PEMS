@@ -39,6 +39,12 @@ public static class DependencyInjection
 
         services.AddScoped<PEMS.Application.Notifications.Common.INotificationService, PEMS.Application.Notifications.Common.NotificationService>();
 
+        // Department Leader personnel scope — the single authorization gate behind /api/department-leader.
+        // Registered here (not in Infrastructure) because it only needs the DbContext abstraction and the
+        // current-user claims; keeping one implementation is what stops each handler from growing its own.
+        services.AddScoped<PEMS.Application.DepartmentLeaderPersonnel.Common.IDepartmentLeaderPersonnelScopeService,
+            PEMS.Application.DepartmentLeaderPersonnel.Common.DepartmentLeaderPersonnelScopeService>();
+
         // visit_requests.status aggregate (campus-independent approval) — mirrors the DB triggers.
         services.AddScoped<PEMS.Application.Delegations.Services.IVisitRequestAggregateStatusService, PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService>();
 

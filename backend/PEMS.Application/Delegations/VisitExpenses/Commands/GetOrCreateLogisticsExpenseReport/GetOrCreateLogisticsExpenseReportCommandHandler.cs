@@ -36,14 +36,18 @@ public class GetOrCreateLogisticsExpenseReportCommandHandler : IRequestHandler<G
         if (logisticsItem == null)
             throw new NotFoundException(nameof(VisitLogisticsItem), request.LogisticsItemId);
 
-        // 2. Security: Must belong to requested_to_department_id
-        // We need to check if currentUser belongs to logisticsItem.RequestedToDepartmentId
+        // 2. Security: department members (own the item) can view/edit; the campus instance's current
+        // Host can VIEW a report the department already saved — read-only, never triggers creation
+        // (see the existing-report short-circuit below).
         var userDepartment = await _context.Users
             .Where(u => u.UserId == currentUserId)
             .Select(u => u.DepartmentId)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (logisticsItem.RequestedToDepartmentId != userDepartment)
+        var isDepartmentMember = logisticsItem.RequestedToDepartmentId.HasValue && logisticsItem.RequestedToDepartmentId == userDepartment;
+        var isInstanceHost = logisticsItem.VisitInstance.CurrentHostUserId == currentUserId;
+
+        if (!isDepartmentMember && !isInstanceHost)
             throw new ForbiddenException("You do not have permission to view or edit this logistics expense report.");
 
         // 3. Status checks
@@ -67,6 +71,10 @@ public class GetOrCreateLogisticsExpenseReportCommandHandler : IRequestHandler<G
         {
             return MapToDto(existingReport);
         }
+
+        // Host chỉ được XEM báo cáo đã có — khởi tạo báo cáo mới là việc riêng của phòng ban.
+        if (!isDepartmentMember)
+            throw new NotFoundException(nameof(VisitExpenseReport), request.LogisticsItemId);
 
         // Must be AFTER_VISIT to create
         if (!isAfterVisit && !isClosed)

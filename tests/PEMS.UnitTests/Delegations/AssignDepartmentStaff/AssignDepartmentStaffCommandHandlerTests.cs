@@ -75,7 +75,8 @@ public class AssignDepartmentStaffCommandHandlerTests
         var dispatcher = mocks.DispatcherFor(db);
         var handler = new AssignDepartmentStaffCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, formRead.Object);
+            mocks.Storage.Object, formRead.Object,
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
 
         return (db, handler, user, mocks, dispatcher);
     }

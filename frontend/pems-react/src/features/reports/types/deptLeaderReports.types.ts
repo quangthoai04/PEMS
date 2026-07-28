@@ -10,7 +10,6 @@ export interface DeptLeaderReportFilters {
   toDate?: string;
   logisticsStatus: string;
   itemType: string;
-  priority: string;
   assignedUserId: string;
   dueStatus: string;
   handoverStatus: string;
@@ -40,7 +39,6 @@ export interface DeptLeaderFilterSummary {
   toDate: string | null;
   logisticsStatus: string;
   itemType: string;
-  priority: string;
   assignedUserId: string;
   assignedUserName: string | null;
   dueStatus: string;
@@ -133,7 +131,6 @@ export interface DeptLeaderPendingTask {
   itemType: string;
   quantity: number;
   unit: string | null;
-  priority: string;
   status: string;
   dueAt: string | null;
   assignedToName: string | null;

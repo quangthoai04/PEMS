@@ -46,6 +46,17 @@ export function DeptLeadVisitTasksPage() {
 
   return (
     <div className="w-full flex flex-col space-y-6 pb-12 overflow-x-hidden animate-in fade-in duration-300">
+      {/* Reset overflow-hidden của khung bọc SharedDashboardView cho print — phòng cắt nội dung biên
+          bản nhúng inline bên trong (cùng lý do với #dashboard-root/#dashboard-main). */}
+      <style type="text/css" media="print">
+        {`
+          #dept-lead-tasks-content {
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+          }
+        `}
+      </style>
       <div className="border-b border-gray-100 pb-3">
         <h1 className="text-3xl font-bold text-[#004c91]">Nhiệm vụ tiếp khách</h1>
       </div>
@@ -80,7 +91,7 @@ export function DeptLeadVisitTasksPage() {
         </button>
       </div>
 
-      <div className={activeTab === 'calendar' ? 'bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden' : 'overflow-hidden'}>
+      <div id="dept-lead-tasks-content" className={activeTab === 'calendar' ? 'bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden' : 'overflow-hidden'}>
         <SharedDashboardView
           user={user}
           isDeptLeader={isDeptLeader}

@@ -10,7 +10,6 @@ public class ExportDeptLeaderReportCommand : IRequest<ExportDeptLeaderReportResu
     public DateTime? ToDate { get; set; }
     public string? LogisticsStatus { get; set; }
     public string? ItemType { get; set; }
-    public string? Priority { get; set; }
     public string? AssignedUserId { get; set; }
     public string? DueStatus { get; set; }
     public string? HandoverStatus { get; set; }

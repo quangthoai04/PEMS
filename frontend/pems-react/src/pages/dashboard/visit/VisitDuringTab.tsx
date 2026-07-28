@@ -28,7 +28,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MinutesCard } from './MinutesCard';
-import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 import { businessCardOcrApi } from '../../../features/business-card-ocr/api/businessCardOcrApi';
 import { showLoadingToast, updateToastSuccess, updateToastError, showMessageErrorToast } from '../../../shared/utils/toast';
@@ -283,26 +282,15 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
   return (
     <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
 
-      {/* Ký mượn tài sản hậu cần — phần đầu tiên của tab Đang tiếp khách (real handover API). */}
-      {visitInstanceId && (
-        <LogisticsHandoverSection 
-          visitInstanceId={visitInstanceId} 
-          canManage={!isReadOnly && !isDept} 
-          handoverPhase="BORROW" 
-          sectionNumber="1" 
-          theme="blue" 
-        />
-      )}
-
       {/* Đánh giá chuyến thăm đã chuyển sang tab Sau tiếp khách (VisitAfterTab) —
           chỉ đánh giá sau khi Host xác nhận kết thúc tiếp khách. */}
 
-      {/* 2. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
+      {/* 1. Biên bản cuộc họp — bản thật (backend + cơ chế lock) khi có visitInstanceId; nếu không, dùng mock cũ */}
       {visitInstanceId && (
         <MinutesCard visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} />
       )}
 
-       {/* 3. Đối tác & Tài liệu */}
+       {/* 2. Đối tác & Tài liệu */}
        {!isDept && (
          <>
        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm relative transition-all">
@@ -312,7 +300,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
          >
           <div>
             <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
-               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">3</span>
+               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">2</span>
                Tài liệu
             </h2>
           </div>
@@ -455,7 +443,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
         </AnimatePresence>
       </div>
       
-       {/* 4. Thông tin khác */}
+       {/* 3. Thông tin khác */}
        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm relative transition-all">
          <div 
           className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
@@ -463,7 +451,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
          >
           <div>
             <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
-               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">4</span>
+               <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">3</span>
                Thông tin khác
             </h2>
           </div>

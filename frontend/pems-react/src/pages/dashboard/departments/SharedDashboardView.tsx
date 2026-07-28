@@ -28,8 +28,7 @@ import {
   Sparkles,
   Info,
   ChevronDown,
-  Edit2,
-  Download
+  Edit2
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -41,12 +40,12 @@ import { getNotificationLink, timeAgo } from '../../../features/notifications/co
 import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
 import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { matchCalendarChangeNotifs } from '../../../features/notifications/utils/calendarChangeNotifs';
-import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
-import { LogisticsExpensePanel } from './LogisticsExpensePanel';
+import { TaskHandoverModal } from './TaskHandoverModal';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 import { formatVietnamDateTime, toVietnamCalendarDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
+
 interface Event {
   id: string;
   title: string;
@@ -86,8 +85,6 @@ type AssignmentProgressItem = {
   rawStatus: string;
   uiStatus: string;
   statusLabel: string;
-  priority?: string | null;     // LOW | MEDIUM | HIGH | URGENT (REQUEST items only)
-  dueAt?: string | null;
   startAt: string;
   endAt: string;
   canViewDelegationDetail: boolean;
@@ -174,6 +171,20 @@ const INITIAL_EVENTS: Event[] = [
     contactPerson: 'Trần Văn Tuyến (Điều hành xe - 0914.555.666)'
   }];
 
+/** Dòng key-value gọn cho khối thông tin — thay cho các "khung" bento to trước đây. */
+function InfoLine({ icon: Icon, label, value, emphasize }: { icon: React.ElementType; label: string; value: React.ReactNode; emphasize?: boolean }) {
+  if (value == null || value === '') return null;
+  return (
+    <div className="flex items-start gap-2 py-1">
+      <Icon className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-0.5">{label}</span>
+        <span className={emphasize ? 'text-sm font-black text-[#004c91]' : 'text-sm font-semibold text-gray-800'}>{value}</span>
+      </div>
+    </div>
+  );
+}
+
 export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent, isVisitor, initialVisitInstanceId, viewMode = 'calendar' }: { user?: any, isDeptLeader?: boolean, isDeptStaff?: boolean, isStudent?: boolean, isVisitor?: boolean, initialVisitInstanceId?: number | null, viewMode?: 'calendar' | 'assignments' }) {
   // "Hôm nay" theo lịch Việt Nam — không lệch ngày ở browser nước ngoài.
   const today = toVietnamCalendarDate(new Date())!;
@@ -224,8 +235,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentItemType, setAssignmentItemType] = useState('ALL');
   const [assignmentStatus, setAssignmentStatus] = useState('ALL');
-  const [assignmentPriority, setAssignmentPriority] = useState('ALL');
-  const [assignmentSortBy, setAssignmentSortBy] = useState<'PRIORITY' | 'DATE'>('PRIORITY');
   const [assignmentOwnerScope, setAssignmentOwnerScope] = useState('DEPARTMENT');
   const [assignmentFromDate, setAssignmentFromDate] = useState('');
   const [assignmentToDate, setAssignmentToDate] = useState('');
@@ -383,10 +392,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [requestRejectReason, setRequestRejectReason] = useState('');
   const [requestRejectSignature, setRequestRejectSignature] = useState<{ name: string, time: string } | null>(null);
   const [isProposing, setIsProposing] = useState(false);
+  const [proposalContent, setProposalContent] = useState('');
   const [proposalNote, setProposalNote] = useState('');
   const [proposalStartTime, setProposalStartTime] = useState('');
   const [proposalEndTime, setProposalEndTime] = useState('');
+  const [proposalQuantity, setProposalQuantity] = useState('');
   const [proposalSubmitted, setProposalSubmitted] = useState(false);
+  const [proposalSubmitting, setProposalSubmitting] = useState(false);
 
   // Dept preliminary states
   const [deptPreliminaryStatus, setDeptPreliminaryStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted'>('pending');
@@ -409,22 +421,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setProposalSubmitted(false);
     setDeptPreliminaryStatus('pending');
     setDeptRejectReason('');
-    setSafuriBG1Signed(null);
-    setSafuriBG2Signed(null);
-    setSafuriNT1Signed(null);
-    setSafuriNT2Signed(null);
   }, [activePopoverEvent?.id]);
-
-  // States for interactive handover & acceptance of Safuri event
-  const [safuriBG1Signed, setSafuriBG1Signed] = useState<string | null>(null);
-  const [safuriBG2Signed, setSafuriBG2Signed] = useState<string | null>(null);
-  const [safuriNT1Signed, setSafuriNT1Signed] = useState<string | null>(null);
-  const [safuriNT2Signed, setSafuriNT2Signed] = useState<string | null>(null);
-
-  const [safuriBG1Note, setSafuriBG1Note] = useState('Xe sạc đầy pin 100%, có trang bị 10 ô mang thương hiệu FPT.');
-  const [safuriBG2Note, setSafuriBG2Note] = useState('Đã kiểm tra xe vận hành êm ái, đầy đủ ô dù.');
-  const [safuriNT1Note, setSafuriNT1Note] = useState('Đã nhận lại chìa khóa, xe sạch sẽ.');
-  const [safuriNT2Note, setSafuriNT2Note] = useState('Xe trả nguyên trạng, hoàn tất phiên bàn giao.');
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     creator: false,
@@ -451,10 +448,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   }, [activePopoverEvent?.id]);
 
   const [activeEventDetail, setActiveEventDetail] = useState<any>(null);
-
-  // Đơn mượn xe (TRANSPORT): biên bản dùng checklist xe ô tô điện cố định;
-  // đơn yêu cầu chung chung giữ nguyên biên bản hiện tại.
-  const isVehicleDoc = isVehicleHandover(activeEventDetail?.itemType);
 
   React.useEffect(() => {
     if (!activePopoverEvent || !activePopoverEvent.rawId) {
@@ -487,20 +480,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         } else if (activePopoverEvent.itemType === 'REQUEST') {
           const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
           setActiveEventDetail(detail);
-          setSafuriBG1Signed(toHandoverSignatureText(detail.borrowProviderSignature));
-          setSafuriBG2Signed(toHandoverSignatureText(detail.borrowBorrowerSignature));
-          setSafuriNT1Signed(toHandoverSignatureText(detail.returnProviderSignature));
-          setSafuriNT2Signed(toHandoverSignatureText(detail.returnBorrowerSignature));
-          if (detail.borrowNote) {
-            const notes = parseHandoverNotes(detail.borrowNote);
-            setSafuriBG1Note(notes.provider || detail.borrowNote);
-            setSafuriBG2Note(notes.borrower || detail.borrowNote);
-          }
-          if (detail.returnNote) {
-            const notes = parseHandoverNotes(detail.returnNote);
-            setSafuriNT1Note(notes.provider || detail.returnNote);
-            setSafuriNT2Note(notes.borrower || detail.returnNote);
-          }
 
           if (detail.status === 'CANCELLED') {
             setRequestStatus('rejected');
@@ -696,8 +675,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       targetDate = activePopoverEvent.date;
       targetTime = activePopoverEvent.time;
     } else if (assigningTaskItem) {
-      const startIso = assigningTaskItem.startAt || assigningTaskItem.dueAt;
-      const endIso = assigningTaskItem.endAt || assigningTaskItem.dueAt;
+      const startIso = assigningTaskItem.startAt;
+      const endIso = assigningTaskItem.endAt;
       if (startIso && endIso) {
         const sd = toVietnamCalendarDate(startIso) ?? new Date(NaN);
         const ed = toVietnamCalendarDate(endIso) ?? new Date(NaN);
@@ -737,11 +716,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         search: assignmentSearch || undefined,
         itemType: assignmentItemType,
         status: assignmentStatus,
-        priority: assignmentPriority !== 'ALL' ? assignmentPriority : undefined,
         ownerScope: assignmentOwnerScope,
         fromDate: assignmentFromDate || undefined,
         toDate: assignmentToDate || undefined,
-        sortBy: assignmentSortBy === 'PRIORITY' ? 'priority' : 'date',
         sortDirection: assignmentSortDirection,
         page: assignmentPage,
         pageSize: assignmentPageSize,
@@ -764,8 +741,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentSearch,
     assignmentItemType,
     assignmentStatus,
-    assignmentPriority,
-    assignmentSortBy,
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
@@ -781,8 +756,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentSearch,
     assignmentItemType,
     assignmentStatus,
-    assignmentPriority,
-    assignmentSortBy,
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
@@ -804,6 +777,31 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       setFocusVisitRequestId(Number(visitRequestIdFromUrl));
     }
   }, [searchParams, viewMode]);
+
+  // Notification "Có yêu cầu hậu cần mới" / "Lời mời tham gia" trỏ thẳng vào đây qua
+  // ?taskId=&itemType= (thay cho trang "Chi tiết nhiệm vụ điều phối" đứng riêng đã bỏ) —
+  // mở đúng popover như khi bấm 1 đơn trong Bảng lịch. Ưu tiên lấy từ `events` đã tải sẵn
+  // cho đủ trường hiển thị (host/guests/time/date); thiếu thì mở khung tối thiểu, phần chi
+  // tiết còn lại tự nạp qua activeEventDetail (effect fetchDetail theo rawId/itemType).
+  React.useEffect(() => {
+    const taskIdFromUrl = searchParams.get('taskId');
+    const itemTypeFromUrl = searchParams.get('itemType');
+    if (!taskIdFromUrl || (itemTypeFromUrl !== 'REQUEST' && itemTypeFromUrl !== 'INVITATION')) return;
+    if (events.length === 0) return;
+
+    const matched = events.find(e => String(e.rawId) === String(taskIdFromUrl) && e.itemType === itemTypeFromUrl);
+    setActivePopoverEvent(matched || {
+      id: `${itemTypeFromUrl.toLowerCase()}_${taskIdFromUrl}`,
+      rawId: taskIdFromUrl,
+      itemType: itemTypeFromUrl,
+      category: itemTypeFromUrl === 'INVITATION' ? 'Lời mời tham gia' : 'Đơn yêu cầu mượn đồ',
+    });
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('taskId');
+    next.delete('itemType');
+    setSearchParams(next, { replace: true });
+  }, [events, searchParams, setSearchParams]);
 
   const clearFocusFilter = () => {
     setFocusVisitRequestId(null);
@@ -835,7 +833,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [displayMode, setDisplayMode] = useState<'Ngày' | 'Tuần' | 'Tháng' | 'Năm'>('Tháng');
 
   // New states for Calendar Type ("Trong văn phòng", "Lịch của tôi")
-  const [calendarType, setCalendarType] = useState<'Trong văn phòng' | 'Lịch của tôi'>('Lịch của tôi');
+  // Dept Leader mặc định xem lịch văn phòng; Dept Staff/Student/Visitor mặc định xem lịch của tôi.
+  const [calendarType, setCalendarType] = useState<'Trong văn phòng' | 'Lịch của tôi'>(isDeptLeader ? 'Trong văn phòng' : 'Lịch của tôi');
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
 
   // Filter events based on type
@@ -1200,58 +1199,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
   };
 
-  const toHandoverSignatureText = (signature?: { name?: string; signedAt?: string } | null) => {
-    if (!signature?.signedAt) return null;
-    return `${signature.name || 'Người ký'} - ${formatDateTime(signature.signedAt)}`;
-  };
-
-  const parseHandoverNotes = (note?: string) => {
-    const result: { borrower?: string; provider?: string } = {};
-    if (!note) return result;
-    note.split('\n').forEach((line) => {
-      if (line.startsWith('Bên nhận:')) result.borrower = line.replace('Bên nhận:', '').trim();
-      if (line.startsWith('Bên giao:')) result.provider = line.replace('Bên giao:', '').trim();
-    });
-    return result;
-  };
-
-  const handleSignHandover = async (
-    handoverType: 'BORROW' | 'RETURN',
-    signerSide: 'BORROWER' | 'PROVIDER',
-    note: string,
-    setSigned: React.Dispatch<React.SetStateAction<string | null>>,
-    successMessage: string
-  ) => {
+  // Refetch chi tiết đơn sau khi ký biên bản trong TaskHandoverModal (dùng chung với Dept Staff) —
+  // giữ đồng bộ activeEventDetail + trạng thái popover + lịch/tiến độ ngoài modal.
+  const refreshActiveEventDetail = async () => {
     if (!activePopoverEvent?.rawId) return;
-    try {
-      const result = await departmentReceptionTasksApi.signHandover(activePopoverEvent.rawId, handoverType, signerSide, note);
-      setSigned(`${result.signedByName || user?.name || 'Người ký'} - ${formatDateTime(result.signedAt)}`);
-      toast.success(successMessage);
-      const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
-      setActiveEventDetail(detail);
-      if (result.status === 'IN_PROGRESS' || detail.status === 'IN_PROGRESS') setRequestStatus('accepted');
-      if (result.status === 'DONE' || detail.status === 'DONE') setRequestStatus('accepted');
-      await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
-    } catch (e: any) {
-      toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Ký biên bản thất bại');
-    }
-  };
-
-  const getPriorityClass = (priority?: string | null) => {
-    switch ((priority || '').toUpperCase()) {
-      case 'URGENT': return 'bg-red-50 text-red-700 border-red-200';
-      case 'HIGH': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'LOW': return 'bg-slate-50 text-slate-500 border-slate-200';
-      default: return 'bg-sky-50 text-sky-700 border-sky-200'; // MEDIUM
-    }
-  };
-  const getPriorityLabel = (priority?: string | null) => {
-    switch ((priority || '').toUpperCase()) {
-      case 'URGENT': return 'Khẩn cấp';
-      case 'HIGH': return 'Cao';
-      case 'LOW': return 'Thấp';
-      default: return 'Trung bình';
-    }
+    const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
+    setActiveEventDetail(detail);
+    if (detail.status === 'IN_PROGRESS' || detail.status === 'DONE') setRequestStatus('accepted');
+    await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
   };
 
   const getStatusClass = (status: string) => {
@@ -1391,10 +1346,32 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     };
   };
 
+  // Đoàn khách diễn ra nhiều ngày (so ngày của usageStartAt/usageEndAt theo giờ VN) → ô đề xuất
+  // giờ cần cả ngày lẫn giờ (datetime-local); trong 1 ngày → chỉ cần giờ (time), như trước.
+  const usageStartDatePart = toVietnamDateTimeLocalInput(activeEventDetail?.usageStartAt || undefined).slice(0, 10) || undefined;
+  const usageEndDatePart = toVietnamDateTimeLocalInput(activeEventDetail?.usageEndAt || undefined).slice(0, 10) || undefined;
+  const isMultiDay = !!(usageStartDatePart && usageEndDatePart && usageStartDatePart !== usageEndDatePart);
+
+  // "Chốt": số lượng Host đã CHẤP NHẬN đề xuất — hiển thị số này ở mọi chỗ chỉ có 1 ô "Số lượng"
+  // (không tách 3 cột dự kiến/đề xuất/chốt như card Host); số dự kiến gốc (activeEventDetail.quantity)
+  // không đổi, chỉ dùng để tính toán (vd ép "đề xuất mới phải nhỏ hơn").
+  const finalQuantityDisplay = activeEventDetail?.proposalResponse === 'ACCEPTED' && activeEventDetail?.proposedQuantity != null
+    ? activeEventDetail.proposedQuantity : activeEventDetail?.quantity;
+  const quantityTooHigh = proposalQuantity.trim() !== '' && activeEventDetail?.quantity != null && Number(proposalQuantity) >= activeEventDetail.quantity;
+
   const handleOpenProposal = () => {
-    const current = extractTimeRange();
-    setProposalStartTime(current.start);
-    setProposalEndTime(current.end);
+    if (isMultiDay) {
+      setProposalStartTime(toVietnamDateTimeLocalInput(activeEventDetail?.proposedUsageStartAt || activeEventDetail?.usageStartAt || undefined));
+      setProposalEndTime(toVietnamDateTimeLocalInput(activeEventDetail?.proposedUsageEndAt || activeEventDetail?.usageEndAt || undefined));
+    } else {
+      const current = extractTimeRange();
+      setProposalStartTime(current.start);
+      setProposalEndTime(current.end);
+    }
+    // Không seed từ quantity gốc — số lượng đề xuất phải NHỎ HƠN số lượng dự kiến, để trống mặc
+    // định, chỉ khôi phục đề xuất dở dang nếu có.
+    setProposalQuantity(activeEventDetail?.proposedQuantity != null ? String(activeEventDetail.proposedQuantity) : '');
+    setProposalContent(activeEventDetail?.proposedDescription || '');
     setIsProposing(true);
   };
 
@@ -2760,8 +2737,40 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
         {/* Wide Horizontal Table Modal representing Giai đoạn 1: Trước tiếp khách */}
         {activePopoverEvent && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick flex flex-col my-8">
+          <>
+            {/* Modal này bọc ngoài TaskHandoverModal (biên bản, id #task-handover-modal) bằng các lớp
+                overflow-y-auto/max-h-[70vh]/flex — chỉ hiện visibility qua CSS in của TaskHandoverModal
+                không đủ, vì overflow/max-height của lớp cha vẫn cắt nội dung khi in. Reset riêng 3 lớp
+                cha này (không đụng visibility — đã đúng ở CSS in bên trong). */}
+            <style type="text/css" media="print">
+              {`
+                /* position:static rơi về đúng vị trí trong luồng tài liệu — nếu trang có nội dung
+                   ẩn khác nằm TRƯỚC modal này (vd bảng "Phân công và tiến độ"), phần đó vẫn chiếm
+                   chỗ dù invisible, đẩy biên bản xuống dưới thành khoảng trắng lớn đầu trang. Ép
+                   absolute + top:0 để ghim hẳn lên đầu trang in, giống #task-handover-modal bên trong. */
+                #event-modal-backdrop {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  /* class gốc "inset-0" gán luôn right/bottom: 0 — không reset nốt 2 cạnh này thì
+                     khung vẫn bị ép đúng 1 màn hình cao, nội dung dư ra bị cắt dù overflow:visible. */
+                  right: auto !important;
+                  bottom: auto !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                #event-modal-backdrop, #event-modal-card, #event-modal-body {
+                  overflow: visible !important;
+                  max-height: none !important;
+                  height: auto !important;
+                  display: block !important;
+                }
+              `}
+            </style>
+          <div id="event-modal-backdrop" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div id="event-modal-card" className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick flex flex-col my-8">
 
               {/* Modal Title Banner */}
               <div className={`${activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted' ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-6 py-5 text-white flex justify-between items-center relative shadow-sm border-b border-white/10`}>
@@ -2794,7 +2803,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               </div>
 
               {/* Modal Contents in a clean wide Horizontal Table layout */}
-              <div className="p-6 md:p-8 space-y-4 overflow-y-auto max-h-[70vh] no-scrollbar bg-slate-50/50">
+              <div id="event-modal-body" className="p-6 md:p-8 space-y-4 overflow-y-auto max-h-[70vh] no-scrollbar bg-slate-50/50">
                 {/* Thay đổi mới (thông báo chưa đọc gắn với đơn/thư mời này) */}
                 {(() => {
                   const changes = getEventChangeNotifs(activePopoverEvent);
@@ -3269,214 +3278,336 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
                 {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && (
                   <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
+                    {!isProposing ? (
+                      <>
+                        {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Tiêu đề/Số lượng, Thời gian sử dụng) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-                    {/* BENTO GRID (Người gửi, Thời gian gửi, Đoàn khách, Thời gian sử dụng) */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <User className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
-                        </div>
-                        <div className="text-sm font-black text-[#004c91]">{activePopoverEvent.host}</div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <Clock className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
-                        </div>
-                        <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
-                      </div>
-
-                      {activePopoverEvent.guests && (
-                        <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
-                          <div className="flex items-center gap-2 text-gray-400 mb-2">
-                            <Users className="w-4 h-4" />
-                            <span className="text-[11px] font-bold uppercase tracking-wider">Đoàn khách</span>
+                          <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                            <div className="flex items-center gap-2 text-gray-400 mb-2">
+                              <User className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
+                            </div>
+                            <div className="text-sm font-black text-[#004c91]">{activePopoverEvent.host}</div>
                           </div>
-                          <div className="text-base font-black text-[#004c91] border-l-4 border-[#f37021] pl-3 py-1 bg-transparent leading-none flex items-center uppercase">
-                            {activePopoverEvent.guests}
+
+                          <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
+                            <div className="flex items-center gap-2 text-gray-400 mb-2">
+                              <Clock className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
+                            </div>
+                            <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
+                          </div>
+
+                          {activePopoverEvent.guests && (
+                            <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
+                              <div className="flex items-center gap-2 text-gray-400 mb-2">
+                                <Users className="w-4 h-4" />
+                                <span className="text-[11px] font-bold uppercase tracking-wider">Đoàn khách</span>
+                              </div>
+                              <div className="text-base font-black text-[#004c91] border-l-4 border-[#f37021] pl-3 py-1 bg-transparent leading-none flex items-center uppercase">
+                                {activePopoverEvent.guests}
+                              </div>
+                            </div>
+                          )}
+
+                          {((activeEventDetail?.title || activePopoverEvent?.title) || activeEventDetail?.quantity != null) && (
+                            <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex items-center gap-8">
+                              {(activeEventDetail?.title || activePopoverEvent?.title) && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                                    <FileText className="w-4 h-4" />
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Tiêu đề</span>
+                                  </div>
+                                  <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.title || activePopoverEvent?.title}</div>
+                                </div>
+                              )}
+                              {activeEventDetail?.quantity != null && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                                    <FileText className="w-4 h-4" />
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Số lượng</span>
+                                  </div>
+                                  <div className="text-sm font-black text-[#004c91]">{finalQuantityDisplay}</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default relative overflow-hidden flex flex-col justify-center">
+                            <div className="flex items-center gap-2 text-gray-400 mb-2 relative z-10">
+                              <Calendar className="w-4 h-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng</span>
+                            </div>
+                            <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
+                              {isMultiDay ? (
+                                <>
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.usageStartAt)}</span>
+                                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.usageEndAt)}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
+                                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
+                                  <span className="text-sm text-[#004c91] ml-2 font-black">{activePopoverEvent.date.split('-').reverse().join('-')}</span>
+                                </>
+                              )}
+                            </div>
+                            <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none scale-150 mr-4">
+                              <Calendar className="w-24 h-24 text-gray-900" />
+                            </div>
+                          </div>
+
+                        </div>
+
+                        <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <FileText className="w-4 h-4" />
+                            <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
+                          </div>
+                          <div className="p-6 bg-[#f8fafc] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 transition-all relative">
+                            {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line, idx) => (
+                              <p key={idx} className={idx > 0 && line.startsWith('*') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
+                                {line}
+                              </p>
+                            ))}
                           </div>
                         </div>
-                      )}
 
-                      <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default relative overflow-hidden flex flex-col justify-center">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2 relative z-10">
-                          <Calendar className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng</span>
-                        </div>
-                        <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
-                          <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                          <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
-                          <span className="text-sm text-[#004c91] ml-2 font-black">{activePopoverEvent.date.split('-').reverse().join('-')}</span>
-                        </div>
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none scale-150 mr-4">
-                          <Calendar className="w-24 h-24 text-gray-900" />
-                        </div>
-                      </div>
-
-                      {/* Mức ưu tiên + Hạn phản hồi (visit_logistics_items.priority / due_at) */}
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <AlertCircle className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Mức ưu tiên</span>
-                        </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-full border text-[11px] font-black ${getPriorityClass(activeEventDetail?.priority)}`}>
-                          {getPriorityLabel(activeEventDetail?.priority)}
-                        </span>
-                      </div>
-
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <Clock className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Hạn phản hồi</span>
-                        </div>
-                        <div className="text-sm font-black text-[#004c91]">
-                          {activeEventDetail?.dueAt ? formatDateTime(activeEventDetail.dueAt) : 'Chưa có'}
-                        </div>
-                      </div>
-
-                      {isProposing && !proposalSubmitted && (
-                        <div className="col-span-1 sm:col-span-2 p-4 bg-orange-50/50 rounded-2xl border border-orange-200 cursor-default relative overflow-hidden flex flex-col justify-center animate-fade-in-quick mt-[-4px]">
-                          <div className="flex items-center gap-2 text-[#de703b] mb-2 relative z-10">
-                            <Calendar className="w-4 h-4" />
-                            <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng (Đề xuất)</span>
+                        {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && !proposalSubmitted && (
+                          <div className="flex justify-end pt-2">
+                            <button
+                              onClick={handleOpenProposal}
+                              disabled={!!assignedPerson}
+                              className={`px-5 py-2.5 rounded-xl border border-orange-200 text-[#f37021] bg-orange-50 font-bold text-xs flex items-center gap-2 transition-colors ${(!!assignedPerson) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-100'}`}>
+                              <Edit2 className="w-4 h-4" />
+                              Đề xuất thay đổi
+                            </button>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
-                            <input
-                              type="time"
-                              value={proposalStartTime}
-                              onChange={(e) => setProposalStartTime(e.target.value)}
-                              className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
-                            />
-                            <span className="text-center text-[#de703b] font-black">-</span>
-                            <input
-                              type="time"
-                              value={proposalEndTime}
-                              onChange={(e) => setProposalEndTime(e.target.value)}
-                              className="w-full text-sm p-3.5 border border-orange-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
-                            />
+                        )}
+
+                        {proposalSubmitted && (
+                          <div className="mt-4 animate-fade-in-quick">
+                            <div className="bg-[#de703b] text-white rounded-2xl p-5 flex flex-col items-center justify-center text-center shadow-md border border-[#c9602c]">
+                              <div className="flex items-center gap-2.5 mb-2.5">
+                                <Clock className="w-5 h-5" />
+                                <span className="font-extrabold text-sm uppercase tracking-wider">Chờ xác nhận (Đề xuất thay đổi)</span>
+                              </div>
+                              <div className="bg-black/15 px-4 py-1.5 rounded-full inline-block">
+                                <span className="text-white/95 text-xs font-medium">
+                                  bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
+                                  {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
+                                  {' - '}
+                                  {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : formatVietnamDateTime(new Date())}
+                                </span>
+                                <div className="mt-2 space-y-1 text-white/95 text-xs">
+                                  {activeEventDetail?.proposedQuantity != null && (
+                                    <p>Đề xuất số lượng: {activeEventDetail.proposedQuantity}</p>
+                                  )}
+                                  {activeEventDetail?.proposedUsageStartAt && activeEventDetail?.proposedUsageEndAt && (
+                                    <p>Đề xuất giờ: {formatDateTime(activeEventDetail.proposedUsageStartAt)} - {formatDateTime(activeEventDetail.proposedUsageEndAt)}</p>
+                                  )}
+                                  {activeEventDetail?.proposedDescription && (
+                                    <p>Nội dung đề xuất: {activeEventDetail.proposedDescription}</p>
+                                  )}
+                                  <p>Lý do: {activeEventDetail?.proposalNote || proposalNote}</p>
+                                </div>
+                              </div>
+                            </div>
                           </div>
+                        )}
+                      </>
+                    ) : (
+                      /* Đang đề xuất thay đổi: tách 2 khối — trái = đề xuất mượn của Host (đối chiếu), phải = đề xuất thay đổi của mình */
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+
+                        <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+                          <h4 className="text-[11px] font-black uppercase tracking-wider text-gray-500 flex items-center gap-1.5 pb-2 mb-1 border-b border-gray-200">
+                            <User className="w-3.5 h-3.5" /> Đề xuất mượn của Host
+                          </h4>
+                          <InfoLine icon={User} label="Người gửi" value={activePopoverEvent.host} />
+                          <InfoLine icon={Clock} label="Thời gian gửi" value={formatDateTimeDisplay(activeEventDetail?.requestedAt)} />
+                          <InfoLine icon={Users} label="Đoàn khách" value={activePopoverEvent.guests} emphasize />
+                          <InfoLine icon={FileText} label="Tiêu đề" value={activeEventDetail?.title || activePopoverEvent?.title} />
+                          <InfoLine icon={FileText} label="Số lượng" value={finalQuantityDisplay} />
+                          <InfoLine
+                            icon={Calendar}
+                            label="Thời gian sử dụng"
+                            value={isMultiDay
+                              ? `${formatDateTimeDisplay(activeEventDetail?.usageStartAt)} - ${formatDateTimeDisplay(activeEventDetail?.usageEndAt)}`
+                              : `${activePopoverEvent.time || ''}${activePopoverEvent.date ? ` · ${activePopoverEvent.date.split('-').reverse().join('-')}` : ''}`}
+                          />
+                          {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.trim() && (
+                            <div className="flex items-start gap-2 py-1 pt-2 mt-1 border-t border-gray-200">
+                              <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-1">Nội dung chi tiết công việc</span>
+                                {activePopoverEvent.purpose.split('\n').map((line: string, idx: number) => (
+                                  <p key={idx} className={`text-sm text-gray-700 leading-relaxed ${idx > 0 && line.startsWith('*') ? 'mt-2 font-bold text-gray-900' : ''}`}>
+                                    {line}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
 
-                    </div>
+                        <div className="rounded-xl border border-orange-200 bg-orange-50/40 p-4">
+                          <h4 className="text-[11px] font-black uppercase tracking-wider text-[#de703b] flex items-center gap-1.5 pb-2 mb-1 border-b border-orange-200">
+                            <Edit2 className="w-3.5 h-3.5" /> Đề xuất thay đổi của tôi
+                          </h4>
 
-                    <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
-                      <div className="flex items-center gap-2 text-gray-400">
-                        <FileText className="w-4 h-4" />
-                        <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
-                      </div>
-                      <div className="p-6 bg-[#f8fafc] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 transition-all relative">
-                        {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line, idx) => (
-                          <p key={idx} className={idx > 0 && line.startsWith('*') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
-                            {line}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
+                          <div className="flex flex-col gap-2.5 animate-fade-in-quick">
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Số lượng mới</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={activeEventDetail?.quantity != null ? activeEventDetail.quantity - 1 : undefined}
+                                step={1}
+                                value={proposalQuantity}
+                                onChange={(e) => setProposalQuantity(e.target.value)}
+                                className={`w-full text-sm px-3 py-2 border rounded-lg outline-none bg-white font-bold text-slate-800 ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-orange-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200'}`}
+                              />
+                              {quantityTooHigh && (
+                                <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({activeEventDetail.quantity}).</p>
+                              )}
+                            </div>
 
-                    {(requestStatus === 'pending' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
-                      <div className="flex justify-end pt-2">
-                        <button
-                          onClick={handleOpenProposal}
-                          disabled={!!assignedPerson}
-                          className={`px-5 py-2.5 rounded-xl border border-orange-200 text-[#f37021] bg-orange-50 font-bold text-xs flex items-center gap-2 transition-colors ${(!!assignedPerson) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-100'}`}>
-                          <Edit2 className="w-4 h-4" />
-                          Đề xuất thay đổi
-                        </button>
-                      </div>
-                    )}
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Thời gian sử dụng mới</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type={isMultiDay ? 'datetime-local' : 'time'}
+                                  value={proposalStartTime}
+                                  onChange={(e) => setProposalStartTime(e.target.value)}
+                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                                />
+                                <span className="text-[#de703b] font-black shrink-0">-</span>
+                                <input
+                                  type={isMultiDay ? 'datetime-local' : 'time'}
+                                  value={proposalEndTime}
+                                  onChange={(e) => setProposalEndTime(e.target.value)}
+                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                                />
+                              </div>
+                            </div>
 
-                    {isProposing && (
-                      <div className="flex flex-col gap-3 transition-all cursor-default relative z-10 animate-fade-in-quick mt-2">
-                        <div className="flex items-center gap-2 text-[#de703b] mt-2">
-                          <FileText className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc (Đề xuất)</span>
-                        </div>
-                        <textarea
-                          rows={4}
-                          className="w-full text-sm p-5 border border-orange-200 rounded-2xl focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none bg-orange-50/50 font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
-                          placeholder="Nhập đề xuất nội dung..."
-                          value={proposalNote}
-                          onChange={(e) => setProposalNote(e.target.value)}
-                          autoFocus
-                        />
-                        <div className="flex justify-end gap-3 mt-1">
-                          <button
-                            onClick={() => {
-                              setIsProposing(false);
-                              setProposalNote('');
-                              setProposalStartTime('');
-                              setProposalEndTime('');
-                            }}
-                            className="px-5 py-2.5 rounded-xl text-gray-500 hover:bg-gray-100 font-bold text-xs"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                if (activePopoverEvent?.rawId) {
-                                  if (proposalStartTime && proposalEndTime && proposalStartTime >= proposalEndTime) {
-                                    toast.error('Giờ kết thúc phải sau giờ bắt đầu');
-                                    return;
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Nội dung chi tiết công việc (đề xuất)</label>
+                              <textarea
+                                ref={(el) => {
+                                  if (el) {
+                                    el.style.height = 'auto';
+                                    el.style.height = `${Math.max(38, el.scrollHeight)}px`;
                                   }
-                                  if (!proposalNote.trim()) {
-                                    toast.error('Vui lòng nhập lý do/ghi chú đề xuất.');
-                                    return;
+                                }}
+                                rows={1}
+                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
+                                placeholder="Nhập nội dung công việc đề xuất (nếu có thay đổi)..."
+                                value={proposalContent}
+                                onChange={(e) => {
+                                  setProposalContent(e.target.value);
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = `${Math.max(38, e.target.scrollHeight)}px`;
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Lý do đề xuất *</label>
+                              <textarea
+                                ref={(el) => {
+                                  if (el) {
+                                    el.style.height = 'auto';
+                                    el.style.height = `${Math.max(38, el.scrollHeight)}px`;
                                   }
-                                  await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, {
-                                    proposedUsageStartAt: buildProposalDateTime(proposalStartTime),
-                                    proposedUsageEndAt: buildProposalDateTime(proposalEndTime),
-                                    proposalNote: proposalNote.trim(),
-                                  });
-                                  toast.success('Đã gửi đề xuất thay đổi');
+                                }}
+                                rows={1}
+                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
+                                placeholder="Lý do đề xuất thay đổi..."
+                                value={proposalNote}
+                                onChange={(e) => {
+                                  setProposalNote(e.target.value);
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = `${Math.max(38, e.target.scrollHeight)}px`;
+                                }}
+                                autoFocus
+                              />
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-1">
+                              <button
+                                onClick={() => {
                                   setIsProposing(false);
-                                  setProposalSubmitted(true);
+                                  setProposalContent('');
+                                  setProposalNote('');
                                   setProposalStartTime('');
                                   setProposalEndTime('');
-                                  await refetchAfterTaskAction();
-                                  const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
-                                  setActiveEventDetail(detail);
-                                }
-                              } catch (e: any) {
-                                toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Gửi đề xuất thất bại');
-                              }
-                            }}
-                            disabled={!proposalNote.trim() || !proposalStartTime || !proposalEndTime}
-                            className="px-5 py-2.5 rounded-xl bg-[#de703b] text-white hover:bg-[#c9602c] font-bold text-xs disabled:opacity-50"
-                          >
-                            Gửi đề xuất
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {proposalSubmitted && (
-                      <div className="mt-4 animate-fade-in-quick">
-                        <div className="bg-[#de703b] text-white rounded-2xl p-5 flex flex-col items-center justify-center text-center shadow-md border border-[#c9602c]">
-                          <div className="flex items-center gap-2.5 mb-2.5">
-                            <Clock className="w-5 h-5" />
-                            <span className="font-extrabold text-sm uppercase tracking-wider">Chờ xác nhận (Đề xuất thay đổi)</span>
-                          </div>
-                          <div className="bg-black/15 px-4 py-1.5 rounded-full inline-block">
-                            <span className="text-white/95 text-xs font-medium">
-                              bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
-                              {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
-                              {' - '}
-                              {activeEventDetail?.proposedAt ? formatDateTime(activeEventDetail.proposedAt) : formatVietnamDateTime(new Date())}
-                            </span>
-                            <div className="mt-2 space-y-1 text-white/95 text-xs">
-                              {activeEventDetail?.proposedUsageStartAt && activeEventDetail?.proposedUsageEndAt && (
-                                <p>Đề xuất giờ: {formatDateTime(activeEventDetail.proposedUsageStartAt)} - {formatDateTime(activeEventDetail.proposedUsageEndAt)}</p>
-                              )}
-                              <p>Ghi chú: {activeEventDetail?.proposedDescription || proposalNote}</p>
+                                  setProposalQuantity('');
+                                }}
+                                className="px-4 py-2 rounded-lg text-gray-500 hover:bg-gray-100 font-bold text-xs"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (proposalSubmitting) return; // chặn double-submit khi bấm liên tục
+                                  try {
+                                    if (activePopoverEvent?.rawId) {
+                                      if (proposalStartTime && proposalEndTime && proposalStartTime >= proposalEndTime) {
+                                        toast.error('Thời gian kết thúc phải sau thời gian bắt đầu');
+                                        return;
+                                      }
+                                      if (!proposalNote.trim()) {
+                                        toast.error('Vui lòng nhập lý do đề xuất.');
+                                        return;
+                                      }
+                                      const qty = proposalQuantity.trim() ? Number(proposalQuantity) : null;
+                                      if (qty != null && (!Number.isInteger(qty) || qty < 1)) {
+                                        toast.error('Số lượng đề xuất phải là số nguyên ≥ 1');
+                                        return;
+                                      }
+                                      if (qty != null && activeEventDetail?.quantity != null && qty >= activeEventDetail.quantity) {
+                                        toast.error(`Số lượng đề xuất phải nhỏ hơn số lượng dự kiến (${activeEventDetail.quantity})`);
+                                        return;
+                                      }
+                                      setProposalSubmitting(true);
+                                      await departmentReceptionTasksApi.proposeChange(activePopoverEvent.rawId, {
+                                        proposedQuantity: qty,
+                                        proposedUsageStartAt: isMultiDay ? `${proposalStartTime}:00` : buildProposalDateTime(proposalStartTime),
+                                        proposedUsageEndAt: isMultiDay ? `${proposalEndTime}:00` : buildProposalDateTime(proposalEndTime),
+                                        proposedDescription: proposalContent.trim() || undefined,
+                                        proposalNote: proposalNote.trim(),
+                                      });
+                                      toast.success('Đã gửi đề xuất thay đổi');
+                                      setIsProposing(false);
+                                      setProposalSubmitted(true);
+                                      setProposalContent('');
+                                      setProposalStartTime('');
+                                      setProposalEndTime('');
+                                      setProposalQuantity('');
+                                      await refetchAfterTaskAction();
+                                      const detail = await departmentReceptionTasksApi.getRequestDetail(activePopoverEvent.rawId);
+                                      setActiveEventDetail(detail);
+                                    }
+                                  } catch (e: any) {
+                                    toast.error(e.response?.data?.message || e.response?.data?.title || e.message || 'Gửi đề xuất thất bại');
+                                  } finally {
+                                    setProposalSubmitting(false);
+                                  }
+                                }}
+                                disabled={proposalSubmitting || !proposalNote.trim() || !proposalStartTime || !proposalEndTime || quantityTooHigh}
+                                className="px-4 py-2 rounded-lg bg-[#de703b] text-white hover:bg-[#c9602c] font-bold text-xs disabled:opacity-50"
+                              >
+                                {proposalSubmitting ? 'Đang gửi...' : 'Gửi đề xuất'}
+                              </button>
                             </div>
                           </div>
                         </div>
+
                       </div>
                     )}
 
@@ -3740,406 +3871,45 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   </div>
                 )}
 
-                {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && requestStatus === 'accepted' && (
-                  <>
-                    <style type="text/css" media="print">
-                      {`
-                      body * {
-                        visibility: hidden;
-                      }
-                      #safuri-handover-layout, #safuri-handover-layout * {
-                        visibility: visible;
-                      }
-                      #safuri-handover-layout {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                        margin: 0;
-                        padding: 0;
-                        overflow: visible !important;
-                        border: none !important;
-                        box-shadow: none !important;
-                      }
-                    `}
-                    </style>
-                    {/* Safuri Event Layout */}
-                    <div id="safuri-handover-layout" className="bg-white rounded-2xl p-6 md:p-10 font-sans w-full space-y-6 relative overflow-hidden print:max-w-none">
-
-                      <button
-                        type="button"
-                        onClick={() => window.print()}
-                        className="absolute top-6 right-6 z-20 flex items-center gap-1.5 text-xs font-bold text-[#004c91] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors outline-none print:hidden"
-                      >
-                        <Download className="w-4 h-4" /> Tải PDF
-                      </button>
-
-                      {/* Draft decorative watermark stamp */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100/15 text-5xl sm:text-7xl font-sans font-black tracking-widest uppercase pointer-events-none select-none -rotate-12">
-                        FPT UNIVERSITY
-                      </div>
-
-                      {/* National Emblem Text & FPTU Header */}
-                      <div className="flex flex-col sm:flex-row justify-between border-b border-slate-150 pb-5 text-xs gap-4 text-slate-550 relative z-10">
-                        <div className="text-left space-y-1">
-                          <p className="font-extrabold text-slate-900 text-xs sm:text-sm uppercase tracking-wide">TRƯỜNG ĐẠI HỌC FPT HÒA LẠC</p>
-                          <p className="font-bold text-[11px] text-slate-550">Tổ Quản Lý Thiết Bị & Xe Điện Nội Khu</p>
-                          <p className="text-[10px] text-slate-450 font-mono">Số văn bản: FPTU/BGNT-XD/2026-088</p>
-                        </div>
-                        <div className="text-left sm:text-right space-y-1">
-                          <p className="font-extrabold text-slate-900 uppercase text-[11px] tracking-wider">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
-                          <p className="font-black text-[11px] text-[#f37021]">Độc lập - Tự do - Hạnh phúc</p>
-                          <div className="w-24 sm:w-32 h-[1px] bg-slate-250 sm:ml-auto mt-1" />
-                        </div>
-                      </div>
-
-                      {/* Official Document Title */}
-                      <div className="text-center space-y-1 mb-8 relative z-10 pt-2">
-                        <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-wide">
-                          BIÊN BẢN BÀN GIAO VÀ NGHIỆM THU
-                        </h4>
-                        <p className="text-lg font-bold uppercase">
-                          TÀI SẢN / TRANG THIẾT BỊ
-                        </p>
-                      </div>
-
-                      {/* Core Minutes Information */}
-                      <div className="space-y-3 text-[15px] leading-relaxed mb-6 font-sans relative z-10">
-                        <p>
-                          Hôm nay, lúc: <b>08:00</b> giờ, ngày <b>08/08/2026</b>, tại: <b>Trường Đại học FPT Hòa Lạc</b>.
-                        </p>
-                        <p>Chúng tôi gồm:</p>
-                        <div className="space-y-2 pl-4">
-                          <div className="flex flex-wrap gap-x-8 gap-y-2">
-                            <p className="flex-1 min-w-[250px]">Người bàn giao: <b>Đại diện Tổ Quản Lý Thiết Bị</b></p>
-                            <p className="flex-1 min-w-[200px]">Bộ phận: <b>Tổ Quản Lý Thiết Bị</b></p>
-                          </div>
-                          <div className="flex flex-wrap gap-x-8 gap-y-2">
-                            <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>Đại diện Ban Đào tạo & CTSV</b></p>
-                            <p className="flex-1 min-w-[200px]">Bộ phận: <b>Ban Đào tạo & CTSV</b></p>
-                          </div>
-                          <p>Lý do bàn giao: <b>Đón tiếp phái đoàn đối tác thương mại Safuri</b></p>
-                          <p>
-                            {isVehicleDoc ? 'Thời gian hẹn trả xe' : 'Thời gian hẹn trả tài sản'}:{' '}
-                            <b>{activeEventDetail?.endTime && activeEventDetail?.date ? `${activeEventDetail.endTime}, ${activeEventDetail.date}` : '16:30, 08/08/2026'}</b>
-                          </p>
-                        </div>
-                      </div>
-
-                      <p className="font-bold text-[15px] mb-2 relative z-10">
-                        {isVehicleDoc ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
-                      </p>
-                      <div className="overflow-x-auto mb-6 relative z-10">
-                        <table className="w-full border-collapse border border-slate-500 text-[14px]">
-                          <thead>
-                            <tr className="bg-slate-50">
-                              <th className="border border-slate-500 p-2 text-center w-12">STT</th>
-                              <th className="border border-slate-500 p-2 text-center">Nội dung</th>
-                              <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                              <th className="border border-slate-500 p-2 text-center">{isVehicleDoc ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
-                              <th className="border border-slate-500 p-2 text-center">{isVehicleDoc ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
-                              <th className="border border-slate-500 p-2 text-center">Ghi chú</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {isVehicleDoc ? (
-                              VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
-                                <tr key={i}>
-                                  <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                                  <td className="border border-slate-500 p-2">{row.name}</td>
-                                  <td className="border border-slate-500 p-2 text-center">{row.qty}</td>
-                                  <td className="border border-slate-500 p-2"></td>
-                                  <td className="border border-slate-500 p-2"></td>
-                                  <td className="border border-slate-500 p-2"></td>
-                                </tr>
-                              ))
-                            ) : (
-                              <tr>
-                                <td className="border border-slate-500 p-2 text-center">1</td>
-                                <td className="border border-slate-500 p-2 font-semibold">Xe điện FPTU-EV-09 (8 ghế)</td>
-                                <td className="border border-slate-500 p-2 text-center">1</td>
-                                <td className="border border-slate-500 p-2 text-center">
-                                  {safuriBG1Note || 'Đã sạc đầy 100%, 10 ô dù'}
-                                </td>
-                                <td className="border border-slate-500 p-2 text-center">
-                                  {safuriBG2Signed ? (safuriBG2Note || 'Đã xác nhận') : ''}
-                                </td>
-                                <td className="border border-slate-500 p-2"></td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div className="space-y-1 text-[14px] mb-8 relative z-10">
-                        <p className="font-bold">{isVehicleDoc ? 'Quy định khi sử dụng xe ô tô điện:' : 'Quy định khi sử dụng tài sản:'}</p>
-                        {isVehicleDoc ? (
-                          <ul className="list-disc pl-8 space-y-1">
-                            <li>Người mượn xe phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao xe cho người khác.</li>
-                            <li>Khi có vấn đề xảy ra (xe bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn xe</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
-                            <li>An toàn trong quá trình sử dụng xe sẽ do <b>người mượn xe</b> chịu hoàn toàn trách nhiệm.</li>
-                            <li>Ghi chú khác: ....................................................................................................................</li>
-                          </ul>
-                        ) : (
-                          <ul className="list-disc pl-8 space-y-1">
-                            <li>Người mượn tài sản phải tuân thủ đúng mục đích sử dụng, không tự ý chuyển giao cho người khác.</li>
-                            <li>Khi có vấn đề xảy ra (bị hỏng hoặc không nguyên hiện trạng ban đầu), <b>người mượn tài sản</b> sẽ phải chịu hoàn toàn trách nhiệm chi trả chi phí sửa chữa/đền bù.</li>
-                            <li>An toàn trong quá trình sử dụng tài sản sẽ do <b>người mượn tài sản</b> chịu hoàn toàn trách nhiệm.</li>
-                            <li>Ghi chú khác: ....................................................................................................................</li>
-                          </ul>
-                        )}
-                        <p className="mt-4">
-                          Tôi là <b>Đại diện Ban Đào tạo & CTSV</b>, đã đọc hiểu và cam kết thực hiện đúng quy định sử dụng.
-                        </p>
-                      </div>
-
-                      {/* Gray horizontal divider with Handover text */}
-                      <div className="relative my-7">
-                        <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                          <div className="w-full border-t border-slate-350"></div>
-                        </div>
-                        <div className="relative flex justify-center text-xs uppercase font-extrabold tracking-widest">
-                          <span className="bg-white text-slate-900 font-black px-4 py-1.5 rounded-full border border-slate-200 shadow-3xs uppercase text-[11px] tracking-widest">BÀN GIAO</span>
-                        </div>
-                      </div>
-
-                      {/* Handover Signatures with Notes on the SAME row */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50/70 p-4.5 rounded-2xl border border-slate-200">
-
-                        {/* Block Bên Giao */}
-                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4">
-                          <div>
-                            <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
-                              Ghi chú Bên Giao
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={safuriBG1Note}
-                              onChange={e => setSafuriBG1Note(e.target.value)}
-                              className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#f37021] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-orange-200"
-                              disabled={!!safuriBG1Signed}
-                              placeholder="Nhập ý kiến Bên Giao đầu giờ..."
-                            />
-                          </div>
-
-                          {/* Horizontal Signature Box */}
-                          <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriBG1Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-white hover:border-[#004c91]/40'}`}>
-                            {safuriBG1Signed ? (
-                              <div className="flex flex-row items-center justify-between gap-4 animate-fade-in-quick w-full">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs border border-emerald-200 shadow-3xs shrink-0">✓</div>
-                                  <div className="text-left">
-                                    <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider font-sans block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
-                                    <p className="text-[11px] font-extrabold text-slate-805 leading-snug truncate max-w-[170px]">{safuriBG1Signed.split(' - ')[0]}</p>
-                                    <p className="text-[9px] text-slate-500 font-mono mt-0.5 leading-none">{safuriBG1Signed.split(' - ')[1]}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-row items-center justify-between gap-3 w-full">
-                                <div className="flex items-center gap-2">
-                                  <FileText className="w-4 h-4 text-[#f37021]/80 shrink-0" />
-                                  <div className="text-left">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
-                                    <span className="text-[9px] text-slate-450">Nhấp để hoàn tất BG1</span>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSignHandover('BORROW', 'PROVIDER', safuriBG1Note, setSafuriBG1Signed, 'Đã ký bàn giao. Đơn yêu cầu đã chuyển sang đang xử lý.')}
-                                  className="py-2 px-3 bg-orange-50 hover:bg-orange-100 hover:text-[#f37021] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                  <span>Ký xác nhận (BG1)</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Block Bên Nhận */}
-                        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4">
-                          <div>
-                            <label className="block text-[10px] font-black text-[#f37021] uppercase tracking-wider mb-1.5">
-                              Ghi chú Bên Nhận
-                            </label>
-                            {safuriBG2Signed ? (
-                              <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
-                                {safuriBG2Note || 'Đã xác nhận nhận tài sản.'}
-                              </div>
-                            ) : (
-                              <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-400 italic">
-                                Chưa ký nhận.
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Horizontal Signature Box */}
-                          <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriBG2Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
-                            {safuriBG2Signed ? (
-                              <div className="flex flex-row items-center justify-between gap-4 animate-fade-in-quick w-full">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs border border-emerald-200 shadow-3xs shrink-0">✓</div>
-                                  <div className="text-left">
-                                    <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider font-sans block leading-none mb-0.5">ĐÃ KÝ DUYỆT BÀN GIAO</span>
-                                    <p className="text-[11px] font-extrabold text-slate-850 leading-snug truncate max-w-[170px]">{safuriBG2Signed.split(' - ')[0]}</p>
-                                    <p className="text-[9px] text-slate-500 font-mono mt-0.5 leading-none">{safuriBG2Signed.split(' - ')[1]}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
-                                <div className="flex items-center gap-2">
-                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                                  <div className="text-left">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
-                                    <span className="text-[9px] text-slate-450">Chờ Host ký nhận</span>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Toggle Acceptance Row when both are signed */}
-                      {safuriBG1Signed && safuriBG2Signed ? (
-                        <div className="animate-fade-in-quick space-y-6 pt-2 font-sans">
-                          {/* Gray horizontal divider with Nghiệm thu text */}
-                          <div className="relative my-7">
-                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                              <div className="w-full border-t border-slate-350"></div>
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase font-extrabold tracking-widest">
-                              <span className="bg-white text-slate-900 font-black px-4 py-1.5 rounded-full border border-slate-200 shadow-3xs uppercase text-[11px] tracking-widest">NGHIỆM THU</span>
-                            </div>
-                          </div>
-
-                          {/* Acceptance signatures with Notes on the SAME row */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-[#f8fbfe] p-4.5 rounded-2xl border border-blue-200/50">
-
-                            {/* Block Bên Giao Nghiệm Thu */}
-                            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4 print:shadow-none">
-                              <div>
-                                <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
-                                  Ghi chú Nghiệm thu (Bên Giao)
-                                </label>
-                                {safuriNT1Signed ? (
-                                  <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-600 italic">
-                                    {safuriNT1Note || 'Đã bàn giao trả tài sản.'}
-                                  </div>
-                                ) : (
-                                  <div className="w-full text-xs p-3 border border-slate-200 rounded-xl bg-slate-50 min-h-[64px] text-slate-400 italic">
-                                    Chưa ký trả.
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Horizontal Signature Box */}
-                              <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriNT1Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-slate-50'}`}>
-                                {safuriNT1Signed ? (
-                                  <div className="flex flex-row items-center justify-between gap-4 animate-fade-in-quick w-full">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs border border-emerald-200 shadow-3xs shrink-0">✓</div>
-                                      <div className="text-left font-sans">
-                                        <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider font-sans block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
-                                        <p className="text-[11px] font-extrabold text-slate-805 leading-snug truncate max-w-[170px]">{safuriNT1Signed.split(' - ')[0]}</p>
-                                        <p className="text-[9px] text-slate-500 font-mono mt-0.5 leading-none">{safuriNT1Signed.split(' - ')[1]}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
-                                    <div className="flex items-center gap-2">
-                                      <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                                      <div className="text-left font-sans">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Giao</span>
-                                        <span className="text-[9px] text-slate-450">Chờ Host ký trả</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Block Bên Nhận Nghiệm Thu */}
-                            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-3xs flex flex-col justify-between gap-4 print:shadow-none">
-                              <div>
-                                <label className="block text-[10px] font-black text-[#004c91] uppercase tracking-wider mb-1.5">
-                                  Ghi chú Nghiệm thu (Bên Nhận)
-                                </label>
-                                <textarea
-                                  rows={2}
-                                  value={safuriNT2Note}
-                                  onChange={e => setSafuriNT2Note(e.target.value)}
-                                  className="w-full text-xs p-2.5 border border-slate-250 rounded-xl focus:border-[#004c91] outline-none resize-none font-sans bg-slate-50/30 focus:ring-1 focus:ring-blue-200"
-                                  disabled={!!safuriNT2Signed || !safuriNT1Signed}
-                                  placeholder={safuriNT1Signed ? "Nhận xét tình trạng bàn giao trả..." : "Chờ Host (Bên Giao) ký trả trước..."}
-                                />
-                              </div>
-
-                              {/* Horizontal Signature Box */}
-                              <div className={`border-2 rounded-xl p-3 relative group shadow-3xs transition-colors ${safuriNT2Signed ? 'border-solid border-emerald-500 bg-emerald-50/20' : 'border-dashed border-slate-250 bg-white hover:border-[#004c91]/40'}`}>
-                                {safuriNT2Signed ? (
-                                  <div className="flex flex-row items-center justify-between gap-4 animate-fade-in-quick w-full">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs border border-emerald-200 shadow-3xs shrink-0">✓</div>
-                                      <div className="text-left font-sans">
-                                        <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider font-sans block leading-none mb-0.5">ĐÃ KÝ DUYỆT NGHIỆM THU</span>
-                                        <p className="text-[11px] font-extrabold text-slate-850 leading-snug truncate max-w-[170px]">{safuriNT2Signed.split(' - ')[0]}</p>
-                                        <p className="text-[9px] text-slate-500 font-mono mt-0.5 leading-none">{safuriNT2Signed.split(' - ')[1]}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : safuriNT1Signed ? (
-                                  <div className="flex flex-row items-center justify-between gap-3 w-full">
-                                    <div className="flex items-center gap-2">
-                                      <FileText className="w-4 h-4 text-[#004c91]/80 shrink-0" />
-                                      <div className="text-left font-sans">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
-                                        <span className="text-[9px] text-slate-450">Nhấp để hoàn tất NT2</span>
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSignHandover('RETURN', 'PROVIDER', safuriNT2Note, setSafuriNT2Signed, 'Đã ký nghiệm thu. Đơn yêu cầu đã hoàn thành.')}
-                                      className="py-2 px-3 bg-blue-50 hover:bg-blue-100 hover:text-[#004c91] text-slate-705 font-extrabold text-[11px] rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs shrink-0"
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      <span>Ký Nghiệm thu (NT2)</span>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-row items-center justify-between gap-3 w-full opacity-60">
-                                    <div className="flex items-center gap-2">
-                                      <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                                      <div className="text-left font-sans">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Chữ ký Bên Nhận</span>
-                                        <span className="text-[9px] text-slate-450">Chờ bên giao ký trước</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-amber-50/85 rounded-2xl p-4.5 text-center text-xs text-amber-900 border border-amber-200 animate-pulse relative z-10 flex items-center justify-center gap-2 font-sans">
-                          <span className="w-2 h-2 rounded-full bg-amber-500" />
-                          <span className="font-semibold text-amber-950">Tiến trình an toàn: Vui lòng ký đầy đủ 2 ô "Bàn giao" đợt 1 bên trên để tự động mở khóa hồ sơ "Nghiệm thu bồi hoàn" đợt 2 sau khi hoàn tất hành trình di chuyển đoàn Safuri.</span>
-                        </div>
-                      )}
-
-                      {/* Ghi chú chi phí — hiện sau khi ký nghiệm thu đủ 2 bên; nằm trong vùng in
-                      của biên bản nên Tải PDF sẽ kèm bảng chi phí. */}
-                      {safuriBG1Signed && safuriBG2Signed && safuriNT1Signed && safuriNT2Signed && activePopoverEvent.rawId && (
-                        <LogisticsExpensePanel logisticsItemId={activePopoverEvent.rawId} />
-                      )}
-                    </div>
-                  </>
-                )}
+                {(activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' || activePopoverEvent.itemType === 'REQUEST') && requestStatus === 'accepted' && activeEventDetail && (() => {
+                  // Dùng chung TaskHandoverModal với Dept Staff (StaffLeaderTaskModal) thay vì layout
+                  // "Safuri" cũ hardcode tên/ngày giả — data thật + mọi fix (checklist, in PDF...) tự
+                  // đồng bộ. Dept Leader chỉ xem (không ký) khi việc đã giao cho staff khác.
+                  const toPascalSig = (sig: any) => sig?.name ? { Name: sig.name, SignedAt: sig.signedAt } : null;
+                  const isAssignedToOther = activeEventDetail.assigneeId && activeEventDetail.assigneeId !== currentUserId;
+                  const readOnlyHandover = isDeptLeader && isAssignedToOther;
+                  // "Chốt": số lượng đã được Host CHẤP NHẬN đề xuất thay proposedQuantity cho
+                  // quantity gốc — biên bản bàn giao phải dùng số này, không phải số dự kiến ban đầu.
+                  const finalQuantity = activeEventDetail.proposalResponse === 'ACCEPTED' && activeEventDetail.proposedQuantity != null
+                    ? activeEventDetail.proposedQuantity : activeEventDetail.quantity;
+                  const handoverDto = {
+                    LogisticsItemId: activePopoverEvent.rawId,
+                    Title: activeEventDetail.title,
+                    Quantity: finalQuantity,
+                    Description: activeEventDetail.description,
+                    ItemType: activeEventDetail.itemType,
+                    UsageEndTime: activeEventDetail.endTime,
+                    UsageDate: activeEventDetail.date,
+                    DelegationName: activeEventDetail.delegationName,
+                    SenderName: activeEventDetail.senderName,
+                    AssigneeName: activeEventDetail.assigneeName,
+                    BorrowNote: activeEventDetail.borrowNote,
+                    ReturnNote: activeEventDetail.returnNote,
+                    ChecklistJson: activeEventDetail.checklistJson,
+                    BorrowProviderSignature: toPascalSig(activeEventDetail.borrowProviderSignature),
+                    BorrowBorrowerSignature: toPascalSig(activeEventDetail.borrowBorrowerSignature),
+                    ReturnBorrowerSignature: toPascalSig(activeEventDetail.returnBorrowerSignature),
+                    ReturnProviderSignature: toPascalSig(activeEventDetail.returnProviderSignature),
+                  };
+                  return (
+                    <TaskHandoverModal
+                      inline
+                      detailData={handoverDto}
+                      onSuccess={refreshActiveEventDetail}
+                      readOnly={readOnlyHandover}
+                    />
+                  );
+                })()}
 
                 {activePopoverEvent.category === 'Lịch của tôi' && activePopoverEvent.itemType !== 'INVITATION' && activePopoverEvent.itemType !== 'REQUEST' && (
                   <div className="bg-white rounded-2xl p-6 md:p-8 font-sans w-full space-y-6 relative overflow-visible">
@@ -4208,6 +3978,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
             </div>
           </div>
+          </>
         )}
 
         {/* Editable email preview before assigning a logistics task. */}

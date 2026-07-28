@@ -1,4 +1,4 @@
-using PEMS.Application.Common.Interfaces;
+﻿using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChange;
 using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
@@ -41,7 +41,6 @@ public class ProposeRequestChangeCommandHandlerTests
             ItemType = "LED",
             Title = "Màn LED sảnh A",
             Status = "ACCEPTED",
-            Priority = "HIGH",
             CoordinationMode = "SYSTEM_REQUEST",
             RequestedToDepartmentId = DeptId,
             RequestedBy = hostUserId,
@@ -81,9 +80,19 @@ public class ProposeRequestChangeCommandHandlerTests
         Assert.Equal(SystemEmailContent.FromTemplate.Instance, sent.Content);
         Assert.Equal($"user{DelegationsTestData.HostUserId}@test.local", sent.To.Email);
 
+        // A proposal is a counter-offer, so the mail carries WHAT is proposed, not only why. Sending
+        // the rationale alone made the Host open the portal to find the numbers they were being asked
+        // to approve.
         Assert.Equal(
-            new[] { "departmentName", "hostName", "logisticsTitle", "proposalNote" },
+            new[]
+            {
+                "delegationName", "departmentName", "hostName", "logisticsTitle", "originalQuantity",
+                "proposalNote", "proposedDescription", "proposedQuantity",
+                "proposedUsageEndAt", "proposedUsageStartAt",
+            },
             sent.Variables.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        Assert.Equal("1", sent.Variables["proposedQuantity"]);
 
         // The Host now learns who is asking. "The handling department proposes a change" was
         // unverifiable — this names it.

@@ -54,7 +54,7 @@ export function ForgotPasswordPage() {
             >
               {t('loginModal:forgot.haveCode')}
             </button>
-            <Link to="/login" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
+            <Link to="/" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
@@ -76,7 +76,7 @@ export function ForgotPasswordPage() {
             >
               {submitting ? t('loginModal:forgot.sending') : t('loginModal:forgot.submit')}
             </button>
-            <Link to="/login" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
+            <Link to="/" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
           </form>
         )}
       </div>

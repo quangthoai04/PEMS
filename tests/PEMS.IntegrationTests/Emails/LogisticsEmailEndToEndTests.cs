@@ -93,6 +93,13 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
             ["hostName"] = "Trần Thị Hà",
             ["logisticsTitle"] = "Màn LED sảnh A",
             ["departmentName"] = "Phòng Hành chính",
+            ["delegationName"] = "Đoàn Đại học Quốc gia",
+            // The counter-offer itself, not just the reason for it.
+            ["originalQuantity"] = "2",
+            ["proposedQuantity"] = "1",
+            ["proposedUsageStartAt"] = "08:00 01/08/2026",
+            ["proposedUsageEndAt"] = "12:00 01/08/2026",
+            ["proposedDescription"] = "Không đổi",
             ["proposalNote"] = "Kho chỉ còn 1 màn, xin giảm số lượng.",
         },
         TrustedBlocks: new Dictionary<string, string>

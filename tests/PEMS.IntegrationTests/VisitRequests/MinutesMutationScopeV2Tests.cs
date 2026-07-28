@@ -111,7 +111,7 @@ public sealed class MinutesMutationScopeV2Tests
             new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db));
+            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "MN" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
@@ -126,7 +126,7 @@ public sealed class MinutesMutationScopeV2Tests
         var actor = new FakeUser(leaderId, RoleCodes.Staff, UserSubRoles.Leader, campusId);
         await new ApproveCampusInstanceCommandHandler(
                 db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), new SilentNotifications(),
-                new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()))
+                new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()), new MySqlUserMutationLockService(db))
             .Handle(new ApproveCampusInstanceCommand(requestId, instanceId, hostId, null), CancellationToken.None);
     }
 

@@ -25,7 +25,7 @@ import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
 import { ParticipantPartnerCell } from '../../../features/partners/components/ParticipantPartnerCell';
 import { RichTextEditor } from '../../../shared/components/RichTextEditor';
-import { formatVietnamDateTime, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
+import { formatVietnamDateTime, toVietnamDateTimeLocalInput, vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
 const formatDateTime = (value?: string | null) =>
   value ? formatVietnamDateTime(value) : '-';
 // ISO/DB value ("+07:00" hoặc chuỗi trần VN) → "yyyy-MM-ddTHH:mm" cho <input type="datetime-local">,
@@ -249,10 +249,14 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     if (!draftTitle.trim()) titleErr = 'Vui lòng nhập tên biên bản.';
 
     // 2) Đầu mục công việc: bỏ qua dòng rỗng hoàn toàn; dòng đã nhập một phần phải có nội dung.
+    // Hạn hoàn thành (nếu có) không được ở quá khứ — cùng quy tắc với input min= bên dưới,
+    // chặn thêm cả trường hợp gõ tay bỏ qua giao diện lịch.
     const filledActions = draftActionItems.filter((a) => !isBlankActionItem(a));
     const nextActionErrors: Record<string, string> = {};
+    const nowLocal = vietnamNowDateTimeLocal();
     for (const a of filledActions) {
-      if (!a.title.trim()) nextActionErrors[a._key] = 'Vui lòng nhập nội dung công việc.';
+      if (!a.title.trim()) { nextActionErrors[a._key] = 'Vui lòng nhập nội dung công việc.'; continue; }
+      if (a.dueDate && a.dueDate < nowLocal) nextActionErrors[a._key] = 'Hạn hoàn thành không được ở quá khứ.';
     }
 
     const hasActionErr = Object.keys(nextActionErrors).length > 0;
@@ -446,13 +450,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm transition-all relative">
-      {/* Header — mẫu cũ: nền xanh #004c91, badge số 2 màu cam */}
+      {/* Header — mẫu cũ: nền xanh #004c91, badge số 1 màu cam */}
       <div
         className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
         <h2 className="text-sm font-bold text-white tracking-tight uppercase flex items-center gap-2">
-          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">2</span>
+          <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm font-black shrink-0">1</span>
           Biên bản cuộc họp
         </h2>
         <button type="button" className="text-white hover:bg-white/20 p-1 rounded-full transition-colors">
@@ -743,8 +747,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                           placeholder="Nhập ghi chú hoặc nội dung biên bản cuộc họp..."
                         />
                       ) : data.content?.trim() ? (
+                        // ql-editor (không phải "prose" — plugin @tailwindcss/typography chưa cài nên
+                        // class đó không có hiệu lực gì) tái dùng đúng CSS Quill dùng để vẽ bullet/số
+                        // thứ tự/indent/align lúc đang gõ, để nội dung xem lại giống hệt lúc lưu.
                         <div
-                          className="w-full rounded-xl border border-gray-200 bg-gray-50/60 p-4 min-h-[120px] text-sm text-gray-800 prose max-w-none"
+                          className="ql-editor !h-auto !min-h-[120px] !p-4 w-full rounded-xl border border-gray-200 bg-gray-50/60 text-sm text-gray-800"
                           dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.content) }}
                         />
                       ) : (
@@ -785,7 +792,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   <div className="flex items-center gap-2">
                                     <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
                                     {editing ? (
-                                      <input type="datetime-local" value={a.dueDate} onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
+                                      <input type="datetime-local" value={a.dueDate} min={vietnamNowDateTimeLocal()}
+                                        onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
                                         className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
                                     ) : (
                                       <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>

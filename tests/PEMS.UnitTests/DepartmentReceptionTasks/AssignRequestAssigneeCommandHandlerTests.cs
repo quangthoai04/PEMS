@@ -1,4 +1,4 @@
-using Moq;
+﻿using Moq;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssignee;
@@ -48,7 +48,6 @@ public class AssignRequestAssigneeCommandHandlerTests
             ItemType = "LED",
             Title = "Màn LED sảnh A",
             Status = itemStatus,
-            Priority = "HIGH",
             CoordinationMode = "SYSTEM_REQUEST",
             RequestedToDepartmentId = DeptId,
             RequestedBy = DelegationsTestData.HostUserId,
@@ -70,7 +69,8 @@ public class AssignRequestAssigneeCommandHandlerTests
         var dispatcher = mocks.DispatcherFor(db);
         var handler = new AssignRequestAssigneeCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object);
+            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object,
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
 
         return (db, handler, user, mocks, dispatcher);
     }

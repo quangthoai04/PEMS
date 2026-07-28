@@ -43,13 +43,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IFileStorageService _storage;
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+        private readonly IUserMutationLockService _lockService;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
             ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
             IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-            PEMS.Application.Notifications.Common.INotificationService notificationService)
+            PEMS.Application.Notifications.Common.INotificationService notificationService,
+            IUserMutationLockService lockService)
         {
+            _lockService = lockService;
             _context = context;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -132,6 +135,21 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
             await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
             {
+                // Shared lock protocol (see IUserMutationLockService): an assignment hands this
+                // account a live logistics responsibility, so it must serialize against a role change
+                // on the same account. The eligibility read above was unlocked — re-read the
+                // department/status under the lock before writing.
+                await _lockService.LockUsersAsync(new[] { request.AssigneeUserId }, cancellationToken);
+
+                var stillEligible = await _context.Users.AsNoTracking().AnyAsync(
+                    u => u.UserId == request.AssigneeUserId
+                         && u.DepartmentId == user.DepartmentId
+                         && u.Status == "ACTIVE",
+                    cancellationToken);
+                if (!stillEligible)
+                    throw new ConflictException(
+                        "Vai trò hoặc phòng ban của nhân sự này vừa thay đổi. Vui lòng tải lại và phân công lại.");
+
                 _context.VisitLogisticsAssignmentAttempts.Add(new VisitLogisticsAssignmentAttempt
                 {
                     LogisticsItemId = request.LogisticsItemId,
@@ -196,8 +214,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: assignee.UserId,
-                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
-                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
+                        Title: "Bạn được phân công hậu cần",
+                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" cho đoàn {delegationName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigned,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: l.LogisticsItemId,

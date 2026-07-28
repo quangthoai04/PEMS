@@ -6,6 +6,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Common;
 
 namespace PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
@@ -46,7 +47,6 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
                 Description = l.Description,
                 Quantity = l.Quantity,
                 Status = l.Status,
-                Priority = l.Priority,
                 CoordinationMode = l.CoordinationMode,
                 OfflineCoordinationNote = l.OfflineCoordinationNote,
                 RequestedToDepartmentId = l.RequestedToDepartmentId,
@@ -69,7 +69,7 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
         // subqueries on optional FKs — Pomelo translation pitfall).
         var rows = await _db.VisitLogisticsItems
             .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
-            .Select(l => new { l.LogisticsItemId, l.RequestedAt, l.UsageStartAt, l.UsageEndAt, l.DueAt, l.CompletedAt, l.ProposedUsageStartAt, l.ProposedUsageEndAt })
+            .Select(l => new { l.LogisticsItemId, l.RequestedAt, l.UsageStartAt, l.UsageEndAt, l.CompletedAt, l.ProposedUsageStartAt, l.ProposedUsageEndAt })
             .ToListAsync(cancellationToken);
         var timeById = rows.ToDictionary(r => r.LogisticsItemId);
 
@@ -120,7 +120,18 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
         foreach (var i in items)
         {
             if (handoversByItem.TryGetValue(i.LogisticsItemId, out var hs))
+            {
+                // condition_note của dòng BORROW là envelope {rows, note} cho MỌI loại hạng mục — tách
+                // checklist qua ChecklistJson để Host render đúng bảng, và ghi chú tự do (đã gộp Bên
+                // giao/Bên nhận) qua ConditionNote.
+                foreach (var h in hs.Where(h => h.HandoverType == "BORROW"))
+                {
+                    var rawConditionNote = h.ConditionNote;
+                    h.ChecklistJson = VehicleHandoverChecklistNote.ExtractRowsJson(rawConditionNote);
+                    h.ConditionNote = VehicleHandoverChecklistNote.ExtractNote(rawConditionNote);
+                }
                 i.Handovers = hs;
+            }
             if (i.RequestedToDepartmentId.HasValue && deptNames.TryGetValue(i.RequestedToDepartmentId.Value, out var dn))
                 i.DepartmentName = dn;
             if (i.AssignedToUserId.HasValue && userNames.TryGetValue(i.AssignedToUserId.Value, out var un))
@@ -132,7 +143,6 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
                 i.RequestedAt = t.RequestedAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.UsageStartAt = t.UsageStartAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.UsageEndAt = t.UsageEndAt?.ToString("yyyy-MM-ddTHH:mm:ss");
-                i.DueAt = t.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.CompletedAt = t.CompletedAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.ProposedUsageStartAt = t.ProposedUsageStartAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.ProposedUsageEndAt = t.ProposedUsageEndAt?.ToString("yyyy-MM-ddTHH:mm:ss");

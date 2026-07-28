@@ -128,6 +128,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   const [isProposing, setIsProposing] = useState(false);
   const [proposalStartTime, setProposalStartTime] = useState('');
   const [proposalEndTime, setProposalEndTime] = useState('');
+  const [proposalQuantity, setProposalQuantity] = useState('');
   const [proposalNote, setProposalNote] = useState('');
   const [proposedContent, setProposedContent] = useState('');
   const [detailVisitRequestId, setDetailVisitRequestId] = useState<number | null>(null);
@@ -144,6 +145,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
     setIsProposing(false);
     setProposalStartTime('');
     setProposalEndTime('');
+    setProposalQuantity('');
     setProposalNote('');
     setProposedContent('');
 
@@ -167,14 +169,30 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   const startTime = detail?.startTime || item?.time?.split('-')[0]?.trim() || '';
   const endTime = detail?.endTime || item?.time?.split('-')[1]?.trim() || '';
 
+  // Đoàn khách diễn ra nhiều ngày (so ngày của usageStartAt/usageEndAt theo giờ VN) → 2 ô đề xuất
+  // giờ cần cả ngày lẫn giờ (datetime-local); trong 1 ngày → chỉ cần giờ (time), như trước.
+  const usageStartDatePart = toVietnamDateTimeLocalInput(detail?.usageStartAt || undefined).slice(0, 10) || undefined;
+  const usageEndDatePart = toVietnamDateTimeLocalInput(detail?.usageEndAt || undefined).slice(0, 10) || undefined;
+  const isMultiDay = !!(usageStartDatePart && usageEndDatePart && usageStartDatePart !== usageEndDatePart);
+
   useEffect(() => {
     if (detail || item) {
-      const s = parseHHMM(detail?.proposedUsageStartAt || startTime);
-      const e = parseHHMM(detail?.proposedUsageEndAt || endTime);
-      if (s && !proposalStartTime) setProposalStartTime(s);
-      if (e && !proposalEndTime) setProposalEndTime(e);
+      if (isMultiDay) {
+        const s = toVietnamDateTimeLocalInput(detail?.proposedUsageStartAt || detail?.usageStartAt || undefined);
+        const e = toVietnamDateTimeLocalInput(detail?.proposedUsageEndAt || detail?.usageEndAt || undefined);
+        if (s && !proposalStartTime) setProposalStartTime(s);
+        if (e && !proposalEndTime) setProposalEndTime(e);
+      } else {
+        const s = parseHHMM(detail?.proposedUsageStartAt || startTime);
+        const e = parseHHMM(detail?.proposedUsageEndAt || endTime);
+        if (s && !proposalStartTime) setProposalStartTime(s);
+        if (e && !proposalEndTime) setProposalEndTime(e);
+      }
+      // Không seed từ quantity gốc — số lượng đề xuất phải NHỎ HƠN số lượng dự kiến, để trống mặc
+      // định (chỉ điền khi phòng ban thực sự muốn đề xuất giảm), chỉ khôi phục đề xuất dở dang.
+      if (detail?.proposedQuantity != null && !proposalQuantity) setProposalQuantity(String(detail.proposedQuantity));
     }
-  }, [detail, item, startTime, endTime]);
+  }, [detail, item, startTime, endTime, isMultiDay]);
   const displayDate = detail?.date || item?.date?.split('-').reverse().join('-') || '';
   const detailTitle = detail?.title || item?.title || '';
   const delegationName = detail?.delegationName || item?.delegationName || '';
@@ -202,10 +220,16 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   // TaskHandoverModal (dùng chung với Dept Leader) nhận DTO PascalCase — map từ detail camelCase.
   const toPascalSig = (sig: SignatureInfo) =>
     sig?.name ? { Name: sig.name, SignedAt: sig.signedAt } : null;
+  // "Chốt": số lượng đã được Host CHẤP NHẬN đề xuất thay proposedQuantity cho quantity gốc — biên
+  // bản bàn giao phải dùng số này, không phải số dự kiến ban đầu (detail.quantity không đổi).
+  const finalQuantity = detail && detail.proposalResponse === 'ACCEPTED' && detail.proposedQuantity != null
+    ? detail.proposedQuantity : detail?.quantity;
+  const quantityTooHigh = proposalQuantity.trim() !== '' && detail?.quantity != null && Number(proposalQuantity) >= detail.quantity;
   const handoverDto = detail ? {
     LogisticsItemId: item?.rawId,
     Title: detail.title || item?.title,
-    Quantity: detail.quantity,
+    Quantity: finalQuantity,
+    Description: detail.description,
     // TRANSPORT → biên bản bàn giao xe ô tô điện với checklist cố định.
     ItemType: detail.itemType,
     UsageEndTime: detail.endTime,
@@ -215,6 +239,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
     AssigneeName: detail.assigneeName || detail.currentResponsibleName,
     BorrowNote: detail.borrowNote,
     ReturnNote: detail.returnNote,
+    ChecklistJson: detail.checklistJson,
     BorrowProviderSignature: toPascalSig(signatures.borrowProvider),
     BorrowBorrowerSignature: toPascalSig(signatures.borrowBorrower),
     ReturnBorrowerSignature: toPascalSig(signatures.returnBorrower),
@@ -273,12 +298,13 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   };
 
   const handlePropose = async () => {
+    if (actionLoading) return; // chặn double-submit khi bấm liên tục
     if (!proposalStartTime || !proposalEndTime) {
-      toast.error('Vui lòng chọn giờ bắt đầu và giờ kết thúc');
+      toast.error(isMultiDay ? 'Vui lòng chọn đầy đủ ngày giờ bắt đầu và kết thúc' : 'Vui lòng chọn giờ bắt đầu và giờ kết thúc');
       return;
     }
     if (proposalEndTime <= proposalStartTime) {
-      toast.error('Giờ kết thúc phải sau giờ bắt đầu');
+      toast.error('Thời gian kết thúc phải sau thời gian bắt đầu');
       return;
     }
     const note = proposalNote.trim() || proposedContent.trim();
@@ -286,12 +312,22 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
       toast.error('Vui lòng nhập nội dung hoặc lý do đề xuất');
       return;
     }
+    const qty = proposalQuantity.trim() ? Number(proposalQuantity) : null;
+    if (qty != null && (!Number.isInteger(qty) || qty < 1)) {
+      toast.error('Số lượng đề xuất phải là số nguyên ≥ 1');
+      return;
+    }
+    if (qty != null && detail?.quantity != null && qty >= detail.quantity) {
+      toast.error(`Số lượng đề xuất phải nhỏ hơn số lượng dự kiến (${detail.quantity})`);
+      return;
+    }
     setActionLoading(true);
     try {
       const baseDate = toIsoDate(item.date || '');
       await departmentReceptionTasksApi.proposeChange(item.rawId, {
-        proposedUsageStartAt: baseDate + 'T' + proposalStartTime + ':00',
-        proposedUsageEndAt: baseDate + 'T' + proposalEndTime + ':00',
+        proposedQuantity: qty,
+        proposedUsageStartAt: isMultiDay ? `${proposalStartTime}:00` : baseDate + 'T' + proposalStartTime + ':00',
+        proposedUsageEndAt: isMultiDay ? `${proposalEndTime}:00` : baseDate + 'T' + proposalEndTime + ':00',
         proposedDescription: proposedContent.trim() || note,
         proposalNote: note,
       });
@@ -307,8 +343,37 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4" onClick={onClose}>
-        <div className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      {/* Modal này bọc ngoài TaskHandoverModal (biên bản, id #task-handover-modal) bằng
+          overflow-y-auto/max-h/flex — CSS in của TaskHandoverModal chỉ xử lý bên trong nó, lớp cha
+          vẫn cắt nội dung khi in nếu không reset riêng (không đụng visibility, đã đúng bên trong). */}
+      <style type="text/css" media="print">
+        {`
+          /* position:static rơi về đúng vị trí trong luồng tài liệu — nội dung ẩn khác nằm TRƯỚC
+             modal này trên trang vẫn chiếm chỗ dù invisible, đẩy biên bản xuống thành khoảng trắng
+             lớn đầu trang. Ép absolute + top:0 để ghim lên đầu trang in, giống #task-handover-modal. */
+          #staff-task-modal-backdrop {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            /* class gốc "inset-0" gán luôn right/bottom: 0 — không reset nốt 2 cạnh này thì khung
+               vẫn bị ép đúng 1 màn hình cao, nội dung dư ra bị cắt dù overflow:visible. */
+            right: auto !important;
+            bottom: auto !important;
+            width: 100% !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          #staff-task-modal-backdrop, #staff-task-modal-card, #staff-task-modal-body {
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            display: block !important;
+          }
+        `}
+      </style>
+      <div id="staff-task-modal-backdrop" className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4" onClick={onClose}>
+        <div id="staff-task-modal-card" className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
           {/* Header compact */}
           <div className={`${isRequest && canShowHandover ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-5 py-3.5 text-white flex items-center justify-between gap-3`}>
             <div className="flex items-center gap-2.5 min-w-0">
@@ -326,7 +391,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div id="staff-task-modal-body" className="flex-1 overflow-y-auto px-5 py-4">
             {/* Thay đổi mới (thông báo chưa đọc gắn với đơn/thư mời này) */}
             {changeNotifs.length > 0 && (
               <div className="mb-4 bg-red-50/70 border border-red-200 rounded-2xl overflow-hidden">
@@ -376,10 +441,18 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                   <InfoRow label="Loại nhiệm vụ">
                     {isRequest ? 'Nhiệm vụ hỗ trợ (logistics)' : 'Thư mời tham gia'}
                   </InfoRow>
+                  {isRequest && detailTitle && (
+                    <InfoRow label="Tiêu đề">{detailTitle}</InfoRow>
+                  )}
+                  {isRequest && detail?.quantity != null && (
+                    <InfoRow label="Số lượng">{finalQuantity}</InfoRow>
+                  )}
                   <InfoRow label="Người giao">{senderName}</InfoRow>
                   <InfoRow label="Địa điểm">{item.location || 'Hòa Lạc'}</InfoRow>
                   <InfoRow label="Thời gian">
-                    {startTime || '--:--'} - {endTime || '--:--'}{displayDate ? ` · ${displayDate}` : ''}
+                    {isMultiDay
+                      ? `${formatDateTime(detail?.usageStartAt) || '--:--'} - ${formatDateTime(detail?.usageEndAt) || '--:--'}`
+                      : `${startTime || '--:--'} - ${endTime || '--:--'}${displayDate ? ` · ${displayDate}` : ''}`}
                   </InfoRow>
                   <InfoRow label="Trạng thái">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[11px] font-black ${statusBadge[effectiveStatus] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
@@ -398,15 +471,28 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                 {isProposing && isRequest && (
                   <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
                     <p className="text-[11px] font-black uppercase tracking-wide text-[#e85c0d]">Đề xuất thay đổi</p>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Số lượng mới</label>
+                      <input type="number" min={1} max={detail?.quantity != null ? detail.quantity - 1 : undefined} step={1}
+                        value={proposalQuantity} onChange={e => setProposalQuantity(e.target.value)}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm font-bold outline-none ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-slate-200 focus:border-[#e85c0d]'}`} />
+                      {quantityTooHigh && (
+                        <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({detail.quantity}).</p>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Giờ bắt đầu mới</label>
-                        <input type="time" value={proposalStartTime} onChange={e => setProposalStartTime(e.target.value)}
+                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                          {isMultiDay ? 'Ngày giờ bắt đầu mới' : 'Giờ bắt đầu mới'}
+                        </label>
+                        <input type={isMultiDay ? 'datetime-local' : 'time'} value={proposalStartTime} onChange={e => setProposalStartTime(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold outline-none focus:border-[#e85c0d]" />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Giờ kết thúc mới</label>
-                        <input type="time" value={proposalEndTime} onChange={e => setProposalEndTime(e.target.value)}
+                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                          {isMultiDay ? 'Ngày giờ kết thúc mới' : 'Giờ kết thúc mới'}
+                        </label>
+                        <input type={isMultiDay ? 'datetime-local' : 'time'} value={proposalEndTime} onChange={e => setProposalEndTime(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold outline-none focus:border-[#e85c0d]" />
                       </div>
                     </div>
@@ -439,8 +525,13 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                       </span>
                     </div>
                     <div className="divide-y divide-slate-100">
+                      {detail?.proposedQuantity != null && (
+                        <InfoRow label="Số lượng mới">{detail.proposedQuantity}</InfoRow>
+                      )}
                       <InfoRow label="Thời gian mới">
-                        {formatTime(detail?.proposedUsageStartAt)} - {formatTime(detail?.proposedUsageEndAt)}
+                        {isMultiDay
+                          ? `${formatDateTime(detail?.proposedUsageStartAt) || '--:--'} - ${formatDateTime(detail?.proposedUsageEndAt) || '--:--'}`
+                          : `${formatTime(detail?.proposedUsageStartAt)} - ${formatTime(detail?.proposedUsageEndAt)}`}
                       </InfoRow>
                       <InfoRow label="Nội dung">
                         <span className="whitespace-pre-line font-medium">{detail?.proposedDescription || 'Không thay đổi nội dung công việc.'}</span>
@@ -546,9 +637,9 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                   </button>
                 ) : (
                   <>
-                    <button onClick={handlePropose} disabled={actionLoading}
+                    <button onClick={handlePropose} disabled={actionLoading || quantityTooHigh}
                       className="px-4 py-2 bg-[#16a34a] text-white hover:bg-green-700 text-xs font-black rounded-xl transition-colors disabled:opacity-50">
-                      Gửi đề xuất
+                      {actionLoading ? 'Đang gửi...' : 'Gửi đề xuất'}
                     </button>
                     <button onClick={() => setIsProposing(false)}
                       className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200">

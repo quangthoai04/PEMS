@@ -24,13 +24,16 @@ public sealed class ApproveCampusInstanceCommandHandler
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
     private readonly IVisitFormReadService _formReadService;
+    private readonly IUserMutationLockService _lockService;
 
     public ApproveCampusInstanceCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IVisitRequestAggregateStatusService aggregateStatus,
         PEMS.Application.Notifications.Common.INotificationService notificationService,
-        IVisitFormReadService formReadService)
+        IVisitFormReadService formReadService,
+        IUserMutationLockService lockService)
     {
+        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -81,6 +84,15 @@ public sealed class ApproveCampusInstanceCommandHandler
                 "Khi duyệt yêu cầu, bạn phải chọn host chính thức.",
                 VisitRequestErrorCodes.HostRequiredOnApproval);
 
+        // ── The transaction opens BEFORE host eligibility is evaluated, and the first thing it does
+        //    is lock the candidate's users row (see IUserMutationLockService). Approving assigns a
+        //    Host, which is exactly the responsibility a concurrent role change must not be able to
+        //    step over: whichever transaction locks first wins, and the loser re-reads the committed
+        //    state — either this approval refuses an ineligible candidate, or the role change
+        //    returns 409 because the account now hosts a visit (spec §13.6). ──
+        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
+        await _lockService.LockUsersAsync(new[] { request.HostUserId }, cancellationToken);
+
         // ── Host eligibility — the SHARED rule (VisitHostEligibility), so the transfer path that runs
         //    after approval cannot admit somebody this path would refuse. ──
         var (eligibility, host) = await VisitHostEligibility.EvaluateAsync(
@@ -106,8 +118,6 @@ public sealed class ApproveCampusInstanceCommandHandler
 
         var now = _clock.VietnamNow;
         var decisionNote = string.IsNullOrWhiteSpace(request.DecisionNote) ? null : request.DecisionNote.Trim();
-
-        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
         // Approve + assign in ONE campus-instance update (the DB trigger requires decision and
         // host fields to be present together when the row moves to ASSIGNED).

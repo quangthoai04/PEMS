@@ -315,7 +315,6 @@ export const reportsApi = {
     }
     if (filters.logisticsStatus !== 'ALL') params.logisticsStatus = filters.logisticsStatus;
     if (filters.itemType !== 'ALL') params.itemType = filters.itemType;
-    if (filters.priority !== 'ALL') params.priority = filters.priority;
     if (filters.assignedUserId !== 'ALL') params.assignedUserId = filters.assignedUserId;
     if (filters.dueStatus !== 'ALL') params.dueStatus = filters.dueStatus;
     if (filters.handoverStatus !== 'ALL') params.handoverStatus = filters.handoverStatus;
@@ -332,7 +331,6 @@ export const reportsApi = {
       toDate: request.preset === 'CUSTOM' ? request.toDate : undefined,
       logisticsStatus: request.logisticsStatus,
       itemType: request.itemType,
-      priority: request.priority,
       assignedUserId: request.assignedUserId,
       dueStatus: request.dueStatus,
       handoverStatus: request.handoverStatus,

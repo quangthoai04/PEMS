@@ -119,7 +119,8 @@ public sealed class CampusApprovalDecisionV2Tests
     private static ApproveCampusInstanceCommandHandler ApproveHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
         => new(db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), notifications,
-            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()));
+            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
+            new MySqlUserMutationLockService(db));
 
     private static RejectCampusInstanceCommandHandler RejectHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
@@ -144,7 +145,7 @@ public sealed class CampusApprovalDecisionV2Tests
             new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db));
+            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "AP" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),

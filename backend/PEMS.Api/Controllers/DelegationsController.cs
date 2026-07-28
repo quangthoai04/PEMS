@@ -396,7 +396,7 @@ namespace PEMS.Api.Controllers
             ulong visitInstanceId, ulong logisticsItemId, [FromBody] SignVisitLogisticsHandoverBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new SignVisitLogisticsHandoverCommand(visitInstanceId, logisticsItemId, body.HandoverType, body.ItemCondition, body.Note),
+                new SignVisitLogisticsHandoverCommand(visitInstanceId, logisticsItemId, body.HandoverType, body.ItemCondition, body.Note, body.ChecklistJson),
                 cancellationToken);
             return Ok(result);
         }
@@ -406,6 +406,7 @@ namespace PEMS.Api.Controllers
             public string HandoverType { get; set; } = default!;   // BORROW | RETURN
             public string? ItemCondition { get; set; }
             public string? Note { get; set; }
+            public string? ChecklistJson { get; set; }
         }
 
         // ── Operational reception stage transitions (Host only) ──────────────

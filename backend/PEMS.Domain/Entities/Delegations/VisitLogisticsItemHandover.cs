@@ -37,6 +37,11 @@ public class VisitLogisticsItemHandover
     [Column("item_condition")]
     public string? ItemCondition { get; set; } // GOOD | DAMAGED | MISSING | OTHER
 
+    /// <summary>
+    /// Free-text note cho item thường; với item TRANSPORT (xe điện) cột này được dùng để lưu
+    /// checklist dạng JSON (mảng {name, qty, giao, nhan}) trên dòng BORROW thay vì note tự do —
+    /// tránh thêm cột DB mới. Đọc lại qua RequestDetailDto.ChecklistJson (chỉ set khi ItemType = TRANSPORT).
+    /// </summary>
     [Column("condition_note")]
     public string? ConditionNote { get; set; }
 

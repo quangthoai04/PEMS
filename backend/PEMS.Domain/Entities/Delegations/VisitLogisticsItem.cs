@@ -34,9 +34,6 @@ public class VisitLogisticsItem
     [Column("status")]
     public string Status { get; set; } = "REQUESTED";
 
-    [Column("priority")]
-    public string Priority { get; set; } = "MEDIUM";
-
     // PEMS v11: how this request is coordinated.
     //   SYSTEM_REQUEST     = sent to a department through the system (email/notification + workflow).
     //   OFFLINE_COORDINATED = discussed/handled outside the system, recorded for traceability only
@@ -77,6 +74,8 @@ public class VisitLogisticsItem
     [Column("assignee_response_note")]
     public string? AssigneeResponseNote { get; set; }
 
+    // Not user-editable — auto-computed on create as UsageStartAt minus 24h for SYSTEM_REQUEST items
+    // (null for OFFLINE_COORDINATED, which has no department workflow to meet a deadline for).
     [Column("due_at")]
     public DateTime? DueAt { get; set; }
 
