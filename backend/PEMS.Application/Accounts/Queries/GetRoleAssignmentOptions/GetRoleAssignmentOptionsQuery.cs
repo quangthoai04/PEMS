@@ -38,6 +38,30 @@ public sealed class GeneralDepartmentOptionDto
     public bool Selectable { get; init; }
 }
 
+/// <summary>
+/// The department the target account currently heads, plus the colleagues who could take it over.
+/// Present only when the target is somebody's <c>head_user_id</c> — the modal uses it to ask for a
+/// successor in the same step as the role change (spec §8.6), instead of refusing the change and
+/// sending the user to a reassign flow that would leave the account unmanageable.
+/// </summary>
+public sealed class HeadedDepartmentDto
+{
+    public ulong DepartmentId { get; init; }
+    public string Name { get; init; } = default!;
+
+    /// <summary>Active DEPARTMENT/STAFF members of this department. Empty means no valid successor.</summary>
+    public IReadOnlyList<HeadReplacementCandidateDto> ReplacementCandidates { get; init; }
+        = new List<HeadReplacementCandidateDto>();
+}
+
+/// <summary>One account eligible to become the new head of <see cref="HeadedDepartmentDto"/>.</summary>
+public sealed class HeadReplacementCandidateDto
+{
+    public ulong UserId { get; init; }
+    public string FullName { get; init; } = default!;
+    public string Email { get; init; } = default!;
+}
+
 /// <summary>Role-assignment options for the Staff Leader "Chỉnh sửa vai trò" modal.</summary>
 public sealed class RoleAssignmentOptionsDto
 {
@@ -49,4 +73,7 @@ public sealed class RoleAssignmentOptionsDto
 
     public IReadOnlyList<GeneralDepartmentOptionDto> GeneralDepartments { get; init; }
         = new List<GeneralDepartmentOptionDto>();
+
+    /// <summary>Null unless the target account currently heads a GENERAL department.</summary>
+    public HeadedDepartmentDto? HeadedDepartment { get; init; }
 }

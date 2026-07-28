@@ -360,6 +360,18 @@ export interface RoleAssignmentOptions {
     /** !hasHead || isCurrentTargetHead. */
     selectable: boolean;
   }>;
+  /**
+   * Set when the target account currently heads a GENERAL department. Any change that takes them
+   * out of that seat must name a successor in the same request — the backend refuses to leave a
+   * department headless, and handing over separately would demote the account to a shape a Staff
+   * Leader can no longer manage.
+   */
+  headedDepartment: {
+    departmentId: string;
+    name: string;
+    /** Active DEPARTMENT/STAFF members of that department; empty means no valid successor exists. */
+    replacementCandidates: Array<{ userId: string; fullName: string; email: string }>;
+  } | null;
 }
 
 /** UC-97 — change account status request. Mirrors backend ManageAccountStatusCommand. */
@@ -393,6 +405,12 @@ export interface UpdateAccountRoleRequest {
   fullName?: string | null;
   /** Email — same editability rule as fullName. Omit/null to leave unchanged. */
   email?: string | null;
+  /**
+   * Successor for the GENERAL department the target currently heads. Required when the change
+   * vacates that seat; rejected (422) when the change does not. Handover and role change commit
+   * together or not at all.
+   */
+  replacementDepartmentHeadUserId?: string | null;
 }
 
 export interface UpdateAccountRoleResponse {

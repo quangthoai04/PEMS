@@ -206,7 +206,7 @@ public sealed class VisitContactTransferWorkflowTests
                 new UserProvisionService(db),
                 NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
                 new PerCampusFormV2Options { Enabled = true }, WriteOn,
-                new VisitRequestAggregateStatusService(db));
+                new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
             var created = await handler.Handle(
                 new CreateVisitRequestV2Command(Form("TR" + Guid.NewGuid().ToString("N"), emailB)),
                 CancellationToken.None);
@@ -420,7 +420,7 @@ public sealed class VisitContactTransferWorkflowTests
                     new UserProvisionService(db),
                     NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
                     new PerCampusFormV2Options { Enabled = true }, WriteOn,
-                new VisitRequestAggregateStatusService(db));
+                new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
                 var created = await handler.Handle(
                     new CreateVisitRequestV2Command(Form("TR" + Guid.NewGuid().ToString("N"), emailB)),
                     CancellationToken.None);

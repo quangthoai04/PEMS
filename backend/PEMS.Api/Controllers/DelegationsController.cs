@@ -16,6 +16,7 @@ using PEMS.Application.Delegations.Commands.CancelVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceReminderSettings;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
 using PEMS.Application.Delegations.Commands.SignVisitLogisticsHandover;
+using PEMS.Application.Delegations.Commands.SaveVisitLogisticsHandoverDocument;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceSentEmails;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
@@ -396,7 +397,7 @@ namespace PEMS.Api.Controllers
             ulong visitInstanceId, ulong logisticsItemId, [FromBody] SignVisitLogisticsHandoverBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new SignVisitLogisticsHandoverCommand(visitInstanceId, logisticsItemId, body.HandoverType, body.ItemCondition, body.Note),
+                new SignVisitLogisticsHandoverCommand(visitInstanceId, logisticsItemId, body.HandoverType, body.ItemCondition, body.Note, body.ChecklistJson),
                 cancellationToken);
             return Ok(result);
         }
@@ -406,6 +407,21 @@ namespace PEMS.Api.Controllers
             public string HandoverType { get; set; } = default!;   // BORROW | RETURN
             public string? ItemCondition { get; set; }
             public string? Note { get; set; }
+            public string? ChecklistJson { get; set; }
+        }
+
+        // "Lưu vào hệ thống" — generates a real PDF of the fully-signed handover, uploads it to the
+        // delegation's Drive "Hậu cần" folder, and creates/updates the matching documents row.
+        // visitInstanceId is kept in the route only for URL consistency with the sibling sign route
+        // above — the command re-derives everything it needs from logisticsItemId server-side.
+        [HttpPost("visit-instances/{visitInstanceId}/logistics/{logisticsItemId}/handovers/{handoverType}/save-document")]
+        public async Task<IActionResult> SaveVisitLogisticsHandoverDocument(
+            ulong visitInstanceId, ulong logisticsItemId, string handoverType, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new SaveVisitLogisticsHandoverDocumentCommand { LogisticsItemId = logisticsItemId, HandoverType = handoverType },
+                cancellationToken);
+            return Ok(result);
         }
 
         // ── Operational reception stage transitions (Host only) ──────────────

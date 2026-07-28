@@ -1,11 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MediatR;
+using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Application.Delegations.VisitPhotos;
 using PEMS.Application.Translation;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Documents;
 using PEMS.Shared;
 using QuestPDF.Infrastructure;
 
@@ -19,6 +23,8 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
     private readonly IFileStorageService _storage;
     private readonly IGoogleDriveStorageService _drive;
     private readonly IContentTranslationService _translator;
+    private readonly IFileUploadService _fileUpload;
+    private readonly IVisitPhotoFolderService _folderService;
     private readonly ILogger<ExportScheduleReportPdfQueryHandler> _logger;
 
     public ExportScheduleReportPdfQueryHandler(
@@ -28,6 +34,8 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
         IFileStorageService storage,
         IGoogleDriveStorageService drive,
         IContentTranslationService translator,
+        IFileUploadService fileUpload,
+        IVisitPhotoFolderService folderService,
         ILogger<ExportScheduleReportPdfQueryHandler> logger)
     {
         _db = db;
@@ -36,6 +44,8 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
         _storage = storage;
         _drive = drive;
         _translator = translator;
+        _fileUpload = fileUpload;
+        _folderService = folderService;
         _logger = logger;
         QuestPDF.Settings.License = LicenseType.Community;
     }
@@ -95,7 +105,52 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
             ? await TryLoadFileBytesAsync(dto.PartnerLogoFileId.Value, cancellationToken)
             : null;
 
-        return ScheduleReportPdfRenderer.Render(dto, ScheduleReportAssets.FptLogoBytes, partnerLogoBytes, request.LanguageCode);
+        var pdfBytes = ScheduleReportPdfRenderer.Render(
+            dto, ScheduleReportAssets.FptLogoBytes, partnerLogoBytes, request.LanguageCode);
+
+        // This report is scoped to ONE delegation instance (unlike the Staff Leader/HO dashboard
+        // exports, which aggregate across many) — archive it into that delegation's own
+        // Tài liệu/Theo đoàn khách folder instead of the flat "Report" folder. Best-effort: a
+        // Drive/DB hiccup must never block the download itself.
+        try
+        {
+            var campusCode = await _db.Campuses
+                .Where(c => c.CampusId == instance.CampusId)
+                .Select(c => c.CampusCode)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(campusCode))
+            {
+                var target = await _folderService.EnsureDocumentUploadTargetAsync(
+                    instance, campusCode, VisitDocumentSubtypes.TheoDoanKhach, userId, cancellationToken);
+
+                await using var stream = new MemoryStream(pdfBytes);
+                var fileName = $"PEMS_Schedule_Report_{visit.RequestCode}_{VietnamTime.Now():yyyyMMdd_HHmm}.pdf";
+                var uploaded = await _fileUpload.UploadBusinessFileAsync(
+                    stream, fileName, "application/pdf", pdfBytes.LongLength,
+                    FilePurpose.VisitRequestAttachment, (long)userId, target.DocumentFolderExternalId, cancellationToken);
+
+                _db.Documents.Add(new Document
+                {
+                    FileId = (ulong)uploaded.FileId,
+                    OwnerType = "VISIT",
+                    OwnerId = instance.VisitRequestId,
+                    CampusId = instance.CampusId,
+                    Title = fileName,
+                    DocumentCategory = "SCHEDULE_REPORT",
+                    Status = "PUBLISHED",
+                    CreatedAt = VietnamTime.Now(),
+                    CreatedBy = userId,
+                });
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to archive schedule report for visit instance {VisitInstanceId}.", instance.VisitInstanceId);
+        }
+
+        return pdfBytes;
     }
 
     /// <summary>

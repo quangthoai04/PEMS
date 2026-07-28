@@ -40,7 +40,7 @@ public class PrepareVisitLogisticsCommandHandlerTests
 
     private static PrepareVisitLogisticsCommand SystemRequest(ulong? departmentId = DeptId, string title = "Welcome LED") =>
         new(DelegationsTestData.VisitInstanceId, departmentId, "LED", title, null, 1,
-            "2026-08-01T08:00", "2026-08-01T12:00", "MEDIUM", null);
+            "2026-08-01T08:00", "2026-08-01T12:00");
 
     [Theory]
     [InlineData(ParticipantStatuses.Invited)]
@@ -143,8 +143,7 @@ public class PrepareVisitLogisticsCommandHandlerTests
         await handler.Handle(
             new PrepareVisitLogisticsCommand(
                 DelegationsTestData.VisitInstanceId, DeptId, "OTHER", "Việc khác",
-                Description: null, Quantity: null, UsageStartAt: null, UsageEndAt: null,
-                Priority: "MEDIUM", DueAt: null),
+                Description: null, Quantity: null, UsageStartAt: null, UsageEndAt: null),
             default);
 
         var vars = dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables;
@@ -163,13 +162,15 @@ public class PrepareVisitLogisticsCommandHandlerTests
             new PrepareVisitLogisticsCommand(
                 DelegationsTestData.VisitInstanceId, DeptId, "LED", "Màn LED sảnh",
                 Description: "Cần bật từ 7h30, nội dung do IC gửi sau.", Quantity: 2,
-                UsageStartAt: "2026-08-01T08:00", UsageEndAt: "2026-08-01T12:00",
-                Priority: "HIGH", DueAt: "2026-07-30T17:00"),
+                UsageStartAt: "2026-08-01T08:00", UsageEndAt: "2026-08-01T12:00"),
             default);
 
         var vars = dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables;
         Assert.Equal("Cần bật từ 7h30, nội dung do IC gửi sau.", vars["coordinationNote"]);
-        Assert.Equal("17:00 30/07/2026", vars["dueAt"]);
+        // The deadline is the BACKEND's, not the client's: 24h before the usage window opens. The
+        // request no longer carries a due date at all, so there is nothing for a caller to talk the
+        // department into accepting.
+        Assert.Equal("08:00 31/07/2026", vars["dueAt"]);
     }
 
     [Fact]
@@ -205,7 +206,7 @@ public class PrepareVisitLogisticsCommandHandlerTests
         var response = await handler.Handle(
             new PrepareVisitLogisticsCommand(
                 DelegationsTestData.VisitInstanceId, DeptId, "LED", "Đã trao đổi ngoài",
-                null, null, null, null, "MEDIUM", null,
+                null, null, null, null,
                 CoordinationMode: LogisticsCoordinationModes.OfflineCoordinated,
                 OfflineCoordinationNote: "Đã gọi điện thống nhất với phòng."),
             default);

@@ -20,24 +20,35 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
     {
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IUserMutationLockService _lockService;
 
-        public ConfirmRequestCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
+        public ConfirmRequestCommandHandler(
+            IApplicationDbContext context, ICurrentUserService currentUserService,
+            IUserMutationLockService lockService)
         {
             _context = context;
             _currentUserService = currentUserService;
+            _lockService = lockService;
         }
 
         public async Task<bool> Handle(ConfirmRequestCommand request, CancellationToken cancellationToken)
         {
+            ulong userId = _currentUserService.UserId.Value;
+
+            // Taking the item makes the caller its assignee — a live responsibility. The shared lock
+            // (see IUserMutationLockService) serializes that against a Staff Leader changing this
+            // very account's role at the same moment.
+            await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
+            await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
+
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
             if (l == null) throw new NotFoundException("Không tìm thấy đơn yêu cầu");
 
-            // Verify department
-            ulong userId = _currentUserService.UserId.Value;
+            // Verify department — read AFTER the lock, so a just-committed role/department move is seen.
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
-            if (user == null || l.RequestedToDepartmentId != user.DepartmentId) 
+            if (user == null || l.RequestedToDepartmentId != user.DepartmentId)
                 throw new ForbiddenException("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
 
             // Database time conflict check
@@ -81,6 +92,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
             });
 
             await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return true;
         }

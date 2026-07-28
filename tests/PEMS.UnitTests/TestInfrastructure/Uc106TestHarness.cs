@@ -245,6 +245,33 @@ public sealed class FakeDateTimeService : IDateTimeService
 }
 
 /// <summary>
+/// Stand-in for <see cref="IUserMutationLockService"/>. EF InMemory has no row locks, and these
+/// tests are single-threaded, so the calls are simply recorded — which is what the tests actually
+/// assert: that each flow ASKS for the lock, and asks for the right rows. Real serialization is
+/// proven by the MySQL concurrency suite.
+/// </summary>
+public sealed class RecordingUserMutationLockService : IUserMutationLockService
+{
+    public List<ulong[]> LockedUserBatches { get; } = new();
+    public List<ulong[]> LockedDepartmentBatches { get; } = new();
+
+    /// <summary>Every user id locked across all calls, in call order.</summary>
+    public IEnumerable<ulong> AllLockedUserIds => LockedUserBatches.SelectMany(b => b);
+
+    public Task LockUsersAsync(IReadOnlyCollection<ulong> userIds, CancellationToken cancellationToken)
+    {
+        LockedUserBatches.Add(userIds.ToArray());
+        return Task.CompletedTask;
+    }
+
+    public Task LockDepartmentsAsync(IReadOnlyCollection<ulong> departmentIds, CancellationToken cancellationToken)
+    {
+        LockedDepartmentBatches.Add(departmentIds.ToArray());
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
 /// Records every <see cref="RevokeAllActiveSessionsAsync"/> call and revokes the matching
 /// sessions in the shared test context (mirroring the real service, which writes through the
 /// same scoped DbContext). All other members throw: UC-106 must never call them.

@@ -665,8 +665,10 @@ export function MinuteManagement() {
                       <div>
                         <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Nội dung biên bản</h3>
                         {detailData.content?.trim() ? (
+                          // ql-editor (không phải "prose" — chưa cài @tailwindcss/typography) để bullet/
+                          // số thứ tự/indent hiện đúng như lúc gõ trong RichTextEditor.
                           <div
-                            className="prose prose-sm max-w-none text-sm text-slate-700 leading-relaxed"
+                            className="ql-editor !h-auto !p-0 !min-h-0 text-sm text-slate-700 leading-relaxed"
                             dangerouslySetInnerHTML={{ __html: sanitizeHtml(detailData.content) }}
                           />
                         ) : (

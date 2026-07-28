@@ -48,7 +48,7 @@ export function ResetPasswordPage() {
       });
       // Backend `message` is Vietnamese-only; show the localized confirmation instead.
       setSuccess(t('loginModal:reset.success'));
-      setTimeout(() => navigate('/login', { replace: true }), 1500);
+      setTimeout(() => navigate('/', { replace: true }), 1500);
     } catch (err) {
       setError(getAuthErrorMessage(err, t('loginModal:reset.invalidCode')));
     } finally {
@@ -129,7 +129,7 @@ export function ResetPasswordPage() {
             >
               {submitting ? t('loginModal:reset.processing') : t('loginModal:reset.submit')}
             </button>
-            <Link to="/login" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
+            <Link to="/" className="block text-center text-sm text-[#004c91] hover:underline">{t('loginModal:backToLogin')}</Link>
           </form>
         )}
       </div>

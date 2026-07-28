@@ -13,8 +13,8 @@ using Xunit;
 namespace PEMS.IntegrationTests.Emails;
 
 /// <summary>
-/// Batch 10 — the closure contract for Gate G4: the catalog is exactly 26 templates, the code registry
-/// and the database seed agree in both directions, and every one of the 26 renders in both languages
+/// Batch 10 — the closure contract for Gate G4: the catalog is exactly 30 templates, the code registry
+/// and the database seed agree in both directions, and every one of the 30 renders in both languages
 /// from the database alone.
 ///
 /// <para>
@@ -26,7 +26,7 @@ namespace PEMS.IntegrationTests.Emails;
 /// </summary>
 public sealed class SystemEmailG4ClosureTests
 {
-    private const int CatalogSize = 26;
+    private const int CatalogSize = 30;
 
     /// <summary>The catalog as the plan fixed it. Written out so a rename cannot pass silently.</summary>
     private static readonly string[] Catalog =
@@ -34,6 +34,10 @@ public sealed class SystemEmailG4ClosureTests
         "ACCOUNT_EMAIL_CONFIRMATION", "ACCOUNT_PENDING_EMAIL_CHANGED_OLD_NOTICE", "ACCOUNT_ACTIVATED",
         "ACCOUNT_EMAIL_CHANGED_OLD_NOTICE", "ACCOUNT_EMAIL_CHANGED_NEW_NOTICE", "ACCOUNT_ROLE_CHANGED",
         "ACCOUNT_STAFF_LEADER_ASSIGNED", "ACCOUNT_STAFF_LEADER_REPLACED",
+        // Added when the Department-Leader personnel module stopped composing its own HTML and moved
+        // onto the dispatcher, so its six notices became templates like every other system email.
+        "DEPT_PERSONNEL_ACCOUNT_DISABLED", "DEPT_PERSONNEL_ACCOUNT_ENABLED",
+        "DEPT_LEADERSHIP_GRANTED", "DEPT_LEADERSHIP_HANDED_OVER",
         "AUTH_PASSWORD_RESET_OTP",
         "VISIT_REQUEST_OTP", "VISIT_CONTACT_CLAIM", "VISIT_CONTACT_TRANSFER",
         "VISIT_PARTICIPANT_INVITATION", "VISIT_STUDENT_INVITATION",
@@ -154,7 +158,7 @@ public sealed class SystemEmailG4ClosureTests
     }
 
     /// <summary>
-    /// Renders all 26 in both languages from the database, with exactly their declared variables. This
+    /// Renders all 30 in both languages from the database, with exactly their declared variables. This
     /// is the test that would have caught the reminder templates shipping "{{plannedEnd}}" as literal
     /// text to recipients.
     /// </summary>

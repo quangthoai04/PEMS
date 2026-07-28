@@ -86,6 +86,30 @@ public sealed class CompleteVisitStageCommandHandler
                 if (agendaCount == 0)
                     missing.Add("lịch trình (agenda) chưa có mục nào");
 
+                // Mọi hạng mục hậu cần "gửi yêu cầu qua hệ thống" đã được chấp nhận (ACCEPTED/
+                // IN_PROGRESS/DONE) phải có phiếu bàn giao (BORROW) đã ký đủ hai bên (bên giao +
+                // bên nhận) trước khi bắt đầu tiếp khách — tránh đoàn khách đến mà tài sản/thiết bị
+                // chưa thực sự được bàn giao xong.
+                var beforeHandoverEligibleIds = await _db.VisitLogisticsItems
+                    .Where(l => l.VisitInstanceId == instance.VisitInstanceId
+                                && l.CoordinationMode == "SYSTEM_REQUEST"
+                                && (l.Status == LogisticsItemStatus.Accepted
+                                    || l.Status == LogisticsItemStatus.InProgress
+                                    || l.Status == LogisticsItemStatus.Done))
+                    .Select(l => l.LogisticsItemId)
+                    .ToListAsync(cancellationToken);
+                if (beforeHandoverEligibleIds.Count > 0)
+                {
+                    var fullySignedBorrowCount = await _db.VisitLogisticsItemHandovers
+                        .CountAsync(h => beforeHandoverEligibleIds.Contains(h.LogisticsItemId)
+                                         && h.HandoverType == LogisticsHandoverTypes.Borrow
+                                         && h.ProviderSignedAt != null && h.BorrowerSignedAt != null,
+                            cancellationToken);
+                    var unsignedHandoverCount = beforeHandoverEligibleIds.Count - fullySignedBorrowCount;
+                    if (unsignedHandoverCount > 0)
+                        missing.Add($"{unsignedHandoverCount} phiếu bàn giao tài sản chưa ký nhận đủ hai bên");
+                }
+
                 if (missing.Count > 0)
                     throw new ConflictException(
                         "Chưa thể chuyển sang giai đoạn đang tiếp khách vì còn hạng mục chuẩn bị chưa hoàn tất: "

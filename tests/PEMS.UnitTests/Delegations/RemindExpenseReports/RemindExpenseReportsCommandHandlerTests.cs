@@ -1,4 +1,4 @@
-using PEMS.Application.Common.Exceptions;
+﻿using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.VisitExpenses.Commands.RemindExpenseReports;
 using PEMS.Application.Emails.Common;
@@ -55,7 +55,6 @@ public class RemindExpenseReportsCommandHandlerTests
         ItemType = "LED",
         Title = $"Hạng mục {id}",
         Status = status,
-        Priority = "MEDIUM",
         CoordinationMode = "SYSTEM_REQUEST",
         RequestedToDepartmentId = DeptId,
         AssignedToUserId = assignedTo,

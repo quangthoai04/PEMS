@@ -29,7 +29,6 @@ public class DeptLeaderFilterSummary
     public string? ToDate { get; set; }
     public string LogisticsStatus { get; set; } = "ALL";
     public string ItemType { get; set; } = "ALL";
-    public string Priority { get; set; } = "ALL";
     public string AssignedUserId { get; set; } = "ALL";
     public string? AssignedUserName { get; set; }
     public string DueStatus { get; set; } = "ALL";
@@ -117,7 +116,6 @@ public class DeptLeaderPendingTask
     public string ItemType { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public string? Unit { get; set; }
-    public string Priority { get; set; } = "MEDIUM";
     public string Status { get; set; } = string.Empty;
     public DateTime? DueAt { get; set; }
     public string? AssignedToName { get; set; }
@@ -224,13 +222,5 @@ public static class DeptLeaderReportLabels
         "DECLINED" => "Nhân sự từ chối",
         "CANCELLED" => "Đã hủy",
         _ => status ?? "—",
-    };
-
-    public static string PriorityLabelVi(string? priority) => priority?.Trim().ToUpperInvariant() switch
-    {
-        "URGENT" => "Khẩn cấp",
-        "HIGH" => "Cao",
-        "LOW" => "Thấp",
-        _ => "Trung bình",
     };
 }

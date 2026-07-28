@@ -7,8 +7,11 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Application.Delegations.VisitPhotos;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 using PEMS.Domain.Constants;
@@ -36,13 +39,21 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IVisitFormReadService _formReadService;
+    private readonly IFileUploadService _fileUpload;
+    private readonly IVisitPhotoFolderService _folderService;
+    private readonly ILogger<ExportDeptLeaderInvoiceCommandHandler> _logger;
 
     public ExportDeptLeaderInvoiceCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IVisitFormReadService formReadService)
+        IApplicationDbContext db, ICurrentUserService currentUser, IVisitFormReadService formReadService,
+        IFileUploadService fileUpload, IVisitPhotoFolderService folderService,
+        ILogger<ExportDeptLeaderInvoiceCommandHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _formReadService = formReadService;
+        _fileUpload = fileUpload;
+        _folderService = folderService;
+        _logger = logger;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -111,7 +122,7 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
         // Header metadata.
         var deptInfo = await _db.Departments.AsNoTracking()
             .Where(d => d.DepartmentId == deptId)
-            .Select(d => new { d.Name, CampusName = d.Campus.Name })
+            .Select(d => new { d.Name, CampusName = d.Campus.Name, d.CampusId, d.Campus.CampusCode })
             .FirstOrDefaultAsync(cancellationToken);
         var generatedByName = _currentUser.UserId != null
             ? await _db.Users.AsNoTracking()
@@ -142,11 +153,59 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
             HostName = hostName ?? "—",
         };
 
+        var pdfBytes = BuildPdf(meta, lines, grandTotal);
+        var fileName = $"PEMS_Department_Invoice_{visit.RequestCode}_{stampVn:yyyyMMdd_HHmm}.pdf";
+
+        // Unlike the cross-delegation Staff Leader/HO reports, this invoice is scoped to ONE
+        // delegation (its own VisitInstanceId) — so it archives into that delegation's own
+        // Tài liệu/Hậu cần folder (via the shared VisitPhotoFolderService), not the flat "Report"
+        // folder. Best-effort: a Drive/DB hiccup must never block the download itself.
+        if (_currentUser.UserId is { } userId && deptInfo?.CampusCode is { } campusCode)
+        {
+            try
+            {
+                var instanceForFolder = new PEMS.Domain.Entities.Delegations.VisitRequestCampus
+                {
+                    VisitInstanceId = visit.VisitInstanceId,
+                    VisitRequestId = visit.VisitRequestId,
+                    CampusId = deptInfo.CampusId,
+                    VisitRequest = new PEMS.Domain.Entities.Delegations.VisitRequest { RequestCode = visit.RequestCode },
+                };
+                var target = await _folderService.EnsureDocumentUploadTargetAsync(
+                    instanceForFolder, campusCode, VisitDocumentSubtypes.HauCan, userId, cancellationToken);
+
+                await using var stream = new MemoryStream(pdfBytes);
+                var uploaded = await _fileUpload.UploadBusinessFileAsync(
+                    stream, fileName, "application/pdf", pdfBytes.LongLength,
+                    FilePurpose.LogisticsAttachment, (long)userId, target.DocumentFolderExternalId, cancellationToken);
+
+                _db.Documents.Add(new PEMS.Domain.Entities.Documents.Document
+                {
+                    FileId = (ulong)uploaded.FileId,
+                    OwnerType = "LOGISTICS",
+                    OwnerId = visit.VisitInstanceId,
+                    CampusId = deptInfo.CampusId,
+                    Title = meta.Title,
+                    DocumentCategory = "DEPT_LEADER_INVOICE",
+                    Status = "PUBLISHED",
+                    CreatedAt = stampVn,
+                    CreatedBy = userId,
+                });
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // The invoice PDF itself is still returned below regardless of this failure.
+                _logger.LogWarning(ex,
+                    "Failed to archive department invoice for visit instance {VisitInstanceId}.", visit.VisitInstanceId);
+            }
+        }
+
         return new ExportDeptLeaderInvoiceResult
         {
-            Content = BuildPdf(meta, lines, grandTotal),
+            Content = pdfBytes,
             ContentType = "application/pdf",
-            FileName = $"PEMS_Department_Invoice_{visit.RequestCode}_{stampVn:yyyyMMdd_HHmm}.pdf",
+            FileName = fileName,
         };
     }
 

@@ -43,8 +43,15 @@ public static class SensitiveEmailVariables
             "delegationName", "departmentLeaderName", "departmentName", "dueAt", "effectiveDate",
             "expireMinutes", "expiresInHours", "fullName", "hostMessage", "hostName", "itemTitle",
             "logisticsItemType", "logisticsTitle", "newRoleName", "oldEmailMasked", "oldRoleName",
-            "periodFrom", "periodTo", "personName", "plannedEnd", "plannedStart", "plannedTime",
-            "proposalNote", "quantity", "reason", "recipientName", "requestCode", "requesterName",
+            "originalQuantity", "periodFrom", "periodTo", "personName", "plannedEnd", "plannedStart",
+            "plannedTime",
+            // The change-proposal counter-offer. These are business figures the Host is being asked to
+            // approve — the same kind of data as `quantity` and `usageStartAt` above, which they sit
+            // beside in the message. Reading one grants nothing: it authorises no action and unlocks no
+            // account, so the proposal email keeps a stored body and remains readable in the history.
+            "proposalNote", "proposedDescription", "proposedQuantity", "proposedUsageEndAt",
+            "proposedUsageStartAt",
+            "quantity", "reason", "recipientName", "requestCode", "requesterName",
             "roleLabel", "roleName", "scopeLabel", "successorName", "usageEndAt", "usageStartAt",
         };
 

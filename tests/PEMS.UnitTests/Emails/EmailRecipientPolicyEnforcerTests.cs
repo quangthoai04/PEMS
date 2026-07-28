@@ -300,8 +300,10 @@ public class EmailRecipientPolicyEnforcerTests
 
     [Fact]
     public void Registry_holds_the_agreed_number_of_templates()
-        // Catalog decision DL-02: 26 codes, each with a real production caller.
-        => Assert.Equal(26, SystemEmailTemplates.AllCodes.Count);
+        // Catalog decision DL-02: every code has a real production caller. 26 + the 4 DEPT_* codes
+        // added when the Department-Leader personnel module stopped composing its own HTML and moved
+        // onto the dispatcher (disable / enable / leadership granted / leadership handed over).
+        => Assert.Equal(30, SystemEmailTemplates.AllCodes.Count);
 
     [Fact]
     public void Registry_has_no_duplicate_codes()

@@ -46,10 +46,18 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
       }
     }
 
-    // Dept Leader: đơn/thư mời được giao xem tại tab "Phân công và tiến độ" thay vì
-    // trang chi tiết đứng riêng (TaskDetail/TaskInvitationDetail) — lọc còn đúng 1 dòng.
-    if (isDeptLeader && (link.includes('/tasks/') || link.includes('/invitations/')) && item.visitRequestId) {
-      return `/dashboard/visit?tab=assignments-progress&visitRequestId=${item.visitRequestId}`;
+    // Dept Leader: đơn/thư mời mở thẳng modal chi tiết (giống bấm 1 đơn trong Bảng lịch)
+    // thay vì trang "Chi tiết nhiệm vụ điều phối" đứng riêng (đã bỏ) — dùng luôn id tách
+    // từ targetUrl, không phụ thuộc visitRequestId (một số notification hậu cần không có field này).
+    if (isDeptLeader) {
+      if (link.includes('/tasks/')) {
+        const parts = link.split('/tasks/');
+        return `/dashboard/visit?taskId=${parts[1]}&itemType=REQUEST`;
+      }
+      if (link.includes('/invitations/')) {
+        const parts = link.split('/invitations/');
+        return `/dashboard/visit?taskId=${parts[1]}&itemType=INVITATION`;
+      }
     }
 
     // Notification cũ (tạo trước khi ActionUrl bắt đầu kèm id) còn lưu targetUrl trơ trụi

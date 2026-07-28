@@ -3,7 +3,10 @@ import { Search } from 'lucide-react';
 import { DocumentOwnerType, DocumentStatus } from '../types/documents.types';
 import { formatDocumentType, formatDocumentStatus } from '../../../shared/utils/domainLabels';
 
-const OWNER_TYPE_OPTIONS: DocumentOwnerType[] = ['GENERAL', 'VISIT', 'PARTNER', 'MINUTES', 'NEWS', 'LOGISTICS', 'REPORT'];
+// GENERAL/MINUTES/NEWS dropped from the filter — the 4 remaining types are the only ones a document
+// can still be created as (see the Drive-folder redesign: Theo đoàn khách / Đối tác / Hậu cần /
+// Báo cáo). formatDocumentType still labels legacy GENERAL/MINUTES/NEWS docs shown under "All".
+const OWNER_TYPE_OPTIONS: DocumentOwnerType[] = ['VISIT', 'PARTNER', 'LOGISTICS', 'REPORT'];
 const STATUS_OPTIONS: DocumentStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED'];
 
 interface Props {

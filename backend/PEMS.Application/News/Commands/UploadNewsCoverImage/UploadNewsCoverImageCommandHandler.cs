@@ -103,7 +103,7 @@ public sealed class UploadNewsCoverImageCommandHandler
             request.Content!.LongLength,
             FilePurpose.NewsImage,
             (long)userId,
-            target.CampusFolderExternalId,
+            target.PhotoFolderExternalId,
             cancellationToken);
     }
 }

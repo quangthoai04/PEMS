@@ -92,8 +92,8 @@ export default function ConfirmEmailPage() {
               {state.alreadyConfirmed ? 'Email đã được xác nhận' : 'Xác nhận thành công'}
             </p>
             <p className="mb-6 text-sm text-gray-600">{state.message}</p>
-            <Link to="/login" className="inline-block rounded-md bg-[#004c91] px-6 py-2.5 font-semibold text-white hover:bg-[#013565]">
-              Đến trang đăng nhập
+            <Link to="/" className="inline-block rounded-md bg-[#004c91] px-6 py-2.5 font-semibold text-white hover:bg-[#013565]">
+              Về trang chủ
             </Link>
           </div>
         )}
@@ -103,8 +103,8 @@ export default function ConfirmEmailPage() {
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-3xl text-amber-600">⏱</div>
             <p className="mb-2 font-semibold text-amber-700">Liên kết đã hết hạn</p>
             <p className="mb-6 text-sm text-gray-600">{state.message} Vui lòng liên hệ quản trị để được gửi lại email xác nhận.</p>
-            <Link to="/login" className="inline-block rounded-md border border-gray-300 px-6 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
-              Đến trang đăng nhập
+            <Link to="/" className="inline-block rounded-md border border-gray-300 px-6 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
+              Về trang chủ
             </Link>
           </div>
         )}
@@ -114,8 +114,8 @@ export default function ConfirmEmailPage() {
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-3xl text-red-600">✕</div>
             <p className="mb-2 font-semibold text-red-700">Liên kết không hợp lệ</p>
             <p className="mb-6 text-sm text-gray-600">{state.message}</p>
-            <Link to="/login" className="inline-block rounded-md border border-gray-300 px-6 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
-              Đến trang đăng nhập
+            <Link to="/" className="inline-block rounded-md border border-gray-300 px-6 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
+              Về trang chủ
             </Link>
           </div>
         )}
@@ -134,8 +134,8 @@ export default function ConfirmEmailPage() {
                 Thử lại
               </button>
             )}
-            <Link to="/login" className="inline-block text-sm text-[#004c91] hover:underline">
-              Đến trang đăng nhập
+            <Link to="/" className="inline-block text-sm text-[#004c91] hover:underline">
+              Về trang chủ
             </Link>
           </div>
         )}

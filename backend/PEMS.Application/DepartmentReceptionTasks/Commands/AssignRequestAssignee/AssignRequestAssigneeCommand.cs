@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.DepartmentReceptionTasks.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Security;
 using PEMS.Application.Emails.Common;
@@ -43,13 +44,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly IFileStorageService _storage;
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+        private readonly IUserMutationLockService _lockService;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
             ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
             IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-            PEMS.Application.Notifications.Common.INotificationService notificationService)
+            PEMS.Application.Notifications.Common.INotificationService notificationService,
+            IUserMutationLockService lockService)
         {
+            _lockService = lockService;
             _context = context;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -65,31 +69,41 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         {
             ulong userId = _currentUserService.UserId.Value;
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
-            if (user == null) throw new Exception("Không xác định được người dùng hiện tại");
+            if (user == null) throw new ForbiddenException("Không xác định được người dùng hiện tại.");
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
-            if (l == null) throw new Exception("Không tìm thấy đơn yêu cầu");
+            if (l == null)
+                throw new NotFoundException(
+                    "Không tìm thấy yêu cầu hậu cần.", LogisticsTaskErrorCodes.RequestNotFound);
 
             // Check department scope
             if (l.RequestedToDepartmentId != user.DepartmentId)
-                throw new Exception("Không có quyền phân công đơn yêu cầu của phòng ban khác");
+                throw new AuthBusinessException(
+                    LogisticsTaskErrorCodes.AssignmentOutOfDepartmentScope,
+                    "Không có quyền phân công đơn yêu cầu của phòng ban khác.");
 
             // Block assignment in terminal/in-flight statuses.
             var blockedStatuses = new[] { "ASSIGNED", "ACCEPTED", "CHANGE_PROPOSED", "IN_PROGRESS", "DONE", "CANCELLED", "REJECTED", "DECLINED" };
             if (blockedStatuses.Contains(l.Status))
-                throw new Exception("Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status);
+                throw new ConflictException(
+                    "Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status,
+                    LogisticsTaskErrorCodes.AssignmentStatusNotAssignable);
 
             bool hasPendingAttempt = await _context.VisitLogisticsAssignmentAttempts
                 .AnyAsync(a => a.LogisticsItemId == request.LogisticsItemId && a.Status == "PENDING", cancellationToken);
             if (hasPendingAttempt)
-                throw new ConflictException("Nhiệm vụ đã được phân công và đang chờ phản hồi hoặc đã được nhận.");
+                throw new ConflictException(
+                    "Nhiệm vụ đã được phân công và đang chờ phản hồi hoặc đã được nhận.",
+                    LogisticsTaskErrorCodes.AssignmentAlreadyPending);
 
             bool hasSigned = await _context.VisitLogisticsItemHandovers
                 .AnyAsync(h => h.LogisticsItemId == request.LogisticsItemId &&
                                (h.BorrowerSignedAt != null || h.ProviderSignedAt != null), cancellationToken);
             if (hasSigned)
-                throw new Exception("Nhiệm vụ đã được xử lý hoặc đã có ký biên bản, không thể đổi người phụ trách.");
+                throw new ConflictException(
+                    "Nhiệm vụ đã được xử lý hoặc đã có ký biên bản, không thể đổi người phụ trách.",
+                    LogisticsTaskErrorCodes.AssignmentHandoverSigned);
 
             var assignee = await _context.Users.FirstOrDefaultAsync(
                 u => u.UserId == request.AssigneeUserId
@@ -97,7 +111,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                      && u.Status == "ACTIVE",
                 cancellationToken);
             if (assignee == null)
-                throw new Exception("Người phụ trách không hợp lệ hoặc không thuộc phòng ban");
+                throw new ConflictException(
+                    "Người phụ trách không hợp lệ hoặc không thuộc phòng ban.",
+                    LogisticsTaskErrorCodes.AssigneeNotEligible);
 
             // Database time conflict check for target assignee
             var campus = await _context.VisitRequestCampuses.AsNoTracking()
@@ -111,7 +127,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                     _context, assignee.UserId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
                 if (hasConflict)
                 {
-                    throw new Exception($"Nhân sự {assignee.FullName} đã bị trùng lịch làm việc vào khung giờ của đơn này. Vui lòng chọn nhân sự khác.");
+                    throw new ConflictException(
+                        $"Nhân sự {assignee.FullName} đã bị trùng lịch làm việc vào khung giờ của đơn này. Vui lòng chọn nhân sự khác.",
+                        LogisticsTaskErrorCodes.AssigneeScheduleConflict);
                 }
             }
 
@@ -132,6 +150,21 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
             await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
             {
+                // Shared lock protocol (see IUserMutationLockService): an assignment hands this
+                // account a live logistics responsibility, so it must serialize against a role change
+                // on the same account. The eligibility read above was unlocked — re-read the
+                // department/status under the lock before writing.
+                await _lockService.LockUsersAsync(new[] { request.AssigneeUserId }, cancellationToken);
+
+                var stillEligible = await _context.Users.AsNoTracking().AnyAsync(
+                    u => u.UserId == request.AssigneeUserId
+                         && u.DepartmentId == user.DepartmentId
+                         && u.Status == "ACTIVE",
+                    cancellationToken);
+                if (!stillEligible)
+                    throw new ConflictException(
+                        "Vai trò hoặc phòng ban của nhân sự này vừa thay đổi. Vui lòng tải lại và phân công lại.");
+
                 _context.VisitLogisticsAssignmentAttempts.Add(new VisitLogisticsAssignmentAttempt
                 {
                     LogisticsItemId = request.LogisticsItemId,
@@ -196,8 +229,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: assignee.UserId,
-                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
-                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
+                        Title: "Bạn được phân công hậu cần",
+                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" cho đoàn {delegationName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigned,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: l.LogisticsItemId,

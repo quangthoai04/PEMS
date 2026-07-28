@@ -103,7 +103,7 @@ public sealed class SystemEmailTemplateContractTests
         RequireDb();
         var all = await LoadAllAsync();
 
-        Assert.Equal(26, all.Count);
+        Assert.Equal(30, all.Count);
         Assert.All(all, t => Assert.Equal("ACTIVE", t.Status));
     }
 

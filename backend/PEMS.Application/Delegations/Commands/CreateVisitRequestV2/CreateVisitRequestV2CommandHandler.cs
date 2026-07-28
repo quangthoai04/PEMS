@@ -31,6 +31,7 @@ public sealed class CreateVisitRequestV2CommandHandler
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
     private readonly PerCampusFormV2Options _readFlag;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
+    private readonly IUserMutationLockService _lockService;
 
     public CreateVisitRequestV2CommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
@@ -39,8 +40,10 @@ public sealed class CreateVisitRequestV2CommandHandler
         IVisitContactClaimService contactClaimService, IUserProvisionService userProvisionService,
         ILogger<CreateVisitRequestV2CommandHandler> logger,
         PerCampusFormV2Options readFlag, PerCampusFormV2WriteOptions writeFlag,
-        IVisitRequestAggregateStatusService aggregateStatus)
+        IVisitRequestAggregateStatusService aggregateStatus,
+        IUserMutationLockService lockService)
     {
+        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -156,35 +159,9 @@ public sealed class CreateVisitRequestV2CommandHandler
 
         // ASSIGN_HOST candidate: re-queried and re-authorized from the DB — the client dropdown is never
         // trusted (a disabled / other-campus / non-IC / Leader pick is rejected here, not in the UI).
-        foreach (var plan in planList)
-        {
-            if (plan.Mode != CampusSubmissionModes.AssignHost) continue;
-
-            var candidateId = plan.HostUserId!.Value;
-            if (candidateId == registrantUserId)
-                continue; // Leader picked themself — equivalent to SELF_HOST, already validated above.
-
-            var candidate = await _db.Users
-                .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.UserId == candidateId, cancellationToken)
-                ?? throw new NotFoundException("User", candidateId);
-
-            var candidateDeptType = await _db.Departments
-                .Where(d => d.DepartmentId == candidate.DepartmentId)
-                .Select(d => d.DepartmentType)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            var candidateOk = candidate.Role.RoleCode == RoleCodes.Staff
-                && candidate.SubRole == UserSubRoles.Staff
-                && candidate.PrimaryCampusId == actor.PrimaryCampusId
-                && candidate.Status == UserStatuses.Active
-                && candidateDeptType == "IC";
-
-            if (!candidateOk)
-                throw new BusinessRuleException(
-                    "Host được chọn phải là IC Staff đang hoạt động thuộc đúng cơ sở của bạn.",
-                    VisitRequestErrorCodes.InvalidHostCandidate);
-        }
+        // Runs twice: once here to fail fast, once more under the row lock inside the transaction.
+        await EnsureAssignHostCandidatesEligibleAsync(
+            planList, registrantUserId, actor.PrimaryCampusId, cancellationToken);
 
         // ── Idempotency (sequential): a retry with the same submissionId returns the same request. ──
         var existing = await FindBySubmissionAsync(form.SubmissionId, cancellationToken);
@@ -199,6 +176,21 @@ public sealed class CreateVisitRequestV2CommandHandler
         {
             try
             {
+                // ── Direct SELF_HOST / ASSIGN_HOST assigns a Host inside this transaction, so the
+                //    accounts involved join the shared lock protocol (see IUserMutationLockService)
+                //    before their eligibility is trusted. The candidate loop above ran unlocked and
+                //    is deliberately re-run here against committed state (spec §13.6/§14). ──
+                var hostUserIds = planList
+                    .Where(p => p.HostUserId.HasValue)
+                    .Select(p => p.HostUserId!.Value)
+                    .Distinct()
+                    .ToList();
+                if (hostUserIds.Count > 0)
+                {
+                    await _lockService.LockUsersAsync(hostUserIds, cancellationToken);
+                    await EnsureAssignHostCandidatesEligibleAsync(
+                        planList, registrantUserId, actor.PrimaryCampusId, cancellationToken);
+                }
 
                 var initializers = new System.Collections.Generic.Dictionary<string, System.Action<PEMS.Domain.Entities.Delegations.VisitRequestCampus>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var kvp in plans)
@@ -301,6 +293,47 @@ public sealed class CreateVisitRequestV2CommandHandler
         }
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false);
+    }
+
+    /// <summary>
+    /// Re-authorizes every ASSIGN_HOST pick straight from the database: an active IC Staff of the
+    /// leader's own campus, never a Leader and never another campus. Called once before the
+    /// transaction to fail fast, and again inside it under the users row lock — between those two
+    /// points a role change may have committed, and that is precisely the race the lock closes.
+    /// </summary>
+    private async Task EnsureAssignHostCandidatesEligibleAsync(
+        IReadOnlyList<V2CampusProcessingPlan> plans, ulong registrantUserId,
+        ulong? actorCampusId, CancellationToken ct)
+    {
+        foreach (var plan in plans)
+        {
+            if (plan.Mode != CampusSubmissionModes.AssignHost) continue;
+
+            var candidateId = plan.HostUserId!.Value;
+            if (candidateId == registrantUserId)
+                continue; // Leader picked themself — equivalent to SELF_HOST, already validated.
+
+            var candidate = await _db.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.UserId == candidateId, ct)
+                ?? throw new NotFoundException("User", candidateId);
+
+            var candidateDeptType = await _db.Departments
+                .Where(d => d.DepartmentId == candidate.DepartmentId)
+                .Select(d => d.DepartmentType)
+                .FirstOrDefaultAsync(ct);
+
+            var candidateOk = candidate.Role.RoleCode == RoleCodes.Staff
+                && candidate.SubRole == UserSubRoles.Staff
+                && candidate.PrimaryCampusId == actorCampusId
+                && candidate.Status == UserStatuses.Active
+                && candidateDeptType == "IC";
+
+            if (!candidateOk)
+                throw new BusinessRuleException(
+                    "Host được chọn phải là IC Staff đang hoạt động thuộc đúng cơ sở của bạn.",
+                    VisitRequestErrorCodes.InvalidHostCandidate);
+        }
     }
 
     private async Task<(ulong RequestId, string RequestCode)?> FindBySubmissionAsync(

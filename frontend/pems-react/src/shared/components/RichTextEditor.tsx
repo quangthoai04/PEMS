@@ -24,7 +24,7 @@ export function RichTextEditor({
   placeholder = 'Nhập ghi chú hoặc nội dung biên bản cuộc họp...',
 }: RichTextEditorProps) {
   return (
-    <div className="bg-white border border-gray-300 rounded-xl overflow-hidden focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-[#004c91]/20 transition-all min-h-[160px]">
+    <div className="bg-white border border-gray-300 rounded-xl overflow-hidden focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-[#004c91]/20 transition-all [&_.ql-container]:h-auto [&_.ql-editor]:h-auto [&_.ql-editor]:min-h-[44px]">
       {/* @ts-ignore */}
       <ReactQuill
         theme="snow"

@@ -82,7 +82,6 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
 
         var logisticsStatus = NormalizeFilter(request.LogisticsStatus);
         var itemType = NormalizeFilter(request.ItemType);
-        var priority = NormalizeFilter(request.Priority);
         var dueStatus = NormalizeFilter(request.DueStatus);
         var handoverStatus = NormalizeFilter(request.HandoverStatus);
         var feedbackRating = NormalizeFilter(request.FeedbackRating);
@@ -93,13 +92,12 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         {
             if (logisticsStatus != null) q = q.Where(li => li.Status == logisticsStatus);
             if (itemType != null) q = q.Where(li => li.ItemType == itemType);
-            if (priority != null) q = q.Where(li => li.Priority == priority);
             if (assignedUserId != null) q = q.Where(li => li.AssignedToUserId == assignedUserId);
             if (dueStatus == "OVERDUE")
-                q = q.Where(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status));
+                q = q.Where(li => li.VisitInstance.PlannedEndAt < nowVn && OpenStatuses.Contains(li.Status));
             else if (dueStatus == "DUE_SOON")
-                q = q.Where(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) >= nowVn
-                                  && (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn.AddHours(72)
+                q = q.Where(li => li.VisitInstance.PlannedEndAt >= nowVn
+                                  && li.VisitInstance.PlannedEndAt < nowVn.AddHours(72)
                                   && OpenStatuses.Contains(li.Status));
             if (handoverStatus == "COMPLETE")
                 q = q.Where(li => li.Handovers.Any() && li.Handovers.All(h => h.BorrowerSignedAt != null && h.ProviderSignedAt != null));
@@ -132,7 +130,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         var waitingAssignment = await currentItems.CountAsync(
             li => li.Status == LogisticsItemStatus.Requested && li.AssignedToUserId == null, cancellationToken);
         var overdueCurrent = await currentItems.CountAsync(
-            li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status), cancellationToken);
+            li => li.VisitInstance.PlannedEndAt < nowVn && OpenStatuses.Contains(li.Status), cancellationToken);
         var pendingResponseOver24h = await currentItems.CountAsync(
             li => li.Status == LogisticsItemStatus.Assigned && li.AssignedAt != null && li.AssignedAt < pending24hUtc, cancellationToken);
         var missingSignatureCurrent = await currentItems
@@ -191,7 +189,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 g.Key.Month,
                 Total = g.Count(),
                 Completed = g.Count(li => li.Status == LogisticsItemStatus.Done),
-                Overdue = g.Count(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status)),
+                Overdue = g.Count(li => li.VisitInstance.PlannedEndAt < nowVn && OpenStatuses.Contains(li.Status)),
             })
             .ToListAsync(cancellationToken);
 
@@ -236,7 +234,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 Total = g.Count(),
                 InProgress = g.Count(li => li.Status == LogisticsItemStatus.InProgress),
                 Completed = g.Count(li => li.Status == LogisticsItemStatus.Done),
-                Overdue = g.Count(li => (li.DueAt ?? li.VisitInstance.PlannedEndAt) < nowVn && OpenStatuses.Contains(li.Status)),
+                Overdue = g.Count(li => li.VisitInstance.PlannedEndAt < nowVn && OpenStatuses.Contains(li.Status)),
             })
             .ToListAsync(cancellationToken);
 
@@ -249,7 +247,7 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
         var pendingTasksQuery = currentItems.Where(li => OpenStatuses.Contains(li.Status));
         var pendingTasksTotal = await pendingTasksQuery.CountAsync(cancellationToken);
         var pendingRows = await pendingTasksQuery
-            .OrderBy(li => li.DueAt ?? li.VisitInstance.PlannedEndAt)
+            .OrderBy(li => li.VisitInstance.PlannedEndAt)
             .Take(PreviewLimit)
             .Select(li => new
             {
@@ -261,9 +259,8 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 li.Title,
                 li.ItemType,
                 li.Quantity,
-                li.Priority,
                 li.Status,
-                DueAt = li.DueAt ?? (DateTime?)li.VisitInstance.PlannedEndAt,
+                DueAt = (DateTime?)li.VisitInstance.PlannedEndAt,
                 li.AssignedToUserId,
                 WaitingSince = li.AssignedAt ?? li.RequestedAt ?? li.CreatedAt,
             })
@@ -476,7 +473,6 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 ItemType = r.ItemType,
                 Quantity = r.Quantity ?? 0,
                 Unit = null, // schema has no unit column; UI renders "—"
-                Priority = r.Priority,
                 Status = r.Status,
                 DueAt = r.DueAt,
                 AssignedToName = UserName(r.AssignedToUserId),
@@ -596,7 +592,6 @@ public sealed class GetDeptLeaderReportOverviewQueryHandler
                 ToDate = toVnExclusive.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 LogisticsStatus = logisticsStatus ?? "ALL",
                 ItemType = itemType ?? "ALL",
-                Priority = priority ?? "ALL",
                 AssignedUserId = assignedUserId?.ToString() ?? "ALL",
                 AssignedUserName = UserName(assignedUserId),
                 DueStatus = dueStatus ?? "ALL",

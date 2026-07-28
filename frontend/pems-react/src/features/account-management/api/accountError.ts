@@ -1,9 +1,25 @@
 import { AxiosError } from 'axios';
 
+/** One active-responsibility group blocking a role change (backend AccountRoleChangeBlocker). */
+export interface AccountRoleChangeBlocker {
+  type: string;
+  count: number;
+  affectedVisitCount: number;
+  sampleVisitInstanceIds?: number[];
+  message: string;
+}
+
+export interface AccountRoleChangeBlockedData {
+  affectedVisitCount: number;
+  blockers: AccountRoleChangeBlocker[];
+}
+
 interface ApiErrorBody {
   message?: string;
   errorCode?: string;
   errors?: Record<string, string[]>;
+  /** Structured payload for codes that carry one (see backend ConflictException.Data). */
+  data?: AccountRoleChangeBlockedData;
 }
 
 /**
@@ -44,7 +60,31 @@ export const ACCOUNT_ERROR_MESSAGES: Record<string, string> = {
   // Related Visitor Accounts tab (Staff Leader) — UC_StaffLeader_Related_Visitor_Accounts_Tab.
   RELATED_VISITOR_FORBIDDEN: 'Chỉ Trưởng phòng (Staff Leader) mới được xem danh sách Visitor liên quan đến cơ sở.',
   VISITOR_SCOPE_FORBIDDEN: 'Bạn không có quyền xem tài khoản khách này.',
+
+  // Safe account role change (active responsibilities) — spec §11/§16.
+  ACCOUNT_ROLE_TARGET_NOT_MANAGEABLE: 'Tài khoản này nằm ngoài phạm vi thay đổi vai trò của bạn.',
+  ACCOUNT_ROLE_CHANGE_BLOCKED_BY_ACTIVE_RESPONSIBILITIES:
+    'Không thể thay đổi vai trò vì tài khoản còn trách nhiệm đang hoạt động. Vui lòng chuyển giao, hoàn tất hoặc hủy hợp lệ các trách nhiệm đó trước khi thử lại.',
 };
+
+/**
+ * Codes whose backend message is more informative than any static string can be, because it is
+ * assembled from live data (how many visits, which department). The static entry above stays as a
+ * fallback for the rare case the body arrives without a message — it must never REPLACE the
+ * backend's per-blocker breakdown, which is the whole point of the error (spec §16.3).
+ */
+const PREFER_BACKEND_MESSAGE = new Set<string>([
+  'ACCOUNT_ROLE_CHANGE_BLOCKED_BY_ACTIVE_RESPONSIBILITIES',
+]);
+
+/** The blocker breakdown from a 409, or null when this error is not a blocker error. */
+export function getAccountRoleChangeBlockers(error: unknown): AccountRoleChangeBlockedData | null {
+  const body = (error as AxiosError<ApiErrorBody>)?.response?.data;
+  if (body?.errorCode !== 'ACCOUNT_ROLE_CHANGE_BLOCKED_BY_ACTIVE_RESPONSIBILITIES') return null;
+  const data = body.data;
+  if (!data || !Array.isArray(data.blockers)) return null;
+  return data;
+}
 
 /**
  * Extracts a safe, user-facing message from an account API error. Prefers the localized
@@ -58,6 +98,12 @@ export function getAccountErrorMessage(
   const axiosError = error as AxiosError<ApiErrorBody>;
   const status = axiosError?.response?.status;
   const body = axiosError?.response?.data;
+
+  // Data-driven codes speak for themselves; a static string here would silently discard the
+  // per-blocker counts the user needs in order to act.
+  if (body?.errorCode && PREFER_BACKEND_MESSAGE.has(body.errorCode) && body.message) {
+    return body.message;
+  }
 
   if (body?.errorCode && ACCOUNT_ERROR_MESSAGES[body.errorCode]) {
     return ACCOUNT_ERROR_MESSAGES[body.errorCode];
