@@ -103,7 +103,7 @@ public sealed class V2MixedListSurfacesTests
                 new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
                 new UserProvisionService(db),
                 NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-                    new VisitRequestAggregateStatusService(db));
+                    new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
             var form = new VisitRequestFormDataV2(
                 "LS" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
@@ -191,7 +191,7 @@ public sealed class V2MixedListSurfacesTests
                     new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
                     new UserProvisionService(db),
                     NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-                    new VisitRequestAggregateStatusService(db));
+                    new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
                 var form = new VisitRequestFormDataV2(
                     "LS" + Guid.NewGuid().ToString("N"),
                     new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),

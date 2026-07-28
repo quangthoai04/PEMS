@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using System;
@@ -36,14 +37,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string StartTime { get; set; }
         public string EndTime { get; set; }
         public string Date { get; set; }
+        /// <summary>Mốc đầy đủ (ISO, giữ nguyên offset +07:00) — dùng để FE phát hiện đoàn khách
+        /// diễn ra nhiều ngày (StartTime/EndTime/Date ở trên chỉ có giờ + 1 ngày bắt đầu).</summary>
+        public string? UsageStartAt { get; set; }
+        public string? UsageEndAt { get; set; }
         public string Title { get; set; }
         public string Description { get; set; }
         public int Quantity { get; set; }
         /// <summary>Loại hạng mục hậu cần: ROOM | TRANSPORT | MEAL | EQUIPMENT | BANNER | LED | OTHER.
         /// TRANSPORT dùng để hiện biên bản bàn giao xe ô tô điện với checklist cố định.</summary>
         public string ItemType { get; set; }
-        public string? Priority { get; set; }   // LOW | MEDIUM | HIGH | URGENT
-        public string? DueAt { get; set; }      // "yyyy-MM-ddTHH:mm:ss" wall-clock, null if none
         public ulong? AssigneeId { get; set; }
         public string AssigneeName { get; set; }
         public string Status { get; set; }
@@ -53,6 +56,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public ulong VisitInstanceId { get; set; }
         public ulong VisitRequestId { get; set; }
         public string? CancelReason { get; set; }
+        public int? ProposedQuantity { get; set; }
         public string? ProposedUsageStartAt { get; set; }
         public string? ProposedUsageEndAt { get; set; }
         public string? ProposedDescription { get; set; }
@@ -71,6 +75,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public HandoverSignatureDto? ReturnBorrowerSignature { get; set; }
         public string? BorrowNote { get; set; }
         public string? ReturnNote { get; set; }
+        /// <summary>JSON checklist xe điện (TRANSPORT) — null nếu đơn không phải TRANSPORT hoặc chưa ai lưu.</summary>
+        public string? ChecklistJson { get; set; }
 
         // Full Details
         public string RegistrantFullName { get; set; }
@@ -243,12 +249,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 StartTime = l.UsageStartAt?.ToString("HH:mm") ?? "",
                 EndTime = l.UsageEndAt?.ToString("HH:mm") ?? "",
                 Date = l.UsageStartAt?.ToString("dd-MM-yyyy") ?? "",
+                UsageStartAt = l.UsageStartAt?.ToString("O"),
+                UsageEndAt = l.UsageEndAt?.ToString("O"),
                 Title = l.Title,
                 Description = l.Description ?? "",
                 Quantity = l.Quantity ?? 1,
                 ItemType = l.ItemType,
-                Priority = l.Priority,
-                DueAt = l.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
                 AssigneeId = l.AssignedToUserId,
                 AssigneeName = assigneeName,
                 Status = unifiedStatus,
@@ -258,6 +264,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 VisitInstanceId = camp.VisitInstanceId,
                 VisitRequestId = camp.VisitRequestId,
                 CancelReason = camp.CancellationReason ?? camp.VisitRequest.CancellationReason,
+                ProposedQuantity = l.ProposedQuantity,
                 ProposedUsageStartAt = l.ProposedUsageStartAt?.ToString("O"),
                 ProposedUsageEndAt = l.ProposedUsageEndAt?.ToString("O"),
                 ProposedDescription = l.ProposedDescription,
@@ -274,8 +281,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 BorrowBorrowerSignature = ToSignature(borrowHandover?.BorrowerSignedBy, borrowHandover?.BorrowerSignedAt, signerNames),
                 ReturnProviderSignature = ToSignature(returnHandover?.ProviderSignedBy, returnHandover?.ProviderSignedAt, signerNames),
                 ReturnBorrowerSignature = ToSignature(returnHandover?.BorrowerSignedBy, returnHandover?.BorrowerSignedAt, signerNames),
-                BorrowNote = borrowHandover?.ConditionNote,
+                // condition_note của dòng BORROW là envelope {rows, note} cho MỌI loại hạng mục — tách
+                // checklist qua ChecklistJson và ghi chú tự do (Bên giao/Bên nhận, đã gộp) qua BorrowNote.
+                BorrowNote = VehicleHandoverChecklistNote.ExtractNote(borrowHandover?.ConditionNote),
                 ReturnNote = returnHandover?.ConditionNote,
+                ChecklistJson = VehicleHandoverChecklistNote.ExtractRowsJson(borrowHandover?.ConditionNote),
 
                 RegistrantFullName = camp.VisitRequest.RegistrantFullName ?? "",
                 RegistrantEmail = camp.VisitRequest.RegistrantEmail ?? "",

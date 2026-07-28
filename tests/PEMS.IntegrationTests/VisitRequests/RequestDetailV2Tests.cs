@@ -268,7 +268,6 @@ public sealed class RequestDetailV2Tests
         ItemType = "ROOM",
         Title = "Phòng họp",
         Status = "REQUESTED",
-        Priority = "MEDIUM",
         CoordinationMode = "SYSTEM_REQUEST",
         Quantity = 1,
         RequestedAt = DateTime.Now,

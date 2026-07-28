@@ -151,11 +151,14 @@ public sealed class PrepareVisitLogisticsCommandHandler
 
         var now = _clock.VietnamNow;
         var itemType = request.ItemType.Trim().ToUpperInvariant();
-        var priority = string.IsNullOrWhiteSpace(request.Priority) ? "MEDIUM" : request.Priority!.Trim().ToUpperInvariant();
         var usageStart = ParseLocal(request.UsageStartAt);
         var usageEnd = ParseLocal(request.UsageEndAt);
-        var dueAt = ParseLocal(request.DueAt);
         var title = request.Title.Trim();
+
+        // Not user-facing: response deadline defaults to 24h before the item is due to be used.
+        // OFFLINE_COORDINATED items are recorded DONE immediately — no department workflow to meet a
+        // deadline for.
+        var dueAt = offline ? (DateTime?)null : usageStart?.AddHours(-24);
 
         // One active item per fixed category. The "Chuẩn bị chi tiết" screen identifies a fixed
         // category by (item_type, title) and shows a single active card each (Welcome LED, Xe điện,
@@ -195,7 +198,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 // OFFLINE_COORDINATED is already handled outside the system → DONE (no further workflow);
                 // SYSTEM_REQUEST starts at REQUESTED for the department to process.
                 Status = offline ? LogisticsItemStatus.Done : LogisticsItemStatus.Requested,
-                Priority = priority,
                 CoordinationMode = offline ? LogisticsCoordinationModes.OfflineCoordinated : LogisticsCoordinationModes.SystemRequest,
                 OfflineCoordinationNote = offline ? request.OfflineCoordinationNote!.Trim() : null,
                 RequestedBy = actorId,
@@ -259,8 +261,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: leaderUserId!.Value,
-                        Title: LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
-                        Message: $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
+                        Title: "Có yêu cầu hậu cần mới",
+                        Message: $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" cho đoàn {delegationName} tại {campusName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsRequestCreated,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: item.LogisticsItemId,

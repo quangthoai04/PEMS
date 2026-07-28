@@ -17,8 +17,6 @@ public sealed record PrepareVisitLogisticsCommand(
     int? Quantity,
     string? UsageStartAt,       // "yyyy-MM-ddTHH:mm[:ss]" wall-clock
     string? UsageEndAt,
-    string? Priority,           // LOW | MEDIUM | HIGH | URGENT (default MEDIUM)
-    string? DueAt,
     string? CoordinationMode = null,        // SYSTEM_REQUEST (default) | OFFLINE_COORDINATED
     string? OfflineCoordinationNote = null, // required when OFFLINE_COORDINATED
     EmailOverride? EmailOverride = null) : IRequest<PrepareVisitLogisticsResponse>;
@@ -33,9 +31,4 @@ public static class LogisticsCoordinationModes
     public const string SystemRequest = "SYSTEM_REQUEST";
     public const string OfflineCoordinated = "OFFLINE_COORDINATED";
     public static readonly string[] All = { SystemRequest, OfflineCoordinated };
-}
-
-public static class LogisticsPriorities
-{
-    public static readonly string[] All = { "LOW", "MEDIUM", "HIGH", "URGENT" };
 }

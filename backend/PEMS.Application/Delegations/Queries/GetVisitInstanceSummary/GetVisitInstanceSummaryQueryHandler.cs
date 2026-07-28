@@ -216,7 +216,6 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
                                  ItemType = li.ItemType,
                                  Title = li.Title,
                                  Status = li.Status,
-                                 Priority = li.Priority,
                                  RequestedToDepartmentId = li.RequestedToDepartmentId,
                                  DepartmentName = d != null ? d.Name : null,
                                  AssignedToUserId = li.AssignedToUserId,

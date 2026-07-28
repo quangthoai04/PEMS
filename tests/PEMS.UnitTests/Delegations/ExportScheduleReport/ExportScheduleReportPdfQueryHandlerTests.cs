@@ -30,8 +30,11 @@ public class ExportScheduleReportPdfQueryHandlerTests
         var storage = new Mock<IFileStorageService>(MockBehavior.Loose);
         var drive = new Mock<IGoogleDriveStorageService>(MockBehavior.Loose);
         var translator = new Mock<IContentTranslationService>(MockBehavior.Loose);
+        var fileUpload = new Mock<IFileUploadService>(MockBehavior.Loose);
+        var folderService = new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose);
         var handler = new ExportScheduleReportPdfQueryHandler(
             db, currentUser, formRead, storage.Object, drive.Object, translator.Object,
+            fileUpload.Object, folderService.Object,
             NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
         return (db, handler, currentUser);
     }
@@ -177,6 +180,8 @@ public class ExportScheduleReportPdfQueryHandlerTests
             new Mock<IFileStorageService>(MockBehavior.Loose).Object,
             new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
             new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
+            new Mock<IFileUploadService>(MockBehavior.Loose).Object,
+            new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose).Object,
             NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
 
         await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
@@ -202,6 +207,8 @@ public class ExportScheduleReportPdfQueryHandlerTests
             db, currentUser, formRead, storage.Object,
             new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
             new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
+            new Mock<IFileUploadService>(MockBehavior.Loose).Object,
+            new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose).Object,
             NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
 
         var bytes = await handlerWithLogo.Handle(

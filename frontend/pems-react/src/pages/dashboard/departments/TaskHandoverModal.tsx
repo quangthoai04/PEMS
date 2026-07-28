@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, Download, X, Loader2, PenLine, Plus } from 'lucide-react';
+import { FileText, Download, X, Loader2, PenLine, Plus, Trash2 } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
-import { VEHICLE_HANDOVER_CHECKLIST, isVehicleHandover } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
+import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import toast from 'react-hot-toast';
 
@@ -29,7 +30,30 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const [busy, setBusy] = useState(false);
   const [borrowNote, setBorrowNote] = useState('');
   const [returnNote, setReturnNote] = useState('');
-  const [extraRows, setExtraRows] = useState<{ id: number }[]>([]);
+  const [checklistRows, setChecklistRows] = useState<VehicleChecklistRow[]>(() => {
+    if (detailData?.ChecklistJson) {
+      try {
+        const parsed = JSON.parse(detailData.ChecklistJson);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch { /* rơi về mặc định nếu JSON hỏng */ }
+    }
+    // Xe điện: checklist mẫu giấy có sẵn danh mục. Hạng mục khác: chỉ 1 dòng khởi điểm lấy tên/số
+    // lượng từ chính đơn yêu cầu — cùng logic bảng, không list sẵn.
+    return isVehicleHandover(detailData?.ItemType)
+      ? buildDefaultVehicleChecklist()
+      : buildDefaultGenericChecklist(detailData?.Title, detailData?.Quantity);
+  });
+
+  // Chỉ seed 1 lần lúc mount (useState initializer) — nếu Quantity "chốt" đổi sau đó (vd Host vừa
+  // chấp nhận đề xuất số lượng mới trong khi biên bản này đã mở), cột Số Lượng của dòng mặc định
+  // tự sinh (chưa có checklistJson đã lưu) bị kẹt ở giá trị cũ. Đồng bộ lại riêng cột qty, không
+  // đụng Giao/Nhận người dùng có thể đã gõ.
+  useEffect(() => {
+    if (detailData?.ChecklistJson) return; // đã có checklist lưu sẵn, không tự ý sửa
+    if (isVehicleHandover(detailData?.ItemType)) return; // checklist xe điện là danh mục cố định
+    const qty = detailData?.Quantity ? String(detailData.Quantity) : '';
+    setChecklistRows((rows) => rows.map((r) => (r.name === (detailData?.Title || '') ? { ...r, qty } : r)));
+  }, [detailData?.Quantity, detailData?.Title, detailData?.ChecklistJson, detailData?.ItemType]);
 
   if ((!isOpen && !inline) || !detailData) return null;
 
@@ -43,8 +67,10 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   const canSignNT2 = isBorrowDone && nt1 && !nt2 && !readOnly; // Department is PROVIDER
 
   const isReturnStarted = nt1 || nt2;
-  const canEditFirst4Cols = !isBorrowDone && !isReturnStarted && !readOnly;
-  const canEditLastCol = isBorrowDone && !isReturnStarted && !readOnly;
+  // Cột "bàn giao" do phòng ban (Dept) điền TRƯỚC khi ký "Ký Giao", khoá lại ngay sau đó. Cột
+  // "Tình trạng nghiệm thu" (cuối bảng) là việc của Host — chỉ Host điền khi ký nghiệm thu (NT1)
+  // trong LogisticsHandoverSection; Dept không sửa cột này ở modal này, kể cả lúc ký NT2.
+  const canEditChecklist = !bg1 && !readOnly;
 
   // parse date for top section
   let handoverTime = "....";
@@ -69,11 +95,28 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
     ? `${detailData.UsageEndTime} ngày ${detailData.UsageDate}`
     : '............................................';
 
+  const [savingDocType, setSavingDocType] = useState<'BORROW' | 'RETURN' | null>(null);
+  const handleSaveDocument = async (type: 'BORROW' | 'RETURN') => {
+    if (!detailData.VisitInstanceId || !detailData.LogisticsItemId) return;
+    setSavingDocType(type);
+    try {
+      await delegationsApi.saveLogisticsHandoverDocument(detailData.VisitInstanceId, detailData.LogisticsItemId, type);
+      toast.success('Đã lưu biên bản vào hệ thống.');
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Không thể lưu biên bản vào hệ thống.');
+    } finally {
+      setSavingDocType(null);
+    }
+  };
+
   const handleSign = async (type: 'BORROW' | 'RETURN') => {
     setBusy(true);
     try {
-      const note = type === 'BORROW' ? borrowNote : returnNote;
-      await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note.trim() || undefined);
+      const note = (type === 'BORROW' ? borrowNote : returnNote).trim();
+      // Checklist (cột "bàn giao") chỉ Dept gửi lúc ký BORROW — cột "Tình trạng nghiệm thu" là việc
+      // của Host, ký ở LogisticsHandoverSection, không gửi lại từ đây để tránh đè dữ liệu Host vừa điền.
+      const checklistJson = type === 'BORROW' ? JSON.stringify(checklistRows) : undefined;
+      await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note || undefined, checklistJson);
       toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nhận lại'}`);
       onSuccess?.();
     } catch (e: any) {
@@ -100,7 +143,15 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
             width: 100%;
             margin: 0;
             padding: 0;
+          }
+          /* flex/overflow-hidden trên khung modal chặn nội dung tràn nhiều trang khi in —
+             ép về block + overflow visible cho toàn bộ cây con để trình duyệt tự chia trang. */
+          #task-handover-modal, #task-handover-modal * {
             overflow: visible !important;
+            max-height: none !important;
+          }
+          #task-handover-modal > div {
+            display: block !important;
           }
         `}
       </style>
@@ -165,6 +216,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                   <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
                   <p className="flex-1 min-w-[200px]">Bộ phận: <b>Host (Tiếp đón)</b></p>
                 </div>
+                {detailData.Description && (
+                  <p>Mô tả: <b>{detailData.Description}</b></p>
+                )}
                 <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
                 <p>Đoàn khách: <b>{detailData.DelegationName}</b></p>
                 {isVehicle ? (
@@ -176,66 +230,71 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
             </div>
 
             <p className="font-bold text-[15px] mb-2">
-              {isVehicle ? 'Cùng bàn giao xe ô tô điện với tình trạng sau:' : 'Cùng bàn giao tài sản với tình trạng sau:'}
+              {isVehicle
+                ? `Cùng bàn giao xe ${detailData.Quantity || 1} ô tô điện với tình trạng sau:`
+                : `Cùng bàn giao ${detailData.Quantity || 1} ${detailData.Title || 'hạng mục'} với tình trạng sau:`}
             </p>
             <div className="overflow-x-auto mb-6">
               <table className="w-full border-collapse border border-slate-500 text-[14px]">
                 <thead>
                   <tr className="bg-slate-50">
-                    <th className="border border-slate-500 p-2 text-center w-12">STT</th>
-                    <th className="border border-slate-500 p-2 text-center">Nội dung</th>
+                    <th className="border border-slate-500 p-2 text-center w-14">STT</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[160px]">Nội dung</th>
                     <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                    <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
-                    <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS nhận bàn giao' : 'Tình Trạng nhận'}</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[140px]">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[140px]">Tình trạng nghiệm thu</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {isVehicle ? (
-                    <>
-                      {VEHICLE_HANDOVER_CHECKLIST.map((row, i) => (
-                        <tr key={i}>
-                          <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" defaultValue={row.name} disabled={!canEditFirst4Cols} /></td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" defaultValue={row.qty} disabled={!canEditFirst4Cols} /></td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
-                          <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditLastCol} /></td>
-                        </tr>
-                      ))}
-                      {extraRows.map((row, idx) => {
-                        const i = VEHICLE_HANDOVER_CHECKLIST.length + idx;
-                        return (
-                          <tr key={row.id}>
-                            <td className="border border-slate-500 p-2 text-center">{i + 1}</td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none text-center px-1" disabled={!canEditFirst4Cols} /></td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditFirst4Cols} /></td>
-                            <td className="border border-slate-500 p-0"><input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" disabled={!canEditLastCol} /></td>
-                          </tr>
-                        );
-                      })}
-                      {canEditFirst4Cols && (
-                        <tr className="print:hidden">
-                          <td colSpan={5} className="border border-slate-500 p-0">
-                            <button type="button" onClick={() => setExtraRows(prev => [...prev, { id: Date.now() }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
-                              <Plus className="w-4 h-4" /> Thêm dòng
+                  {checklistRows.map((row, i) => (
+                    <tr key={i}>
+                      <td className="border border-slate-500 p-1 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <span>{i + 1}</span>
+                          {canEditChecklist && (
+                            <button type="button" onClick={() => setChecklistRows(prev => prev.filter((_, idx) => idx !== i))}
+                              className="text-slate-400 hover:text-rose-500 transition-colors print:hidden cursor-pointer" title="Xoá dòng">
+                              <Trash2 className="w-3 h-3" />
                             </button>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ) : (
-                    <tr>
-                      <td className="border border-slate-500 p-2 text-center">1</td>
-                      <td className="border border-slate-500 p-2 font-semibold">{detailData.Title}</td>
-                      <td className="border border-slate-500 p-2 text-center">{detailData.Quantity || 1}</td>
-                      <td className="border border-slate-500 p-2 text-center">
-                        {detailData.BorrowNote || (bg1 ? 'Tốt' : '')}
+                          )}
+                        </div>
                       </td>
-                      <td className="border border-slate-500 p-2 text-center">
-                        {bg2 ? 'Đã xác nhận' : ''}
+                      <td className="border border-slate-500 p-0 min-w-[160px]">
+                        <input type="text" className="w-full min-h-[36px] bg-transparent outline-none px-2" value={row.name} disabled={!canEditChecklist}
+                          onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))} />
+                      </td>
+                      <td className="border border-slate-500 p-0">
+                        <input type="text" placeholder="Nhập..." className="w-full min-h-[36px] bg-transparent outline-none text-center px-1 placeholder:text-slate-300" value={row.qty} disabled={!canEditChecklist}
+                          onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} />
+                      </td>
+                      <td className="border border-slate-500 p-0 min-w-[140px]">
+                        <input type="text" placeholder="Nhập..." className="w-full min-h-[36px] bg-transparent outline-none px-2 placeholder:text-slate-300" value={row.giao} disabled={!canEditChecklist}
+                          onChange={e => setChecklistRows(prev => prev.map((r, idx) => idx === i ? { ...r, giao: e.target.value } : r))} />
+                      </td>
+                      <td className="border border-slate-500 p-0 min-w-[140px] bg-slate-50">
+                        <input type="text" placeholder="Host điền khi nghiệm thu" className="w-full min-h-[36px] bg-transparent outline-none px-2 placeholder:text-slate-300 text-slate-600" value={row.nhan} disabled
+                          readOnly />
+                      </td>
+                    </tr>
+                  ))}
+                  {canEditChecklist && (
+                    <tr className="print:hidden">
+                      <td colSpan={5} className="border border-slate-500 p-0">
+                        <button type="button" onClick={() => setChecklistRows(prev => [...prev, { name: '', qty: '', giao: '', nhan: '' }])} className="w-full py-2 flex items-center justify-center gap-1 text-sm font-bold text-[#004c91] bg-blue-50/50 hover:bg-blue-100/50 transition-colors">
+                          <Plus className="w-4 h-4" /> Thêm dòng
+                        </button>
                       </td>
                     </tr>
                   )}
+                  {/* Hàng ghi chú tổng — gộp ý kiến Bên Giao/Bên Nhận mỗi giai đoạn, cùng format
+                      "+ Nhãn: nội dung" (MergeNote), đặt cuối bảng. */}
+                  <tr>
+                    <td className="border border-slate-500 p-2 text-center font-semibold">{checklistRows.length + 1}</td>
+                    <td className="border border-slate-500 p-2 font-semibold">Ghi chú</td>
+                    <td className="border border-slate-500 p-2"></td>
+                    <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{detailData.BorrowNote || ''}</td>
+                    <td className="border border-slate-500 p-2 whitespace-pre-line align-top">{detailData.ReturnNote || ''}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -426,6 +485,33 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* "Lưu vào hệ thống" — sinh PDF thật phía backend (khác nút Tải PDF ở trên, chỉ in
+                  trang hiện tại) và lưu vào Quản lý tài liệu (loại Hậu cần). Chỉ bật khi đủ 2 chữ ký. */}
+              <div className="flex flex-wrap gap-3 print:hidden">
+                {!readOnly && isBorrowDone && (
+                  <button
+                    type="button"
+                    disabled={savingDocType !== null}
+                    onClick={() => handleSaveDocument('BORROW')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {savingDocType === 'BORROW' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    Lưu biên bản bàn giao vào hệ thống
+                  </button>
+                )}
+                {!readOnly && nt1 && nt2 && (
+                  <button
+                    type="button"
+                    disabled={savingDocType !== null}
+                    onClick={() => handleSaveDocument('RETURN')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {savingDocType === 'RETURN' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    Lưu biên bản nghiệm thu vào hệ thống
+                  </button>
+                )}
               </div>
 
               {/* Ghi chú chi phí — hiện khi biên bản đã ký nghiệm thu đủ 2 bên; nằm trong vùng in

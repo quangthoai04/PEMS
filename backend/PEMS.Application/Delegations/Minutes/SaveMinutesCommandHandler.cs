@@ -100,7 +100,13 @@ public sealed class SaveMinutesCommandHandler
             .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
             .GetValueOrDefault(instance.VisitInstanceId) ?? "Đoàn khách";
         string title = request.Title.Trim();
-        var minutesActionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
+        // Host xem/sửa biên bản trong trang "Quy trình tiếp khách" (tab Đang tiếp khách); mọi
+        // participant khác (Student Buddy, IC Host Protocol, IT Lead...) chỉ có quyền vào trang
+        // "Đóng góp kết quả" — route sai trang sẽ khiến participant vào 1 trang họ không thao tác
+        // được. Mỗi recipient cần đúng URL theo vai trò của họ, không dùng chung 1 URL cứng.
+        string ActionUrlFor(ulong recipientUserId) => recipientUserId == instance.CurrentHostUserId
+            ? $"/dashboard/visit/process/{instance.VisitInstanceId}"
+            : $"/dashboard/visit/contribution/{instance.VisitInstanceId}";
 
         // Notify Accepted participants
         var notifyParticipantIds = await _db.VisitParticipants
@@ -122,7 +128,7 @@ public sealed class SaveMinutesCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: minutesActionUrl
+                ActionUrl: ActionUrlFor(pId)
             ));
         }
 
@@ -145,7 +151,7 @@ public sealed class SaveMinutesCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: minutesActionUrl
+                ActionUrl: ActionUrlFor(instance.CurrentHostUserId.Value)
             ));
         }
 

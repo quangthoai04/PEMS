@@ -40,11 +40,14 @@ public sealed class ExportDeptLeaderReportCommandHandler
 
     private readonly IMediator _mediator;
     private readonly ICurrentUserService _currentUser;
+    private readonly Reports.Common.IReportArchiveService _reportArchive;
 
-    public ExportDeptLeaderReportCommandHandler(IMediator mediator, ICurrentUserService currentUser)
+    public ExportDeptLeaderReportCommandHandler(
+        IMediator mediator, ICurrentUserService currentUser, Reports.Common.IReportArchiveService reportArchive)
     {
         _mediator = mediator;
         _currentUser = currentUser;
+        _reportArchive = reportArchive;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -62,7 +65,6 @@ public sealed class ExportDeptLeaderReportCommandHandler
             ToDate = request.ToDate,
             LogisticsStatus = request.LogisticsStatus,
             ItemType = request.ItemType,
-            Priority = request.Priority,
             AssignedUserId = request.AssignedUserId,
             DueStatus = request.DueStatus,
             HandoverStatus = request.HandoverStatus,
@@ -83,7 +85,7 @@ public sealed class ExportDeptLeaderReportCommandHandler
         var stampVn = VietnamTime.Now();
         var baseName = $"PEMS_DepartmentLeader_Report_{stampVn:yyyyMMdd_HHmm}";
 
-        return format switch
+        var result = format switch
         {
             "CSV" => new ExportDeptLeaderReportResult
             {
@@ -104,6 +106,15 @@ public sealed class ExportDeptLeaderReportCommandHandler
                 FileName = baseName + ".xlsx",
             },
         };
+
+        if (_currentUser.UserId is { } userId)
+        {
+            await _reportArchive.ArchiveAsync(
+                result.Content, result.FileName, result.ContentType, "DEPT_LEADER_REPORT",
+                _currentUser.PrimaryCampusId, userId, cancellationToken);
+        }
+
+        return result;
     }
 
     // ─────────────────────────── Shared label helpers ───────────────────────────
@@ -127,7 +138,6 @@ public sealed class ExportDeptLeaderReportCommandHandler
         var parts = new List<string>();
         if (f.LogisticsStatus != "ALL") parts.Add($"Trạng thái: {DeptLeaderReportLabels.StatusLabelVi(f.LogisticsStatus)}");
         if (f.ItemType != "ALL") parts.Add($"Mảng việc: {DeptLeaderReportLabels.ItemTypeLabelVi(f.ItemType)}");
-        if (f.Priority != "ALL") parts.Add($"Ưu tiên: {DeptLeaderReportLabels.PriorityLabelVi(f.Priority)}");
         if (f.AssignedUserId != "ALL") parts.Add($"Nhân sự: {f.AssignedUserName ?? f.AssignedUserId}");
         if (f.DueStatus != "ALL") parts.Add($"Deadline: {(f.DueStatus == "OVERDUE" ? "Quá hạn" : "Sắp đến hạn")}");
         if (f.HandoverStatus != "ALL") parts.Add($"Bàn giao: {f.HandoverStatus}");
@@ -215,11 +225,11 @@ public sealed class ExportDeptLeaderReportCommandHandler
             else foreach (var m in o.MonthlyTrend) Row(m.MonthLabel, m.TotalTasks, m.CompletedTasks, m.OverdueTasks);
             Row();
             Row("Pending Tasks", $"Top {o.PendingTasks.Count}/{o.PendingTasksTotal}");
-            Row("Item", "Visit", "Type", "Quantity", "Priority", "Status", "Deadline", "Assignee", "Waiting Hours", "Action");
+            Row("Item", "Visit", "Type", "Quantity", "Status", "Deadline", "Assignee", "Waiting Hours", "Action");
             if (o.PendingTasks.Count == 0) NoData();
             else foreach (var t in o.PendingTasks)
                 Row(t.ItemName, $"{t.RequestCode} · {t.DelegationName}", DeptLeaderReportLabels.ItemTypeLabelVi(t.ItemType),
-                    t.Quantity, DeptLeaderReportLabels.PriorityLabelVi(t.Priority), DeptLeaderReportLabels.StatusLabelVi(t.Status),
+                    t.Quantity, DeptLeaderReportLabels.StatusLabelVi(t.Status),
                     Dt(t.DueAt), t.AssignedToName ?? "—", t.WaitingHours.ToString("0.#", CultureInfo.InvariantCulture), t.ActionLabel);
             Row();
             Row("Change Proposals");
@@ -378,11 +388,11 @@ public sealed class ExportDeptLeaderReportCommandHandler
                 o.MonthlyTrend.Select(m => new object?[] { m.MonthLabel, m.TotalTasks, m.CompletedTasks, m.OverdueTasks }),
                 "Xu hướng theo tháng");
             r = WriteTable(ws, r,
-                new[] { "Nhiệm vụ", "Đoàn/Visit", "Mảng việc", "Số lượng", "Ưu tiên", "Trạng thái", "Deadline", "Người xử lý", "Giờ chờ", "Hành động" },
+                new[] { "Nhiệm vụ", "Đoàn/Visit", "Mảng việc", "Số lượng", "Trạng thái", "Deadline", "Người xử lý", "Giờ chờ", "Hành động" },
                 o.PendingTasks.Select(t => new object?[]
                 {
                     t.ItemName, $"{t.RequestCode} · {t.DelegationName}", DeptLeaderReportLabels.ItemTypeLabelVi(t.ItemType),
-                    t.Quantity, DeptLeaderReportLabels.PriorityLabelVi(t.Priority), DeptLeaderReportLabels.StatusLabelVi(t.Status),
+                    t.Quantity, DeptLeaderReportLabels.StatusLabelVi(t.Status),
                     Dt(t.DueAt), t.AssignedToName ?? "—", t.WaitingHours, t.ActionLabel,
                 }),
                 $"Nhiệm vụ cần xử lý (top {o.PendingTasks.Count}/{o.PendingTasksTotal})");
@@ -590,14 +600,14 @@ public sealed class ExportDeptLeaderReportCommandHandler
                             o.MonthlyTrend.Select(m => new[] { m.MonthLabel, m.TotalTasks.ToString(), m.CompletedTasks.ToString(), m.OverdueTasks.ToString() }).ToList());
                         SubTitle($"Nhiệm vụ cần xử lý (top {o.PendingTasks.Count}/{o.PendingTasksTotal})");
                         DataTable(
-                            new[] { "Nhiệm vụ", "Đoàn", "Mảng việc", "SL", "Ưu tiên", "Trạng thái", "Deadline", "Người xử lý" },
+                            new[] { "Nhiệm vụ", "Đoàn", "Mảng việc", "SL", "Trạng thái", "Deadline", "Người xử lý" },
                             o.PendingTasks.Select(t => new[]
                             {
                                 t.ItemName, t.DelegationName, DeptLeaderReportLabels.ItemTypeLabelVi(t.ItemType), t.Quantity.ToString(),
-                                DeptLeaderReportLabels.PriorityLabelVi(t.Priority), DeptLeaderReportLabels.StatusLabelVi(t.Status),
+                                DeptLeaderReportLabels.StatusLabelVi(t.Status),
                                 Dt(t.DueAt), t.AssignedToName ?? "—",
                             }).ToList(),
-                            new[] { 2.2f, 2f, 1.5f, 0.6f, 1f, 1.5f, 1.1f, 1.5f });
+                            new[] { 2.2f, 2f, 1.5f, 0.6f, 1.5f, 1.1f, 1.5f });
                         SubTitle("Đề xuất thay đổi");
                         DataTable(
                             new[] { "Nhiệm vụ", "Người đề xuất", "SL đề xuất", "Ghi chú", "Ngày tạo" },

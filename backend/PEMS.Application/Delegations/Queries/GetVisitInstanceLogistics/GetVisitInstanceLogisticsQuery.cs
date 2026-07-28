@@ -24,7 +24,6 @@ public sealed class VisitInstanceLogisticsItemDto
     public string? Description { get; set; }
     public int? Quantity { get; set; }
     public string Status { get; set; } = default!;     // REQUESTED | ASSIGNED | ACCEPTED | ...
-    public string Priority { get; set; } = default!;
     public string CoordinationMode { get; set; } = default!;  // SYSTEM_REQUEST | OFFLINE_COORDINATED
     public string? OfflineCoordinationNote { get; set; }
     public ulong? RequestedToDepartmentId { get; set; }
@@ -34,7 +33,6 @@ public sealed class VisitInstanceLogisticsItemDto
     public string? RequestedByName { get; set; }
     public string? UsageStartAt { get; set; }
     public string? UsageEndAt { get; set; }
-    public string? DueAt { get; set; }
     public string? CompletedAt { get; set; }
     public ulong? AssignedToUserId { get; set; }
     public string? AssignedToName { get; set; }
@@ -66,4 +64,6 @@ public sealed class LogisticsHandoverDto
     public string? ProviderSignedAt { get; set; }
     public string? ItemCondition { get; set; }             // GOOD | DAMAGED | MISSING | OTHER
     public string? ConditionNote { get; set; }
+    /// <summary>JSON checklist xe điện (TRANSPORT, dòng BORROW) — null nếu không phải TRANSPORT.</summary>
+    public string? ChecklistJson { get; set; }
 }

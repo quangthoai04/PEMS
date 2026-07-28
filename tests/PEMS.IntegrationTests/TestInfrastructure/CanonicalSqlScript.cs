@@ -24,7 +24,7 @@ public static class CanonicalSqlScript
 {
     /// <summary>The only accepted schema script. No wildcards, no fallback to historical names.</summary>
     public const string FileName =
-        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY.sql";
+        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql";
 
     /// <summary>
     /// SHA-256 of the canonical script this test suite is written against. Changing the schema is allowed,
@@ -78,8 +78,37 @@ public static class CanonicalSqlScript
     ///   • ACCOUNT_STAFF_LEADER_ASSIGNED and _REPLACED gained {{reason}}, which both emails already
     ///     showed and which is a required input of the replace-leader command.
     /// No DDL, no trigger, no row count changed.
+    /// (2026-07-28, eighth bump) MERGE of Dev into Cảnh-Iter1. Two things happened at once, and this is
+    /// the first bump where the FILE ITSELF changed identity:
+    ///   • Dev renamed the canonical script to PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql
+    ///     while Cảnh-Iter1 was editing the old name — a rename/modify conflict. The renamed file is the
+    ///     canonical one; FileName above moves with it and the old name no longer exists on disk;
+    ///   • the merged file carries BOTH sides: Dev's Document-AI/OCR fixes, Department-Leader personnel
+    ///     support and logistics proposed_quantity/proposed_usage_* columns, and Cảnh-Iter1's whole email
+    ///     schema (email_templates, sent_email*, email_draft*, email_action_tokens,
+    ///     account_email_confirmations) plus the template catalog.
+    /// Seed text also changed in two deliberate places:
+    ///   • LOGISTICS_CHANGE_PROPOSAL_TO_HOST now renders the proposal ITSELF — proposed quantity against
+    ///     the original, the proposed window, the proposed content — instead of the rationale alone, which
+    ///     forced the Host into the portal to see what they were approving;
+    ///   • four DEPT_* templates were added (personnel disabled/enabled, leadership granted/handed over)
+    ///     when the Department-Leader module stopped composing its own HTML and moved onto the dispatcher.
+    ///     The catalog is 30 codes, and the code-side registry is asserted equal to it in both directions.
+    /// ExpectedBaseTableCount (82) and ExpectedTriggerCount (32) are unchanged, verified by a fresh import
+    /// into a disposable database before this constant was touched.
+    /// (2026-07-29, ninth bump) NOT A SCHEMA CHANGE — the .sql file is byte-for-byte the one the eighth
+    /// bump pinned. What changed is the HASHING RULE, from raw file bytes to the line-ending-normalised
+    /// text (see <see cref="ComputeNormalizedSha256"/>).
+    ///   • old raw-byte hash, Windows CRLF checkout: 322a8a94c2dc61192e46d14769acb41af287c486b8e942fbf5850655702d68a0
+    ///   • old raw-byte hash, Linux LF checkout:     18e97d4dce754353f5d19decc304c46f4d8f8dab3364d24ebdec9ba907e286b8
+    /// Both were "correct"; the pin could satisfy one platform at a time and no more. Every local gate on
+    /// this branch was green on Windows while CI was red on Linux for this single reason. The normalised
+    /// hash equals the LF value, because the repository stores the file with LF — so this is not a third
+    /// form, it is the form git has held all along.
+    /// A fresh import was re-run against a disposable database after the change: 82 tables, 32 triggers,
+    /// 252 foreign keys, 30 templates, 0 duplicate codes — identical to the eighth bump's baseline.
     public const string ExpectedSha256 =
-        "51e178bb5e56fc927fd896e2a87ed8015043a2ca4904b4e1d9df581b2caae8a1";
+        "18e97d4dce754353f5d19decc304c46f4d8f8dab3364d24ebdec9ba907e286b8";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
@@ -141,28 +170,81 @@ public static class CanonicalSqlScript
         return path;
     }
 
-    /// <summary>Lower-case hex SHA-256 of the file's bytes.</summary>
-    public static string ComputeSha256(string path)
+    /// <summary>UTF-8 without a BOM, and strict: a decoding error must fail loudly, not produce U+FFFD.</summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>
+    /// Canonicalises the script text so that the SAME SQL yields the SAME hash on every platform.
+    ///
+    /// <para>
+    /// Exactly three things are neutralised, all of them artefacts of how a file was checked out rather
+    /// than of what it says: a leading BOM, CRLF line endings, and lone CR line endings. Nothing else is
+    /// touched — no trimming, no whitespace collapsing, no Unicode normalisation — because every one of
+    /// those would let a real content change slip through the guard. A space added inside a SIGNAL message
+    /// or a trailing space after a column definition still changes the hash, exactly as it should.
+    /// </para>
+    /// </summary>
+    public static string NormalizeForHashing(string text)
     {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        // Exactly one leading BOM, and only at position 0. A U+FEFF anywhere else is real content.
+        if (text.Length > 0 && text[0] == '\uFEFF')
+            text = text[1..];
+
+        // CRLF first so the second pass only sees genuinely lone CRs (old-Mac endings).
+        return text.Replace("\r\n", "\n").Replace("\r", "\n");
     }
 
-    /// <summary>Reads the canonical script, failing when its hash does not match <see cref="ExpectedSha256"/>.</summary>
+    /// <summary>Lower-case hex SHA-256 of the line-ending-normalised text, encoded UTF-8 without a BOM.</summary>
+    public static string ComputeNormalizedSha256OfText(string text) =>
+        Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(NormalizeForHashing(text)))).ToLowerInvariant();
+
+    /// <summary>
+    /// Lower-case hex SHA-256 of the canonical script, independent of how it was checked out.
+    ///
+    /// <para>
+    /// This replaces a raw-byte hash of the file. The repository stores this script with LF (<c>.gitattributes</c>
+    /// declares <c>* text=auto</c>), so a Windows worktree holds it with CRLF and a Linux runner holds it with LF —
+    /// the same 1.7 MB of SQL, two different SHA-256 values. A raw-byte pin can therefore be green on one platform
+    /// only, which is precisely how CI first went red on a branch whose every local gate passed. Hashing what the
+    /// file SAYS rather than how its lines happen to end is what makes the schema contract portable.
+    /// </para>
+    /// </summary>
+    public static string ComputeNormalizedSha256(string path) =>
+        ComputeNormalizedSha256OfText(StrictUtf8.GetString(File.ReadAllBytes(path)));
+
+    /// <summary>
+    /// Reads the canonical script, failing when its hash does not match <see cref="ExpectedSha256"/>.
+    ///
+    /// <para>
+    /// Returns the NORMALISED text, which is also the text that was hashed. That matters beyond tidiness:
+    /// two of this script's CRLFs fall INSIDE string literals — the seeded <c>note_to_fptu</c> values for
+    /// visit requests 1002 and 3048/3049, each built with <c>CONCAT</c> around an embedded newline — and
+    /// <c>MySqlScript</c>, which <see cref="DisposableDatabaseManager"/> imports through, passes them to the
+    /// server unchanged (measured, not assumed). So before this change the suite's disposable database held
+    /// those two rows with <c>\r\n</c> on Windows and <c>\n</c> on Linux. Two rows is a small discrepancy,
+    /// but it is exactly the kind that survives for years: it lives in seed data nobody diffs, on a path
+    /// where the <c>mysql</c> command-line client — which strips CR line by line, so manual and CI imports
+    /// never showed it — behaves differently from the driver.
+    /// Feeding the normalised text to the import makes a disposable database byte-identical wherever the
+    /// suite runs, and keeps "what was verified" and "what was imported" the same string.
+    /// </para>
+    /// </summary>
     public static string ReadVerified(string? repositoryRoot = null)
     {
         var path = ResolvePath(repositoryRoot);
-        var actual = ComputeSha256(path);
+        var actual = ComputeNormalizedSha256(path);
 
         if (!string.Equals(actual, ExpectedSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"Canonical SQL hash mismatch for '{Path.GetFileName(path)}'.{Environment.NewLine}" +
-                $"  expected SHA-256: {ExpectedSha256}{Environment.NewLine}" +
-                $"  actual   SHA-256: {actual}{Environment.NewLine}" +
+                $"  expected normalized SHA-256: {ExpectedSha256}{Environment.NewLine}" +
+                $"  actual   normalized SHA-256: {actual}{Environment.NewLine}" +
+                "This hash ignores line endings and a leading BOM, so a CRLF/LF checkout difference cannot " +
+                "cause it. The script's content really did change." + Environment.NewLine +
                 $"If the schema changed on purpose, update {nameof(CanonicalSqlScript)}.{nameof(ExpectedSha256)} " +
                 "in the same commit.");
 
-        return File.ReadAllText(path);
+        return NormalizeForHashing(StrictUtf8.GetString(File.ReadAllBytes(path)));
     }
 
     /// <summary>

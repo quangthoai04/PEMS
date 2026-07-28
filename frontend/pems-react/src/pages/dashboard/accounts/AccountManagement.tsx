@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, UserCheck, UserX, Clock, Search, MapPin,
+  Users, UserCheck, UserX, Clock, Search,
   Shield, CheckCircle, XCircle, MoreVertical, Eye,
   Edit, Key, RefreshCw, Plus, X, UserCog, Briefcase, GraduationCap,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle
@@ -16,7 +16,10 @@ import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useAccountList } from '../../../features/account-management/hooks/useAccountList';
 import { useAccountManagement } from '../../../features/account-management/hooks/useAccountManagement';
 import { accountManagementApi } from '../../../features/account-management/api/accountManagementApi';
-import { getAccountErrorMessage } from '../../../features/account-management/api/accountError';
+import {
+  getAccountErrorMessage,
+  getAccountRoleChangeBlockers,
+} from '../../../features/account-management/api/accountError';
 import type {
   AccountListItem,
   AccountListQueryParams,
@@ -43,6 +46,15 @@ import { RelatedVisitorsTab } from '../../../features/account-management/compone
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
 
+// Status dropdown value → users.status. One map for both the server query and the client-side
+// narrowing below, so a filter can never mean two different things depending on which one runs.
+const STATUS_FILTER_TO_DB: Record<string, string> = {
+  Active: 'ACTIVE',
+  Inactive: 'INACTIVE',
+  Locked: 'LOCKED',
+  PendingEmail: 'PENDING_EMAIL_CONFIRMATION',
+};
+
 // UC-100-SL — isolated role-edit state (never mutates the account-detail snapshot).
 // departmentId/studentCode are the dependent fields for DEPARTMENT / STUDENT respectively.
 // fullName/email are the identity fields, editable only for eligible targets (see canEditIdentity).
@@ -52,6 +64,8 @@ interface RoleEditForm {
   studentCode: string;
   fullName: string;
   email: string;
+  /** Successor for the department the target heads — only used when the change vacates that seat. */
+  replacementHeadUserId: string;
 }
 
 // Whether Họ tên / Email may be edited for a target, derived from its ORIGINAL role/sub-role
@@ -283,6 +297,7 @@ export function AccountManagement() {
       // Identity fields seeded from the snapshot; only editable for eligible targets.
       fullName: selectedAccount.name ?? '',
       email: selectedAccount.email ?? '',
+      replacementHeadUserId: '',
     });
     setEditForm({ role: roleCode });
     setIsEditingProfile(true);
@@ -318,13 +333,7 @@ export function AccountManagement() {
       ? campusOptions.find((c) => c.campusName.includes(campusFilter))?.campusId
       : undefined;
 
-    const status = statusFilter === 'Active'
-      ? 'ACTIVE'
-      : statusFilter === 'Inactive'
-        ? 'INACTIVE'
-        : statusFilter === 'Locked'
-          ? 'LOCKED'
-          : undefined;
+    const status = STATUS_FILTER_TO_DB[statusFilter];
 
     return {
       page: currentPage,
@@ -384,6 +393,8 @@ export function AccountManagement() {
 
   // UC-100 role-update feedback (detail drawer edit).
   const [roleSaving, setRoleSaving] = useState(false);
+  // Carries the full refusal text — for a 409 blocker error that is the backend's per-blocker
+  // breakdown, rendered as a single panel inside the drawer (the toast only summarises it).
   const [roleError, setRoleError] = useState<string | null>(null);
   // HO_BASIC_INFO — email-change confirmation (spec §10). Set to {oldEmail,newEmail} to prompt.
   const [basicInfoEmailConfirm, setBasicInfoEmailConfirm] = useState<{ oldEmail: string; newEmail: string } | null>(null);
@@ -567,27 +578,6 @@ export function AccountManagement() {
     { label: "Chưa từng đăng nhập", value: accounts.filter(a => a.loginStatus === 'Chưa từng đăng nhập').length.toString(), icon: UserX, color: "text-gray-500", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-gray-100", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: 'NoLogin' })); scrollToTable(); } },
   ];
   
-  const campusThemes = [
-    { borderTop: "border-t-[#004c91]", iconText: "text-[#004c91]", iconBg: "bg-blue-50", glow: "from-blue-50/50" },
-    { borderTop: "border-t-[#f37021]", iconText: "text-[#f37021]", iconBg: "bg-orange-50", glow: "from-orange-50/50" },
-    { borderTop: "border-t-[#0aa14f]", iconText: "text-[#0aa14f]", iconBg: "bg-emerald-50", glow: "from-emerald-50/50" },
-    { borderTop: "border-t-[#b32d2e]", iconText: "text-[#b32d2e]", iconBg: "bg-red-50", glow: "from-red-50/50" },
-    { borderTop: "border-t-[#6b21a8]", iconText: "text-[#6b21a8]", iconBg: "bg-purple-50", glow: "from-purple-50/50" },
-  ];
-
-  const hoStats = CAMPUSES.map((campus, index) => {
-    const theme = campusThemes[index % campusThemes.length];
-    return {
-      isHOStyle: true,
-      campus: campus,
-      label: `Cơ sở ${campus}`, 
-      value: accounts.filter(a => a.campus === campus).length.toString(), 
-      icon: MapPin,
-      theme: theme,
-      onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: '', role: '', search: '', campus: campus })); scrollToTable(); } 
-    };
-  });
-
   // UC-95-SL stat cards — campus-scoped totals from the statistics API.
   const slStats = [
     { label: "Tổng số tài khoản", value: (statistics?.totalAccounts ?? 0).toString(), icon: Users, color: "text-[#004c91]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-blue-50", onClick: () => { setActiveTab('all'); setAllFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } },
@@ -598,8 +588,11 @@ export function AccountManagement() {
 
   // ADMIN dùng chung bộ card thống kê thật từ /accounts/statistics như Staff Leader
   // (backend trả số toàn hệ thống cho ADMIN) — không dùng số đếm từ trang hiện tại.
+  // HO sees no stat cards at all — only the create button. The per-campus counters were removed
+  // on purpose: HO works across every campus, so five per-campus totals said little and pushed the
+  // table below the fold.
   const stats = isHO
-    ? hoStats
+    ? []
     : (isStaffLeader || isRealAdmin)
     ? slStats
     : [...statsBase, { label: "Yêu cầu chờ duyệt", value: pendingAccounts.length.toString(), icon: Clock, color: "text-[#f37021]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-orange-50", onClick: () => { setActiveTab('pending'); setPendingFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } }];
@@ -638,7 +631,7 @@ export function AccountManagement() {
       list = list.filter(acc => String(acc.role).toUpperCase() === roleFilter.toUpperCase());
     }
     if (statusFilter) {
-      const s = statusFilter.toUpperCase();
+      const s = STATUS_FILTER_TO_DB[statusFilter] ?? statusFilter.toUpperCase();
       list = list.filter(acc => String(acc.status).toUpperCase() === s || String(acc.rawStatus || '').toUpperCase() === s);
     }
     if (searchQuery.trim()) {
@@ -991,13 +984,22 @@ export function AccountManagement() {
     (canEditIdentity && normalizeAccountEmail(roleEditForm.email) !== normalizeAccountEmail(selectedAccount.email))
   );
 
+  // The target heads a department and this change takes them out of that seat, so the request has
+  // to carry a successor. Staying DEPARTMENT/LEADER of the SAME department is not a handover.
+  const headedDepartment = roleOptions?.headedDepartment ?? null;
+  const needsHeadReplacement = !!(roleEditForm && headedDepartment) && !(
+    roleEditForm.roleCode === 'DEPARTMENT'
+    && String(roleEditForm.departmentId || '') === String(headedDepartment.departmentId)
+  );
+
   // Staff-Leader submit gate: options must be loaded/valid and the role's required field present.
   const roleUpdateBlocked = !!roleEditForm && isStaffLeader && (
     roleOptionsLoading ||
     !!roleOptionsError ||
     (roleEditForm.roleCode === 'STAFF' && !roleOptions?.icDepartment) ||
     (roleEditForm.roleCode === 'DEPARTMENT' && !roleEditForm.departmentId) ||
-    (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0)
+    (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0) ||
+    (needsHeadReplacement && !roleEditForm.replacementHeadUserId)
   );
 
   // Identity submit gate — the same shared rules as the create modal, so both flows accept and
@@ -1013,8 +1015,17 @@ export function AccountManagement() {
     setRoleError(null);
     // Reset the role-dependent fields, but keep the identity fields — their editability is fixed by
     // the ORIGINAL target role and does not change with the dropdown (spec §4.2.1 / §4.7).
+    // The successor is kept too: it belongs to the department the target currently heads, which the
+    // role dropdown does not change. Switching back to that same department simply stops sending it.
     setRoleEditForm((prev) => (prev
-      ? { roleCode: nextRole, departmentId: '', studentCode: '', fullName: prev.fullName, email: prev.email }
+      ? {
+        roleCode: nextRole,
+        departmentId: '',
+        studentCode: '',
+        fullName: prev.fullName,
+        email: prev.email,
+        replacementHeadUserId: prev.replacementHeadUserId,
+      }
       : prev));
   };
 
@@ -1115,6 +1126,10 @@ export function AccountManagement() {
         if (!code) { setRoleError('Vui lòng nhập mã số sinh viên.'); return; }
         if (code.length > 30) { setRoleError('Mã số sinh viên không được vượt quá 30 ký tự.'); return; }
       }
+      if (needsHeadReplacement && !roleEditForm.replacementHeadUserId) {
+        setRoleError('Vui lòng chọn Trưởng phòng thay thế trước khi thay đổi vai trò.');
+        return;
+      }
     }
 
     // ADMIN keeps the legacy behaviour: role-only change, original department preserved.
@@ -1135,15 +1150,28 @@ export function AccountManagement() {
         // Identity is only sent for editable targets; otherwise leave null so the backend keeps it.
         fullName: canEditIdentity ? roleEditForm.fullName.trim() : null,
         email: canEditIdentity ? roleEditForm.email.trim() : null,
+        // Sent only when this change actually vacates a department head seat — the backend rejects
+        // a successor it has no use for rather than ignoring it.
+        replacementDepartmentHeadUserId: needsHeadReplacement
+          ? roleEditForm.replacementHeadUserId
+          : null,
       });
       pushToast('success', 'Cập nhật tài khoản thành công. Đã gửi email thông báo cho người dùng.');
       closeViewDrawer();
       refetchAccounts();
       loadStatistics();
     } catch (err) {
+      // The drawer deliberately stays open with the user's choices intact: the role change was
+      // refused, not lost, and re-entering everything after handing over a delegation would be
+      // punishing. Nothing here touches selectedAccount or refetches (spec §16.4).
       const msg = getAccountErrorMessage(err, 'Không thể cập nhật vai trò. Vui lòng kiểm tra lại dữ liệu và thử lại.');
       setRoleError(msg);
-      pushToast('error', msg);
+      // The blocker breakdown can run to several lines; it belongs in the drawer, next to the
+      // fields it is about. The toast only says that something blocked and where to look.
+      const blocked = getAccountRoleChangeBlockers(err);
+      pushToast('error', blocked
+        ? 'Không thể đổi vai trò — tài khoản còn trách nhiệm đang hoạt động. Xem chi tiết trong biểu mẫu.'
+        : msg);
     } finally {
       setRoleSaving(false);
     }
@@ -1164,37 +1192,13 @@ export function AccountManagement() {
         </div>
       </div>
 
-      {/* I. Top Widgets & Create Account Card */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${stats.length === 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4 mb-8 items-stretch`}>
+      {/* I. Top Widgets & Create Account Card. With no stat cards (HO) the button stands alone,
+          right-aligned, instead of being squeezed into one column of an otherwise empty grid. */}
+      <div className={stats.length === 0
+        ? 'flex justify-end mb-8'
+        : `grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${stats.length === 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4 mb-8 items-stretch`}>
         {stats.map((stat: any, idx) => {
           const Icon = stat.icon;
-          if (stat.isHOStyle) {
-            return (
-              <button 
-                key={idx} 
-                onClick={stat.onClick} 
-                className={`relative bg-white border border-slate-100 ${stat.theme.borderTop} border-t-4 rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden group text-left w-full hover:-translate-y-1 hover:shadow-md transition-all duration-200 focus:ring-2 focus:ring-[#004c91]/20 outline-none`}
-              >
-                <div className={`absolute inset-0 bg-gradient-to-br ${stat.theme.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`}></div>
-                
-                {/* Dòng 1: Icon + Số liệu */}
-                <div className="flex items-center justify-between w-full mb-2 relative z-10">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-8 h-8 rounded-lg ${stat.theme.iconBg} flex items-center justify-center shrink-0`}>
-                      <Icon className={`w-4.5 h-4.5 ${stat.theme.iconText}`} />
-                    </div>
-                    <h3 className={`text-2xl font-black ${stat.theme.iconText} tracking-tight`}>{stat.value}</h3>
-                  </div>
-                  <span className={`text-xs font-black ${stat.theme.iconText} uppercase tracking-widest`}>{stat.campus}</span>
-                </div>
-
-                {/* Dòng 2: Chú thích */}
-                <div className="relative z-10">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{stat.label}</span>
-                </div>
-              </button>
-            );
-          }
 
           return (
             <button 
@@ -1222,21 +1226,22 @@ export function AccountManagement() {
           );
         })}
 
-        {/* Card 5: Tạo tài khoản mới */}
+        {/* Card 5: Tạo tài khoản mới. Standing alone (HO) it is a normal action button, not a card
+            the size of a stat tile — so it drops to a compact padding/icon/text scale. */}
         <button
-          onClick={() => { 
-            setCreateError(null); 
-            setCreateStudentCodeError(null); 
-            setSelectedDept(''); 
-            setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' }); 
-            setIsCreateModalOpen(true); 
+          onClick={() => {
+            setCreateError(null);
+            setCreateStudentCodeError(null);
+            setSelectedDept('');
+            setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' });
+            setIsCreateModalOpen(true);
           }}
-          className="bg-[#f37021] hover:bg-[#e85c0d] text-white rounded-2xl p-4 sm:p-4.5 border border-transparent shadow-sm shadow-orange-500/20 flex items-center justify-center gap-2.5 transition-all hover:shadow-md hover:shadow-orange-500/40 cursor-pointer outline-none focus:ring-2 focus:ring-orange-400 group w-full"
+          className={`bg-[#f37021] hover:bg-[#e85c0d] text-white rounded-2xl border border-transparent shadow-sm shadow-orange-500/20 flex items-center justify-center gap-2.5 transition-all hover:shadow-md hover:shadow-orange-500/40 cursor-pointer outline-none focus:ring-2 focus:ring-orange-400 group ${stats.length === 0 ? 'w-full sm:w-auto px-4 py-2.5 gap-2' : 'w-full p-4 sm:p-4.5'}`}
         >
-          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-            <Plus className="w-5 h-5 text-white stroke-[2.5]" />
+          <div className={`rounded-lg bg-white/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform ${stats.length === 0 ? 'w-6 h-6' : 'w-9 h-9 rounded-xl'}`}>
+            <Plus className={`text-white stroke-[2.5] ${stats.length === 0 ? 'w-4 h-4' : 'w-5 h-5'}`} />
           </div>
-          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight leading-none whitespace-nowrap">
+          <h3 className={`font-bold text-white tracking-tight leading-none whitespace-nowrap ${stats.length === 0 ? 'text-sm' : 'text-base sm:text-lg'}`}>
             Tạo tài khoản mới
           </h3>
         </button>
@@ -1304,7 +1309,9 @@ export function AccountManagement() {
             </div>
           )}
 
-          {/* Lọc Loại Tài khoản (Tài khoản nội bộ / Tài khoản khách) */}
+          {/* Lọc Loại Tài khoản (Tài khoản nội bộ / Tài khoản khách). Ẩn với HO: HO chỉ làm việc
+              với tài khoản nội bộ, nên bộ lọc luôn ở INTERNAL (giá trị mặc định) và không hiển thị. */}
+          {!isHO && (
           <div className="relative">
             <select
               value={accountTypeFilter}
@@ -1324,6 +1331,7 @@ export function AccountManagement() {
             </select>
             <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
           </div>
+          )}
 
           <div className="relative">
             <select
@@ -1349,7 +1357,9 @@ export function AccountManagement() {
                 return r !== 'HO';
               }).map(r => (
                 <option className="text-gray-900" key={r} value={r}>
-                  {r === 'STAFF' ? 'Nhân viên' : r === 'DEPARTMENT' ? 'Trưởng phòng' : r === 'STUDENT' ? 'Sinh viên' : r === 'HO' ? 'Cán bộ HO' : r === 'ADMIN' ? 'Quản trị viên' : r}
+                  {/* STAFF reads differently per viewer: the only STAFF accounts HO manages are the
+                      campus IC leaders, while a Staff Leader is filtering their own IC members. */}
+                  {r === 'STAFF' ? (isHO ? 'Trưởng phòng IC' : 'Nhân sự phòng IC') : r === 'DEPARTMENT' ? 'Trưởng phòng ban' : r === 'STUDENT' ? 'Sinh viên' : r === 'HO' ? 'Cán bộ HO' : r === 'ADMIN' ? 'Quản trị viên' : r}
                 </option>
               ))}
             </select>
@@ -1367,6 +1377,7 @@ export function AccountManagement() {
                 <option className="text-gray-900" value="Active">Hoạt động</option>
                 <option className="text-gray-900" value="Inactive">Vô hiệu hóa</option>
                 <option className="text-gray-900" value="Locked">Bị khóa</option>
+                <option className="text-gray-900" value="PendingEmail">Chờ xác nhận email</option>
               </select>
               <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
             </div>
@@ -1984,6 +1995,44 @@ export function AccountManagement() {
                         </div>
                       )}
 
+                      {/* ── Department handover. Shown whenever this change takes the account out of
+                          a head seat, whatever the new role is: the backend refuses to leave a
+                          department headless, and handing over separately afterwards would demote
+                          the account to DEPARTMENT/STAFF — a shape a Staff Leader cannot manage,
+                          which would strand the role change entirely. ── */}
+                      {isStaffLeader && needsHeadReplacement && headedDepartment && (
+                        <div className="flex flex-col min-w-0 md:col-span-2">
+                          <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                            Trưởng phòng thay thế cho {headedDepartment.name} <span className="text-red-500">*</span>
+                          </span>
+                          {headedDepartment.replacementCandidates.length > 0 ? (
+                            <>
+                              <div className="relative">
+                                <select
+                                  value={roleEditForm?.replacementHeadUserId ?? ''}
+                                  disabled={roleOptionsLoading}
+                                  onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, replacementHeadUserId: e.target.value } : prev))}
+                                  className={selectClass(roleOptionsLoading)}
+                                >
+                                  <option value="">-- Chọn người thay thế --</option>
+                                  {headedDepartment.replacementCandidates.map((c) => (
+                                    <option key={c.userId} value={c.userId}>{c.fullName} — {c.email}</option>
+                                  ))}
+                                </select>
+                                <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              </div>
+                              <p className="mt-1.5 text-xs text-gray-500">
+                                Tài khoản này đang là Trưởng phòng của {headedDepartment.name}. Người được chọn sẽ nhận vai trò Trưởng phòng ngay khi lưu thay đổi.
+                              </p>
+                            </>
+                          ) : (
+                            <p className="mt-1.5 text-xs text-amber-600">
+                              {headedDepartment.name} hiện chưa có nhân viên nào đủ điều kiện làm Trưởng phòng thay thế. Vui lòng bổ sung nhân sự cho phòng ban trước khi thay đổi vai trò của tài khoản này.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       {/* ADMIN keeps the legacy read-only snapshot of the current org fields. */}
                       {isRealAdmin && (data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
                         <>
@@ -2043,7 +2092,7 @@ export function AccountManagement() {
                       {isEditingProfile && (
                         <div className="mt-4 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
                           {roleError && (
-                            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 whitespace-pre-line">
                               {roleError}
                             </div>
                           )}

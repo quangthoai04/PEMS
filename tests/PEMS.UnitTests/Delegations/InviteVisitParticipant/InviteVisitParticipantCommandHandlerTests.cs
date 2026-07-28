@@ -50,7 +50,8 @@ public class InviteVisitParticipantCommandHandlerTests
         var dispatcher = mocks.DispatcherFor(db);
         var handler = new InviteVisitParticipantCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object);
+            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object,
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
         return (db, handler, user, mocks, dispatcher);
     }
 

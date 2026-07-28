@@ -49,6 +49,20 @@ public enum FilePurpose
     /// <c>files</c> row, because <c>sent_email_attachments.file_id</c> is NOT NULL.
     /// </summary>
     ReportAttachment,
+    /// <summary>
+    /// Staff Leader/Dept Leader/HO report export (PDF/Excel/CSV) — a date-range/campus aggregate
+    /// across many delegations, so it archives into the flat "Report" Drive folder (never nested
+    /// under a delegation), created by <see cref="Reports.Common.IReportArchiveService"/>.
+    ///
+    /// <para>
+    /// Deliberately distinct from <see cref="ReportAttachment"/>, even though both produce a report
+    /// into the same folder: that one exists because an EMAILED report needs a <c>files</c> row for
+    /// <c>sent_email_attachments.file_id</c>, this one because an EXPORTED report is archived whether
+    /// or not anybody emails it. Collapsing them would make "was this report actually sent to
+    /// somebody" unanswerable from the file row alone.
+    /// </para>
+    /// </summary>
+    ReportDocument,
     Other,
 }
 
@@ -81,6 +95,7 @@ public static class FilePurposeDbValues
     public const string LogisticsAttachment = "LOGISTICS_ATTACHMENT";
     public const string BusinessCard = "BUSINESS_CARD";
     public const string ReportAttachment = "REPORT_ATTACHMENT";
+    public const string ReportDocument = "REPORT_DOCUMENT";
     public const string Other = "OTHER";
 }
 
@@ -111,6 +126,7 @@ public static class FilePurposeExtensions
         FilePurpose.LogisticsAttachment => FilePurposeDbValues.LogisticsAttachment,
         FilePurpose.BusinessCard => FilePurposeDbValues.BusinessCard,
         FilePurpose.ReportAttachment => FilePurposeDbValues.ReportAttachment,
+        FilePurpose.ReportDocument => FilePurposeDbValues.ReportDocument,
         _ => FilePurposeDbValues.Other,
     };
 
@@ -137,6 +153,7 @@ public static class FilePurposeExtensions
         FilePurpose.LogisticsAttachment => "logistics",
         FilePurpose.BusinessCard => "business-cards",
         FilePurpose.ReportAttachment => "reports",
+        FilePurpose.ReportDocument => "reports",
         _ => "other",
     };
 }

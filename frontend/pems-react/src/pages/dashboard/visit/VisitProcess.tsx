@@ -105,22 +105,22 @@ export function VisitProcess() {
   const [isSection3Expanded, setIsSection3Expanded] = useState(true);
   const [isSection4Expanded, setIsSection4Expanded] = useState(true);
 
-  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(true);
-  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(true);
-  const [isInfoSection3Expanded, setIsInfoSection3Expanded] = useState(false);
+  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(false);
+  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(false);
+  const [isInfoSection3Expanded, setIsInfoSection3Expanded] = useState(true);
 
   const [isInfoEditableState, setIsInfoEditable] = useState(false);
 
-  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mở mặc định "1. Thông tin chung"
-  // cùng 2 accordion con (Thông tin người tạo + Thông tin đoàn khách) để Host xem lại bản
-  // đăng ký gốc của khách; "2. Chuẩn bị chi tiết" giữ trạng thái đóng. Chỉ chạy khi activeTab
-  // đổi nên không reset trải nghiệm khi user đang tự mở/đóng trong cùng tab.
+  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mặc định đóng mục 1 (Thông tin người tạo)
+  // và mục 2 (Thông tin đoàn khách), đồng thời mở mặc định mục 3 (Thiết lập & Điều phối sự kiện)
+  // để người dùng dễ dàng thao tác chuẩn bị sự kiện.
   useEffect(() => {
     if (activeTab === 'before') {
       setIsInfoExpanded(true);
       setIsSetupExpanded(false);
-      setIsInfoSection1Expanded(true);
-      setIsInfoSection2Expanded(true);
+      setIsInfoSection1Expanded(false);
+      setIsInfoSection2Expanded(false);
+      setIsInfoSection3Expanded(true);
     }
   }, [activeTab]);
 
@@ -660,6 +660,15 @@ export function VisitProcess() {
   const [preparationNote, setPreparationNote] = useState('');
   const [preparationNoteSaved, setPreparationNoteSaved] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (noteTextareaRef.current) {
+      noteTextareaRef.current.style.height = 'auto';
+      noteTextareaRef.current.style.height = `${Math.max(48, noteTextareaRef.current.scrollHeight)}px`;
+      noteTextareaRef.current.scrollTop = 0;
+    }
+  }, [preparationNote]);
 
   const campusOptions = ['Hà Nội', 'Đà Nẵng', 'Cần Thơ', 'Hồ Chí Minh', 'Quy Nhơn'];
   const [visitMode, setVisitMode] = useState<'single' | 'multiple'>('single');
@@ -734,7 +743,7 @@ export function VisitProcess() {
 
   if (!hasNumericId || permLoadFailed || detailLoadError) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+      <div className="w-full py-4 pb-24">
         <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
@@ -761,7 +770,7 @@ export function VisitProcess() {
     }
     // Lỡ lot xuống đây mà không đủ quyền
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto">
+      <div className="w-full py-4 pb-24">
         <div className="bg-white rounded-[2rem] border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
@@ -779,7 +788,7 @@ export function VisitProcess() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 w-full pb-24">
+    <div className="w-full flex flex-col pb-24 animate-in fade-in duration-300">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
         <span className="mx-2">/</span>
@@ -891,10 +900,10 @@ export function VisitProcess() {
             <AnimatePresence>
               {isInfoExpanded && (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="border-t border-gray-100 overflow-hidden"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="border-t border-gray-100"
                 >
                   <div className={`p-6 space-y-4 ${!isInfoEditable ? 'bg-slate-50/50 opacity-90' : 'bg-white'}`}>
                     {/* Section 1: Thông tin người đăng ký */}
@@ -980,9 +989,9 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection3Expanded && (
                           <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
                           >
                             <div className="p-0 bg-white border-t border-gray-100">
 
@@ -1193,46 +1202,44 @@ export function VisitProcess() {
                           )}
                         </div>
 
-            {/* 3. Cảnh báo & Thông báo — 4 cấu hình riêng theo kênh × người nhận (Part C) */}
+            {/* 3. Cảnh báo nhắc nhở trước thời gian tiếp khách */}
             <div className="p-6 border-b border-gray-100 bg-slate-50/50">
-              <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-2">
+              <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-4">
                 <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                3. Cảnh báo & Thông báo
+                3. Cảnh báo nhắc nhở trước thời gian tiếp khách
               </h3>
-              <p className="text-xs text-gray-500 mb-6">
-                Hệ thống chỉ đặt lịch — thông báo/email được gửi tự động khi tới thời điểm (phải trước thời điểm bắt đầu tiếp khách).
-              </p>
 
               {canConfigurePrep && remindersLoadFailed && (
                 <StaleDataBanner onRetry={() => { void loadReminders(); }} className="mb-4" />
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-4">
                 {REMINDER_CONFIGS.map((cfg) => {
                   const row = reminders[cfg.key];
                   const isEmail = cfg.channel === 'EMAIL';
                   return (
-                    <div key={cfg.key} className={`bg-white border rounded-xl p-4 shadow-sm ${isEmail ? 'border-orange-100' : 'border-blue-100'}`}>
-                      <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-1">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isEmail ? 'bg-orange-100 text-[#f37021]' : 'bg-blue-100 text-[#004c91]'}`}>
-                          {isEmail ? <Mail className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                        </div>
-                        {cfg.title}
-                      </h4>
-                      <p className="text-xs text-gray-500 mb-3 ml-10">{cfg.desc}</p>
-                      <label className="flex items-center gap-2 ml-10 mb-2 text-xs font-medium text-gray-600 select-none">
-                        <input disabled={!canConfigurePrep} type="checkbox" checked={row.enabled}
-                          onChange={(e) => setReminder(cfg.key, { enabled: e.target.checked })} />
-                        Bật cảnh báo này
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2 ml-10">
+                    <div key={cfg.key} className={`bg-white border rounded-xl p-3.5 shadow-sm flex flex-col justify-between ${isEmail ? 'border-orange-100' : 'border-blue-100'}`}>
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2.5 leading-snug">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isEmail ? 'bg-orange-100 text-[#f37021]' : 'bg-blue-100 text-[#004c91]'}`}>
+                            {isEmail ? <Mail className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+                          </div>
+                          <span>{cfg.title}</span>
+                        </h4>
+                        <label className="flex items-center gap-2 mb-3 pl-1.5 text-xs font-semibold text-gray-700 select-none cursor-pointer">
+                          <input disabled={!canConfigurePrep} type="checkbox" checked={row.enabled}
+                            onChange={(e) => setReminder(cfg.key, { enabled: e.target.checked })} />
+                          Bật cảnh báo này
+                        </label>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600 font-medium pt-2 border-t border-gray-100">
                         <input disabled={!canConfigurePrep || !row.enabled} type="number" min="0" max="31"
-                          className="w-16 px-2 py-2 text-center text-sm font-bold rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-60"
+                          className="w-12 px-1.5 py-1.5 text-center text-xs font-bold rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-50"
                           value={row.days}
                           onChange={(e) => setReminder(cfg.key, { days: Math.max(0, Math.min(31, parseInt(e.target.value) || 0)) })} />
-                        <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
+                        <span>ngày trước, vào lúc</span>
                         <input disabled={!canConfigurePrep || !row.enabled} type="time"
-                          className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white disabled:opacity-60"
+                          className="px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs outline-none bg-white disabled:opacity-50 font-semibold text-gray-800"
                           value={row.time}
                           onChange={(e) => setReminder(cfg.key, { time: e.target.value })} />
                       </div>
@@ -1266,12 +1273,33 @@ export function VisitProcess() {
                             4. Ghi chú chung
                           </h3>
                           <textarea
+                            ref={(el) => {
+                              // Any refetch of `detail` (invite participant, save reminders/agenda...)
+                              // flips `detailLoading` true→false, which early-returns a bare spinner
+                              // and unmounts this whole tree — so this textarea gets a BRAND NEW DOM
+                              // node on remount. The [preparationNote]-keyed effect below won't re-run
+                              // for it (the note text itself didn't change), leaving the fresh node at
+                              // its default ~48px height and clipping long notes. Resizing here, right
+                              // when the node is (re)attached, covers that case too.
+                              noteTextareaRef.current = el;
+                              if (el) {
+                                el.style.height = 'auto';
+                                el.style.height = `${Math.max(48, el.scrollHeight)}px`;
+                                el.scrollTop = 0;
+                              }
+                            }}
                             readOnly={!canConfigurePrep}
+                            rows={1}
                             maxLength={5000}
                             placeholder="Ghi chú chuẩn bị nội bộ cho chuyến tiếp khách..."
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm min-h-[100px] resize-none"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm leading-relaxed min-h-[48px] resize-none overflow-hidden focus:bg-white focus:border-[#004c91] outline-none transition-all"
                             value={preparationNote}
-                            onChange={(e) => setPreparationNote(e.target.value)}
+                            onChange={(e) => {
+                              setPreparationNote(e.target.value);
+                              e.target.style.height = 'auto';
+                              e.target.style.height = `${Math.max(48, e.target.scrollHeight)}px`;
+                              e.target.scrollTop = 0;
+                            }}
                           ></textarea>
                           <div className="flex items-center justify-between mt-2">
                             <span className="text-[11px] text-gray-400">{preparationNote.length}/5000</span>

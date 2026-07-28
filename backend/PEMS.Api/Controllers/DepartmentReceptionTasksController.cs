@@ -18,6 +18,7 @@ using PEMS.Application.DepartmentReceptionTasks.Commands.CreatePersonalEvent;
 using PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentAssigneeCandidates;
 using PEMS.Application.DepartmentReceptionTasks.Queries.GetAssignmentsProgressList;
 using PEMS.Application.DepartmentReceptionTasks.Queries.GetAttentionItems;
+using PEMS.Application.DepartmentReceptionTasks.Queries.GetOverdueLogisticsResponses;
 using PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
 using PEMS.Application.Emails.Common;
 
@@ -51,6 +52,12 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> GetAttentionItems()
         {
             return Ok(await _mediator.Send(new GetAttentionItemsQuery()));
+        }
+
+        [HttpGet("overdue-responses")]
+        public async Task<IActionResult> GetOverdueResponses()
+        {
+            return Ok(await _mediator.Send(new GetOverdueLogisticsResponsesQuery()));
         }
 
         [HttpGet("invitations/{participantId}")]

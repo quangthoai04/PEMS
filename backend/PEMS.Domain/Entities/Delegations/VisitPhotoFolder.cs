@@ -6,8 +6,11 @@ namespace PEMS.Domain.Entities.Delegations;
 
 /// <summary>
 /// One private Google Drive child folder per visit request/delegation
-/// (<c>VisitRequestPhotoFolderId</c> root → <c>VR-{visit_request_id}</c>). Campus subfolders
-/// (HN/HCM…) live only on Drive; the DB tracks the per-request folder. Independent from Gallery.
+/// (<c>VisitRequestPhotoFolderId</c> root → <c>{campus_code}</c> → <c>{RequestCode}</c> — Campus is
+/// the outermost Drive level). For a delegation that visits several campuses at once
+/// (VisitScope=MULTI_CAMPUS, rare), this single folder is still shared by all of them — it simply
+/// lives under whichever campus's upload created it first; there is deliberately no per-campus
+/// column here to keep this table at exactly one row per request. Independent from Gallery.
 /// </summary>
 [Table("visit_photo_folders")]
 public class VisitPhotoFolder
