@@ -84,19 +84,40 @@ jobs:
           fi
           echo "path=${files[0]}" >> "$GITHUB_OUTPUT"
           echo "Canonical: ${files[0]}"
+          echo "raw checkout hash — informational only, NOT the contract:"
           sha256sum "${files[0]}"
 
       # The pin lives in the test suite; a schema change without a matching bump must fail here too,
       # not only in the integration job.
+      #
+      # The contract hash is computed over the line-ending-normalised text, never over the raw bytes.
+      # `.gitattributes` declares `* text=auto`, so this file arrives here with LF and arrives in a Windows
+      # worktree with CRLF — a raw-byte pin is green on one platform at a time and red on the other, which
+      # is exactly how this workflow first failed against a branch whose local gates were all green.
+      #
+      # This rule is implemented twice, here and in CanonicalSqlScript.ComputeNormalizedSha256. The fixture
+      # step below is what keeps the two from drifting apart.
+      - name: Hashing rule agrees with the C# implementation
+        run: node scripts/normalized-sql-hash.cjs --self-test
+
       - name: Hash matches the pinned value
         run: |
-          expected=$(grep -A2 'public const string ExpectedSha256' \
-            tests/PEMS.IntegrationTests/TestInfrastructure/CanonicalSqlScript.cs \
-            | grep -oE '[0-9a-f]{64}' | head -1)
-          actual=$(sha256sum "${{ steps.canon.outputs.path }}" | cut -d' ' -f1)
-          echo "expected $expected"
-          echo "actual   $actual"
-          [ "$expected" = "$actual" ]
+          node -e '
+            const fs = require("fs");
+            const { normalizedSha256 } = require("./scripts/normalized-sql-hash.cjs");
+            const src = fs.readFileSync(
+              "tests/PEMS.IntegrationTests/TestInfrastructure/CanonicalSqlScript.cs", "utf8");
+            const m = src.match(/public const string ExpectedSha256\s*=\s*"([0-9a-f]{64})"/);
+            if (!m) { console.error("Could not read ExpectedSha256 from CanonicalSqlScript.cs"); process.exit(1); }
+            const expected = m[1];
+            const actual = normalizedSha256(fs.readFileSync(process.argv[1], "utf8"));
+            console.log("normalized expected " + expected);
+            console.log("normalized actual   " + actual);
+            if (expected !== actual) {
+              console.error("Canonical SQL content changed without a matching ExpectedSha256 bump.");
+              process.exit(1);
+            }
+          ' "${{ steps.canon.outputs.path }}"
 
       # Retarget onto a disposable database and PROVE the retarget worked before executing anything:
       # the script carries its own USE statement, which wins over the database argument given to mysql.

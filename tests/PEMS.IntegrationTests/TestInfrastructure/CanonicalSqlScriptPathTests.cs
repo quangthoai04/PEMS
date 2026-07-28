@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using Xunit;
 
 namespace PEMS.IntegrationTests.TestInfrastructure;
@@ -55,8 +56,17 @@ public sealed class CanonicalSqlScriptPathTests
         var path = ExpectedPath;
         Assert.True(File.Exists(path), $"Canonical schema missing at {path} — see {nameof(CanonicalSqlFileMustExist)}.");
 
-        using var stream = File.OpenRead(path);
-        var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        // Re-derived here rather than delegating to CanonicalSqlScript.ComputeNormalizedSha256, on purpose:
+        // if the shared helper's normalisation were wrong, a test that used it would agree with it and both
+        // would be wrong together. This spells the rule out independently — strip one leading BOM, fold CRLF
+        // and lone CR to LF, encode UTF-8 without a BOM — so the two implementations have to agree.
+        var text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+            .GetString(File.ReadAllBytes(path));
+        if (text.Length > 0 && text[0] == '\uFEFF') text = text[1..];
+        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+        var actual = Convert.ToHexString(
+            SHA256.HashData(new UTF8Encoding(false).GetBytes(text))).ToLowerInvariant();
 
         Assert.True(
             string.Equals(actual, CanonicalSqlScript.ExpectedSha256, StringComparison.OrdinalIgnoreCase),

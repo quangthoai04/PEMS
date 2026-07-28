@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# The canonical schema script is checked out with LF on EVERY platform.
+#
+# Under `* text=auto` alone this file is stored with LF and handed to a Windows worktree with CRLF, so the
+# same schema has two different raw SHA-256 values depending on where it was cloned. The contract hash in
+# CanonicalSqlScript is normalised and no longer cares, so this line is defence in depth rather than the
+# fix itself — but it also keeps the imported file byte-identical everywhere, which matters because two of
+# this script's CRLFs sit INSIDE string literals (the seeded note_to_fptu values for visit requests 1002
+# and 3048/3049) and would otherwise reach the database as \r\n on Windows and \n on Linux.
+docs/database/scripts/PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql text eol=lf
