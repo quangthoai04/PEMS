@@ -357,6 +357,7 @@ export const API_ENDPOINTS = {
     calendar: '/department/reception-tasks/calendar',
     assignmentsProgress: '/department/reception-tasks/assignments-progress',
     attentionItems: '/department/reception-tasks/attention-items',
+    overdueResponses: '/department/reception-tasks/overdue-responses',
     invitationDetail: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}`,
     acceptInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/accept`,
     declineInvitation: (participantId: string | number) => `/department/reception-tasks/invitations/${participantId}/decline`,

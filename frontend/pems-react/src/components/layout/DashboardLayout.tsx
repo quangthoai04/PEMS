@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../dashboard/Sidebar';
 import { NotificationBellButton } from '../../features/notifications/components/NotificationBellButton';
+import { ForcedResponseGate } from '../../features/department-reception-tasks/components/ForcedResponseGate';
 import { Menu } from 'lucide-react';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
@@ -29,6 +30,7 @@ export function DashboardLayout() {
 
   return (
     <div id="dashboard-root" className="flex h-screen bg-[#fafafa] overflow-hidden flex-col lg:flex-row shadow-inner">
+      <ForcedResponseGate />
       {/* Khung layout tổng (h-screen/overflow-hidden trên #dashboard-root, max-h-screen/overflow-y-auto
           trên #dashboard-main) ép cứng đúng 1 màn hình — bất kỳ nội dung nào in bên trong (biên bản
           nhúng inline, không dùng portal) đều bị cắt ở ranh giới đó dù trang con đã tự reset overflow.

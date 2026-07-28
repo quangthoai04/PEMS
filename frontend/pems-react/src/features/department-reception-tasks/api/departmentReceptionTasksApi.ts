@@ -17,6 +17,11 @@ export const departmentReceptionTasksApi = {
     return data;
   },
 
+  getOverdueResponses: async () => {
+    const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.overdueResponses);
+    return data;
+  },
+
   getInvitationDetail: async (participantId: number | string) => {
     const { data } = await httpClient.get<any>(API_ENDPOINTS.departmentReceptionTasks.invitationDetail(participantId));
     return data;
