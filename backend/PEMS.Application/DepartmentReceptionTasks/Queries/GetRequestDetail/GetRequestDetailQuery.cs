@@ -43,8 +43,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         /// <summary>Loại hạng mục hậu cần: ROOM | TRANSPORT | MEAL | EQUIPMENT | BANNER | LED | OTHER.
         /// TRANSPORT dùng để hiện biên bản bàn giao xe ô tô điện với checklist cố định.</summary>
         public string ItemType { get; set; }
-        public string? Priority { get; set; }   // LOW | MEDIUM | HIGH | URGENT
-        public string? DueAt { get; set; }      // "yyyy-MM-ddTHH:mm:ss" wall-clock, null if none
         public ulong? AssigneeId { get; set; }
         public string AssigneeName { get; set; }
         public string Status { get; set; }
@@ -250,8 +248,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 Description = l.Description ?? "",
                 Quantity = l.Quantity ?? 1,
                 ItemType = l.ItemType,
-                Priority = l.Priority,
-                DueAt = l.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
                 AssigneeId = l.AssignedToUserId,
                 AssigneeName = assigneeName,
                 Status = unifiedStatus,

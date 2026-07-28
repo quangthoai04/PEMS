@@ -148,7 +148,6 @@ public sealed class LogisticsCancelScopeV2Tests
             ItemType = "EQUIPMENT",
             Title = title,
             Status = LogisticsItemStatus.Requested,
-            Priority = "MEDIUM",
             CoordinationMode = "SYSTEM_REQUEST",
             RequestedBy = hostId,
             RequestedAt = Now,

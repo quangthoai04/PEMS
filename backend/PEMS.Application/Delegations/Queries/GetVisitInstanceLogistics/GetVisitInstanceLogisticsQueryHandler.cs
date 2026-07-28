@@ -47,7 +47,6 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
                 Description = l.Description,
                 Quantity = l.Quantity,
                 Status = l.Status,
-                Priority = l.Priority,
                 CoordinationMode = l.CoordinationMode,
                 OfflineCoordinationNote = l.OfflineCoordinationNote,
                 RequestedToDepartmentId = l.RequestedToDepartmentId,
@@ -70,7 +69,7 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
         // subqueries on optional FKs — Pomelo translation pitfall).
         var rows = await _db.VisitLogisticsItems
             .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
-            .Select(l => new { l.LogisticsItemId, l.RequestedAt, l.UsageStartAt, l.UsageEndAt, l.DueAt, l.CompletedAt, l.ProposedUsageStartAt, l.ProposedUsageEndAt })
+            .Select(l => new { l.LogisticsItemId, l.RequestedAt, l.UsageStartAt, l.UsageEndAt, l.CompletedAt, l.ProposedUsageStartAt, l.ProposedUsageEndAt })
             .ToListAsync(cancellationToken);
         var timeById = rows.ToDictionary(r => r.LogisticsItemId);
 
@@ -144,7 +143,6 @@ public sealed class GetVisitInstanceLogisticsQueryHandler
                 i.RequestedAt = t.RequestedAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.UsageStartAt = t.UsageStartAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.UsageEndAt = t.UsageEndAt?.ToString("yyyy-MM-ddTHH:mm:ss");
-                i.DueAt = t.DueAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.CompletedAt = t.CompletedAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.ProposedUsageStartAt = t.ProposedUsageStartAt?.ToString("yyyy-MM-ddTHH:mm:ss");
                 i.ProposedUsageEndAt = t.ProposedUsageEndAt?.ToString("yyyy-MM-ddTHH:mm:ss");

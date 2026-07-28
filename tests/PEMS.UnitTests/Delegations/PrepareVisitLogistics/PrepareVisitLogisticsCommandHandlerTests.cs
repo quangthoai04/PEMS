@@ -36,7 +36,7 @@ public class PrepareVisitLogisticsCommandHandlerTests
 
     private static PrepareVisitLogisticsCommand SystemRequest(ulong? departmentId = DeptId, string title = "Welcome LED") =>
         new(DelegationsTestData.VisitInstanceId, departmentId, "LED", title, null, 1,
-            "2026-08-01T08:00", "2026-08-01T12:00", "MEDIUM", null);
+            "2026-08-01T08:00", "2026-08-01T12:00");
 
     [Theory]
     [InlineData(ParticipantStatuses.Invited)]

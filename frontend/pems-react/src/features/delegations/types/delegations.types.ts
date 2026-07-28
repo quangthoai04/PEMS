@@ -498,7 +498,6 @@ export interface ContributionLogisticsItem {
   itemType?: string | null;
   title: string;
   status: string;
-  priority?: string | null;
   requestedToDepartmentId?: number | null;
   departmentName?: string | null;
   assignedToUserId?: number | null;
@@ -1265,7 +1264,6 @@ export const LOGISTICS_STATUS_META: Record<LogisticsItemStatus, { label: string;
 
 // ── VisitProcess logistics requests (visit_logistics_items), Host → Department. ──
 export type LogisticsItemType = 'ROOM' | 'TRANSPORT' | 'MEAL' | 'EQUIPMENT' | 'BANNER' | 'LED' | 'OTHER';
-export type LogisticsPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 export type LogisticsCoordinationMode = 'SYSTEM_REQUEST' | 'OFFLINE_COORDINATED';
 
@@ -1279,8 +1277,6 @@ export interface PrepareVisitLogisticsPayload {
   quantity?: number | null;
   usageStartAt?: string | null;   // "yyyy-MM-ddTHH:mm[:ss]" wall-clock
   usageEndAt?: string | null;
-  priority?: LogisticsPriority | null;
-  dueAt?: string | null;
   /** SYSTEM_REQUEST (default) = send to department via system; OFFLINE_COORDINATED = handled outside. */
   coordinationMode?: LogisticsCoordinationMode | null;
   /** Required when coordinationMode = OFFLINE_COORDINATED. */
@@ -1305,7 +1301,6 @@ export interface VisitInstanceLogisticsItem {
   description?: string | null;
   quantity?: number | null;
   status: LogisticsItemStatus;
-  priority: LogisticsPriority;
   coordinationMode?: LogisticsCoordinationMode;        // SYSTEM_REQUEST | OFFLINE_COORDINATED
   offlineCoordinationNote?: string | null;
   requestedToDepartmentId?: number | null;
@@ -1315,7 +1310,6 @@ export interface VisitInstanceLogisticsItem {
   requestedByName?: string | null;
   usageStartAt?: string | null;
   usageEndAt?: string | null;
-  dueAt?: string | null;
   completedAt?: string | null;
   assignedToUserId?: number | null;
   assignedToName?: string | null;

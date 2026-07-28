@@ -29,7 +29,6 @@ import {
   LOGISTICS_STATUS_META,
   type LogisticsItemType,
   type LogisticsCoordinationMode,
-  type LogisticsPriority,
   type PrepareVisitLogisticsPayload,
   type SupportDepartment,
   type VisitInstanceLogisticsItem,
@@ -63,19 +62,6 @@ const ITEM_TYPE_LABEL: Record<LogisticsItemType, string> = {
 const COORD_LABEL: Record<LogisticsCoordinationMode, string> = {
   SYSTEM_REQUEST: 'Xử lý qua hệ thống',
   OFFLINE_COORDINATED: 'Trao đổi bên ngoài',
-};
-// Priority dropdown options + read-only badge styling (visit_logistics_items.priority).
-const PRIORITY_OPTIONS: { value: LogisticsPriority; label: string }[] = [
-  { value: 'LOW', label: 'Thấp' },
-  { value: 'MEDIUM', label: 'Trung bình' },
-  { value: 'HIGH', label: 'Cao' },
-  { value: 'URGENT', label: 'Khẩn cấp' },
-];
-const PRIORITY_META: Record<LogisticsPriority, { label: string; cls: string }> = {
-  LOW:    { label: 'Thấp', cls: 'border-slate-200 bg-slate-50 text-slate-600' },
-  MEDIUM: { label: 'Trung bình', cls: 'border-slate-200 bg-slate-50 text-slate-600' },
-  HIGH:   { label: 'Cao', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
-  URGENT: { label: 'Khẩn cấp', cls: 'border-red-200 bg-red-50 text-red-700' },
 };
 // Statuses where the department has taken the item → host can no longer cancel/replace it.
 const LOCKED_STATUSES = new Set(['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']);
@@ -137,8 +123,6 @@ type ResourceForm = {
   quantity: string;
   usageStartAt: string;  // datetime-local "YYYY-MM-DDTHH:mm"
   usageEndAt: string;
-  dueAt: string;         // optional response/completion deadline
-  priority: string;      // LOW | MEDIUM | HIGH | URGENT (default MEDIUM)
   note: string;
   departmentId: string;
   title: string;         // editable only for "Khác"
@@ -146,7 +130,7 @@ type ResourceForm = {
 /** Fresh create-form. `defaultStart`/`defaultEnd` are the campus-instance planned times (already in
  * datetime-local form, '' when unknown) — a DEFAULT the host can edit, never a lock. */
 const emptyForm = (title = '', defaultStart = '', defaultEnd = ''): ResourceForm =>
-  ({ quantity: '', usageStartAt: defaultStart, usageEndAt: defaultEnd, dueAt: '', priority: 'MEDIUM', note: '', departmentId: '', title });
+  ({ quantity: '', usageStartAt: defaultStart, usageEndAt: defaultEnd, note: '', departmentId: '', title });
 
 // datetime-local string of Vietnam "now" (minute precision) for past-date guards —
 // fixed Asia/Ho_Chi_Minh, independent of the browser timezone.
@@ -1115,8 +1099,6 @@ function ResourceCard({
     quantity: it.quantity?.toString() || '',
     usageStartAt: toVietnamDateTimeLocalInput(it.usageStartAt),
     usageEndAt: toVietnamDateTimeLocalInput(it.usageEndAt),
-    dueAt: toVietnamDateTimeLocalInput(it.dueAt),
-    priority: it.priority || 'MEDIUM',
     note: it.description || '',
     departmentId: it.requestedToDepartmentId?.toString() || '',
   });
@@ -1185,12 +1167,6 @@ function ResourceCard({
     if (form.usageStartAt < nowStr) return 'Thời gian bắt đầu không được trong quá khứ.';
     if (form.usageEndAt <= form.usageStartAt) return 'Thời gian kết thúc phải sau thời gian bắt đầu.';
 
-    const highPriority = form.priority === 'HIGH' || form.priority === 'URGENT';
-    if (highPriority && !form.dueAt) return 'Mức ưu tiên Cao/Khẩn cấp cần có hạn phản hồi.';
-    if (form.dueAt && form.dueAt < nowStr) return 'Hạn phản hồi không được nằm trong quá khứ.';
-    if (form.dueAt && form.usageStartAt && form.dueAt > form.usageStartAt)
-      return 'Hạn phản hồi phải trước thời gian bắt đầu sử dụng.';
-
     return null;
   };
 
@@ -1210,12 +1186,8 @@ function ResourceCard({
     quantity: form.quantity ? Number(form.quantity) : null,
     usageStartAt: form.usageStartAt || null,
     usageEndAt: form.usageEndAt || null,
-    dueAt: form.dueAt || null,
-    priority: (form.priority || 'MEDIUM') as LogisticsPriority,
     coordinationMode: 'SYSTEM_REQUEST',
   });
-
-  const dueRequired = form.priority === 'HIGH' || form.priority === 'URGENT';
 
   // Inline error stays at the field; a single toast surfaces the first error (no spam).
   const doSend = async () => {
@@ -1368,24 +1340,6 @@ function ResourceCard({
                 </div>
               )}
             </div>
-
-            {/* Dòng 3: Mức ưu tiên & Hạn phản hồi */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên <span className="text-red-500">*</span></label>
-                <select disabled={isFormDisabled} value={form.priority} onChange={(e) => set('priority', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-                  {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">
-                  Hạn phản hồi / hoàn thành {dueRequired && <span className="text-red-500">*</span>}
-                </label>
-                <input type="datetime-local" disabled={isFormDisabled} value={form.dueAt} onChange={(e) => set('dueAt', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-gray-400 transition-colors outline-none text-sm disabled:bg-gray-50 disabled:text-gray-400" />
-              </div>
-            </div>
           </div>
 
           {/* KHỐI PHẢI: Mô tả chi tiết (Tự động co giãn theo độ dài chữ) */}
@@ -1440,7 +1394,6 @@ function OfflineCard({
   const [note, setNote] = useState(() => existingItem?.offlineCoordinationNote || existingItem?.description || '');
   const [departmentId, setDepartmentId] = useState(() => existingItem?.requestedToDepartmentId?.toString() || '');
   const [titleVal, setTitleVal] = useState(() => existingItem?.title || '');
-  const [priority, setPriority] = useState<string>(() => existingItem?.priority || 'MEDIUM');
   const [err, setErr] = useState<string | null>(null);
   const [localSubmitted, setLocalSubmitted] = useState(false);
   const busy = busyKey === cardKey;
@@ -1459,7 +1412,6 @@ function OfflineCard({
       setNote(existingItem.offlineCoordinationNote || existingItem.description || '');
       setDepartmentId(existingItem.requestedToDepartmentId?.toString() || '');
       setTitleVal(existingItem.title || '');
-      setPriority(existingItem.priority || 'MEDIUM');
       setErr(null);
       setLocalSubmitted(true);
     } else {
@@ -1482,7 +1434,6 @@ function OfflineCard({
       description: note.trim(),
       coordinationMode: 'OFFLINE_COORDINATED',
       offlineCoordinationNote: note.trim(),
-      priority: (priority || 'MEDIUM') as LogisticsPriority,
     };
     if (await onSubmit(cardKey, payload)) {
       setLocalSubmitted(true);
@@ -1544,16 +1495,8 @@ function OfflineCard({
         </div>
       </div>
 
-      {/* Dòng 2: Mức ưu tiên (trái) & Nút Lưu (phải) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-end">
-        <div>
-          <label className="block text-xs font-bold text-gray-600 mb-1">Mức ưu tiên</label>
-          <select disabled={isFormDisabled} value={priority} onChange={(e) => setPriority(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-[#004c91] hover:border-[#004c91] transition-colors outline-none text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400">
-            {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center justify-end">
+      <div className="flex items-end">
+        <div className="flex items-center justify-end w-full">
           {!isSubmitted && (
             <button type="button" disabled={busy || isFormDisabled} onClick={doSave}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-5 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-40">
@@ -1896,9 +1839,6 @@ function LogisticsListRow({ it, canManage, busy, onRespond, onViewSent, onOpenSi
             )}
           </div>
 
-          {it.dueAt && (
-            <div><span className="text-slate-400 font-medium">Hạn hoàn thành:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.dueAt)}</span></div>
-          )}
           {offline && it.offlineCoordinationNote && (
             <div className="italic text-slate-500 line-clamp-1" title={it.offlineCoordinationNote}>
               <span className="font-semibold text-amber-700/80 not-italic">Ghi chú ngoài:</span> {it.offlineCoordinationNote}

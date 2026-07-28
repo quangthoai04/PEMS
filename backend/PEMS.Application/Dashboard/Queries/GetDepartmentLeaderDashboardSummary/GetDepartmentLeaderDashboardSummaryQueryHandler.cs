@@ -61,7 +61,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
         var pendingRequestCount = await requestItemsQuery
             .Where(li => li.AssignedToUserId == null
                          && li.Status == "REQUESTED"
-                         && (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt) >= now)
+                         && (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) >= now)
             .CountAsync(cancellationToken);
 
         var pendingInvitationCount = await invitationItemsQuery
@@ -103,8 +103,8 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
         var requestQuickTasks = await requestItemsQuery
             .Where(li => li.AssignedToUserId == null
                          && li.Status == "REQUESTED"
-                         && (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt) >= now)
-            .OrderBy(li => li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt)
+                         && (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt) >= now)
+            .OrderBy(li => li.UsageStartAt ?? li.VisitInstance.PlannedStartAt)
             .Select(li => new DepartmentLeaderQuickTaskDto
             {
                 ItemType = "REQUEST",
@@ -114,7 +114,7 @@ public class GetDepartmentLeaderDashboardSummaryQueryHandler
                 VisitRequestId = li.VisitInstance.VisitRequestId,
                 DelegationName = li.VisitInstance.FormDetail != null ? li.VisitInstance.FormDetail.DelegationName : null,
                 TaskTitle = li.Title,
-                DueAt = (li.UsageStartAt ?? li.DueAt ?? li.VisitInstance.PlannedStartAt).ToString("O"),
+                DueAt = (li.UsageStartAt ?? li.VisitInstance.PlannedStartAt).ToString("O"),
                 Status = li.Status,
                 AssignedToUserId = li.AssignedToUserId,
                 AssignedToName = li.AssignedToUserId != null

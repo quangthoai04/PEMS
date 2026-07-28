@@ -138,7 +138,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 var rejectUrl = _tokens.BuildPublicActionUrl(rejectRaw);
                 var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
 
-                finalSubject = LogisticsPriorityText.ApplySubjectPrefix(l.Priority, $"[PEMS] Phòng ban đề xuất thay đổi hậu cần — {l.Title}");
+                finalSubject = $"[PEMS] Phòng ban đề xuất thay đổi hậu cần — {l.Title}";
                 finalBody = EmailComposition.BrandedShell(
                     ProposalContentHtml(host.FullName, delegationName, l)
                     + EmailComposition.LogisticsProposalActionBlock(approveUrl, rejectUrl, detailUrl));
@@ -176,8 +176,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: host.UserId,
-                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Phòng ban đề xuất thay đổi hậu cần",
-                        Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) của đoàn {delegationName}.",
+                        Title: "Phòng ban đề xuất thay đổi hậu cần",
+                        Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" của đoàn {delegationName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: l.LogisticsItemId,
@@ -217,8 +217,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
         {
             string HE(string? s) => EmailComposition.HE(s);
             string Fmt(DateTime? d) => d.HasValue ? HE(d.Value.ToString("HH:mm dd/MM/yyyy")) : "—";
-            var rows = $"<li><strong>Mức ưu tiên:</strong> {HE(LogisticsPriorityText.LabelVi(l.Priority))}</li>";
-            if (l.DueAt.HasValue) rows += $"<li><strong>Hạn phản hồi:</strong> {Fmt(l.DueAt)}</li>";
+            var rows = string.Empty;
             if (l.ProposedQuantity.HasValue)
                 rows += $"<li><strong>Số lượng đề xuất:</strong> {l.ProposedQuantity} (dự kiến: {(l.Quantity?.ToString() ?? "—")})</li>";
             if (l.ProposedUsageStartAt.HasValue || l.ProposedUsageEndAt.HasValue)

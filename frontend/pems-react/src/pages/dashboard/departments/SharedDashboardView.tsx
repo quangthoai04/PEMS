@@ -84,8 +84,6 @@ type AssignmentProgressItem = {
   rawStatus: string;
   uiStatus: string;
   statusLabel: string;
-  priority?: string | null;     // LOW | MEDIUM | HIGH | URGENT (REQUEST items only)
-  dueAt?: string | null;
   startAt: string;
   endAt: string;
   canViewDelegationDetail: boolean;
@@ -222,8 +220,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentItemType, setAssignmentItemType] = useState('ALL');
   const [assignmentStatus, setAssignmentStatus] = useState('ALL');
-  const [assignmentPriority, setAssignmentPriority] = useState('ALL');
-  const [assignmentSortBy, setAssignmentSortBy] = useState<'PRIORITY' | 'DATE'>('PRIORITY');
   const [assignmentOwnerScope, setAssignmentOwnerScope] = useState('DEPARTMENT');
   const [assignmentFromDate, setAssignmentFromDate] = useState('');
   const [assignmentToDate, setAssignmentToDate] = useState('');
@@ -270,7 +266,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           assigneeName: p.staffName,
           DelegationName: p.delegationName ?? 'đoàn khách',
           logisticsTitle: p.title ?? 'hạng mục hậu cần',
-          dueAt: '—',
         },
       });
       setAssignPreview((s) => ({
@@ -655,8 +650,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       targetDate = activePopoverEvent.date;
       targetTime = activePopoverEvent.time;
     } else if (assigningTaskItem) {
-      const startIso = assigningTaskItem.startAt || assigningTaskItem.dueAt;
-      const endIso = assigningTaskItem.endAt || assigningTaskItem.dueAt;
+      const startIso = assigningTaskItem.startAt;
+      const endIso = assigningTaskItem.endAt;
       if (startIso && endIso) {
         const sd = toVietnamCalendarDate(startIso) ?? new Date(NaN);
         const ed = toVietnamCalendarDate(endIso) ?? new Date(NaN);
@@ -696,11 +691,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         search: assignmentSearch || undefined,
         itemType: assignmentItemType,
         status: assignmentStatus,
-        priority: assignmentPriority !== 'ALL' ? assignmentPriority : undefined,
         ownerScope: assignmentOwnerScope,
         fromDate: assignmentFromDate || undefined,
         toDate: assignmentToDate || undefined,
-        sortBy: assignmentSortBy === 'PRIORITY' ? 'priority' : 'date',
         sortDirection: assignmentSortDirection,
         page: assignmentPage,
         pageSize: assignmentPageSize,
@@ -723,8 +716,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentSearch,
     assignmentItemType,
     assignmentStatus,
-    assignmentPriority,
-    assignmentSortBy,
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
@@ -740,8 +731,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     assignmentSearch,
     assignmentItemType,
     assignmentStatus,
-    assignmentPriority,
-    assignmentSortBy,
     assignmentOwnerScope,
     assignmentFromDate,
     assignmentToDate,
@@ -1193,23 +1182,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setActiveEventDetail(detail);
     if (detail.status === 'IN_PROGRESS' || detail.status === 'DONE') setRequestStatus('accepted');
     await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
-  };
-
-  const getPriorityClass = (priority?: string | null) => {
-    switch ((priority || '').toUpperCase()) {
-      case 'URGENT': return 'bg-red-50 text-red-700 border-red-200';
-      case 'HIGH': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'LOW': return 'bg-slate-50 text-slate-500 border-slate-200';
-      default: return 'bg-sky-50 text-sky-700 border-sky-200'; // MEDIUM
-    }
-  };
-  const getPriorityLabel = (priority?: string | null) => {
-    switch ((priority || '').toUpperCase()) {
-      case 'URGENT': return 'Khẩn cấp';
-      case 'HIGH': return 'Cao';
-      case 'LOW': return 'Thấp';
-      default: return 'Trung bình';
-    }
   };
 
   const getStatusClass = (status: string) => {
@@ -3304,27 +3276,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                         <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none scale-150 mr-4">
                           <Calendar className="w-24 h-24 text-gray-900" />
-                        </div>
-                      </div>
-
-                      {/* Mức ưu tiên + Hạn phản hồi (visit_logistics_items.priority / due_at) */}
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <AlertCircle className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Mức ưu tiên</span>
-                        </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-full border text-[11px] font-black ${getPriorityClass(activeEventDetail?.priority)}`}>
-                          {getPriorityLabel(activeEventDetail?.priority)}
-                        </span>
-                      </div>
-
-                      <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <Clock className="w-4 h-4" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">Hạn phản hồi</span>
-                        </div>
-                        <div className="text-sm font-black text-[#004c91]">
-                          {activeEventDetail?.dueAt ? formatDateTime(activeEventDetail.dueAt) : 'Chưa có'}
                         </div>
                       </div>
 

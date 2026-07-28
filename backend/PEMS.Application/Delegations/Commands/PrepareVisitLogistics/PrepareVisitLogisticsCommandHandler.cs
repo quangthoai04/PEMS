@@ -146,10 +146,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
 
         var now = _clock.VietnamNow;
         var itemType = request.ItemType.Trim().ToUpperInvariant();
-        var priority = string.IsNullOrWhiteSpace(request.Priority) ? "MEDIUM" : request.Priority!.Trim().ToUpperInvariant();
         var usageStart = ParseLocal(request.UsageStartAt);
         var usageEnd = ParseLocal(request.UsageEndAt);
-        var dueAt = ParseLocal(request.DueAt);
         var title = request.Title.Trim();
 
         // One active item per fixed category. The "Chuẩn bị chi tiết" screen identifies a fixed
@@ -193,14 +191,12 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 // OFFLINE_COORDINATED is already handled outside the system → DONE (no further workflow);
                 // SYSTEM_REQUEST starts at REQUESTED for the department to process.
                 Status = offline ? LogisticsItemStatus.Done : LogisticsItemStatus.Requested,
-                Priority = priority,
                 CoordinationMode = offline ? LogisticsCoordinationModes.OfflineCoordinated : LogisticsCoordinationModes.SystemRequest,
                 OfflineCoordinationNote = offline ? request.OfflineCoordinationNote!.Trim() : null,
                 RequestedBy = actorId,
                 RequestedToDepartmentId = requestedDeptId,
                 RequestedAt = now,
                 CompletedAt = offline ? now : (DateTime?)null,
-                DueAt = dueAt,
                 CreatedAt = now,
                 CreatedBy = actorId,
             };
@@ -241,10 +237,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         { "quantity", item.Quantity?.ToString() ?? "—" },
                         { "usageStartAt", usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
                         { "usageEndAt", usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
-                        { "priority", LogisticsPriorityText.LabelVi(item.Priority) },
-                        { "Priority", LogisticsPriorityText.LabelVi(item.Priority) },
-                        { "dueAt", dueAt?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
-                        { "DueAt", dueAt?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
                         { "detailUrl", detailUrl }
                     };
                     finalSubject = EmailComposition.RenderTemplate(template.SubjectVi ?? $"[PEMS] Yêu cầu hậu cần mới — {item.Title}", context, "LOGISTICS_REQUEST");
@@ -264,8 +256,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
 
-                // High-urgency items get a subject prefix ([KHẨN] / [ƯU TIÊN CAO]).
-                finalSubject = LogisticsPriorityText.ApplySubjectPrefix(item.Priority, finalSubject);
                 finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
 
                 var sentEmail = new SentEmail
@@ -300,8 +290,8 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: leaderUserId!.Value,
-                        Title: LogisticsPriorityText.SubjectPrefix(item.Priority) + "Có yêu cầu hậu cần mới",
-                        Message: $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(item.Priority)}) cho đoàn {delegationName} tại {campusName}.",
+                        Title: "Có yêu cầu hậu cần mới",
+                        Message: $"Host {requesterName} đã gửi yêu cầu \"{item.Title}\" cho đoàn {delegationName} tại {campusName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsRequestCreated,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: item.LogisticsItemId,
@@ -415,7 +405,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
     <li><strong>Hạng mục:</strong> {HE(item.Title)} ({HE(item.ItemType)})</li>
     {qty}
     {usage}
-    <li><strong>Mức ưu tiên:</strong> {HE(item.Priority)}</li>
   </ul>
 </div>
 <p>Vui lòng đăng nhập hệ thống để tiếp nhận, đề xuất thay đổi hoặc phân công nhân sự xử lý.</p>";

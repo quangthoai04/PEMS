@@ -195,7 +195,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                         DefaultContentHtml(assignee.FullName, delegationName, l) + EmailComposition.LogisticsAssigneeActionBlock(acceptUrl, declineUrl, detailUrl));
                 }
 
-                finalSubject = LogisticsPriorityText.ApplySubjectPrefix(l.Priority, finalSubject);
                 finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
 
                 var sentEmail = new SentEmail
@@ -232,8 +231,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                         RecipientUserId: assignee.UserId,
-                        Title: LogisticsPriorityText.SubjectPrefix(l.Priority) + "Bạn được phân công hậu cần",
-                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" (ưu tiên {LogisticsPriorityText.LabelVi(l.Priority)}) cho đoàn {delegationName}.",
+                        Title: "Bạn được phân công hậu cần",
+                        Message: $"Bạn được phân công xử lý hạng mục \"{l.Title}\" cho đoàn {delegationName}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsAssigned,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
                         RelatedId: l.LogisticsItemId,
@@ -297,15 +296,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private static string DefaultContentHtml(string assigneeName, string delegationName, VisitLogisticsItem l)
         {
             string HE(string? s) => EmailComposition.HE(s);
-            var prio = $"<li><strong>Mức ưu tiên:</strong> {HE(LogisticsPriorityText.LabelVi(l.Priority))}</li>";
-            var due = l.DueAt.HasValue ? $"<li><strong>Hạn xử lý:</strong> {HE(l.DueAt.Value.ToString("HH:mm dd/MM/yyyy"))}</li>" : string.Empty;
             return $@"<p>Xin chào <strong>{HE(assigneeName)}</strong>,</p>
 <p>Bạn được phân công xử lý hạng mục hậu cần <strong>{HE(l.Title)}</strong> cho đoàn <strong>{HE(delegationName)}</strong>.</p>
 <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
   <ul style=""margin:0;padding-left:20px;line-height:1.7"">
     <li><strong>Hạng mục:</strong> {HE(l.Title)} ({HE(l.ItemType)})</li>
-    {prio}
-    {due}
   </ul>
 </div>
 <p>Vui lòng phản hồi bằng một trong các nút dưới đây.</p>";
