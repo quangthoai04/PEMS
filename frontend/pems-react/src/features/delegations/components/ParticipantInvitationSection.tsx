@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Search, Loader2, AlertCircle, Mail, Phone, Building2,
-  Users, UserCheck, GraduationCap, Trash2, Send, Eye, History,
+  Users, UserCheck, GraduationCap, Trash2, Send, Eye,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
@@ -669,7 +669,7 @@ function ViewSentButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-[#004c91] outline-none transition-colors hover:bg-gray-50"
     >
-      <History className="w-3.5 h-3.5" /> Mail đã gửi
+      <Eye className="w-3.5 h-3.5" /> Mail đã gửi
     </button>
   );
 }

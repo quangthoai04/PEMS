@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Loader2, Send, Eye, Plus, Trash2, ChevronUp, ChevronDown, CheckCircle, CheckCircle2, AlertCircle, X,
-  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, History, Mail, FileText, PenLine, Clock, Download,
+  MonitorPlay, MapPin, Building2, MoreHorizontal, Car, UserCheck, Coffee, FileText, PenLine, Clock, Download,
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
@@ -1833,7 +1833,7 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
             {it.coordinationMode === 'SYSTEM_REQUEST' && (
               <button type="button" onClick={() => onViewSent(it)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-1.5 text-xs font-bold text-[#004c91] outline-none hover:bg-blue-100 transition-colors shadow-sm">
-                <Mail className="w-3.5 h-3.5" /> Mail đã gửi
+                <Eye className="w-3.5 h-3.5" /> Mail đã gửi
               </button>
             )}
           </div>
