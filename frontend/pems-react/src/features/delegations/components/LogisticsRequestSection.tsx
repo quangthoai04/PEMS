@@ -233,7 +233,7 @@ export function LogisticsRequestSection({
         } catch { }
       }
       return isVehicleHandover(item.itemType)
-        ? buildDefaultVehicleChecklist()
+        ? buildDefaultVehicleChecklist(finalQuantity(item))
         : buildDefaultGenericChecklist(item.title, finalQuantity(item));
     })();
     setChecklistDraft(rows);
@@ -749,7 +749,7 @@ export function LogisticsRequestSection({
                             <th className="border border-slate-500 p-2 text-center w-12">STT</th>
                             <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                             <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
                             <th className="border border-slate-500 p-2 text-center">Tình trạng nghiệm thu</th>
                           </tr>
                         </thead>

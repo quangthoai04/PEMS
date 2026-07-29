@@ -196,10 +196,14 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
         } catch { /* rơi về mặc định nếu JSON hỏng */ }
       }
       return isVehicleHandover(item.itemType)
-        ? buildDefaultVehicleChecklist()
+        ? buildDefaultVehicleChecklist(item.quantity)
         : buildDefaultGenericChecklist(item.title, item.quantity);
     })();
-    setChecklistDraft(rows);
+    // Cột "Tình trạng nghiệm thu" chỉ seed sẵn "Tốt" khi Host sắp ký NGHIỆM THU (RETURN) — lúc ký
+    // BÀN GIAO (BORROW) cột này phải trống, Phòng ban không chạm vào.
+    setChecklistDraft(handoverPhase === 'RETURN'
+      ? rows.map((r: VehicleChecklistRow) => (r.name && !r.nhan ? { ...r, nhan: 'Tốt' } : r))
+      : rows);
   };
   const closeSignModal = () => { if (!busy) { setSignTarget(null); setErr(null); } };
 
@@ -507,7 +511,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                             <th className="border border-slate-500 p-2 text-center w-12">STT</th>
                             <th className="border border-slate-500 p-2 text-center">Nội dung</th>
                             <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                            <th className="border border-slate-500 p-2 text-center">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                            <th className="border border-slate-500 p-2 text-center">Tình Trạng bàn giao</th>
                             <th className="border border-slate-500 p-2 text-center">Tình trạng nghiệm thu</th>
                           </tr>
                         </thead>

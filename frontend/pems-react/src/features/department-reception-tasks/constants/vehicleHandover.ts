@@ -1,7 +1,7 @@
 /**
  * Checklist cố định trong biên bản bàn giao XE Ô TÔ ĐIỆN (đơn yêu cầu item_type = TRANSPORT).
- * Theo mẫu biên bản giấy: mọi ô Số Lượng/tình trạng để trống, input tự có placeholder "Nhập..."
- * làm hint — không seed sẵn text giả như "___ cái" (dễ nhầm là giá trị thật đã điền).
+ * Tên mục cố định theo mẫu biên bản giấy; Số Lượng/Tình trạng bàn giao được seed sẵn (nhân theo số
+ * xe mượn, tình trạng mặc định "Tốt") nhưng vẫn là input thường — người dùng sửa thoải mái.
  */
 export const VEHICLE_HANDOVER_CHECKLIST: { name: string; qty: string }[] = [
   { name: 'Chìa khoá xe', qty: '' },
@@ -23,8 +23,30 @@ export const isVehicleHandover = (itemType?: string | null): boolean =>
 
 export type VehicleChecklistRow = { name: string; qty: string; giao: string; nhan: string };
 
-export const buildDefaultVehicleChecklist = (): VehicleChecklistRow[] =>
-  VEHICLE_HANDOVER_CHECKLIST.map(row => ({ name: row.name, qty: row.qty, giao: '', nhan: '' }));
+/** Tình trạng bàn giao mặc định — seed sẵn cho mọi dòng có tên, người dùng vẫn sửa được. */
+const DEFAULT_CONDITION = 'Tốt';
+
+/** Số lượng mỗi mục nhân theo số xe mượn — mặc định 1:1, trừ các mục có nhiều đơn vị/xe. */
+const VEHICLE_ITEM_MULTIPLIER: Record<string, number> = {
+  'Gương chiếu hậu': 2,
+  'Ghế bọc da': 4,
+  'Bánh xe': 4,
+};
+
+/** Số lượng seed sẵn cho 1 mục checklist xe = đơn giá mục đó x số xe mượn. Trống nếu chưa rõ số xe. */
+export const vehicleItemQuantity = (name: string, vehicleCount?: number | null): string => {
+  if (!name || !vehicleCount || vehicleCount <= 0) return '';
+  const multiplier = VEHICLE_ITEM_MULTIPLIER[name] ?? 1;
+  return String(multiplier * vehicleCount);
+};
+
+export const buildDefaultVehicleChecklist = (vehicleCount?: number | null): VehicleChecklistRow[] =>
+  VEHICLE_HANDOVER_CHECKLIST.map(row => ({
+    name: row.name,
+    qty: row.name ? vehicleItemQuantity(row.name, vehicleCount) : row.qty,
+    giao: row.name ? DEFAULT_CONDITION : '',
+    nhan: '',
+  }));
 
 /**
  * Checklist mặc định cho hạng mục KHÔNG phải xe điện (Teabreak, phòng họp, thiết bị...) — bảng
@@ -32,5 +54,5 @@ export const buildDefaultVehicleChecklist = (): VehicleChecklistRow[] =>
  * danh sách item cố định sẵn: chỉ 1 dòng khởi điểm lấy tên/số lượng từ chính đơn yêu cầu.
  */
 export const buildDefaultGenericChecklist = (title?: string | null, quantity?: number | null): VehicleChecklistRow[] => [
-  { name: title || '', qty: quantity ? String(quantity) : '', giao: '', nhan: '' },
+  { name: title || '', qty: quantity ? String(quantity) : '', giao: title ? DEFAULT_CONDITION : '', nhan: '' },
 ];

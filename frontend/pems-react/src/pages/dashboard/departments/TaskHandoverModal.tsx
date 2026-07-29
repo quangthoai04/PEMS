@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { FileText, Download, X, Loader2, PenLine, Plus, Trash2 } from 'lucide-react';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
+import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, vehicleItemQuantity, type VehicleChecklistRow } from '../../../features/department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from './LogisticsExpensePanel';
 import toast from 'react-hot-toast';
 
@@ -40,7 +40,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
     // Xe điện: checklist mẫu giấy có sẵn danh mục. Hạng mục khác: chỉ 1 dòng khởi điểm lấy tên/số
     // lượng từ chính đơn yêu cầu — cùng logic bảng, không list sẵn.
     return isVehicleHandover(detailData?.ItemType)
-      ? buildDefaultVehicleChecklist()
+      ? buildDefaultVehicleChecklist(detailData?.Quantity)
       : buildDefaultGenericChecklist(detailData?.Title, detailData?.Quantity);
   });
 
@@ -50,7 +50,10 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
   // đụng Giao/Nhận người dùng có thể đã gõ.
   useEffect(() => {
     if (detailData?.ChecklistJson) return; // đã có checklist lưu sẵn, không tự ý sửa
-    if (isVehicleHandover(detailData?.ItemType)) return; // checklist xe điện là danh mục cố định
+    if (isVehicleHandover(detailData?.ItemType)) {
+      setChecklistRows((rows) => rows.map((r) => (r.name ? { ...r, qty: vehicleItemQuantity(r.name, detailData?.Quantity) } : r)));
+      return;
+    }
     const qty = detailData?.Quantity ? String(detailData.Quantity) : '';
     setChecklistRows((rows) => rows.map((r) => (r.name === (detailData?.Title || '') ? { ...r, qty } : r)));
   }, [detailData?.Quantity, detailData?.Title, detailData?.ChecklistJson, detailData?.ItemType]);
@@ -241,7 +244,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                     <th className="border border-slate-500 p-2 text-center w-14">STT</th>
                     <th className="border border-slate-500 p-2 text-center min-w-[160px]">Nội dung</th>
                     <th className="border border-slate-500 p-2 text-center w-24">Số Lượng</th>
-                    <th className="border border-slate-500 p-2 text-center min-w-[140px]">{isVehicle ? 'Tình Trạng BTS bàn giao' : 'Tình Trạng bàn giao'}</th>
+                    <th className="border border-slate-500 p-2 text-center min-w-[140px]">Tình Trạng bàn giao</th>
                     <th className="border border-slate-500 p-2 text-center min-w-[140px]">Tình trạng nghiệm thu</th>
                   </tr>
                 </thead>
