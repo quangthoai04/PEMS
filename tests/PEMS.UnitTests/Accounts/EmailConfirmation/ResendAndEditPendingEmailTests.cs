@@ -145,6 +145,121 @@ public class ResendAndEditPendingEmailTests
         Assert.DoesNotContain(sent.Variables.Values, v => v.Contains("token=raw"));
     }
 
+    /// <summary>
+    /// HO is not campus-bound: the same actor campus that would refuse a Staff Leader (see
+    /// <see cref="Unauthorized_actor_cannot_edit_email"/>) is accepted for HO.
+    /// </summary>
+    [Fact]
+    public async Task Ho_of_any_campus_may_resend()
+    {
+        var h = new Harness();
+        SeedUser(h);                        // account on campus 1
+        h.Actor.RoleCode = RoleCodes.Ho;
+        h.Actor.SubRole = null;
+        h.Actor.PrimaryCampusId = 2;        // a different campus — irrelevant for HO
+
+        var res = await h.Resend().Handle(
+            new ResendAccountEmailConfirmationCommand { UserId = TargetUserId }, CancellationToken.None);
+
+        Assert.True(res.Success);
+        Assert.Equal(1, res.ResendCount);   // no live pending row ⇒ series starts at 1
+    }
+
+    [Fact]
+    public async Task Unknown_user_is_a_404()
+    {
+        var h = new Harness();   // nothing seeded
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => h.Resend().Handle(new ResendAccountEmailConfirmationCommand { UserId = TargetUserId }, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Every non-pending state is refused with the SAME stable code, and — the part that matters —
+    /// without sending anything. A resend on an account that is already active/disabled/locked would
+    /// mail a live activation link to an address the flow no longer vouches for.
+    /// </summary>
+    [Theory]
+    [InlineData(UserStatuses.Active)]
+    [InlineData(UserStatuses.Inactive)]
+    [InlineData(UserStatuses.Locked)]
+    public async Task Non_pending_statuses_are_refused_and_send_nothing(string status)
+    {
+        var h = new Harness();
+        SeedUser(h, status: status);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => h.Resend().Handle(new ResendAccountEmailConfirmationCommand { UserId = TargetUserId }, CancellationToken.None));
+
+        Assert.Equal("ACCOUNT_NOT_PENDING", ex.ErrorCode);
+        Assert.Empty(h.Dispatcher.Sent);
+        h.Confirmations.Verify(c => c.IssuePendingAsync(
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>
+    /// A resend re-mails a link; it provisions nothing. The account keeps its identity and its
+    /// pending status — only the holder clicking the new link may change that.
+    /// </summary>
+    [Fact]
+    public async Task Resend_changes_nothing_about_the_account()
+    {
+        var h = new Harness();
+        var before = SeedUser(h);
+        var (roleId, subRole, campus, department) = (before.RoleId, before.SubRole, before.PrimaryCampusId, before.DepartmentId);
+        SeedPendingConfirmation(h, resendCount: 0, createdSecondsAgo: 120);
+
+        await h.Resend().Handle(new ResendAccountEmailConfirmationCommand { UserId = TargetUserId }, CancellationToken.None);
+
+        var after = await h.Db.Users.SingleAsync();          // Single ⇒ no second account was created
+        Assert.Equal(TargetUserId, after.UserId);
+        Assert.Equal(UserStatuses.PendingEmailConfirmation, after.Status);   // never auto-activated
+        Assert.Equal(OwnerEmail, after.Email);
+        Assert.Equal(roleId, after.RoleId);
+        Assert.Equal(subRole, after.SubRole);
+        Assert.Equal(campus, after.PrimaryCampusId);
+        Assert.Equal(department, after.DepartmentId);
+    }
+
+    /// <summary>The counter continues the pending row's series rather than restarting at 1.</summary>
+    [Fact]
+    public async Task Resend_count_continues_from_the_live_pending_row()
+    {
+        var h = new Harness();
+        SeedUser(h);
+        SeedPendingConfirmation(h, resendCount: 3, createdSecondsAgo: 120);
+
+        var res = await h.Resend().Handle(
+            new ResendAccountEmailConfirmationCommand { UserId = TargetUserId }, CancellationToken.None);
+
+        Assert.Equal(4, res.ResendCount);
+    }
+
+    /// <summary>
+    /// Delivery is reported as it happened. A caller that treated Success as "the mail arrived"
+    /// would tell HO the holder has a link when SMTP was off or the send failed outright.
+    /// </summary>
+    [Theory]
+    [InlineData("SKIPPED")]
+    [InlineData("FAILED")]
+    public async Task Failed_or_skipped_delivery_is_reported_truthfully(string notificationStatus)
+    {
+        var h = new Harness();
+        SeedUser(h);
+        SeedPendingConfirmation(h, resendCount: 0, createdSecondsAgo: 120);
+        h.Dispatcher.Outcome = notificationStatus == "SKIPPED"
+            ? EmailDeliveryResult.Skipped("SMTP_DISABLED", "SMTP disabled")
+            : EmailDeliveryResult.Failed("SMTP_SEND_FAILED", "SMTP down");
+
+        var res = await h.Resend().Handle(
+            new ResendAccountEmailConfirmationCommand { UserId = TargetUserId }, CancellationToken.None);
+
+        Assert.Equal(notificationStatus, res.EmailNotificationStatus);
+        // A fresh token was still issued, so the account stays actionable via a later resend.
+        Assert.Equal(UserStatuses.PendingEmailConfirmation,
+            (await h.Db.Users.SingleAsync()).Status);
+    }
+
     // ── Edit email ─────────────────────────────────────────────────────────
     [Fact]
     public async Task Unauthorized_actor_cannot_edit_email()
