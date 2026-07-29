@@ -1160,8 +1160,6 @@ function ResourceCard({
     if (editableTitle && !title) return 'Vui lòng nhập tiêu đề / nội dung công việc.';
     if (!form.departmentId) return 'Vui lòng chọn phòng ban xử lý.';
     
-    const qtyRequiredTypes: LogisticsItemType[] = ['ROOM', 'TRANSPORT', 'MEAL', 'EQUIPMENT'];
-    if (qtyRequiredTypes.includes(itemType) && !form.quantity) return 'Vui lòng nhập số lượng.';
     if (form.quantity && (Number.isNaN(Number(form.quantity)) || Number(form.quantity) < 1)) return 'Số lượng phải là số nguyên ≥ 1.';
     
     if (!form.usageStartAt) return 'Vui lòng nhập thời gian bắt đầu sử dụng.';

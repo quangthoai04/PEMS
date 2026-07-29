@@ -42,9 +42,6 @@ public sealed class PrepareVisitLogisticsCommandValidator : AbstractValidator<Pr
             .MaximumLength(255);
 
         RuleFor(x => x.Quantity)
-            .NotNull()
-            .When(x => !IsOffline(x) && (x.ItemType == "ROOM" || x.ItemType == "TRANSPORT" || x.ItemType == "MEAL" || x.ItemType == "EQUIPMENT"))
-            .WithMessage("LOGISTICS_QUANTITY_REQUIRED")
             .Must(q => q is null || q >= 1)
             .WithMessage("LOGISTICS_QUANTITY_INVALID");
 
