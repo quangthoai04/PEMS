@@ -18,6 +18,8 @@ import type {
   RelatedVisitorQueryParams,
   ReplaceStaffLeaderRequest,
   ReplaceStaffLeaderResponse,
+  ResendAccountEmailConfirmationRequest,
+  ResendAccountEmailConfirmationResponse,
   RoleAssignmentOptions,
   StaffLeaderAvailability,
   StaffLeaderReplacementPreview,
@@ -148,6 +150,21 @@ export const accountManagementApi = {
   async updateBasicAccountInfo(payload: UpdateBasicAccountInfoRequest): Promise<UpdateBasicAccountInfoResponse> {
     const { data } = await httpClient.post<UpdateBasicAccountInfoResponse>(
       API_ENDPOINTS.accounts.updateBasicInfo,
+      payload,
+    );
+    return data;
+  },
+
+  /**
+   * Re-issues the email-confirmation link for an account still awaiting confirmation. The backend
+   * supersedes the previous token (so the old link dies), enforces the cooldown and the resend cap,
+   * and reports the delivery outcome truthfully — the account stays pending either way.
+   */
+  async resendEmailConfirmation(
+    payload: ResendAccountEmailConfirmationRequest,
+  ): Promise<ResendAccountEmailConfirmationResponse> {
+    const { data } = await httpClient.post<ResendAccountEmailConfirmationResponse>(
+      API_ENDPOINTS.accounts.resendEmailConfirmation,
       payload,
     );
     return data;

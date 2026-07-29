@@ -14,7 +14,7 @@ export const REPLACEMENT_REASON_MIN_LENGTH = 10;
 export const REPLACEMENT_REASON_MAX_LENGTH = 500;
 
 /** Exact (post-lowercase) domains accepted as a PEMS login email. No subdomains. */
-export const ALLOWED_ACCOUNT_EMAIL_DOMAINS = ['gmail.com', 'fpt.edu.vn', 'fe.edu.vn'] as const;
+export const ALLOWED_ACCOUNT_EMAIL_DOMAINS = ['gmail.com', 'fpt.edu.vn'] as const;
 
 export const ACCOUNT_IDENTITY_MESSAGES = {
   fullNameRequired: 'Vui lòng nhập họ và tên.',
@@ -27,8 +27,7 @@ export const ACCOUNT_IDENTITY_MESSAGES = {
   emailTooLong: 'Email không được vượt quá 150 ký tự.',
   emailLocalPartTooLong: 'Phần tên email trước ký tự @ không được vượt quá 64 ký tự.',
   emailPlusNotAllowed: 'Email dùng để đăng nhập không được chứa dấu cộng (+).',
-  emailDomainNotAllowed:
-    'Email phải sử dụng một trong các tên miền: @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.',
+  emailDomainNotAllowed: 'Chỉ chấp nhận @gmail.com và @fpt.edu.vn.',
   reasonRequired: 'Vui lòng nhập lý do thay thế.',
   reasonTooShort: 'Lý do thay thế phải có ít nhất 10 ký tự.',
   reasonTooLong: 'Lý do thay thế không được vượt quá 500 ký tự.',

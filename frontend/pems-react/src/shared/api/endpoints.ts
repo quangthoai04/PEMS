@@ -43,6 +43,9 @@ export const API_ENDPOINTS = {
     updateRole: '/accounts/updateaccountrole',
     // HO_BASIC_INFO — HO edits only full name + email of another HO / Staff Leader.
     updateBasicInfo: '/accounts/updatebasicaccountinfo',
+    // Re-issues the confirmation link of a PENDING_EMAIL_CONFIRMATION account (rate-limited
+    // server-side). Supersedes the previous token — it never creates a second account.
+    resendEmailConfirmation: '/accounts/resend-email-confirmation',
     statistics: '/accounts/statistics',
     campusDepartments: '/accounts/campus-departments',
     // UC-100-SL — role-assignment options for the "Chỉnh sửa vai trò" modal (campus scoped server-side).

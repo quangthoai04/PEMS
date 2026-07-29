@@ -10,13 +10,15 @@ import {
   Users, UserCheck, UserX, Clock, Search,
   Shield, CheckCircle, XCircle, MoreVertical, Eye,
   Edit, Key, RefreshCw, Plus, X, UserCog, Briefcase, GraduationCap,
-  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle, Mail
 } from 'lucide-react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useAccountList } from '../../../features/account-management/hooks/useAccountList';
 import { useAccountManagement } from '../../../features/account-management/hooks/useAccountManagement';
 import { accountManagementApi } from '../../../features/account-management/api/accountManagementApi';
+import type { AxiosError } from 'axios';
 import {
+  ACCOUNT_ERROR_MESSAGES,
   getAccountErrorMessage,
   getAccountRoleChangeBlockers,
 } from '../../../features/account-management/api/accountError';
@@ -40,6 +42,12 @@ import {
   validateFullName,
 } from '../../../features/account-management/validation/accountIdentityValidation';
 import type { AccountIdentityFieldErrors } from '../../../features/account-management/validation/accountIdentityValidation';
+import { resolveAccountStatusMeta } from '../../../features/account-management/adapters/accountStatusMeta';
+import {
+  canResendEmailConfirmation,
+  resendDeliveryFeedback,
+  resendResultSummary,
+} from '../../../features/account-management/adapters/accountResendConfirmation';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
 import { RelatedVisitorsTab } from '../../../features/account-management/components/RelatedVisitorsTab';
 
@@ -210,7 +218,20 @@ export function AccountManagement() {
   // Replace Staff Leader modal (HO only): set to the campus of the Staff Leader being replaced.
   const [replaceLeaderTarget, setReplaceLeaderTarget] = useState<{ campusId: string; campusName: string } | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<any>(null);
-  
+  // True only once the UC-98 detail request has come back. The resend button keys off the DETAIL
+  // status, so while this is false the list row must not be allowed to stand in for it.
+  const [detailLoaded, setDetailLoaded] = useState(false);
+
+  // ── Resend email confirmation (pending accounts). Scoped to the open detail modal: every field
+  //    is cleared when the drawer closes or another account is opened, so one account's cooldown /
+  //    limit state can never be read as another's. ──
+  const [isResendConfirmOpen, setIsResendConfirmOpen] = useState(false);
+  const [resendSubmitting, setResendSubmitting] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
+  const [resendLimitReached, setResendLimitReached] = useState(false);
+  const [lastResendCount, setLastResendCount] = useState<number | null>(null);
+  const [lastDeliveryStatus, setLastDeliveryStatus] = useState<string | null>(null);
+
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   // UC-100-SL role editor: isolated form + backend-provided options (campus scoped).
@@ -260,8 +281,20 @@ export function AccountManagement() {
     setEditFieldErrors({});
   };
 
+  /** Clears every resend field so nothing leaks from one account's modal session into the next. */
+  const resetResendState = () => {
+    setIsResendConfirmOpen(false);
+    setResendSubmitting(false);
+    setResendError(null);
+    setResendLimitReached(false);
+    setLastResendCount(null);
+    setLastDeliveryStatus(null);
+  };
+
   const closeViewDrawer = () => {
     setIsViewDrawerOpen(false);
+    setDetailLoaded(false);
+    resetResendState();
     resetRoleEditor();
   };
 
@@ -721,10 +754,16 @@ export function AccountManagement() {
 
   // UC-98 — open the detail drawer, fetching the safe detail projection from the API.
   const openViewDrawer = async (acc: any) => {
+    // Reset BEFORE the request: opening account B must not show account A's detail-derived actions
+    // (or its resend cooldown) during the gap while B's detail is still in flight.
+    setDetailLoaded(false);
+    resetResendState();
     setSelectedAccount(acc);
     setIsViewDrawerOpen(true);
     if (!isServerTab) return;
     const details = await getAccountDetails(acc.userId ?? acc.id);
+    // Detail failed → detailLoaded stays false, so no detail-gated action is offered. The row's own
+    // status is deliberately NOT used as a stand-in.
     if (!details) return;
     setSelectedAccount((prev: any) => ({
       ...prev,
@@ -748,7 +787,111 @@ export function AccountManagement() {
       // HO_BASIC_INFO — detail is authoritative for the edit-basic-info permission.
       canEditBasicInfo: details.canEditBasicInfo ?? prev?.canEditBasicInfo ?? false,
     }));
+    setDetailLoaded(true);
   };
+
+  // ── Resend email confirmation ────────────────────────────────────────────────
+  // Gate: HO only, and ONLY on the status the detail endpoint returned. The list row carries a
+  // display-mapped status and may be stale (the holder could have confirmed in another tab), so it
+  // is never consulted here — while the detail is loading or failed, the button simply stays away.
+  const canResendConfirmation = canResendEmailConfirmation({
+    isHO,
+    detailLoaded,
+    detailStatus: selectedAccount?.rawStatus,
+  });
+
+  // A pending account holds its seat but no authority yet — it has not proven it owns the address.
+  // Actions that treat it as an operating account (replacing the Staff Leader) do not apply until
+  // it confirms; the way forward from here is the resend above. Read from rawStatus, which carries
+  // the raw DB status from the list projection as well as the detail, so the action is withheld
+  // immediately rather than flickering while the detail loads.
+  const isPendingEmailConfirmation =
+    String(selectedAccount?.rawStatus ?? '').trim().toUpperCase() === 'PENDING_EMAIL_CONFIRMATION';
+
+  /** Re-reads the detail so a stale-status refusal corrects the modal instead of arguing with it. */
+  const refreshDetailStatus = async () => {
+    const id = selectedAccount?.userId ?? selectedAccount?.id;
+    if (!id) return;
+    const details = await getAccountDetails(id);
+    if (!details) return;
+    setSelectedAccount((prev: any) => ({ ...prev, rawStatus: details.status, email: details.email }));
+  };
+
+  const handleResendError = (error: unknown) => {
+    const code = (error as AxiosError<{ errorCode?: string }>)?.response?.data?.errorCode;
+    const status = (error as AxiosError)?.response?.status;
+
+    // The cap is a property of the account, not of this click: keep the button disabled for the
+    // rest of this modal session rather than inviting a retry that cannot succeed.
+    if (code === 'RESEND_LIMIT_REACHED') setResendLimitReached(true);
+
+    if (code === 'ACCOUNT_NOT_PENDING') {
+      setResendError(ACCOUNT_ERROR_MESSAGES.ACCOUNT_NOT_PENDING);
+      pushToast('warning', ACCOUNT_ERROR_MESSAGES.ACCOUNT_NOT_PENDING);
+      setIsResendConfirmOpen(false);
+      // Whoever confirmed it was right and we were stale — adopt their truth, which also retires
+      // the button because canResendConfirmation stops matching.
+      void refreshDetailStatus();
+      return;
+    }
+
+    if (status === 403 && !code) {
+      setResendError('Bạn không có quyền gửi lại email xác nhận cho tài khoản này.');
+      return;
+    }
+
+    if (status === 404 && !code) {
+      setResendError('Tài khoản không tồn tại hoặc bạn không còn quyền truy cập.');
+      setIsResendConfirmOpen(false);
+      refetchAccounts();
+      return;
+    }
+
+    setResendError(getAccountErrorMessage(
+      error, 'Không thể gửi lại email xác nhận. Vui lòng thử lại sau.'));
+  };
+
+  const confirmResendEmail = async () => {
+    if (!selectedAccount || resendSubmitting) return;   // double-click guard (UX only — the backend
+                                                        // cooldown is the real defence)
+    const userId = selectedAccount.userId ?? selectedAccount.id;
+    if (!userId) {
+      setResendError('Không xác định được tài khoản cần gửi lại email xác nhận.');
+      return;
+    }
+
+    setResendSubmitting(true);
+    setResendError(null);
+    try {
+      const result = await accountManagementApi.resendEmailConfirmation({ userId });
+      const deliveryStatus = String(result.emailNotificationStatus ?? '').trim().toUpperCase();
+
+      setLastDeliveryStatus(deliveryStatus);
+      setLastResendCount(result.resendCount);
+      setIsResendConfirmOpen(false);
+
+      // Report what actually happened to the message. `success: true` only means a new token was
+      // issued — claiming "đã gửi" on a SKIPPED/FAILED delivery would send HO away believing the
+      // holder has a link they never received. The account stays pending in every branch.
+      const feedback = resendDeliveryFeedback(deliveryStatus, selectedAccount.email);
+      pushToast(feedback.kind, feedback.message);
+    } catch (error) {
+      handleResendError(error);
+    } finally {
+      setResendSubmitting(false);
+    }
+  };
+
+  // Escape closes the resend confirmation — but never mid-flight, where it would hide a request
+  // that is still going to land and leave HO unsure whether a mail went out.
+  useEffect(() => {
+    if (!isResendConfirmOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !resendSubmitting) setIsResendConfirmOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isResendConfirmOpen, resendSubmitting]);
 
   // UC-96 — prepare the create-confirmation step (spec §16.1 "handleContinueCreateAccount").
   // Runs the SAME validation as before, normalizes the data, builds the payload snapshot + its
@@ -1681,9 +1824,57 @@ export function AccountManagement() {
               
               <div className="w-full space-y-3 mt-auto">
 
+                {/* Resend the activation link — only for an account the DETAIL endpoint reports as
+                    still pending. Sits alongside the other actions, never in place of them, and is
+                    kept apart from the status controls: this re-sends a mail, it does not activate
+                    anything. */}
+                {canResendConfirmation && (
+                  <div className="w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResendError(null);
+                        setIsResendConfirmOpen(true);
+                      }}
+                      disabled={resendSubmitting || resendLimitReached}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 outline-none"
+                    >
+                      {resendSubmitting
+                        ? <RefreshCw className="h-4 w-4 animate-spin" />
+                        : <Mail className="h-4 w-4" />}
+                      {resendSubmitting ? 'Đang gửi...' : 'Gửi lại email xác nhận'}
+                    </button>
+                    <p className="mt-1.5 text-[11px] leading-snug text-blue-200/80">
+                      Dùng khi người nhận chưa nhận được email kích hoạt tài khoản.
+                    </p>
+                    {resendError && (
+                      <p className="mt-1.5 text-[11px] font-bold leading-snug text-red-200">{resendError}</p>
+                    )}
+                    {lastResendCount !== null && !resendError && (() => {
+                      const summary = resendResultSummary(lastDeliveryStatus, lastResendCount);
+                      const headlineClass =
+                        summary.kind === 'success' ? 'text-emerald-200'
+                        : summary.kind === 'error' ? 'text-red-200'
+                        : 'text-amber-200';
+                      return (
+                        <div className="mt-2 rounded-lg bg-white/10 px-2.5 py-2 text-left">
+                          <p className={`text-[11px] font-bold leading-snug ${headlineClass}`}>
+                            {summary.headline}
+                          </p>
+                          {summary.detail && (
+                            <p className="mt-0.5 text-[11px] leading-snug text-blue-100/80">{summary.detail}</p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 {/* Replace Staff Leader (HO only) — the HO list only shows HO + Staff Leaders, so a
-                    STAFF row here is the campus IC Head. */}
-                {isHO && selectedAccount.role === 'STAFF' && selectedAccount.campusId && (
+                    STAFF row here is the campus IC Head. Hidden while the leader is still awaiting
+                    email confirmation: there is no seated leader to replace yet, only one to
+                    activate (or cancel), so the resend above is the action that applies. */}
+                {isHO && selectedAccount.role === 'STAFF' && selectedAccount.campusId && !isPendingEmailConfirmation && (
                   <button
                     onClick={() => {
                       setReplaceLeaderTarget({ campusId: String(selectedAccount.campusId), campusName: selectedAccount.campus || '' });
@@ -1814,6 +2005,28 @@ export function AccountManagement() {
                     </div>
                   );
 
+                  // UC-98 — account status badge. The value comes from the DETAIL response
+                  // (openViewDrawer stores details.status in rawStatus); the list row is only the
+                  // fallback for the instant before that request resolves. Read-only in BOTH modes
+                  // (spec §11.6): status is changed through the enable/disable + lock actions on the
+                  // list, never from this modal.
+                  const statusMeta = resolveAccountStatusMeta(data.rawStatus, data.status);
+                  const StatusField = () => (
+                    <div className="flex flex-col min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                        Trạng thái tài khoản
+                      </span>
+                      {/* No field-style box behind the badge — the pill IS the value here, and a gray
+                          container around it read as an empty input. min-h keeps the row aligned with
+                          the boxed fields beside it. */}
+                      <div className="min-h-[42px] flex items-center">
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold ${statusMeta.className}`}>
+                          {statusMeta.label}
+                        </span>
+                      </div>
+                    </div>
+                  );
+
                   // The role currently selected in the editor (falls back to the snapshot role).
                   const editRoleCode: string = roleEditForm?.roleCode ?? data.role;
                   const roleSelectOptions = isHO
@@ -1899,7 +2112,7 @@ export function AccountManagement() {
                           <p id="edit-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{editFieldErrors.email}</p>
                         )}
                         {canEditIdentity && !editFieldErrors.email && (
-                          <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.</p>
+                          <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com và @fpt.edu.vn.</p>
                         )}
                       </div>
                       <DisplayField label="Giới tính" value={genderLabel(data.gender)} />
@@ -1922,6 +2135,8 @@ export function AccountManagement() {
                           <ChevronDown className={`w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${isHO ? 'text-slate-400' : 'text-gray-400'}`} />
                         </div>
                       </div>
+
+                      <StatusField />
 
                       <DisplayField label="Cơ sở trực thuộc" value={data.campus} />
 
@@ -2057,6 +2272,8 @@ export function AccountManagement() {
                         <Select label="Vai trò" value={roleValue} field="role" disabled={true} options={roleSelectOptions} />
                       )}
 
+                      <StatusField />
+
                       {data.role === 'STUDENT' && (
                         <>
                           <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isEdit} />
@@ -2119,6 +2336,61 @@ export function AccountManagement() {
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Xác nhận gửi lại email xác nhận. Layers ABOVE the detail modal and never closes it — after
+          the send, HO stays on the account they were looking at. */}
+      {isResendConfirmOpen && selectedAccount && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => { if (!resendSubmitting) setIsResendConfirmOpen(false); }}
+          />
+          <div className="relative bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+              <Mail className="w-5 h-5 text-sky-600" />
+              <h2 className="text-lg font-black text-gray-800">Gửi lại email xác nhận</h2>
+            </div>
+
+            <div className="p-6 space-y-3 text-[15px] leading-relaxed text-gray-700">
+              <p>Hệ thống sẽ phát hành một liên kết xác nhận mới và gửi đến:</p>
+              {/* Read-only on purpose: correcting a wrong address is the edit-pending-email flow,
+                  not something to slip into a resend. */}
+              <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-bold text-[#004c91] break-all">
+                {selectedAccount.email}
+              </p>
+              <p>
+                Liên kết xác nhận cũ sẽ không còn hiệu lực. Tài khoản vẫn ở trạng thái chờ xác nhận
+                cho đến khi người nhận hoàn tất xác nhận email.
+              </p>
+              {resendError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                  {resendError}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => setIsResendConfirmOpen(false)}
+                disabled={resendSubmitting}
+                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmResendEmail}
+                disabled={resendSubmitting || resendLimitReached}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white bg-sky-600 hover:bg-sky-700 shadow-[0_4px_12px_rgba(2,132,199,0.2)] transition-all outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {resendSubmitting && <RefreshCw className="h-4 w-4 animate-spin" />}
+                {resendSubmitting ? 'Đang gửi...' : 'Xác nhận gửi lại'}
+              </button>
             </div>
           </div>
         </div>
@@ -2404,7 +2676,7 @@ export function AccountManagement() {
                       {createFieldErrors.email && (
                         <p id="create-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{createFieldErrors.email}</p>
                       )}
-                      <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.</p>
+                      <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com và @fpt.edu.vn.</p>
                     </div>
 
                     {/* PHẦN B — MSSV bắt buộc khi tạo tài khoản STUDENT (spec §5.2). */}

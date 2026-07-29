@@ -389,6 +389,28 @@ export interface ManageAccountStatusResponse {
   message: string;
 }
 
+/**
+ * Re-issue the confirmation link of an account still in PENDING_EMAIL_CONFIRMATION. The account is
+ * identified by id alone — the address is whatever the backend currently holds, never a value the
+ * caller supplies (correcting a typo is the separate edit-pending-email flow).
+ */
+export interface ResendAccountEmailConfirmationRequest {
+  userId: string | number;
+}
+
+export interface ResendAccountEmailConfirmationResponse {
+  success: boolean;
+  /**
+   * Truthful delivery outcome. `success: true` only means the request was processed and a fresh
+   * token issued — the mail itself may still have been SKIPPED (SMTP off) or FAILED, so the UI must
+   * branch on this field, never on `success`. Widened with `string` because the server may add
+   * outcomes this client has not been taught yet.
+   */
+  emailNotificationStatus: 'SENT' | 'SKIPPED' | 'FAILED' | string;
+  resendCount: number;
+  message: string;
+}
+
 /** UC-100 Update Account Role request. Mirrors backend UpdateAccountRoleCommand. */
 export interface UpdateAccountRoleRequest {
   userId: string;
