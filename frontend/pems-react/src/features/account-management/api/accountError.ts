@@ -62,6 +62,7 @@ export const ACCOUNT_ERROR_MESSAGES: Record<string, string> = {
   RESEND_TOO_SOON: 'Vui lòng đợi một lát trước khi gửi lại email xác nhận.',
   RESEND_LIMIT_REACHED:
     'Đã đạt số lần gửi lại tối đa. Vui lòng chỉnh sửa email hoặc liên hệ quản trị.',
+  EMAIL_UNCHANGED: 'Email mới trùng với email hiện tại.',
 
   // Related Visitor Accounts tab (Staff Leader) — UC_StaffLeader_Related_Visitor_Accounts_Tab.
   RELATED_VISITOR_FORBIDDEN: 'Chỉ Trưởng phòng (Staff Leader) mới được xem danh sách Visitor liên quan đến cơ sở.',

@@ -48,6 +48,12 @@ import {
   resendDeliveryFeedback,
   resendResultSummary,
 } from '../../../features/account-management/adapters/accountResendConfirmation';
+import {
+  isPendingEmailConfirmation as isPendingEmailConfirmationStatus,
+  pendingEmailEditFeedback,
+  shouldUsePendingEmailEdit,
+} from '../../../features/account-management/adapters/accountPendingEmailEdit';
+import { PendingEmailEditConfirmModal } from '../../../features/account-management/components/PendingEmailEditConfirmModal';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
 import { RelatedVisitorsTab } from '../../../features/account-management/components/RelatedVisitorsTab';
 
@@ -278,6 +284,7 @@ export function AccountManagement() {
     setRoleError(null);
     setRoleSaving(false);
     setBasicInfoEmailConfirm(null);
+    setPendingEmailEditConfirm(null);
     setEditFieldErrors({});
   };
 
@@ -431,6 +438,10 @@ export function AccountManagement() {
   const [roleError, setRoleError] = useState<string | null>(null);
   // HO_BASIC_INFO — email-change confirmation (spec §10). Set to {oldEmail,newEmail} to prompt.
   const [basicInfoEmailConfirm, setBasicInfoEmailConfirm] = useState<{ oldEmail: string; newEmail: string } | null>(null);
+  // Pending account: address correction that re-issues the activation link. A separate prompt from
+  // the one above because the consequences it has to state are different ones.
+  const [pendingEmailEditConfirm, setPendingEmailEditConfirm] =
+    useState<{ oldEmail: string; newEmail: string } | null>(null);
 
   // Lightweight toast notifications (create + email outcome, status, role update).
   const [toasts, setToasts] = useState<{ id: number; type: 'success' | 'error' | 'warning'; msg: string }[]>([]);
@@ -805,8 +816,7 @@ export function AccountManagement() {
   // it confirms; the way forward from here is the resend above. Read from rawStatus, which carries
   // the raw DB status from the list projection as well as the detail, so the action is withheld
   // immediately rather than flickering while the detail loads.
-  const isPendingEmailConfirmation =
-    String(selectedAccount?.rawStatus ?? '').trim().toUpperCase() === 'PENDING_EMAIL_CONFIRMATION';
+  const isPendingEmailConfirmation = isPendingEmailConfirmationStatus(selectedAccount?.rawStatus);
 
   /** Re-reads the detail so a stale-status refusal corrects the modal instead of arguing with it. */
   const refreshDetailStatus = async () => {
@@ -1152,6 +1162,16 @@ export function AccountManagement() {
     validateAccountEmail(roleEditForm.email) !== null
   );
 
+  // Which endpoint this submit belongs to. A pending account that is getting a NEW address must go
+  // through edit-pending-email: the generic basic-info call mails a change notice with no activation
+  // link, which would leave an account that has never confirmed with no way to ever log in.
+  // Status is read from rawStatus (the UC-98 detail), never from the display-mapped list row.
+  const usePendingEmailEdit = !!(selectedAccount && roleEditForm) && shouldUsePendingEmailEdit({
+    rawStatus: selectedAccount.rawStatus,
+    oldEmail: selectedAccount.email,
+    newEmail: roleEditForm.email,
+  });
+
   // Switch the target role and reset the dependent fields (spec §3.3/§3.4/§3.5 — always fresh on a
   // genuine role change; the original values are only preserved by handleEditClick on first open).
   const changeRoleCode = (nextRole: string) => {
@@ -1197,6 +1217,14 @@ export function AccountManagement() {
 
     const oldEmail = String(selectedAccount.email ?? '');
     const emailChanged = email !== normalizeAccountEmail(oldEmail);
+
+    // A pending account's address change is a different operation, not a variant of this one: it has
+    // to re-issue the activation link, so it gets its own endpoint and its own confirmation copy.
+    if (usePendingEmailEdit) {
+      setPendingEmailEditConfirm({ oldEmail, newEmail: email });
+      return;
+    }
+
     if (emailChanged) {
       // Confirm before an email change (session revoke + SSO/FEID re-link).
       setBasicInfoEmailConfirm({ oldEmail, newEmail: email });
@@ -1234,6 +1262,86 @@ export function AccountManagement() {
     } finally {
       setRoleSaving(false);
     }
+  };
+
+  /**
+   * Corrects a pending account's address through the dedicated endpoint. Name and email travel in ONE
+   * request so they cannot half-apply, and the toast reports the delivery outcome rather than the
+   * request outcome — the address is saved in every branch, but only SENT means a link went out.
+   */
+  const submitPendingEmailEdit = async () => {
+    if (!selectedAccount || !roleEditForm || roleSaving) return;   // double-click guard
+    const newEmail = normalizeAccountEmail(roleEditForm.email);
+    setRoleSaving(true);
+    setRoleError(null);
+    try {
+      const res = await accountManagementApi.editPendingAccountEmail({
+        userId: (selectedAccount.userId ?? selectedAccount.id) as any,
+        newEmail,
+        fullName: normalizeFullName(roleEditForm.fullName),
+      });
+      setPendingEmailEditConfirm(null);
+      const feedback = pendingEmailEditFeedback(res.emailNotificationStatus, res.email || newEmail);
+      pushToast(feedback.kind, feedback.message);
+      closeViewDrawer();
+      refetchAccounts();
+      loadStatistics();
+    } catch (err) {
+      handlePendingEmailEditError(err);
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
+  const handlePendingEmailEditError = (error: unknown) => {
+    const code = (error as AxiosError<{ errorCode?: string }>)?.response?.data?.errorCode;
+    const status = (error as AxiosError)?.response?.status;
+
+    // Somebody confirmed (or cancelled) the account while this modal was open. Their truth wins:
+    // adopt it, which also flips the submit back to the ordinary basic-info flow.
+    if (code === 'ACCOUNT_NOT_PENDING') {
+      const msg = ACCOUNT_ERROR_MESSAGES.ACCOUNT_NOT_PENDING;
+      setPendingEmailEditConfirm(null);
+      setRoleError(msg);
+      pushToast('warning', msg);
+      void refreshDetailStatus();
+      refetchAccounts();
+      return;
+    }
+
+    // Rejections about the address itself belong under the email input, where the value that caused
+    // them still is.
+    if (code === 'EMAIL_UNCHANGED' || code === 'EMAIL_ALREADY_EXISTS') {
+      const msg = getAccountErrorMessage(error);
+      setPendingEmailEditConfirm(null);
+      setEditFieldErrors((prev) => ({ ...prev, email: msg }));
+      pushToast('error', msg);
+      return;
+    }
+
+    if (status === 403 && !code) {
+      const msg = 'Bạn không có quyền chỉnh sửa email của tài khoản này.';
+      setPendingEmailEditConfirm(null);
+      setRoleError(msg);
+      pushToast('error', msg);
+      return;
+    }
+
+    if (status === 404 && !code) {
+      const msg = 'Tài khoản không tồn tại hoặc không còn quyền truy cập.';
+      setPendingEmailEditConfirm(null);
+      setRoleError(msg);
+      pushToast('error', msg);
+      refetchAccounts();
+      return;
+    }
+
+    const msg = getAccountErrorMessage(
+      error, 'Không thể cập nhật email tài khoản. Vui lòng thử lại sau.');
+    // A validation message from the shared identity rules is about the address too.
+    if (/email/i.test(msg)) setEditFieldErrors((prev) => ({ ...prev, email: msg }));
+    else setRoleError(msg);
+    pushToast('error', msg);
   };
 
   const handleUpdateRole = async () => {
@@ -2930,6 +3038,20 @@ export function AccountManagement() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Pending account — xác nhận đổi email + phát hành lại liên kết kích hoạt. Tách khỏi hộp
+          thoại trên vì hệ quả khác hẳn: liên kết cũ chết, liên kết mới gửi tới địa chỉ mới, và tài
+          khoản vẫn chờ xác nhận cho tới khi người nhận bấm vào đó. */}
+      {pendingEmailEditConfirm && (
+        <PendingEmailEditConfirmModal
+          oldEmail={pendingEmailEditConfirm.oldEmail}
+          newEmail={pendingEmailEditConfirm.newEmail}
+          submitting={roleSaving}
+          error={roleError}
+          onCancel={() => setPendingEmailEditConfirm(null)}
+          onConfirm={() => void submitPendingEmailEdit()}
+        />
       )}
 
       {/* ADMIN LOCK/UNLOCK — flow riêng với lý do bắt buộc khi khóa */}

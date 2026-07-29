@@ -411,6 +411,36 @@ export interface ResendAccountEmailConfirmationResponse {
   message: string;
 }
 
+/**
+ * Correct the address of an account still in PENDING_EMAIL_CONFIRMATION
+ * (POST /accounts/edit-pending-email). Mirrors backend EditPendingAccountEmailCommand.
+ *
+ * Separate from {@link UpdateBasicAccountInfoRequest} because the outcomes differ in kind: this one
+ * kills the old confirmation token and mails a fresh activation link to the new address, which is
+ * what such an account needs in order to ever become usable. `fullName` rides along so a modal that
+ * edits both fields commits them together — two calls could half-succeed.
+ */
+export interface EditPendingAccountEmailRequest {
+  userId: string | number;
+  newEmail: string;
+  /** Omit to leave the current name untouched. */
+  fullName?: string;
+}
+
+export interface EditPendingAccountEmailResponse {
+  success: boolean;
+  /** The stored (normalized) address. */
+  email: string;
+  /**
+   * Delivery outcome of the CONFIRMATION email sent to the new address — never the neutral notice
+   * sent to the old one. `success: true` only means the address was changed and a fresh token issued;
+   * the mail may still have been SKIPPED (SMTP off) or FAILED, so the UI must branch on this field.
+   * Widened with `string` because the server may add outcomes this client has not been taught yet.
+   */
+  emailNotificationStatus: 'SENT' | 'SKIPPED' | 'FAILED' | string;
+  message: string;
+}
+
 /** UC-100 Update Account Role request. Mirrors backend UpdateAccountRoleCommand. */
 export interface UpdateAccountRoleRequest {
   userId: string;
