@@ -22,7 +22,7 @@ public static class AccountIdentityRules
 
     /// <summary>Exact (post-lowercase) domains accepted as a PEMS login email. No subdomains.</summary>
     public static readonly IReadOnlySet<string> AllowedEmailDomains =
-        new HashSet<string>(StringComparer.Ordinal) { "gmail.com", "fpt.edu.vn", "fe.edu.vn" };
+        new HashSet<string>(StringComparer.Ordinal) { "gmail.com", "fpt.edu.vn" };
 
     // Punctuation tolerated inside a person's name (O'Connor, D’Arcy, Jean-Luc, J. Smith).
     private const string NamePunctuation = "-'’.";
@@ -42,7 +42,7 @@ public static class AccountIdentityRules
     public const string EmailPlusNotAllowedMessage =
         "Email dùng để đăng nhập không được chứa dấu cộng (+).";
     public const string EmailDomainNotAllowedMessage =
-        "Email phải sử dụng một trong các tên miền: @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.";
+        "Chỉ chấp nhận @gmail.com và @fpt.edu.vn.";
     public const string EmailAlreadyUsedMessage = "Email này đã được sử dụng bởi một tài khoản khác.";
 
     public const string ReasonRequiredMessage = "Vui lòng nhập lý do thay thế.";
