@@ -53,6 +53,7 @@ import {
   pendingEmailEditFeedback,
   shouldUsePendingEmailEdit,
 } from '../../../features/account-management/adapters/accountPendingEmailEdit';
+import { LoginEmailChangeConfirmModal } from '../../../features/account-management/components/LoginEmailChangeConfirmModal';
 import { PendingEmailEditConfirmModal } from '../../../features/account-management/components/PendingEmailEditConfirmModal';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
 import { RelatedVisitorsTab } from '../../../features/account-management/components/RelatedVisitorsTab';
@@ -2995,49 +2996,14 @@ export function AccountManagement() {
 
       {/* HO_BASIC_INFO §10 — xác nhận đổi email đăng nhập (thu hồi phiên + liên kết lại SSO/FEID). */}
       {basicInfoEmailConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 relative">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-              <h2 className="text-xl font-black text-gray-800">✉️ Xác nhận thay đổi email đăng nhập</h2>
-              <button
-                onClick={() => setBasicInfoEmailConfirm(null)}
-                disabled={roleSaving}
-                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors outline-none disabled:opacity-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 text-gray-700 leading-relaxed text-[15px]">
-              Bạn đang thay đổi email đăng nhập từ <strong className="text-[#004c91]">{basicInfoEmailConfirm.oldEmail || '-'}</strong> sang <strong className="text-[#004c91]">{basicInfoEmailConfirm.newEmail}</strong>.
-              <div className="mt-3 text-sm text-gray-600">
-                Tài khoản sẽ bị đăng xuất khỏi các phiên hiện tại và phải liên kết lại SSO/FEID khi đăng nhập lần tiếp theo.
-              </div>
-              {roleError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
-                  {roleError}
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 rounded-b-2xl">
-              <button
-                onClick={() => setBasicInfoEmailConfirm(null)}
-                disabled={roleSaving}
-                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none disabled:opacity-60"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={submitBasicInfo}
-                disabled={roleSaving}
-                className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#00386b] shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {roleSaving ? 'Đang lưu...' : 'Xác nhận thay đổi'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <LoginEmailChangeConfirmModal
+          oldEmail={basicInfoEmailConfirm.oldEmail}
+          newEmail={basicInfoEmailConfirm.newEmail}
+          submitting={roleSaving}
+          error={roleError}
+          onCancel={() => setBasicInfoEmailConfirm(null)}
+          onConfirm={() => void submitBasicInfo()}
+        />
       )}
 
       {/* Pending account — xác nhận đổi email + phát hành lại liên kết kích hoạt. Tách khỏi hộp
