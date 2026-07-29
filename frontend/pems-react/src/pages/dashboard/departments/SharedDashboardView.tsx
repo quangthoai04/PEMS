@@ -3457,7 +3457,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <label className="text-[10px] font-bold uppercase tracking-wider text-[#de703b]/80 block mb-1">Số lượng mới</label>
                               <input
                                 type="number"
-                                min={1}
+                                min={0}
                                 max={activeEventDetail?.quantity != null ? activeEventDetail.quantity - 1 : undefined}
                                 step={1}
                                 value={proposalQuantity}
@@ -3559,8 +3559,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                         return;
                                       }
                                       const qty = proposalQuantity.trim() ? Number(proposalQuantity) : null;
-                                      if (qty != null && (!Number.isInteger(qty) || qty < 1)) {
-                                        toast.error('Số lượng đề xuất phải là số nguyên ≥ 1');
+                                      if (qty != null && (!Number.isInteger(qty) || qty < 0)) {
+                                        toast.error('Số lượng đề xuất phải là số nguyên ≥ 0');
                                         return;
                                       }
                                       if (qty != null && activeEventDetail?.quantity != null && qty >= activeEventDetail.quantity) {

@@ -314,8 +314,8 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
       return;
     }
     const qty = proposalQuantity.trim() ? Number(proposalQuantity) : null;
-    if (qty != null && (!Number.isInteger(qty) || qty < 1)) {
-      toast.error('Số lượng đề xuất phải là số nguyên ≥ 1');
+    if (qty != null && (!Number.isInteger(qty) || qty < 0)) {
+      toast.error('Số lượng đề xuất phải là số nguyên ≥ 0');
       return;
     }
     if (qty != null && detail?.quantity != null && qty >= detail.quantity) {
@@ -474,7 +474,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                     <p className="text-[11px] font-black uppercase tracking-wide text-[#e85c0d]">Đề xuất thay đổi</p>
                     <div>
                       <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Số lượng mới</label>
-                      <input type="number" min={1} max={detail?.quantity != null ? detail.quantity - 1 : undefined} step={1}
+                      <input type="number" min={0} max={detail?.quantity != null ? detail.quantity - 1 : undefined} step={1}
                         value={proposalQuantity} onChange={e => setProposalQuantity(e.target.value)}
                         className={`w-full px-3 py-2 rounded-lg border text-sm font-bold outline-none ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-slate-200 focus:border-[#e85c0d]'}`} />
                       {quantityTooHigh && (

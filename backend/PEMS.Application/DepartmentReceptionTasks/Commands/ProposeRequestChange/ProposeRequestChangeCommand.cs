@@ -15,8 +15,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
     public class ProposeRequestChangeCommand : IRequest<bool>
     {
         public ulong LogisticsItemId { get; set; }
-        /// <summary>Proposed quantity (optional). When set, must be >= 1. Stored on proposed_quantity —
-        /// the original quantity (PLANNED figure) is never overwritten.</summary>
+        /// <summary>Proposed quantity (optional). When set, must be >= 0 (0 = department cannot fulfill
+        /// any of the requested amount). Stored on proposed_quantity — the original quantity (PLANNED
+        /// figure) is never overwritten.</summary>
         public int? ProposedQuantity { get; set; }
         public string? ProposedUsageStartAt { get; set; } // YYYY-MM-DDTHH:mm:ss
         public string? ProposedUsageEndAt { get; set; } // YYYY-MM-DDTHH:mm:ss
@@ -56,7 +57,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             var note = (request.ProposalNote ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(note)) note = (request.ProposedDescription ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(note)) throw new Exception("Vui lòng nhập lý do/ghi chú đề xuất.");
-            if (request.ProposedQuantity is { } pq && pq < 1) throw new Exception("Số lượng đề xuất phải là số nguyên ≥ 1.");
+            if (request.ProposedQuantity is { } pq && pq < 0) throw new Exception("Số lượng đề xuất phải là số nguyên ≥ 0.");
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);

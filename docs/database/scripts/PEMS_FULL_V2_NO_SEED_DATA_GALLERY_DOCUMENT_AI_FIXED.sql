@@ -1922,7 +1922,7 @@ CREATE TABLE visit_logistics_items (
   KEY idx_logistics_proposed_by_time (proposed_by, proposed_at),
   CHECK (quantity IS NULL OR quantity >= 1),
   CHECK (usage_end_at IS NULL OR usage_start_at IS NULL OR usage_end_at > usage_start_at),
-  CHECK (proposed_quantity IS NULL OR proposed_quantity >= 1),
+  CHECK (proposed_quantity IS NULL OR proposed_quantity >= 0),
   CHECK (proposed_usage_end_at IS NULL OR proposed_usage_start_at IS NULL OR proposed_usage_end_at > proposed_usage_start_at),
 
   CONSTRAINT fk_logistics_instance
