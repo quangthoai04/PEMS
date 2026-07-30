@@ -182,8 +182,31 @@ public static class CanonicalSqlScript
     /// should leave them. A pre-G11FC database migrated with
     /// <c>docs/database/scripts/email_template_revision/02_up_add_revision.sql</c> was compared to the
     /// fresh import: identical column definition, identical row count, identical template content digest.
+    ///
+    /// ── Thirteenth bump (merge-loss restoration) ─────────────────────────────────────────────────
+    ///
+    /// NOT new work. Commit 6be02a28 ("visit amendment workflow") carried a different lineage of this
+    /// script forward and, in doing so, silently dropped THREE pieces the tenth, eleventh and twelfth
+    /// bumps had already landed. The pin above pointed at a file that no longer existed on disk, so the
+    /// schema contract had been failing for exactly this reason. Restored verbatim from 9b9b2a71:
+    ///   • <c>email_templates.revision</c> — the twelfth bump's column. Without it EVERY query EF issues
+    ///     against email_templates fails with "Unknown column 'e.revision' in 'field list'", which took
+    ///     out template rendering and therefore every outbound mail: creating a pending account reported
+    ///     "chưa gửi được email xác nhận", and the resend endpoint returned a raw 500.
+    ///   • <c>email_send_idempotency</c> — the tenth bump's table, together with its DROP in the reset
+    ///     list and the <c>merged_runtime_table_count</c> assertion (which had reverted to 81).
+    ///   • the eleventh bump's five contact-guard triggers and their self-test. The regression here was
+    ///     live, not cosmetic: <c>v_user_status</c> was back to VARCHAR(20) while users.status can hold
+    ///     PENDING_EMAIL_CONFIRMATION (26 chars), so the guards raised 22001 "Data too long" instead of
+    ///     their business code — on the state every newly created account occupies. The reverted script
+    ///     measured contact_guard_negative_failures = 14.
+    ///
+    /// Measured on a fresh disposable import after the restoration: 83 tables, 32 triggers, 30 templates
+    /// all revision 1, contact_guard_negative_failures = 0, contact_guard_positive_failures = 0,
+    /// merged_runtime_table_count issue_count = 0 — identical to the twelfth bump's baseline, which is
+    /// the point: this bump restores a known-good state rather than establishing a new one.
     public const string ExpectedSha256 =
-        "16010f54de2282aa0cbaa11909000b74c59d27b7184715f72a7875bdb854f2f0";
+        "e2ef098c283634b402b72ab227687d67515f840b6f02cc25f1639e105721291f";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
