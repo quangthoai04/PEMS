@@ -1,4 +1,11 @@
 import type { PersonnelGender } from '../types/departmentLeaderPersonnel.types';
+import {
+  ALLOWED_LOGIN_EMAIL_DOMAINS,
+  LOGIN_EMAIL_LOCAL_PART_MAX_LENGTH,
+  LOGIN_EMAIL_MAX_LENGTH,
+  normalizeLoginEmail,
+  validateLoginEmail,
+} from '../../../shared/validation/loginEmailValidation';
 
 /**
  * Client-side mirror of the backend personnel rules (`AccountIdentityRules`,
@@ -8,18 +15,26 @@ import type { PersonnelGender } from '../types/departmentLeaderPersonnel.types';
  * every field on the normalized value and is the authority — a payload that slips past this file
  * still fails there, and a message shown here that the server disagrees with is a bug in this file,
  * not a permission the user gained.
+ *
+ * The login-email rule is NOT restated here. It is imported from
+ * `shared/validation/loginEmailValidation`, which the HO account-management screen uses too: this
+ * file used to carry its own copy of the whitelist, and that copy kept `@fe.edu.vn` long after the
+ * organisation had stopped accepting it — the modal promised an address the server then refused.
  */
 
 export const FULL_NAME_MIN_LENGTH = 2;
 export const FULL_NAME_MAX_LENGTH = 150;
-export const EMAIL_MAX_LENGTH = 150;
-export const EMAIL_LOCAL_PART_MAX_LENGTH = 64;
+export const EMAIL_MAX_LENGTH = LOGIN_EMAIL_MAX_LENGTH;
+export const EMAIL_LOCAL_PART_MAX_LENGTH = LOGIN_EMAIL_LOCAL_PART_MAX_LENGTH;
 export const PHONE_MAX_LENGTH = 30;
 export const PHONE_MIN_DIGITS = 8;
 export const PHONE_MAX_DIGITS = 15;
 
-/** Exact domains accepted as a PEMS login email. No subdomains. */
-export const ALLOWED_EMAIL_DOMAINS = ['gmail.com', 'fpt.edu.vn', 'fe.edu.vn'] as const;
+/**
+ * Re-exported from the shared module rather than declared, so this screen cannot drift away from
+ * the rest of the product again.
+ */
+export const ALLOWED_EMAIL_DOMAINS = ALLOWED_LOGIN_EMAIL_DOMAINS;
 
 /** Collapses whitespace runs and trims — same normalization the backend applies before validating. */
 export function normalizeFullName(value: string): string {
@@ -28,7 +43,7 @@ export function normalizeFullName(value: string): string {
 
 /** Trims and lowercases. The local-part is never otherwise rewritten. */
 export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
+  return normalizeLoginEmail(value);
 }
 
 export function normalizePhone(value: string): string {
@@ -52,32 +67,14 @@ export function validateFullName(rawValue: string): string | null {
   return null;
 }
 
+/**
+ * The login-email rule, in full, from the shared module: required, ≤150 chars, no plus addressing,
+ * local-part ≤64 with no leading/trailing/doubled dot, and an EXACT match on `gmail.com` or
+ * `fpt.edu.vn`. Identical in the create and the edit modal, and identical in every account status —
+ * a status decides what an email change costs, never which addresses are legal.
+ */
 export function validateEmail(rawValue: string): string | null {
-  const value = normalizeEmail(rawValue);
-  if (value.length === 0) return 'Vui lòng nhập email.';
-  if (value.length > EMAIL_MAX_LENGTH) return 'Email không được vượt quá 150 ký tự.';
-  if (value.includes('+')) return 'Email dùng để đăng nhập không được chứa dấu cộng (+).';
-
-  const at = value.indexOf('@');
-  if (at <= 0 || at !== value.lastIndexOf('@')) return 'Email không đúng định dạng.';
-
-  const local = value.slice(0, at);
-  const domain = value.slice(at + 1);
-
-  if (local.length > EMAIL_LOCAL_PART_MAX_LENGTH) {
-    return 'Phần tên email trước ký tự @ không được vượt quá 64 ký tự.';
-  }
-  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) {
-    return 'Email không đúng định dạng.';
-  }
-  if (!/^[a-z0-9._-]+$/.test(local)) return 'Email không đúng định dạng.';
-  if (!/^[a-z0-9.-]+$/.test(domain) || !domain.includes('.')) return 'Email không đúng định dạng.';
-
-  // Exact match, never endsWith — "abc@fake-fpt.edu.vn" and "abc@fpt.edu.vn.evil.com" must fail.
-  if (!ALLOWED_EMAIL_DOMAINS.includes(domain as (typeof ALLOWED_EMAIL_DOMAINS)[number])) {
-    return 'Email phải sử dụng một trong các tên miền: @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.';
-  }
-  return null;
+  return validateLoginEmail(rawValue);
 }
 
 export function validatePhone(rawValue: string): string | null {

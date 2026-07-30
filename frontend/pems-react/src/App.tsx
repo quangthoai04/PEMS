@@ -194,7 +194,15 @@ export default function App() {
               path="my-department"
               element={isDeptLeader ? <MyDepartmentPage /> : <Navigate to="/dashboard" replace />}
             />
-            <Route path="departments/:id" element={<DepartmentDetailDashboard />} />
+            {/* Legacy per-id department screen. A Department Leader is bounced to their own screen:
+                the id in this URL is client-supplied, and this page's personnel modal is the older
+                one. Their single entry point is /dashboard/my-department. */}
+            <Route
+              path="departments/:id"
+              element={
+                isDeptLeader ? <Navigate to="/dashboard/my-department" replace /> : <DepartmentDetailDashboard />
+              }
+            />
             <Route path="accounts" element={<ProtectedRoute><AccountManagement /></ProtectedRoute>} />
             <Route path="campus" element={<ProtectedRoute><CampusManagement /></ProtectedRoute>} />
             <Route path="campus/:id" element={<ProtectedRoute><CampusDetail /></ProtectedRoute>} />

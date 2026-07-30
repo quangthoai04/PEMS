@@ -20,11 +20,21 @@ interface Props {
   /** Required in edit mode — supplies the current values and the account status. */
   personnel?: PersonnelDetail | null;
   submitting: boolean;
+  /**
+   * Field errors the SERVER returned for the last submit. Client validation is only a UX aid, so a
+   * rejection that arrives from the API has to land on the offending field like a local one — a
+   * generic toast leaves the operator staring at a form that still looks valid.
+   */
+  serverErrors?: PersonnelFormErrors;
   onClose: () => void;
   onSubmit: (values: { fullName: string; email: string; phone: string; gender: PersonnelGender }) => void;
 }
 
 const EMPTY: PersonnelFormValues = { fullName: '', email: '', phone: '', gender: '' };
+
+/** Both modals state the rule identically; the edit modal adds what changing the address costs. */
+const EMAIL_DOMAIN_HINT = 'Chỉ chấp nhận @gmail.com và @fpt.edu.vn.';
+const EMAIL_EDIT_HINT = 'Có thể sửa ở mọi trạng thái tài khoản. Đổi email sẽ thu hồi mọi phiên đăng nhập.';
 
 /**
  * Add / edit personnel modal.
@@ -38,7 +48,15 @@ const EMPTY: PersonnelFormValues = { fullName: '', email: '', phone: '', gender:
  *    everywhere, so on submit the modal shows exactly what will happen and waits for a second
  *    confirmation — the operator never triggers that as a side effect of a name fix.
  */
-export function PersonnelFormModal({ open, mode, personnel, submitting, onClose, onSubmit }: Props) {
+export function PersonnelFormModal({
+  open,
+  mode,
+  personnel,
+  submitting,
+  serverErrors,
+  onClose,
+  onSubmit,
+}: Props) {
   const [values, setValues] = useState<PersonnelFormValues>(EMPTY);
   const [errors, setErrors] = useState<PersonnelFormErrors>({});
   const [touched, setTouched] = useState(false);
@@ -63,6 +81,15 @@ export function PersonnelFormModal({ open, mode, personnel, submitting, onClose,
     );
   }, [open, mode, personnel]);
 
+  // A server rejection re-opens the form (never leaves the operator on the confirmation step
+  // wondering what happened) and marks the form touched, so correcting the field revalidates live.
+  useEffect(() => {
+    if (!serverErrors || Object.keys(serverErrors).length === 0) return;
+    setErrors((current) => ({ ...current, ...serverErrors }));
+    setTouched(true);
+    setConfirmingEmailChange(false);
+  }, [serverErrors]);
+
   const originalEmail = useMemo(
     () => (mode === 'edit' && personnel ? normalizeEmail(personnel.email) : ''),
     [mode, personnel],
@@ -76,7 +103,19 @@ export function PersonnelFormModal({ open, mode, personnel, submitting, onClose,
   const setField = <K extends keyof PersonnelFormValues>(key: K, value: PersonnelFormValues[K]) => {
     const next = { ...values, [key]: value };
     setValues(next);
-    if (touched) setErrors(validatePersonnelForm(next));
+    if (!touched) return;
+
+    const validation = validatePersonnelForm(next);
+    // A server rejection stands until the field it belongs to is actually edited: "email already
+    // taken" is invisible to client validation, so re-running it must not erase the only feedback
+    // the operator has. Editing that field clears it and lets them retry.
+    for (const [field, message] of Object.entries(serverErrors ?? {}) as [
+      keyof PersonnelFormValues,
+      string,
+    ][]) {
+      if (field !== key && !validation[field]) validation[field] = message;
+    }
+    setErrors(validation);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -151,9 +190,15 @@ export function PersonnelFormModal({ open, mode, personnel, submitting, onClose,
               required
               error={errors.email}
               hint={
-                mode === 'edit'
-                  ? 'Có thể sửa ở mọi trạng thái tài khoản. Đổi email sẽ thu hồi mọi phiên đăng nhập.'
-                  : 'Dùng @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.'
+                mode === 'edit' ? (
+                  <>
+                    {EMAIL_DOMAIN_HINT}
+                    <br />
+                    {EMAIL_EDIT_HINT}
+                  </>
+                ) : (
+                  EMAIL_DOMAIN_HINT
+                )
               }
             >
               <input
@@ -323,7 +368,7 @@ function Field({
   label: string;
   required?: boolean;
   error?: string;
-  hint?: string;
+  hint?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (

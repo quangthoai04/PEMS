@@ -5,11 +5,20 @@ namespace PEMS.Application.Accounts.Common;
 
 /// <summary>
 /// Single source of truth for validating the identity fields (full name / login email) of an
-/// account across every HO flow: Create Account, Update Basic Account Info and Replace Staff Leader
-/// (mode CREATE_NEW_USER). The frontend mirrors these rules in
-/// <c>features/account-management/validation/accountIdentityValidation.ts</c> for early feedback —
+/// account, for EVERY flow that provisions or edits a login identity — not only HO's:
+/// <list type="bullet">
+///   <item>HO — Create Account, Update Basic Account Info, Replace Staff Leader (CREATE_NEW_USER);</item>
+///   <item>Department Leader — Create/Update Department Personnel (the "Phòng ban của tôi" modals);</item>
+///   <item>the legacy Departments/adddepartmentpersonnel provisioning path.</item>
+/// </list>
+/// A caller that validates a login email anywhere else is a bug: the whitelist has exactly two
+/// domains, and it drifted once already when a screen kept a private copy of it.
+///
+/// The frontend mirrors these rules in <c>shared/validation/loginEmailValidation.ts</c> (which the
+/// account-management and department-leader-personnel validators both import) for early feedback —
 /// this class is the authoritative check and must reject any payload sent straight to the API.
-/// See PEMS_HO_ACCOUNT_IDENTITY_VALIDATION_IMPLEMENTATION_SPEC §3/§4/§5/§9.
+/// See PEMS_HO_ACCOUNT_IDENTITY_VALIDATION_IMPLEMENTATION_SPEC §3/§4/§5/§9 and
+/// PEMS_DEPARTMENT_LEADER_PERSONNEL_EMAIL_DOMAIN_VALIDATION_IMPLEMENTATION_SPEC §3/§4.
 /// </summary>
 public static class AccountIdentityRules
 {

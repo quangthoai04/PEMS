@@ -4,17 +4,32 @@
  *
  * This is a UX aid only — the backend (`AccountIdentityRules.cs`) is the source of truth and must
  * reject the same payloads. Keep the two files in sync; the messages below are byte-identical.
+ *
+ * The EMAIL half of that contract lives in `shared/validation/loginEmailValidation` and is imported
+ * here, not restated: the Department Leader personnel screen validates the same login address, and
+ * when each screen owned a private copy of the whitelist the two drifted apart.
  */
+
+import {
+  ALLOWED_LOGIN_EMAIL_DOMAINS,
+  LOGIN_EMAIL_LOCAL_PART_MAX_LENGTH,
+  LOGIN_EMAIL_MAX_LENGTH,
+  LOGIN_EMAIL_MESSAGES,
+  containsPlusAddressing as containsLoginPlusAddressing,
+  hasAllowedLoginEmailDomain,
+  normalizeLoginEmail,
+  validateLoginEmail,
+} from '../../../shared/validation/loginEmailValidation';
 
 export const ACCOUNT_FULL_NAME_MIN_LENGTH = 2;
 export const ACCOUNT_FULL_NAME_MAX_LENGTH = 150;
-export const ACCOUNT_EMAIL_MAX_LENGTH = 150;
-export const ACCOUNT_EMAIL_LOCAL_PART_MAX_LENGTH = 64;
+export const ACCOUNT_EMAIL_MAX_LENGTH = LOGIN_EMAIL_MAX_LENGTH;
+export const ACCOUNT_EMAIL_LOCAL_PART_MAX_LENGTH = LOGIN_EMAIL_LOCAL_PART_MAX_LENGTH;
 export const REPLACEMENT_REASON_MIN_LENGTH = 10;
 export const REPLACEMENT_REASON_MAX_LENGTH = 500;
 
 /** Exact (post-lowercase) domains accepted as a PEMS login email. No subdomains. */
-export const ALLOWED_ACCOUNT_EMAIL_DOMAINS = ['gmail.com', 'fpt.edu.vn'] as const;
+export const ALLOWED_ACCOUNT_EMAIL_DOMAINS = ALLOWED_LOGIN_EMAIL_DOMAINS;
 
 export const ACCOUNT_IDENTITY_MESSAGES = {
   fullNameRequired: 'Vui lòng nhập họ và tên.',
@@ -22,12 +37,12 @@ export const ACCOUNT_IDENTITY_MESSAGES = {
   fullNameTooLong: 'Họ và tên không được vượt quá 150 ký tự.',
   fullNameInvalidChars:
     'Họ và tên chỉ được chứa chữ cái, khoảng trắng, dấu chấm, dấu nháy đơn và dấu gạch nối.',
-  emailRequired: 'Vui lòng nhập email.',
-  emailFormat: 'Email không đúng định dạng.',
-  emailTooLong: 'Email không được vượt quá 150 ký tự.',
-  emailLocalPartTooLong: 'Phần tên email trước ký tự @ không được vượt quá 64 ký tự.',
-  emailPlusNotAllowed: 'Email dùng để đăng nhập không được chứa dấu cộng (+).',
-  emailDomainNotAllowed: 'Chỉ chấp nhận @gmail.com và @fpt.edu.vn.',
+  emailRequired: LOGIN_EMAIL_MESSAGES.required,
+  emailFormat: LOGIN_EMAIL_MESSAGES.invalidFormat,
+  emailTooLong: LOGIN_EMAIL_MESSAGES.tooLong,
+  emailLocalPartTooLong: LOGIN_EMAIL_MESSAGES.localPartTooLong,
+  emailPlusNotAllowed: LOGIN_EMAIL_MESSAGES.plusNotAllowed,
+  emailDomainNotAllowed: LOGIN_EMAIL_MESSAGES.domainNotAllowed,
   reasonRequired: 'Vui lòng nhập lý do thay thế.',
   reasonTooShort: 'Lý do thay thế phải có ít nhất 10 ký tự.',
   reasonTooLong: 'Lý do thay thế không được vượt quá 500 ký tự.',
@@ -46,8 +61,6 @@ const NAME_PUNCTUATION = "-'’.";
 const CONTROL_CHARS_PATTERN = '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]';
 const LETTER_RE = /\p{L}/u;
 const NON_SPACING_MARK_RE = /\p{Mn}/u;
-const EMAIL_LOCAL_PART_RE = /^[a-z0-9._-]+$/;
-const EMAIL_DOMAIN_RE = /^[a-z0-9.-]+$/;
 
 /**
  * Strips control characters, collapses whitespace runs into one space and trims. Casing, diacritics
@@ -64,8 +77,7 @@ export function normalizeFullName(value?: string | null): string {
 
 /** Trims and lowercases. The local-part is never rewritten. */
 export function normalizeAccountEmail(value?: string | null): string {
-  if (value == null) return '';
-  return value.trim().toLowerCase();
+  return normalizeLoginEmail(value);
 }
 
 /** Trims and collapses whitespace runs for a free-text reason. */
@@ -108,39 +120,13 @@ export function isValidFullName(value: string): boolean {
   return hasLetter;
 }
 
-function splitEmail(email: string): { local: string; domain: string } | null {
-  const at = email.indexOf('@');
-  if (at <= 0 || at !== email.lastIndexOf('@')) return null;
-  return { local: email.slice(0, at), domain: email.slice(at + 1) };
-}
-
 /** Exact domain match — never a suffix check, so subdomains and look-alikes fail. */
 export function hasAllowedEmailDomain(email: string): boolean {
-  const parts = splitEmail(email);
-  return !!parts && (ALLOWED_ACCOUNT_EMAIL_DOMAINS as readonly string[]).includes(parts.domain);
+  return hasAllowedLoginEmailDomain(email);
 }
 
 export function containsPlusAddressing(email: string): boolean {
-  return email.includes('+');
-}
-
-/** Structural check of a NORMALIZED email. Domain whitelisting is checked separately. */
-function hasValidEmailShape(email: string): boolean {
-  if (!email) return false;
-  if (/\s/.test(email) || new RegExp(CONTROL_CHARS_PATTERN).test(email)) return false;
-
-  const parts = splitEmail(email);
-  if (!parts) return false;
-
-  const { local, domain } = parts;
-  if (!local || local.length > ACCOUNT_EMAIL_LOCAL_PART_MAX_LENGTH) return false;
-  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
-  if (!EMAIL_LOCAL_PART_RE.test(local)) return false;
-
-  if (!domain || domain.length > 253) return false;
-  if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
-  if (!domain.includes('.')) return false;
-  return EMAIL_DOMAIN_RE.test(domain);
+  return containsLoginPlusAddressing(email);
 }
 
 /** Returns the first violated message for the NORMALIZED name, or null when acceptable. */
@@ -157,17 +143,7 @@ export function validateFullName(value?: string | null): string | null {
  * Uniqueness is not checked here — only the backend can answer that.
  */
 export function validateAccountEmail(value?: string | null): string | null {
-  const normalized = normalizeAccountEmail(value);
-  if (normalized.length === 0) return ACCOUNT_IDENTITY_MESSAGES.emailRequired;
-  if (normalized.length > ACCOUNT_EMAIL_MAX_LENGTH) return ACCOUNT_IDENTITY_MESSAGES.emailTooLong;
-  if (containsPlusAddressing(normalized)) return ACCOUNT_IDENTITY_MESSAGES.emailPlusNotAllowed;
-
-  const parts = splitEmail(normalized);
-  if (parts && parts.local.length > ACCOUNT_EMAIL_LOCAL_PART_MAX_LENGTH) {
-    return ACCOUNT_IDENTITY_MESSAGES.emailLocalPartTooLong;
-  }
-  if (!hasValidEmailShape(normalized)) return ACCOUNT_IDENTITY_MESSAGES.emailFormat;
-  return hasAllowedEmailDomain(normalized) ? null : ACCOUNT_IDENTITY_MESSAGES.emailDomainNotAllowed;
+  return validateLoginEmail(value);
 }
 
 /** Replacement reason: required, 10–500 chars and not just punctuation. */
