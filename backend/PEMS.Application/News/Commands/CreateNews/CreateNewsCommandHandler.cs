@@ -247,7 +247,7 @@ public sealed class CreateNewsCommandHandler
                     var orderedSections = request.ContentSections.OrderBy(s => s.SectionOrder).ToList();
 
                     var plainInputs = new List<string> { sanitizedTitle, sanitizedSummary };
-                    plainInputs.AddRange(orderedSections.Select(s => s.SectionTitle));
+                    plainInputs.AddRange(orderedSections.Select(s => string.IsNullOrWhiteSpace(s.SectionTitle) ? " " : s.SectionTitle));
                     var htmlInputs = orderedSections.Select(s => s.SectionBodyHtml).ToList();
 
                     var plainResults = await _translator.TranslateTextAsync(
@@ -399,12 +399,11 @@ public sealed class CreateNewsCommandHandler
 
         foreach (var sectionDto in sections)
         {
-            var sanitizedSectionTitle = _sanitizer.Sanitize(sectionDto.SectionTitle.Trim());
+            var rawTitle              = sectionDto.SectionTitle ?? string.Empty;
+            var sanitizedSectionTitle = string.IsNullOrWhiteSpace(rawTitle) ? string.Empty : _sanitizer.Sanitize(rawTitle.Trim());
             var sanitizedBodyHtml     = _sanitizer.Sanitize(sectionDto.SectionBodyHtml);
             var bodyText              = ExtractPlainText(sanitizedBodyHtml);
 
-            if (string.IsNullOrWhiteSpace(sanitizedSectionTitle))
-                throw new ValidationException($"Tiêu đề nội dung {sectionDto.SectionOrder} không hợp lệ.");
             if (string.IsNullOrWhiteSpace(bodyText))
                 throw new ValidationException($"Nội dung chi tiết {sectionDto.SectionOrder} không được rỗng.");
             if (sanitizedBodyHtml.Contains("data:image", StringComparison.OrdinalIgnoreCase))

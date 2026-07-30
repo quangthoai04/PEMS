@@ -31,7 +31,6 @@ public sealed class EditNewsCommandValidator : AbstractValidator<EditNewsCommand
         RuleForEach(x => x.ContentSections).ChildRules(section =>
         {
             section.RuleFor(s => s.SectionTitle)
-                .NotEmpty().WithMessage("Tiêu đề nội dung không được để trống.")
                 .MaximumLength(255).WithMessage("Tiêu đề nội dung không được vượt quá 255 ký tự.");
 
             section.RuleFor(s => s.SectionBodyHtml)

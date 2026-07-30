@@ -67,7 +67,6 @@ public sealed class CreateNewsCommandValidator : AbstractValidator<CreateNewsCom
             .WithMessage("Thứ tự nội dung phải từ 1 đến 10.");
 
         section.RuleFor(s => s.SectionTitle)
-            .NotEmpty().WithMessage("Tiêu đề nội dung không được để trống.")
             .MaximumLength(255).WithMessage("Tiêu đề nội dung không được vượt quá 255 ký tự.");
 
         section.RuleFor(s => s.SectionBodyHtml)

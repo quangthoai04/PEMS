@@ -159,12 +159,11 @@ public sealed class EditNewsCommandHandler
             // Create new sections (+ their file mappings)
             foreach (var dto in request.ContentSections.OrderBy(s => s.SectionOrder))
             {
-                var sTitle    = _sanitizer.Sanitize(dto.SectionTitle.Trim());
+                var rawTitle  = dto.SectionTitle ?? string.Empty;
+                var sTitle    = string.IsNullOrWhiteSpace(rawTitle) ? string.Empty : _sanitizer.Sanitize(rawTitle.Trim());
                 var sBodyHtml = _sanitizer.Sanitize(dto.SectionBodyHtml);
                 var sBodyText = ExtractPlainText(sBodyHtml);
 
-                if (string.IsNullOrWhiteSpace(sTitle))
-                    throw new ValidationException($"Tiêu đề nội dung {dto.SectionOrder} không hợp lệ.");
                 if (string.IsNullOrWhiteSpace(sBodyText))
                     throw new ValidationException($"Nội dung chi tiết {dto.SectionOrder} không được rỗng.");
                 if (sBodyHtml.Contains("data:image", StringComparison.OrdinalIgnoreCase))

@@ -327,10 +327,6 @@ export function CreateNews() {
     if (!summary.trim())  { toast.error('Mô tả ngắn không được để trống.'); return; }
     if (summary.length > 500) { toast.error('Mô tả ngắn không được vượt quá 500 ký tự.'); return; }
     for (const s of sections) {
-      if (!s.sectionTitle.trim()) {
-        toast.error(`Tiêu đề mục ${s.sectionOrder} không được để trống.`);
-        return;
-      }
       if (s.sectionTitle.length > 255) {
         toast.error(`Tiêu đề mục ${s.sectionOrder} không được vượt quá 255 ký tự.`);
         return;
@@ -346,10 +342,6 @@ export function CreateNews() {
       if (englishTitle.length > 150) { toast.error('Tiêu đề tiếng Anh không được vượt quá 150 ký tự.'); return; }
       if (englishSummary.length > 500) { toast.error('Mô tả ngắn (Anh) không được vượt quá 500 ký tự.'); return; }
       for (const s of sections) {
-        if (!s.englishSectionTitle.trim()) {
-          toast.error(`Tiêu đề tiếng Anh của mục ${s.sectionOrder} không được để trống.`);
-          return;
-        }
         if (s.englishSectionTitle.length > 255) {
           toast.error(`Tiêu đề tiếng Anh của mục ${s.sectionOrder} không được vượt quá 255 ký tự.`);
           return;
@@ -829,7 +821,7 @@ export function CreateNews() {
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
                           <label className="block text-gray-900 font-bold text-sm">
-                            Tiêu đề mục <span className="text-red-500">*</span>
+                            Tiêu đề mục
                             {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                           </label>
                           <span className={`text-xs font-medium shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
