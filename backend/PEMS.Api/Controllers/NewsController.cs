@@ -156,7 +156,8 @@ namespace PEMS.Api.Controllers
                 Action     = body.Action,
                 Reason     = body.Reason,
                 RowVersion = body.RowVersion,
-                IsFeatured = body.IsFeatured
+                IsFeatured = body.IsFeatured,
+                IsPinned   = body.IsPinned
             };
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
@@ -187,6 +188,22 @@ namespace PEMS.Api.Controllers
             {
                 NewsId     = newsId,
                 IsFeatured = body.IsFeatured,
+                RowVersion = body.RowVersion
+            };
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        // Standalone pinned toggle for an already-reviewed post:
+        // PATCH /api/news/{newsId}/pinned — "Bỏ ghim" / "Ghim bài" on the detail page.
+        [HttpPatch("{newsId}/pinned")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> SetNewsPinned(ulong newsId, [FromBody] SetPinnedBody body, CancellationToken cancellationToken)
+        {
+            var command = new PEMS.Application.News.Commands.SetNewsPinned.SetNewsPinnedCommand
+            {
+                NewsId   = newsId,
+                IsPinned = body.IsPinned,
                 RowVersion = body.RowVersion
             };
             var result = await _mediator.Send(command, cancellationToken);
@@ -291,10 +308,11 @@ namespace PEMS.Api.Controllers
 
     public sealed record CreateVisitInstanceNewsBody(string Title, string? Summary, string? Body);
     public sealed record UpdateVisitInstanceNewsBody(string Title, string? Summary, string? Body, int RowVersion);
-    public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion, bool? IsFeatured = null);
+    public sealed record ReviewNewsBody(string Action, string? Reason, int RowVersion, bool? IsFeatured = null, bool? IsPinned = null);
     public sealed record AutoTranslateNewsBody(string? SourceLanguage, string TargetLanguage, bool Save);
     public sealed record ChangeVisibilityBody(string TargetStatus, int RowVersion);
     public sealed record SetFeaturedBody(bool IsFeatured, int RowVersion);
+    public sealed record SetPinnedBody(bool IsPinned, int RowVersion);
     public sealed record EditNewsBody(
         int    RowVersion,
         ulong? CoverFileId,

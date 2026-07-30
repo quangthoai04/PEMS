@@ -81,6 +81,9 @@ public sealed class ApproveNewsCommandHandler
         if (request.IsFeatured.HasValue)
             news.IsFeatured = request.IsFeatured.Value;
 
+        if (request.IsPinned.HasValue)
+            news.IsPinned = request.IsPinned.Value;
+
         news.ReviewedBy = currentUserId;
         news.ReviewedAt = now;
         news.RowVersion++;

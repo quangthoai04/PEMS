@@ -37,7 +37,7 @@ public sealed class ViewNewsDetailsQueryHandler
                 n.NewsId, n.CampusId, n.VisitInstanceId, n.AuthorUserId,
                 n.CoverFileId, n.Status, n.SubmittedAt,
                 n.ReviewedBy, n.ReviewedAt, n.ReviewNote,
-                n.PublishedAt, n.IsFeatured, n.RowVersion, n.CreatedAt, n.UpdatedAt
+                n.PublishedAt, n.IsFeatured, n.IsPinned, n.RowVersion, n.CreatedAt, n.UpdatedAt
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Tin tức", request.NewsId);
@@ -221,6 +221,7 @@ public sealed class ViewNewsDetailsQueryHandler
             ReviewNote      = isHo ? null : news.ReviewNote,
             PublishedAt     = news.PublishedAt,
             IsFeatured      = news.IsFeatured,
+            IsPinned        = news.IsPinned,
             RowVersion      = news.RowVersion,
             LanguageCode    = translation?.LanguageCode ?? "vi",
             AvailableLanguages = availableLanguages,
@@ -248,6 +249,7 @@ public sealed class ViewNewsDetailsQueryHandler
                 CanHide       = status == NewsConstants.Status.Published,
                 CanShow       = status == NewsConstants.Status.Hidden,
                 CanSetFeatured = true,
+                CanSetPinned  = true,
                 CanTranslate  = true
             };
         }

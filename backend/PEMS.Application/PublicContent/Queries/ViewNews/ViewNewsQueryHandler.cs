@@ -29,6 +29,9 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
         if (request.IsFeatured.HasValue)
             query = query.Where(n => n.IsFeatured == request.IsFeatured.Value);
 
+        if (request.IsPinned.HasValue)
+            query = query.Where(n => n.IsPinned == request.IsPinned.Value);
+
         if (request.CampusId.HasValue)
             query = query.Where(n => n.CampusId == request.CampusId.Value);
 
@@ -38,10 +41,11 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
                 query = query.Where(n => n.IsFeatured);
                 break;
             case "visit":
-                query = query.Where(n => n.VisitInstanceId != null);
+            case "pinned":
+                query = query.Where(n => n.IsPinned);
                 break;
             case "general":
-                query = query.Where(n => n.VisitInstanceId == null && !n.IsFeatured);
+                query = query.Where(n => !n.IsPinned && !n.IsFeatured);
                 break;
         }
 
@@ -72,6 +76,7 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
                 n.CoverFileId,
                 n.PublishedAt,
                 n.IsFeatured,
+                n.IsPinned,
                 n.CampusId,
                 CampusName = n.CampusId != null ? _dbContext.Campuses.Where(c => c.CampusId == n.CampusId).Select(c => c.Name).FirstOrDefault() : null,
                 CampusCode = n.CampusId != null ? _dbContext.Campuses.Where(c => c.CampusId == n.CampusId).Select(c => c.CampusCode).FirstOrDefault() : null,
@@ -115,6 +120,7 @@ public sealed class ViewNewsQueryHandler : IRequestHandler<ViewNewsQuery, ViewNe
                 PublishedAt    = n.PublishedAt,
                 LanguageCode   = translation.LanguageCode,
                 IsFeatured     = n.IsFeatured,
+                IsPinned       = n.IsPinned,
                 CampusId       = n.CampusId,
                 CampusName     = n.CampusName,
                 CampusCode     = n.CampusCode,

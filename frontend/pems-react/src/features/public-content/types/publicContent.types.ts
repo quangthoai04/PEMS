@@ -46,6 +46,7 @@ export type PublicNewsListItem = {
   publishedAt?: string | null;
   languageCode: string;
   isFeatured: boolean;
+  isPinned?: boolean;
   campusId?: number | null;
   campusName?: string | null;
   campusCode?: string | null;

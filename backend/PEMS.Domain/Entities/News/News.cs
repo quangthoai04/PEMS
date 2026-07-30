@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PEMS.Domain.Entities.News;
@@ -42,6 +42,9 @@ public class News
 
     [Column("is_featured")]
     public bool IsFeatured { get; set; }
+
+    [Column("is_pinned")]
+    public bool IsPinned { get; set; }
 
     [Column("row_version")]
     public int RowVersion { get; set; }

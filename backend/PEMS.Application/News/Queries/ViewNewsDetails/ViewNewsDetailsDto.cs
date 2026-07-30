@@ -19,6 +19,7 @@ public sealed class ViewNewsDetailsDto
     public string? ReviewNote { get; init; }
     public DateTime? PublishedAt { get; init; }
     public bool IsFeatured { get; init; }
+    public bool IsPinned { get; init; }
     public int RowVersion { get; init; }
     public string LanguageCode { get; init; } = "vi";
     /// <summary>All languages this post has a translation for (vi first).</summary>
@@ -72,6 +73,8 @@ public sealed class NewsDetailAvailableActionsDto
     public bool CanShow { get; init; }
     /// <summary>Standalone featured toggle on the detail page, independent of review status.</summary>
     public bool CanSetFeatured { get; init; }
+    /// <summary>Standalone pinned toggle on the detail page, independent of review status.</summary>
+    public bool CanSetPinned { get; init; }
     /// <summary>May add translations (author while editable, Staff Leader of the campus anytime).</summary>
     public bool CanTranslate { get; init; }
 }

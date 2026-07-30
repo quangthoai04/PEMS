@@ -34,7 +34,7 @@ const HERO_ROTATE_INTERVAL_MS = 5000;
 const CAMPUS_STORIES_INITIAL_SIZE = 3;
 const CAMPUS_STORIES_LOAD_MORE_STEP = 3;
 
-type TypeFilter = 'all' | 'featured' | 'visit' | 'general';
+type TypeFilter = 'all' | 'featured' | 'general';
 type SortOrder = 'latest' | 'oldest';
 
 // We'll generate TYPE_OPTIONS using useTranslation inside the component or via a function.
@@ -246,7 +246,6 @@ function FilterBar({
   const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
     { value: 'all', label: t('news:types.all') },
     { value: 'featured', label: t('news:types.featured') },
-    { value: 'visit', label: t('news:types.visit') },
     { value: 'general', label: t('news:types.general') },
   ];
 
@@ -661,7 +660,7 @@ export function NewsPage() {
     (async () => {
       setVisitLoading(true);
       try {
-        const res = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 4, type: 'visit', sort: 'latest', languageCode: lang });
+        const res = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 4, isPinned: true, sort: 'latest', languageCode: lang });
         if (!cancelled) setVisitHighlights(res.items ?? []);
       } catch {
         if (!cancelled) setVisitHighlights([]);

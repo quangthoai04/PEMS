@@ -27,6 +27,8 @@ public class ViewNewsQuery : IRequest<ViewNewsDto>
 
     public bool? IsFeatured { get; init; }
 
+    public bool? IsPinned { get; init; }
+
     /// <summary>Optional campus filter (matches News.CampusId).</summary>
     public ulong? CampusId { get; init; }
 

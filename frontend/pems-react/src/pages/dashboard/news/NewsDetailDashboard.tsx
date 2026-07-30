@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, X, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { Calendar, User, Clock, CheckCircle, XCircle, EyeOff, Eye, ArrowLeft, Edit2, Globe, X, ChevronLeft, ChevronRight, Star, Pin } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -47,6 +47,7 @@ interface AvailableActions {
   canHide: boolean;
   canShow: boolean;
   canSetFeatured: boolean;
+  canSetPinned: boolean;
   canTranslate: boolean;
 }
 
@@ -68,6 +69,7 @@ interface NewsDetail {
   reviewNote?: string;
   publishedAt?: string;
   isFeatured: boolean;
+  isPinned: boolean;
   rowVersion: number;
   languageCode: string;
   availableLanguages: string[];
@@ -315,6 +317,7 @@ export function NewsDetailDashboard() {
   const [actionLoading, setActionLoading]          = useState(false);
   const [selectedLang, setSelectedLang]            = useState<string | null>(null);
   const [isFeaturedChecked, setIsFeaturedChecked]  = useState(false);
+  const [isPinnedChecked, setIsPinnedChecked]      = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -330,6 +333,7 @@ export function NewsDetailDashboard() {
         if (!cancelled) {
           setNews(data);
           setIsFeaturedChecked(data.isFeatured);
+          setIsPinnedChecked(data.isPinned);
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -353,7 +357,8 @@ export function NewsDetailDashboard() {
         action,
         reason: reason ?? null,
         rowVersion: news.rowVersion,
-        isFeatured: isFeaturedChecked
+        isFeatured: isFeaturedChecked,
+        isPinned: isPinnedChecked
       });
       toast.success(action === 'APPROVE' ? 'Bài viết đã được duyệt thành công!' : 'Bài viết đã bị từ chối.');
       setShowApprovePopup(false);
@@ -378,6 +383,25 @@ export function NewsDetailDashboard() {
       );
       setNews({ ...news, isFeatured: data.isFeatured, rowVersion: data.rowVersion });
       toast.success(data.isFeatured ? 'Đã đánh dấu bài viết là nổi bật.' : 'Đã bỏ đánh dấu nổi bật.');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Có lỗi xảy ra, vui lòng thử lại.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleTogglePinned() {
+    if (!news) return;
+    const nextPinned = !news.isPinned;
+    setActionLoading(true);
+    try {
+      const { data } = await httpClient.patch<{ isPinned: boolean; rowVersion: number }>(
+        `/news/${news.newsId}/pinned`,
+        { isPinned: nextPinned, rowVersion: news.rowVersion }
+      );
+      setNews({ ...news, isPinned: data.isPinned, rowVersion: data.rowVersion });
+      toast.success(data.isPinned ? 'Đã ghim bài viết ở Dấu ấn các chuyến thăm.' : 'Đã bỏ ghim bài viết.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(msg ?? 'Có lỗi xảy ra, vui lòng thử lại.');
@@ -476,15 +500,27 @@ export function NewsDetailDashboard() {
               </button>
             )}
             {(actions.canApprove || actions.canReject) && (
-              <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={isFeaturedChecked}
-                  onChange={(e) => setIsFeaturedChecked(e.target.checked)}
-                  className="w-4 h-4 accent-[#004c91] cursor-pointer"
-                />
-                Nổi bật
-              </label>
+              <>
+                <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isFeaturedChecked}
+                    onChange={(e) => setIsFeaturedChecked(e.target.checked)}
+                    className="w-4 h-4 accent-[#004c91] cursor-pointer"
+                  />
+                  Nổi bật
+                </label>
+                <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isPinnedChecked}
+                    onChange={(e) => setIsPinnedChecked(e.target.checked)}
+                    className="w-4 h-4 accent-[#004c91] cursor-pointer"
+                  />
+                  <Pin className="w-4 h-4 text-[#004c91]" />
+                  Ghim
+                </label>
+              </>
             )}
             {actions.canSetFeatured && !actions.canApprove && !actions.canReject && (
               <button
@@ -498,6 +534,20 @@ export function NewsDetailDashboard() {
               >
                 <Star className={`w-4 h-4 ${news.isFeatured ? 'fill-white' : ''}`} />
                 {news.isFeatured ? 'Bỏ nổi bật' : 'Đánh dấu nổi bật'}
+              </button>
+            )}
+            {actions.canSetPinned && !actions.canApprove && !actions.canReject && (
+              <button
+                onClick={handleTogglePinned}
+                disabled={actionLoading}
+                className={`flex items-center gap-2 font-semibold px-4 py-2 rounded-xl transition-colors text-sm disabled:opacity-50 ${
+                  news.isPinned
+                    ? 'bg-[#004c91] text-white hover:bg-[#003b70]'
+                    : 'bg-white border border-[#004c91] text-[#004c91] hover:bg-blue-50'
+                }`}
+              >
+                <Pin className={`w-4 h-4 ${news.isPinned ? 'fill-white' : ''}`} />
+                {news.isPinned ? 'Bỏ ghim' : 'Ghim bài'}
               </button>
             )}
             {actions.canApprove && (

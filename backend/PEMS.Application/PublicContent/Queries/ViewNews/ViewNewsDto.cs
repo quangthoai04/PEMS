@@ -24,6 +24,7 @@ public sealed class PublicNewsListItemDto
     public DateTime? PublishedAt { get; init; }
     public string LanguageCode { get; init; } = "vi";
     public bool IsFeatured { get; init; }
+    public bool IsPinned { get; init; }
     public ulong? CampusId { get; init; }
     public string? CampusName { get; init; }
     public string? CampusCode { get; init; }

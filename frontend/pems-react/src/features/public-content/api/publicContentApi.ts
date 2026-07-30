@@ -11,6 +11,7 @@ export interface PublicNewsListParams {
   languageCode?: string;
   keyword?: string;
   isFeatured?: boolean;
+  isPinned?: boolean;
   campusId?: number;
   type?: 'all' | 'featured' | 'visit' | 'general';
   sort?: 'latest' | 'oldest';
