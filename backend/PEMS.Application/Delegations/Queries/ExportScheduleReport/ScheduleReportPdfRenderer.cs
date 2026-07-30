@@ -68,7 +68,7 @@ public static class ScheduleReportPdfRenderer
                     col.Item().Column(info =>
                     {
                         info.Spacing(4);
-                        FieldLine(info, L("Thời gian", "Time"), FormatTimeRange(dto.PlannedStartAt, dto.PlannedEndAt));
+                        FieldLine(info, L("Thời gian", "Time"), FormatTimeRange(dto.PlannedStartAt, dto.PlannedEndAt, isEnglish));
                         FieldLine(info, L("Địa điểm", "Location"), dto.Location);
                         FieldLine(info, L("Mục tiêu", "Objective"), string.IsNullOrWhiteSpace(dto.Purpose) ? "-" : dto.Purpose);
                     });
@@ -173,12 +173,12 @@ public static class ScheduleReportPdfRenderer
                 var a = rows[i];
                 string bg = i % 2 == 1 ? ZebraBg : Colors.White;
 
-                GridCell(table, bg).Text(FormatTimeSpan(a.StartTime, a.EndTime)).FontSize(9).Bold();
+                GridCell(table, bg).Text(FormatTimeSpan(a.StartTime, a.EndTime, isEnglish)).FontSize(9).Bold();
 
                 var descCell = GridCell(table, bg);
                 descCell.Column(c =>
                 {
-                    c.Item().Text(a.Title).FontSize(9).SemiBold();
+                    c.Item().Text(a.Title).FontSize(9);
                     if (!string.IsNullOrWhiteSpace(a.Description))
                         c.Item().Text(a.Description).FontSize(8.5f).LineHeight(1.3f);
                 });
@@ -204,17 +204,37 @@ public static class ScheduleReportPdfRenderer
     private static QuestPDF.Infrastructure.IContainer GridCell(QuestPDF.Fluent.TableDescriptor table, string bg)
         => table.Cell().Border(0.75f).BorderColor(BorderColor).Background(bg).Padding(6);
 
-    private static string FormatTimeRange(DateTime start, DateTime end)
+    private static string FormatTimeRange(DateTime start, DateTime end, bool isEnglish)
     {
         var datePart = start.Date == end.Date
-            ? start.ToString("dddd, MMMM dd, yyyy", CultureInfo.InvariantCulture)
-            : $"{start.ToString("MMMM dd, yyyy", CultureInfo.InvariantCulture)} - {end.ToString("MMMM dd, yyyy", CultureInfo.InvariantCulture)}";
-        return $"{datePart}, {FormatTimeSpan(start, end)} (GMT+7)";
+            ? FormatDate(start, isEnglish)
+            : $"{FormatDate(start, isEnglish)} - {FormatDate(end, isEnglish)}";
+        return $"{datePart}, {FormatTimeSpan(start, end, isEnglish)} (GMT+7)";
     }
 
-    private static string FormatTimeSpan(DateTime start, DateTime? end)
+    private static string FormatDate(DateTime d, bool isEnglish)
+        => isEnglish
+            ? d.ToString("dddd, MMMM dd, yyyy", CultureInfo.InvariantCulture)
+            : $"{ViDayName(d.DayOfWeek)}, ngày {d.Day} tháng {d.Month} năm {d.Year}";
+
+    private static string FormatTimeSpan(DateTime start, DateTime? end, bool isEnglish)
     {
-        var s = start.ToString("h:mm tt", CultureInfo.InvariantCulture);
-        return end.HasValue ? $"{s} - {end.Value.ToString("h:mm tt", CultureInfo.InvariantCulture)}" : s;
+        string Fmt(DateTime t) => isEnglish
+            ? t.ToString("h:mm tt", CultureInfo.InvariantCulture)
+            : t.ToString("HH:mm", CultureInfo.InvariantCulture);
+        var s = Fmt(start);
+        return end.HasValue ? $"{s} - {Fmt(end.Value)}" : s;
     }
+
+    private static string ViDayName(DayOfWeek d) => d switch
+    {
+        DayOfWeek.Monday => "Thứ Hai",
+        DayOfWeek.Tuesday => "Thứ Ba",
+        DayOfWeek.Wednesday => "Thứ Tư",
+        DayOfWeek.Thursday => "Thứ Năm",
+        DayOfWeek.Friday => "Thứ Sáu",
+        DayOfWeek.Saturday => "Thứ Bảy",
+        DayOfWeek.Sunday => "Chủ Nhật",
+        _ => "",
+    };
 }
