@@ -374,6 +374,113 @@ public sealed class SentEmailHistoryAuthorizationTests : IDisposable
         await CleanupRowsAsync(db);
     }
 
+    // ── The reply affordance travels with the message ───────────────────────
+    //
+    // `ViewEmailDto` carried no `canReply`, so the screen read `undefined` and the reply button was
+    // permanently hidden — a command with no reachable caller. These pin the flag to the same relation
+    // the reply command re-checks, on the real query rather than on the helper alone.
+
+    [Fact]
+    public async Task An_addressee_is_told_they_may_reply()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        var id = await SeedAsync(db);
+
+        Assert.True((await Read(db, Viewer(RecipientB), id)).CanReply);
+        Assert.True((await Read(db, Viewer(CopiedC), id)).CanReply);
+        // Blind-copied is still party to the conversation; the reply command accepts them too.
+        Assert.True((await Read(db, Viewer(BlindD), id)).CanReply);
+
+        await CleanupRowsAsync(db);
+    }
+
+    [Fact]
+    public async Task The_author_is_not_told_they_may_reply_to_their_own_message()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        var id = await SeedAsync(db);
+
+        Assert.False((await Read(db, Viewer(SenderA), id)).CanReply);
+
+        await CleanupRowsAsync(db);
+    }
+
+    [Fact]
+    public async Task A_linked_object_reader_is_not_told_they_may_reply()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        await SeedAsync(db);
+
+        var linkedId = await SeedMessageAsync(db, EmailActionTargetTypes.VisitParticipant, ParticipantId);
+
+        // They can open the message through the visit, but they are not on its envelope — and the reply
+        // command resolves the envelope alone, so it would refuse them. The button must not appear.
+        Assert.False((await Read(db, Ho, linkedId)).CanReply);
+        Assert.False((await Read(db, StaffLeader, linkedId)).CanReply);
+
+        await CleanupRowsAsync(db);
+    }
+
+    // ── Whether the detail offers "đánh dấu đã xử lý" ────────────────────────
+    //
+    // The payload carried no such flag at all, so the screen read undefined and the button never rendered
+    // for anyone, while MarkEmailCompletedCommandHandler was willing to accept the call. These assert the
+    // flag against the same viewers the command would and would not accept.
+
+    [Fact]
+    public async Task An_addressee_is_told_they_may_close_the_message()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        var id = await SeedAsync(db);
+
+        Assert.True((await Read(db, Viewer(SenderA), id)).CanMarkComplete);
+        Assert.True((await Read(db, Viewer(RecipientB), id)).CanMarkComplete);
+        Assert.True((await Read(db, Viewer(CopiedC), id)).CanMarkComplete);
+        Assert.True((await Read(db, Viewer(BlindD), id)).CanMarkComplete);
+
+        await CleanupRowsAsync(db);
+    }
+
+    [Fact]
+    public async Task A_linked_object_reader_is_not_told_they_may_close_the_message()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        await SeedAsync(db);
+
+        var linkedId = await SeedMessageAsync(db, EmailActionTargetTypes.VisitParticipant, ParticipantId);
+
+        // Reading a message because you can open the visit it belongs to is not the same as being in the
+        // conversation; the command refuses them, so the button must not appear.
+        Assert.False((await Read(db, Ho, linkedId)).CanMarkComplete);
+        Assert.False((await Read(db, StaffLeader, linkedId)).CanMarkComplete);
+
+        await CleanupRowsAsync(db);
+    }
+
+    [Fact]
+    public async Task A_message_already_closed_is_not_offered_for_closing_again()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        var id = await SeedAsync(db);
+
+        Assert.True((await Read(db, Viewer(RecipientB), id)).CanMarkComplete);
+
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE sent_emails SET delivered_at = '2026-07-01 09:00:00' WHERE sent_email_id = {0}", id);
+        db.ChangeTracker.Clear();
+
+        Assert.False((await Read(db, Viewer(RecipientB), id)).CanMarkComplete);
+        Assert.False((await Read(db, Viewer(SenderA), id)).CanMarkComplete);
+
+        await CleanupRowsAsync(db);
+    }
+
     // ── 10-12. The surfaces agree, and none of them counts the hidden ────────
 
     [Fact]

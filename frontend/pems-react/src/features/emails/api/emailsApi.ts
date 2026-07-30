@@ -1,4 +1,49 @@
 import httpClient from '../../../shared/api/httpClient';
+import type { EmailRecipientInput } from '../types/recipients';
+import type { TemplateContract } from '../types/templateContract';
+
+/**
+ * Carries the idempotency key for one send attempt (G11-H). Same shape as the reports feature uses —
+ * duplicated as a two-line helper rather than imported across features, which would couple the email
+ * module to the reports module for one header.
+ */
+function idempotent(key: string) {
+  return { headers: { 'Idempotency-Key': key } };
+}
+
+/**
+ * Manual compose payload — the camelCase form of `SendEmailCommand`.
+ * The three groups are three lists, as they are on the command; a single flattened list could not say
+ * which addresses were copies.
+ */
+export interface SendEmailPayload {
+  templateId?: number | null;
+  subject: string;
+  body: string;
+  /** PLAIN_TEXT | HTML. The composer produces HTML. */
+  bodyFormat?: 'PLAIN_TEXT' | 'HTML';
+  to: EmailRecipientInput[];
+  cc: EmailRecipientInput[];
+  bcc: EmailRecipientInput[];
+}
+
+/**
+ * Reply payload — the camelCase form of `ReplytoEmailCommand`.
+ *
+ * There is no `to`: the reply goes to the original sender, resolved server-side from
+ * `originalEmailId`. Letting the client name the TO would let a reply be redirected to somebody who was
+ * never party to the thread.
+ */
+export interface ReplyEmailPayload {
+  originalEmailId: number;
+  body: string;
+  cc?: EmailRecipientInput[];
+  bcc?: EmailRecipientInput[];
+}
+
+export interface RecipientLimits {
+  maxRecipients: number;
+}
 
 export const emailsApi = {
   getEmailList: (params: {
@@ -16,8 +61,24 @@ export const emailsApi = {
   getEmailDetail: (id: number, sourceType: string) => {
     return httpClient.get('/Emails/viewemail', { params: { id, sourceType } });
   },
-  replyEmail: (data: { originalEmailId: number; body: string; cc?: any[]; bcc?: any[] }) => {
-    return httpClient.post('/Emails/replytoemail', data);
+  /**
+   * Reply to the original sender. The route REFUSES a request without `Idempotency-Key` (G11-H): a
+   * browser that gives up on a slow reply and lets the user press Send again would otherwise post the
+   * message twice, to real people, with no way for the server to tell the two apart.
+   */
+  replyEmail: (data: ReplyEmailPayload, idempotencyKey: string) => {
+    return httpClient.post('/Emails/replytoemail', data, idempotent(idempotencyKey));
+  },
+  /**
+   * Reply All: the original sender plus the original's VISIBLE recipients, minus the current user. The
+   * recipient list is resolved by the server from the parent message — the client sends no addresses for
+   * it, so it cannot smuggle in someone who was on BCC.
+   */
+  replyAllEmail: (data: ReplyEmailPayload, idempotencyKey: string) => {
+    return httpClient.post('/Emails/replyalltoemail', data, idempotent(idempotencyKey));
+  },
+  getRecipientLimits: () => {
+    return httpClient.get<RecipientLimits>('/Emails/recipient-limits');
   },
   markCompleted: (id: number) => {
     return httpClient.post(`/Emails/${id}/mark-completed`);
@@ -25,8 +86,15 @@ export const emailsApi = {
   getUnprocessedCount: () => {
     return httpClient.get('/Emails/unprocessed-count');
   },
-  sendEmail: (data: any) => {
-    return httpClient.post('/Emails/sendemail', data);
+  /**
+   * Direct manual send — no draft. Requires `Idempotency-Key` for the same reason reply does.
+   *
+   * No screen currently calls this: the compose modal saves a draft and sends that, which is protected by
+   * the DRAFT→SENT claim instead. It is kept and protected because it is a live API route, and an
+   * unprotected send route is unprotected whether or not the current UI happens to use it.
+   */
+  sendEmail: (data: SendEmailPayload, idempotencyKey: string) => {
+    return httpClient.post('/Emails/sendemail', data, idempotent(idempotencyKey));
   },
   getEmailTemplateList: (params?: { keyword?: string; status?: string; purpose?: string; page?: number; pageSize?: number; mode?: string }) => {
     return httpClient.get('/email-templates', { params });
@@ -34,13 +102,43 @@ export const emailsApi = {
   getEmailTemplateDetail: (id: number | string) => {
     return httpClient.get(`/email-templates/${id}`);
   },
-  createEmailTemplate: (data: any) => {
-    return httpClient.post('/email-templates', data);
+  /**
+   * What a template's variables actually are (G11-J). Fetched per template code before the editor
+   * validates anything, and used by the compose screen to decide whether CC/BCC may be offered at all.
+   */
+  getEmailTemplateContract: (templateCode: string, language?: string) => {
+    return httpClient.get<TemplateContract>(
+      `/email-templates/contract/${encodeURIComponent(templateCode)}`,
+      { params: language ? { language } : undefined },
+    );
   },
-  updateEmailTemplate: (id: number | string, data: any) => {
+  /**
+   * Content only. The command no longer carries templateCode, purpose, campusId, bodyFormat,
+   * variablesText or status — the catalog is fixed in code (G11-I) — and `expectedRevision` is the
+   * optimistic-concurrency token read back from the detail response.
+   */
+  updateEmailTemplate: (id: number | string, data: UpdateEmailTemplatePayload) => {
     return httpClient.put(`/email-templates/${id}`, data);
   },
-  toggleEmailTemplateStatus: (id: number | string, status: string) => {
-    return httpClient.patch(`/email-templates/${id}/status`, { status });
+  /**
+   * Puts a template's content back to the wording PEMS ships (G11-I). HO only; the backend refuses
+   * anyone else, so hiding the button is presentation, not protection.
+   *
+   * Carries the same `expectedRevision` as a save: restore is a full content overwrite, and restoring
+   * over a colleague's unseen edit is the same lost update as saving over it.
+   */
+  restoreEmailTemplateDefault: (id: number | string, expectedRevision: number) => {
+    return httpClient.post(`/email-templates/${id}/restore-default`, { expectedRevision });
   }
 };
+
+/** Content fields an operator may change, plus the concurrency token they loaded with. */
+export interface UpdateEmailTemplatePayload {
+  name: string;
+  description?: string | null;
+  subjectVi?: string | null;
+  bodyVi?: string | null;
+  subjectEn?: string | null;
+  bodyEn?: string | null;
+  expectedRevision?: number | null;
+}

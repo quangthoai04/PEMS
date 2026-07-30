@@ -29,6 +29,17 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Common\Assets\fpt-logo.png" />
+    <!--
+      The shipped default content of every system email template (G11-I restore-to-default).
+      Embedded rather than read from disk so restore works in any deployment without a file path, and
+      embedded rather than hand-written in C# so the wording has exactly ONE author: the canonical SQL
+      seed. The file is GENERATED from a fresh canonical import (MySQL evaluates the seed's CONCAT
+      expressions, so no SQL-string parser can get the escaping wrong), and
+      EmailTemplateDefaultsParityTests re-derives it from a fresh import on every integration run — an
+      edit to the SQL that is not regenerated here fails that test instead of drifting silently.
+      Regeneration procedure: docs/email-standardization/10-g11-final-closure.md §3.
+    -->
+    <EmbeddedResource Include="Emails\Common\Assets\email-template-defaults.json" />
   </ItemGroup>
 
 </Project>

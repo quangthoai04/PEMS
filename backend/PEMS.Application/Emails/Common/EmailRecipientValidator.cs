@@ -132,6 +132,48 @@ public static class EmailRecipientValidator
     }
 
     /// <summary>
+    /// Headers the pipeline owns, which a caller may therefore never supply through
+    /// <c>OutboundEmail.Headers</c>.
+    ///
+    /// <para>
+    /// Two kinds are on this list, and both matter. <b>Identity</b> — From, Sender, Reply-To, Return-Path
+    /// — decides who the message claims to be from and where bounces go; it comes from configuration, and
+    /// a caller that could set it could send mail as anyone. <b>Envelope</b> — To, Cc, Bcc, Message-Id —
+    /// is derived from the typed recipient lists and the message identity written to <c>sent_emails</c>; a
+    /// header-bag copy could disagree with the row, which is how history stops describing what was sent.
+    /// </para>
+    /// <para>
+    /// <c>In-Reply-To</c> and <c>References</c> are deliberately NOT here: they are what the bag exists
+    /// for, they name a parent message rather than an identity, and threading breaks without them.
+    /// </para>
+    /// <para>
+    /// Measured before this existed, on a real message serialised to disk: a From supplied through the bag
+    /// was overwritten by configuration, Sender and Reply-To were dropped by the framework, and
+    /// <c>Return-Path</c> survived into the file. So one of the four was genuinely settable, and the other
+    /// three depended on framework behaviour nobody had written down. Refusing all of them makes the rule
+    /// the code's rather than the library's.
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlySet<string> ReservedHeaderNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "From", "Sender", "Reply-To", "Return-Path",
+            "To", "Cc", "Bcc", "Message-Id",
+        };
+
+    /// <summary>
+    /// Refuses a caller-supplied header that the pipeline owns. Called for every entry in the bag, before
+    /// anything is handed to the transport.
+    /// </summary>
+    public static void AssertHeaderNameAllowed(string name)
+    {
+        if (ReservedHeaderNames.Contains(name.Trim()))
+            throw new ValidationException(
+                $"Header '{name}' do hệ thống quyết định, không nhận từ nơi gọi.",
+                EmailErrorCodes.HeaderInvalid);
+    }
+
+    /// <summary>
     /// Well-formed means: parseable as a mailbox, exactly one '@', and a dotted domain.
     /// <see cref="MailAddress"/> alone accepts things like "a@b" that no real mail server will route.
     /// </summary>

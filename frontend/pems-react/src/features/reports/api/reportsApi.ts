@@ -22,6 +22,16 @@ import type {
   DeptLeaderInvoiceItemV2,
 } from '../types/deptLeaderReportsV2.types';
 
+/**
+ * Carries the idempotency key for one send attempt (G11 / R-103).
+ *
+ * The six send routes REFUSE a request without it, so this is not optional plumbing: it is what lets the
+ * backend tell a retry apart from a second send. See `useIdempotentSend` for who owns the key's lifetime.
+ */
+function idempotent(key: string) {
+  return { headers: { 'Idempotency-Key': key } };
+}
+
 /** Chuyển filters UI → query params; bỏ giá trị "ALL"/rỗng để backend hiểu là không lọc. */
 function toQueryParams(filters: HoReportFilters): Record<string, string | number> {
   const params: Record<string, string | number> = { preset: filters.preset };
@@ -138,9 +148,9 @@ export const reportsApi = {
   /** HO gửi email báo cáo vận hành 1 campus cho Staff Leader campus đó. */
   sendHoCampusReport: async (payload: {
     campusId: number; fromDate?: string; toDate?: string; note?: string;
-  }): Promise<{ success: boolean; message: string }> => {
+  }, idempotencyKey: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await httpClient.post<{ success: boolean; message: string }>(
-      '/reports/ho-report-v2/send-campus-report', payload,
+      '/reports/ho-report-v2/send-campus-report', payload, idempotent(idempotencyKey),
     );
     return data;
   },
@@ -190,9 +200,9 @@ export const reportsApi = {
   /** Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự/student. */
   sendStaffLeaderPersonnelReport: async (payload: {
     userId: number; fromDate?: string; toDate?: string; note?: string;
-  }): Promise<{ success: boolean; message: string }> => {
+  }, idempotencyKey: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await httpClient.post<{ success: boolean; message: string }>(
-      '/reports/staff-leader-report-v2/send-personnel-report', payload,
+      '/reports/staff-leader-report-v2/send-personnel-report', payload, idempotent(idempotencyKey),
     );
     return data;
   },
@@ -219,9 +229,9 @@ export const reportsApi = {
   /** Gửi email báo cáo phối hợp tiếp khách cho trưởng 1 phòng ban (phần 3). */
   sendStaffLeaderDepartmentReport: async (payload: {
     departmentId: number; fromDate?: string; toDate?: string; note?: string;
-  }): Promise<{ success: boolean; message: string }> => {
+  }, idempotencyKey: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await httpClient.post<{ success: boolean; message: string }>(
-      '/reports/staff-leader-report-v2/send-department-report', payload,
+      '/reports/staff-leader-report-v2/send-department-report', payload, idempotent(idempotencyKey),
     );
     return data;
   },
@@ -238,9 +248,10 @@ export const reportsApi = {
   sendStaffLeaderDeptInvoice: async (departmentId: number, payload: {
     fromDate?: string; toDate?: string; note?: string;
     items: { logisticsItemId: number; unitPrice: number }[];
-  }): Promise<{ success: boolean; message: string }> => {
+  }, idempotencyKey: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await httpClient.post<{ success: boolean; message: string }>(
       `/reports/staff-leader-report-v2/departments/${departmentId}/send-invoice`, payload,
+      idempotent(idempotencyKey),
     );
     return data;
   },
@@ -268,9 +279,9 @@ export const reportsApi = {
   /** Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự phòng ban. */
   sendDeptLeaderPersonnelReport: async (payload: {
     userId: number; fromDate?: string; toDate?: string; note?: string;
-  }): Promise<{ success: boolean; message: string }> => {
+  }, idempotencyKey: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await httpClient.post<{ success: boolean; message: string }>(
-      '/reports/dept-leader-report-v2/send-personnel-report', payload,
+      '/reports/dept-leader-report-v2/send-personnel-report', payload, idempotent(idempotencyKey),
     );
     return data;
   },
@@ -279,9 +290,9 @@ export const reportsApi = {
   sendDeptLeaderInvoiceToStaffLeader: async (payload: {
     fromDate?: string; toDate?: string; note?: string;
     items: { logisticsItemId: number; unitPrice: number }[];
-  }): Promise<{ success: boolean; message: string }> => {
+  }, idempotencyKey: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await httpClient.post<{ success: boolean; message: string }>(
-      '/reports/dept-leader-report-v2/send-invoice', payload,
+      '/reports/dept-leader-report-v2/send-invoice', payload, idempotent(idempotencyKey),
     );
     return data;
   },

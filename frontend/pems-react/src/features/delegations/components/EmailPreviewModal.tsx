@@ -20,6 +20,7 @@ import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
 import type { EmailAttachmentRefInput } from '../types/delegations.types';
+import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -319,7 +320,10 @@ export function EmailPreviewModal({
                   {lockedActionBlockHtml && (
                     <div
                       className="mt-2 rounded-lg border border-amber-200 bg-white p-2 opacity-80 pointer-events-none select-none"
-                      dangerouslySetInnerHTML={{ __html: lockedActionBlockHtml }}
+                      // Server-generated (EmailComposition action blocks, URLs already HTML-escaped),
+                      // but sanitised here anyway: this is the render boundary, and the block is built
+                      // from data. Its markup is <div>/<a>/<p>, all of which survive the allow-list.
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(lockedActionBlockHtml) }}
                     />
                   )}
                 </div>

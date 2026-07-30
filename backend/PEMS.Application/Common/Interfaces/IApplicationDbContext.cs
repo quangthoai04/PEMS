@@ -91,6 +91,9 @@ public interface IApplicationDbContext
     DbSet<EmailDraftRecipient> EmailDraftRecipients { get; }
     DbSet<EmailDraftAttachment> EmailDraftAttachments { get; }
     DbSet<EmailActionToken> EmailActionTokens { get; }
+
+    /// <summary>Send reservations for the six report/invoice actions (G11 / R-103).</summary>
+    DbSet<EmailSendIdempotency> EmailSendIdempotencies { get; }
     DbSet<AccountEmailConfirmation> AccountEmailConfirmations { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<CalendarEvent> CalendarEvents { get; }

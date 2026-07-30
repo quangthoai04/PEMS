@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 
 namespace PEMS.Infrastructure.Email;
 
@@ -55,25 +56,52 @@ public sealed class FileSinkEmailService : IEmailService
     public Task<EmailDeliveryResult> TrySendAsync(
         OutboundEmail message, CancellationToken cancellationToken = default)
     {
-        Append(message);
+        var envelope = Gate(message);
+        Append(message, envelope);
         return Task.FromResult(EmailDeliveryResult.Sent());
     }
 
     public Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default)
     {
-        Append(message);
+        var envelope = Gate(message);
+        Append(message, envelope);
         return Task.CompletedTask;
     }
 
-    private void Append(OutboundEmail message)
+    /// <summary>
+    /// Applies the SAME last-gate checks as <see cref="EmailService"/> — envelope validation, the
+    /// template recipient policy, and the subject header-break check — before anything is written.
+    ///
+    /// <para>
+    /// This sink used to write whatever it was handed. That made it a bypass of
+    /// <see cref="EmailRecipientPolicyEnforcer"/>, and the consequence was worse than a missing check:
+    /// the sink is what real-stack evidence is collected from, so a run could show a system template
+    /// going out with CC/BCC, record it as a pass, and prove nothing about production — where the same
+    /// send is refused. A test double that enforces less than the thing it doubles produces evidence
+    /// for a system that does not exist.
+    /// </para>
+    /// </summary>
+    private ValidatedEnvelope Gate(OutboundEmail message)
+    {
+        // The same ceiling EmailService applies. Read from configuration there; the sink is only ever
+        // constructed in Testing, so the default is the right source here.
+        var envelope = EmailRecipientValidator.Validate(message, new EmailRecipientOptions().MaxRecipients);
+        EmailRecipientPolicyEnforcer.Assert(message.TemplateCode, envelope);
+        EmailRecipientValidator.AssertNoHeaderBreak(message.Subject ?? string.Empty, "tiêu đề email");
+        return envelope;
+    }
+
+    private void Append(OutboundEmail message, ValidatedEnvelope envelope)
     {
         var body = message.Body ?? string.Empty;
 
         var record = JsonSerializer.Serialize(new
         {
-            to = Project(message.To),
-            cc = Project(message.Cc),
-            bcc = Project(message.Bcc),
+            // Recorded from the VALIDATED envelope, not the raw message, so what evidence shows is what
+            // a real provider would have been handed — trimmed, de-duplicated and policy-checked.
+            to = Project(envelope.To),
+            cc = Project(envelope.Cc),
+            bcc = Project(envelope.Bcc),
             templateCode = message.TemplateCode,
             subject = message.Subject,
             body,
@@ -86,6 +114,7 @@ public sealed class FileSinkEmailService : IEmailService
                 contentId = a.ContentId,
                 sizeBytes = a.Content.Length,
             }).ToArray(),
+            messageId = message.MessageId,
             headers = message.Headers,
 
             // Kept for the existing Playwright harness, which reads the OTP / claim link from here.

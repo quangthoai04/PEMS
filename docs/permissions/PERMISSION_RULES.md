@@ -358,3 +358,51 @@ PEMS không dùng role riêng cho Staff Leader hoặc Department Leader. Hệ th
 - Lưu trữ DB: `users.sub_role ENUM('LEADER','STAFF')` (uppercase); `role_permissions.sub_role ENUM('NONE','Leader','Staff')`. So khớp dùng collation `utf8mb4_unicode_ci` (case-insensitive) nên `LEADER` khớp `Leader`. Code phải normalize uppercase khi so sánh để tránh lỗi casing.
 - `DEPT_SUPPORT` là role tham dự đoàn (visit participant), KHÔNG phải role_code — không đổi tên.
 - Các enum audit `decision_actor_role`/`cancellation_actor_type`/`host_assignment_source` chứa `STAFF_LEADER`/`AUTO_STAFF_LEADER` là nhãn người thực hiện (audit), KHÔNG phải role_code — giữ nguyên để không phá trigger.
+
+---
+
+## Email template catalog — fixed, update-only (2026-07-30, G11-I)
+
+### Nguồn sự thật
+
+| Dữ liệu | Nguồn có thẩm quyền | KHÔNG được là nguồn |
+|---|---|---|
+| Danh sách `templateCode` | `SystemEmailTemplates` (backend registry) | Dòng DB do người dùng tạo |
+| Nội dung VI/EN đang dùng | `email_templates` sau seed/sync/hot-edit hợp lệ | Hard-code trong handler |
+| Hợp đồng biến | `EmailTemplateContracts` (registry) | `variables_text` do UI sửa |
+| Mẫu nhạy cảm / CC-BCC | Registry + `EmailRecipientPolicyEnforcer` | Payload từ frontend |
+| Giá trị mẫu cho preview | `EmailVariableCatalog` (backend) | Dictionary hard-code trong màn hình |
+
+### Quy tắc enforce
+
+- **Tạo / xóa / clone / đổi trạng thái mẫu hệ thống: từ chối**, mã `EMAIL_TEMPLATE_CATALOG_FIXED`.
+  Chặn tại handler — một kiểm tra chỉ nằm ở controller attribute hoặc ở nút trên UI thì không phải là
+  "không đường nào tạo được mẫu".
+- **Update chỉ nhận whitelist nội dung**: `name`, `description`, `subjectVi`, `subjectEn`, `bodyVi`,
+  `bodyEn`. Các trường registry-owned **không tồn tại trên command** thay vì được nhận rồi bỏ đi
+  im lặng — một field API nhận vào rồi âm thầm loại bỏ là lời hứa không ai giữ.
+- **`variables_text` được ghi lại từ registry mỗi lần save.** Đây là cột renderer dùng để validate
+  bản gửi thật; nếu người vận hành nới được nó thì họ viết được placeholder không caller nào cấp giá
+  trị, mẫu lưu sạch và mọi lần gửi sau đó đều lỗi.
+- **Optimistic concurrency bắt buộc.** Token là cột `email_templates.revision` (INT UNSIGNED, đơn điệu).
+  Sai token → `EMAIL_TEMPLATE_CONCURRENCY_CONFLICT`, không last-write-wins.
+  So sánh nằm **trong chính câu UPDATE** (`... AND revision = :expected`, đồng thời `revision = revision + 1`),
+  nên không có khoảng trống giữa lúc kiểm tra và lúc ghi; `rowsAffected = 0` chính là xung đột và bên thua
+  không ghi gì cả.
+  *Đã sửa 2026-07-30:* token trước đây là `updated_at` — cột DATETIME không có phần giây lẻ, nên hai lần lưu
+  trong **cùng một giây** ghi ra cùng một mốc, so sánh bằng nhau, và lần sau đè lần trước im lặng. Điểm mù
+  nằm đúng chỗ hai người thật sự đụng nhau. Nay đã đóng.
+- **Restore Default — HO, và chỉ 6 trường nội dung.** `POST /api/email-templates/{id}/restore-default`.
+  Nội dung mặc định lấy từ registry backend có thẩm quyền (embedded resource **sinh từ canonical SQL seed**,
+  có parity test chống drift) — **không** lấy từ hàng DB hiện tại (đó chính là thứ có thể đã bị sửa hỏng),
+  không lấy từ `sent_emails`, bản nháp hay audit. Mang cùng `expectedRevision` như một lần lưu: restore là
+  ghi đè toàn bộ nội dung, và ghi đè lên thay đổi chưa thấy của đồng nghiệp cũng là mất dữ liệu như lưu đè.
+  Ghi `audit_logs` kèm **nội dung bị thay**, để người bấm nhầm vẫn còn chỗ tìm lại chữ của mình.
+- **Mẫu lịch sử (mã không có trong registry) được giữ, không được sửa.** Lịch sử email và bản nháp còn
+  khóa ngoại tới nó; sửa nội dung sẽ đổi một thông điệp không bao giờ gửi lại được nữa.
+- **Mẫu mang bí mật (OTP, token, link hành động) không được CC/BCC.** `allowCc = allowBcc = false`,
+  do registry quyết định và `EmailRecipientPolicyEnforcer` chặn tại cửa cuối trước khi gửi. Từ
+  2026-07-30, `FileSinkEmailService` (sink dùng cho real-stack evidence) áp **đúng** các kiểm tra đó —
+  trước đây nó ghi mọi thứ được đưa vào, nên một lần chạy có thể "chứng minh" một mẫu token đi kèm BCC
+  thành công trong khi production từ chối chính lệnh gửi ấy. Một test double enforce ít hơn thứ nó thay
+  thế thì tạo ra bằng chứng cho một hệ thống không tồn tại.

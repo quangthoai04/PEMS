@@ -107,8 +107,83 @@ public static class CanonicalSqlScript
     /// form, it is the form git has held all along.
     /// A fresh import was re-run against a disposable database after the change: 82 tables, 32 triggers,
     /// 252 foreign keys, 30 templates, 0 duplicate codes — identical to the eighth bump's baseline.
+    /// (2026-07-29, tenth bump) G11 / R-103 — ONE new table, <c>email_send_idempotency</c>, so that a
+    /// report/invoice send carries a persistent reservation and a retried request cannot become a second
+    /// outbound message. Exactly three hunks, all of them that table:
+    ///   • its <c>DROP TABLE IF EXISTS</c> in the reset list, before `sent_emails` (it is a child of it);
+    ///   • the <c>CREATE TABLE</c> itself, after `account_email_confirmations`;
+    ///   • the file's own <c>merged_runtime_table_count</c> assertion, 81 → 83. That assertion was ALREADY
+    ///     wrong before G11: it read 81 while the script produced 82, and this file's own header comment
+    ///     said 82, so every import reported a permanent issue_count of 1. It is corrected here rather
+    ///     than left one further out of date.
+    /// No seed row, no template, no trigger and no other table changed — verified by diffing the hunks.
+    /// Measured on a fresh disposable import after the change: 83 tables, 32 triggers, 254 foreign keys,
+    /// 30 templates, 22 historical sent_emails. A pre-G11 database migrated with
+    /// <c>docs/database/scripts/email_dispatch_idempotency/02_up_additive.sql</c> was then compared to the
+    /// fresh import column by column, index by index, constraint by constraint, with comments compared as
+    /// raw bytes: identical.
+    /// (2026-07-30, eleventh bump) G12 — contact-guard closure. NO schema change at all: not one table,
+    /// column, index, constraint or seed row differs. The diff is confined to the five primary-contact
+    /// guard triggers and the self-test procedure that measures them.
+    ///
+    /// The headline finding is that the guards were never broken. The import had reported
+    /// <c>contact_guard_negative_failures = 14</c> — every negative case — and the reason was the
+    /// measuring instrument, not the database. Each handler ran
+    /// <c>SET v_raised = TRUE;</c> BEFORE <c>GET DIAGNOSTICS CONDITION 1</c>. MySQL clears the
+    /// diagnostics area on the first successful statement inside a handler, so the subsequent read
+    /// returned NULL for both RETURNED_SQLSTATE and MESSAGE_TEXT; <c>v_sqlstate = '45000'</c> then
+    /// evaluated to UNKNOWN, every case scored FAIL, and the report printed the exact opposite of the
+    /// truth: "Operation unexpectedly succeeded". A direct probe against the same database rejected the
+    /// same statement with 45000 and the right message. Reordering those two statements in all 21
+    /// handlers turned the counters to 0/0 with no trigger change whatsoever.
+    ///
+    /// Three genuine defects in the trigger bodies were then found by probing, and fixed:
+    ///   • <c>v_user_status</c> was VARCHAR(20) while users.status is an ENUM whose longest member,
+    ///     PENDING_EMAIL_CONFIRMATION, is 26 characters. A visitor in that state — the state every new
+    ///     account starts in — made the guard raise <c>22001 Data too long</c> from inside the trigger.
+    ///     The write was still refused, but with a storage error in place of the business code.
+    ///   • roles was INNER JOINed, so a user whose role row could not be read collapsed COUNT(*) to 0
+    ///     and was reported as PRIMARY_CONTACT_USER_NOT_FOUND — untrue, and it hides the real fault.
+    ///   • <c>trg_users_protect_active_primary_contact_bu</c> compared a role code that a zero-row
+    ///     <c>SELECT ... INTO</c> leaves NULL. <c>NULL &lt;&gt; 'VISITOR'</c> is UNKNOWN, which IF treats
+    ///     as false, so on that path the guard silently stopped guarding.
+    ///
+    /// Five self-test cases were added for the paths none of the original 21 reached: NEG-15 (user id
+    /// that does not exist), NEG-16 and NEG-18 (the unconfirmed-account state, on both the request and
+    /// identity-change guards), NEG-17 (an UPDATE that writes visitor_user_id alone, leaving the access
+    /// status untouched) and POS-08 (a visitor linked only to a CANCELLED request may still be
+    /// deactivated — the documented exclusion, asserted so the guard cannot start over-blocking).
+    ///
+    /// Measured on a fresh disposable import after the change: 83 tables, 32 triggers, 254 foreign keys,
+    /// 30 templates, 22 historical sent_emails — identical to the tenth bump's baseline, and
+    /// contact_guard_negative_failures = 0, contact_guard_positive_failures = 0 across 18 negative and
+    /// 8 positive cases. A pre-G12 database migrated with
+    /// <c>docs/database/scripts/contact_guard_closure/02_up_replace_triggers.sql</c> was compared to the
+    /// fresh import: all 32 trigger bodies identical as raw bytes, template content digest identical.
+    ///
+    /// ── Twelfth bump (G11 final closure) ────────────────────────────────────────────────────────
+    ///
+    /// One additive column: <c>email_templates.revision INT UNSIGNED NOT NULL DEFAULT 1</c>. Nothing else
+    /// in the script changed — no table, no index, no trigger, no seed row.
+    ///
+    /// It exists because the optimistic-concurrency token for UC-44 was <c>updated_at</c>, and that column
+    /// cannot do the job: it is DATETIME with no fractional part, so two saves inside the SAME second
+    /// stored an identical stamp, compared equal, and the second silently overwrote the first. The blind
+    /// spot sat exactly at the resolution where concurrent edits collide. Content writes now issue a
+    /// conditional UPDATE carrying <c>AND revision = :expected</c> and bump the column in the same
+    /// statement, so the database decides the winner and the loser writes nothing at all.
+    ///
+    /// The same column is what makes restore-to-default safe: a restore is a full content overwrite, and
+    /// restoring over a colleague's unseen edit is the same lost update as saving over it.
+    ///
+    /// Measured on a fresh disposable import after the change: 83 tables, 32 triggers, 254 foreign keys,
+    /// 30 templates all revision 1, and contact_guard_negative_failures = 0 /
+    /// contact_guard_positive_failures = 0 — unchanged from the eleventh bump, as an additive column
+    /// should leave them. A pre-G11FC database migrated with
+    /// <c>docs/database/scripts/email_template_revision/02_up_add_revision.sql</c> was compared to the
+    /// fresh import: identical column definition, identical row count, identical template content digest.
     public const string ExpectedSha256 =
-        "18e97d4dce754353f5d19decc304c46f4d8f8dab3364d24ebdec9ba907e286b8";
+        "16010f54de2282aa0cbaa11909000b74c59d27b7184715f72a7875bdb854f2f0";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

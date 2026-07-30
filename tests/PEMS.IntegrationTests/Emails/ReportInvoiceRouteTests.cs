@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,7 @@ using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
@@ -133,6 +135,12 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
     private void Authenticate(
         HttpClient client, ulong userId, string roleCode, string? subRole, ulong? deptId)
     {
+        // One key per client, and every send in this file builds its own client — so each request is its
+        // own attempt, which is what these route tests are about. Without it the six send routes answer
+        // 400 EMAIL_IDEMPOTENCY_KEY_REQUIRED (G11 / R-103); that refusal has its own tests below rather
+        // than being the incidental reason every other test fails.
+        client.DefaultRequestHeaders.Add(IdempotencyKey.HeaderName, Guid.NewGuid().ToString());
+
         client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, userId.ToString());
         client.DefaultRequestHeaders.Add(TestAuthHandler.RoleCodeHeader, roleCode);
         if (subRole is not null)
@@ -247,6 +255,11 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
 
     private static async Task CleanupAsync(ApplicationDbContext db)
     {
+        // Send reservations go first. They reference both users (ON DELETE RESTRICT — the record of what
+        // a person sent must not vanish with the person) and sent_emails, so deleting either while a
+        // reservation still points at it is refused by the database, exactly as intended in production.
+        await db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM email_send_idempotency WHERE actor_user_id BETWEEN {0} AND {1}", Base, Base + 100);
         await db.Database.ExecuteSqlRawAsync(
             "DELETE r, e FROM sent_emails e JOIN sent_email_recipients r ON r.sent_email_id = e.sent_email_id "
             + "WHERE r.recipient_email LIKE {0}", MailPrefix + "%" + MailDomain);
@@ -302,6 +315,84 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // ── G11 / R-103, over real HTTP ─────────────────────────────────────────
+    //
+    // These two routes have no frontend caller, so HTTP is the only place their contract can be shown.
+    // The suites above prove the idempotency state machine against the handlers; these prove that the
+    // header reaches it, and that a caller who omits it is refused at the door rather than served.
+
+    /// <summary>Both invoice routes refuse a request with no <c>Idempotency-Key</c>, and send nothing.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_invoice_send_with_no_idempotency_key_is_refused(bool staffLeaderRoute)
+    {
+        using var scope = _factory.Services.CreateScope();
+        await SeedAsync(scope);
+
+        var client = WorkingProviderClient(staffLeaderRoute ? AsStaffLeader : AsDeptLeader);
+        client.DefaultRequestHeaders.Remove(IdempotencyKey.HeaderName);
+
+        var response = await client.PostAsJsonAsync(
+            staffLeaderRoute ? StaffLeaderUrl(DeptId) : DeptLeaderUrl, InvoicePayload());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(EmailErrorCodes.IdempotencyKeyRequired, await response.Content.ReadAsStringAsync());
+        Assert.Empty(Messages());
+    }
+
+    /// <summary>
+    /// The same request twice with the same key over HTTP: one message, and the second call answers with
+    /// the first call's result rather than doing the work again.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_invoice_send_repeated_with_the_same_key_produces_one_message(bool staffLeaderRoute)
+    {
+        using var scope = _factory.Services.CreateScope();
+        await SeedAsync(scope);
+
+        var url = staffLeaderRoute ? StaffLeaderUrl(DeptId) : DeptLeaderUrl;
+        var client = WorkingProviderClient(staffLeaderRoute ? AsStaffLeader : AsDeptLeader);
+
+        var first = await client.PostAsJsonAsync(url, InvoicePayload());
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Single(Messages());
+
+        // Same client, so the same key travels again — a browser retry, not a new send.
+        var replay = await client.PostAsJsonAsync(url, InvoicePayload());
+
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal(await first.Content.ReadAsStringAsync(), await replay.Content.ReadAsStringAsync());
+        Assert.Single(Messages());
+    }
+
+    /// <summary>The same key with an edited invoice is refused over HTTP, and sends nothing further.</summary>
+    [Fact]
+    public async Task An_invoice_send_reusing_a_key_for_a_different_request_is_refused()
+    {
+        using var scope = _factory.Services.CreateScope();
+        await SeedAsync(scope);
+
+        var client = WorkingProviderClient(AsDeptLeader);
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(DeptLeaderUrl, InvoicePayload())).StatusCode);
+        Assert.Single(Messages());
+
+        var edited = await client.PostAsJsonAsync(DeptLeaderUrl, new
+        {
+            fromDate = "2026-07-01",
+            toDate = "2026-07-31",
+            note = "Đã sửa nội dung",
+            items = new[] { new { logisticsItemId = LogisticsItemId, unitPrice = 999_000m } },
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, edited.StatusCode);
+        Assert.Contains(EmailErrorCodes.IdempotencyKeyReused, await edited.Content.ReadAsStringAsync());
+        Assert.Single(Messages());
+    }
+
     /// <summary>Both are POST-only; a GET must not quietly resolve to some other action.</summary>
     [Fact]
     public async Task The_invoice_urls_answer_to_post_only()
@@ -355,6 +446,69 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
 
         Assert.Equal(HttpStatusCode.Unauthorized, staffLeader.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, deptLeader.StatusCode);
+    }
+
+    /// <summary>
+    /// The three scaffolded dashboard endpoints sit on the same controller. They are not built, but the
+    /// class-level <c>[Authorize]</c> has to hold regardless — an unimplemented endpoint that answers an
+    /// anonymous caller is a door left open for whoever implements it. They carry no
+    /// <c>[RoleAuthorize]</c>; that is tracked as debt (R-104) and is deliberately NOT asserted here,
+    /// because a test that locks in a missing role gate would have to be deleted to fix it.
+    /// </summary>
+    [Theory]
+    [InlineData("GET", "/api/reports/viewdashboardstatistics")]
+    [InlineData("POST", "/api/reports/exportstatisticsreport")]
+    [InlineData("GET", "/api/reports/filterdashboardbytime")]
+    public async Task An_anonymous_caller_is_challenged_on_the_scaffolded_dashboard_routes(
+        string method, string url)
+    {
+        var client = PlainClient(Anonymous);
+
+        var response = method == "GET"
+            ? await client.GetAsync(url)
+            : await client.PostAsJsonAsync(url, new { });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>
+    /// R-104 option B. The three routes are declared but unbuilt, so they answer <b>501 Not
+    /// Implemented</b> with a stable code — not 500, which is what an unhandled
+    /// <c>NotImplementedException</c> produced and which is indistinguishable from a real fault.
+    ///
+    /// <para>
+    /// Every authenticated role gets the same answer on purpose: the role contract for these endpoints
+    /// is still an open owner decision, and 501-for-everyone settles none of it.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("GET", "/api/reports/viewdashboardstatistics")]
+    [InlineData("POST", "/api/reports/exportstatisticsreport")]
+    [InlineData("GET", "/api/reports/filterdashboardbytime")]
+    public async Task The_unbuilt_dashboard_routes_answer_501_rather_than_failing(string method, string url)
+    {
+        using var scope = _factory.Services.CreateScope();
+        await SeedAsync(scope);
+
+        foreach (var authenticate in new Action<HttpClient>[] { AsHo, AsStaffLeader, AsDeptLeader, AsDeptStaff })
+        {
+            var client = PlainClient(authenticate);
+
+            var response = method == "GET"
+                ? await client.GetAsync(url)
+                : await client.PostAsJsonAsync(url, new { });
+
+            Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+            Assert.NotEqual(HttpStatusCode.InternalServerError, response.StatusCode);
+
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.False(body.RootElement.GetProperty("success").GetBoolean());
+            Assert.Equal(
+                PEMS.Api.Controllers.ReportsController.DashboardNotImplementedErrorCode,
+                body.RootElement.GetProperty("errorCode").GetString());
+            Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("message").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("traceId").GetString()));
+        }
     }
 
     [Fact]
