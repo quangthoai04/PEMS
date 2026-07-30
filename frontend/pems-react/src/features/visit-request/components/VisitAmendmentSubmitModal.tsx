@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, X } from 'lucide-react';
+import { useAuthContext } from '../../../shared/auth/AuthContext';
+import { HelpCircle, Plus, Trash2, X } from 'lucide-react';
 import {
   submitAmendment,
   type AmendmentProposalPayload,
@@ -65,6 +66,8 @@ function diffMembers(current: EditableMember[], originalByKey: Map<string, strin
  */
 export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onClose, onSubmitted }: Props) {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
+  const { user } = useAuthContext();
+  const isStaff = user?.roleCode?.toUpperCase() === 'STAFF';
 
   const [delegationName, setDelegationName] = useState(campus.delegationName);
   const [visitType, setVisitType] = useState(campus.visitType);
@@ -121,6 +124,10 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
       case AmendmentErrorCode.BaseRevisionConflict:
       case AmendmentErrorCode.ConcurrencyConflict:
         return t('visitRequestV2:amend.errConflict');
+      case AmendmentErrorCode.ApproverScopeForbidden:
+        return t('visitRequestV2:amend.errApproverScopeForbidden');
+      case AmendmentErrorCode.NoChanges:
+        return t('visitRequestV2:amend.errNoChanges');
       default:
         return t('visitRequestV2:amend.errGeneric');
     }
@@ -227,15 +234,16 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
       aria-label={t('visitRequestV2:amend.title', { campus: campus.campusName })}>
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-[#004c91]">
-            {t('visitRequestV2:amend.title', { campus: campus.campusName })}
+          <h2 className="flex items-center text-base font-extrabold text-[#004c91]">
+            {isStaff ? t('visitRequestV2:amend.titleUpdate', { campus: campus.campusName, defaultValue: `Cập nhật thông tin — ${campus.campusName}` }) : t('visitRequestV2:amend.title', { campus: campus.campusName })}
+            <span title={t('visitRequestV2:amend.activeStaysNote')} className="ml-2 flex items-center">
+              <HelpCircle className="h-4 w-4 text-slate-400" />
+            </span>
           </h2>
           <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label={t('visitRequestV2:common.cancel')}>
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t('visitRequestV2:amend.activeStaysNote')}</p>
-
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.delegationName')}</span>
@@ -315,7 +323,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           </button>
           <button type="button" data-testid="amendment-submit" disabled={busy || !reasonValid || !hasVisitor} onClick={() => void submit()}
             className="rounded-lg bg-[#f37021] px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50">
-            {t('visitRequestV2:amend.submit')}
+            {isStaff ? t('visitRequestV2:amend.submitUpdate', { defaultValue: 'Cập nhật' }) : t('visitRequestV2:amend.submit')}
           </button>
         </div>
       </div>

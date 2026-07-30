@@ -115,6 +115,7 @@ public static class VisitFormV2ErrorCodes
 
     public const string AmendmentAlreadyPending = "AMENDMENT_ALREADY_PENDING";
     public const string AmendmentNotEditable = "AMENDMENT_NOT_EDITABLE";
+    public const string AmendmentNoChanges = "AMENDMENT_NO_CHANGES";
     public const string AmendmentBaseRevisionConflict = "AMENDMENT_BASE_REVISION_CONFLICT";
     public const string AmendmentApproverScopeForbidden = "AMENDMENT_APPROVER_SCOPE_FORBIDDEN";
     public const string AmendmentWindowExpired = "AMENDMENT_WINDOW_EXPIRED";

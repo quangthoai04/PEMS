@@ -254,8 +254,10 @@ public sealed class VisitFormReadService : IVisitFormReadService
             //    way must not close a campus that is still a week out (and vice versa). ──
             var hasPendingAmendment = activeAmendmentByInstance.ContainsKey(c.VisitInstanceId);
             var isLeaderHere = IsCurrentCampusLeader(c.CampusId);
+            var isHostHere = c.CurrentHostUserId == userId;
             var relationHere = requesterSide
                 ? VisitViewerRelations.Requester
+                : isHostHere ? VisitViewerRelations.Host
                 : isLeaderHere ? VisitViewerRelations.CampusLeader : VisitViewerRelations.Other;
             var instanceCapabilities = new List<VisitActionCapabilityDto>();
 
@@ -271,12 +273,22 @@ public sealed class VisitFormReadService : IVisitFormReadService
                         ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
                         : null));
             }
-            if (isLeaderHere)
+            if (isHostHere)
             {
                 instanceCapabilities.Add(Decide(
+                    VisitMutationAction.SubmitAmendment, VisitFormActions.SubmitAmendment,
+                    c, VisitViewerRelations.Host, name, instanceScope: true,
+                    overrideReason: hasPendingAmendment
+                        ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
+                        : null));
+
+                instanceCapabilities.Add(Decide(
                     VisitMutationAction.ApproveAmendment, VisitFormActions.ApproveAmendment,
-                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
+                    c, VisitViewerRelations.Host, name, instanceScope: true,
                     overrideReason: hasPendingAmendment ? null : "Cơ sở này không có đề xuất nào chờ duyệt."));
+            }
+            if (isLeaderHere)
+            {
                 // Transferring the Host presupposes there IS one — before approval the Host arrives with
                 // the approval decision, which is a different action on a different screen.
                 instanceCapabilities.Add(Decide(
@@ -285,6 +297,13 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     overrideReason: c.CurrentHostUserId is null
                         ? "Cơ sở này chưa có Host để chuyển giao."
                         : null));
+
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.SubmitAmendment, VisitFormActions.SubmitAmendment,
+                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
+                    overrideReason: hasPendingAmendment
+                        ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
+                        : null));
             }
 
             // The flat list stays the ENABLED subset, so it can never contradict the verdicts above.
@@ -292,7 +311,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             // Reject travels with approve (one decision, two outcomes); withdraw is the requester's own
             // way out of a proposal and stays open regardless of the cutoff — cancelling a request for a
             // change is never something to keep alive against the requester's wishes.
-            if (hasPendingAmendment && isLeaderHere
+            if (hasPendingAmendment && isHostHere
                 && instanceActions.Contains(VisitFormActions.ApproveAmendment))
                 instanceActions.Add(VisitFormActions.RejectAmendment);
             if (hasPendingAmendment && requesterSide)

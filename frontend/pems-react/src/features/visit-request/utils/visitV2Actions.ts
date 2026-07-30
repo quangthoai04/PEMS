@@ -66,6 +66,7 @@ export const VisitMutationErrorCode = {
 export const AmendmentErrorCode = {
   AlreadyPending: 'AMENDMENT_ALREADY_PENDING',
   NotEditable: 'AMENDMENT_NOT_EDITABLE',
+  NoChanges: 'AMENDMENT_NO_CHANGES',
   BaseRevisionConflict: 'AMENDMENT_BASE_REVISION_CONFLICT',
   ApproverScopeForbidden: 'AMENDMENT_APPROVER_SCOPE_FORBIDDEN',
   WindowExpired: 'AMENDMENT_WINDOW_EXPIRED',

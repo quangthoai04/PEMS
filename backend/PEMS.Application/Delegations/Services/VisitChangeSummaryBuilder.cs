@@ -70,7 +70,8 @@ public static class VisitChangeSummaryBuilder
 
         var pendingAmendments = await db.VisitInstanceAmendments.AsNoTracking()
             .Where(a => visitRequestIds.Contains(a.VisitRequestId)
-                        && a.Status == AmendmentStatuses.PendingApproval)
+                        && a.Status == AmendmentStatuses.PendingApproval
+                        && a.VisitInstance.CurrentHostUserId == userId)
             .Select(a => new { a.VisitRequestId, a.VisitInstanceId })
             .ToListAsync(ct);
 

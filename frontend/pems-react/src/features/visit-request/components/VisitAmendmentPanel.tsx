@@ -110,7 +110,7 @@ export default function VisitAmendmentPanel({
     >
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-          Đề xuất thay đổi #{amendment.amendmentNo} — chờ Staff Leader duyệt
+          Đề xuất thay đổi #{amendment.amendmentNo} — chờ người phụ trách đơn duyệt
         </h3>
         <span className="rounded bg-amber-200/70 dark:bg-amber-800/60 px-1.5 py-0.5 text-[11px] text-amber-900 dark:text-amber-100">
           Nội dung đang hiệu lực KHÔNG thay đổi cho tới khi duyệt

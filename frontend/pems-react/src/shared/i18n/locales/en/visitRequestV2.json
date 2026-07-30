@@ -251,13 +251,15 @@
   "amend": {
     "open": "Propose change",
     "title": "Propose a change — {{campus}}",
-    "activeStaysNote": "The active content stays unchanged until a Staff Leader approves the proposal.",
+    "activeStaysNote": "If you are Staff, your proposal is automatically approved and applied. If you are a Visitor, the content stays unchanged until the Host or Staff Leader approves it.",
     "reason": "Reason for the change",
     "submit": "Submit proposal",
     "errAlreadyPending": "This campus already has a pending proposal. Please wait for it or withdraw the current one.",
     "errWindowExpired": "The visit starts within 24 hours, so self-service changes are closed. Please contact FPTU.",
     "errNotEditable": "This campus cannot accept a change proposal right now.",
     "errConflict": "The data changed since you opened this. Please reload and try again.",
+    "errApproverScopeForbidden": "You cannot propose changes to a visit that you are the approver for.",
+    "errNoChanges": "The proposal has no changes compared to the active content.",
     "errGeneric": "Could not submit the proposal. Please try again.",
     "members": {
       "visitors": "Guest list",
