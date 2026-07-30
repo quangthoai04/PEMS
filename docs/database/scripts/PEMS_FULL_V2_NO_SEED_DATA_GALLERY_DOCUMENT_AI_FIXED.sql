@@ -414,6 +414,7 @@ DROP TABLE IF EXISTS `email_draft_recipients`;
 DROP TABLE IF EXISTS `email_drafts`;
 DROP TABLE IF EXISTS `sent_email_attachments`;
 DROP TABLE IF EXISTS `sent_email_recipients`;
+DROP TABLE IF EXISTS `email_send_idempotency`;
 DROP TABLE IF EXISTS `sent_emails`;
 DROP TABLE IF EXISTS `email_templates`;
 DROP TABLE IF EXISTS `visit_photo_face_detections`;
@@ -2592,6 +2593,7 @@ CREATE TABLE news (
 
   published_at DATETIME NULL COMMENT 'Thời điểm bài viết được đăng',
   is_featured BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Bài viết nổi bật',
+  is_pinned BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Bài viết được ghim ở Dấu ấn các chuyến thăm',
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token, chống ghi đè khi cập nhật đồng thời',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2605,6 +2607,7 @@ CREATE TABLE news (
   KEY idx_news_visit_instance_status (visit_instance_id, status),
   KEY idx_news_review (reviewed_by, reviewed_at),
   KEY idx_news_featured (is_featured, status, published_at),
+  KEY idx_news_pinned (is_pinned, status, published_at),
 
   CONSTRAINT fk_news_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
@@ -3082,6 +3085,7 @@ CREATE TABLE email_templates (
   body_format ENUM('PLAIN_TEXT','HTML') NOT NULL DEFAULT 'HTML'
     COMMENT 'Định dạng nội dung email template; HTML dùng cho rich text editor',
   variables_text VARCHAR(700) NULL,
+  revision INT UNSIGNED NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -3130,6 +3134,31 @@ CREATE TABLE sent_emails (
     FOREIGN KEY (sent_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Sent email log; recipients stored in sent_email_recipients';
+
+CREATE TABLE email_send_idempotency (
+  email_send_idempotency_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor_user_id BIGINT UNSIGNED NOT NULL COMMENT 'Người bấm gửi, đọc từ JWT đã xác thực — không bao giờ từ payload',
+  operation_code VARCHAR(64) NOT NULL COMMENT 'Một trong sáu hành động gửi báo cáo/hóa đơn, ví dụ REPORT_HO_CAMPUS',
+  idempotency_key_hash CHAR(64) NOT NULL COMMENT 'SHA-256 (hex) của Idempotency-Key — KHÔNG lưu key gốc',
+  request_fingerprint CHAR(64) NOT NULL COMMENT 'SHA-256 (hex) của nội dung nghiệp vụ đã chuẩn hoá; cùng key khác fingerprint = từ chối, không gửi',
+  state VARCHAR(32) NOT NULL DEFAULT 'RESERVED' COMMENT 'RESERVED / PREPARING / DISPATCHING / SUCCEEDED / FAILED_BEFORE_DISPATCH / OUTCOME_UNKNOWN',
+  sent_email_id BIGINT UNSIGNED NULL COMMENT 'Bản ghi lịch sử của lần gửi thành công, để đối chiếu',
+  result_message VARCHAR(500) NULL COMMENT 'Thông báo thành công, phát lại nguyên văn cho lần gọi trùng',
+  failure_code VARCHAR(64) NULL COMMENT 'Mã lỗi ổn định; không chứa địa chỉ, số tiền, token hay nội dung thư',
+  attempt_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Số lần handler thực sự chạy dưới key này (chỉ tăng khi retry sau FAILED_BEFORE_DISPATCH)',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  dispatch_started_at DATETIME NULL COMMENT 'Thời điểm ngay trước lời gọi ra ngoài; có giá trị nghĩa là không thể khẳng định chưa gửi',
+  completed_at DATETIME NULL,
+  PRIMARY KEY (email_send_idempotency_id),
+  UNIQUE KEY uq_email_send_idempotency_actor_op_key (actor_user_id, operation_code, idempotency_key_hash),
+  KEY idx_email_send_idempotency_state (state, created_at),
+  KEY idx_email_send_idempotency_sent_email (sent_email_id),
+  CONSTRAINT chk_email_send_idempotency_state CHECK (state IN ('RESERVED','PREPARING','DISPATCHING','SUCCEEDED','FAILED_BEFORE_DISPATCH','OUTCOME_UNKNOWN')),
+  CONSTRAINT fk_email_send_idempotency_actor FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_email_send_idempotency_sent_email FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Chống gửi trùng cho sáu hành động gửi báo cáo/hóa đơn (G11 / R-103). Chỉ lưu hash của key và của yêu cầu.';
 
 CREATE TABLE sent_email_recipients (
   sent_email_recipient_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -4525,19 +4554,23 @@ BEGIN
   DECLARE v_valid_file INT DEFAULT 0;
 
   SELECT COUNT(*) INTO v_valid_participant
-  FROM visit_participants vp
-  JOIN users u ON u.user_id = vp.user_id
+  FROM visit_request_campuses vrc
+  JOIN users u ON u.user_id = NEW.uploaded_by
   JOIN roles r ON r.role_id = u.role_id
-  WHERE vp.visit_instance_id = NEW.visit_instance_id
+  LEFT JOIN visit_participants vp ON vp.visit_instance_id = NEW.visit_instance_id
     AND vp.user_id = NEW.uploaded_by
-    AND vp.participant_role = 'STUDENT'
-    AND vp.status = 'ACCEPTED'
-    AND r.role_code = 'STUDENT'
-    AND u.status = 'ACTIVE';
+    AND (vp.status = 'ACCEPTED' OR vp.status = 'ASSIGNED')
+  WHERE vrc.visit_instance_id = NEW.visit_instance_id
+    AND u.status = 'ACTIVE'
+    AND (
+      vrc.current_host_user_id = NEW.uploaded_by
+      OR r.role_code IN ('ADMIN', 'STAFF')
+      OR vp.participant_id IS NOT NULL
+    );
 
   IF v_valid_participant = 0 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE Student with ACCEPTED participation in this visit instance';
+      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE user who is Host, Staff, Admin, or Participant of this visit instance';
   END IF;
 
   SELECT COUNT(*) INTO v_valid_file
@@ -10264,14 +10297,14 @@ SELECT
   'Google Document AI - Business Card OCR',
   'GOOGLE_DOCUMENT_AI',
   'BUSINESS_CARD_OCR',
-  'https://us-documentai.googleapis.com',
+  'https://asia-southeast1-documentai.googleapis.com',
   'POST',
   'CUSTOM',
   JSON_OBJECT(
-    'project_id', '',
-    'location', 'us',
-    'processor_id', '',
-    'endpoint', 'us-documentai.googleapis.com',
+    'project_id', 'pems-production',
+    'location', 'asia-southeast1',
+    'processor_id', '9f4642de7b8f8b25',
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
     'max_file_size_mb', 10,
     'allowed_mime_types', JSON_ARRAY('image/jpeg', 'image/png', 'image/webp', 'application/pdf')
   ),
