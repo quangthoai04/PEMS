@@ -295,6 +295,142 @@ public sealed class EmailMimeEnvelopeTests : IDisposable
         Assert.Equal(0, MessageCount());
     }
 
+    // ── The sender identity is the system's, never the caller's ──────────────
+    //
+    // Report and invoice commands carry no `from`, but "no caller sets it today" is a fact about today's
+    // callers. These hold the property at the place that actually builds the message, so a future caller
+    // cannot acquire a sender identity by any route.
+
+    [Fact]
+    public async Task The_sender_address_always_comes_from_configuration()
+    {
+        await Service().SendAsync(new OutboundEmail
+        {
+            // A display name shaped like an address, on the one field a caller does control.
+            To = new[] { R("head@fpt.edu.vn", "ban-giam-hieu@fpt.edu.vn") },
+            Subject = "Hóa đơn hậu cần",
+            Body = "<p>report</p>",
+        });
+
+        var eml = ReadOnlyMessage();
+        var from = HeaderValue(eml, "From");
+
+        Assert.Contains("no-reply@pems.test", from);
+        Assert.DoesNotContain("ban-giam-hieu@fpt.edu.vn", from);
+
+        // Exactly one From header: a second one would let a reader's client choose which to believe.
+        var fromHeaders = eml.Split('\n')
+            .TakeWhile(l => l.Trim().Length > 0)
+            .Count(l => l.StartsWith("From:", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, fromHeaders);
+    }
+
+    /// <summary>
+    /// Every header that decides who a message is from, or who it reaches, is refused outright when it
+    /// arrives through the bag.
+    ///
+    /// <para>
+    /// This used to be a weaker test: it sent the identity headers and then asserted what the framework
+    /// happened to do with them — From overwritten by configuration, Sender and Reply-To dropped. That is
+    /// a description of .NET's behaviour, not a rule of ours, and it said nothing at all about
+    /// <c>Return-Path</c>, which did survive into the file, or about To/Cc/Bcc. The refusal is now the
+    /// rule, so none of it depends on the transport being kind.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("From", "hieu-truong@fpt.edu.vn")]
+    [InlineData("Sender", "hieu-truong@fpt.edu.vn")]
+    [InlineData("Reply-To", "hieu-truong@fpt.edu.vn")]
+    [InlineData("Return-Path", "bounces@evil.example.com")]
+    [InlineData("To", "someone-else@fpt.edu.vn")]
+    [InlineData("Cc", "someone-else@fpt.edu.vn")]
+    [InlineData("Bcc", "watcher@evil.example.com")]
+    [InlineData("Message-Id", "<forged@evil.example.com>")]
+    public async Task A_header_the_pipeline_owns_is_refused_from_the_bag(string header, string value)
+    {
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Service().SendAsync(new OutboundEmail
+        {
+            To = new[] { R("head@fpt.edu.vn") },
+            Subject = "Hóa đơn hậu cần",
+            Body = "<p>report</p>",
+            Headers = new Dictionary<string, string> { [header] = value },
+        }));
+
+        Assert.Equal(EmailErrorCodes.HeaderInvalid, ex.ErrorCode);
+
+        // Refused while the message was still being built, before the transport was even reached — the
+        // pickup directory is created on the way out, so its absence is the strongest form of "nothing
+        // was sent". Tolerate either: what matters is that no .eml exists.
+        Assert.Empty(Directory.Exists(_pickupDir)
+            ? Directory.GetFiles(_pickupDir, "*.eml")
+            : Array.Empty<string>());
+    }
+
+    [Fact]
+    public async Task Header_names_are_matched_regardless_of_case()
+    {
+        // "bcc:" and "BCC:" name the same header to every mail server; the denylist must agree.
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Service().SendAsync(new OutboundEmail
+        {
+            To = new[] { R("head@fpt.edu.vn") },
+            Subject = "Hóa đơn hậu cần",
+            Body = "<p>report</p>",
+            Headers = new Dictionary<string, string> { ["bCc"] = "watcher@evil.example.com" },
+        }));
+
+        Assert.Equal(EmailErrorCodes.HeaderInvalid, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task The_sender_identity_still_comes_from_configuration()
+    {
+        // With the bag closed, this is what remains true of every message: one From, and it is ours.
+        await Service().SendAsync(new OutboundEmail
+        {
+            To = new[] { R("head@fpt.edu.vn") },
+            Subject = "Hóa đơn hậu cần",
+            Body = "<p>report</p>",
+        });
+
+        var eml = ReadOnlyMessage();
+
+        Assert.Contains("no-reply@pems.test", HeaderValue(eml, "From"));
+        Assert.Empty(HeaderValue(eml, "Sender"));
+        Assert.Empty(HeaderValue(eml, "Return-Path"));
+    }
+
+    [Fact]
+    public async Task The_message_id_comes_from_the_typed_field_and_reaches_the_wire()
+    {
+        // Message-Id is on the denylist, so it has to travel some other way: the typed field, which is
+        // also what gets written to sent_emails.provider_message_id. If this stopped working, replies
+        // would thread against an id no delivered message ever carried.
+        await Service().SendAsync(new OutboundEmail
+        {
+            To = new[] { R("head@fpt.edu.vn") },
+            Subject = "Hóa đơn hậu cần",
+            Body = "<p>report</p>",
+            MessageId = "<pems-typed-id@pems.local>",
+        });
+
+        Assert.Contains("pems-typed-id@pems.local", HeaderValue(ReadOnlyMessage(), "Message-Id"));
+    }
+
+    [Fact]
+    public async Task Thread_headers_are_still_allowed_through_the_headers_bag()
+    {
+        // The denylist must not cost the reply threading the bag exists for.
+        await Service().SendAsync(new OutboundEmail
+        {
+            To = new[] { R("head@fpt.edu.vn") },
+            Subject = "Re: Hóa đơn",
+            Body = "<p>reply</p>",
+            Headers = new Dictionary<string, string> { ["In-Reply-To"] = "<pems-1@pems.test>" },
+        });
+
+        Assert.Contains("pems-1@pems.test", HeaderValue(ReadOnlyMessage(), "In-Reply-To"));
+    }
+
     // ── Status truthfulness ──────────────────────────────────────────────────
 
     [Fact]

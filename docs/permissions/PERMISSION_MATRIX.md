@@ -277,11 +277,39 @@ Nếu một tài khoản VISITOR cần chuyển sang role nội bộ, Staff Lead
 | UC-42 | View Email Template List | R | — | — | — | — | — | — | — |
 | UC-43 | View Email Template Detail | R | — | — | — | — | — | — | — |
 | UC-44 | Update Email Template | E | — | — | — | — | — | — | — |
-| UC-45 | Create Email Template | F | — | — | — | — | — | — | — |
+| UC-45 | ~~Create Email Template~~ **DEPRECATED — NOT AVAILABLE** | — | — | — | — | — | — | — | — |
 | UC-46 | Edit Email Content | O | — | O | O | O | O | O | O |
 | UC-47 | Send Email | O | — | O | O | O | O | O | O |
 | UC-48 | View Email | O | — | O | O | O | O | O | O |
 | UC-49 | Reply to Email | O | — | O | O | O | O | O | O |
+
+> **Email template catalog — cập nhật 2026-07-30 (G11-I).** Danh mục mẫu email là catalog hệ thống cố
+> định do backend registry quyết định, không phải dữ liệu người dùng tạo được.
+>
+> - **UC-45 chuyển từ `F` (HO) sang không khả dụng cho mọi role.** `POST /api/email-templates` trả
+>   `EMAIL_TEMPLATE_CATALOG_FIXED`; chặn ở handler, không chỉ ẩn nút. Đổi trạng thái mẫu
+>   (`PATCH /{id}/status`) cũng bị chặn bằng cùng mã lỗi.
+> - **UC-44 giữ `E` cho HO**, giới hạn ở các trường nội dung (`name`, `description`, `subjectVi/En`,
+>   `bodyVi/En`). Mã mẫu, module, `campus_id`, trạng thái, `body_format` và hợp đồng biến
+>   (`variables_text`) do registry sở hữu và không nhận từ request.
+> - **UC-42/43/44 nay được enforce theo từng action.** Trước đây controller mang một `[RoleAuthorize]`
+>   duy nhất liệt kê 5 role — đúng cho phía đọc (ai soạn email cũng cần chọn và xem trước mẫu) nhưng
+>   khiến Staff, Department và Staff Leader **tạo, sửa và tắt được mẫu hệ thống**, trái hẳn bảng này.
+>   Các action ghi giờ là `[RoleAuthorize(Ho)]`; `preview`, `GET` danh sách/chi tiết và
+>   `GET contract/{code}` vẫn mở cho các role soạn email vì màn hình soạn cần chúng.
+>
+> **Bổ sung 2026-07-30 (G11 final closure):**
+>
+> - **Còn một đường vòng nữa đã đóng.** `EmailsController` mang hai route trùng lặp —
+>   `POST /api/Emails/updateemailtemplate` và `POST /api/Emails/createemailtemplate` — chỉ thừa hưởng
+>   `[RoleAuthorize]` cấp class liệt kê 5 role. Nghĩa là Staff/Department/Staff Leader **vẫn sửa được nội
+>   dung mẫu hệ thống** qua một route màn hình không bao giờ hiện; siết `EmailTemplatesController` ở trên
+>   chưa đủ. Hai route nay là `[RoleAuthorize(Ho)]` và được đánh dấu DEPRECATED (không caller nào gọi).
+>   **Không xoá route** — bỏ một route là quyết định của chủ dự án, không phải của lượt sửa này.
+> - **Restore Default (`POST /api/email-templates/{id}/restore-default`) — HO, thuộc UC-44.** Không đánh số
+>   UC mới: đây là đường quay lại của cùng một quyền "sửa nội dung mẫu", và catalog cố định nghĩa là người
+>   vận hành sửa hỏng thì không có cách nào khác để về. Chỉ phục hồi đúng 6 trường mà UC-44 sửa được; mã
+>   mẫu, module, phân loại, trạng thái và hợp đồng biến không đổi. Có ghi `audit_logs` kèm nội dung bị thay.
 
 ### 5.6. Partner Management
 

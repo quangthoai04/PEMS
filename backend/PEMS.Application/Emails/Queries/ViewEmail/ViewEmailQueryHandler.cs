@@ -67,9 +67,13 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
 
         // The linked-object branch is only consulted when the envelope does not already grant access, so a
         // sender or addressee never pays for the extra lookup.
-        var relation = SentEmailAccess.Resolve(
+        // Kept separately from `relation` below: the reply affordance must be decided on the envelope
+        // alone, because that is what the reply command re-checks.
+        var envelopeRelation = SentEmailAccess.Resolve(
             currentUserId, currentUserEmail, email.SentBy, recipients,
             r => r.RecipientEmail, r => r.RecipientType);
+
+        var relation = envelopeRelation;
 
         if (relation == SentEmailAccess.Relation.None
             && await _objectScope.CanViewLinkedObjectAsync(email.RelatedType, email.RelatedId, cancellationToken))
@@ -115,6 +119,8 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
             SentAt = email.SentAt,
             CreatedAt = email.CreatedAt,
             Sender = senderDto,
+            CanReply = SentEmailAccess.CanOfferReply(envelopeRelation, email.SentBy),
+            CanMarkComplete = SentEmailAccess.CanMarkComplete(envelopeRelation, email.DeliveredAt),
             // Deliberately NOT accompanied by a total, a count or a "hidden recipients" flag: any of those
             // would tell a TO or CC reader that a blind copy exists, which is the one thing BCC promises
             // it will not do.

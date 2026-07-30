@@ -10,6 +10,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Shared;
@@ -22,16 +23,26 @@ namespace PEMS.Application.Reports.Commands.SendStaffLeaderDepartmentReport;
 /// phòng ban đó — mỗi người một thư riêng. Nội dung thư đến từ <c>email_templates</c>
 /// (REPORT_DEPARTMENT_COLLABORATION); số liệu và danh sách nhiệm vụ đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendStaffLeaderDepartmentReportCommand : IRequest<SendStaffLeaderDepartmentReportResult>
+public sealed class SendStaffLeaderDepartmentReportCommand : IRequest<SendStaffLeaderDepartmentReportResult>, IIdempotentEmailSend
 {
     public ulong DepartmentId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     /// <summary>Ghi chú của Staff Leader nhập trên bảng (đưa vào báo cáo).</summary>
     public string? Note { get; set; }
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.StaffLeaderDepartmentReport;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Id("department", DepartmentId)
+               .Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note);
 }
 
-public sealed class SendStaffLeaderDepartmentReportResult
+public sealed class SendStaffLeaderDepartmentReportResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;

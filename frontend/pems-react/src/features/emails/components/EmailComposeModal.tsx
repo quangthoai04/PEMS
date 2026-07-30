@@ -13,13 +13,33 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { X, Loader2, Paperclip, Send, Trash2, Image as ImageIcon, Eye, ChevronLeft } from 'lucide-react';
-import { emailDraftsApi, type EmailDraftAttachmentInput } from '../api/emailDraftsApi';
+import {
+  emailDraftsApi,
+  type EmailDraftAttachmentInput,
+  type EmailDraftRecipientInput,
+  type EmailDraftRecipientDto,
+} from '../api/emailDraftsApi';
 import { emailsApi } from '../api/emailsApi';
+import { RecipientChipInput } from './RecipientChipInput';
+import { useRecipientLimit } from '../hooks/useRecipientLimit';
+import { classifyRecipientError } from '../utils/recipientErrors';
+import {
+  RECIPIENT_GROUP_LABELS,
+  countRecipients,
+  emptyEnvelope,
+  isUsableLimit,
+  normalizeEmail,
+  splitPastedRecipients,
+  validateEnvelope,
+  type RecipientEnvelope,
+  type RecipientGroup,
+} from '../types/recipients';
 import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../utils/inlineImages';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
+import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 
 type Toast = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -41,6 +61,11 @@ interface Props {
   initialSubject?: string;
   initialBodyHtml?: string;
   initialRecipients?: string; // comma/newline separated
+  /**
+   * Reopen an existing draft instead of starting a new one. The draft is fetched and its recipients
+   * are put back into the group `recipient_type` says they came from.
+   */
+  initialDraftId?: number | null;
 }
 
 const QUILL_MODULES_TOOLBAR = [
@@ -58,15 +83,51 @@ function formatBytes(bytes?: number | null): string {
   return kb < 1024 ? `${kb.toFixed(kb < 10 ? 1 : 0)} KB` : `${(kb / 1024).toFixed(1)} MB`;
 }
 
-function parseRecipients(raw: string): string[] {
-  return Array.from(
-    new Set(
-      raw
-        .split(/[,;\n\s]+/)
-        .map((s) => s.trim())
-        .filter((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)),
-    ),
-  );
+/**
+ * Seeds the TO group from the `initialRecipients` prop, which callers still pass as a comma/newline
+ * string. Splitting is all this does — the addresses go through the same validation as typed ones.
+ */
+function seedEnvelopeFromString(raw: string): RecipientEnvelope {
+  const envelope = emptyEnvelope();
+  const seen = new Set<string>();
+  for (const email of splitPastedRecipients(raw)) {
+    const key = normalizeEmail(email);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    envelope.TO.push({ email });
+  }
+  return envelope;
+}
+
+/**
+ * Rebuilds the three groups from a stored draft.
+ *
+ * `recipient_type` is the only thing that says which group a row belonged to, and the mapping is
+ * exhaustive on purpose: TO, CC, BCC, nothing else. A value outside those three is corrupt data or a
+ * contract mismatch, and there is no safe group to put it in — coercing it to TO would change what the
+ * data means, write an unverified address into a visible header, and turn a broken row into a
+ * perfectly sendable payload. Coercing it to BCC would leak it.
+ *
+ * So unrecognised rows are neither placed nor dropped: they are handed back separately, the caller
+ * refuses to preview or send the draft, and the stored draft is left alone so nothing is lost.
+ */
+function envelopeFromDraft(recipients: EmailDraftRecipientDto[] | undefined): {
+  envelope: RecipientEnvelope;
+  unknown: EmailDraftRecipientDto[];
+} {
+  const envelope = emptyEnvelope();
+  const unknown: EmailDraftRecipientDto[] = [];
+  if (!recipients) return { envelope, unknown };
+
+  for (const row of [...recipients].sort((a, b) => a.displayOrder - b.displayOrder)) {
+    const type = (row.recipientType || '').toUpperCase();
+    if (type === 'TO' || type === 'CC' || type === 'BCC') {
+      envelope[type].push({ email: row.recipientEmail, name: row.recipientName ?? undefined });
+    } else {
+      unknown.push(row);
+    }
+  }
+  return { envelope, unknown };
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -81,9 +142,31 @@ function readAsDataUrl(file: File): Promise<string> {
 export function EmailComposeModal({
   open, onClose, onSent, pushToast,
   relatedType, relatedId, emailTemplateId,
-  initialSubject = '', initialBodyHtml = '', initialRecipients = '',
+  initialSubject = '', initialBodyHtml = '', initialRecipients = '', initialDraftId = null,
 }: Props) {
-  const [toInput, setToInput] = useState(initialRecipients);
+  const [envelope, setEnvelope] = useState<RecipientEnvelope>(() => seedEnvelopeFromString(initialRecipients));
+  // CC/BCC start hidden but their data outlives the toggle — collapsing is a view concern, and a
+  // collapsed field that silently dropped its addresses would send a different email than the one
+  // the sender composed.
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
+  const [recipientErrors, setRecipientErrors] = useState<Partial<Record<RecipientGroup, string>>>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  /**
+   * Set when the loaded draft itself is unusable — currently a recipient row whose type is none of
+   * TO/CC/BCC. Blocks preview, send AND autosave: persisting would rewrite the draft from the groups
+   * we could classify, silently discarding the rows we could not.
+   */
+  const [draftBlocked, setDraftBlocked] = useState<string | null>(null);
+  /**
+   * True from the moment a draft id is supplied until `getDraft` has resolved (either way).
+   *
+   * Autosave must not run during this window. The form is empty until hydration lands, so a debounce
+   * that fired first would PUT that empty form over the very draft being restored — turning "reopen my
+   * draft" into "erase my draft". The flag starts true, so the gap between mount and the effect
+   * running is covered too.
+   */
+  const [hydrating, setHydrating] = useState(initialDraftId != null);
   const [subject, setSubject] = useState(initialSubject);
   const [bodyHtml, setBodyHtml] = useState(initialBodyHtml);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
@@ -97,6 +180,10 @@ export function EmailComposeModal({
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(emailTemplateId || null);
   const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
 
+  // The ceiling comes from the server (EmailRecipientOptions). It is never assumed: when the request
+  // fails the counter says so instead of showing a made-up denominator.
+  const { limit: recipientLimit, status: limitStatus } = useRecipientLimit(open);
+
   const quillRef = useRef<any>(null);
   // src (data: URL) -> inline image identity, since quill strips data-* attributes off <img>.
   const inlineMapRef = useRef<Map<string, { fileId: number; contentId: string }>>(new Map());
@@ -105,11 +192,24 @@ export function EmailComposeModal({
   const dirtyRef = useRef(false);
 
   useEffect(() => { draftIdRef.current = draftId; }, [draftId]);
+  // Mirrored into refs because the debounced autosave runs outside React's render cycle.
+  const draftBlockedRef = useRef<string | null>(null);
+  useEffect(() => { draftBlockedRef.current = draftBlocked; }, [draftBlocked]);
+  const hydratingRef = useRef(initialDraftId != null);
+  useEffect(() => { hydratingRef.current = hydrating; }, [hydrating]);
 
   // Reset state each time the modal opens.
   useEffect(() => {
     if (!open) return;
-    setToInput(initialRecipients);
+    setEnvelope(seedEnvelopeFromString(initialRecipients));
+    setShowCc(false);
+    setShowBcc(false);
+    setRecipientErrors({});
+    setFormError(null);
+    setDraftBlocked(null);
+    // Reopening must never inherit a previous draft id from state — the id comes from the caller.
+    setHydrating(initialDraftId != null);
+    hydratingRef.current = initialDraftId != null;
     setSubject(initialSubject);
     setBodyHtml(initialBodyHtml);
     setAttachments([]);
@@ -126,6 +226,72 @@ export function EmailComposeModal({
       .catch(() => pushToast?.('info', 'Không tải được danh sách mẫu email. Bạn vẫn có thể soạn thủ công.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Re-hydrate an existing draft. Runs after the reset above, so a failed load leaves a usable empty
+  // composer rather than a half-populated one.
+  useEffect(() => {
+    if (!open) return;
+    if (initialDraftId == null) { setHydrating(false); hydratingRef.current = false; return; }
+
+    let cancelled = false;
+    setHydrating(true);
+    hydratingRef.current = true;   // set synchronously; a debounce could fire before the re-render
+
+    (async () => {
+      try {
+        const draft = await emailDraftsApi.getDraft(initialDraftId);
+        if (cancelled) return;
+
+        const { envelope: restored, unknown } = envelopeFromDraft(draft.recipients);
+        setEnvelope(restored);
+        // Reveal a group only when it actually has addresses, so reopening a draft does not hide
+        // recipients behind a collapsed toggle.
+        setShowCc(restored.CC.length > 0);
+        setShowBcc(restored.BCC.length > 0);
+
+        // A row we cannot classify makes the whole draft unsendable. This is a data/contract fault,
+        // not something the sender just mistyped, so it is reported at form level and the draft is
+        // left untouched on the server rather than rewritten without the offending rows.
+        if (unknown.length > 0) {
+          const types = Array.from(new Set(unknown.map(r => r.recipientType || '(trống)'))).join(', ');
+          setDraftBlocked(
+            `Email nháp chứa loại người nhận không hợp lệ (${types}). ` +
+            'Không thể xem trước hoặc gửi email nháp này. Dữ liệu nháp được giữ nguyên; ' +
+            'vui lòng liên hệ quản trị viên.',
+          );
+        }
+        setSubject(draft.subject ?? '');
+        setBodyHtml(draft.bodyContent ?? '');
+        setAttachments(
+          (draft.attachments ?? [])
+            .filter(a => a.attachmentType === 'ATTACHMENT')
+            .map(a => ({
+              fileId: a.fileId,
+              name: a.displayName || a.originalFilename || `Tệp ${a.fileId}`,
+              size: a.fileSize,
+              mimeType: a.mimeType,
+            })),
+        );
+        setDraftId(draft.emailDraftId);
+        dirtyRef.current = false;
+        // Autosave is enabled only now, and only on success.
+        setHydrating(false);
+        hydratingRef.current = false;
+      } catch {
+        if (cancelled) return;
+        // Fail closed: no draft id is adopted, so nothing can be created or updated. The composer is
+        // NOT presented as a working empty one — that would look like a draft whose content vanished.
+        setDraftId(null);
+        draftIdRef.current = null;
+        dirtyRef.current = false;
+        setFormError('Không tải được email nháp. Dữ liệu nháp trên hệ thống được giữ nguyên. Vui lòng đóng và thử lại.');
+        // hydrating stays true: autosave remains disabled for this failed attempt.
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialDraftId]);
 
   // Rewrite tracked inline <img src=dataUrl> → cid:{contentId} and return the body + inline list.
   const finalizeBody = useCallback((html: string): { html: string; inline: { fileId: number; contentId: string }[] } => {
@@ -147,7 +313,18 @@ export function EmailComposeModal({
 
   const buildPayload = useCallback(() => {
     const { html, inline } = finalizeBody(bodyHtml);
-    const recipients = parseRecipients(toInput).map((email, i) => ({ email, recipientType: 'TO' as const, displayOrder: i }));
+    // Every group keeps its own type. This used to be a single list stamped 'TO', which is why a CC
+    // the screen collected came back from the server as a primary recipient.
+    const groups: RecipientGroup[] = ['TO', 'CC', 'BCC'];
+    let order = 0;
+    const recipients: EmailDraftRecipientInput[] = groups.flatMap(group =>
+      envelope[group].map(recipient => ({
+        email: recipient.email,
+        name: recipient.name ?? null,
+        recipientType: group,
+        displayOrder: order++,
+      })),
+    );
     const fileAtts: EmailDraftAttachmentInput[] = attachments.map((a, i) => ({
       fileId: a.fileId, attachmentType: 'ATTACHMENT', displayName: a.name, displayOrder: i,
     }));
@@ -164,11 +341,16 @@ export function EmailComposeModal({
       recipients,
       attachments: [...fileAtts, ...inlineAtts],
     };
-  }, [finalizeBody, bodyHtml, toInput, attachments, subject, emailTemplateId, relatedType, relatedId]);
+  }, [finalizeBody, bodyHtml, envelope, attachments, subject, selectedTemplateId, relatedType, relatedId]);
 
   // ── Autosave (debounced) ──────────────────────────────────────────────────
   const persist = useCallback(async () => {
     if (!dirtyRef.current) return;
+    // Never write back a draft we could not fully understand: buildPayload can only emit the rows it
+    // managed to classify, so saving would delete the unclassifiable ones from the server copy.
+    if (draftBlockedRef.current) return;
+    // Never write while the draft is still loading — the form is empty until it arrives.
+    if (hydratingRef.current) return;
     dirtyRef.current = false;
     setSaving(true);
     try {
@@ -187,11 +369,18 @@ export function EmailComposeModal({
     }
   }, [buildPayload]);
 
+  // The timer must run the LATEST persist, not the one captured when it was scheduled. Closing over
+  // `persist` directly meant the callback held the state from before the edit that scheduled it, so
+  // the final change in a burst — the last recipient added, the last character typed — was never
+  // written to the draft.
+  const persistRef = useRef(persist);
+  useEffect(() => { persistRef.current = persist; }, [persist]);
+
   const scheduleSave = useCallback(() => {
     dirtyRef.current = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { void persist(); }, 1200);
-  }, [persist]);
+    saveTimer.current = setTimeout(() => { void persistRef.current(); }, 1200);
+  }, []);
 
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
@@ -270,18 +459,48 @@ export function EmailComposeModal({
   };
 
   // ── Preview & Send ────────────────────────────────────────────────────────
+
+  /**
+   * Runs the whole envelope through the shared rules and parks each problem on its own field.
+   * Returns true when the envelope is sendable. Nothing here mutates the draft: a refusal must never
+   * cost the sender their subject, body, attachments or the recipients already entered.
+   */
+  const validateRecipients = useCallback((): boolean => {
+    const problems = validateEnvelope(envelope, recipientLimit);
+    const next: Partial<Record<RecipientGroup, string>> = {};
+    for (const problem of problems) next[problem.group] ??= problem.message;
+    setRecipientErrors(next);
+    return problems.length === 0;
+  }, [envelope, recipientLimit]);
+
   const handlePreview = useCallback(() => {
-    const recipients = parseRecipients(toInput);
-    if (recipients.length === 0) { pushToast?.('error', 'Vui lòng nhập ít nhất một email người nhận hợp lệ.'); return; }
+    if (draftBlocked) return;
+    setFormError(null);
+    if (!validateRecipients()) return;
     if (!subject.trim()) { pushToast?.('error', 'Tiêu đề email không được để trống.'); return; }
     if (uploading) { pushToast?.('error', 'Vui lòng đợi tệp đính kèm tải lên xong.'); return; }
     setShowPreview(true);
-  }, [toInput, subject, uploading, pushToast]);
+  }, [validateRecipients, subject, uploading, pushToast]);
+
+  /** Puts a server-side rejection back on the field it belongs to, matched on the stable code. */
+  const mapServerError = useCallback((error: any) => {
+    // Shared with the reply composer so the two screens read the same refusal the same way.
+    const classified = classifyRecipientError(error);
+    if (classified.group) {
+      setRecipientErrors({ [classified.group]: classified.message });
+      return;
+    }
+    // Anything we cannot attribute to a field is shown at form level rather than guessed onto one.
+    setFormError(classified.message);
+  }, []);
 
   const handleSend = useCallback(async () => {
-    const recipients = parseRecipients(toInput);
-    if (recipients.length === 0) { pushToast?.('error', 'Vui lòng nhập ít nhất một email người nhận hợp lệ.'); return; }
+    if (sending) return;               // double-submit guard, before any await
+    if (draftBlocked) return;          // an unclassifiable stored recipient makes this draft unsendable
+    setFormError(null);
+    if (!validateRecipients()) return;
     if (!subject.trim()) { pushToast?.('error', 'Tiêu đề email không được để trống.'); return; }
+    const recipientTotal = countRecipients(envelope);
     setSending(true);
     try {
       // Flush any pending autosave, then persist the final state synchronously.
@@ -298,16 +517,21 @@ export function EmailComposeModal({
       const res = await emailDraftsApi.sendDraft(id!);
       pushToast?.(res.success ? 'success' : 'warning',
         res.success
-          ? `Đã gửi email tới ${recipients.length} người nhận.`
+          ? `Đã gửi email tới ${recipientTotal} người nhận.`
           : (res.message || 'Đã tạo email nhưng gửi thất bại với một hoặc nhiều người nhận.'));
       onSent?.();
       onClose();
     } catch (e: any) {
+      // The draft is left exactly as it was; only the error display changes. Drop back to the editor
+      // so the sender can see which field was rejected — the errors live next to the inputs, and
+      // leaving them on the preview would show a failure with nothing to act on.
+      setShowPreview(false);
+      mapServerError(e);
       pushToast?.('error', e?.response?.data?.message || 'Không thể gửi email. Vui lòng thử lại.');
     } finally {
       setSending(false);
     }
-  }, [toInput, subject, buildPayload, pushToast, onSent, onClose]);
+  }, [sending, envelope, subject, buildPayload, validateRecipients, mapServerError, pushToast, onSent, onClose]);
 
   const handleDiscard = useCallback(async () => {
     setConfirmState({
@@ -327,7 +551,20 @@ export function EmailComposeModal({
 
   if (!open) return null;
 
-  const recipientCount = parseRecipients(toInput).length;
+  const recipientCount = countRecipients(envelope);
+
+  /** Addresses used in the other two groups, so each field can refuse a cross-group duplicate. */
+  const takenOutside = (group: RecipientGroup): Set<string> => {
+    const others: RecipientGroup[] = (['TO', 'CC', 'BCC'] as RecipientGroup[]).filter(g => g !== group);
+    return new Set(others.flatMap(g => envelope[g].map(r => normalizeEmail(r.email))));
+  };
+
+  const setGroup = (group: RecipientGroup) => (next: typeof envelope.TO) => {
+    setEnvelope(prev => ({ ...prev, [group]: next }));
+    setRecipientErrors(prev => ({ ...prev, [group]: undefined }));
+    dirtyRef.current = true;
+    scheduleSave();
+  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onMouseDown={onClose}>
@@ -357,16 +594,26 @@ export function EmailComposeModal({
                 <p className="text-xs text-gray-600">Kiểm tra kỹ nội dung và người nhận trước khi gửi chính thức.</p>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase">Người nhận:</label>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {parseRecipients(toInput).map(email => (
-                    <span key={email} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      {email}
-                    </span>
-                  ))}
+              {/*
+                All three groups are shown. This is the sender's own draft before it leaves, so the BCC
+                list is theirs to see — the privacy rule that matters is that it never reaches the other
+                recipients or the history of anyone else, which is enforced server-side.
+              */}
+              {(['TO', 'CC', 'BCC'] as RecipientGroup[]).filter(g => envelope[g].length > 0).map(group => (
+                <div key={group}>
+                  <label className="text-xs font-bold text-gray-500 uppercase">
+                    {RECIPIENT_GROUP_LABELS[group]}:
+                  </label>
+                  <div className="mt-1 flex flex-wrap gap-1" data-testid={`preview-${group}`}>
+                    {envelope[group].map(recipient => (
+                      <span key={normalizeEmail(recipient.email)}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        {recipient.name ? `${recipient.name} <${recipient.email}>` : recipient.email}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ))}
 
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">Tiêu đề:</label>
@@ -390,7 +637,12 @@ export function EmailComposeModal({
 
               <div className="border-t border-gray-200 pt-4 mt-2">
                 <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Nội dung (HTML):</label>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 min-h-[200px] text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+                {/*
+                  Sanitised at the render boundary, not at save. The stored draft and the sent payload
+                  keep exactly what the author wrote — the backend is what decides the outgoing body —
+                  so this only governs what this browser executes while previewing.
+                */}
+                <div className="bg-white rounded-lg border border-gray-200 p-4 min-h-[200px] text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHtml(bodyHtml) }} />
               </div>
             </div>
 
@@ -471,18 +723,93 @@ export function EmailComposeModal({
                 </select>
               </div>
 
-              {/* Recipients */}
-              <div>
-                <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
-                  Người nhận {recipientCount > 0 && <span className="text-gray-400">({recipientCount})</span>}
-                </label>
-                <textarea
-                  value={toInput}
-                  onChange={(e) => { setToInput(e.target.value); scheduleSave(); }}
-                  placeholder="email1@fpt.edu.vn, email2@fpt.edu.vn"
-                  rows={2}
-                  className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]"
+              {/* Recipients — TO always shown; CC/BCC revealed on demand but never cleared by hiding */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-gray-500">
+                    Người nhận
+                  </label>
+                  <div className="flex items-center gap-3 text-xs">
+                    {!showCc && (
+                      <button type="button" onClick={() => setShowCc(true)}
+                        className="font-medium text-[#004c91] hover:underline">Thêm CC</button>
+                    )}
+                    {!showBcc && (
+                      <button type="button" onClick={() => setShowBcc(true)}
+                        className="font-medium text-[#004c91] hover:underline">Thêm BCC</button>
+                    )}
+                    <span
+                      data-testid="recipient-counter"
+                      className={
+                        isUsableLimit(recipientLimit) && recipientCount > recipientLimit
+                          ? 'font-medium text-red-600'
+                          : 'text-gray-500'
+                      }
+                    >
+                      {isUsableLimit(recipientLimit)
+                        ? `${recipientCount}/${recipientLimit} người nhận`
+                        : limitStatus === 'loading'
+                          ? `${recipientCount} người nhận`
+                          : `${recipientCount} người nhận — chưa tải được giới hạn, hệ thống sẽ kiểm tra khi gửi`}
+                    </span>
+                  </div>
+                </div>
+
+                <RecipientChipInput
+                  group="TO"
+                  value={envelope.TO}
+                  onChange={setGroup('TO')}
+                  takenElsewhere={takenOutside('TO')}
+                  externalError={recipientErrors.TO ?? null}
+                  disabled={sending}
                 />
+
+                {showCc && (
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <RecipientChipInput
+                        group="CC"
+                        value={envelope.CC}
+                        onChange={setGroup('CC')}
+                        takenElsewhere={takenOutside('CC')}
+                        externalError={recipientErrors.CC ?? null}
+                        disabled={sending}
+                      />
+                    </div>
+                    <button type="button" onClick={() => setShowCc(false)} aria-label="Thu gọn CC"
+                      className="mt-6 text-xs text-gray-500 hover:text-gray-700">Thu gọn</button>
+                  </div>
+                )}
+
+                {showBcc && (
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <RecipientChipInput
+                        group="BCC"
+                        value={envelope.BCC}
+                        onChange={setGroup('BCC')}
+                        takenElsewhere={takenOutside('BCC')}
+                        externalError={recipientErrors.BCC ?? null}
+                        disabled={sending}
+                      />
+                    </div>
+                    <button type="button" onClick={() => setShowBcc(false)} aria-label="Thu gọn BCC"
+                      className="mt-6 text-xs text-gray-500 hover:text-gray-700">Thu gọn</button>
+                  </div>
+                )}
+
+                {draftBlocked && (
+                  <p role="alert" data-testid="draft-blocked"
+                    className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                    <span aria-hidden="true">✕ </span>{draftBlocked}
+                  </p>
+                )}
+
+                {formError && (
+                  <p role="alert" className="text-sm text-red-600">
+                    <span aria-hidden="true">✕ </span>{formError}
+                  </p>
+                )}
               </div>
 
               {/* Subject */}
@@ -555,7 +882,7 @@ export function EmailComposeModal({
                 <button
                   type="button"
                   onClick={handlePreview}
-                  disabled={uploading}
+                  disabled={uploading || draftBlocked !== null}
                   className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#013565] disabled:opacity-60 transition-colors"
                 >
                   <Eye className="w-4 h-4" /> Xem trước

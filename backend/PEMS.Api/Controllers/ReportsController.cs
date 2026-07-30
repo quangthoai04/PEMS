@@ -268,26 +268,39 @@ namespace PEMS.Api.Controllers
             return File(result.Content, result.ContentType, result.FileName);
         }
 
+        // ── UC-69..71 dashboard statistics: declared, not built ──────────────
+        //
+        // The three handlers behind these URLs are scaffolds that throw NotImplementedException, so
+        // every call used to surface as a 500 — an unhandled fault, indistinguishable in logs and
+        // monitoring from a real one. 501 says the same thing truthfully: the route exists, the
+        // feature does not.
+        //
+        // Deliberately NOT decided here: who may call them. PERMISSION_MATRIX §5.11 and
+        // PROJECT_OVERVIEW FE-08 disagree on both the role set and the UC ids (R-104), and answering
+        // 501 for every authenticated role settles nothing by implementation. The class-level
+        // [Authorize] still holds, so an anonymous caller is challenged before reaching this.
+
+        /// <summary>Stable code for the three unbuilt dashboard routes — the contract clients may branch on.</summary>
+        public const string DashboardNotImplementedErrorCode = "REPORT_DASHBOARD_NOT_IMPLEMENTED";
+
+        private IActionResult NotImplementedYet() => StatusCode(
+            StatusCodes.Status501NotImplemented,
+            new
+            {
+                success = false,
+                errorCode = DashboardNotImplementedErrorCode,
+                message = "Chức năng này chưa được triển khai.",
+                traceId = System.Diagnostics.Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+            });
+
         [HttpGet("viewdashboardstatistics")]
-        public async Task<IActionResult> ViewDashboardStatistics([FromQuery] PEMS.Application.Reports.Queries.ViewDashboardStatistics.ViewDashboardStatisticsQuery query, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult ViewDashboardStatistics() => NotImplementedYet();
 
         [HttpPost("exportstatisticsreport")]
-        public async Task<IActionResult> ExportStatisticsReport([FromBody] PEMS.Application.Reports.Commands.ExportStatisticsReport.ExportStatisticsReportCommand command, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult ExportStatisticsReport() => NotImplementedYet();
 
         [HttpGet("filterdashboardbytime")]
-        public async Task<IActionResult> FilterDashboardByTime([FromQuery] PEMS.Application.Reports.Queries.FilterDashboardByTime.FilterDashboardByTimeQuery query, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult FilterDashboardByTime() => NotImplementedYet();
 
     }
 }

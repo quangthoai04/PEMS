@@ -87,6 +87,18 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
                 Task.Run(() => Service(dbA).DispatchDueAsync()),
                 Task.Run(() => Service(dbB).DispatchDueAsync()));
 
+            // Asserted BEFORE the message count, so a reminder that never entered the batch is reported as
+            // exactly that rather than as "0 messages", which is what made the earlier failure opaque.
+            // DispatchDueAsync sweeps the newest 50 due reminders globally, so a database holding enough
+            // older due rows could leave this one unprocessed — a real possibility on a shared database,
+            // and one worth naming in the assertion instead of discovering through an empty directory.
+            using (var claimed = EmailEvidenceHarness.NewContext())
+            {
+                var after = await claimed.VisitInstanceReminderSettings.AsNoTracking()
+                    .SingleAsync(r => r.ReminderSettingId == _reminderId);
+                Assert.Equal(VisitReminderStatus.SENT, after.Status);
+            }
+
             Assert.Single(MessagesTo(_h.Marker));
 
             using var verify = EmailEvidenceHarness.NewContext();
@@ -95,6 +107,102 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         }
         finally { await CleanupAsync(); }
     }
+
+    /// <summary>
+    /// The race, twenty times over, in one process.
+    ///
+    /// <para>
+    /// A single race that passes proves very little: the two workers have to actually overlap for the
+    /// conditional UPDATE to be exercised, and on a fast machine one can finish before the other starts.
+    /// Repeating it makes the overlap likely rather than hoped for, and makes a regression that only
+    /// shows up occasionally show up here instead of in an unrelated suite three runs later.
+    /// </para>
+    /// <para>
+    /// Each iteration seeds and cleans up its own rows, so a failure names the iteration it happened on
+    /// and leaves nothing behind for the next one.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Racing_workers_produce_one_set_of_messages_on_every_one_of_twenty_attempts()
+    {
+        EmailEvidenceHarness.RequireDb();
+
+        const int Attempts = 20;
+
+        for (var attempt = 1; attempt <= Attempts; attempt++)
+        {
+            try
+            {
+                await SeedAsync(VisitReminderTargetGroup.HOST);
+
+                using var dbA = EmailEvidenceHarness.NewContext();
+                using var dbB = EmailEvidenceHarness.NewContext();
+
+                await Task.WhenAll(
+                    Task.Run(() => Service(dbA).DispatchDueAsync()),
+                    Task.Run(() => Service(dbB).DispatchDueAsync()));
+
+                using (var verify = EmailEvidenceHarness.NewContext())
+                {
+                    var after = await verify.VisitInstanceReminderSettings.AsNoTracking()
+                        .SingleAsync(r => r.ReminderSettingId == _reminderId);
+                    Assert.Equal(VisitReminderStatus.SENT, after.Status);
+
+                    Assert.Equal(1, await verify.SentEmailRecipients.AsNoTracking()
+                        .CountAsync(r => r.RecipientEmail == _h.Marker));
+                }
+
+                // One message, on this attempt, from this iteration's own mailbox — the pickup directory
+                // is cleaned between attempts so the count cannot accumulate into a false pass.
+                var messages = MessagesTo(_h.Marker);
+                Assert.True(messages.Count == 1,
+                    $"Attempt {attempt} of {Attempts} produced {messages.Count} messages, expected exactly 1.");
+            }
+            finally
+            {
+                await CleanupAsync();
+                _h.ClearMessages();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The suite writes nothing to a row it did not create.
+    ///
+    /// <para>
+    /// Pinned as a test because the previous fixture DID: it rewrote the first ACTIVE Staff Leader's email
+    /// address, and the administrator's, for the duration of each test. Both are rows other suites read.
+    /// A comment would not have stopped that coming back.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Seeding_never_changes_a_user_it_did_not_create()
+    {
+        EmailEvidenceHarness.RequireDb();
+
+        Dictionary<ulong, string> Snapshot(ApplicationDbContext db) => db.Users.AsNoTracking()
+            .Select(u => new { u.UserId, u.Email }).ToDictionary(u => u.UserId, u => u.Email);
+
+        Dictionary<ulong, string> before;
+        using (var db = EmailEvidenceHarness.NewContext()) before = Snapshot(db);
+
+        try
+        {
+            await SeedAsync(VisitReminderTargetGroup.HOST_AND_PARTICIPANTS, withParticipant: true);
+
+            using var db = EmailEvidenceHarness.NewContext();
+            var after = Snapshot(db);
+
+            foreach (var (userId, email) in before)
+            {
+                Assert.True(after.TryGetValue(userId, out var now),
+                    $"User {userId} disappeared during seeding.");
+                Assert.Equal(email, now);
+            }
+        }
+        finally { await CleanupAsync(); }
+    }
+
 
     [Fact]
     public async Task A_reminder_that_is_not_due_yet_is_left_alone()
@@ -239,25 +347,52 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
     {
         using var db = EmailEvidenceHarness.NewContext();
 
-        // The schema only accepts an operational instance whose host is IC Staff of that campus, or the
-        // approving Staff Leader themself. Taking the Leader satisfies host AND decider in one person,
-        // which is a shape production really produces (self-host approval).
+        // The approving Staff Leader is READ, never written: it supplies the campus and the decision
+        // metadata the schema requires, and nothing about this suite changes it.
         var leader = await db.Users.AsNoTracking()
             .Where(u => u.Role.RoleCode == "STAFF" && u.SubRole == "LEADER"
                         && u.Status == "ACTIVE" && u.PrimaryCampusId != null)
             .OrderBy(u => u.UserId)
-            .Select(u => new { u.UserId, CampusId = u.PrimaryCampusId!.Value })
+            .Select(u => new { u.UserId, u.RoleId, u.DepartmentId, CampusId = u.PrimaryCampusId!.Value })
             .FirstOrDefaultAsync()
             ?? throw new InvalidOperationException(
-                "pems_pr3_test needs at least one ACTIVE Staff Leader with a primary campus.");
+                "The disposable database needs at least one ACTIVE Staff Leader with a primary campus.");
 
         var campusId = leader.CampusId;
-        var hostUserId = leader.UserId;
 
-        // The Host's mailbox is the marker, so cleanup keys on it exactly as the other suites do.
-        var host = await db.Users.SingleAsync(u => u.UserId == hostUserId);
-        _originalHostEmail = host.Email;
-        host.Email = _h.Marker;
+        // ── The Host is a user this suite OWNS ───────────────────────────────
+        //
+        // It used to borrow that Staff Leader and overwrite its email with the marker for the duration
+        // of the test. That is a mutation of a row selected by a NON-UNIQUE predicate ("the first ACTIVE
+        // Staff Leader") on a database xUnit shares between test classes running in parallel — so for as
+        // long as one test here was running, every other suite that read that Staff Leader saw
+        // `batch8-idempotency@partner.example.com` as its address. Whether that mattered depended on
+        // which classes happened to overlap, which is exactly the shape of a defect that appears once and
+        // then hides. Creating our own row removes the shared write entirely; the dispatcher cannot tell
+        // the difference, because all it does is read `current_host_user_id`.
+        //
+        // sub_role STAFF, deliberately NOT LEADER: a campus must have exactly one Staff Leader
+        // (BR-86-19/20), and adding a second would make the campus configuration-invalid and break every
+        // visit-create test that runs against it. The host-assignment trigger requires only that the host
+        // fields are populated, not that the host holds any particular role, so plain staff is both
+        // sufficient here and safe for everyone else. sub_role and department_id are both mandatory for
+        // STAFF (trg_users_validate_*), and the department is the Leader's own — same campus, IC type.
+        var hostUser = new PEMS.Domain.Entities.Users.User
+        {
+            FullName = "Reminder Host " + Guid.NewGuid().ToString("N")[..8],
+            Email = _h.Marker,
+            RoleId = leader.RoleId,
+            SubRole = "STAFF",
+            DepartmentId = leader.DepartmentId,
+            Status = "ACTIVE",
+            PrimaryCampusId = campusId,
+            CreatedAt = DateTime.Now,
+        };
+        db.Users.Add(hostUser);
+        await db.SaveChangesAsync();
+
+        var hostUserId = hostUser.UserId;
+        _createdUserIds.Add(hostUserId);
 
         var request = new VisitRequest
         {
@@ -290,9 +425,11 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             PlannedEndAt = DateTime.Now.AddDays(2).AddHours(2),
             Status = PEMS.Shared.VisitInstanceStatus.BeforeVisit,
             CurrentHostUserId = hostUserId,
-            HostAssignedBy = hostUserId,
+            // Assigned and decided BY the Staff Leader — the shape production produces, and it keeps this
+            // suite's only write on rows it created itself.
+            HostAssignedBy = leader.UserId,
             HostAssignedAt = DateTime.Now,
-            DecidedBy = hostUserId,
+            DecidedBy = leader.UserId,
             DecidedAt = DateTime.Now,
             DecisionActorRole = "STAFF_LEADER",
             CreatedAt = DateTime.Now,
@@ -318,14 +455,24 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
 
         if (withParticipant)
         {
-            var participantUserId = await db.Users.AsNoTracking()
-                .Where(u => u.UserId != hostUserId && u.Email != null && u.Email != "")
-                .OrderBy(u => u.UserId).Select(u => u.UserId).FirstAsync();
+            // Also owned by this suite. The previous version took "the first user with an email" —
+            // `admin@fpt.edu.vn`, user 1 — and rewrote the administrator's address while the test ran.
+            var participantUser = new PEMS.Domain.Entities.Users.User
+            {
+                FullName = "Reminder Participant " + Guid.NewGuid().ToString("N")[..8],
+                Email = ParticipantAddress,
+                RoleId = leader.RoleId,
+                SubRole = "STAFF",
+                DepartmentId = leader.DepartmentId,
+                Status = "ACTIVE",
+                PrimaryCampusId = campusId,
+                CreatedAt = DateTime.Now,
+            };
+            db.Users.Add(participantUser);
+            await db.SaveChangesAsync();
 
-            var participantUser = await db.Users.SingleAsync(u => u.UserId == participantUserId);
-            _participantUserId = participantUserId;
-            _originalParticipantEmail = participantUser.Email;
-            participantUser.Email = ParticipantAddress;
+            var participantUserId = participantUser.UserId;
+            _createdUserIds.Add(participantUserId);
 
             db.VisitParticipants.Add(new VisitParticipant
             {
@@ -358,9 +505,8 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             .Select(r => r.ReminderSettingId).SingleAsync();
     }
 
-    private string? _originalHostEmail;
-    private string? _originalParticipantEmail;
-    private ulong? _participantUserId;
+    /// <summary>Users this suite created, deleted on the way out. Nothing else is ever written.</summary>
+    private readonly List<ulong> _createdUserIds = new();
 
     private async Task CleanupAsync()
     {
@@ -388,19 +534,12 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         if (_visitRequestId != 0)
             await db.VisitRequests.Where(v => v.VisitRequestId == _visitRequestId).ExecuteDeleteAsync();
 
-        // Put the borrowed mailboxes back exactly as they were.
-        if (_originalHostEmail is not null)
+        // Remove the users this suite created. Nothing is "restored", because nothing shared was changed.
+        if (_createdUserIds.Count > 0)
         {
-            await db.Users.Where(u => u.Email == _h.Marker)
-                .ExecuteUpdateAsync(s => s.SetProperty(u => u.Email, _originalHostEmail));
-            _originalHostEmail = null;
-        }
-        if (_participantUserId is { } pid && _originalParticipantEmail is not null)
-        {
-            await db.Users.Where(u => u.UserId == pid)
-                .ExecuteUpdateAsync(s => s.SetProperty(u => u.Email, _originalParticipantEmail));
-            _originalParticipantEmail = null;
-            _participantUserId = null;
+            var ids = _createdUserIds.ToList();
+            await db.Users.Where(u => ids.Contains(u.UserId)).ExecuteDeleteAsync();
+            _createdUserIds.Clear();
         }
 
         _visitInstanceId = 0;
