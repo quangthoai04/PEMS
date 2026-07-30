@@ -53,6 +53,8 @@ import {
   pendingEmailEditFeedback,
   shouldUsePendingEmailEdit,
 } from '../../../features/account-management/adapters/accountPendingEmailEdit';
+import { accountRoleUpdateFeedback } from '../../../features/account-management/adapters/accountRoleUpdateFeedback';
+import { AccountStatusConfirmModal } from '../../../features/account-management/components/AccountStatusConfirmModal';
 import { LoginEmailChangeConfirmModal } from '../../../features/account-management/components/LoginEmailChangeConfirmModal';
 import { PendingEmailEditConfirmModal } from '../../../features/account-management/components/PendingEmailEditConfirmModal';
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
@@ -798,18 +800,26 @@ export function AccountManagement() {
       lastLoginAt: details.lastLoginAt,
       // HO_BASIC_INFO — detail is authoritative for the edit-basic-info permission.
       canEditBasicInfo: details.canEditBasicInfo ?? prev?.canEditBasicInfo ?? false,
+      // Pending-account actions. Taken from the detail response and NOT carried over from `prev`: an
+      // absent flag means "not permitted", and inheriting the previous account's answer would offer a
+      // button on the strength of a different account's permissions.
+      canResendEmailConfirmation: details.canResendEmailConfirmation === true,
+      canEditPendingEmail: details.canEditPendingEmail === true,
     }));
     setDetailLoaded(true);
   };
 
   // ── Resend email confirmation ────────────────────────────────────────────────
-  // Gate: HO only, and ONLY on the status the detail endpoint returned. The list row carries a
-  // display-mapped status and may be stale (the holder could have confirmed in another tab), so it
-  // is never consulted here — while the detail is loading or failed, the button simply stays away.
+  // Gate: the backend's own permission answer, and ONLY the status the detail endpoint returned. The
+  // list row carries a display-mapped status and may be stale (the holder could have confirmed in
+  // another tab), so it is never consulted here — while the detail is loading or failed, the button
+  // simply stays away. The action is not HO's alone: a Staff Leader runs it for the pending accounts
+  // of their own campus, which is why the permission comes from the query rather than a role check
+  // re-derived here.
   const canResendConfirmation = canResendEmailConfirmation({
-    isHO,
     detailLoaded,
     detailStatus: selectedAccount?.rawStatus,
+    canResend: selectedAccount?.canResendEmailConfirmation,
   });
 
   // A pending account holds its seat but no authority yet — it has not proven it owns the address.
@@ -1384,6 +1394,43 @@ export function AccountManagement() {
       }
     }
 
+    // Compared after normalization, so a pure casing/whitespace edit is not a change: it must not
+    // prompt for a confirmation, revoke sessions or invalidate an activation link.
+    const outgoingEmail = canEditIdentity ? normalizeAccountEmail(roleEditForm.email) : null;
+    const emailIsChanging = outgoingEmail !== null
+      && outgoingEmail.length > 0
+      && outgoingEmail !== normalizeAccountEmail(selectedAccount.email ?? '');
+
+    // Changing the login email is not a field edit like the others: it re-points the account's
+    // authentication and, for an account still awaiting activation, invalidates the link already
+    // mailed and issues a new one. Both deserve a look before they happen — so the submit stops here
+    // and the confirmation dialog does the calling. Which dialog depends on whether the account has
+    // ever proven an address; the wording for the two situations is not interchangeable.
+    if (emailIsChanging) {
+      const confirmPayload = { oldEmail: String(selectedAccount.email ?? ''), newEmail: outgoingEmail! };
+      if (isPendingEmailConfirmation) setPendingEmailEditConfirm(confirmPayload);
+      else setBasicInfoEmailConfirm(confirmPayload);
+      return;
+    }
+
+    void submitRoleUpdate();
+  };
+
+  /**
+   * The single request that carries a Staff Leader's whole edit — role, department, MSSV, name and
+   * email together.
+   *
+   * One call on purpose. Splitting it into "change the role, then change the email" is what produces
+   * the half-applied states this flow must not have: a role that moved while the only live activation
+   * link still points at the old address, or an address that moved while the role did not. The backend
+   * commits all of it in one transaction, and reports separately what became of the emails — which is
+   * what the toast below is reading, rather than assuming a mail went out because the request
+   * succeeded.
+   */
+  const submitRoleUpdate = async () => {
+    if (!selectedAccount || !roleEditForm || roleSaving) return;   // double-click guard
+    const { roleCode, departmentId, studentCode } = roleEditForm;
+
     // ADMIN keeps the legacy behaviour: role-only change, original department preserved.
     const outgoingDepartmentId = roleCode === 'DEPARTMENT'
       ? (isStaffLeader ? departmentId : (selectedAccount.departmentId ?? null))
@@ -1391,24 +1438,35 @@ export function AccountManagement() {
     const outgoingStudentCode = roleCode === 'STUDENT'
       ? (isStaffLeader ? studentCode.trim() : null)
       : null;
+    const outgoingEmail = canEditIdentity ? normalizeAccountEmail(roleEditForm.email) : null;
 
     setRoleSaving(true);
     try {
-      await accountManagementApi.updateAccountRole({
+      const res = await accountManagementApi.updateAccountRole({
         userId: (selectedAccount.userId ?? selectedAccount.id) as any,
         newRoleCode: roleCode as any,
         departmentId: outgoingDepartmentId as any,
         studentCode: outgoingStudentCode,
         // Identity is only sent for editable targets; otherwise leave null so the backend keeps it.
-        fullName: canEditIdentity ? roleEditForm.fullName.trim() : null,
-        email: canEditIdentity ? roleEditForm.email.trim() : null,
+        fullName: canEditIdentity ? normalizeFullName(roleEditForm.fullName) : null,
+        email: outgoingEmail,
         // Sent only when this change actually vacates a department head seat — the backend rejects
         // a successor it has no use for rather than ignoring it.
         replacementDepartmentHeadUserId: needsHeadReplacement
           ? roleEditForm.replacementHeadUserId
           : null,
       });
-      pushToast('success', 'Cập nhật tài khoản thành công. Đã gửi email thông báo cho người dùng.');
+      setPendingEmailEditConfirm(null);
+      setBasicInfoEmailConfirm(null);
+
+      // Report what happened to the mail, not that the request returned 200. Up to two messages can be
+      // due — the activation link and the role-changed notice — and the response reports each on its
+      // own, so the whole object goes to the adapter rather than a status picked out of it here. A
+      // pending account whose activation link failed to send is still unusable, and saying "đã gửi"
+      // would hide the one thing the operator needs to act on.
+      const feedback = accountRoleUpdateFeedback(res, outgoingEmail);
+      pushToast(feedback.kind, feedback.message);
+
       closeViewDrawer();
       refetchAccounts();
       loadStatistics();
@@ -1417,6 +1475,29 @@ export function AccountManagement() {
       // refused, not lost, and re-entering everything after handing over a delegation would be
       // punishing. Nothing here touches selectedAccount or refetches (spec §16.4).
       const msg = getAccountErrorMessage(err, 'Không thể cập nhật vai trò. Vui lòng kiểm tra lại dữ liệu và thử lại.');
+      const code = (err as AxiosError<{ errorCode?: string }>)?.response?.data?.errorCode;
+
+      // Rejections about the address belong under the email input, where the value that caused them
+      // still is — and the confirmation dialog steps aside so that field is reachable again.
+      if (code === 'EMAIL_ALREADY_EXISTS' || code === 'EMAIL_UNCHANGED') {
+        setPendingEmailEditConfirm(null);
+        setBasicInfoEmailConfirm(null);
+        setEditFieldErrors((prev) => ({ ...prev, email: msg }));
+        pushToast('error', msg);
+        return;
+      }
+
+      // Somebody confirmed (or cancelled) the account while this modal was open. Their truth wins:
+      // adopt it, which also switches the next submit onto the right branch.
+      if (code === 'ACCOUNT_NOT_PENDING') {
+        setPendingEmailEditConfirm(null);
+        setRoleError(ACCOUNT_ERROR_MESSAGES.ACCOUNT_NOT_PENDING);
+        pushToast('warning', ACCOUNT_ERROR_MESSAGES.ACCOUNT_NOT_PENDING);
+        void refreshDetailStatus();
+        refetchAccounts();
+        return;
+      }
+
       setRoleError(msg);
       // The blocker breakdown can run to several lines; it belongs in the drawer, next to the
       // fields it is about. The toast only says that something blocked and where to look.
@@ -2946,52 +3027,17 @@ export function AccountManagement() {
         </div>
       )}
 
-      {/* UC-97: Xác nhận kích hoạt / vô hiệu hóa tài khoản */}
+      {/* UC-97: Xác nhận kích hoạt / vô hiệu hóa tài khoản. Trạng thái hiện tại quyết định hướng đi —
+          chỉ ACTIVE mới là "vô hiệu hóa", mọi trạng thái khác vào đây đều là "kích hoạt lại". */}
       {statusTarget && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 relative">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-              <h2 className="text-xl font-black text-gray-800">
-                {statusTarget.status === 'Active' ? '⚠️ Xác nhận vô hiệu hóa' : '✅ Xác nhận kích hoạt'}
-              </h2>
-              <button
-                onClick={() => setStatusTarget(null)}
-                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors outline-none"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 text-gray-700 leading-relaxed text-[15px]">
-              {statusTarget.status === 'Active' ? (
-                <>Bạn có chắc muốn <strong className="text-red-600">vô hiệu hóa</strong> tài khoản <strong className="text-[#004c91]">{statusTarget.email}</strong>? Tất cả phiên đăng nhập của tài khoản này sẽ bị thu hồi ngay lập tức.</>
-              ) : (
-                <>Bạn có chắc muốn <strong className="text-[#0aa14f]">kích hoạt</strong> lại tài khoản <strong className="text-[#004c91]">{statusTarget.email}</strong>?</>
-              )}
-              {statusError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
-                  {statusError}
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 rounded-b-2xl">
-              <button
-                onClick={() => setStatusTarget(null)}
-                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={confirmToggleStatus}
-                disabled={statusSaving}
-                className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed ${statusTarget.status === 'Active' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#0aa14f] hover:bg-[#088c44]'}`}
-              >
-                {statusSaving ? 'Đang xử lý...' : 'Xác nhận'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AccountStatusConfirmModal
+          account={statusTarget}
+          action={statusTarget.status === 'Active' ? 'disable' : 'enable'}
+          submitting={statusSaving}
+          error={statusError}
+          onCancel={() => setStatusTarget(null)}
+          onConfirm={() => void confirmToggleStatus()}
+        />
       )}
 
       {/* HO_BASIC_INFO §10 — xác nhận đổi email đăng nhập (thu hồi phiên + liên kết lại SSO/FEID). */}
@@ -3002,7 +3048,9 @@ export function AccountManagement() {
           submitting={roleSaving}
           error={roleError}
           onCancel={() => setBasicInfoEmailConfirm(null)}
-          onConfirm={() => void submitBasicInfo()}
+          // Whose submit this is follows from who opened it: HO edits basic info through its own
+          // endpoint, everyone else sends role and identity together in one updateAccountRole call.
+          onConfirm={() => void (isHO ? submitBasicInfo() : submitRoleUpdate())}
         />
       )}
 
@@ -3016,7 +3064,9 @@ export function AccountManagement() {
           submitting={roleSaving}
           error={roleError}
           onCancel={() => setPendingEmailEditConfirm(null)}
-          onConfirm={() => void submitPendingEmailEdit()}
+          // Same split as above. A Staff Leader may be changing the role in the same breath, so their
+          // path must stay the single atomic call — never edit-pending-email followed by a role update.
+          onConfirm={() => void (isHO ? submitPendingEmailEdit() : submitRoleUpdate())}
         />
       )}
 

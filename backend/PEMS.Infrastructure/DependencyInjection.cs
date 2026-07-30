@@ -80,6 +80,10 @@ public static class DependencyInjection
             PEMS.Infrastructure.Email.AccountEmailConfirmationService>();
         services.AddScoped<PEMS.Application.Accounts.Common.IAccountEmailConfirmationMaintenance,
             PEMS.Application.Accounts.Common.AccountEmailConfirmationMaintenance>();
+        // Moving a still-pending account onto a different address: shared by HO's dedicated edit and a
+        // Staff Leader's combined role+email edit, so the two cannot diverge on what that entails.
+        services.AddScoped<PEMS.Application.Accounts.Common.IPendingAccountEmailChangeService,
+            PEMS.Application.Accounts.Common.PendingAccountEmailChangeService>();
         services.AddHttpContextAccessor();
         services.AddHttpClient();
 

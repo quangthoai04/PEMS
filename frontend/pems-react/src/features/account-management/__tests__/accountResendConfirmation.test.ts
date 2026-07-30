@@ -11,7 +11,7 @@ import {
  * reporting fails here.
  */
 describe('canResendEmailConfirmation', () => {
-  const pending = { isHO: true, detailLoaded: true, detailStatus: 'PENDING_EMAIL_CONFIRMATION' };
+  const pending = { canResend: true, detailLoaded: true, detailStatus: 'PENDING_EMAIL_CONFIRMATION' };
 
   it('offers the action for a pending account once the detail has loaded', () => {
     expect(canResendEmailConfirmation(pending)).toBe(true);
@@ -28,12 +28,19 @@ describe('canResendEmailConfirmation', () => {
   });
 
   it('hides it when the detail request failed and left no status', () => {
-    expect(canResendEmailConfirmation({ isHO: true, detailLoaded: false, detailStatus: undefined })).toBe(false);
-    expect(canResendEmailConfirmation({ isHO: true, detailLoaded: true, detailStatus: null })).toBe(false);
+    expect(canResendEmailConfirmation({ canResend: true, detailLoaded: false, detailStatus: undefined })).toBe(false);
+    expect(canResendEmailConfirmation({ canResend: true, detailLoaded: true, detailStatus: null })).toBe(false);
   });
 
-  it('is HO-only', () => {
-    expect(canResendEmailConfirmation({ ...pending, isHO: false })).toBe(false);
+  // The permission is the backend's answer, not a role check re-derived here: a Staff Leader runs
+  // this for their own campus, and only the query can weigh sub-role + campus + the self rule.
+  it('hides it when the backend did not grant the permission', () => {
+    expect(canResendEmailConfirmation({ ...pending, canResend: false })).toBe(false);
+  });
+
+  // An older backend that does not send the flag must hide the button, not offer one that 403s.
+  it.each([undefined, null])('treats a missing permission flag (%j) as no', (canResend) => {
+    expect(canResendEmailConfirmation({ ...pending, canResend })).toBe(false);
   });
 
   it('normalizes casing and whitespace from the server', () => {

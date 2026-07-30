@@ -37,16 +37,19 @@ public sealed class EditPendingAccountEmailCommandHandler
     private readonly IDateTimeService _clock;
     private readonly IAccountEmailConfirmationService _confirmations;
     private readonly ISystemEmailDispatcher _dispatcher;
+    private readonly IPendingAccountEmailChangeService _emailChange;
 
     public EditPendingAccountEmailCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IAccountEmailConfirmationService confirmations, ISystemEmailDispatcher dispatcher)
+        IAccountEmailConfirmationService confirmations, ISystemEmailDispatcher dispatcher,
+        IPendingAccountEmailChangeService emailChange)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _confirmations = confirmations;
         _dispatcher = dispatcher;
+        _emailChange = emailChange;
     }
 
     public async Task<EditPendingAccountEmailResponse> Handle(
@@ -60,40 +63,9 @@ public sealed class EditPendingAccountEmailCommandHandler
             .FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken);
         if (user is null) throw new NotFoundException("Tài khoản không tồn tại.");
 
-        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user);
-
-        if (user.Status != UserStatuses.PendingEmailConfirmation)
-            throw new BusinessRuleException(
-                "Chỉ có thể sửa email của tài khoản đang chờ xác nhận.", "ACCOUNT_NOT_PENDING");
-
-        // Full name is optional; when sent it is held to the same shared rules as every other HO flow,
-        // so a direct API call cannot store a name the modal would have rejected.
-        var oldFullName = user.FullName;
-        var newFullName = oldFullName;
-        if (request.FullName is not null)
-        {
-            newFullName = AccountIdentityRules.NormalizeFullName(request.FullName);
-            if (AccountIdentityRules.ValidateFullName(newFullName) is { } fullNameError)
-                throw new ValidationException(fullNameError);
-        }
-
-        var newEmail = AccountIdentityRules.NormalizeEmail(request.NewEmail);
-        if (AccountIdentityRules.ValidateEmail(newEmail) is { } emailError)
-            throw new ValidationException(emailError);
-
-        var oldEmail = user.Email;
-        if (string.Equals(newEmail, oldEmail, StringComparison.OrdinalIgnoreCase))
-            throw new BusinessRuleException("Email mới trùng với email hiện tại.", "EMAIL_UNCHANGED");
-
-        if (await _db.Users.AsNoTracking().AnyAsync(u => u.Email == newEmail && u.UserId != user.UserId, cancellationToken))
-            throw new ConflictException(
-                AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
-
-        var now = _clock.VietnamNow;
-        var actorId = _currentUser.UserId;
-
         // The confirmation email states the account's role. Prefer the loaded navigation, falling back
-        // to a lookup by id so a context that did not materialize it still produces a correct email.
+        // to a lookup by id so a context that did not materialize it still produces a correct email —
+        // and so the scope check below, which turns on what the account IS, always has a role to read.
         var roleCode = user.Role?.RoleCode
             ?? await _db.Roles.AsNoTracking()
                 .Where(r => r.RoleId == user.RoleId)
@@ -101,43 +73,29 @@ public sealed class EditPendingAccountEmailCommandHandler
                 .FirstOrDefaultAsync(cancellationToken)
             ?? RoleCodes.Staff;
 
+        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user, roleCode);
+
+        if (user.Status != UserStatuses.PendingEmailConfirmation)
+            throw new BusinessRuleException(
+                "Chỉ có thể sửa email của tài khoản đang chờ xác nhận.", "ACCOUNT_NOT_PENDING");
+
+        var now = _clock.VietnamNow;
+        var actorId = _currentUser.UserId;
+
         // ── Everything that must be true together: the new identity, the re-pointed providers, the
         //    dead old token and the live new one. A half-applied version of this leaves an account
         //    whose only live link points at an address it no longer has.
-        string rawToken;
+        PreparedPendingEmailChange change;
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         try
         {
-            user.FullName = newFullName;
-            user.Email = newEmail;
+            // The new identity, the re-pointed providers and the token that replaces the old one are
+            // all applied by the shared service — the SAME one the Staff Leader's combined role+email
+            // edit uses, so neither flow can quietly skip a step the other performs.
+            change = await _emailChange.PrepareAsync(user, request.NewEmail, request.FullName, cancellationToken);
 
-            // Unlink SSO/FEID by DELETING the row: provider_subject identifies the OLD external
-            // identity and a subject-less SSO/FEID row is rejected by the database outright. Removing
-            // it is what "re-link on next login" means — the login handler creates a fresh row when the
-            // user has none. Same policy as the basic-info flow, so an account cannot end up bound to
-            // an external identity that was proven against a different address.
-            var externalProviders = user.AuthProviders
-                .Where(p => p.ProviderType == ProviderTypes.GoogleSso || p.ProviderType == ProviderTypes.FeId)
-                .ToList();
-            _db.UserAuthProviders.RemoveRange(externalProviders);
-
-            // Local-password logins stay linked — only the address they point at changes.
-            foreach (var provider in user.AuthProviders)
-            {
-                if (provider.ProviderType == ProviderTypes.GoogleSso || provider.ProviderType == ProviderTypes.FeId)
-                    continue;
-                provider.ProviderEmail = newEmail;
-            }
-
-            // A pending account has verified nothing; after the address moves that is doubly true.
-            user.EmailVerifiedAt = null;
             user.UpdatedAt = now;
             user.UpdatedBy = actorId;
-
-            // Fresh token bound to the NEW email. Supersedes every live token for this user, so the
-            // link already mailed to the old address stops confirming. isResend:false — this is a
-            // corrected address starting its own series, not another attempt at the same one.
-            rawToken = await _confirmations.IssuePendingAsync(user.UserId, newEmail, isResend: false, cancellationToken);
 
             _db.AuditLogs.Add(new AuditLog
             {
@@ -155,13 +113,13 @@ public sealed class EditPendingAccountEmailCommandHandler
                         FieldName = "PendingAccountEmail",
                         OldValueText = JsonSerializer.Serialize(new
                         {
-                            email = oldEmail,
-                            fullName = oldFullName,
+                            email = change.OldEmail,
+                            fullName = change.OldFullName,
                         }),
                         NewValueText = JsonSerializer.Serialize(new
                         {
-                            email = newEmail,
-                            fullName = newFullName,
+                            email = change.NewEmail,
+                            fullName = change.NewFullName,
                             oldConfirmationSuperseded = true,
                             newConfirmationIssued = true,
                         }),
@@ -184,16 +142,12 @@ public sealed class EditPendingAccountEmailCommandHandler
         var notificationStatus = "FAILED";
         try
         {
-            var result = await _dispatcher.SendAsync(new SystemEmailRequest(
-                SystemEmailTemplates.AccountEmailConfirmation,
-                new EmailRecipient(newEmail, user.FullName),
-                await AccountEmailVariables.ForConfirmationAsync(
-                    _db, user.FullName, roleCode, user.SubRole,
-                    user.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
-                TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(_confirmations.BuildConfirmUrl(rawToken)),
-                RelatedType: "User",
-                RelatedId: user.UserId,
-                SentBy: _currentUser.UserId), cancellationToken);
+            var result = await _dispatcher.SendAsync(
+                await PendingAccountEmailChangeMails.BuildConfirmationAsync(
+                    _db, _confirmations, user.UserId, user.FullName, roleCode, user.SubRole,
+                    user.PrimaryCampusId, change.NewEmail, change.RawToken, _currentUser.UserId,
+                    cancellationToken),
+                cancellationToken);
 
             notificationStatus = result.NotificationStatus;
         }
@@ -206,27 +160,19 @@ public sealed class EditPendingAccountEmailCommandHandler
         // Neutral notice to the previous address — best-effort, never blocks, and never affects the
         // status above: the mail that decides whether this account can be activated is the one sent to
         // the NEW address.
-        //
-        // Deliberately anonymous: the address being unlinked may have been a typo and belong to somebody
-        // with no connection to this account. No variables, and no display name on the recipient either —
-        // a To header reading "Nguyễn Văn A <stranger@…>" would name the holder just as effectively as
-        // the body would.
         try
         {
-            await _dispatcher.SendAsync(new SystemEmailRequest(
-                SystemEmailTemplates.AccountPendingEmailChangedOldNotice,
-                new EmailRecipient(oldEmail),
-                new Dictionary<string, string>(),
-                RelatedType: "User",
-                RelatedId: user.UserId,
-                SentBy: _currentUser.UserId), cancellationToken);
+            await _dispatcher.SendAsync(
+                PendingAccountEmailChangeMails.BuildOldAddressNotice(
+                    user.UserId, change.OldEmail, _currentUser.UserId),
+                cancellationToken);
         }
         catch { /* notice is best-effort */ }
 
         return new EditPendingAccountEmailResponse
         {
             Success = true,
-            Email = newEmail,
+            Email = change.NewEmail,
             EmailNotificationStatus = notificationStatus,
             Message = "Đã cập nhật email và gửi lại xác nhận.",
         };

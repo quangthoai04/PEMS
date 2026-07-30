@@ -14,20 +14,29 @@ export type ResendFeedback = {
 };
 
 /**
- * Whether HO may be offered the resend action.
+ * Whether the caller may be offered the resend action.
  *
- * `detailStatus` must come from the UC-98 detail response, never from the list row: the row holds a
- * display-mapped status and can be stale (the holder may have confirmed in another tab). Until the
- * detail request has resolved — `detailLoaded` — there is no trustworthy status at all, so the
- * action stays hidden rather than guessing from what the table happened to render.
+ * Two independent facts, both required, both from the UC-98 detail response:
+ *
+ * - `detailStatus` — never the list row, which holds a display-mapped status and can be stale (the
+ *   holder may have confirmed in another tab). Until the detail request has resolved (`detailLoaded`)
+ *   there is no trustworthy status at all, so the action stays hidden rather than guessing from what
+ *   the table happened to render.
+ * - `canResend` — the backend's answer to "may THIS caller manage THIS pending account". It replaced
+ *   an `isHO` check here: the action is not HO's alone (a Staff Leader runs it for their own campus),
+ *   and the conditions that separate the two — sub-role, campus scope, the self-account rule — are not
+ *   things this component can evaluate as reliably as the query already has. A missing flag reads as
+ *   `false`, so an older backend hides the button rather than offering one that 403s.
  */
 export function canResendEmailConfirmation(input: {
-  isHO: boolean;
   detailLoaded: boolean;
   detailStatus?: string | null;
+  canResend?: boolean | null;
 }): boolean {
   const normalized = String(input.detailStatus ?? '').trim().toUpperCase();
-  return input.isHO && input.detailLoaded && normalized === 'PENDING_EMAIL_CONFIRMATION';
+  return input.detailLoaded
+    && normalized === 'PENDING_EMAIL_CONFIRMATION'
+    && input.canResend === true;
 }
 
 export type ResendResultSummary = {

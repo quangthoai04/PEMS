@@ -74,6 +74,12 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             canEditBasicInfo = editBasicInfoDisabledReason is null;
         }
 
+        // ── Pending-account actions (resend / correct the email). Both are the same permission, and
+        //    both are computed from the DATABASE row rather than left to the client to infer from a
+        //    role code and a campus id. ──
+        var canManagePending = row.Status == UserStatuses.PendingEmailConfirmation
+            && CanManagePendingAccount(row.UserId, row.RoleCode, row.SubRole, row.PrimaryCampusId);
+
         return new ViewAccountDetailsDto
         {
             UserId = row.UserId,
@@ -98,7 +104,42 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             LastLoginAt = row.LastLoginAt,
             CanEditBasicInfo = canEditBasicInfo,
             EditBasicInfoDisabledReason = editBasicInfoDisabledReason,
+            CanResendEmailConfirmation = canManagePending,
+            CanEditPendingEmail = canManagePending,
         };
+    }
+
+    /// <summary>
+    /// Whether the caller may act on a PENDING_EMAIL_CONFIRMATION account: HO within its own scope
+    /// (another HO or a Staff Leader), or the Staff Leader of the account's OWN campus over the three
+    /// shapes a leader manages. Never one's own account — nobody re-issues their own activation link.
+    ///
+    /// <para>
+    /// This mirrors what <c>PendingAccountAuthorization</c> plus the Staff Leader target rules enforce
+    /// at the mutations. Being a display hint does not make it optional to get right: a button offered
+    /// and then refused with a 403 is a worse answer than no button, and one withheld from somebody
+    /// entitled to it hides the only way forward for that account.
+    /// </para>
+    /// </summary>
+    private bool CanManagePendingAccount(
+        ulong targetUserId, string targetRoleCode, string? targetSubRole, ulong? targetCampusId)
+    {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null) return false;
+        if (_currentUser.UserId.Value == targetUserId) return false;
+
+        if (_currentUser.RoleCode == RoleCodes.Ho)
+            return targetRoleCode == RoleCodes.Ho
+                || (targetRoleCode == RoleCodes.Staff && targetSubRole == UserSubRoles.Leader);
+
+        var isCampusLeader = _currentUser.RoleCode == RoleCodes.Staff
+            && _currentUser.SubRole == UserSubRoles.Leader
+            && _currentUser.PrimaryCampusId is not null
+            && _currentUser.PrimaryCampusId == targetCampusId;
+        if (!isCampusLeader) return false;
+
+        // The same three shapes the mutations allow — never an HO, never another Staff Leader, never a
+        // DEPARTMENT/STAFF — read from the one place that defines them.
+        return PendingAccountAuthorization.IsStaffLeaderManageableShape(targetRoleCode, targetSubRole);
     }
 
     /// <summary>

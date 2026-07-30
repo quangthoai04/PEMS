@@ -58,7 +58,9 @@ public class ResendAndEditPendingEmailTests
         }
 
         public ResendAccountEmailConfirmationCommandHandler Resend() => new(Db, Actor, Clock, Confirmations.Object, Dispatcher);
-        public EditPendingAccountEmailCommandHandler Edit() => new(Db, Actor, Clock, Confirmations.Object, Dispatcher);
+        public EditPendingAccountEmailCommandHandler Edit() => new(
+            Db, Actor, Clock, Confirmations.Object, Dispatcher,
+            new PendingAccountEmailChangeService(Db, Confirmations.Object));
     }
 
     private static User SeedUser(Harness h, string? status = null, string email = OwnerEmail, ulong campus = CampusA)
@@ -823,7 +825,8 @@ public class PendingEmailEditTokenLifecycleTests
         }
 
         public EditPendingAccountEmailCommandHandler Edit()
-            => new(Db, Actor, Clock, Confirmations, Dispatcher);
+            => new(Db, Actor, Clock, Confirmations, Dispatcher,
+                new PendingAccountEmailChangeService(Db, Confirmations));
 
         public ConfirmAccountEmailCommandHandler Confirm()
             => new(Db, Tokens, Clock, Dispatcher, Confirmations);

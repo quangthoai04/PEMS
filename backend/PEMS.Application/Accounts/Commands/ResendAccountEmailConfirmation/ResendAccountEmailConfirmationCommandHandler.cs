@@ -46,7 +46,14 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
         var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken);
         if (user is null) throw new NotFoundException("Tài khoản không tồn tại.");
 
-        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user);
+        // The role is resolved before the scope check, not just for the email below: a Staff Leader's
+        // authority over an account depends on what that account IS, so the check cannot run without it.
+        var roleCode = await _db.Roles.AsNoTracking()
+            .Where(r => r.RoleId == user.RoleId)
+            .Select(r => r.RoleCode)
+            .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
+
+        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user, roleCode);
 
         if (user.Status != UserStatuses.PendingEmailConfirmation)
             throw new BusinessRuleException(
@@ -71,23 +78,14 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
         var rawToken = await _confirmations.IssuePendingAsync(user.UserId, user.Email, isResend: true, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
-        // The confirmation email states the account's role, so resolve it by id rather than relying on a
-        // navigation the caller may not have loaded.
-        var roleCode = await _db.Roles.AsNoTracking()
-            .Where(r => r.RoleId == user.RoleId)
-            .Select(r => r.RoleCode)
-            .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
-
-        var result = await _dispatcher.SendAsync(new SystemEmailRequest(
-            SystemEmailTemplates.AccountEmailConfirmation,
-            new EmailRecipient(user.Email, user.FullName),
-            await AccountEmailVariables.ForConfirmationAsync(
-                _db, user.FullName, roleCode, user.SubRole,
-                user.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
-            TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(_confirmations.BuildConfirmUrl(rawToken)),
-            RelatedType: "User",
-            RelatedId: user.UserId,
-            SentBy: _currentUser.UserId), cancellationToken);
+        // Built from the same helper as the create and email-edit flows, so the three activation mails
+        // cannot drift apart. The address is user.Email — a resend re-sends to where the account
+        // already points, never to an address supplied by the request.
+        var result = await _dispatcher.SendAsync(
+            await PendingAccountEmailChangeMails.BuildConfirmationAsync(
+                _db, _confirmations, user.UserId, user.FullName, roleCode, user.SubRole,
+                user.PrimaryCampusId, user.Email, rawToken, _currentUser.UserId, cancellationToken),
+            cancellationToken);
 
         var newResendCount = (latest?.Status == AccountEmailConfirmationStatuses.Pending ? latest.ResendCount : 0) + 1;
 
