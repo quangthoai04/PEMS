@@ -36,14 +36,13 @@ internal static class AmendmentGuards
             throw new ForbiddenException("Bạn không có quyền thao tác đề xuất của đơn này.");
     }
 
-    /// <summary>Decision side: the CURRENT Staff Leader of the instance's campus (never HO/Admin/Host —
-    /// and never merely the "original reviewer" if their campus changed).</summary>
-    public static void EnsureCurrentCampusLeader(ICurrentUserService currentUser, ulong instanceCampusId)
+    /// <summary>Decision side: ONLY the current Host.</summary>
+    public static void EnsureCurrentHost(ICurrentUserService currentUser, ulong? currentHostUserId)
     {
-        if (currentUser.RoleCode != RoleCodes.Staff
-            || currentUser.SubRole != UserSubRoles.Leader
-            || currentUser.PrimaryCampusId != instanceCampusId)
-            throw new ForbiddenException("Chỉ Staff Leader hiện tại của cơ sở này mới được quyết định đề xuất.")
+        var isHost = currentUser.UserId.HasValue && currentUser.UserId.Value == currentHostUserId;
+
+        if (!isHost)
+            throw new ForbiddenException("Chỉ Host hiện tại của cơ sở này mới được quyết định đề xuất.")
             {
                 // stable code surfaced to the client
             };
@@ -111,6 +110,12 @@ public sealed class SubmitVisitAmendmentCommandHandler
         {
             amendment = await _amendments.SubmitAsync(
                 visit, instance, request.Proposal, actorId, now, cancellationToken);
+            
+            if (_currentUser.RoleCode == RoleCodes.Staff)
+            {
+                await _amendments.ApproveAsync(amendment, actorId, "Tự động duyệt do người đề xuất là Staff.", now, cancellationToken);
+            }
+
             await tx.CommitAsync(cancellationToken);
         }
 
@@ -186,11 +191,9 @@ public sealed class GetActiveVisitAmendmentQueryHandler
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
 
-        // Scope: requester side, the campus Staff Leader, the current Host, or HO (read-only).
+        // Scope: requester side, the current Host, or HO (read-only).
         var allowed = row.RegistrantUserId == actorId
             || (row.VisitorUserId == actorId && row.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active)
-            || (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader
-                && _currentUser.PrimaryCampusId == row.CampusId)
             || row.CurrentHostUserId == actorId
             || _currentUser.RoleCode == RoleCodes.Ho;
         if (!allowed)
@@ -245,13 +248,14 @@ public sealed class DecideVisitAmendmentCommandHandlers :
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
         var campusId = await CampusOfInstanceAsync(request.VisitInstanceId, cancellationToken);
+        var instance = await _db.VisitRequestCampuses.AsNoTracking().FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken);
         try
         {
-            AmendmentGuards.EnsureCurrentCampusLeader(_currentUser, campusId);
+            AmendmentGuards.EnsureCurrentHost(_currentUser, instance?.CurrentHostUserId);
         }
         catch (ForbiddenException)
         {
-            throw new ForbiddenException("Chỉ Staff Leader hiện tại của cơ sở này mới được duyệt đề xuất.");
+            throw new ForbiddenException("Chỉ Host hiện tại của cơ sở này mới được duyệt đề xuất.");
         }
 
         VisitAmendmentDecisionResponse result;
@@ -270,7 +274,8 @@ public sealed class DecideVisitAmendmentCommandHandlers :
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
         var campusId = await CampusOfInstanceAsync(request.VisitInstanceId, cancellationToken);
-        AmendmentGuards.EnsureCurrentCampusLeader(_currentUser, campusId);
+        var instance = await _db.VisitRequestCampuses.AsNoTracking().FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken);
+        AmendmentGuards.EnsureCurrentHost(_currentUser, instance?.CurrentHostUserId);
 
         VisitAmendmentDecisionResponse result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))

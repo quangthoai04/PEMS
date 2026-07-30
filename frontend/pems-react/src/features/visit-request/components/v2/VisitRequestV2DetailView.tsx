@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
+import { useAuthContext } from '../../../../shared/auth/AuthContext';
 import { useTranslation } from 'react-i18next';
 import {
   getVisitRequestFormV2,
@@ -42,6 +43,9 @@ interface Props {
  */
 export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
+  const { user } = useAuthContext();
+  const isStaff = user?.roleCode === 'STAFF';
+
   const [data, setData] = useState<ResolvedVisitForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<'notfound' | 'forbidden' | 'generic' | null>(null);
@@ -308,7 +312,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       icon={<PencilLine className="h-4 w-4" aria-hidden />}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5"
                     >
-                      {t('visitRequestV2:amend.open')}
+                      {isStaff ? t('visitRequestV2:amend.openUpdate', { defaultValue: 'Cập nhật thông tin' }) : t('visitRequestV2:amend.open')}
                     </VisitActionButton>
                     <VisitActionButton
                       capability={transferCap}

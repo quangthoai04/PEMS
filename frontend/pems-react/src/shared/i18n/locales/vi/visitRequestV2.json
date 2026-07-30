@@ -251,13 +251,15 @@
   "amend": {
     "open": "Đề xuất thay đổi",
     "title": "Đề xuất thay đổi — {{campus}}",
-    "activeStaysNote": "Nội dung đang hiệu lực không thay đổi cho tới khi Staff Leader duyệt đề xuất.",
+    "activeStaysNote": "Nếu bạn là Staff, đề xuất sẽ tự động được duyệt và áp dụng ngay. Nếu bạn là Khách, nội dung chỉ thay đổi sau khi Host duyệt.",
     "reason": "Lý do đề xuất",
     "submit": "Gửi đề xuất",
     "errAlreadyPending": "Cơ sở này đã có một đề xuất đang chờ duyệt. Vui lòng chờ xử lý hoặc rút đề xuất hiện tại.",
     "errWindowExpired": "Lịch thăm bắt đầu trong vòng 24 giờ nên không thể tự đề xuất thay đổi. Vui lòng liên hệ FPTU.",
     "errNotEditable": "Cơ sở này hiện không thể đề xuất thay đổi.",
-    "errConflict": "Dữ liệu đã thay đổi từ lúc bạn mở. Vui lòng tải lại và thử lại.",
+    "errConflict": "Nội dung đang hiệu lực đã thay đổi so với bản bạn xem. Vui lòng tải lại trước khi đề xuất.",
+    "errApproverScopeForbidden": "Bạn không thể đề xuất thay đổi do trùng lặp quyền duyệt. Vui lòng liên hệ Admin.",
+    "errNoChanges": "Đề xuất không có thay đổi nào so với nội dung đang hiệu lực.",
     "errGeneric": "Không thể gửi đề xuất. Vui lòng thử lại.",
     "members": {
       "visitors": "Danh sách khách",

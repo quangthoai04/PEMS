@@ -30,8 +30,10 @@ public static class VisitViewerRelations
     public const string Requester = "REQUESTER";
     /// <summary>Staff Leader of the campus the action targets.</summary>
     public const string CampusLeader = "CAMPUS_LEADER";
-    /// <summary>Anyone else (Host, HO, participant, unrelated). Never mutates.</summary>
+    /// <summary>Anyone else (HO, participant, unrelated). Never mutates.</summary>
     public const string Other = "OTHER";
+    /// <summary>The designated Host of this visit instance.</summary>
+    public const string Host = "HOST";
 }
 
 /// <summary>Stable reasons an action is refused. The UI maps these to sentences; never parse messages.</summary>
@@ -123,7 +125,9 @@ public static class VisitMutationPolicy
         // ── 1. Relation. Checked first so a Host never sees a reason that implies "come back earlier". ──
         var relationOk = context.Action switch
         {
-            VisitMutationAction.ApproveAmendment or VisitMutationAction.TransferHost
+            VisitMutationAction.ApproveAmendment
+                => context.ViewerRelation == VisitViewerRelations.Host,
+            VisitMutationAction.TransferHost
                 => context.ViewerRelation == VisitViewerRelations.CampusLeader,
             _ => context.ViewerRelation == VisitViewerRelations.Requester,
         };

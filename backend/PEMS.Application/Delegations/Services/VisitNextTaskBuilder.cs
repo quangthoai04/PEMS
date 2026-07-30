@@ -73,7 +73,7 @@ public static class VisitNextTaskBuilder
         var prepBlocked = await LoadPreparationBlockedAsync(db, prepInstanceIds, ct);
         var closeBlocked = await LoadCloseBlockedAsync(db, closingInstanceIds, ct);
         var freshHandover = await LoadFreshHandoverAsync(db, userId, hostInstanceIds, ct);
-        var pendingAmendment = await LoadPendingAmendmentAsync(db, leaderInstanceIds, ct);
+        var pendingAmendment = await LoadPendingAmendmentAsync(db, hostInstanceIds, ct);
 
         return rows.Select(r => Decide(r, now, prepBlocked, closeBlocked, freshHandover, pendingAmendment)).ToList();
     }

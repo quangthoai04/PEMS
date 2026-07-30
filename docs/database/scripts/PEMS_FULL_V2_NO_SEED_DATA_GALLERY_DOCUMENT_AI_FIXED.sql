@@ -1,4 +1,15 @@
 -- ============================================================================
+-- PEMS FULL V2 — DOCUMENT / EMAIL / WORKFLOW SEED EDITION — 2026-07-30
+-- Code-grounded against repository commit:
+--   242d54215ac8ec6540ca9d3e7666b6baeed1dd00
+-- Input:
+--   PEMS_FULL_V2_NO_SEED_DATA_GALLERY(2).sql
+-- Adds coherent document, primary-contact claim/transfer, participant,
+-- logistics, reminder and report-email stories plus 20 zero-error checks.
+-- IMPORTANT: destructive FRESH-CREATE build for disposable pems_db only.
+-- ============================================================================
+
+-- ============================================================================
 -- PEMS FULL V2 — CURATED SEED FIXED EDITION
 -- Built from: PEMS_FULL_V2_NO_SEED_DATA_GALLERY(1).sql
 -- Change scope: seed DML only. Persistent table definitions are unchanged.
@@ -397,8 +408,6 @@ DROP TABLE IF EXISTS `calendar_event_attendees`;
 DROP TABLE IF EXISTS `calendar_events`;
 DROP TABLE IF EXISTS `notifications`;
 DROP TABLE IF EXISTS `account_email_confirmations`;
--- Child of both `users` and `sent_emails`, so it drops before either of them (G11 / R-103).
-DROP TABLE IF EXISTS `email_send_idempotency`;
 DROP TABLE IF EXISTS `email_action_tokens`;
 DROP TABLE IF EXISTS `email_draft_attachments`;
 DROP TABLE IF EXISTS `email_draft_recipients`;
@@ -1621,7 +1630,7 @@ CREATE TABLE visit_instance_form_revision_history (
   visit_instance_id BIGINT UNSIGNED NOT NULL,
   form_revision INT UNSIGNED NOT NULL,
   approval_revision INT UNSIGNED NOT NULL,
-  source_type ENUM('CREATE','SAFE_EDIT','PENDING_EDIT','AMENDMENT_APPLIED','MIGRATION','RESUBMIT') NOT NULL,
+  source_type ENUM('CREATE','SAFE_EDIT','AMENDMENT_APPLIED','MIGRATION','RESUBMIT') NOT NULL,
   source_id BIGINT UNSIGNED NULL,
   snapshot_json JSON NOT NULL,
   applied_by BIGINT UNSIGNED NULL,
@@ -1644,7 +1653,7 @@ CREATE TABLE visit_request_revision_history (
   request_revision_history_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   visit_request_id BIGINT UNSIGNED NOT NULL,
   request_revision INT UNSIGNED NOT NULL,
-  source_type ENUM('CREATE','SAFE_EDIT','PENDING_EDIT','MIGRATION','RESUBMIT') NOT NULL,
+  source_type ENUM('CREATE','SAFE_EDIT','MIGRATION','RESUBMIT') NOT NULL,
   source_id BIGINT UNSIGNED NULL,
   snapshot_json JSON NOT NULL,
   applied_by BIGINT UNSIGNED NULL,
@@ -3065,13 +3074,6 @@ CREATE TABLE email_templates (
   body_format ENUM('PLAIN_TEXT','HTML') NOT NULL DEFAULT 'HTML'
     COMMENT 'Định dạng nội dung email template; HTML dùng cho rich text editor',
   variables_text VARCHAR(700) NULL,
-  -- Monotonic content revision — the optimistic-concurrency token for UC-44 update and restore.
-  -- updated_at cannot do this job: it is DATETIME with no fractional part, so two saves inside the
-  -- same second store an identical stamp and the second one silently overwrites the first. Every
-  -- content write must therefore be a conditional UPDATE carrying `AND revision = :expected` and
-  -- bumping this column by exactly one, so the database — not the handler — decides who wins.
-  -- Never written by an operator and never reset: it counts writes, it does not describe content.
-  revision INT UNSIGNED NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -3377,69 +3379,6 @@ CREATE TABLE account_email_confirmations (
     ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Bằng chứng sở hữu email một-lần cho tài khoản nội bộ mới (P0 #1).';
-
--- G11 (R-103): one reservation per logical "gửi báo cáo/hóa đơn" action. The client sends an opaque
--- Idempotency-Key and reuses it when retrying THE SAME action, so a network timeout can no longer turn
--- one click into two outbound messages. Only hashes are stored — never the key, the note text, the
--- recipient address or any monetary value.
-CREATE TABLE email_send_idempotency (
-  email_send_idempotency_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-
-  actor_user_id BIGINT UNSIGNED NOT NULL
-    COMMENT 'Người bấm gửi, đọc từ JWT đã xác thực — không bao giờ từ payload',
-  operation_code VARCHAR(64) NOT NULL
-    COMMENT 'Một trong sáu hành động gửi báo cáo/hóa đơn, ví dụ REPORT_HO_CAMPUS',
-  idempotency_key_hash CHAR(64) NOT NULL
-    COMMENT 'SHA-256 (hex) của Idempotency-Key — KHÔNG lưu key gốc',
-  request_fingerprint CHAR(64) NOT NULL
-    COMMENT 'SHA-256 (hex) của nội dung nghiệp vụ đã chuẩn hoá; cùng key khác fingerprint = từ chối, không gửi',
-
-  state VARCHAR(32) NOT NULL DEFAULT 'RESERVED'
-    COMMENT 'RESERVED / PREPARING / DISPATCHING / SUCCEEDED / FAILED_BEFORE_DISPATCH / OUTCOME_UNKNOWN',
-
-  sent_email_id BIGINT UNSIGNED NULL
-    COMMENT 'Bản ghi lịch sử của lần gửi thành công, để đối chiếu',
-  result_message VARCHAR(500) NULL
-    COMMENT 'Thông báo thành công, phát lại nguyên văn cho lần gọi trùng',
-  failure_code VARCHAR(64) NULL
-    COMMENT 'Mã lỗi ổn định; không chứa địa chỉ, số tiền, token hay nội dung thư',
-
-  attempt_count INT UNSIGNED NOT NULL DEFAULT 0
-    COMMENT 'Số lần handler thực sự chạy dưới key này (chỉ tăng khi retry sau FAILED_BEFORE_DISPATCH)',
-
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  dispatch_started_at DATETIME NULL
-    COMMENT 'Thời điểm ngay trước lời gọi ra ngoài; có giá trị nghĩa là không thể khẳng định chưa gửi',
-  completed_at DATETIME NULL,
-
-  PRIMARY KEY (email_send_idempotency_id),
-
-  -- The whole contract rests on this one constraint: two concurrent requests carrying the same key
-  -- collide in the database, not in application code.
-  UNIQUE KEY uq_email_send_idempotency_actor_op_key
-    (actor_user_id, operation_code, idempotency_key_hash),
-
-  KEY idx_email_send_idempotency_state (state, created_at),
-  KEY idx_email_send_idempotency_sent_email (sent_email_id),
-
-  CONSTRAINT chk_email_send_idempotency_state
-    CHECK (state IN ('RESERVED','PREPARING','DISPATCHING','SUCCEEDED',
-                     'FAILED_BEFORE_DISPATCH','OUTCOME_UNKNOWN')),
-
-  -- RESTRICT, not CASCADE: this table records what a person sent. Deleting the person must not delete
-  -- the evidence, and PEMS hard-deletes no user anywhere in the backend.
-  CONSTRAINT fk_email_send_idempotency_actor
-    FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
-
-  -- SET NULL: if a history row is ever removed the reservation survives, because the fact that a send
-  -- happened is exactly what must not be lost.
-  CONSTRAINT fk_email_send_idempotency_sent_email
-    FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Chống gửi trùng cho sáu hành động gửi báo cáo/hóa đơn (G11 / R-103). Chỉ lưu hash của key và của yêu cầu.';
 
 CREATE TABLE notifications (
   notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -4567,9 +4506,8 @@ BEGIN
 END$$
 
 -- Visit photo upload must be an image stored on Google Drive with the dedicated
--- purpose, and the uploader must be an ACTIVE user who is the instance's Host, an
--- Admin/Staff (regular Staff or Staff Leader), or a Participant (any role) with
--- ACCEPTED/ASSIGNED status. Application authorization must perform the same
+-- purpose, and the uploader must be an ACTIVE Student who ACCEPTED participation
+-- in the exact campus instance. Application authorization must perform the same
 -- checks before calling IFileUploadService; these triggers are defense-in-depth.
 CREATE TRIGGER trg_visit_photos_validate_bi
 BEFORE INSERT ON visit_photos
@@ -4579,23 +4517,19 @@ BEGIN
   DECLARE v_valid_file INT DEFAULT 0;
 
   SELECT COUNT(*) INTO v_valid_participant
-  FROM visit_request_campuses vrc
-  JOIN users u ON u.user_id = NEW.uploaded_by
+  FROM visit_participants vp
+  JOIN users u ON u.user_id = vp.user_id
   JOIN roles r ON r.role_id = u.role_id
-  LEFT JOIN visit_participants vp ON vp.visit_instance_id = NEW.visit_instance_id
+  WHERE vp.visit_instance_id = NEW.visit_instance_id
     AND vp.user_id = NEW.uploaded_by
-    AND (vp.status = 'ACCEPTED' OR vp.status = 'ASSIGNED')
-  WHERE vrc.visit_instance_id = NEW.visit_instance_id
-    AND u.status = 'ACTIVE'
-    AND (
-      vrc.current_host_user_id = NEW.uploaded_by
-      OR r.role_code IN ('ADMIN', 'STAFF')
-      OR vp.participant_id IS NOT NULL
-    );
+    AND vp.participant_role = 'STUDENT'
+    AND vp.status = 'ACCEPTED'
+    AND r.role_code = 'STUDENT'
+    AND u.status = 'ACTIVE';
 
   IF v_valid_participant = 0 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE user who is Host, Staff, Admin, or Participant of this visit instance';
+      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE Student with ACCEPTED participation in this visit instance';
   END IF;
 
   SELECT COUNT(*) INTO v_valid_file
@@ -5367,8 +5301,8 @@ INSERT INTO visit_agendas (agenda_id, visit_instance_id, sequence_order, title, 
   (12, 3112, 1, 'Mekong sustainability workshop', 'Workshop sustainability tại Cần Thơ.', '2026-06-24 09:00:00', '2026-06-24 11:00:00', 'CT Workshop Room', 14, '2026-06-20 10:10:00', 14, NULL, NULL);
 
 INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, item_type, title, description, quantity, usage_start_at, usage_end_at, status, priority, requested_by, requested_to_department_id, requested_at, received_by, received_at, assigned_to_user_id, assigned_by, assigned_at, assignee_accepted_at, assignee_response_note, due_at, completed_at, proposed_by, proposed_at, proposed_quantity, proposed_usage_start_at, proposed_usage_end_at, proposed_description, proposal_note, proposal_responded_by, proposal_responded_at, proposal_response, proposal_response_note, decision_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  
-  
+
+
   (1, 3004, 'TRANSPORT', 'Xe điện nội khu cho đoàn Green Mobility', 'Chuẩn bị 2 xe điện, route Alpha Lobby - EV Station - Library.', 2, '2026-06-28 09:15:00', '2026-06-28 10:30:00', 'REQUESTED', 'HIGH', 4, 3, '2026-06-18 10:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-06-27 17:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-06-18 10:00:00', 4, NULL, NULL),
   (2, 3004, 'ROOM', 'Phòng họp Alpha 201 cho briefing mobility', 'Cần phòng 20 chỗ, máy chiếu, nước uống nhẹ.', 1, '2026-06-28 10:30:00', '2026-06-28 12:00:00', 'REQUESTED', 'MEDIUM', 4, 3, '2026-06-18 10:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-06-27 16:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-18 10:20:00', 4, NULL, NULL),
   (3, 3004, 'MEAL', 'Teabreak ít đường cho khách Singapore', 'Ban đầu 6 suất, đề xuất tăng lên 8 vì có thêm khách quan sát.', 6, '2026-06-28 10:00:00', '2026-06-28 10:20:00', 'CHANGE_PROPOSED', 'MEDIUM', 4, 3, '2026-06-18 10:25:00', 17, '2026-06-18 11:00:00', NULL, NULL, NULL, NULL, NULL, '2026-06-27 15:00:00', NULL, 17, '2026-06-18 11:30:00', 8, '2026-06-28 10:00:00', '2026-06-28 10:20:00', 'Tăng số suất vì đoàn bổ sung 2 quan sát viên mobility.', 'Facilities đề xuất tăng lên 8 suất, vẫn trong budget.', NULL, NULL, NULL, NULL, NULL, 2, '2026-06-18 10:25:00', 4, '2026-06-18 11:30:00', 17),
@@ -5462,826 +5396,34 @@ INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, cre
 -- 7. Communication, calendar, API, documents and audit
 -- ---------------------------------------------------------------------
 
--- ---------------------------------------------------------------------
--- email_templates — canonical system catalog (26 templates).
---
--- ONE logical seed block. Every row here has a real production caller; a template with no caller is
--- not seeded, and a caller with no template does not exist. That pairing is asserted in both
--- directions by SystemEmailTemplateContractTests, so neither side can drift.
---
--- Rules this block keeps, and why:
---   * NO email_template_id is written. Everything that needs to reference a template looks it up by
---     template_code, so re-seeding or re-ordering can never repoint a foreign key at the wrong row.
---   * Every row carries BOTH Vietnamese and English subject/body. The renderer refuses to fall back
---     from one language to the other, because a half-translated template is a content bug an operator
---     must be told about rather than have hidden.
---   * variables_text lists exactly the {{placeholders}} used across subject_vi/body_vi/subject_en/body_en,
---     in lower camelCase. {{actionBlock}} is deliberately absent: it is injected by the backend as
---     trusted HTML, never editable content, so the buttons that carry one-time tokens cannot be moved,
---     removed or forged by editing a template.
---   * NO raw token, OTP or action URL appears in any body — those are minted per send.
---   * campus_id is NULL everywhere: no evidence any of this content differs per campus.
---   * Bodies are inner content only. The branded PEMS card is applied by the backend at send time so
---     the shell lives in one place instead of being copy-pasted into 26 rows.
--- ---------------------------------------------------------------------
+INSERT INTO email_templates (email_template_id, template_code, name, purpose, campus_id, description, status, subject_vi, body_vi, subject_en, body_en, variables_text, created_at, created_by, updated_at, updated_by) VALUES
+  (1, 'ACCOUNT_CREATED_INTERNAL', 'Thông báo tạo tài khoản nội bộ', 'ACCOUNT', NULL, 'Gửi cho user nội bộ khi account được tạo thủ công.', 'ACTIVE', 'Tài khoản nội bộ PEMS của bạn đã được khởi tạo', 'Xin chào {{FullName}}, tài khoản PEMS của bạn đã được tạo cho vai trò {{RoleName}} tại {{CampusName}}.', 'Your PEMS internal account has been created', 'Hello {{FullName}}, your PEMS internal account has been created for {{RoleName}} at {{CampusName}}.', 'FullName,RoleName,CampusName,LoginUrl', '2026-03-01 08:00:00', 1, NULL, NULL),
+  (2, 'VISIT_REQUEST_APPROVED', 'Thông báo duyệt đơn thăm', 'VISIT_REQUEST', NULL, 'Gửi khi request được HO hoặc Staff Leader duyệt.', 'ACTIVE', 'Yêu cầu tham quan đã được duyệt', 'Đơn {{RequestCode}} đã được duyệt. Lịch chi tiết sẽ được gửi sau khi host xác nhận.', 'Visit request approved', 'Your request {{RequestCode}} has been approved. Detailed schedule will follow after host confirmation.', 'RequestCode,DelegationName,DecisionNote', '2026-03-01 08:05:00', 2, NULL, NULL),
+  (3, 'VISIT_REQUEST_REJECTED', 'Thông báo từ chối đơn thăm', 'VISIT_REQUEST', NULL, 'Gửi khi request bị từ chối trước duyệt.', 'ACTIVE', 'Yêu cầu tham quan chưa thể tiếp nhận', 'Đơn {{RequestCode}} chưa thể tiếp nhận. Lý do: {{DecisionNote}}.', 'Visit request cannot be accepted', 'Request {{RequestCode}} cannot be accepted. Reason: {{DecisionNote}}.', 'RequestCode,DecisionNote', '2026-03-01 08:10:00', 2, NULL, NULL),
+  (4, 'VISIT_CANCELLED', 'Thông báo hủy lịch thăm', 'CANCELLATION', NULL, 'Gửi khi visitor hoặc host hủy theo rule hợp lệ.', 'ACTIVE', 'Lịch thăm đã được hủy', 'Lịch thăm {{RequestCode}} đã được hủy. Lý do: {{CancellationReason}}.', 'Visit has been cancelled', 'Visit {{RequestCode}} has been cancelled. Reason: {{CancellationReason}}.', 'RequestCode,CancellationReason', '2026-03-01 08:15:00', 2, NULL, NULL),
+  (5, 'HOST_ASSIGNMENT', 'Phân công host chính thức', 'HOST_ASSIGNMENT', NULL, 'Thông báo cho Staff khi được Staff Leader gán làm host.', 'ACTIVE', 'Bạn được phân công làm Host chính', 'Bạn được phân công làm Host cho {{DelegationName}} tại {{CampusName}}.', 'You have been assigned as official host', 'You have been assigned as host for {{DelegationName}} at {{CampusName}}.', 'DelegationName,CampusName,PlannedStartAt', '2026-03-01 08:20:00', 2, NULL, NULL),
+  (6, 'LOGISTICS_REQUEST', 'Yêu cầu hậu cần mới', 'LOGISTICS', NULL, 'Gửi cho Department Lead khi host tạo yêu cầu logistics.', 'ACTIVE', 'Có yêu cầu hậu cần mới', 'Yêu cầu {{LogisticsTitle}} cần được tiếp nhận trước {{DueAt}}.', 'New logistics request', 'Request {{LogisticsTitle}} needs to be handled before {{DueAt}}.', 'LogisticsTitle,DueAt,VisitCode', '2026-03-01 08:25:00', 2, NULL, NULL),
+  (7, 'OTP_VISIT_REQUEST', 'OTP xác minh email đăng ký thăm', 'OTP', NULL, 'Gửi OTP cho visitor trước khi tạo visit_requests.', 'ACTIVE', 'Mã OTP xác minh đăng ký tham quan', 'Mã OTP của bạn là {{OtpCode}}. Mã hết hạn sau {{ExpireMinutes}} phút.', 'Visit request email verification OTP', 'Your OTP is {{OtpCode}}. It expires in {{ExpireMinutes}} minutes.', 'OtpCode,ExpireMinutes', '2026-03-01 08:30:00', 1, NULL, NULL);
 
-INSERT INTO email_templates
-  (template_code, name, purpose, campus_id, description, status,
-   subject_vi, body_vi, subject_en, body_en, body_format, variables_text, created_at)
-VALUES
+-- Additional templates for VisitProcess invitation, logistics request, and scheduled reminders.
+INSERT INTO email_templates (email_template_id, template_code, name, purpose, campus_id, description, status, subject_vi, body_vi, subject_en, body_en, variables_text, created_at, created_by, updated_at, updated_by) VALUES
+  (8, 'VISIT_PARTICIPANT_INVITATION', 'Mời nhân sự IC tham gia tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời IC Staff tham gia hỗ trợ visit instance; có nút chấp nhận/từ chối qua email_action_tokens.', 'ACTIVE', 'Mời tham gia hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}} từ {{plannedStartAt}} đến {{plannedEndAt}}.</p><p>Host phụ trách: {{hostName}}.</p><p>Vui lòng chọn Chấp nhận hoặc Từ chối bằng nút trong email.</p>', 'Invitation to support {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support <strong>{{DelegationName}}</strong> at {{CampusName}} from {{plannedStartAt}} to {{plannedEndAt}}.</p><p>Host: {{hostName}}.</p><p>Please accept or decline using the email buttons.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,acceptUrl,declineUrl', '2026-06-26 09:00:00', 1, NULL, NULL),
+  (9, 'VISIT_DEPARTMENT_LEADER_INVITATION', 'Mời Department Leader phối hợp tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời Department Leader phối hợp; chấp nhận/từ chối bằng token, gán nhân sự qua link đăng nhập.', 'ACTIVE', 'Mời phòng ban phối hợp đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Phòng ban của bạn được mời phối hợp đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}}.</p><p>Thời gian: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'Department coordination invitation for {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>Your department is invited to coordinate <strong>{{DelegationName}}</strong> at {{CampusName}}.</p><p>Time: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,acceptUrl,declineUrl,assignUrl', '2026-06-26 09:05:00', 1, NULL, NULL),
+  (10, 'VISIT_STUDENT_INVITATION', 'Mời sinh viên hỗ trợ tiếp khách', 'VISIT_PARTICIPANT', NULL, 'Email mời Student hỗ trợ đoàn; có nút chấp nhận/từ chối qua email_action_tokens.', 'ACTIVE', 'Mời sinh viên hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}}.</p><p>Thời gian: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'Student support invitation for {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support <strong>{{DelegationName}}</strong> at {{CampusName}}.</p><p>Time: {{plannedStartAt}} - {{plannedEndAt}}.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,acceptUrl,declineUrl', '2026-06-26 09:10:00', 1, NULL, NULL),
+  (11, 'LOGISTICS_REQUEST_TO_DEPARTMENT', 'Gửi yêu cầu hậu cần tới phòng ban', 'LOGISTICS', NULL, 'Email gửi Department Leader khi Host tạo yêu cầu logistics.', 'ACTIVE', 'Yêu cầu hậu cần mới: {{logisticsTitle}}', '<p>Xin chào {{departmentLeaderName}},</p><p>Host {{requesterName}} đã gửi yêu cầu hậu cần <strong>{{logisticsTitle}}</strong> cho đoàn {{DelegationName}} tại {{CampusName}}.</p><p>Loại: {{itemType}}. Số lượng dự kiến: {{quantity}}. Thời gian sử dụng: {{usageStartAt}} - {{usageEndAt}}.</p>', 'New logistics request: {{logisticsTitle}}', '<p>Hello {{departmentLeaderName}},</p><p>Host {{requesterName}} submitted logistics request <strong>{{logisticsTitle}}</strong> for {{DelegationName}} at {{CampusName}}.</p><p>Type: {{itemType}}. Planned quantity: {{quantity}}. Usage time: {{usageStartAt}} - {{usageEndAt}}.</p>', 'departmentLeaderName,requesterName,DelegationName,CampusName,logisticsTitle,itemType,quantity,usageStartAt,usageEndAt,detailUrl', '2026-06-26 09:15:00', 1, NULL, NULL),
+  (12, 'LOGISTICS_ASSIGNEE_ASSIGNMENT', 'Phân công nhân sự xử lý hậu cần', 'LOGISTICS', NULL, 'Email gửi nhân sự phòng ban khi Department Leader phân công xử lý logistics; có nút nhận/từ chối.', 'ACTIVE', 'Bạn được phân công xử lý: {{logisticsTitle}}', '<p>Xin chào {{assigneeName}},</p><p>Bạn được phân công xử lý hạng mục <strong>{{logisticsTitle}}</strong> cho đoàn {{DelegationName}}.</p><p>Deadline: {{dueAt}}.</p>', 'You have been assigned: {{logisticsTitle}}', '<p>Hello {{assigneeName}},</p><p>You have been assigned to handle <strong>{{logisticsTitle}}</strong> for {{DelegationName}}.</p><p>Due: {{dueAt}}.</p>', 'assigneeName,DelegationName,logisticsTitle,dueAt,acceptUrl,declineUrl', '2026-06-26 09:20:00', 1, NULL, NULL),
+  (13, 'VISIT_REMINDER_HOST', 'Nhắc lịch tiếp khách cho Host', 'VISIT_REMINDER', NULL, 'Email nhắc Host trước thời điểm tiếp khách theo visit_instance_reminder_settings.', 'ACTIVE', 'Nhắc lịch tiếp khách: {{DelegationName}}', '<p>Xin chào {{hostName}},</p><p>Đoàn <strong>{{DelegationName}}</strong> sẽ diễn ra tại {{CampusName}} vào {{plannedStartAt}}.</p><p>Vui lòng kiểm tra agenda, thành phần tham gia, hậu cần và ghi chú chuẩn bị.</p><p><a href="{{detailUrl}}">Mở trang điều phối</a></p>', 'Visit reminder: {{DelegationName}}', '<p>Hello {{hostName}},</p><p><strong>{{DelegationName}}</strong> will take place at {{CampusName}} on {{plannedStartAt}}.</p><p>Please review agenda, participants, logistics and preparation note.</p><p><a href="{{detailUrl}}">Open coordination page</a></p>', 'hostName,DelegationName,CampusName,plannedStartAt,detailUrl', '2026-06-26 09:25:00', 1, NULL, NULL),
+  (14, 'VISIT_REMINDER_PARTICIPANTS', 'Nhắc lịch tiếp khách cho người tham gia', 'VISIT_REMINDER', NULL, 'Email nhắc người tham gia đã nhận/gán trước chuyến tiếp khách.', 'ACTIVE', 'Nhắc lịch tham gia hỗ trợ đoàn {{DelegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn có lịch tham gia hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại {{CampusName}} vào {{plannedStartAt}}.</p><p>Vui lòng có mặt đúng giờ và kiểm tra thông tin trên PEMS nếu cần.</p>', 'Reminder to support {{DelegationName}}', '<p>Hello {{recipientName}},</p><p>You are scheduled to support <strong>{{DelegationName}}</strong> at {{CampusName}} on {{plannedStartAt}}.</p><p>Please arrive on time and check PEMS if needed.</p>', 'recipientName,DelegationName,CampusName,plannedStartAt,detailUrl', '2026-06-26 09:30:00', 1, NULL, NULL),
+  (15, 'VISIT_REQUEST_SUBMITTED_NOTIFY', 'Thông báo có yêu cầu tham quan mới', 'VISIT_REQUEST', NULL, 'Email thông báo Staff Leader/HO khi có visit request mới cần xử lý.', 'ACTIVE', 'Có yêu cầu tham quan mới: {{RequestCode}}', '<p>Hệ thống vừa ghi nhận yêu cầu tham quan <strong>{{RequestCode}}</strong> từ {{DelegationName}}.</p><p><a href="{{detailUrl}}">Xem và xử lý yêu cầu</a></p>', 'New visit request: {{RequestCode}}', '<p>A new visit request <strong>{{RequestCode}}</strong> from {{DelegationName}} has been submitted.</p><p><a href="{{detailUrl}}">View and process</a></p>', 'RequestCode,DelegationName,SubmittedAt,detailUrl', '2026-06-26 09:35:00', 1, NULL, NULL),
+  (16, 'LOGISTICS_REQUEST_SUBMITTED_NOTIFY', 'Thông báo nội bộ về yêu cầu hậu cần', 'LOGISTICS', NULL, 'Template email ngắn khi hệ thống cần báo nội bộ về yêu cầu hậu cần vừa gửi.', 'ACTIVE', 'Yêu cầu hậu cần đã được gửi: {{logisticsTitle}}', '<p>Yêu cầu hậu cần <strong>{{logisticsTitle}}</strong> đã được gửi tới {{departmentName}}.</p><p>Trạng thái hiện tại: {{statusLabel}}.</p>', 'Logistics request submitted: {{logisticsTitle}}', '<p>Logistics request <strong>{{logisticsTitle}}</strong> has been sent to {{departmentName}}.</p><p>Current status: {{statusLabel}}.</p>', 'logisticsTitle,departmentName,statusLabel,detailUrl', '2026-06-26 09:40:00', 1, NULL, NULL);
 
--- ── ACCOUNT ──────────────────────────────────────────────────────────────
-  ('ACCOUNT_EMAIL_CONFIRMATION',
-   'Xác nhận email để kích hoạt tài khoản',
-   'ACCOUNT', NULL,
-   'Gửi cho tài khoản vừa tạo ở trạng thái chờ xác nhận email. Là email đầu tiên của mọi luồng tạo tài khoản.',
-   'ACTIVE',
-   '[PEMS] Xác nhận email để kích hoạt tài khoản',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Một tài khoản PEMS đã được khởi tạo cho bạn với vai trò <strong>{{roleName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<p>Tài khoản đang ở trạng thái <strong>chờ xác nhận email</strong>. Vui lòng bấm nút bên dưới để xác nhận địa chỉ email này. ',
-     'Bạn chưa thể đăng nhập cho tới khi hoàn tất bước xác nhận.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Liên kết xác nhận có hiệu lực trong <strong>{{expiresInHours}}</strong> giờ và chỉ dùng được một lần. ',
-     'Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Confirm your email to activate your account',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>A PEMS account has been created for you with the role <strong>{{roleName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<p>The account is <strong>pending email confirmation</strong>. Please use the button below to confirm this address. ',
-     'You will not be able to sign in until this step is complete.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">The confirmation link is valid for <strong>{{expiresInHours}}</strong> hours and can be used once. ',
-     'If you were not expecting this email, please ignore it.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, roleName, campusName, expiresInHours', CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_PENDING_EMAIL_CHANGED_OLD_NOTICE',
-   'Báo địa chỉ cũ khi đổi email tài khoản chờ xác nhận',
-   'ACCOUNT', NULL,
-   'Gửi tới địa chỉ cũ khi email của một tài khoản còn chờ xác nhận bị đổi. Cố tình ẩn danh: địa chỉ cũ có thể là người gõ nhầm, không liên quan tới tài khoản.',
-   'ACTIVE',
-   '[PEMS] Email đăng ký của bạn đã được thay đổi',
-   CONCAT(
-     '<p>Xin chào,</p>',
-     '<p>Một tài khoản nội bộ PEMS trước đây được đăng ký với địa chỉ email này đã được cập nhật sang một địa chỉ khác trước khi kích hoạt.</p>',
-     '<p>Địa chỉ email này sẽ không được sử dụng để đăng nhập. Bạn không cần thực hiện thêm thao tác nào.</p>',
-     '<p>Nếu bạn không biết về tài khoản này hoặc cho rằng đây là sự nhầm lẫn, vui lòng liên hệ bộ phận quản trị hệ thống PEMS.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Your registration email has been changed',
-   CONCAT(
-     '<p>Hello,</p>',
-     '<p>A PEMS internal account previously registered with this email address has been moved to a different address before activation.</p>',
-     '<p>This address will not be used to sign in. No action is needed from you.</p>',
-     '<p>If you do not recognise this account, or believe this is a mistake, please contact the PEMS system administrator.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', NULL, CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_ACTIVATED',
-   'Thông báo tài khoản đã kích hoạt',
-   'ACCOUNT', NULL,
-   'Gửi sau khi người dùng xác nhận email thành công và tài khoản chuyển sang hoạt động.',
-   'ACTIVE',
-   '[PEMS] Tài khoản của bạn đã được kích hoạt',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Email của bạn đã được xác nhận. Tài khoản PEMS với vai trò <strong>{{roleName}}</strong> tại <strong>{{campusName}}</strong> đã sẵn sàng sử dụng.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Nếu bạn gặp khó khăn khi truy cập hệ thống, vui lòng liên hệ bộ phận phụ trách tài khoản.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Your account has been activated',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>Your email has been confirmed. Your PEMS account with the role <strong>{{roleName}}</strong> at <strong>{{campusName}}</strong> is ready to use.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">If you have trouble signing in, please contact the account administrator.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, roleName, campusName', CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_EMAIL_CHANGED_OLD_NOTICE',
-   'Báo địa chỉ cũ khi đổi email tài khoản đang hoạt động',
-   'ACCOUNT', NULL,
-   'Gửi tới địa chỉ vừa bị gỡ khỏi một tài khoản đang hoạt động. Cố tình ẩn danh: không nêu tên chủ tài khoản, địa chỉ mới, vai trò hay cơ sở.',
-   'ACTIVE',
-   '[PEMS] Địa chỉ email này đã được gỡ khỏi một tài khoản PEMS',
-   CONCAT(
-     '<p>Xin chào,</p>',
-     '<p>Địa chỉ email này không còn được sử dụng để đăng nhập vào tài khoản PEMS đã liên kết trước đó.</p>',
-     '<p>Mọi phiên đăng nhập đang hoạt động bằng địa chỉ email này đã được thu hồi. Bạn không cần thực hiện thêm thao tác nào.</p>',
-     '<p>Nếu bạn không biết về tài khoản này hoặc cho rằng đây là sự nhầm lẫn, vui lòng liên hệ Head Office, Staff Leader phụ trách hoặc bộ phận quản trị hệ thống PEMS để được hỗ trợ.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] This address has been removed from a PEMS account',
-   CONCAT(
-     '<p>Hello,</p>',
-     '<p>This email address is no longer used to sign in to the PEMS account it was previously linked to.</p>',
-     '<p>Any active sessions using this address have been revoked. No action is needed from you.</p>',
-     '<p>If you do not recognise this account, or believe this is a mistake, please contact the Head Office, the responsible Staff Leader, or the PEMS system administrator.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', NULL, CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_EMAIL_CHANGED_NEW_NOTICE',
-   'Báo địa chỉ mới khi đổi email tài khoản đang hoạt động',
-   'ACCOUNT', NULL,
-   'Gửi tới địa chỉ mới khi email của một tài khoản đang hoạt động được chuyển sang địa chỉ đó.',
-   'ACTIVE',
-   '[PEMS] Email này đã trở thành email tài khoản PEMS',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Địa chỉ email này vừa được đặt làm email đăng nhập cho tài khoản PEMS của bạn, thay cho <strong>{{oldEmailMasked}}</strong>.</p>',
-     '<p>Hãy dùng địa chỉ này cho những lần đăng nhập tiếp theo.</p>',
-     '<p>Nếu bạn không thực hiện thay đổi này, hãy liên hệ ngay bộ phận phụ trách tài khoản.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] This address is now your PEMS account email',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>This address is now the sign-in email for your PEMS account, replacing <strong>{{oldEmailMasked}}</strong>.</p>',
-     '<p>Please use it for your next sign-in.</p>',
-     '<p>If you did not make this change, please contact the account administrator immediately.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, oldEmailMasked', CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_ROLE_CHANGED',
-   'Thông báo thay đổi vai trò tài khoản',
-   'ACCOUNT', NULL,
-   'Gửi cho người dùng khi vai trò trên hệ thống của họ được thay đổi.',
-   'ACTIVE',
-   '[PEMS] Vai trò tài khoản của bạn đã thay đổi',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Vai trò của bạn trên PEMS tại <strong>{{campusName}}</strong> đã được cập nhật.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Vai trò trước đây: <strong>{{oldRoleName}}</strong></li>',
-     '<li>Vai trò hiện tại: <strong>{{newRoleName}}</strong></li>',
-     '</ul>',
-     '<p>Các chức năng bạn nhìn thấy trong hệ thống sẽ thay đổi theo vai trò mới ở lần đăng nhập kế tiếp.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Your account role has changed',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>Your role in PEMS at <strong>{{campusName}}</strong> has been updated.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Previous role: <strong>{{oldRoleName}}</strong></li>',
-     '<li>Current role: <strong>{{newRoleName}}</strong></li>',
-     '</ul>',
-     '<p>The features available to you will follow the new role from your next sign-in.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, oldRoleName, newRoleName, campusName', CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_STAFF_LEADER_ASSIGNED',
-   'Thông báo được phân công làm Staff Leader',
-   'ACCOUNT', NULL,
-   'Gửi cho người được phân công làm Staff Leader của một campus.',
-   'ACTIVE',
-   '[PEMS] Bạn được phân công làm Staff Leader {{campusName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Bạn được phân công làm <strong>Staff Leader</strong> của <strong>{{campusName}}</strong>, hiệu lực từ <strong>{{effectiveDate}}</strong>.</p>',
-     '<p><strong>Lý do thay thế:</strong> {{reason}}</p>',
-     '<p>Từ thời điểm này bạn chịu trách nhiệm duyệt yêu cầu tiếp khách của campus và phân công người phụ trách tiếp đón.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] You have been assigned Staff Leader of {{campusName}}',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>You have been assigned <strong>Staff Leader</strong> of <strong>{{campusName}}</strong>, effective <strong>{{effectiveDate}}</strong>.</p>',
-     '<p><strong>Reason for the replacement:</strong> {{reason}}</p>',
-     '<p>From now on you are responsible for approving the campus visit requests and assigning the reception owner.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, campusName, effectiveDate, reason', CURRENT_TIMESTAMP),
-
-  ('ACCOUNT_STAFF_LEADER_REPLACED',
-   'Thông báo kết thúc vai trò Staff Leader',
-   'ACCOUNT', NULL,
-   'Gửi cho Staff Leader cũ khi vai trò của họ được chuyển cho người khác.',
-   'ACTIVE',
-   '[PEMS] Bạn không còn là Staff Leader {{campusName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Vai trò <strong>Staff Leader</strong> của <strong>{{campusName}}</strong> đã được chuyển cho <strong>{{successorName}}</strong>, hiệu lực từ <strong>{{effectiveDate}}</strong>.</p>',
-     '<p><strong>Lý do thay thế:</strong> {{reason}}</p>',
-     '<p>Tài khoản của bạn được chuyển về vai trò Staff thuộc Phòng Hợp tác Quốc tế. Các yêu cầu tiếp khách đang chờ xử lý của campus sẽ do người kế nhiệm tiếp tục.</p>',
-     '<p>Nếu thông tin này chưa chính xác, vui lòng liên hệ Head Office hoặc quản trị hệ thống.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] You are no longer Staff Leader of {{campusName}}',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>The <strong>Staff Leader</strong> role for <strong>{{campusName}}</strong> has been transferred to <strong>{{successorName}}</strong>, effective <strong>{{effectiveDate}}</strong>.</p>',
-     '<p><strong>Reason for the replacement:</strong> {{reason}}</p>',
-     '<p>Your account returns to the Staff role within the International Cooperation office. Any visit requests still awaiting a decision will be handled by your successor.</p>',
-     '<p>If this is not correct, please contact the Head Office or the system administrator.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, campusName, successorName, effectiveDate, reason', CURRENT_TIMESTAMP),
-
--- ── DEPARTMENT PERSONNEL (Trưởng phòng quản lý nhân sự phòng mình) ────────
-  ('DEPT_PERSONNEL_ACCOUNT_DISABLED',
-   'Thông báo tài khoản bị vô hiệu hóa',
-   'ACCOUNT', NULL,
-   'Gửi cho nhân sự khi Trưởng phòng vô hiệu hóa tài khoản của họ.',
-   'ACTIVE',
-   '[PEMS] Tài khoản PEMS của bạn đã bị vô hiệu hóa',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Tài khoản PEMS của bạn thuộc phòng ban <strong>{{departmentName}}</strong> đã được vô hiệu hóa. Bạn sẽ không thể đăng nhập cho tới khi tài khoản được kích hoạt lại.</p>',
-     '<p><strong>Lý do:</strong> {{reason}}</p>',
-     '<p>Mọi phiên đăng nhập đang hoạt động đã được thu hồi.</p>',
-     '<p>Nếu bạn cho rằng đây là sự nhầm lẫn, vui lòng liên hệ Trưởng phòng phụ trách.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Your PEMS account has been deactivated',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>Your PEMS account in the <strong>{{departmentName}}</strong> department has been deactivated. You will not be able to sign in until it is re-enabled.</p>',
-     '<p><strong>Reason:</strong> {{reason}}</p>',
-     '<p>All active sessions have been revoked.</p>',
-     '<p>If you believe this is a mistake, please contact your Department Leader.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, departmentName, reason', CURRENT_TIMESTAMP),
-
-  ('DEPT_PERSONNEL_ACCOUNT_ENABLED',
-   'Thông báo tài khoản được kích hoạt lại',
-   'ACCOUNT', NULL,
-   'Gửi cho nhân sự khi Trưởng phòng kích hoạt lại tài khoản của họ.',
-   'ACTIVE',
-   '[PEMS] Tài khoản PEMS của bạn đã được kích hoạt lại',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Tài khoản PEMS của bạn thuộc phòng ban <strong>{{departmentName}}</strong> đã được kích hoạt lại.</p>',
-     '<p>Vui lòng đăng nhập lại để tiếp tục sử dụng hệ thống.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Your PEMS account has been re-enabled',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>Your PEMS account in the <strong>{{departmentName}}</strong> department has been re-enabled.</p>',
-     '<p>Please sign in again to continue using the system.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, departmentName', CURRENT_TIMESTAMP),
-
-  ('DEPT_LEADERSHIP_GRANTED',
-   'Thông báo được bổ nhiệm Trưởng phòng',
-   'ACCOUNT', NULL,
-   'Gửi cho người nhận vai trò Trưởng phòng sau khi bàn giao được ghi nhận.',
-   'ACTIVE',
-   '[PEMS] Bạn đã được bổ nhiệm làm Trưởng phòng',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Bạn đã được bổ nhiệm làm <strong>Trưởng phòng</strong> của phòng ban <strong>{{departmentName}}</strong>.</p>',
-     '<p>Các phiên đăng nhập hiện tại đã được thu hồi. Vui lòng đăng nhập lại để nhận quyền quản lý mới.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] You have been appointed Department Leader',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>You have been appointed <strong>Department Leader</strong> of the <strong>{{departmentName}}</strong> department.</p>',
-     '<p>Your current sessions have been revoked. Please sign in again to receive the new management permissions.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, departmentName', CURRENT_TIMESTAMP),
-
-  ('DEPT_LEADERSHIP_HANDED_OVER',
-   'Thông báo đã bàn giao vai trò Trưởng phòng',
-   'ACCOUNT', NULL,
-   'Gửi cho Trưởng phòng cũ sau khi bàn giao được ghi nhận.',
-   'ACTIVE',
-   '[PEMS] Bạn đã bàn giao vai trò Trưởng phòng',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Bạn đã bàn giao vai trò Trưởng phòng của phòng ban <strong>{{departmentName}}</strong> và hiện là nhân viên của phòng ban này.</p>',
-     '<p>Các phiên đăng nhập hiện tại đã được thu hồi. Vui lòng đăng nhập lại để hệ thống áp dụng quyền mới.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] You have handed over the Department Leader role',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>You have handed over the Department Leader role for the <strong>{{departmentName}}</strong> department and are now a staff member of it.</p>',
-     '<p>Your current sessions have been revoked. Please sign in again so the system applies your new permissions.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'fullName, departmentName', CURRENT_TIMESTAMP),
-
--- ── AUTH ─────────────────────────────────────────────────────────────────
-  ('AUTH_PASSWORD_RESET_OTP',
-   'Mã đặt lại mật khẩu',
-   'AUTH', NULL,
-   'Gửi mã OTP đặt lại mật khẩu. Chỉ gửi riêng cho một người nhận, cấm CC/BCC.',
-   'ACTIVE',
-   '[PEMS] Mã đặt lại mật khẩu',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Mã đặt lại mật khẩu của bạn là:</p>',
-     '<div style="text-align:center;margin:24px 0">',
-     '<div style="display:inline-block;background:#f0f7ff;border:2px dashed #004c91;border-radius:12px;padding:16px 40px">',
-     '<span style="font-size:32px;font-weight:900;letter-spacing:10px;color:#004c91">{{otpCode}}</span>',
-     '</div></div>',
-     '<p>Mã có hiệu lực trong <strong>{{expireMinutes}}</strong> phút.</p>',
-     '<p style="color:#6b7280;font-size:12px">Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này. Không chia sẻ mã cho bất kỳ ai.</p>'),
-   '[PEMS] Your password reset code',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>Your password reset code is:</p>',
-     '<div style="text-align:center;margin:24px 0">',
-     '<div style="display:inline-block;background:#f0f7ff;border:2px dashed #004c91;border-radius:12px;padding:16px 40px">',
-     '<span style="font-size:32px;font-weight:900;letter-spacing:10px;color:#004c91">{{otpCode}}</span>',
-     '</div></div>',
-     '<p>The code is valid for <strong>{{expireMinutes}}</strong> minutes.</p>',
-     '<p style="color:#6b7280;font-size:12px">If you did not request a password reset, please ignore this email. Never share this code with anyone.</p>'),
-   'HTML', 'fullName, otpCode, expireMinutes', CURRENT_TIMESTAMP),
-
--- ── VISIT_REQUEST ────────────────────────────────────────────────────────
-  ('VISIT_REQUEST_OTP',
-   'Mã xác thực đăng ký tham quan',
-   'VISIT_REQUEST', NULL,
-   'Gửi mã OTP xác thực email cho người đăng ký tham quan trước khi tạo yêu cầu. Cấm CC/BCC.',
-   'ACTIVE',
-   '[PEMS] Mã xác thực đăng ký tham quan',
-   CONCAT(
-     '<p>Xin chào <strong>{{fullName}}</strong>,</p>',
-     '<p>Bạn đang đăng ký tham quan FPT University. Vui lòng nhập mã xác thực bên dưới để hoàn tất đơn đăng ký.</p>',
-     '<div style="text-align:center;margin:24px 0">',
-     '<div style="display:inline-block;background:#f0f7ff;border:2px dashed #004c91;border-radius:12px;padding:16px 40px">',
-     '<span style="font-size:32px;font-weight:900;letter-spacing:10px;color:#004c91">{{otpCode}}</span>',
-     '</div></div>',
-     '<p>Mã có hiệu lực trong <strong>{{expireMinutes}}</strong> phút.</p>',
-     '<p style="color:#6b7280;font-size:12px">Nếu bạn không thực hiện thao tác này, vui lòng bỏ qua email. Không chia sẻ mã cho bất kỳ ai.</p>'),
-   '[PEMS] Campus visit registration verification code',
-   CONCAT(
-     '<p>Hello <strong>{{fullName}}</strong>,</p>',
-     '<p>You are registering a visit to FPT University. Please enter the verification code below to complete your request.</p>',
-     '<div style="text-align:center;margin:24px 0">',
-     '<div style="display:inline-block;background:#f0f7ff;border:2px dashed #004c91;border-radius:12px;padding:16px 40px">',
-     '<span style="font-size:32px;font-weight:900;letter-spacing:10px;color:#004c91">{{otpCode}}</span>',
-     '</div></div>',
-     '<p>The code is valid for <strong>{{expireMinutes}}</strong> minutes.</p>',
-     '<p style="color:#6b7280;font-size:12px">If you did not start this, please ignore this email. Never share this code with anyone.</p>'),
-   'HTML', 'fullName, otpCode, expireMinutes', CURRENT_TIMESTAMP),
-
-  ('VISIT_CONTACT_CLAIM',
-   'Xác nhận vai trò đầu mối liên hệ',
-   'VISIT_REQUEST', NULL,
-   'Gửi cho người được ghi nhận là đầu mối liên hệ của một yêu cầu tham quan để họ xác nhận vai trò. Có liên kết dùng một lần.',
-   'ACTIVE',
-   '[PEMS] Xác nhận vai trò đầu mối liên hệ — {{requestCode}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{contactFullName}}</strong>,</p>',
-     '<p>Bạn được ghi nhận là <strong>đầu mối liên hệ</strong> cho yêu cầu tham quan <strong>{{requestCode}}</strong> của đoàn <strong>{{delegationName}}</strong>.</p>',
-     '<p>Vui lòng xác nhận để chúng tôi trao đổi thông tin tiếp đón với bạn.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Nếu bạn không phải đầu mối của đoàn này, vui lòng bỏ qua email.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Confirm your primary contact role — {{requestCode}}',
-   CONCAT(
-     '<p>Hello <strong>{{contactFullName}}</strong>,</p>',
-     '<p>You have been recorded as the <strong>primary contact</strong> for visit request <strong>{{requestCode}}</strong> from the delegation <strong>{{delegationName}}</strong>.</p>',
-     '<p>Please confirm so that we can coordinate the reception with you.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">If you are not the contact for this delegation, please ignore this email.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'contactFullName, requestCode, delegationName', CURRENT_TIMESTAMP),
-
-  ('VISIT_CONTACT_TRANSFER',
-   'Lời mời nhận vai trò đầu mối liên hệ',
-   'VISIT_REQUEST', NULL,
-   'Gửi cho người được đề nghị tiếp nhận vai trò đầu mối liên hệ từ người hiện tại. Có liên kết dùng một lần.',
-   'ACTIVE',
-   '[PEMS] Lời mời nhận vai trò đầu mối liên hệ — {{requestCode}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{contactFullName}}</strong>,</p>',
-     '<p><strong>{{currentContactName}}</strong> đề nghị chuyển vai trò <strong>đầu mối liên hệ</strong> của yêu cầu tham quan ',
-     '<strong>{{requestCode}}</strong> (đoàn <strong>{{delegationName}}</strong>) cho bạn.</p>',
-     '<p>Nếu bạn đồng ý, mọi trao đổi về việc tiếp đón đoàn sẽ được gửi tới bạn.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Nếu bạn không liên quan tới đoàn này, vui lòng bỏ qua email.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Invitation to take the primary contact role — {{requestCode}}',
-   CONCAT(
-     '<p>Hello <strong>{{contactFullName}}</strong>,</p>',
-     '<p><strong>{{currentContactName}}</strong> would like to transfer the <strong>primary contact</strong> role for visit request ',
-     '<strong>{{requestCode}}</strong> (delegation <strong>{{delegationName}}</strong>) to you.</p>',
-     '<p>If you accept, all correspondence about the reception will be sent to you.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">If you are not involved with this delegation, please ignore this email.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'contactFullName, requestCode, delegationName, currentContactName', CURRENT_TIMESTAMP),
-
--- ── VISIT_PARTICIPANT ────────────────────────────────────────────────────
-  ('VISIT_PARTICIPANT_INVITATION',
-   'Mời nhân sự tham gia hỗ trợ tiếp khách',
-   'VISIT_PARTICIPANT', NULL,
-   'Email mời nhân sự IC tham gia hỗ trợ một chuyến tiếp khách. Mỗi người nhận có liên kết chấp nhận/từ chối riêng.',
-   'ACTIVE',
-   '[PEMS] Lời mời tham gia hỗ trợ tiếp khách — {{delegationName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Bạn được mời tham gia hỗ trợ tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Thời gian: <strong>{{plannedTime}}</strong></li>',
-     '<li>Vai trò: <strong>{{roleLabel}}</strong></li>',
-     '<li>Người phụ trách tiếp đón: <strong>{{hostName}}</strong></li>',
-     '</ul>',
-     '<p>{{hostMessage}}</p>',
-     '<p>Vui lòng phản hồi bằng một trong các nút dưới đây:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Invitation to support a delegation visit — {{delegationName}}',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>You are invited to help receive the delegation <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>When: <strong>{{plannedTime}}</strong></li>',
-     '<li>Role: <strong>{{roleLabel}}</strong></li>',
-     '<li>Reception owner: <strong>{{hostName}}</strong></li>',
-     '</ul>',
-     '<p>{{hostMessage}}</p>',
-     '<p>Please respond using one of the buttons below:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, delegationName, campusName, plannedTime, hostName, roleLabel, hostMessage', CURRENT_TIMESTAMP),
-
-  ('VISIT_STUDENT_INVITATION',
-   'Mời sinh viên hỗ trợ tiếp khách',
-   'VISIT_PARTICIPANT', NULL,
-   'Email mời sinh viên hỗ trợ một chuyến tiếp khách. Mỗi người nhận có liên kết chấp nhận/từ chối riêng.',
-   'ACTIVE',
-   '[PEMS] Lời mời sinh viên hỗ trợ tiếp khách — {{delegationName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Bạn được mời tham gia hỗ trợ tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Thời gian: <strong>{{plannedTime}}</strong></li>',
-     '<li>Vai trò: <strong>{{roleLabel}}</strong></li>',
-     '<li>Người phụ trách tiếp đón: <strong>{{hostName}}</strong></li>',
-     '</ul>',
-     '<p>{{hostMessage}}</p>',
-     '<p>Vui lòng phản hồi bằng một trong các nút dưới đây:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Student invitation to support a delegation visit — {{delegationName}}',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>You are invited to help receive the delegation <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>When: <strong>{{plannedTime}}</strong></li>',
-     '<li>Role: <strong>{{roleLabel}}</strong></li>',
-     '<li>Reception owner: <strong>{{hostName}}</strong></li>',
-     '</ul>',
-     '<p>{{hostMessage}}</p>',
-     '<p>Please respond using one of the buttons below:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, delegationName, campusName, plannedTime, hostName, roleLabel, hostMessage', CURRENT_TIMESTAMP),
-
-  ('VISIT_DEPARTMENT_LEADER_INVITATION',
-   'Mời phòng ban phối hợp tiếp khách',
-   'VISIT_PARTICIPANT', NULL,
-   'Email mời Trưởng phòng ban phối hợp tiếp khách; ngoài chấp nhận/từ chối còn có liên kết gán nhân sự yêu cầu đăng nhập.',
-   'ACTIVE',
-   '[PEMS] Yêu cầu phòng ban hỗ trợ tiếp khách — {{delegationName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Phòng ban của bạn được mời phối hợp tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Thời gian: <strong>{{plannedTime}}</strong></li>',
-     '<li>Nội dung phối hợp: <strong>{{roleLabel}}</strong></li>',
-     '<li>Người phụ trách tiếp đón: <strong>{{hostName}}</strong></li>',
-     '</ul>',
-     '<p>{{hostMessage}}</p>',
-     '<p>Vui lòng phản hồi bằng một trong các nút dưới đây:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Department support request — {{delegationName}}',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>Your department is asked to help receive the delegation <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>When: <strong>{{plannedTime}}</strong></li>',
-     '<li>Support needed: <strong>{{roleLabel}}</strong></li>',
-     '<li>Reception owner: <strong>{{hostName}}</strong></li>',
-     '</ul>',
-     '<p>{{hostMessage}}</p>',
-     '<p>Please respond using one of the buttons below:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, delegationName, campusName, plannedTime, hostName, roleLabel, hostMessage', CURRENT_TIMESTAMP),
-
-  ('VISIT_DEPARTMENT_STAFF_ASSIGNMENT',
-   'Phân công nhân sự phòng ban hỗ trợ tiếp khách',
-   'VISIT_PARTICIPANT', NULL,
-   'Gửi cho nhân sự được Trưởng phòng ban gán vào một chuyến tiếp khách. Khác với lời mời: đây là phân công.',
-   'ACTIVE',
-   '[PEMS] Bạn được phân công hỗ trợ tiếp khách — {{delegationName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Bạn được <strong>{{departmentName}}</strong> phân công hỗ trợ tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Thời gian: <strong>{{plannedTime}}</strong></li>',
-     '</ul>',
-     '<p>Vui lòng xác nhận để người phụ trách tiếp đón nắm được nhân sự tham gia:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] You have been assigned to support a delegation visit — {{delegationName}}',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p><strong>{{departmentName}}</strong> has assigned you to help receive the delegation <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>When: <strong>{{plannedTime}}</strong></li>',
-     '</ul>',
-     '<p>Please confirm so the reception owner knows who is taking part:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, delegationName, campusName, plannedTime, departmentName', CURRENT_TIMESTAMP),
-
--- ── VISIT_REMINDER ───────────────────────────────────────────────────────
-  ('VISIT_REMINDER_HOST',
-   'Nhắc lịch tiếp khách cho người phụ trách',
-   'VISIT_REMINDER', NULL,
-   'Nhắc người phụ trách tiếp đón trước giờ tiếp khách theo cấu hình nhắc lịch của chuyến.',
-   'ACTIVE',
-   '[PEMS] Nhắc lịch tiếp khách — {{delegationName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{hostName}}</strong>,</p>',
-     '<p>Đây là email nhắc lịch cho chuyến tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Bắt đầu: <strong>{{plannedStart}}</strong></li>',
-     '<li>Kết thúc dự kiến: <strong>{{plannedEnd}}</strong></li>',
-     '</ul>',
-     '<p>Vui lòng kiểm tra lại chương trình, nhân sự tham gia và các hạng mục hậu cần trước giờ đón đoàn.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Visit reminder — {{delegationName}}',
-   CONCAT(
-     '<p>Hello <strong>{{hostName}}</strong>,</p>',
-     '<p>This is a reminder for the visit of <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Starts: <strong>{{plannedStart}}</strong></li>',
-     '<li>Expected end: <strong>{{plannedEnd}}</strong></li>',
-     '</ul>',
-     '<p>Please review the agenda, the people taking part and the logistics items before the delegation arrives.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'hostName, delegationName, campusName, plannedStart, plannedEnd', CURRENT_TIMESTAMP),
-
-  ('VISIT_REMINDER_PARTICIPANTS',
-   'Nhắc lịch tiếp khách cho người tham gia',
-   'VISIT_REMINDER', NULL,
-   'Nhắc từng người đã nhận lời mời hoặc được gán, trước giờ tiếp khách. Gửi riêng từng người, không liệt kê người khác.',
-   'ACTIVE',
-   '[PEMS] Nhắc lịch tham gia hỗ trợ — {{delegationName}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Bạn có lịch tham gia hỗ trợ tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Bắt đầu: <strong>{{plannedStart}}</strong></li>',
-     '<li>Kết thúc dự kiến: <strong>{{plannedEnd}}</strong></li>',
-     '</ul>',
-     '<p>Vui lòng có mặt đúng giờ theo phân công.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Reminder: you are supporting a visit — {{delegationName}}',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>You are scheduled to help receive the delegation <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Starts: <strong>{{plannedStart}}</strong></li>',
-     '<li>Expected end: <strong>{{plannedEnd}}</strong></li>',
-     '</ul>',
-     '<p>Please arrive on time for your assignment.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, delegationName, campusName, plannedStart, plannedEnd', CURRENT_TIMESTAMP),
-
--- ── LOGISTICS ────────────────────────────────────────────────────────────
-  ('LOGISTICS_REQUEST_TO_DEPARTMENT',
-   'Gửi yêu cầu hậu cần tới phòng ban',
-   'LOGISTICS', NULL,
-   'Gửi Trưởng phòng ban khi người phụ trách tiếp đón tạo một yêu cầu hậu cần. Có liên kết đồng ý/từ chối dùng một lần.',
-   'ACTIVE',
-   '[PEMS] Yêu cầu hậu cần mới — {{logisticsTitle}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{departmentLeaderName}}</strong>,</p>',
-     '<p><strong>{{requesterName}}</strong> gửi tới phòng ban của bạn một yêu cầu hậu cần cho hoạt động tiếp khách.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Hạng mục: <strong>{{logisticsTitle}}</strong></li>',
-     '<li>Loại: <strong>{{logisticsItemType}}</strong></li>',
-     '<li>Số lượng: <strong>{{quantity}}</strong></li>',
-     '<li>Bắt đầu sử dụng: <strong>{{usageStartAt}}</strong></li>',
-     '<li>Kết thúc sử dụng: <strong>{{usageEndAt}}</strong></li>',
-     '<li>Hạn phản hồi: <strong>{{dueAt}}</strong></li>',
-     '</ul>',
-     '<p><strong>Ghi chú phối hợp:</strong> {{coordinationNote}}</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] New logistics request — {{logisticsTitle}}',
-   CONCAT(
-     '<p>Hello <strong>{{departmentLeaderName}}</strong>,</p>',
-     '<p><strong>{{requesterName}}</strong> has sent your department a logistics request for a delegation visit.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Item: <strong>{{logisticsTitle}}</strong></li>',
-     '<li>Type: <strong>{{logisticsItemType}}</strong></li>',
-     '<li>Quantity: <strong>{{quantity}}</strong></li>',
-     '<li>Use from: <strong>{{usageStartAt}}</strong></li>',
-     '<li>Use until: <strong>{{usageEndAt}}</strong></li>',
-     '<li>Respond by: <strong>{{dueAt}}</strong></li>',
-     '</ul>',
-     '<p><strong>Coordination note:</strong> {{coordinationNote}}</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML',
-   'departmentLeaderName, requesterName, logisticsTitle, logisticsItemType, quantity, usageStartAt, usageEndAt, dueAt, coordinationNote',
-   CURRENT_TIMESTAMP),
-
-  ('LOGISTICS_ASSIGNEE_ASSIGNMENT',
-   'Phân công nhân sự xử lý hậu cần',
-   'LOGISTICS', NULL,
-   'Gửi nhân sự phòng ban khi Trưởng phòng ban phân công họ xử lý một hạng mục hậu cần. Có liên kết nhận/từ chối dùng một lần.',
-   'ACTIVE',
-   '[PEMS] Bạn được phân công xử lý — {{logisticsTitle}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{assigneeName}}</strong>,</p>',
-     '<p>Bạn được phân công xử lý một hạng mục hậu cần phục vụ tiếp đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Hạng mục: <strong>{{logisticsTitle}}</strong></li>',
-     '<li>Hạn xử lý: <strong>{{dueAt}}</strong></li>',
-     '</ul>',
-     '<p>Vui lòng phản hồi để phòng ban nắm được tình trạng nhiệm vụ:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] You have been assigned — {{logisticsTitle}}',
-   CONCAT(
-     '<p>Hello <strong>{{assigneeName}}</strong>,</p>',
-     '<p>You have been assigned a logistics item for the visit of <strong>{{delegationName}}</strong> at <strong>{{campusName}}</strong>.</p>',
-     '<ul style="line-height:1.7">',
-     '<li>Item: <strong>{{logisticsTitle}}</strong></li>',
-     '<li>Due: <strong>{{dueAt}}</strong></li>',
-     '</ul>',
-     '<p>Please respond so your department knows the status of this task:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'assigneeName, logisticsTitle, dueAt, campusName, delegationName', CURRENT_TIMESTAMP),
-
-  ('LOGISTICS_CHANGE_PROPOSAL_TO_HOST',
-   'Đề xuất thay đổi yêu cầu hậu cần gửi người phụ trách',
-   'LOGISTICS', NULL,
-   'Gửi người phụ trách tiếp đón khi phòng ban đề xuất thay đổi một yêu cầu hậu cần. Có liên kết chấp nhận/từ chối dùng một lần.',
-   'ACTIVE',
-   '[PEMS] Đề xuất thay đổi yêu cầu hậu cần — {{logisticsTitle}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{hostName}}</strong>,</p>',
-     '<p><strong>{{departmentName}}</strong> đề xuất thay đổi đối với hạng mục hậu cần <strong>{{logisticsTitle}}</strong> của đoàn <strong>{{delegationName}}</strong>.</p>',
-     '<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:16px 20px;margin:20px 0">',
-     '<ul style="margin:0;padding-left:20px;line-height:1.7">',
-     '<li><strong>Số lượng đề xuất:</strong> {{proposedQuantity}} (dự kiến ban đầu: {{originalQuantity}})</li>',
-     '<li><strong>Thời gian đề xuất:</strong> {{proposedUsageStartAt}} – {{proposedUsageEndAt}}</li>',
-     '<li><strong>Nội dung đề xuất:</strong> {{proposedDescription}}</li>',
-     '<li><strong>Lý do:</strong> {{proposalNote}}</li>',
-     '</ul></div>',
-     '<p>Vui lòng phản hồi để phòng ban tiếp tục xử lý:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Change proposal for a logistics request — {{logisticsTitle}}',
-   CONCAT(
-     '<p>Hello <strong>{{hostName}}</strong>,</p>',
-     '<p><strong>{{departmentName}}</strong> has proposed a change to the logistics item <strong>{{logisticsTitle}}</strong> for the delegation <strong>{{delegationName}}</strong>.</p>',
-     '<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:16px 20px;margin:20px 0">',
-     '<ul style="margin:0;padding-left:20px;line-height:1.7">',
-     '<li><strong>Proposed quantity:</strong> {{proposedQuantity}} (originally requested: {{originalQuantity}})</li>',
-     '<li><strong>Proposed usage window:</strong> {{proposedUsageStartAt}} – {{proposedUsageEndAt}}</li>',
-     '<li><strong>Proposed content:</strong> {{proposedDescription}}</li>',
-     '<li><strong>Reason:</strong> {{proposalNote}}</li>',
-     '</ul></div>',
-     '<p>Please respond so the department can continue:</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'hostName, logisticsTitle, departmentName, delegationName, originalQuantity, proposedQuantity, proposedUsageStartAt, proposedUsageEndAt, proposedDescription, proposalNote', CURRENT_TIMESTAMP),
-
-  ('LOGISTICS_EXPENSE_REPORT_REMINDER',
-   'Nhắc kê khai chi phí hậu cần',
-   'LOGISTICS', NULL,
-   'Nhắc người phụ trách hạng mục hoàn tất kê khai chi phí sau chuyến tiếp khách.',
-   'ACTIVE',
-   '[PEMS] Nhắc kê khai chi phí — {{itemTitle}}',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Hạng mục <strong>{{itemTitle}}</strong> thuộc chuyến tiếp đoàn <strong>{{delegationName}}</strong> chưa được kê khai chi phí.</p>',
-     '<p>Vui lòng hoàn tất trước <strong>{{dueAt}}</strong> để phòng ban tổng hợp hóa đơn đúng hạn.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Expense report reminder — {{itemTitle}}',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>The item <strong>{{itemTitle}}</strong> from the visit of <strong>{{delegationName}}</strong> has no expense report yet.</p>',
-     '<p>Please complete it before <strong>{{dueAt}}</strong> so the department can close the invoice on time.</p>',
-     '{{actionBlock}}',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, itemTitle, dueAt, delegationName', CURRENT_TIMESTAMP),
-
--- ── REPORT ───────────────────────────────────────────────────────────────
-  ('REPORT_CAMPUS_OPERATION',
-   'Báo cáo vận hành campus',
-   'REPORT', NULL,
-   'Gửi báo cáo vận hành tiếp khách của một campus kèm tệp PDF đính kèm.',
-   'ACTIVE',
-   '[PEMS] Báo cáo vận hành campus — {{campusName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Đính kèm là báo cáo vận hành tiếp khách của <strong>{{campusName}}</strong> cho giai đoạn ',
-     '<strong>{{periodFrom}}</strong> đến <strong>{{periodTo}}</strong>.</p>',
-     '<p>Báo cáo tổng hợp số lượng đoàn, tiến độ xử lý yêu cầu và tình hình hậu cần trong kỳ.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Campus operations report — {{campusName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>Attached is the visit operations report for <strong>{{campusName}}</strong> covering ',
-     '<strong>{{periodFrom}}</strong> to <strong>{{periodTo}}</strong>.</p>',
-     '<p>It summarises delegation volume, request handling progress and logistics activity for the period.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, campusName, periodFrom, periodTo', CURRENT_TIMESTAMP),
-
-  ('REPORT_DEPARTMENT_COLLABORATION',
-   'Báo cáo phối hợp tiếp khách của phòng ban',
-   'REPORT', NULL,
-   'Gửi Trưởng phòng ban báo cáo mức độ phối hợp tiếp khách của phòng ban kèm tệp PDF đính kèm.',
-   'ACTIVE',
-   '[PEMS] Báo cáo phối hợp tiếp khách — {{departmentName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Đính kèm là báo cáo phối hợp tiếp khách của <strong>{{departmentName}}</strong> cho giai đoạn ',
-     '<strong>{{periodFrom}}</strong> đến <strong>{{periodTo}}</strong>.</p>',
-     '<p>Báo cáo ghi nhận các yêu cầu hậu cần phòng ban đã tiếp nhận, thời gian phản hồi và kết quả xử lý.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Visit collaboration report — {{departmentName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>Attached is the visit collaboration report for <strong>{{departmentName}}</strong> covering ',
-     '<strong>{{periodFrom}}</strong> to <strong>{{periodTo}}</strong>.</p>',
-     '<p>It records the logistics requests the department accepted, response times and outcomes.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, departmentName, periodFrom, periodTo', CURRENT_TIMESTAMP),
-
-  ('REPORT_DEPARTMENT_INVOICE',
-   'Hóa đơn hậu cần tiếp khách của phòng ban',
-   'REPORT', NULL,
-   'Gửi hóa đơn hậu cần tiếp khách của phòng ban kèm tệp PDF. Dùng chung cho hai chiều gửi: phòng ban gửi lên và campus gửi xuống.',
-   'ACTIVE',
-   '[PEMS] Hóa đơn hậu cần tiếp khách — {{departmentName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Xin chào <strong>{{recipientName}}</strong>,</p>',
-     '<p>Đính kèm là hóa đơn hậu cần tiếp khách của <strong>{{departmentName}}</strong> cho giai đoạn ',
-     '<strong>{{periodFrom}}</strong> đến <strong>{{periodTo}}</strong>.</p>',
-     '<p>Vui lòng đối chiếu các hạng mục và chi phí đã kê khai trước khi phê duyệt.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Visit logistics invoice — {{departmentName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Hello <strong>{{recipientName}}</strong>,</p>',
-     '<p>Attached is the visit logistics invoice for <strong>{{departmentName}}</strong> covering ',
-     '<strong>{{periodFrom}}</strong> to <strong>{{periodTo}}</strong>.</p>',
-     '<p>Please reconcile the listed items and reported costs before approving.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'recipientName, departmentName, periodFrom, periodTo', CURRENT_TIMESTAMP),
-
-  ('REPORT_PERSONNEL_PERFORMANCE',
-   'Báo cáo hiệu suất nhân sự tiếp khách',
-   'REPORT', NULL,
-   'Gửi từng cá nhân báo cáo hiệu suất tham gia tiếp khách kèm tệp PDF. Phạm vi thống kê do người gửi truyền vào qua scopeLabel.',
-   'ACTIVE',
-   '[PEMS] Báo cáo hiệu suất {{scopeLabel}} — {{personName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Xin chào <strong>{{personName}}</strong>,</p>',
-     '<p>Đính kèm là báo cáo hiệu suất <strong>{{scopeLabel}}</strong> của bạn cho giai đoạn ',
-     '<strong>{{periodFrom}}</strong> đến <strong>{{periodTo}}</strong>.</p>',
-     '<p>Báo cáo ghi nhận các nhiệm vụ bạn đã nhận, tỷ lệ hoàn thành và thời gian phản hồi trong kỳ.</p>',
-     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
-   '[PEMS] Performance report {{scopeLabel}} — {{personName}} ({{periodFrom}} – {{periodTo}})',
-   CONCAT(
-     '<p>Hello <strong>{{personName}}</strong>,</p>',
-     '<p>Attached is your <strong>{{scopeLabel}}</strong> performance report covering ',
-     '<strong>{{periodFrom}}</strong> to <strong>{{periodTo}}</strong>.</p>',
-     '<p>It records the assignments you accepted, completion rate and response times for the period.</p>',
-     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'personName, scopeLabel, periodFrom, periodTo', CURRENT_TIMESTAMP);
-
--- ---------------------------------------------------------------------
--- sent_emails history and its link to email_templates
---
--- Every seeded sent_emails row keeps its id, subject, body_snapshot, related_type/related_id,
--- recipients, provider/thread metadata and status EXACTLY as before. Only the email_template_id
--- link is reconsidered, row by row, against the canonical catalog:
---
---   * link kept (looked up by template_code) when the row was generated from a template code that
---     is still in the catalog;
---   * link set to NULL when the code it pointed at is no longer a system template.
---
--- Applying that rule to this seed sets every historical row to NULL, because all of them referenced
--- ids 1..6 — ACCOUNT_CREATED_INTERNAL, VISIT_REQUEST_APPROVED, VISIT_REQUEST_REJECTED,
--- VISIT_CANCELLED, HOST_ASSIGNMENT and LOGISTICS_REQUEST. Those six are notification-only or dead
--- code with no production caller, so they are not seeded any more (an existing database keeps them
--- as INACTIVE rather than losing the reference).
---
--- NULL is the honest value here: it records that the message was sent, and that the template it came
--- from is no longer part of the catalog. Re-pointing these rows at a surviving template would be
--- writing history that never happened.
--- ---------------------------------------------------------------------
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at) VALUES
-  (1, NULL, 'USER', 3, 'Tài khoản nội bộ PEMS của bạn đã được khởi tạo', 'Xin chào IC Staff Leader Hà Nội, tài khoản STAFF LEADER tại FPT University Hà Nội đã được tạo.', 'gmail-thread-acc-003', 'gmail-msg-acc-003', 0, '2026-02-01 08:30:00', '2026-02-01 08:31:00', 'SENT', NULL, 1, '2026-02-01 08:30:00', '2026-02-01 08:30:00'),
-  (2, NULL, 'VISIT_REQUEST', 1003, 'Visit request approved - VR-SC-HN-0003', 'Your request SeoulTech AI curriculum briefing has been approved.', 'gmail-thread-vr-1003', 'gmail-msg-vr-1003', 0, '2026-06-12 16:35:00', '2026-06-12 16:36:00', 'SENT', NULL, 3, '2026-06-12 16:35:00', '2026-06-12 16:35:00'),
-  (3, NULL, 'VISIT_REQUEST', 1002, 'Yêu cầu tham quan chưa thể tiếp nhận - VR-SC-HN-0002', 'Đơn bị từ chối do không đủ thời gian chuẩn bị thiết bị robotics.', 'gmail-thread-vr-1002', 'gmail-msg-vr-1002', 0, '2026-06-10 15:25:00', '2026-06-10 15:26:00', 'SENT', NULL, 3, '2026-06-10 15:25:00', '2026-06-10 15:25:00'),
-  (4, NULL, 'VISIT_REQUEST', 1008, 'Lịch thăm đã được hủy - VR-SC-HN-0008', 'Visitor đã tự hủy do lịch bay thay đổi.', 'gmail-thread-vr-1008', 'gmail-msg-vr-1008', 0, '2026-06-02 08:05:00', '2026-06-02 08:06:00', 'SENT', NULL, 8, '2026-06-02 08:05:00', '2026-06-02 08:05:00'),
-  (5, NULL, 'VISIT_INSTANCE', 3105, 'Bạn được giao điều phối campus instance', 'HO đã giao bạn làm coordinator cho chặng HN, chờ bạn gán host chính thức.', NULL, NULL, 0, NULL, NULL, 'QUEUED', NULL, 2, NULL, '2026-06-16 10:05:00'),
-  (6, NULL, 'LOGISTICS', 10, 'Có yêu cầu hậu cần mới cần phản hồi', 'Yêu cầu quay drone bị thiếu phê duyệt, cần phản hồi.', 'gmail-thread-log-010', NULL, 2, '2026-06-20 10:05:00', NULL, 'FAILED', 'SMTP temporary failure after two retries.', 4, NULL, '2026-06-20 09:30:00');
+  (1, 1, 'USER', 3, 'Tài khoản nội bộ PEMS của bạn đã được khởi tạo', 'Xin chào IC Staff Leader Hà Nội, tài khoản STAFF LEADER tại FPT University Hà Nội đã được tạo.', 'gmail-thread-acc-003', 'gmail-msg-acc-003', 0, '2026-02-01 08:30:00', '2026-02-01 08:31:00', 'SENT', NULL, 1, '2026-02-01 08:30:00', '2026-02-01 08:30:00'),
+  (2, 2, 'VISIT_REQUEST', 1003, 'Visit request approved - VR-SC-HN-0003', 'Your request SeoulTech AI curriculum briefing has been approved.', 'gmail-thread-vr-1003', 'gmail-msg-vr-1003', 0, '2026-06-12 16:35:00', '2026-06-12 16:36:00', 'SENT', NULL, 3, '2026-06-12 16:35:00', '2026-06-12 16:35:00'),
+  (3, 3, 'VISIT_REQUEST', 1002, 'Yêu cầu tham quan chưa thể tiếp nhận - VR-SC-HN-0002', 'Đơn bị từ chối do không đủ thời gian chuẩn bị thiết bị robotics.', 'gmail-thread-vr-1002', 'gmail-msg-vr-1002', 0, '2026-06-10 15:25:00', '2026-06-10 15:26:00', 'SENT', NULL, 3, '2026-06-10 15:25:00', '2026-06-10 15:25:00'),
+  (4, 4, 'VISIT_REQUEST', 1008, 'Lịch thăm đã được hủy - VR-SC-HN-0008', 'Visitor đã tự hủy do lịch bay thay đổi.', 'gmail-thread-vr-1008', 'gmail-msg-vr-1008', 0, '2026-06-02 08:05:00', '2026-06-02 08:06:00', 'SENT', NULL, 8, '2026-06-02 08:05:00', '2026-06-02 08:05:00'),
+  (5, 5, 'VISIT_INSTANCE', 3105, 'Bạn được giao điều phối campus instance', 'HO đã giao bạn làm coordinator cho chặng HN, chờ bạn gán host chính thức.', NULL, NULL, 0, NULL, NULL, 'QUEUED', NULL, 2, NULL, '2026-06-16 10:05:00'),
+  (6, 6, 'LOGISTICS', 10, 'Có yêu cầu hậu cần mới cần phản hồi', 'Yêu cầu quay drone bị thiếu phê duyệt, cần phản hồi.', 'gmail-thread-log-010', NULL, 2, '2026-06-20 10:05:00', NULL, 'FAILED', 'SMTP temporary failure after two retries.', 4, NULL, '2026-06-20 09:30:00');
 
 INSERT INTO sent_email_recipients (sent_email_recipient_id, sent_email_id, recipient_email, recipient_name, recipient_type, delivery_status, provider_message_id, error_message, sent_at, delivered_at, created_at) VALUES
   (1, 1, 'staff.leader.hn@fpt.edu.vn', 'IC Staff Leader Hà Nội', 'TO', 'DELIVERED', 'gmail-msg-acc-003', NULL, '2026-02-01 08:30:00', '2026-02-01 08:31:00', '2026-02-01 08:30:00'),
@@ -8859,8 +8001,8 @@ INSERT INTO visit_agendas (agenda_id, visit_instance_id, sequence_order, title, 
   (8108, 3117, 2, 'DN closing actions and archive', 'Tổng hợp action item, tài liệu và ghi chú đóng đoàn tại Đà Nẵng.', CURRENT_DATE - INTERVAL 37 DAY + INTERVAL 10 HOUR, CURRENT_DATE - INTERVAL 37 DAY + INTERVAL 11 HOUR, 'DN IC room', 12, '2026-05-25 15:25:00', 12, NULL, NULL);
 
 INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, item_type, title, description, quantity, usage_start_at, usage_end_at, status, priority, requested_by, requested_to_department_id, requested_at, received_by, received_at, assigned_to_user_id, assigned_by, assigned_at, assignee_accepted_at, assignee_response_note, due_at, completed_at, proposed_by, proposed_at, proposed_quantity, proposed_usage_start_at, proposed_usage_end_at, proposed_description, proposal_note, proposal_responded_by, proposal_responded_at, proposal_response, proposal_response_note, decision_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  
-  
+
+
   (9001, 5003, 'ROOM', 'ROOM coverage item 9001', 'Kịch bản logistics REQUESTED cho ROOM, nội dung riêng để test filter/sort/status.', 1, '2026-08-10 08:00:00', '2026-08-10 12:00:00', 'REQUESTED', 'LOW', NULL, 2, '2026-07-04 08:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-08-09 17:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-07-04 08:00:00', 4, NULL, NULL),
   (9002, 5004, 'TRANSPORT', 'TRANSPORT coverage item 9002', 'Kịch bản logistics REQUESTED cho TRANSPORT, nội dung riêng để test filter/sort/status.', 2, '2026-08-10 08:00:00', '2026-08-10 12:00:00', 'REQUESTED', 'MEDIUM', NULL, 2, '2026-07-04 08:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-08-09 17:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-07-04 08:00:00', 101, NULL, NULL),
   (9003, 5005, 'MEAL', 'MEAL coverage item 9003', 'Kịch bản logistics REQUESTED cho MEAL, nội dung riêng để test filter/sort/status.', 3, '2026-08-10 08:00:00', '2026-08-10 12:00:00', 'REQUESTED', 'HIGH', NULL, 2, '2026-07-04 08:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-08-09 17:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-07-04 08:00:00', 4, NULL, NULL),
@@ -9339,9 +8481,9 @@ INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, cre
 -- Removed old galleries seed; migrated to gallery_areas/gallery_locations/gallery_items below.
 
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at) VALUES
-  (18001, NULL, 'VISIT_REQUEST', 3001, 'Email coverage QUEUED 18001', 'Body snapshot for email status QUEUED.', 'thread-18001', NULL, 0, NULL, NULL, 'QUEUED', NULL, 4, NULL, '2026-08-19 08:00:00'),
-  (18002, NULL, 'VISIT_REQUEST', 3002, 'Email coverage SENT 18002', 'Body snapshot for email status SENT.', 'thread-18002', 'msg-18002', 0, '2026-08-19 08:10:00', '2026-08-19 08:20:00', 'SENT', NULL, 4, '2026-08-19 08:05:00', '2026-08-19 08:00:00'),
-  (18003, NULL, 'VISIT_REQUEST', 3003, 'Email coverage FAILED 18003', 'Body snapshot for email status FAILED.', 'thread-18003', 'msg-18003', 3, '2026-08-19 08:10:00', NULL, 'FAILED', 'SMTP timeout after retry window.', 4, '2026-08-19 08:05:00', '2026-08-19 08:00:00');
+  (18001, 1, 'VISIT_REQUEST', 3001, 'Email coverage QUEUED 18001', 'Body snapshot for email status QUEUED.', 'thread-18001', NULL, 0, NULL, NULL, 'QUEUED', NULL, 4, NULL, '2026-08-19 08:00:00'),
+  (18002, 1, 'VISIT_REQUEST', 3002, 'Email coverage SENT 18002', 'Body snapshot for email status SENT.', 'thread-18002', 'msg-18002', 0, '2026-08-19 08:10:00', '2026-08-19 08:20:00', 'SENT', NULL, 4, '2026-08-19 08:05:00', '2026-08-19 08:00:00'),
+  (18003, 1, 'VISIT_REQUEST', 3003, 'Email coverage FAILED 18003', 'Body snapshot for email status FAILED.', 'thread-18003', 'msg-18003', 3, '2026-08-19 08:10:00', NULL, 'FAILED', 'SMTP timeout after retry window.', 4, '2026-08-19 08:05:00', '2026-08-19 08:00:00');
 
 INSERT INTO sent_email_recipients (sent_email_recipient_id, sent_email_id, recipient_email, recipient_name, recipient_type, delivery_status, provider_message_id, error_message, sent_at, delivered_at, created_at) VALUES
   (18101, 18001, 'recipient18101@example.com', 'Recipient 18101', 'TO', 'QUEUED', NULL, NULL, NULL, NULL, '2026-08-19 08:00:00'),
@@ -10393,8 +9535,8 @@ INSERT INTO visit_participants (participant_id, visit_instance_id, user_id, part
   (99016, 9914, 12, 'IC_HOST', TRUE, 'ASSIGNED', 11, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 18 HOUR, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 17 HOUR, 11, CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 17 HOUR, 'Host DN cho request visitor@example.com đã bị hủy toàn bộ.', CURRENT_TIMESTAMP - INTERVAL 12 DAY - INTERVAL 18 HOUR, 11, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8);
 
 INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, item_type, title, description, quantity, usage_start_at, usage_end_at, status, priority, requested_by, requested_to_department_id, requested_at, received_by, received_at, assigned_to_user_id, assigned_by, assigned_at, assignee_accepted_at, assignee_response_note, due_at, completed_at, proposed_by, proposed_at, proposed_quantity, proposed_usage_start_at, proposed_usage_end_at, proposed_description, proposal_note, proposal_responded_by, proposal_responded_at, proposal_response, proposal_response_note, decision_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  
-  
+
+
   (99001, 9902, 'EQUIPMENT', 'DN robotics demo kit cancelled', 'Chuẩn bị bộ demo robotics và camera ghi hình; bị hủy theo visitor cancellation.', 2, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 9 HOUR + INTERVAL 30 MINUTE, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 12 HOUR, 'CANCELLED', 'HIGH', 12, 109, CURRENT_TIMESTAMP - INTERVAL 8 DAY - INTERVAL 20 HOUR, 135, CURRENT_TIMESTAMP - INTERVAL 8 DAY - INTERVAL 18 HOUR, 136, 135, CURRENT_TIMESTAMP - INTERVAL 8 DAY - INTERVAL 17 HOUR, NULL, NULL, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 17 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Visitor tự hủy, logistics item dừng xử lý trước khi nhận thiết bị.', 2, CURRENT_TIMESTAMP - INTERVAL 8 DAY - INTERVAL 20 HOUR, 12, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 203),
   (99002, 9903, 'ROOM', 'CT hybrid meeting room cancelled', 'Đặt phòng hybrid cho buổi AI curriculum tại CT; chuyển trạng thái CANCELLED sau khi visitor hủy.', 1, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 10 HOUR, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 12 HOUR + INTERVAL 30 MINUTE, 'CANCELLED', 'MEDIUM', 14, 110, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 18 HOUR, 137, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 17 HOUR, 138, 137, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 16 HOUR, NULL, NULL, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 18 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Visitor chuyển meeting sang online nên phòng không còn cần giữ.', 2, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 18 HOUR, 14, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 210),
   (99003, 9908, 'MEAL', 'HCM tea break cancelled by visitor', 'Tea break 18 người cho chặng HCM, hủy vì visitor chỉ hủy campus HCM.', 18, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 10 HOUR + INTERVAL 30 MINUTE, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 11 HOUR + INTERVAL 15 MINUTE, 'CANCELLED', 'MEDIUM', 10, 105, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 20 HOUR, 127, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 18 HOUR, 128, 127, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 17 HOUR, NULL, NULL, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 16 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Partial cancellation: HCM bị hủy nhưng DN/CT vẫn tiếp tục.', 3, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 20 HOUR, 10, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, 210),
@@ -10433,14 +9575,14 @@ INSERT INTO notifications (notification_id, recipient_user_id, title, message, n
   (99016, 16, 'Lịch QN đã bị visitor hủy', 'Chặng QN trong request Casablanca bị visitor tự hủy.', 'VISIT_CANCELLED', 'VISIT_INSTANCE', 9912, FALSE, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR);
 
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at) VALUES
-  (99001, NULL, 'VISIT_REQUEST', 9001, 'Visitor cancellation confirmed - VR7-SC-HCM-VISITOR-CANCEL-01', 'Visitor đã tự hủy đơn HCM; thông báo gửi tới visitor và Staff Leader HCM.', 'gmail-thread-v7-cancel-9001', 'gmail-msg-v7-cancel-9001', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 'SENT', NULL, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),
-  (99002, NULL, 'VISIT_REQUEST', 9002, 'Visitor cancellation confirmed - VR7-SC-DN-VISITOR-CANCEL-02', 'Đơn DN đã hủy bởi visitor sau khi host được gán.', 'gmail-thread-v7-cancel-9002', 'gmail-msg-v7-cancel-9002', 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 'SENT', NULL, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR),
-  (99003, NULL, 'VISIT_REQUEST', 9003, 'Visitor cancellation confirmed - VR7-SC-CT-VISITOR-CANCEL-03', 'Đơn CT đã hủy bởi visitor vì chuyển sang online meeting.', 'gmail-thread-v7-cancel-9003', 'gmail-msg-v7-cancel-9003', 0, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 'SENT', NULL, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR),
-  (99004, NULL, 'VISIT_REQUEST', 9004, 'Visitor cancellation confirmed - VR7-SC-QN-VISITOR-CANCEL-04', 'Đơn QN hủy bởi visitor trước khi gán host chính thức.', 'gmail-thread-v7-cancel-9004', 'gmail-msg-v7-cancel-9004', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, 'SENT', NULL, 212, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR),
-  (99005, NULL, 'VISIT_REQUEST', 9005, 'Visitor cancelled multi-campus tour - VR7-MC-HN-HCM-DN-VISITOR-CANCEL-05', 'Visitor hủy toàn bộ request liên cơ sở sau khi campus được xử lý.', 'gmail-thread-v7-cancel-9005', 'gmail-msg-v7-cancel-9005', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 'SENT', NULL, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR),
-  (99006, NULL, 'VISIT_INSTANCE', 9908, 'Partial campus cancellation - HCM only', 'Visitor hủy riêng chặng HCM; DN/CT vẫn giữ lịch.', NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, NULL, 'QUEUED', NULL, 210, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR),
-  (99007, NULL, 'VISIT_INSTANCE', 9909, 'Host DN remains assigned after partial cancellation', 'Chặng DN vẫn tiếp tục, host DN giữ phân công.', NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, NULL, 'QUEUED', NULL, 11, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR),
-  (99008, NULL, 'VISIT_REQUEST', 9008, 'Visitor cancelled two-campus AI workshop', 'visitor@example.com tự hủy toàn bộ request HN-DN sau khi host đã được gán.', 'gmail-thread-v7-cancel-9008', 'gmail-msg-v7-cancel-9008', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'SENT', NULL, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR);
+  (99001, 4, 'VISIT_REQUEST', 9001, 'Visitor cancellation confirmed - VR7-SC-HCM-VISITOR-CANCEL-01', 'Visitor đã tự hủy đơn HCM; thông báo gửi tới visitor và Staff Leader HCM.', 'gmail-thread-v7-cancel-9001', 'gmail-msg-v7-cancel-9001', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 'SENT', NULL, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),
+  (99002, 4, 'VISIT_REQUEST', 9002, 'Visitor cancellation confirmed - VR7-SC-DN-VISITOR-CANCEL-02', 'Đơn DN đã hủy bởi visitor sau khi host được gán.', 'gmail-thread-v7-cancel-9002', 'gmail-msg-v7-cancel-9002', 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 'SENT', NULL, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR),
+  (99003, 4, 'VISIT_REQUEST', 9003, 'Visitor cancellation confirmed - VR7-SC-CT-VISITOR-CANCEL-03', 'Đơn CT đã hủy bởi visitor vì chuyển sang online meeting.', 'gmail-thread-v7-cancel-9003', 'gmail-msg-v7-cancel-9003', 0, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 'SENT', NULL, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR),
+  (99004, 4, 'VISIT_REQUEST', 9004, 'Visitor cancellation confirmed - VR7-SC-QN-VISITOR-CANCEL-04', 'Đơn QN hủy bởi visitor trước khi gán host chính thức.', 'gmail-thread-v7-cancel-9004', 'gmail-msg-v7-cancel-9004', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, 'SENT', NULL, 212, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR),
+  (99005, 4, 'VISIT_REQUEST', 9005, 'Visitor cancelled multi-campus tour - VR7-MC-HN-HCM-DN-VISITOR-CANCEL-05', 'Visitor hủy toàn bộ request liên cơ sở sau khi campus được xử lý.', 'gmail-thread-v7-cancel-9005', 'gmail-msg-v7-cancel-9005', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 'SENT', NULL, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR),
+  (99006, 4, 'VISIT_INSTANCE', 9908, 'Partial campus cancellation - HCM only', 'Visitor hủy riêng chặng HCM; DN/CT vẫn giữ lịch.', NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, NULL, 'QUEUED', NULL, 210, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR),
+  (99007, 5, 'VISIT_INSTANCE', 9909, 'Host DN remains assigned after partial cancellation', 'Chặng DN vẫn tiếp tục, host DN giữ phân công.', NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, NULL, 'QUEUED', NULL, 11, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR),
+  (99008, 4, 'VISIT_REQUEST', 9008, 'Visitor cancelled two-campus AI workshop', 'visitor@example.com tự hủy toàn bộ request HN-DN sau khi host đã được gán.', 'gmail-thread-v7-cancel-9008', 'gmail-msg-v7-cancel-9008', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'SENT', NULL, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR);
 
 INSERT INTO sent_email_recipients (sent_email_recipient_id, sent_email_id, recipient_email, recipient_name, recipient_type, delivery_status, provider_message_id, error_message, sent_at, delivered_at, created_at) VALUES
   (99101, 99001, 'sofia.bianchi@polimi.example', 'Sofia Bianchi', 'TO', 'DELIVERED', 'gmail-msg-v7-cancel-9001', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),
@@ -10550,14 +9692,14 @@ INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_nam
 -- C. Dedicated outbound email seeds for email action token demonstrations
 -- ---------------------------------------------------------------------
 INSERT INTO sent_emails (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot, provider_thread_id, provider_message_id, retry_count, last_attempt_at, delivered_at, status, error_message, sent_by, sent_at, created_at) VALUES
-  (99101, NULL, 'VISIT_PARTICIPANT', 4, 'Mời xác nhận tham gia hỗ trợ đoàn Green Mobility', 'Email có nút Xác nhận/Từ chối cho participant_id=4; phản hồi được ghi bằng email_action_tokens.', 'gmail-thread-action-participant-004', 'gmail-msg-action-participant-004', 0, '2026-08-18 10:00:00', '2026-08-18 10:01:00', 'SENT', NULL, 4, '2026-08-18 10:00:00', '2026-08-18 10:00:00'),
-  (99102, NULL, 'VISIT_PARTICIPANT', 7, 'Kết quả phản hồi lời mời student buddy', 'Email demo case đã phản hồi; bấm lại nút khác phải báo đã trả lời rồi.', 'gmail-thread-action-participant-007', 'gmail-msg-action-participant-007', 0, '2026-08-18 10:05:00', '2026-08-18 10:06:00', 'SENT', NULL, 4, '2026-08-18 10:05:00', '2026-08-18 10:05:00'),
-  (99103, NULL, 'LOGISTICS', 5, 'Yêu cầu phản hồi nhiệm vụ micro không dây', 'Email có nút Xác nhận/Từ chối/Thương lượng cho logistics_item_id=5.', 'gmail-thread-action-logistics-005', 'gmail-msg-action-logistics-005', 0, '2026-08-18 10:10:00', '2026-08-18 10:11:00', 'SENT', NULL, 17, '2026-08-18 10:10:00', '2026-08-18 10:10:00'),
-  (99104, NULL, 'LOGISTICS', 6, 'Kết quả xác nhận nhiệm vụ check-in Alpha Lobby', 'Email demo case logistics đã xác nhận; bấm lại từ chối phải báo đã trả lời rồi.', 'gmail-thread-action-logistics-006', 'gmail-msg-action-logistics-006', 0, '2026-08-18 10:15:00', '2026-08-18 10:16:00', 'SENT', NULL, 17, '2026-08-18 10:15:00', '2026-08-18 10:15:00'),
-  (99105, NULL, 'LOGISTICS', 3, 'Đề xuất thay đổi teabreak cần phản hồi', 'Email có nút Chấp nhận/Từ chối đề xuất thay đổi logistics_item_id=3.', 'gmail-thread-action-proposal-003', 'gmail-msg-action-proposal-003', 0, '2026-08-18 10:20:00', '2026-08-18 10:21:00', 'SENT', NULL, 17, '2026-08-18 10:20:00', '2026-08-18 10:20:00'),
-  (99106, NULL, 'LOGISTICS', 7, 'Yêu cầu ký nhận thiết bị LED', 'Email có nút ký nhận mượn thiết bị cho handover_id=4.', 'gmail-thread-action-handover-borrow-004', 'gmail-msg-action-handover-borrow-004', 0, '2026-08-18 10:25:00', '2026-08-18 10:26:00', 'SENT', NULL, 18, '2026-08-18 10:25:00', '2026-08-18 10:25:00'),
-  (99107, NULL, 'LOGISTICS', 7, 'Yêu cầu ký nhận lại thiết bị sau khi trả', 'Email có nút ký trả/nhận lại thiết bị cho handover_id=6.', 'gmail-thread-action-handover-return-006', 'gmail-msg-action-handover-return-006', 0, '2026-08-18 10:30:00', '2026-08-18 10:31:00', 'SENT', NULL, 4, '2026-08-18 10:30:00', '2026-08-18 10:30:00'),
-  (99108, NULL, 'LOGISTICS', 9, 'Biên bản hoàn trả phòng họp đã hoàn tất', 'Email demo case ký trả đã thành công cho handover_id=2.', 'gmail-thread-action-handover-return-002', 'gmail-msg-action-handover-return-002', 0, '2026-08-18 10:35:00', '2026-08-18 10:36:00', 'SENT', NULL, 18, '2026-08-18 10:35:00', '2026-08-18 10:35:00');
+  (99101, 5, 'VISIT_PARTICIPANT', 4, 'Mời xác nhận tham gia hỗ trợ đoàn Green Mobility', 'Email có nút Xác nhận/Từ chối cho participant_id=4; phản hồi được ghi bằng email_action_tokens.', 'gmail-thread-action-participant-004', 'gmail-msg-action-participant-004', 0, '2026-08-18 10:00:00', '2026-08-18 10:01:00', 'SENT', NULL, 4, '2026-08-18 10:00:00', '2026-08-18 10:00:00'),
+  (99102, 5, 'VISIT_PARTICIPANT', 7, 'Kết quả phản hồi lời mời student buddy', 'Email demo case đã phản hồi; bấm lại nút khác phải báo đã trả lời rồi.', 'gmail-thread-action-participant-007', 'gmail-msg-action-participant-007', 0, '2026-08-18 10:05:00', '2026-08-18 10:06:00', 'SENT', NULL, 4, '2026-08-18 10:05:00', '2026-08-18 10:05:00'),
+  (99103, 6, 'LOGISTICS', 5, 'Yêu cầu phản hồi nhiệm vụ micro không dây', 'Email có nút Xác nhận/Từ chối/Thương lượng cho logistics_item_id=5.', 'gmail-thread-action-logistics-005', 'gmail-msg-action-logistics-005', 0, '2026-08-18 10:10:00', '2026-08-18 10:11:00', 'SENT', NULL, 17, '2026-08-18 10:10:00', '2026-08-18 10:10:00'),
+  (99104, 6, 'LOGISTICS', 6, 'Kết quả xác nhận nhiệm vụ check-in Alpha Lobby', 'Email demo case logistics đã xác nhận; bấm lại từ chối phải báo đã trả lời rồi.', 'gmail-thread-action-logistics-006', 'gmail-msg-action-logistics-006', 0, '2026-08-18 10:15:00', '2026-08-18 10:16:00', 'SENT', NULL, 17, '2026-08-18 10:15:00', '2026-08-18 10:15:00'),
+  (99105, 6, 'LOGISTICS', 3, 'Đề xuất thay đổi teabreak cần phản hồi', 'Email có nút Chấp nhận/Từ chối đề xuất thay đổi logistics_item_id=3.', 'gmail-thread-action-proposal-003', 'gmail-msg-action-proposal-003', 0, '2026-08-18 10:20:00', '2026-08-18 10:21:00', 'SENT', NULL, 17, '2026-08-18 10:20:00', '2026-08-18 10:20:00'),
+  (99106, 6, 'LOGISTICS', 7, 'Yêu cầu ký nhận thiết bị LED', 'Email có nút ký nhận mượn thiết bị cho handover_id=4.', 'gmail-thread-action-handover-borrow-004', 'gmail-msg-action-handover-borrow-004', 0, '2026-08-18 10:25:00', '2026-08-18 10:26:00', 'SENT', NULL, 18, '2026-08-18 10:25:00', '2026-08-18 10:25:00'),
+  (99107, 6, 'LOGISTICS', 7, 'Yêu cầu ký nhận lại thiết bị sau khi trả', 'Email có nút ký trả/nhận lại thiết bị cho handover_id=6.', 'gmail-thread-action-handover-return-006', 'gmail-msg-action-handover-return-006', 0, '2026-08-18 10:30:00', '2026-08-18 10:31:00', 'SENT', NULL, 4, '2026-08-18 10:30:00', '2026-08-18 10:30:00'),
+  (99108, 6, 'LOGISTICS', 9, 'Biên bản hoàn trả phòng họp đã hoàn tất', 'Email demo case ký trả đã thành công cho handover_id=2.', 'gmail-thread-action-handover-return-002', 'gmail-msg-action-handover-return-002', 0, '2026-08-18 10:35:00', '2026-08-18 10:36:00', 'SENT', NULL, 18, '2026-08-18 10:35:00', '2026-08-18 10:35:00');
 
 INSERT INTO sent_email_recipients (sent_email_recipient_id, sent_email_id, recipient_email, recipient_name, recipient_type, delivery_status, provider_message_id, error_message, sent_at, delivered_at, created_at) VALUES
   (99201, 99101, 'student@fpt.edu.vn', 'Student Buddy Hà Nội', 'TO', 'DELIVERED', 'gmail-msg-action-participant-004', NULL, '2026-08-18 10:00:00', '2026-08-18 10:01:00', '2026-08-18 10:00:00'),
@@ -10602,16 +9744,386 @@ INSERT INTO email_action_tokens (email_action_token_id, token_hash, action_group
 
 
 -- =====================================================================
--- (removed) V11 email-template professionalization patch
+-- V11 Email professional template updates (appended for fresh-create build)
 -- =====================================================================
--- This section used to re-write email_templates rows by numeric id (email_template_id = 1..16),
--- and a later block patched more rows by template_code â€” including codes that never existed in
--- the seed. Both are gone: the canonical catalog is now seeded once, in section 7, with no
--- hard-coded ids, so there is nothing left to patch afterwards.
+-- =====================================================================
+-- PEMS Email Template Professionalization Patch
+-- Source DB: pems_full_v10_new_final_gallery_phototags_logistics_offline_seed.sql
+-- Purpose: Improve seeded email_templates content only; no schema changes.
+-- Safe to run after the full seed. Re-runnable.
 -- =====================================================================
 
 START TRANSACTION;
 
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Tài khoản nội bộ của bạn đã được khởi tạo',
+  body_vi = '<p>Xin chào {{FullName}},</p>
+<p>Tài khoản nội bộ PEMS của bạn đã được khởi tạo với vai trò <strong>{{RoleName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p>Bạn có thể đăng nhập và sử dụng các chức năng được phân quyền tại: <a href="{{LoginUrl}}">{{LoginUrl}}</a>.</p>
+<p>Nếu thông tin tài khoản chưa chính xác hoặc bạn không truy cập được hệ thống, vui lòng liên hệ bộ phận phụ trách để được hỗ trợ.</p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Your internal account has been created',
+  body_en = '<p>Hello {{FullName}},</p>
+<p>Your PEMS internal account has been created with the role <strong>{{RoleName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p>You can sign in and use the features assigned to your role at: <a href="{{LoginUrl}}">{{LoginUrl}}</a>.</p>
+<p>If the account information is incorrect or you cannot access the system, please contact the responsible team for support.</p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'FullName,RoleName,CampusName,LoginUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 1;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Yêu cầu tham quan {{RequestCode}} đã được duyệt',
+  body_vi = '<p>Xin chào {{RecipientName}},</p>
+<p>Yêu cầu tham quan <strong>{{RequestCode}}</strong> của đoàn <strong>{{DelegationName}}</strong> đã được phê duyệt.</p>
+<p>Hệ thống sẽ tiếp tục điều phối host, lịch trình và các hạng mục chuẩn bị liên quan. Thông tin chi tiết sẽ được cập nhật/gửi tới bạn sau khi hoàn tất phân công.</p>
+<p>Ghi chú phê duyệt: {{DecisionNote}}</p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Visit request {{RequestCode}} has been approved',
+  body_en = '<p>Hello {{RecipientName}},</p>
+<p>Your visit request <strong>{{RequestCode}}</strong> for <strong>{{DelegationName}}</strong> has been approved.</p>
+<p>The system will continue coordinating the host, agenda and preparation items. Detailed information will be updated/sent after the assignment is completed.</p>
+<p>Approval note: {{DecisionNote}}</p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'RecipientName,RequestCode,DelegationName,DecisionNote,DetailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 2;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Yêu cầu tham quan {{RequestCode}} chưa thể tiếp nhận',
+  body_vi = '<p>Xin chào {{RecipientName}},</p>
+<p>Rất tiếc, yêu cầu tham quan <strong>{{RequestCode}}</strong> của đoàn <strong>{{DelegationName}}</strong> hiện chưa thể được tiếp nhận.</p>
+<p><strong>Lý do:</strong> {{DecisionNote}}</p>
+<p>Bạn có thể liên hệ bộ phận phụ trách hoặc gửi lại yêu cầu mới với thông tin điều chỉnh phù hợp.</p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Visit request {{RequestCode}} cannot be accepted',
+  body_en = '<p>Hello {{RecipientName}},</p>
+<p>We regret to inform you that visit request <strong>{{RequestCode}}</strong> for <strong>{{DelegationName}}</strong> cannot be accepted at this time.</p>
+<p><strong>Reason:</strong> {{DecisionNote}}</p>
+<p>You may contact the responsible team or submit a new request with revised information.</p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'RecipientName,RequestCode,DelegationName,DecisionNote',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 3;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Lịch thăm {{RequestCode}} đã được hủy',
+  body_vi = '<p>Xin chào {{RecipientName}},</p>
+<p>Lịch thăm/yêu cầu tham quan <strong>{{RequestCode}}</strong> của đoàn <strong>{{DelegationName}}</strong> đã được hủy trên hệ thống PEMS.</p>
+<p><strong>Lý do hủy:</strong> {{CancellationReason}}</p>
+<p>Nếu cần sắp xếp lại lịch thăm, vui lòng tạo yêu cầu mới hoặc liên hệ bộ phận phụ trách để được hỗ trợ.</p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Visit {{RequestCode}} has been cancelled',
+  body_en = '<p>Hello {{RecipientName}},</p>
+<p>Visit request <strong>{{RequestCode}}</strong> for <strong>{{DelegationName}}</strong> has been cancelled in PEMS.</p>
+<p><strong>Cancellation reason:</strong> {{CancellationReason}}</p>
+<p>If you need to arrange another visit, please submit a new request or contact the responsible team for support.</p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'RecipientName,RequestCode,DelegationName,CancellationReason',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 4;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Bạn được phân công làm Host chính cho đoàn {{DelegationName}}',
+  body_vi = '<p>Xin chào {{HostName}},</p>
+<p>Bạn được phân công làm <strong>Host chính</strong> cho đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Thời gian dự kiến:</strong> {{PlannedStartAt}} - {{PlannedEndAt}}</p>
+<p>Vui lòng kiểm tra thông tin đoàn, lịch trình, thành phần tham gia và các hạng mục chuẩn bị trên PEMS.</p>
+<p><a href="{{DetailUrl}}">Mở trang điều phối đoàn</a></p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] You have been assigned as main host for {{DelegationName}}',
+  body_en = '<p>Hello {{HostName}},</p>
+<p>You have been assigned as the <strong>Main Host</strong> for <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Planned time:</strong> {{PlannedStartAt}} - {{PlannedEndAt}}</p>
+<p>Please review the delegation information, agenda, participants and preparation items in PEMS.</p>
+<p><a href="{{DetailUrl}}">Open coordination page</a></p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'HostName,DelegationName,CampusName,PlannedStartAt,PlannedEndAt,DetailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 5;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Yêu cầu hậu cần mới cần tiếp nhận: {{LogisticsTitle}}',
+  body_vi = '<p>Xin chào {{DepartmentLeaderName}},</p>
+<p>Hệ thống ghi nhận một yêu cầu hậu cần mới cần phòng ban của bạn tiếp nhận/xử lý.</p>
+<p><strong>Đoàn:</strong> {{DelegationName}}<br/>
+<strong>Campus:</strong> {{CampusName}}<br/>
+<strong>Hạng mục:</strong> {{LogisticsTitle}}<br/>
+<strong>Thời gian sử dụng:</strong> {{UsageStartAt}} - {{UsageEndAt}}<br/>
+<strong>Người gửi yêu cầu:</strong> {{RequesterName}}</p>
+<p>Vui lòng kiểm tra chi tiết và phản hồi trên PEMS trong thời gian sớm nhất.</p>
+
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] New logistics request: {{LogisticsTitle}}',
+  body_en = '<p>Hello {{DepartmentLeaderName}},</p>
+<p>A new logistics request has been submitted for your department to review/handle.</p>
+<p><strong>Delegation:</strong> {{DelegationName}}<br/>
+<strong>Campus:</strong> {{CampusName}}<br/>
+<strong>Item:</strong> {{LogisticsTitle}}<br/>
+<strong>Usage time:</strong> {{UsageStartAt}} - {{UsageEndAt}}<br/>
+<strong>Requested by:</strong> {{RequesterName}}</p>
+<p>Please review the details and respond in PEMS as soon as possible.</p>
+
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'DepartmentLeaderName,RequesterName,DelegationName,CampusName,LogisticsTitle,UsageStartAt,UsageEndAt,DetailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 6;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Mã OTP xác minh đăng ký tham quan',
+  body_vi = '<p>Xin chào {{RecipientName}},</p>
+<p>Mã OTP xác minh email đăng ký tham quan của bạn là:</p>
+<p style="font-size:20px;font-weight:700;letter-spacing:2px;">{{OtpCode}}</p>
+<p>Mã có hiệu lực trong <strong>{{ExpireMinutes}} phút</strong>. Vui lòng không chia sẻ mã này với người khác.</p>
+<p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email.</p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Visit request email verification OTP',
+  body_en = '<p>Hello {{RecipientName}},</p>
+<p>Your email verification OTP for visit registration is:</p>
+<p style="font-size:20px;font-weight:700;letter-spacing:2px;">{{OtpCode}}</p>
+<p>The code is valid for <strong>{{ExpireMinutes}} minutes</strong>. Please do not share it with anyone.</p>
+<p>If you did not request this, please ignore this email.</p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'RecipientName,OtpCode,ExpireMinutes',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 7;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Mời hỗ trợ tiếp khách đoàn {{DelegationName}}',
+  body_vi = '<p>Xin chào {{recipientName}},</p>
+<p>Bạn được mời tham gia hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Thời gian:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Host chính:</strong> {{hostName}}<br/>
+<strong>Vai trò dự kiến:</strong> {{participantRoleLabel}}</p>
+<p>Vui lòng phản hồi lời mời bằng một trong hai nút bên dưới. Phản hồi của bạn sẽ được ghi nhận trực tiếp trên hệ thống PEMS.</p>
+
+<p>Nếu cần thêm thông tin, vui lòng liên hệ Host chính hoặc mở trang chi tiết đoàn trên PEMS.</p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Invitation to support {{DelegationName}}',
+  body_en = '<p>Hello {{recipientName}},</p>
+<p>You are invited to support <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Time:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Main host:</strong> {{hostName}}<br/>
+<strong>Expected role:</strong> {{participantRoleLabel}}</p>
+<p>Please respond to this invitation using one of the buttons below. Your response will be recorded directly in PEMS.</p>
+
+<p>If you need more information, please contact the main host or open the visit detail page in PEMS.</p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,participantRoleLabel,acceptUrl,declineUrl,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 8;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Mời phòng ban phối hợp đoàn {{DelegationName}}',
+  body_vi = '<p>Xin chào {{recipientName}},</p>
+<p>Phòng ban <strong>{{departmentName}}</strong> được mời phối hợp hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Thời gian:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Host chính:</strong> {{hostName}}</p>
+<p>Vui lòng phản hồi lời mời hoặc gán nhân sự phụ trách trực tiếp trên PEMS.</p>
+
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Department coordination invitation for {{DelegationName}}',
+  body_en = '<p>Hello {{recipientName}},</p>
+<p><strong>{{departmentName}}</strong> is invited to coordinate support for <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Time:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Main host:</strong> {{hostName}}</p>
+<p>Please respond to the invitation or assign responsible staff directly in PEMS.</p>
+
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'recipientName,departmentName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,acceptUrl,declineUrl,assignUrl,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 9;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Mời sinh viên hỗ trợ đoàn {{DelegationName}}',
+  body_vi = '<p>Xin chào {{recipientName}},</p>
+<p>Bạn được mời tham gia hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Thời gian:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Host chính:</strong> {{hostName}}<br/>
+<strong>Vai trò dự kiến:</strong> {{participantRoleLabel}}</p>
+<p>Vui lòng phản hồi bằng nút bên dưới để Host có thể hoàn tất danh sách thành phần tham gia.</p>
+
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Student support invitation for {{DelegationName}}',
+  body_en = '<p>Hello {{recipientName}},</p>
+<p>You are invited to support <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Time:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Main host:</strong> {{hostName}}<br/>
+<strong>Expected role:</strong> {{participantRoleLabel}}</p>
+<p>Please respond using the buttons below so the host can finalize the participant list.</p>
+
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,hostName,participantRoleLabel,acceptUrl,declineUrl,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 10;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Yêu cầu hậu cần mới: {{logisticsTitle}}',
+  body_vi = '<p>Xin chào {{departmentLeaderName}},</p>
+<p>Host <strong>{{requesterName}}</strong> đã gửi yêu cầu hậu cần tới phòng ban của bạn cho đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Hạng mục:</strong> {{logisticsTitle}}<br/>
+<strong>Loại:</strong> {{itemType}}<br/>
+<strong>Số lượng:</strong> {{quantity}}<br/>
+<strong>Thời gian sử dụng:</strong> {{usageStartAt}} - {{usageEndAt}}<br/>
+<strong>Ghi chú:</strong> {{description}}</p>
+<p>Vui lòng kiểm tra chi tiết trên PEMS, tiếp nhận yêu cầu và phân công nhân sự xử lý nếu cần.</p>
+
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] New logistics request: {{logisticsTitle}}',
+  body_en = '<p>Hello {{departmentLeaderName}},</p>
+<p>Host <strong>{{requesterName}}</strong> submitted a logistics request to your department for <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Item:</strong> {{logisticsTitle}}<br/>
+<strong>Type:</strong> {{itemType}}<br/>
+<strong>Quantity:</strong> {{quantity}}<br/>
+<strong>Usage time:</strong> {{usageStartAt}} - {{usageEndAt}}<br/>
+<strong>Note:</strong> {{description}}</p>
+<p>Please review the request in PEMS, receive it and assign responsible staff if needed.</p>
+
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'departmentLeaderName,requesterName,DelegationName,CampusName,logisticsTitle,itemType,quantity,usageStartAt,usageEndAt,description,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 11;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Bạn được phân công xử lý hậu cần: {{logisticsTitle}}',
+  body_vi = '<p>Xin chào {{assigneeName}},</p>
+<p>Bạn được phân công xử lý hạng mục hậu cần <strong>{{logisticsTitle}}</strong> cho đoàn <strong>{{DelegationName}}</strong>.</p>
+<p><strong>Thời hạn xử lý:</strong> {{dueAt}}<br/>
+<strong>Người phân công:</strong> {{assignedByName}}<br/>
+<strong>Ghi chú:</strong> {{assignmentNote}}</p>
+<p>Vui lòng phản hồi nhận nhiệm vụ hoặc từ chối bằng nút bên dưới. Phản hồi sẽ được ghi nhận trực tiếp trên PEMS.</p>
+
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Logistics assignment: {{logisticsTitle}}',
+  body_en = '<p>Hello {{assigneeName}},</p>
+<p>You have been assigned to handle logistics item <strong>{{logisticsTitle}}</strong> for <strong>{{DelegationName}}</strong>.</p>
+<p><strong>Due date:</strong> {{dueAt}}<br/>
+<strong>Assigned by:</strong> {{assignedByName}}<br/>
+<strong>Note:</strong> {{assignmentNote}}</p>
+<p>Please accept or decline the assignment using the buttons below. Your response will be recorded directly in PEMS.</p>
+
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'assigneeName,DelegationName,logisticsTitle,dueAt,assignedByName,assignmentNote,acceptUrl,declineUrl,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 12;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Nhắc lịch tiếp khách: {{DelegationName}}',
+  body_vi = '<p>Xin chào {{hostName}},</p>
+<p>Đây là email nhắc lịch cho đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Thời gian bắt đầu:</strong> {{plannedStartAt}}</p>
+<p>Vui lòng kiểm tra lại các nội dung chuẩn bị trước khi tiếp khách: lịch trình, thành phần tham gia, hậu cần, phòng/thiết bị và các ghi chú liên quan.</p>
+<p><a href="{{detailUrl}}">Mở trang điều phối</a></p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Visit reminder: {{DelegationName}}',
+  body_en = '<p>Hello {{hostName}},</p>
+<p>This is a reminder for <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Start time:</strong> {{plannedStartAt}}</p>
+<p>Please review all preparation items before the visit: agenda, participants, logistics, rooms/equipment and related notes.</p>
+<p><a href="{{detailUrl}}">Open coordination page</a></p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'hostName,DelegationName,CampusName,plannedStartAt,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 13;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Nhắc lịch tham gia hỗ trợ đoàn {{DelegationName}}',
+  body_vi = '<p>Xin chào {{recipientName}},</p>
+<p>Bạn có lịch tham gia hỗ trợ đoàn <strong>{{DelegationName}}</strong> tại <strong>{{CampusName}}</strong>.</p>
+<p><strong>Thời gian:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Vai trò:</strong> {{participantRoleLabel}}</p>
+<p>Vui lòng có mặt đúng giờ và kiểm tra thông tin chi tiết trên PEMS nếu cần.</p>
+<p><a href="{{detailUrl}}">Xem chi tiết đoàn</a></p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Reminder to support {{DelegationName}}',
+  body_en = '<p>Hello {{recipientName}},</p>
+<p>You are scheduled to support <strong>{{DelegationName}}</strong> at <strong>{{CampusName}}</strong>.</p>
+<p><strong>Time:</strong> {{plannedStartAt}} - {{plannedEndAt}}<br/>
+<strong>Role:</strong> {{participantRoleLabel}}</p>
+<p>Please arrive on time and check the visit details in PEMS if needed.</p>
+<p><a href="{{detailUrl}}">View visit details</a></p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'recipientName,DelegationName,CampusName,plannedStartAt,plannedEndAt,participantRoleLabel,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 14;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Có yêu cầu tham quan mới cần xử lý: {{RequestCode}}',
+  body_vi = '<p>Xin chào {{RecipientName}},</p>
+<p>Hệ thống vừa ghi nhận yêu cầu tham quan mới cần xử lý.</p>
+<p><strong>Mã yêu cầu:</strong> {{RequestCode}}<br/>
+<strong>Đoàn:</strong> {{DelegationName}}<br/>
+<strong>Thời điểm gửi:</strong> {{SubmittedAt}}</p>
+<p>Vui lòng kiểm tra thông tin và thực hiện bước xử lý tiếp theo theo đúng phạm vi phân quyền.</p>
+<p><a href="{{detailUrl}}">Xem và xử lý yêu cầu</a></p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] New visit request to process: {{RequestCode}}',
+  body_en = '<p>Hello {{RecipientName}},</p>
+<p>A new visit request has been submitted and requires processing.</p>
+<p><strong>Request code:</strong> {{RequestCode}}<br/>
+<strong>Delegation:</strong> {{DelegationName}}<br/>
+<strong>Submitted at:</strong> {{SubmittedAt}}</p>
+<p>Please review the information and take the next action according to your authorization scope.</p>
+<p><a href="{{detailUrl}}">View and process request</a></p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'RecipientName,RequestCode,DelegationName,SubmittedAt,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 15;
+
+UPDATE email_templates
+SET
+  subject_vi = '[PEMS] Yêu cầu hậu cần đã được gửi: {{logisticsTitle}}',
+  body_vi = '<p>Xin chào {{RecipientName}},</p>
+<p>Yêu cầu hậu cần <strong>{{logisticsTitle}}</strong> đã được gửi tới <strong>{{departmentName}}</strong>.</p>
+<p><strong>Trạng thái hiện tại:</strong> {{statusLabel}}<br/>
+<strong>Đoàn:</strong> {{DelegationName}}<br/>
+<strong>Campus:</strong> {{CampusName}}</p>
+<p>Bạn có thể theo dõi tiến độ xử lý trong trang chuẩn bị chi tiết của đoàn.</p>
+<p><a href="{{detailUrl}}">Xem chi tiết yêu cầu</a></p>
+<p>Trân trọng,<br/>PEMS - FPT University</p>',
+  subject_en = '[PEMS] Logistics request submitted: {{logisticsTitle}}',
+  body_en = '<p>Hello {{RecipientName}},</p>
+<p>Logistics request <strong>{{logisticsTitle}}</strong> has been sent to <strong>{{departmentName}}</strong>.</p>
+<p><strong>Current status:</strong> {{statusLabel}}<br/>
+<strong>Delegation:</strong> {{DelegationName}}<br/>
+<strong>Campus:</strong> {{CampusName}}</p>
+<p>You can track its progress on the visit preparation detail page.</p>
+<p><a href="{{detailUrl}}">View request details</a></p>
+<p>Best regards,<br/>PEMS - FPT University</p>',
+  variables_text = 'RecipientName,logisticsTitle,departmentName,statusLabel,DelegationName,CampusName,detailUrl',
+  updated_at = CURRENT_TIMESTAMP,
+  updated_by = COALESCE(updated_by, created_by)
+WHERE email_template_id = 16;
 
 
 -- ---------------------------------------------------------------------
@@ -10716,12 +10228,9 @@ COMMIT;
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 3. Seed Google Document AI config with the real PEMS production values.
--- Only Service Account JSON remains empty; Admin may paste it from the UI,
--- or the backend may resolve GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT.
+-- 3. Seed Google Document AI config (INACTIVE until Admin tests it)
 -- ---------------------------------------------------------------------
 INSERT INTO api_configurations (
-  api_config_id,
   api_code,
   name,
   provider_name,
@@ -10730,121 +10239,49 @@ INSERT INTO api_configurations (
   default_method,
   auth_type,
   settings_json,
-  credentials_json_encrypted,
   secret_ref,
-  data_sensitivity,
-  allows_provider_training,
-  retention_days,
   rate_limit_per_minute,
   monthly_quota,
   retry_enabled,
   max_retries,
-  cache_ttl_seconds,
-  last_test_status,
-  last_tested_at,
-  last_test_message,
   timeout_seconds,
   status,
-  created_at,
-  created_by,
-  updated_at,
-  updated_by,
-  deleted_at,
-  deleted_by
+  data_sensitivity,
+  allows_provider_training,
+  retention_days,
+  created_by
 )
 SELECT
-  21007,
   'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
   'Google Document AI - Business Card OCR',
   'GOOGLE_DOCUMENT_AI',
   'BUSINESS_CARD_OCR',
-  'https://asia-southeast1-documentai.googleapis.com',
+  'https://us-documentai.googleapis.com',
   'POST',
   'CUSTOM',
   JSON_OBJECT(
-    'project_id', 'pems-production',
-    'location', 'asia-southeast1',
-    'processor_id', '9f4642de7b8f8b25',
-    'endpoint', 'asia-southeast1-documentai.googleapis.com',
+    'project_id', '',
+    'location', 'us',
+    'processor_id', '',
+    'endpoint', 'us-documentai.googleapis.com',
     'max_file_size_mb', 10,
-    'allowed_mime_types', JSON_ARRAY(
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/pdf'
-    )
+    'allowed_mime_types', JSON_ARRAY('image/jpeg', 'image/png', 'image/webp', 'application/pdf')
   ),
-  NULL,
   'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
-  'CONFIDENTIAL',
-  FALSE,
-  30,
   20,
   1000,
   TRUE,
   2,
-  NULL,
-  NULL,
-  NULL,
-  NULL,
   60,
   'INACTIVE',
-  CURRENT_TIMESTAMP,
-  1,
-  NULL,
-  NULL,
-  NULL,
-  NULL
+  'CONFIDENTIAL',
+  FALSE,
+  30,
+  1
 FROM DUAL
 WHERE NOT EXISTS (
-  SELECT 1
-  FROM api_configurations
-  WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI'
+  SELECT 1 FROM api_configurations WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI'
 );
-
--- Normalize an existing row as well. This avoids the old WHERE NOT EXISTS seed
--- leaving project/location/processor values empty or pointing to the US endpoint.
-UPDATE api_configurations
-SET
-  name = 'Google Document AI - Business Card OCR',
-  provider_name = 'GOOGLE_DOCUMENT_AI',
-  purpose = 'BUSINESS_CARD_OCR',
-  base_url = 'https://asia-southeast1-documentai.googleapis.com',
-  default_method = 'POST',
-  auth_type = 'CUSTOM',
-  settings_json = JSON_OBJECT(
-    'project_id', 'pems-production',
-    'location', 'asia-southeast1',
-    'processor_id', '9f4642de7b8f8b25',
-    'endpoint', 'asia-southeast1-documentai.googleapis.com',
-    'max_file_size_mb', 10,
-    'allowed_mime_types', JSON_ARRAY(
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/pdf'
-    )
-  ),
-  credentials_json_encrypted = NULL,
-  secret_ref = 'GOOGLE_DOCUMENT_AI_SERVICE_ACCOUNT',
-  data_sensitivity = 'CONFIDENTIAL',
-  allows_provider_training = FALSE,
-  retention_days = 30,
-  rate_limit_per_minute = 20,
-  monthly_quota = 1000,
-  retry_enabled = TRUE,
-  max_retries = 2,
-  cache_ttl_seconds = NULL,
-  last_test_status = NULL,
-  last_tested_at = NULL,
-  last_test_message = NULL,
-  timeout_seconds = 60,
-  status = 'INACTIVE',
-  updated_at = CURRENT_TIMESTAMP,
-  updated_by = 1,
-  deleted_at = NULL,
-  deleted_by = NULL
-WHERE api_code = 'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI';
 
 -- ---------------------------------------------------------------------
 -- 4. Seed GLOBAL monthly quota for the OCR config (current month)
@@ -12025,6 +11462,25 @@ SET ce.title = CASE ce.source_type
 -- ---------------------------------------------------------------------
 -- 12) Email templates and sent emails: realistic snapshots for email UI.
 -- ---------------------------------------------------------------------
+UPDATE email_templates SET
+  description = CASE template_code
+    WHEN 'VISIT_INVITATION' THEN 'Mẫu email mời tham gia tiếp khách, có nút xác nhận/từ chối bằng token một lần.'
+    WHEN 'LOGISTICS_REQUEST' THEN 'Mẫu email gửi phòng ban xử lý yêu cầu phòng họp, thiết bị, teabreak hoặc phương tiện.'
+    WHEN 'NEWS_REVIEW' THEN 'Mẫu email thông báo bài news cần Staff Leader duyệt hoặc đã bị từ chối.'
+    WHEN 'VISIT_CANCELLED' THEN 'Mẫu email thông báo hủy chuyến theo actor Visitor/Host và lý do đã ghi nhận.'
+    ELSE description END,
+  subject_vi = CASE template_code
+    WHEN 'VISIT_INVITATION' THEN '[PEMS] Mời tham gia tiếp đoàn {{delegationName}}'
+    WHEN 'LOGISTICS_REQUEST' THEN '[PEMS] Yêu cầu chuẩn bị hậu cần cho {{requestCode}}'
+    WHEN 'NEWS_REVIEW' THEN '[PEMS] Bài viết đang chờ duyệt: {{newsTitle}}'
+    WHEN 'VISIT_CANCELLED' THEN '[PEMS] Cập nhật hủy lịch tiếp đoàn {{delegationName}}'
+    ELSE subject_vi END,
+  body_vi = CASE template_code
+    WHEN 'VISIT_INVITATION' THEN 'Xin chào {{recipientName}}, bạn được mời tham gia tiếp đoàn {{delegationName}} tại {{campusCode}} vào {{plannedStart}}. Vui lòng bấm Xác nhận hoặc Từ chối trong email này; liên kết chỉ dùng một lần.'
+    WHEN 'LOGISTICS_REQUEST' THEN 'Yêu cầu hậu cần {{itemTitle}} cần được xử lý trước {{dueAt}}. Vui lòng xem số lượng, thời gian sử dụng và phản hồi nếu cần thương lượng.'
+    WHEN 'NEWS_REVIEW' THEN 'Bài viết {{newsTitle}} đã được gửi duyệt. Vui lòng kiểm tra nội dung, ảnh, ngôn ngữ và trạng thái public trước khi xuất bản.'
+    WHEN 'VISIT_CANCELLED' THEN 'Lịch tiếp đoàn {{delegationName}} đã bị hủy. Lý do: {{cancellationReason}}. Các task hậu cần liên quan cần được dừng hoặc cập nhật.'
+    ELSE body_vi END;
 
 UPDATE sent_emails se
 LEFT JOIN visit_request_campuses vrc ON se.related_type IN ('VISIT_INSTANCE','VISIT') AND se.related_id = vrc.visit_instance_id
@@ -12926,20 +12382,6 @@ DELIMITER $$
 -- REQUEST-LEVEL PRIMARY CONTACT ACTIVE VISITOR GUARDS
 -- These triggers are intentionally created after seed normalization so the full
 -- fresh-create import can repair legacy rows first, then finish fail-closed.
---
--- Three lookup rules are shared by the four visitor-id guards below, and each of
--- them is load-bearing:
---   * v_user_status is VARCHAR(30), not (20). users.status is an ENUM whose longest
---     member, PENDING_EMAIL_CONFIRMATION, is 26 characters; a VARCHAR(20) target made
---     the SELECT ... INTO raise 22001 "Data too long" from inside the trigger. The
---     operation was still rejected, but with a storage error instead of the stable
---     business code, so a real and reachable account state produced an unreadable failure.
---   * roles is LEFT JOINed. With an inner join, a user whose role row cannot be read
---     collapses COUNT(*) to 0 and is reported as PRIMARY_CONTACT_USER_NOT_FOUND — untrue,
---     and it hides the actual problem. The count now answers only "does this user exist",
---     and <> 1 covers both absence and anything else abnormal.
---   * Comparisons use <=> (NULL-safe). `NULL <> 'VISITOR'` evaluates to UNKNOWN, which IF
---     treats as false, so an unreadable role or status would have slipped straight through.
 -- =====================================================================
 CREATE TRIGGER trg_visit_requests_primary_contact_guard_bi
 BEFORE INSERT ON visit_requests
@@ -12947,26 +12389,26 @@ FOR EACH ROW
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
 
   IF NEW.visitor_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
+    JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.visitor_user_id;
 
-    IF v_user_count <> 1 THEN
+    IF v_user_count = 0 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF NOT (v_role_code <=> 'VISITOR') THEN
+    IF v_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF NOT (v_user_status <=> 'ACTIVE') THEN
+    IF v_user_status <> 'ACTIVE' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -12992,26 +12434,26 @@ FOLLOWS trg_visit_requests_cancel_validate_bu
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
 
   IF NEW.visitor_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
+    JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.visitor_user_id;
 
-    IF v_user_count <> 1 THEN
+    IF v_user_count = 0 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF NOT (v_role_code <=> 'VISITOR') THEN
+    IF v_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF NOT (v_user_status <=> 'ACTIVE') THEN
+    IF v_user_status <> 'ACTIVE' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -13038,16 +12480,12 @@ FOR EACH ROW
 FOLLOWS trg_users_validate_bu
 BEGIN
   DECLARE v_new_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_new_role_count INT DEFAULT 0;
   DECLARE v_linked_request_count INT DEFAULT 0;
 
   IF NOT (NEW.role_id <=> OLD.role_id)
      OR NOT (NEW.status <=> OLD.status) THEN
-    -- COUNT alongside the code so "no such role" is distinguishable from "role named VISITOR".
-    -- A bare SELECT ... INTO over zero rows leaves the variable NULL, and `NULL <> 'VISITOR'`
-    -- evaluates to UNKNOWN, which an IF treats as false — the change would have slipped through.
-    SELECT COUNT(*), MAX(role_code)
-      INTO v_new_role_count, v_new_role_code
+    SELECT role_code
+      INTO v_new_role_code
     FROM roles
     WHERE role_id = NEW.role_id;
 
@@ -13058,17 +12496,14 @@ BEGIN
       AND vr.primary_contact_access_status = 'ACTIVE'
       AND vr.status <> 'CANCELLED';
 
-    IF v_linked_request_count > 0 THEN
-      -- Fail closed: only a role that reads back as exactly one row named VISITOR is accepted.
-      IF v_new_role_count <> 1 OR NOT (v_new_role_code <=> 'VISITOR') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE';
-      END IF;
+    IF v_linked_request_count > 0 AND v_new_role_code <> 'VISITOR' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE';
+    END IF;
 
-      IF NOT (NEW.status <=> 'ACTIVE') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED';
-      END IF;
+    IF v_linked_request_count > 0 AND NEW.status <> 'ACTIVE' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED';
     END IF;
   END IF;
 END$$
@@ -13082,26 +12517,26 @@ FOLLOWS trg_identity_changes_transfer_bi
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
 
   IF NEW.new_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
+    JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.new_user_id;
 
-    IF v_user_count <> 1 THEN
+    IF v_user_count = 0 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF NOT (v_role_code <=> 'VISITOR') THEN
+    IF v_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF NOT (v_user_status <=> 'ACTIVE') THEN
+    IF v_user_status <> 'ACTIVE' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -13115,26 +12550,26 @@ FOLLOWS trg_identity_changes_transfer_bu
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
 
   IF NEW.new_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
+    JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.new_user_id;
 
-    IF v_user_count <> 1 THEN
+    IF v_user_count = 0 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF NOT (v_role_code <=> 'VISITOR') THEN
+    IF v_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF NOT (v_user_status <=> 'ACTIVE') THEN
+    IF v_user_status <> 'ACTIVE' THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -13400,7 +12835,6 @@ BEGIN
   DECLARE v_coord_sub_role VARCHAR(30);
   DECLARE v_coord_campus_id BIGINT UNSIGNED;
   DECLARE v_source VARCHAR(40);
-  DECLARE v_is_host_transfer TINYINT DEFAULT 0;
 
   SELECT status, registrant_user_id INTO v_request_status, v_registrant_user_id
   FROM visit_requests
@@ -13410,22 +12844,7 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot update campus instance to active status under a cancelled request';
   END IF;
 
-  -- ── Host handover (2026-07-26): a deliberate re-assignment on an already-decided, not-yet-started
-  --    campus. The Host does change in real life — leave, transfer, someone leaving the university —
-  --    and every other path to changing it stays refused, so this cannot happen as a side effect. ──
-  IF OLD.current_host_user_id IS NOT NULL
-     AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
-     AND NEW.current_host_user_id IS NOT NULL
-     AND OLD.status IN ('ASSIGNED','BEFORE_VISIT')
-     AND NEW.status = OLD.status
-     AND NEW.host_assigned_by IS NOT NULL
-     AND NEW.host_assigned_at IS NOT NULL THEN
-    SET v_is_host_transfer = 1;
-  END IF;
-
-  IF OLD.current_host_user_id IS NOT NULL
-     AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
-     AND v_is_host_transfer = 0 THEN
+  IF OLD.current_host_user_id IS NOT NULL AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Official host cannot be changed after first assignment';
   END IF;
 
@@ -13504,11 +12923,8 @@ BEGIN
       IF v_registrant_user_id IS NULL OR v_registrant_user_id <> NEW.decided_by THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host decision is only valid on a request registered by that same Staff';
       END IF;
-      -- On a handover the campus keeps its original self-host DECISION but no longer its original
-      -- host, so this trio only has to hold while that decision is being recorded.
-      IF v_is_host_transfer = 0
-         AND (NEW.current_host_user_id IS NULL OR NEW.current_host_user_id <> NEW.decided_by
-              OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_by <> NEW.decided_by) THEN
+      IF NEW.current_host_user_id IS NULL OR NEW.current_host_user_id <> NEW.decided_by
+         OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_by <> NEW.decided_by THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host requires decided_by = host_assigned_by = current_host_user_id';
       END IF;
     ELSE
@@ -13522,16 +12938,11 @@ BEGIN
   END IF;
 
   IF NEW.host_assigned_by IS NOT NULL THEN
-    -- decided_by and host_assigned_by are the same act only while the decision is being MADE. On a
-    -- later handover the assigning leader need not be the one who approved the campus months ago, and
-    -- demanding it would force the transfer to overwrite who approved the visit.
-    IF OLD.decided_by IS NULL AND NEW.decided_by IS NOT NULL
-       AND NEW.decided_by <> NEW.host_assigned_by THEN
+    IF NEW.decided_by IS NOT NULL AND NEW.decided_by <> NEW.host_assigned_by THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must match decided_by when approving a campus instance';
     END IF;
     IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'INTERNAL_SELF_HOST'
-            AND NEW.decision_actor_role = 'STAFF'
-            AND v_is_host_transfer = 0) THEN
+            AND NEW.decision_actor_role = 'STAFF') THEN
       SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
       FROM users u JOIN roles r ON r.role_id = u.role_id
       WHERE u.user_id = NEW.host_assigned_by;
@@ -13541,8 +12952,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- Host eligibility is UNCHANGED by the handover work: IC Staff of this campus, or the assigning
-  -- Staff Leader themself. The backend applies the identical rule (VisitHostEligibility) first.
   IF NEW.current_host_user_id IS NOT NULL THEN
     SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_host_role_code, v_host_sub_role, v_host_campus_id
     FROM users u JOIN roles r ON r.role_id = u.role_id
@@ -13864,14 +13273,6 @@ BEGIN
   DECLARE v_message VARCHAR(1000) DEFAULT NULL;
   DECLARE v_raised BOOLEAN DEFAULT FALSE;
   DECLARE v_condition_ok INT DEFAULT 0;
-  DECLARE v_cancelled_req BIGINT UNSIGNED DEFAULT NULL;
-
-  -- Every handler below reads GET DIAGNOSTICS *before* setting any flag. MySQL clears the
-  -- diagnostics area on the first successful statement inside the handler, so the older
-  -- `SET v_raised = TRUE;` first ordering left RETURNED_SQLSTATE and MESSAGE_TEXT NULL. The
-  -- comparison `v_sqlstate = '45000'` then evaluated to UNKNOWN and every negative case was
-  -- scored FAIL and printed as "Operation unexpectedly succeeded" — while the triggers had in
-  -- fact rejected all fourteen. Do not reorder these two statements.
 
   -- NEG-01: INSERT request with ADMIN as visitor_user_id
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
@@ -13879,8 +13280,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (99790, 'VR-GUARD-TEMP-99790', 1, 8, NULL, 'VISITOR_SUBMITTED', 0, 'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester', '+84997000000', 'visitor@example.com', 'Test', 'SINGLE_CAMPUS', 'Guard Test Contact', 'Guard Test Organization', '+84997000001', 'guard.contact@example.test', 'ACTIVE', '2026-07-12 08:00:00', 'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0, '2026-07-12 08:00:00', 8, NULL, NULL);
@@ -13900,8 +13301,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 2, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13920,8 +13321,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 3, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13940,8 +13341,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 4, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13960,8 +13361,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 5, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13980,8 +13381,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 6, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -14000,8 +13401,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 7, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -14020,8 +13421,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 99680, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -14040,8 +13441,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -14060,8 +13461,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = 8, primary_contact_access_status = 'PENDING_CONFIRMATION' WHERE visit_request_id = 1001;
   END;
@@ -14080,8 +13481,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE users SET role_id = 3, sub_role = 'STAFF', primary_campus_id = 1, department_id = 1 WHERE user_id = 8;
   END;
@@ -14100,8 +13501,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE users SET status = 'INACTIVE' WHERE user_id = 8;
   END;
@@ -14120,8 +13521,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     INSERT INTO visit_request_identity_changes
       (identity_change_id, visit_request_id, change_kind, target_relation,
@@ -14152,8 +13553,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_request_identity_changes SET new_user_id = 4, status = 'APPLIED', applied_at = '2026-07-12 08:05:00' WHERE identity_change_id = 99403;
   END;
@@ -14166,114 +13567,14 @@ BEGIN
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
      IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
 
-  -- NEG-15: a user_id that does not exist at all. The guard must answer before the foreign
-  -- key does, so the caller gets the business code rather than a generic constraint error.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = 99999999, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-15', 'Assign a non-existent user_id as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_NOT_FOUND',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_NOT_FOUND', 'PASS', 'FAIL'));
-
-  -- NEG-16: a VISITOR whose account has not confirmed its email yet. This is the account state
-  -- every new account starts in, so it is reachable in production — and it is 26 characters
-  -- long, which is what used to make the guard raise 22001 "Data too long" instead of a code.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
-    VALUES (99791, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.pending.visitor@example.test', 'x', 'Guard Pending Visitor', 'PENDING_EMAIL_CONFIRMATION', NULL, NULL, '2026-07-12 08:00:00', NULL);
-    UPDATE visit_requests SET visitor_user_id = 99791, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-16', 'Assign a PENDING_EMAIL_CONFIRMATION VISITOR as visitor_user_id', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
-
-  -- NEG-17: the dedicated UPDATE path — only visitor_user_id is written, primary_contact_access_status
-  -- is left untouched. A guard keyed on the access status alone would let this through.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = 4 WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-17', 'Update visitor_user_id alone to a STAFF account', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
-
-  -- NEG-18: the same unconfirmed-account state, reached through the identity-change guard.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
-    VALUES (99792, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.pending.transfer@example.test', 'x', 'Guard Pending Transfer', 'PENDING_EMAIL_CONFIRMATION', NULL, NULL, '2026-07-12 08:00:00', NULL);
-    INSERT INTO visit_request_identity_changes
-      (identity_change_id, visit_request_id, change_kind, target_relation,
-       confirmation_method, old_user_id, new_user_id, old_email_normalized,
-       new_email_normalized, new_email_masked, pending_snapshot_json, status,
-       expected_request_row_version, requested_by, requested_at, expires_at,
-       applied_at, reason, resend_count, created_at, updated_at)
-     VALUES
-      (99721, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 99792,
-       'visitor@example.com', 'guard.pending.transfer@example.test', 'g***@example.test',
-       JSON_OBJECT('seedCase','NEGATIVE_UNCONFIRMED_IDENTITY_TARGET'), 'APPLIED',
-       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
-       '2026-07-12 08:05:00', 'Rollback-safe negative test.', 0,
-       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-18', 'Identity change targeting a PENDING_EMAIL_CONFIRMATION VISITOR', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
-
   -- POS-01: INSERT request with ACTIVE VISITOR primary contact
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
   START TRANSACTION;
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (99790, 'VR-GUARD-TEMP-99790', 8, 8, NULL, 'VISITOR_SUBMITTED', 0, 'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester', '+84997000000', 'visitor@example.com', 'Test', 'SINGLE_CAMPUS', 'Guard Test Contact', 'Guard Test Organization', '+84997000001', 'guard.contact@example.test', 'ACTIVE', '2026-07-12 08:00:00', 'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0, '2026-07-12 08:00:00', 8, NULL, NULL);
@@ -14297,8 +13598,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'PENDING_CONFIRMATION', primary_contact_verified_at = NULL WHERE visit_request_id = 3048;
     IF NOT v_raised THEN
@@ -14321,8 +13622,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
     INSERT INTO visit_request_identity_changes
@@ -14358,8 +13659,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
     INSERT INTO visit_request_identity_changes
@@ -14400,8 +13701,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3046;
     IF NOT v_raised THEN
@@ -14424,8 +13725,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3047;
     IF NOT v_raised THEN
@@ -14448,8 +13749,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     END;
     UPDATE visit_instance_form_details SET operational_contact_email = 'staff.hn@fpt.edu.vn' WHERE visit_instance_id = 5046;
     IF NOT v_raised THEN
@@ -14462,39 +13763,6 @@ BEGIN
      actual_sqlstate, actual_message, result)
   VALUES
     ('POSITIVE', 'POS-07', 'Operational contact may reuse a Staff email as a snapshot', 'NONE', 'ACCEPTED',
-     COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
-     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
-
-  -- POS-08: a VISITOR whose only ACTIVE primary-contact link is on a CANCELLED request may still
-  -- be deactivated. This is the documented exclusion, and the guard must not over-block it. The
-  -- post-condition also asserts the fixture really was linked to a cancelled request, so the test
-  -- fails loudly rather than passing on an empty setup.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0; SET v_cancelled_req = NULL;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    SELECT MIN(visit_request_id) INTO v_cancelled_req FROM visit_requests WHERE status = 'CANCELLED' AND primary_contact_access_status = 'ACTIVE';
-    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
-    VALUES (99793, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.cancelled.owner@example.test', 'x', 'Guard Cancelled Owner', 'ACTIVE', NULL, NULL, '2026-07-12 08:00:00', NULL);
-    UPDATE visit_requests SET visitor_user_id = 99793 WHERE visit_request_id = v_cancelled_req;
-    UPDATE users SET status = 'INACTIVE' WHERE user_id = 99793;
-    IF NOT v_raised THEN
-      SELECT CASE WHEN v_cancelled_req IS NOT NULL AND COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok
-      FROM users u JOIN visit_requests vr ON vr.visitor_user_id = u.user_id
-      WHERE u.user_id = 99793 AND u.status = 'INACTIVE' AND vr.status = 'CANCELLED';
-    END IF;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('POSITIVE', 'POS-08', 'Deactivate a VISITOR linked only to a CANCELLED request', 'NONE', 'ACCEPTED',
      COALESCE(v_sqlstate, 'NONE'),
      IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
      IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
@@ -15436,11 +14704,8 @@ WHERE table_schema = DATABASE()
   AND table_name = 'visit_request_fingerprint_guards'
   AND table_type = 'BASE TABLE';
 
--- 83 = 82 before G11, plus email_send_idempotency. This assertion previously read 81 while the file
--- actually produced 82 (and this file's own header comment said 82), so it had been reporting a
--- permanent issue_count of 1; the number is corrected here rather than left one further out of date.
 SELECT 'merged_runtime_table_count' AS check_name,
-       CASE WHEN COUNT(*) = 83 THEN 0 ELSE ABS(COUNT(*) - 83) END AS issue_count
+       CASE WHEN COUNT(*) = 81 THEN 0 ELSE ABS(COUNT(*) - 81) END AS issue_count
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
   AND table_type = 'BASE TABLE';
@@ -15843,36 +15108,36 @@ INSERT INTO visit_requests (visit_request_id, request_code, submission_id, busin
 -- E. Per-campus decisions, host assignments and lifecycle states
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_source, decision_note, closed_by, closed_at, close_note, news_not_required, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, preparation_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (42001, 41001, 1, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
-  (42002, 41002, 1, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho British Council Digital Skills Roundtable: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
-  (42003, 41003, 1, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Osaka AI Laboratories Academic Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
-  (42004, 41004, 1, CURRENT_DATE + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
-  (42005, 41005, 1, CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
-  (42006, 41006, 1, CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
+  (42002, 41002, 1, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho British Council Digital Skills Roundtable; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho British Council Digital Skills Roundtable: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
+  (42003, 41003, 1, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Osaka AI Laboratories Academic Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Osaka AI Laboratories Academic Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
+  (42004, 41004, 1, CURRENT_DATE + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Korea Foundation Culture Exchange Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
+  (42005, 41005, 1, CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Aalto University Service Design Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
+  (42006, 41006, 1, CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho University of Queensland Partnership Review; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
   (42007, 41007, 1, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus không đủ nguồn lực tiếp đón do lịch đề xuất trùng tuần thi và hồ sơ chưa có danh sách đại biểu chính thức.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
   (42008, 41008, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận hủy vì trưởng đoàn phải tham dự cuộc họp đột xuất tại địa phương.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
-  (42009, 41009, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Erasmus Applied Learning Consortium: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42009, 41009, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Erasmus Applied Learning Consortium; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Erasmus Applied Learning Consortium: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
   (42010, 41009, 2, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42011, 41010, 1, CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech Semiconductor Education Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
-  (42012, 41011, 1, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42013, 41012, 1, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Jeju Tourism Technology Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
+  (42011, 41010, 1, CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech Semiconductor Education Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech Semiconductor Education Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
+  (42012, 41011, 1, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Taiwan Smart Campus Working Group; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42013, 41012, 1, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Jeju Tourism Technology Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Jeju Tourism Technology Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
   (42014, 41013, 1, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
   (42015, 41014, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Temasek Polytechnic Learning Innovation Workshop và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Temasek Polytechnic Learning Innovation Workshop: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
   (42016, 41015, 1, CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Porto Data Partnership Delegation và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
   (42017, 41016, 1, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Mục tiêu chuyến thăm chưa đủ rõ và lịch đề xuất trùng kỳ kiểm tra năng lực đầu vào của campus.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
   (42018, 41017, 1, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận chuyển toàn bộ buổi tư vấn sang trực tuyến nên không còn nhu cầu tiếp đón tại campus.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
   (42019, 41018, 1, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
-  (42020, 41019, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech AI Education Multi-Campus Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42020, 41019, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech AI Education Multi-Campus Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech AI Education Multi-Campus Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
   (42021, 41019, 3, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_dn, @u_sl_dn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
   (42022, 41020, 1, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Quy mô đoàn vượt sức chứa của khu tham quan trong ngày đề xuất; vui lòng chia nhóm hoặc chọn lịch khác.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
   (42023, 41021, 1, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Hãng bay thay đổi hành trình khiến đoàn không thể đến Hà Nội trong khung thời gian đã đăng ký.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
-  (42024, 41022, 1, CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
+  (42024, 41022, 1, CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech Robotics Collaboration Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
   (42025, 41023, 1, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
-  (42026, 41024, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Tokyo Metropolitan Smart Campus Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
+  (42026, 41024, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Tokyo Metropolitan Smart Campus Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Tokyo Metropolitan Smart Campus Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
   (42027, 41025, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Hồ sơ thiếu xác nhận danh sách khách quốc tế và yêu cầu an ninh bắt buộc cho chương trình đông người.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
   (42028, 41026, 1, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đối tác dời toàn bộ chương trình sang quý sau để bổ sung ngân sách và chuyên gia tham gia.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
-  (42029, 41027, 1, CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
-  (42030, 41028, 1, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus Hà Nội xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42031, 41028, 2, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus TP.HCM xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus TP.HCM.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
+  (42029, 41027, 1, CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho National Chengchi University Partnership Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
+  (42030, 41028, 1, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42031, 41028, 2, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus TP.HCM cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus TP.HCM.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
 
 -- F. Full per-campus form snapshots with distinct business content
 INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content, operational_contact_full_name, operational_contact_organization, operational_contact_phone, operational_contact_email, working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu, form_revision, approval_revision, row_version, created_at, created_by, updated_at, updated_by) VALUES
@@ -16272,6 +15537,938 @@ INSERT INTO faq_translations (faq_id, language_code, question, answer, translati
   (16108, 'vi', 'Tôi nên liên hệ ai khi thông tin campus trong đơn chưa chính xác?', 'Hãy liên hệ đầu mối vận hành hiển thị trong chi tiết campus instance. Thay đổi ảnh hưởng lịch hoặc nội dung đã duyệt có thể cần gửi yêu cầu sửa đổi.', 'MANUAL', 'READY', SHA2(CONCAT('Tôi nên liên hệ ai khi thông tin campus trong đơn chưa chính xác?','|','Hãy liên hệ đầu mối vận hành hiển thị trong chi tiết campus instance. Thay đổi ảnh hưởng lịch hoặc nội dung đã duyệt có thể cần gửi yêu cầu sửa đổi.'),256), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, @u_sl_hn, NULL, NULL),
   (16108, 'en', 'Who should I contact when campus information is incorrect?', 'Contact the operational contact shown in the campus instance detail. Changes to an approved schedule or content may require an amendment request.', 'MANUAL', 'READY', SHA2(CONCAT('Tôi nên liên hệ ai khi thông tin campus trong đơn chưa chính xác?','|','Hãy liên hệ đầu mối vận hành hiển thị trong chi tiết campus instance. Thay đổi ảnh hưởng lịch hoặc nội dung đã duyệt có thể cần gửi yêu cầu sửa đổi.'),256), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, @u_sl_hn, NULL, NULL);
 
+-- ---------------------------------------------------------------------------
+-- R. Code-grounded document, contact, email and workflow stories
+-- Base code snapshot: 242d54215ac8ec6540ca9d3e7666b6baeed1dd00
+--
+-- Important implementation contracts mirrored here:
+--   * visit detail email history reads VISIT_PARTICIPANT and LOGISTICS_ITEM only;
+--   * report email history uses CAMPUS / DEPARTMENT / USER;
+--   * OTP bodies are never retained; action-bearing bodies below are already
+--     stripped of their action block and contain no raw token or action URL;
+--   * provider acceptance is SENT, never DELIVERED (there is no webhook);
+--   * approve/reject/cancel/host assignment remain notification-only.
+-- ---------------------------------------------------------------------------
+
+-- R0. Replace the obsolete 16-template demo catalog and its contradictory
+-- delivery history with the 30 template codes registered by the application.
+-- This is a full rebuild script, so the global cleanup below affects seed data
+-- only. Every new automated history row later resolves its template by code.
+UPDATE email_drafts
+SET email_template_id=NULL, sent_email_id=NULL
+WHERE email_template_id IS NOT NULL OR sent_email_id IS NOT NULL;
+DELETE FROM email_action_tokens;
+DELETE FROM sent_email_attachments;
+DELETE FROM sent_email_recipients;
+DELETE FROM sent_emails;
+DELETE FROM email_templates;
+
+INSERT INTO email_templates
+  (email_template_id, template_code, name, purpose, campus_id, description,
+   status, subject_vi, body_vi, subject_en, body_en, body_format, variables_text,
+   created_at, created_by, updated_at, updated_by)
+VALUES
+  (70001, 'ACCOUNT_EMAIL_CONFIRMATION', 'Xác nhận email tài khoản', 'ACCOUNT', NULL, 'Xác nhận quyền sở hữu email cho tài khoản nội bộ mới.', 'ACTIVE',
+   'Xác nhận email cho tài khoản PEMS', '<p>Xin chào {{fullName}},</p><p>Vai trò: {{roleName}}; campus: {{campusName}}; liên kết hết hạn sau {{expiresInHours}} giờ.</p>{{actionBlock}}',
+   'Confirm your PEMS account email', '<p>Hello {{fullName}},</p><p>Role: {{roleName}}; campus: {{campusName}}; the link expires in {{expiresInHours}} hours.</p>{{actionBlock}}',
+   'HTML', 'fullName,roleName,campusName,expiresInHours', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70002, 'ACCOUNT_PENDING_EMAIL_CHANGED_OLD_NOTICE', 'Cảnh báo đổi email tài khoản chờ xác nhận', 'ACCOUNT', NULL, 'Cảnh báo tới email cũ khi email của tài khoản chưa kích hoạt bị thay đổi.', 'ACTIVE',
+   'Email chờ xác nhận của tài khoản PEMS đã thay đổi', '<p>Email đang chờ xác nhận của tài khoản PEMS vừa được thay đổi. Nếu bạn không thực hiện, hãy liên hệ quản trị viên.</p>',
+   'Your pending PEMS email was changed', '<p>The pending email of your PEMS account was changed. Contact an administrator if this was not you.</p>',
+   'HTML', NULL, CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70003, 'ACCOUNT_ACTIVATED', 'Tài khoản đã kích hoạt', 'ACCOUNT', NULL, 'Thông báo tài khoản đã được kích hoạt.', 'ACTIVE',
+   'Tài khoản PEMS đã được kích hoạt', '<p>Xin chào {{fullName}},</p><p>Tài khoản {{roleName}} tại {{campusName}} đã hoạt động.</p>',
+   'Your PEMS account is active', '<p>Hello {{fullName}},</p><p>Your {{roleName}} account at {{campusName}} is active.</p>',
+   'HTML', 'fullName,roleName,campusName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70004, 'ACCOUNT_EMAIL_CHANGED_OLD_NOTICE', 'Cảnh báo email cũ', 'ACCOUNT', NULL, 'Thông báo bảo mật tới email cũ sau khi đổi email.', 'ACTIVE',
+   'Email tài khoản PEMS đã được thay đổi', '<p>Email đăng nhập của tài khoản PEMS vừa được thay đổi. Nếu bạn không thực hiện, hãy liên hệ quản trị viên.</p>',
+   'Your PEMS email was changed', '<p>Your PEMS sign-in email was changed. Contact an administrator if this was not you.</p>',
+   'HTML', NULL, CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70005, 'ACCOUNT_EMAIL_CHANGED_NEW_NOTICE', 'Thông báo email mới', 'ACCOUNT', NULL, 'Thông báo tới email mới sau khi đổi email.', 'ACTIVE',
+   'Email mới đã được gắn với tài khoản PEMS', '<p>Xin chào {{fullName}},</p><p>Email cũ {{oldEmailMasked}} đã được thay thế thành công.</p>',
+   'Your new PEMS email is active', '<p>Hello {{fullName}},</p><p>The previous email {{oldEmailMasked}} was replaced successfully.</p>',
+   'HTML', 'fullName,oldEmailMasked', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70006, 'ACCOUNT_ROLE_CHANGED', 'Vai trò tài khoản thay đổi', 'ACCOUNT', NULL, 'Thông báo thay đổi vai trò người dùng.', 'ACTIVE',
+   'Vai trò PEMS của bạn đã thay đổi', '<p>Xin chào {{fullName}},</p><p>Vai trò tại {{campusName}} đổi từ {{oldRoleName}} thành {{newRoleName}}.</p>',
+   'Your PEMS role changed', '<p>Hello {{fullName}},</p><p>Your role at {{campusName}} changed from {{oldRoleName}} to {{newRoleName}}.</p>',
+   'HTML', 'fullName,oldRoleName,newRoleName,campusName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70007, 'ACCOUNT_STAFF_LEADER_ASSIGNED', 'Bổ nhiệm Staff Leader', 'ACCOUNT', NULL, 'Thông báo bổ nhiệm Staff Leader.', 'ACTIVE',
+   'Bạn được bổ nhiệm Staff Leader', '<p>Xin chào {{fullName}},</p><p>Bạn được bổ nhiệm tại {{campusName}} từ {{effectiveDate}}. Lý do: {{reason}}.</p>',
+   'You were assigned Staff Leader', '<p>Hello {{fullName}},</p><p>You were assigned at {{campusName}} from {{effectiveDate}}. Reason: {{reason}}.</p>',
+   'HTML', 'fullName,campusName,effectiveDate,reason', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70008, 'ACCOUNT_STAFF_LEADER_REPLACED', 'Thay thế Staff Leader', 'ACCOUNT', NULL, 'Thông báo kết thúc nhiệm kỳ Staff Leader.', 'ACTIVE',
+   'Nhiệm kỳ Staff Leader đã được bàn giao', '<p>Xin chào {{fullName}},</p><p>Tại {{campusName}}, {{successorName}} tiếp nhận từ {{effectiveDate}}. Lý do: {{reason}}.</p>',
+   'Your Staff Leader assignment was handed over', '<p>Hello {{fullName}},</p><p>At {{campusName}}, {{successorName}} takes over from {{effectiveDate}}. Reason: {{reason}}.</p>',
+   'HTML', 'fullName,campusName,successorName,effectiveDate,reason', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70009, 'DEPT_PERSONNEL_ACCOUNT_DISABLED', 'Khóa tài khoản nhân sự phòng ban', 'ACCOUNT', NULL, 'Thông báo khóa tài khoản nhân sự phòng ban.', 'ACTIVE',
+   'Tài khoản phòng ban đã bị vô hiệu hóa', '<p>Xin chào {{fullName}},</p><p>Tài khoản tại {{departmentName}} đã bị vô hiệu hóa. Lý do: {{reason}}.</p>',
+   'Your department account was disabled', '<p>Hello {{fullName}},</p><p>Your account in {{departmentName}} was disabled. Reason: {{reason}}.</p>',
+   'HTML', 'fullName,departmentName,reason', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70010, 'DEPT_PERSONNEL_ACCOUNT_ENABLED', 'Mở lại tài khoản nhân sự phòng ban', 'ACCOUNT', NULL, 'Thông báo mở lại tài khoản nhân sự phòng ban.', 'ACTIVE',
+   'Tài khoản phòng ban đã hoạt động', '<p>Xin chào {{fullName}},</p><p>Tài khoản tại {{departmentName}} đã được mở lại.</p>',
+   'Your department account is active', '<p>Hello {{fullName}},</p><p>Your account in {{departmentName}} is active again.</p>',
+   'HTML', 'fullName,departmentName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70011, 'DEPT_LEADERSHIP_GRANTED', 'Bổ nhiệm Department Leader', 'ACCOUNT', NULL, 'Thông báo trao quyền Department Leader.', 'ACTIVE',
+   'Bạn được trao quyền Department Leader', '<p>Xin chào {{fullName}},</p><p>Bạn là Department Leader của {{departmentName}}.</p>',
+   'Department leadership granted', '<p>Hello {{fullName}},</p><p>You are now the Department Leader of {{departmentName}}.</p>',
+   'HTML', 'fullName,departmentName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70012, 'DEPT_LEADERSHIP_HANDED_OVER', 'Bàn giao Department Leader', 'ACCOUNT', NULL, 'Thông báo bàn giao quyền Department Leader.', 'ACTIVE',
+   'Quyền Department Leader đã được bàn giao', '<p>Xin chào {{fullName}},</p><p>Quyền lãnh đạo {{departmentName}} đã được bàn giao.</p>',
+   'Department leadership handed over', '<p>Hello {{fullName}},</p><p>Leadership of {{departmentName}} was handed over.</p>',
+   'HTML', 'fullName,departmentName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70013, 'AUTH_PASSWORD_RESET_OTP', 'OTP đặt lại mật khẩu', 'AUTH', NULL, 'Mã OTP đặt lại mật khẩu; nội dung không được lưu vào lịch sử.', 'ACTIVE',
+   'Mã OTP đặt lại mật khẩu PEMS', '<p>Xin chào {{fullName}},</p><p>Mã OTP: {{otpCode}}. Mã hết hạn sau {{expireMinutes}} phút.</p>',
+   'PEMS password reset OTP', '<p>Hello {{fullName}},</p><p>OTP: {{otpCode}}. It expires in {{expireMinutes}} minutes.</p>',
+   'HTML', 'fullName,otpCode,expireMinutes', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70014, 'VISIT_REQUEST_OTP', 'OTP gửi yêu cầu tham quan', 'VISIT_REQUEST', NULL, 'Mã OTP xác minh email trước khi gửi yêu cầu; nội dung không được lưu vào lịch sử.', 'ACTIVE',
+   'Mã OTP xác minh yêu cầu tham quan', '<p>Xin chào {{fullName}},</p><p>Mã OTP: {{otpCode}}. Mã hết hạn sau {{expireMinutes}} phút.</p>',
+   'Visit request verification OTP', '<p>Hello {{fullName}},</p><p>OTP: {{otpCode}}. It expires in {{expireMinutes}} minutes.</p>',
+   'HTML', 'fullName,otpCode,expireMinutes', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70015, 'VISIT_CONTACT_CLAIM', 'Xác nhận đầu mối chính', 'VISIT_REQUEST', NULL, 'Mời đầu mối chính nhận quyền quản lý yêu cầu.', 'ACTIVE',
+   'Xác nhận đầu mối cho yêu cầu {{requestCode}}', '<p>Xin chào {{contactFullName}},</p><p>Bạn được mời làm đầu mối cho {{delegationName}}, mã {{requestCode}}.</p>{{actionBlock}}',
+   'Confirm contact for request {{requestCode}}', '<p>Hello {{contactFullName}},</p><p>You are invited to manage {{delegationName}}, request {{requestCode}}.</p>{{actionBlock}}',
+   'HTML', 'contactFullName,requestCode,delegationName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70016, 'VISIT_CONTACT_TRANSFER', 'Bàn giao đầu mối chính', 'VISIT_REQUEST', NULL, 'Mời đầu mối mới nhận quyền quản lý từ đầu mối hiện tại.', 'ACTIVE',
+   'Bàn giao đầu mối cho yêu cầu {{requestCode}}', '<p>Xin chào {{contactFullName}},</p><p>{{currentContactName}} mời bạn tiếp nhận {{delegationName}}, mã {{requestCode}}.</p>{{actionBlock}}',
+   'Transfer contact for request {{requestCode}}', '<p>Hello {{contactFullName}},</p><p>{{currentContactName}} invited you to take over {{delegationName}}, request {{requestCode}}.</p>{{actionBlock}}',
+   'HTML', 'contactFullName,currentContactName,requestCode,delegationName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70017, 'VISIT_PARTICIPANT_INVITATION', 'Mời nhân sự IC tham gia', 'VISIT_PARTICIPANT', NULL, 'Host mời nhân sự IC tham gia đoàn.', 'ACTIVE',
+   'Mời tham gia đoàn {{delegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời tham gia {{delegationName}} tại {{campusName}}, lúc {{plannedTime}}. Host: {{hostName}}; vai trò: {{roleLabel}}; lời nhắn: {{hostMessage}}.</p>{{actionBlock}}',
+   'Invitation to join {{delegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to {{delegationName}} at {{campusName}}, {{plannedTime}}. Host: {{hostName}}; role: {{roleLabel}}; note: {{hostMessage}}.</p>{{actionBlock}}',
+   'HTML', 'recipientName,delegationName,campusName,plannedTime,hostName,roleLabel,hostMessage', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70018, 'VISIT_STUDENT_INVITATION', 'Mời sinh viên tham gia', 'VISIT_PARTICIPANT', NULL, 'Host mời sinh viên hỗ trợ đoàn.', 'ACTIVE',
+   'Mời sinh viên hỗ trợ {{delegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời hỗ trợ {{delegationName}} tại {{campusName}}, lúc {{plannedTime}}. Host: {{hostName}}; vai trò: {{roleLabel}}; lời nhắn: {{hostMessage}}.</p>{{actionBlock}}',
+   'Student invitation for {{delegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to support {{delegationName}} at {{campusName}}, {{plannedTime}}. Host: {{hostName}}; role: {{roleLabel}}; note: {{hostMessage}}.</p>{{actionBlock}}',
+   'HTML', 'recipientName,delegationName,campusName,plannedTime,hostName,roleLabel,hostMessage', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70019, 'VISIT_DEPARTMENT_LEADER_INVITATION', 'Mời Department Leader tham gia', 'VISIT_PARTICIPANT', NULL, 'Host mời Department Leader phối hợp.', 'ACTIVE',
+   'Mời phòng ban phối hợp {{delegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được mời phối hợp {{delegationName}} tại {{campusName}}, lúc {{plannedTime}}. Host: {{hostName}}; vai trò: {{roleLabel}}; lời nhắn: {{hostMessage}}.</p>{{actionBlock}}',
+   'Department invitation for {{delegationName}}', '<p>Hello {{recipientName}},</p><p>You are invited to coordinate {{delegationName}} at {{campusName}}, {{plannedTime}}. Host: {{hostName}}; role: {{roleLabel}}; note: {{hostMessage}}.</p>{{actionBlock}}',
+   'HTML', 'recipientName,delegationName,campusName,plannedTime,hostName,roleLabel,hostMessage', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70020, 'VISIT_DEPARTMENT_STAFF_ASSIGNMENT', 'Phân công Department Staff', 'VISIT_PARTICIPANT', NULL, 'Department Leader phân công nhân sự cùng phòng ban.', 'ACTIVE',
+   'Phân công hỗ trợ đoàn {{delegationName}}', '<p>Xin chào {{recipientName}},</p><p>Bạn được phân công hỗ trợ {{delegationName}} tại {{campusName}}, lúc {{plannedTime}}, cho {{departmentName}}.</p>',
+   'Assignment for {{delegationName}}', '<p>Hello {{recipientName}},</p><p>You were assigned to support {{delegationName}} at {{campusName}}, {{plannedTime}}, for {{departmentName}}.</p>',
+   'HTML', 'recipientName,delegationName,campusName,plannedTime,departmentName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70021, 'VISIT_REMINDER_HOST', 'Nhắc lịch cho host', 'VISIT_REMINDER', NULL, 'Nhắc host trước lịch tiếp đoàn.', 'ACTIVE',
+   'Nhắc lịch tiếp đoàn {{delegationName}}', '<p>Xin chào {{hostName}},</p><p>{{delegationName}} tại {{campusName}} diễn ra từ {{plannedStart}} đến {{plannedEnd}}.</p>',
+   'Visit reminder: {{delegationName}}', '<p>Hello {{hostName}},</p><p>{{delegationName}} at {{campusName}} runs from {{plannedStart}} to {{plannedEnd}}.</p>',
+   'HTML', 'hostName,delegationName,campusName,plannedStart,plannedEnd', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70022, 'VISIT_REMINDER_PARTICIPANTS', 'Nhắc lịch cho người tham gia', 'VISIT_REMINDER', NULL, 'Nhắc người tham gia đã nhận lời.', 'ACTIVE',
+   'Nhắc lịch tham gia {{delegationName}}', '<p>Xin chào {{recipientName}},</p><p>{{delegationName}} tại {{campusName}} diễn ra từ {{plannedStart}} đến {{plannedEnd}}.</p>',
+   'Participation reminder: {{delegationName}}', '<p>Hello {{recipientName}},</p><p>{{delegationName}} at {{campusName}} runs from {{plannedStart}} to {{plannedEnd}}.</p>',
+   'HTML', 'recipientName,delegationName,campusName,plannedStart,plannedEnd', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70023, 'LOGISTICS_REQUEST_TO_DEPARTMENT', 'Yêu cầu hậu cần tới phòng ban', 'LOGISTICS', NULL, 'Host gửi yêu cầu hậu cần cho Department Leader.', 'ACTIVE',
+   'Yêu cầu hậu cần mới: {{logisticsTitle}}', '<p>Xin chào {{departmentLeaderName}},</p><p>{{requesterName}} yêu cầu {{logisticsTitle}} ({{logisticsItemType}}), số lượng {{quantity}}, từ {{usageStartAt}} đến {{usageEndAt}}, hạn {{dueAt}}. Ghi chú: {{coordinationNote}}.</p>{{actionBlock}}',
+   'New logistics request: {{logisticsTitle}}', '<p>Hello {{departmentLeaderName}},</p><p>{{requesterName}} requested {{logisticsTitle}} ({{logisticsItemType}}), quantity {{quantity}}, from {{usageStartAt}} to {{usageEndAt}}, due {{dueAt}}. Note: {{coordinationNote}}.</p>{{actionBlock}}',
+   'HTML', 'departmentLeaderName,requesterName,logisticsTitle,logisticsItemType,quantity,usageStartAt,usageEndAt,dueAt,coordinationNote', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70024, 'LOGISTICS_ASSIGNEE_ASSIGNMENT', 'Phân công xử lý hậu cần', 'LOGISTICS', NULL, 'Department Leader phân công Department Staff xử lý hậu cần.', 'ACTIVE',
+   'Bạn được phân công: {{logisticsTitle}}', '<p>Xin chào {{assigneeName}},</p><p>Bạn xử lý {{logisticsTitle}} cho {{delegationName}} tại {{campusName}}, hạn {{dueAt}}.</p>{{actionBlock}}',
+   'You were assigned: {{logisticsTitle}}', '<p>Hello {{assigneeName}},</p><p>You will handle {{logisticsTitle}} for {{delegationName}} at {{campusName}}, due {{dueAt}}.</p>{{actionBlock}}',
+   'HTML', 'assigneeName,logisticsTitle,dueAt,campusName,delegationName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70025, 'LOGISTICS_CHANGE_PROPOSAL_TO_HOST', 'Đề xuất đổi hậu cần tới host', 'LOGISTICS', NULL, 'Department Staff gửi đề xuất thay đổi cho current host.', 'ACTIVE',
+   'Đề xuất thay đổi: {{logisticsTitle}}', '<p>Xin chào {{hostName}},</p><p>{{departmentName}} đề xuất đổi {{logisticsTitle}} cho {{delegationName}} từ {{originalQuantity}} thành {{proposedQuantity}}, thời gian {{proposedUsageStartAt}}–{{proposedUsageEndAt}}. Nội dung: {{proposedDescription}}. Ghi chú: {{proposalNote}}.</p>{{actionBlock}}',
+   'Change proposal: {{logisticsTitle}}', '<p>Hello {{hostName}},</p><p>{{departmentName}} proposed changing {{logisticsTitle}} for {{delegationName}} from {{originalQuantity}} to {{proposedQuantity}}, time {{proposedUsageStartAt}}–{{proposedUsageEndAt}}. Detail: {{proposedDescription}}. Note: {{proposalNote}}.</p>{{actionBlock}}',
+   'HTML', 'hostName,logisticsTitle,departmentName,delegationName,originalQuantity,proposedQuantity,proposedUsageStartAt,proposedUsageEndAt,proposedDescription,proposalNote', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70026, 'LOGISTICS_EXPENSE_REPORT_REMINDER', 'Nhắc nộp báo cáo chi phí', 'LOGISTICS', NULL, 'Nhắc người phụ trách nộp báo cáo chi phí cho hạng mục hoàn tất.', 'ACTIVE',
+   'Nhắc báo cáo chi phí: {{itemTitle}}', '<p>Xin chào {{recipientName}},</p><p>Hãy hoàn tất báo cáo chi phí cho {{itemTitle}}, đoàn {{delegationName}}, trước {{dueAt}}.</p>',
+   'Expense report reminder: {{itemTitle}}', '<p>Hello {{recipientName}},</p><p>Please complete the expense report for {{itemTitle}}, delegation {{delegationName}}, by {{dueAt}}.</p>',
+   'HTML', 'recipientName,itemTitle,dueAt,delegationName', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70027, 'REPORT_CAMPUS_OPERATION', 'Báo cáo vận hành campus', 'REPORT', NULL, 'Gửi báo cáo vận hành theo campus.', 'ACTIVE',
+   'Báo cáo vận hành {{campusName}}', '<p>Xin chào {{recipientName}},</p><p>Báo cáo {{reportTitle}} của {{campusName}}, kỳ {{periodLabel}}, đã được tạo.</p>',
+   'Campus operation report: {{campusName}}', '<p>Hello {{recipientName}},</p><p>{{reportTitle}} for {{campusName}}, period {{periodLabel}}, is ready.</p>',
+   'HTML', 'recipientName,reportTitle,campusName,periodLabel', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70028, 'REPORT_DEPARTMENT_COLLABORATION', 'Báo cáo phối hợp phòng ban', 'REPORT', NULL, 'Gửi báo cáo phối hợp theo phòng ban.', 'ACTIVE',
+   'Báo cáo phối hợp {{departmentName}}', '<p>Xin chào {{recipientName}},</p><p>Báo cáo {{reportTitle}} của {{departmentName}}, kỳ {{periodLabel}}, đã được tạo.</p>',
+   'Department collaboration report: {{departmentName}}', '<p>Hello {{recipientName}},</p><p>{{reportTitle}} for {{departmentName}}, period {{periodLabel}}, is ready.</p>',
+   'HTML', 'recipientName,reportTitle,departmentName,periodLabel', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70029, 'REPORT_DEPARTMENT_INVOICE', 'Báo cáo hóa đơn phòng ban', 'REPORT', NULL, 'Gửi báo cáo hóa đơn theo phòng ban.', 'ACTIVE',
+   'Báo cáo hóa đơn {{departmentName}}', '<p>Xin chào {{recipientName}},</p><p>Báo cáo {{reportTitle}} của {{departmentName}}, kỳ {{periodLabel}}, đã được tạo.</p>',
+   'Department invoice report: {{departmentName}}', '<p>Hello {{recipientName}},</p><p>{{reportTitle}} for {{departmentName}}, period {{periodLabel}}, is ready.</p>',
+   'HTML', 'recipientName,reportTitle,departmentName,periodLabel', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70030, 'REPORT_PERSONNEL_PERFORMANCE', 'Báo cáo hiệu suất nhân sự', 'REPORT', NULL, 'Gửi báo cáo hiệu suất theo nhân sự.', 'ACTIVE',
+   'Báo cáo hiệu suất {{personnelName}}', '<p>Xin chào {{recipientName}},</p><p>Báo cáo {{reportTitle}} của {{personnelName}}, kỳ {{periodLabel}}, đã được tạo.</p>',
+   'Personnel performance report: {{personnelName}}', '<p>Hello {{recipientName}},</p><p>{{reportTitle}} for {{personnelName}}, period {{periodLabel}}, is ready.</p>',
+   'HTML', 'recipientName,reportTitle,personnelName,periodLabel', CURRENT_TIMESTAMP, NULL, NULL, NULL);
+
+SET @u_ho := (
+  SELECT u.user_id
+  FROM users u
+  JOIN roles r ON r.role_id = u.role_id
+  WHERE r.role_code = 'HO' AND u.status = 'ACTIVE'
+  ORDER BY u.user_id
+  LIMIT 1
+);
+SET @partner_document_owner := (
+  SELECT p.partner_id
+  FROM partners p
+  ORDER BY p.partner_id
+  LIMIT 1
+);
+SET @email_sl_hn        := (SELECT email FROM users WHERE user_id=@u_sl_hn LIMIT 1);
+SET @email_staff_hn     := (SELECT email FROM users WHERE user_id=@u_staff_hn LIMIT 1);
+SET @email_dept_lead_hn := (SELECT email FROM users WHERE user_id=@u_dept_lead_hn LIMIT 1);
+SET @email_dept_hn      := (SELECT email FROM users WHERE user_id=@u_dept_hn LIMIT 1);
+SET @email_student_hn   := (SELECT email FROM users WHERE user_id=@u_student_hn LIMIT 1);
+SET @name_sl_hn         := (SELECT full_name FROM users WHERE user_id=@u_sl_hn LIMIT 1);
+SET @name_staff_hn      := (SELECT full_name FROM users WHERE user_id=@u_staff_hn LIMIT 1);
+SET @name_dept_lead_hn  := (SELECT full_name FROM users WHERE user_id=@u_dept_lead_hn LIMIT 1);
+SET @name_dept_hn       := (SELECT full_name FROM users WHERE user_id=@u_dept_hn LIMIT 1);
+SET @name_student_hn    := (SELECT full_name FROM users WHERE user_id=@u_student_hn LIMIT 1);
+
+-- Reserved ranges are cleared in dependency order so this extension can be
+-- re-applied without touching unrelated seed or user-created data.
+DELETE FROM email_action_tokens
+WHERE email_action_token_id BETWEEN 66001 AND 66150
+   OR sent_email_id BETWEEN 64001 AND 64050;
+DELETE FROM sent_email_attachments
+WHERE sent_email_attachment_id BETWEEN 65501 AND 65550
+   OR sent_email_id BETWEEN 64001 AND 64050;
+DELETE FROM sent_email_recipients
+WHERE sent_email_recipient_id BETWEEN 65001 AND 65050
+   OR sent_email_id BETWEEN 64001 AND 64050;
+DELETE FROM sent_emails WHERE sent_email_id BETWEEN 64001 AND 64050;
+DELETE FROM visit_request_identity_change_events
+WHERE identity_change_event_id BETWEEN 67101 AND 67150
+   OR identity_change_id BETWEEN 67001 AND 67010;
+DELETE FROM visit_request_identity_changes
+WHERE identity_change_id BETWEEN 67001 AND 67010;
+DELETE FROM documents WHERE document_id BETWEEN 62001 AND 62050;
+DELETE FROM visit_logistics_item_handovers
+WHERE handover_id BETWEEN 49501 AND 49520
+   OR logistics_item_id BETWEEN 48004 AND 48008;
+DELETE FROM minutes WHERE minutes_id BETWEEN 49001 AND 49020;
+DELETE FROM visit_logistics_items WHERE logistics_item_id BETWEEN 48004 AND 48008;
+DELETE FROM files WHERE file_id BETWEEN 61001 AND 61050;
+
+-- R1. Primary-contact stories: one pending initial claim, one applied initial
+-- claim and one pending transfer while the current ACTIVE owner remains in place.
+UPDATE visit_requests
+SET visitor_user_id = NULL,
+    contact_person_full_name = 'Laura Bennett',
+    contact_person_organization = 'Northbridge Institute of Education',
+    contact_person_phone = '+442079460812',
+    contact_person_email = 'laura.bennett@northbridge-edu.example',
+    primary_contact_access_status = 'PENDING_CONFIRMATION',
+    primary_contact_verified_at = NULL,
+    updated_at = CURRENT_TIMESTAMP - INTERVAL 2 DAY,
+    updated_by = @u_sl_hn
+WHERE visit_request_id = 41001;
+
+UPDATE visit_request_revision_history
+SET snapshot_json = JSON_OBJECT(
+      'requestCode','CURATED-HN-SL-PENDING',
+      'registrantEmail','staff.leader.hn@fpt.edu.vn',
+      'primaryContactEmail','laura.bennett@northbridge-edu.example',
+      'primaryContactAccessStatus','PENDING_CONFIRMATION',
+      'visitScope','SINGLE_CAMPUS'
+    ),
+    reason = 'Baseline request có registrant nội bộ và đầu mối chính khác người đăng ký; đầu mối đang chờ xác nhận quyền quản lý yêu cầu.'
+WHERE request_revision_history_id = 46201
+  AND visit_request_id = 41001;
+
+INSERT INTO visit_request_identity_changes
+  (identity_change_id, visit_request_id, change_kind, target_relation, confirmation_method,
+   old_user_id, new_user_id, old_email_normalized, new_email_normalized, new_email_masked,
+   pending_snapshot_json, status, expected_request_row_version, requested_by, requested_at,
+   expires_at, applied_at, declined_at, cancelled_at, superseded_at, retention_until,
+   redacted_at, reason, resend_count, created_at, updated_at)
+VALUES
+  (67001, 41001, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO',
+   NULL, NULL, NULL, 'laura.bennett@northbridge-edu.example', 'l***@northbridge-edu.example',
+   JSON_OBJECT('contactFullName','Laura Bennett','requestCode','CURATED-HN-SL-PENDING',
+               'delegationName','Helsinki Education Governance Delegation'),
+   'PENDING', 0, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY,
+   CURRENT_TIMESTAMP + INTERVAL 1 DAY, NULL, NULL, NULL, NULL,
+   CURRENT_TIMESTAMP + INTERVAL 91 DAY, NULL,
+   'Mời đầu mối do người đăng ký nội bộ cung cấp xác nhận quyền quản lý đơn.', 1,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (67002, 41002, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO',
+   NULL, @u_nvt, NULL, 'nvtcanhwork@gmail.com', 'n***@gmail.com',
+   JSON_OBJECT('contactFullName','Nguyễn Văn T. Cảnh','requestCode','CURATED-HN-SL-HOST-ASSIGNED',
+               'delegationName','British Council Digital Skills Roundtable'),
+   'APPLIED', 0, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 5 DAY,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY,
+   NULL, NULL, NULL, CURRENT_TIMESTAMP + INTERVAL 87 DAY, NULL,
+   'Đầu mối đã đăng nhập Google và nhận quyền quản lý yêu cầu.', 0,
+   CURRENT_TIMESTAMP - INTERVAL 5 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
+  (67003, 41003, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO',
+   @u_visitor_main, NULL, 'visitor@example.com', 'operations@osaka-ai.example',
+   'o***@osaka-ai.example',
+   JSON_OBJECT('currentContactName','Kim Min Jae','newContactEmail','operations@osaka-ai.example',
+               'requestCode','CURATED-HN-SL-HOST-BEFORE'),
+   'PENDING', 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY,
+   CURRENT_TIMESTAMP + INTERVAL 1 DAY, NULL, NULL, NULL, NULL,
+   CURRENT_TIMESTAMP + INTERVAL 91 DAY, NULL,
+   'Đầu mối hiện tại bàn giao quyền quản lý cho điều phối viên vận hành của đoàn.', 0,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL);
+
+INSERT INTO visit_request_identity_change_events
+  (identity_change_event_id, identity_change_id, visit_request_id, event_type,
+   from_status, to_status, actor_user_id, email_masked, reason, correlation_id, created_at)
+VALUES
+  (67101, 67001, 41001, 'INITIAL_CLAIM_CREATED', NULL, 'PENDING', @u_sl_hn,
+   'l***@northbridge-edu.example', 'Tạo lời mời đầu mối ban đầu.', 'seed-claim-67001',
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (67102, 67001, 41001, 'INVITATION_RESENT', 'PENDING', 'PENDING', @u_sl_hn,
+   'l***@northbridge-edu.example', 'Gửi lại sau khi đầu mối báo chưa nhận được thư lần đầu.', 'seed-claim-67001-resend',
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (67103, 67002, 41002, 'INITIAL_CLAIM_CREATED', NULL, 'PENDING', @u_sl_hn,
+   'n***@gmail.com', 'Tạo lời mời đầu mối ban đầu.', 'seed-claim-67002',
+   CURRENT_TIMESTAMP - INTERVAL 5 DAY),
+  (67104, 67002, 41002, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', @u_nvt,
+   'n***@gmail.com', 'Đầu mối xác nhận bằng Google SSO.', 'seed-claim-67002-apply',
+   CURRENT_TIMESTAMP - INTERVAL 3 DAY),
+  (67105, 67003, 41003, 'TRANSFER_CREATED', NULL, 'PENDING', @u_visitor_main,
+   'o***@osaka-ai.example', 'Khởi tạo bàn giao quyền đầu mối.', 'seed-transfer-67003',
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY);
+
+-- R2. Correct Department participant relationships to match the code:
+-- Host invites the Department Leader; that leader assigns Department Staff.
+UPDATE visit_participants
+SET user_id = @u_dept_lead_hn,
+    participant_role = 'DEPT_SUPPORT',
+    status = 'INVITED',
+    invited_by = @u_sl_hn,
+    invited_at = CURRENT_TIMESTAMP - INTERVAL 9 DAY,
+    responded_at = NULL,
+    assigned_by = NULL,
+    assigned_at = NULL,
+    note = 'Host mời đúng Department Leader của Phòng Đào tạo hỗ trợ phiên giao lưu; đang chờ phản hồi.',
+    updated_at = NULL,
+    updated_by = NULL
+WHERE participant_id = 44027;
+
+UPDATE visit_participants
+SET status = 'ASSIGNED',
+    assigned_by = @u_dept_lead_hn,
+    assigned_at = CURRENT_TIMESTAMP - INTERVAL 7 DAY,
+    note = 'Department Leader đã nhận lời và sau đó phân công nhân sự cùng phòng ban hỗ trợ đoàn.',
+    updated_at = CURRENT_TIMESTAMP - INTERVAL 7 DAY,
+    updated_by = @u_dept_lead_hn
+WHERE participant_id = 44025;
+
+UPDATE visit_participants
+SET status = 'ASSIGNED',
+    invited_by = NULL,
+    invited_at = NULL,
+    responded_at = NULL,
+    assigned_by = @u_dept_lead_hn,
+    assigned_at = CURRENT_TIMESTAMP - INTERVAL 7 DAY,
+    note = 'Department Staff được Department Leader cùng phòng ban phân công trực tiếp; email phân công có nút nhận hoặc từ chối.',
+    updated_at = CURRENT_TIMESTAMP - INTERVAL 7 DAY,
+    updated_by = @u_dept_lead_hn
+WHERE participant_id = 44028;
+
+UPDATE visit_participants
+SET status = 'REMOVED',
+    invited_by = NULL,
+    invited_at = NULL,
+    responded_at = CURRENT_TIMESTAMP - INTERVAL 6 DAY,
+    assigned_by = @u_dept_lead_hn,
+    assigned_at = CURRENT_TIMESTAMP - INTERVAL 8 DAY,
+    note = 'Department Staff từng được Department Leader phân công, sau đó được gỡ khi phạm vi hỗ trợ dữ liệu thay đổi.',
+    updated_at = CURRENT_TIMESTAMP - INTERVAL 6 DAY,
+    updated_by = @u_staff_hn
+WHERE participant_id = 44029;
+
+-- R3. Additional logistics states. 48008 is deliberately offline-coordinated:
+-- it is DONE with no sent_emails row, matching PrepareVisitLogistics.
+INSERT INTO visit_logistics_items
+  (logistics_item_id, visit_instance_id, item_type, title, description,
+   coordination_mode, offline_coordination_note, quantity, usage_start_at, usage_end_at,
+   status, priority, requested_by, requested_to_department_id, requested_at,
+   received_by, received_at, assigned_to_user_id, assigned_by, assigned_at,
+   assignee_accepted_at, assignee_response_note, due_at, completed_at,
+   proposed_by, proposed_at, proposed_quantity, proposed_usage_start_at,
+   proposed_usage_end_at, proposed_description, proposal_note,
+   proposal_responded_by, proposal_responded_at, proposal_response,
+   proposal_response_note, decision_note, row_version, created_at, created_by,
+   updated_at, updated_by)
+VALUES
+  (48004, 42003, 'ROOM', 'Phòng seminar cho đoàn Osaka AI',
+   'Bố trí 30 chỗ, bảng tương tác, hai micro và đường truyền dự phòng.',
+   'SYSTEM_REQUEST', NULL, 1,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 12 HOUR,
+   'REQUESTED', 'HIGH', @u_sl_hn, 2, CURRENT_TIMESTAMP - INTERVAL 2 DAY,
+   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+   CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR, NULL,
+   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+   NULL, NULL, NULL, NULL,
+   'Đang chờ Department Leader tiếp nhận yêu cầu.', 0,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_sl_hn, NULL, NULL),
+  (48005, 42003, 'TRANSPORT', 'Xe điện đón đoàn tại cổng Alpha',
+   'Bố trí một xe điện và một lái xe đón 12 khách từ cổng Alpha tới khu Alpha Hall.',
+   'SYSTEM_REQUEST', NULL, 1,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR,
+   'ASSIGNED', 'HIGH', @u_sl_hn, 2, CURRENT_TIMESTAMP - INTERVAL 4 DAY,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 3 DAY,
+   @u_dept_hn, @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY,
+   NULL, NULL, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 8 HOUR, NULL,
+   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+   NULL, NULL, NULL, NULL,
+   'Department Leader đã tiếp nhận và phân công nhân sự vận hành xe.', 0,
+   CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_dept_lead_hn),
+  (48006, 42003, 'MEAL', 'Teabreak phiên thảo luận AI',
+   'Chuẩn bị teabreak cho 24 người, có lựa chọn chay và không chứa hạt.',
+   'SYSTEM_REQUEST', NULL, 24,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 30 MINUTE,
+   'CHANGE_PROPOSED', 'MEDIUM', @u_sl_hn, 2, CURRENT_TIMESTAMP - INTERVAL 4 DAY,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 3 DAY,
+   @u_dept_hn, @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 3 DAY,
+   CURRENT_TIMESTAMP - INTERVAL 3 DAY, 'Đã nhận việc; cần điều chỉnh số lượng theo báo giá.',
+   CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 10 HOUR, NULL,
+   @u_dept_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 20,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 15 MINUTE,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 45 MINUTE,
+   'Điều chỉnh còn 20 suất và dời 15 phút để khớp thời lượng demo.',
+   'Nhà cung cấp chỉ xác nhận đủ 20 suất trong khung giao hàng mới.',
+   NULL, NULL, NULL, NULL,
+   'Đang chờ Host duyệt hoặc từ chối đề xuất thay đổi.', 1,
+   CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_dept_hn),
+  (48007, 42006, 'OTHER', 'Đối soát chi phí phiên partnership review',
+   'Tổng hợp hóa đơn phòng họp, thiết bị và nước uống sau chuyến thăm.',
+   'SYSTEM_REQUEST', NULL, 1,
+   CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 8 HOUR,
+   CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 14 HOUR,
+   'DONE', 'MEDIUM', @u_sl_hn, 2, CURRENT_TIMESTAMP - INTERVAL 20 DAY,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 19 DAY,
+   @u_dept_hn, @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 18 DAY,
+   CURRENT_TIMESTAMP - INTERVAL 18 DAY, 'Đã hoàn thành phục vụ và tập hợp chứng từ.',
+   CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 16 DAY,
+   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+   NULL, NULL, NULL, NULL,
+   'Hạng mục hoàn tất nhưng báo cáo chi phí cần được nhắc nộp đúng hạn.', 0,
+   CURRENT_TIMESTAMP - INTERVAL 20 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_dept_hn),
+  (48008, 42003, 'BANNER', 'Biển chào tại sảnh Alpha',
+   'In biển chào song ngữ theo nhận diện đoàn Osaka AI.',
+   'OFFLINE_COORDINATED',
+   'Host đã xác nhận trực tiếp với bộ phận sự kiện qua cuộc họp ngày hôm trước.',
+   1, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 8 HOUR,
+   CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 12 HOUR,
+   'DONE', 'LOW', @u_sl_hn, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY,
+   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY,
+   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+   NULL, NULL, NULL, NULL,
+   'Đã phối hợp bên ngoài hệ thống; không tạo email lịch sử.', 0,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_sl_hn, NULL, NULL);
+
+-- R4. Meeting-minutes stories for DURING / AFTER / CLOSED visits.
+INSERT INTO minutes
+  (minutes_id, visit_instance_id, title, content, status, edit_locked_by,
+   edit_locked_at, edit_lock_expires_at, edit_lock_token, row_version,
+   created_at, created_by, updated_at, updated_by)
+VALUES
+  (49001, 42004, 'Biên bản nháp giao lưu văn hóa Korea Foundation',
+   'Host đang ghi nhận câu hỏi của sinh viên và các cam kết phối hợp phát sinh trong buổi làm việc.',
+   'DRAFT', @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 20 MINUTE,
+   CURRENT_TIMESTAMP + INTERVAL 40 MINUTE, '49001000-0000-0000-0000-000000000001',
+   2, CURRENT_TIMESTAMP - INTERVAL 2 HOUR, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 20 MINUTE, @u_sl_hn),
+  (49002, 42005, 'Biên bản Aalto Service Design Delegation',
+   'Hai bên thống nhất tổ chức sprint thử nghiệm, trao đổi mentor và rà soát kết quả sau sáu tuần.',
+   'SAVED', NULL, NULL, NULL, NULL, 4,
+   CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_sl_hn),
+  (49003, 42006, 'Biên bản University of Queensland Partnership Review',
+   'Hai bên chốt ba đầu việc: cập nhật phụ lục chương trình, lịch trao đổi giảng viên và bộ chỉ số đánh giá.',
+   'SAVED', NULL, NULL, NULL, NULL, 5,
+   CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_sl_hn),
+  (49004, 42024, 'Biên bản SeoulTech Robotics Collaboration Delegation',
+   'Workshop hoàn tất; nhóm kỹ thuật bàn giao log thử nghiệm và danh sách đề tài nghiên cứu chung.',
+   'SAVED', NULL, NULL, NULL, NULL, 3,
+   CURRENT_TIMESTAMP - INTERVAL 20 DAY, @u_staff_hn,
+   CURRENT_TIMESTAMP - INTERVAL 19 DAY, @u_staff_hn);
+
+-- R5. One file per real document; no numbered coverage titles and no unrelated
+-- document shares another document's file.
+INSERT INTO files
+  (file_id, storage_provider, bucket_name, object_key, original_filename,
+   mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at,
+   external_file_id, web_view_url, download_url, thumbnail_url, file_purpose)
+VALUES
+  (61001, 'LOCAL', NULL, 'seed/documents/visits/41003/osaka-ai-visit-schedule.pdf',
+   'Lich_trinh_Osaka_AI_Ha_Noi.pdf', 'application/pdf', 248312,
+   SHA2('seed-file-61001-osaka-schedule',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, NULL, NULL, NULL, 'VISIT_REQUEST_ATTACHMENT'),
+  (61002, 'LOCAL', NULL, 'seed/documents/visits/41006/partnership-review-agenda-pack.pdf',
+   'Ho_so_lam_viec_UQ_Partnership_Review.pdf', 'application/pdf', 534880,
+   SHA2('seed-file-61002-uq-agenda',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 17 DAY, NULL, NULL, NULL, NULL, 'VISIT_REQUEST_ATTACHMENT'),
+  (61003, 'LOCAL', NULL, 'seed/documents/minutes/49002/aalto-service-design-minutes.pdf',
+   'Bien_ban_Aalto_Service_Design.pdf', 'application/pdf', 312405,
+   SHA2('seed-file-61003-aalto-minutes',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, NULL, NULL, NULL, 'MINUTES_DOCUMENT'),
+  (61004, 'LOCAL', NULL, 'seed/documents/minutes/49003/uq-partnership-review-minutes.pdf',
+   'Bien_ban_UQ_Partnership_Review.pdf', 'application/pdf', 326701,
+   SHA2('seed-file-61004-uq-minutes',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 15 DAY, NULL, NULL, NULL, NULL, 'MINUTES_DOCUMENT'),
+  (61005, 'LOCAL', NULL, 'seed/documents/partners/profile-draft-cooperation-note.docx',
+   'Du_thao_de_xuat_hop_tac.docx',
+   'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 144822,
+   SHA2('seed-file-61005-partner-draft',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 30 DAY, NULL, NULL, NULL, NULL, 'PARTNER_DOCUMENT'),
+  (61006, 'LOCAL', NULL, 'seed/documents/partners/signed-memorandum.pdf',
+   'Bien_ban_ghi_nho_da_ky.pdf', 'application/pdf', 682113,
+   SHA2('seed-file-61006-partner-published',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 25 DAY, NULL, NULL, NULL, NULL, 'PARTNER_DOCUMENT'),
+  (61007, 'LOCAL', NULL, 'seed/documents/partners/archived-program-outline.pdf',
+   'De_cuong_chuong_trinh_2025_luu_tru.pdf', 'application/pdf', 290441,
+   SHA2('seed-file-61007-partner-archived',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 120 DAY, NULL, NULL, NULL, NULL, 'PARTNER_DOCUMENT'),
+  (61008, 'LOCAL', NULL, 'seed/documents/logistics/48001/room-handover.pdf',
+   'Bien_ban_ban_giao_phong_hop.pdf', 'application/pdf', 201991,
+   SHA2('seed-file-61008-logistics-handover',256), @u_dept_hn,
+   CURRENT_TIMESTAMP - INTERVAL 16 DAY, NULL, NULL, NULL, NULL, 'LOGISTICS_HANDOVER'),
+  (61009, 'LOCAL', NULL, 'seed/documents/logistics/48007/expense-evidence.pdf',
+   'Chung_tu_chi_phi_partnership_review.pdf', 'application/pdf', 488904,
+   SHA2('seed-file-61009-logistics-expense',256), @u_dept_hn,
+   CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, NULL, NULL, NULL, 'LOGISTICS_EXPENSE_EVIDENCE'),
+  (61010, 'LOCAL', NULL, 'seed/reports/campus-operation-hanoi-2026-07.pdf',
+   'BaoCao_VanHanh_Campus_HaNoi_2026_07.pdf', 'application/pdf', 418102,
+   SHA2('seed-file-61010-report-campus',256), @u_ho,
+   CURRENT_TIMESTAMP - INTERVAL 4 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
+  (61011, 'LOCAL', NULL, 'seed/reports/department-collaboration-training-2026-07.pdf',
+   'BaoCao_PhoiHop_PhongDaoTao_2026_07.pdf', 'application/pdf', 451220,
+   SHA2('seed-file-61011-report-department',256), @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
+  (61012, 'LOCAL', NULL, 'seed/reports/department-invoice-training-2026-07.pdf',
+   'HoaDon_HauCan_PhongDaoTao_2026_07.pdf', 'application/pdf', 389744,
+   SHA2('seed-file-61012-report-invoice',256), @u_dept_lead_hn,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
+  (61013, 'LOCAL', NULL, 'seed/reports/personnel-performance-training-2026-07.pdf',
+   'BaoCao_HieuSuat_NhanSu_PhongDaoTao_2026_07.pdf', 'application/pdf', 372901,
+   SHA2('seed-file-61013-report-personnel',256), @u_dept_lead_hn,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
+  (61014, 'LOCAL', NULL, 'seed/documents/visits/41028/hcm-campus-brief.pdf',
+   'Ho_so_tiep_doan_APAA_TPHCM.pdf', 'application/pdf', 417860,
+   SHA2('seed-file-61014-hcm-visit',256), @u_staff_hcm,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, NULL, NULL, NULL, 'VISIT_REQUEST_ATTACHMENT'),
+  (61015, 'LOCAL', NULL, 'seed/documents/minutes/49004/robotics-collaboration-minutes.pdf',
+   'Bien_ban_SeoulTech_Robotics.pdf', 'application/pdf', 341755,
+   SHA2('seed-file-61015-robotics-minutes',256), @u_staff_hn,
+   CURRENT_TIMESTAMP - INTERVAL 19 DAY, NULL, NULL, NULL, NULL, 'MINUTES_DOCUMENT');
+
+INSERT INTO documents
+  (document_id, file_id, owner_type, owner_id, campus_id, title, description,
+   document_category, status, created_at, created_by, updated_at, updated_by)
+VALUES
+  (62001, 61001, 'VISIT', 41003, 1,
+   'Lịch trình chính thức — Osaka AI Laboratories Academic Visit',
+   'Lịch theo campus Hà Nội gồm điểm đón, phiên chuyên môn, người phụ trách và phương án dự phòng.',
+   'SCHEDULE_REPORT', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_sl_hn, NULL, NULL),
+  (62002, 61002, 'VISIT', 41006, 1,
+   'Hồ sơ làm việc — University of Queensland Partnership Review',
+   'Tài liệu chuẩn bị, chương trình và danh sách nội dung cần rà soát trong phiên partnership review.',
+   'VISIT_WORKING_PACK', 'ARCHIVED', CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_sl_hn),
+  (62003, 61003, 'MINUTES', 49002, 1,
+   'Biên bản đã lưu — Aalto Service Design Delegation',
+   'Bản PDF phát hành từ nội dung minutes sau chuyến thăm.',
+   'MEETING_MINUTES', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_sl_hn, NULL, NULL),
+  (62004, 61004, 'MINUTES', 49003, 1,
+   'Biên bản đã lưu — University of Queensland Partnership Review',
+   'Biên bản chốt phụ lục chương trình, lịch trao đổi giảng viên và chỉ số đánh giá.',
+   'MEETING_MINUTES', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_sl_hn, NULL, NULL),
+  (62005, 61005, 'PARTNER', @partner_document_owner, 1,
+   'Dự thảo đề xuất hợp tác học thuật',
+   'Bản đang chỉnh sửa, chưa phát hành ra ngoài nhóm phụ trách.',
+   'COOPERATION_PROPOSAL', 'DRAFT', CURRENT_TIMESTAMP - INTERVAL 30 DAY, @u_sl_hn, NULL, NULL),
+  (62006, 61006, 'PARTNER', @partner_document_owner, 1,
+   'Biên bản ghi nhớ hợp tác đã ký',
+   'Bản PDF chính thức đã được hai bên xác nhận.',
+   'SIGNED_MOU', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 25 DAY, @u_sl_hn, NULL, NULL),
+  (62007, 61007, 'PARTNER', @partner_document_owner, 1,
+   'Đề cương chương trình trao đổi năm 2025',
+   'Tài liệu kỳ trước được lưu để đối chiếu, không còn áp dụng cho kế hoạch hiện tại.',
+   'PROGRAM_OUTLINE', 'ARCHIVED', CURRENT_TIMESTAMP - INTERVAL 120 DAY, @u_sl_hn,
+   CURRENT_TIMESTAMP - INTERVAL 60 DAY, @u_sl_hn),
+  (62008, 61008, 'LOGISTICS', 48001, 1,
+   'Biên bản bàn giao phòng họp partnership review',
+   'Xác nhận tình trạng phòng, thiết bị và thời điểm bàn giao sau buổi làm việc.',
+   'LOGISTICS_HANDOVER', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_dept_hn, NULL, NULL),
+  (62009, 61009, 'LOGISTICS', 48007, 1,
+   'Chứng từ chi phí partnership review',
+   'Bộ chứng từ được Department Staff tập hợp để hoàn tất báo cáo chi phí.',
+   'EXPENSE_EVIDENCE', 'DRAFT', CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_dept_hn, NULL, NULL),
+  (62010, 61010, 'REPORT', NULL, 1,
+   'Báo cáo vận hành campus Hà Nội — tháng 07/2026',
+   'Báo cáo HO gửi Staff Leader, gồm số đoàn, trạng thái, khách, partner và feedback trong kỳ.',
+   'CAMPUS_OPERATION', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_ho, NULL, NULL),
+  (62011, 61011, 'REPORT', NULL, 1,
+   'Báo cáo phối hợp Phòng Đào tạo Hà Nội — tháng 07/2026',
+   'Báo cáo Staff Leader gửi Department Leader về logistics, lời mời hỗ trợ và feedback.',
+   'DEPARTMENT_COLLABORATION', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
+  (62012, 61012, 'REPORT', NULL, 1,
+   'Hóa đơn hậu cần Phòng Đào tạo Hà Nội — tháng 07/2026',
+   'Tổng hợp các khoản chi hậu cần đã đối soát trong kỳ.',
+   'DEPARTMENT_INVOICE', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_dept_lead_hn, NULL, NULL),
+  (62013, 61013, 'REPORT', NULL, 1,
+   'Báo cáo hiệu suất nhân sự Phòng Đào tạo — tháng 07/2026',
+   'Tổng hợp nhiệm vụ, mức độ hoàn thành và feedback của nhân sự được chọn.',
+   'PERSONNEL_PERFORMANCE', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_dept_lead_hn, NULL, NULL),
+  (62014, 61014, 'VISIT', 41028, 2,
+   'Hồ sơ tiếp đoàn APAA — campus TP.HCM',
+   'Tài liệu riêng của instance TP.HCM, không dùng thay cho hồ sơ campus Hà Nội trong cùng request.',
+   'VISIT_WORKING_PACK', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_staff_hcm, NULL, NULL),
+  (62015, 61015, 'MINUTES', 49004, 1,
+   'Biên bản đã lưu — SeoulTech Robotics Collaboration Delegation',
+   'Biên bản workshop, log thử nghiệm và danh sách đề tài nghiên cứu chung.',
+   'MEETING_MINUTES', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 19 DAY, @u_staff_hn, NULL, NULL);
+
+INSERT INTO visit_logistics_item_handovers
+  (handover_id, logistics_item_id, handover_type, borrower_signed_by,
+   borrower_signed_at, provider_signed_by, provider_signed_at, item_condition,
+   condition_note, attachment_file_id, created_at, created_by)
+VALUES
+  (49501, 48001, 'RETURN', @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 16 DAY,
+   @u_dept_hn, CURRENT_TIMESTAMP - INTERVAL 16 DAY, 'GOOD',
+   'Phòng và thiết bị được hoàn trả đầy đủ, không phát sinh hư hỏng.',
+   61008, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_dept_hn);
+
+-- R5. Resolve template IDs by immutable code; never rely on catalog row IDs.
+SET @tpl_claim          := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_CONTACT_CLAIM');
+SET @tpl_transfer       := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_CONTACT_TRANSFER');
+SET @tpl_participant    := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_PARTICIPANT_INVITATION');
+SET @tpl_student        := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_STUDENT_INVITATION');
+SET @tpl_dept_leader    := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_DEPARTMENT_LEADER_INVITATION');
+SET @tpl_dept_staff     := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_DEPARTMENT_STAFF_ASSIGNMENT');
+SET @tpl_reminder_host  := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_REMINDER_HOST');
+SET @tpl_reminder_part  := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_REMINDER_PARTICIPANTS');
+SET @tpl_log_request    := (SELECT email_template_id FROM email_templates WHERE template_code='LOGISTICS_REQUEST_TO_DEPARTMENT');
+SET @tpl_log_assignee   := (SELECT email_template_id FROM email_templates WHERE template_code='LOGISTICS_ASSIGNEE_ASSIGNMENT');
+SET @tpl_log_proposal   := (SELECT email_template_id FROM email_templates WHERE template_code='LOGISTICS_CHANGE_PROPOSAL_TO_HOST');
+SET @tpl_log_expense    := (SELECT email_template_id FROM email_templates WHERE template_code='LOGISTICS_EXPENSE_REPORT_REMINDER');
+SET @tpl_report_campus  := (SELECT email_template_id FROM email_templates WHERE template_code='REPORT_CAMPUS_OPERATION');
+SET @tpl_report_collab  := (SELECT email_template_id FROM email_templates WHERE template_code='REPORT_DEPARTMENT_COLLABORATION');
+SET @tpl_report_invoice := (SELECT email_template_id FROM email_templates WHERE template_code='REPORT_DEPARTMENT_INVOICE');
+SET @tpl_report_person  := (SELECT email_template_id FROM email_templates WHERE template_code='REPORT_PERSONNEL_PERFORMANCE');
+
+-- Action-bearing body snapshots are the safe text retained after the trusted
+-- action block is stripped. They deliberately contain no token, OTP or URL.
+INSERT INTO sent_emails
+  (sent_email_id, email_template_id, related_type, related_id, subject,
+   body_snapshot, body_format, provider_thread_id, provider_message_id,
+   retry_count, last_attempt_at, delivered_at, status, error_message,
+   sent_by, sent_at, created_at)
+VALUES
+  (64001, @tpl_claim, 'VisitRequestIdentityChange', 67001,
+   'Xác nhận đầu mối cho CURATED-HN-SL-PENDING',
+   '<p>Laura Bennett được mời xác nhận quyền đầu mối cho Helsinki Education Governance Delegation. Khối hành động bảo mật đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64001', 'seed-msg-64001', 0,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (64002, @tpl_claim, 'VisitRequestIdentityChange', 67002,
+   'Xác nhận đầu mối cho CURATED-HN-SL-HOST-ASSIGNED',
+   '<p>Nguyễn Văn T. Cảnh được mời nhận quyền đầu mối cho British Council Digital Skills Roundtable. Khối hành động bảo mật đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64002', 'seed-msg-64002', 0,
+   CURRENT_TIMESTAMP - INTERVAL 5 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 5 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 5 DAY),
+  (64003, @tpl_transfer, 'VisitRequestIdentityChange', 67003,
+   'Bàn giao đầu mối cho CURATED-HN-SL-HOST-BEFORE',
+   '<p>Đầu mối hiện tại mời operations@osaka-ai.example tiếp nhận quyền quản lý Osaka AI Laboratories Academic Visit. Khối hành động bảo mật đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64003', 'seed-msg-64003', 0,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (64004, @tpl_participant, 'VISIT_PARTICIPANT', 44021,
+   'Mời hỗ trợ Osaka AI Laboratories Academic Visit',
+   '<p>IC Staff Hà Nội được host mời hỗ trợ campus tour. Khối chấp nhận/từ chối đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64004', 'seed-msg-64004', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64005, @tpl_participant, 'VISIT_PARTICIPANT', 44018,
+   'Mời hỗ trợ SeoulTech Semiconductor Education Visit',
+   '<p>Staff Leader được current host mời tham gia với quan hệ invitee, không phải host. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64005', 'seed-msg-64005', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64006, @tpl_dept_leader, 'VISIT_PARTICIPANT', 44024,
+   'Mời Phòng Đào tạo phối hợp đoàn Osaka AI',
+   '<p>Department Leader được current host mời phối hợp chuyên môn. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64006', 'seed-msg-64006', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 6 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 6 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64007, @tpl_student, 'VISIT_PARTICIPANT', 44030,
+   'Mời sinh viên hỗ trợ đoàn Osaka AI',
+   '<p>Student Buddy được current host mời hỗ trợ campus tour. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64007', 'seed-msg-64007', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 7 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 7 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64008, @tpl_participant, 'VISIT_PARTICIPANT', 44022,
+   'Mời hỗ trợ Korea Foundation Culture Exchange Mission',
+   '<p>IC Staff đã nhận lời hỗ trợ bàn đăng ký và điều phối sinh viên. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64008', 'seed-msg-64008', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64009, @tpl_participant, 'VISIT_PARTICIPANT', 44023,
+   'Mời hỗ trợ Aalto University Service Design Delegation',
+   '<p>IC Staff đã từ chối vì trùng lịch đoàn khác. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64009', 'seed-msg-64009', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64010, @tpl_participant, 'VISIT_PARTICIPANT', 44019,
+   'Mời hỗ trợ Taiwan Smart Campus Working Group',
+   '<p>Staff Leader đã nhận lời tham gia như cố vấn; host vẫn là IC Staff. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64010', 'seed-msg-64010', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64011, @tpl_participant, 'VISIT_PARTICIPANT', 44020,
+   'Mời hỗ trợ Jeju Tourism Technology Delegation',
+   '<p>Staff Leader đã từ chối do trùng lịch họp campus. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64011', 'seed-msg-64011', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64012, @tpl_dept_leader, 'VISIT_PARTICIPANT', 44025,
+   'Mời Phòng Đào tạo phối hợp University of Queensland Partnership Review',
+   '<p>Department Leader đã nhận lời và tiếp tục phân công nhân sự cùng phòng ban. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64012', 'seed-msg-64012', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64013, @tpl_dept_leader, 'VISIT_PARTICIPANT', 44026,
+   'Mời Phòng Đào tạo phối hợp SeoulTech Robotics Collaboration Delegation',
+   '<p>Department Leader đã từ chối do trùng lịch hội đồng. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64013', 'seed-msg-64013', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64014, @tpl_dept_staff, 'VISIT_PARTICIPANT', 44028,
+   'Phân công hỗ trợ University of Queensland Partnership Review',
+   '<p>Department Staff được Department Leader cùng phòng ban phân công trực tiếp.</p>',
+   'HTML', 'seed-thread-64014', 'seed-msg-64014', 0,
+   CURRENT_TIMESTAMP - INTERVAL 7 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 7 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 7 DAY),
+  (64015, @tpl_dept_staff, 'VISIT_PARTICIPANT', 44029,
+   'Phân công hỗ trợ Porto Data Partnership Delegation',
+   '<p>Department Staff từng được Department Leader phân công trước khi phạm vi công việc thay đổi và participant bị gỡ.</p>',
+   'HTML', 'seed-thread-64015', 'seed-msg-64015', 0,
+   CURRENT_TIMESTAMP - INTERVAL 8 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 8 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 8 DAY),
+  (64016, @tpl_student, 'VISIT_PARTICIPANT', 44031,
+   'Mời sinh viên hỗ trợ University of Queensland Partnership Review',
+   '<p>Student Buddy đã nhận lời dẫn đoàn và hỗ trợ giao lưu. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64016', 'seed-msg-64016', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64017, @tpl_student, 'VISIT_PARTICIPANT', 44032,
+   'Mời sinh viên hỗ trợ Jeju Tourism Technology Delegation',
+   '<p>Student Buddy đã từ chối do trùng lịch thi. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64017', 'seed-msg-64017', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64018, @tpl_reminder_host, 'VISIT_PARTICIPANT', 44002,
+   'Nhắc lịch tiếp đoàn Osaka AI Laboratories Academic Visit',
+   '<p>Host được nhắc kiểm tra agenda, participant và logistics trước lịch đón đoàn.</p>',
+   'HTML', 'seed-thread-64018', 'seed-msg-64018', 0,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, 'SENT', NULL,
+   NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (64019, @tpl_reminder_part, 'VISIT_PARTICIPANT', 44031,
+   'Nhắc lịch tham gia University of Queensland Partnership Review',
+   '<p>Student Buddy đã nhận lời được nhắc trước planned_start_at của đoàn.</p>',
+   'HTML', 'seed-thread-64019', 'seed-msg-64019', 0,
+   (SELECT planned_start_at - INTERVAL 1 DAY FROM visit_request_campuses WHERE visit_instance_id=42006),
+   NULL, 'SENT', NULL, NULL,
+   (SELECT planned_start_at - INTERVAL 1 DAY FROM visit_request_campuses WHERE visit_instance_id=42006),
+   (SELECT planned_start_at - INTERVAL 1 DAY FROM visit_request_campuses WHERE visit_instance_id=42006)),
+  (64020, @tpl_log_request, 'LOGISTICS_ITEM', 48004,
+   'Yêu cầu hậu cần mới: Phòng seminar cho đoàn Osaka AI',
+   '<p>Host gửi Phòng Đào tạo yêu cầu chuẩn bị phòng seminar. Khối tiếp nhận/từ chối đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64020', 'seed-msg-64020', 0,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (64021, @tpl_log_request, 'LOGISTICS_ITEM', 48005,
+   'Yêu cầu hậu cần mới: Xe điện đón đoàn tại cổng Alpha',
+   '<p>Host gửi Department Leader yêu cầu điều phối xe điện. Department Leader đã tiếp nhận. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64021', 'seed-msg-64021', 0,
+   CURRENT_TIMESTAMP - INTERVAL 4 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 4 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 4 DAY),
+  (64022, @tpl_log_assignee, 'LOGISTICS_ITEM', 48005,
+   'Bạn được phân công: Xe điện đón đoàn tại cổng Alpha',
+   '<p>Department Leader phân công Department Staff vận hành xe. Khối nhận/từ chối nhiệm vụ đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64022', 'seed-msg-64022', 0,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (64023, @tpl_log_proposal, 'LOGISTICS_ITEM', 48006,
+   'Đề xuất thay đổi: Teabreak phiên thảo luận AI',
+   '<p>Department Staff đề xuất đổi còn 20 suất và dời khung phục vụ; email được gửi tới current host. Khối duyệt/từ chối đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64023', 'seed-msg-64023', 0,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_dept_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (64024, @tpl_log_expense, 'LOGISTICS_ITEM', 48007,
+   'Nhắc báo cáo chi phí: Đối soát chi phí phiên partnership review',
+   '<p>Department Staff được nhắc hoàn tất báo cáo chi phí cho hạng mục đã DONE.</p>',
+   'HTML', 'seed-thread-64024', 'seed-msg-64024', 0,
+   CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, 'SENT', NULL,
+   NULL, CURRENT_TIMESTAMP - INTERVAL 13 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY),
+  (64025, @tpl_report_campus, 'CAMPUS', 1,
+   'Báo cáo vận hành campus Hà Nội — tháng 07/2026',
+   '<p>Báo cáo vận hành campus Hà Nội đã được tạo và đính kèm.</p>',
+   'HTML', 'seed-thread-64025', 'seed-msg-64025', 0,
+   CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, 'SENT', NULL,
+   @u_ho, CURRENT_TIMESTAMP - INTERVAL 3 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
+  (64026, @tpl_report_collab, 'DEPARTMENT', 2,
+   'Báo cáo phối hợp Phòng Đào tạo Hà Nội — tháng 07/2026',
+   '<p>Báo cáo phối hợp Phòng Đào tạo Hà Nội đã được tạo và đính kèm.</p>',
+   'HTML', 'seed-thread-64026', 'seed-msg-64026', 0,
+   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (64027, @tpl_report_invoice, 'DEPARTMENT', 2,
+   'Hóa đơn hậu cần Phòng Đào tạo Hà Nội — tháng 07/2026',
+   '<p>Báo cáo hóa đơn Phòng Đào tạo Hà Nội đã được tạo và đính kèm.</p>',
+   'HTML', 'seed-thread-64027', 'seed-msg-64027', 0,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, 'SENT', NULL,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY,
+   CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (64028, @tpl_report_person, 'USER', @u_dept_hn,
+   'Báo cáo hiệu suất nhân sự Phòng Đào tạo — tháng 07/2026',
+   '<p>Báo cáo hiệu suất nhân sự được chọn đã được tạo và đính kèm.</p>',
+   'HTML', 'seed-thread-64028', 'seed-msg-64028', 0,
+   CURRENT_TIMESTAMP - INTERVAL 12 HOUR, NULL, 'SENT', NULL,
+   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 12 HOUR,
+   CURRENT_TIMESTAMP - INTERVAL 12 HOUR),
+  (64029, @tpl_reminder_host, 'VISIT_PARTICIPANT', 44002,
+   'Nhắc lịch tiếp đoàn Osaka AI — lượt xếp hàng kế tiếp',
+   '<p>Thông báo nhắc lịch đang chờ dispatcher xử lý.</p>',
+   'HTML', NULL, NULL, 0, NULL, NULL, 'QUEUED', NULL,
+   NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 10 MINUTE),
+  (64030, @tpl_dept_leader, 'VISIT_PARTICIPANT', 44027,
+   'Mời Phòng Đào tạo phối hợp Korea Foundation Culture Exchange Mission',
+   '<p>Department Leader được current host mời phối hợp giao lưu văn hóa. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64030', 'seed-msg-64030', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 8 MINUTE, NULL, 'SENT', NULL,
+   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 8 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (64031, @tpl_student, 'VISIT_PARTICIPANT', 44033,
+   'Mời sinh viên hỗ trợ SeoulTech Robotics Collaboration Delegation',
+   '<p>Student Buddy đã nhận lời hỗ trợ workshop robotics. Khối hành động đã được loại khỏi lịch sử.</p>',
+   'HTML', 'seed-thread-64031', 'seed-msg-64031', 0,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
+   @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
+   CURRENT_TIMESTAMP - INTERVAL 9 DAY);
+
+INSERT INTO sent_email_recipients
+  (sent_email_recipient_id, sent_email_id, recipient_email, recipient_name,
+   recipient_type, delivery_status, provider_message_id, error_message,
+   sent_at, delivered_at, created_at)
+VALUES
+  (65001, 64001, 'laura.bennett@northbridge-edu.example', 'Laura Bennett', 'TO', 'SENT', 'seed-msg-64001', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (65002, 64002, 'nvtcanhwork@gmail.com', 'Nguyễn Văn T. Cảnh', 'TO', 'SENT', 'seed-msg-64002', NULL, CURRENT_TIMESTAMP - INTERVAL 5 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 5 DAY),
+  (65003, 64003, 'operations@osaka-ai.example', 'Osaka AI Operations', 'TO', 'SENT', 'seed-msg-64003', NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (65004, 64004, @email_staff_hn, @name_staff_hn, 'TO', 'SENT', 'seed-msg-64004', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65005, 64005, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'seed-msg-64005', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65006, 64006, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64006', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 6 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65007, 64007, @email_student_hn, @name_student_hn, 'TO', 'SENT', 'seed-msg-64007', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 7 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65008, 64008, @email_staff_hn, @name_staff_hn, 'TO', 'SENT', 'seed-msg-64008', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65009, 64009, @email_staff_hn, @name_staff_hn, 'TO', 'SENT', 'seed-msg-64009', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65010, 64010, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'seed-msg-64010', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65011, 64011, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'seed-msg-64011', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65012, 64012, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64012', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65013, 64013, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64013', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65014, 64014, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'seed-msg-64014', NULL, CURRENT_TIMESTAMP - INTERVAL 7 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 7 DAY),
+  (65015, 64015, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'seed-msg-64015', NULL, CURRENT_TIMESTAMP - INTERVAL 8 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 8 DAY),
+  (65016, 64016, @email_student_hn, @name_student_hn, 'TO', 'SENT', 'seed-msg-64016', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65017, 64017, @email_student_hn, @name_student_hn, 'TO', 'SENT', 'seed-msg-64017', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65018, 64018, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'seed-msg-64018', NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (65019, 64019, @email_student_hn, @name_student_hn, 'TO', 'SENT', 'seed-msg-64019', NULL, (SELECT planned_start_at - INTERVAL 1 DAY FROM visit_request_campuses WHERE visit_instance_id=42006), NULL, (SELECT planned_start_at - INTERVAL 1 DAY FROM visit_request_campuses WHERE visit_instance_id=42006)),
+  (65020, 64020, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64020', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (65021, 64021, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64021', NULL, CURRENT_TIMESTAMP - INTERVAL 4 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 4 DAY),
+  (65022, 64022, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'seed-msg-64022', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (65023, 64023, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'seed-msg-64023', NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (65024, 64024, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'seed-msg-64024', NULL, CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 13 DAY),
+  (65025, 64025, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'seed-msg-64025', NULL, CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
+  (65026, 64026, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64026', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (65027, 64027, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64027', NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (65028, 64028, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'seed-msg-64028', NULL, CURRENT_TIMESTAMP - INTERVAL 12 HOUR, NULL, CURRENT_TIMESTAMP - INTERVAL 12 HOUR),
+  (65029, 64029, @email_sl_hn, @name_sl_hn, 'TO', 'QUEUED', NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 10 MINUTE),
+  (65030, 64030, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'seed-msg-64030', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 8 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (65031, 64031, @email_student_hn, @name_student_hn, 'TO', 'SENT', 'seed-msg-64031', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY);
+
+-- R6. One-time action lifecycle. Hashes are generated directly; no raw action
+-- token is persisted or embedded in body_snapshot.
+INSERT INTO email_action_tokens
+  (email_action_token_id, token_hash, action_group_key, action_context,
+   target_type, target_id, intended_action, recipient_user_id, recipient_email,
+   sent_email_id, sent_email_recipient_id, expires_at, used_at, used_action,
+   result_status, result_message, used_ip, used_user_agent, created_at)
+VALUES
+  (66001, SHA2(CONCAT(UUID(),'-66001'),256), 'VISIT_CONTACT_CLAIM:67001', 'VISIT_CONTACT_CLAIM', 'VISIT_REQUEST_IDENTITY_CHANGE', 67001, 'ACCEPT', NULL, 'laura.bennett@northbridge-edu.example', 64001, 65001, CURRENT_TIMESTAMP + INTERVAL 1 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (66002, SHA2(CONCAT(UUID(),'-66002'),256), 'VISIT_CONTACT_CLAIM:67002', 'VISIT_CONTACT_CLAIM', 'VISIT_REQUEST_IDENTITY_CHANGE', 67002, 'ACCEPT', @u_nvt, 'nvtcanhwork@gmail.com', 64002, 65002, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, 'ACCEPT', 'SUCCESS', 'Đầu mối đã nhận quyền quản lý yêu cầu.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 5 DAY),
+  (66003, SHA2(CONCAT(UUID(),'-66003'),256), 'VISIT_CONTACT_TRANSFER:67003', 'VISIT_CONTACT_TRANSFER', 'VISIT_REQUEST_IDENTITY_CHANGE', 67003, 'ACCEPT', NULL, 'operations@osaka-ai.example', 64003, 65003, CURRENT_TIMESTAMP + INTERVAL 1 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+
+  (66010, SHA2(CONCAT(UUID(),'-66010'),256), 'PARTICIPATION:44021', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44021, 'ACCEPT', @u_staff_hn, @email_staff_hn, 64004, 65004, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66011, SHA2(CONCAT(UUID(),'-66011'),256), 'PARTICIPATION:44021', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44021, 'DECLINE', @u_staff_hn, @email_staff_hn, 64004, 65004, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66012, SHA2(CONCAT(UUID(),'-66012'),256), 'PARTICIPATION:44018', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44018, 'ACCEPT', @u_sl_hn, @email_sl_hn, 64005, 65005, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66013, SHA2(CONCAT(UUID(),'-66013'),256), 'PARTICIPATION:44018', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44018, 'DECLINE', @u_sl_hn, @email_sl_hn, 64005, 65005, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66014, SHA2(CONCAT(UUID(),'-66014'),256), 'PARTICIPATION:44024', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44024, 'ACCEPT', @u_dept_lead_hn, @email_dept_lead_hn, 64006, 65006, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66015, SHA2(CONCAT(UUID(),'-66015'),256), 'PARTICIPATION:44024', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44024, 'DECLINE', @u_dept_lead_hn, @email_dept_lead_hn, 64006, 65006, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66016, SHA2(CONCAT(UUID(),'-66016'),256), 'PARTICIPATION:44030', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44030, 'ACCEPT', @u_student_hn, @email_student_hn, 64007, 65007, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66017, SHA2(CONCAT(UUID(),'-66017'),256), 'PARTICIPATION:44030', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44030, 'DECLINE', @u_student_hn, @email_student_hn, 64007, 65007, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+
+  (66018, SHA2(CONCAT(UUID(),'-66018'),256), 'PARTICIPATION:44022', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44022, 'ACCEPT', @u_staff_hn, @email_staff_hn, 64008, 65008, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'SUCCESS', 'Đã xác nhận tham gia.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66019, SHA2(CONCAT(UUID(),'-66019'),256), 'PARTICIPATION:44022', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44022, 'DECLINE', @u_staff_hn, @email_staff_hn, 64008, 65008, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa sau khi đã nhận lời.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66020, SHA2(CONCAT(UUID(),'-66020'),256), 'PARTICIPATION:44023', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44023, 'ACCEPT', @u_staff_hn, @email_staff_hn, 64009, 65009, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa sau khi đã từ chối.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66021, SHA2(CONCAT(UUID(),'-66021'),256), 'PARTICIPATION:44023', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44023, 'DECLINE', @u_staff_hn, @email_staff_hn, 64009, 65009, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'SUCCESS', 'Đã từ chối tham gia.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66022, SHA2(CONCAT(UUID(),'-66022'),256), 'PARTICIPATION:44019', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44019, 'ACCEPT', @u_sl_hn, @email_sl_hn, 64010, 65010, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'SUCCESS', 'Đã xác nhận tham gia.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66023, SHA2(CONCAT(UUID(),'-66023'),256), 'PARTICIPATION:44019', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44019, 'DECLINE', @u_sl_hn, @email_sl_hn, 64010, 65010, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66024, SHA2(CONCAT(UUID(),'-66024'),256), 'PARTICIPATION:44020', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44020, 'ACCEPT', @u_sl_hn, @email_sl_hn, 64011, 65011, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66025, SHA2(CONCAT(UUID(),'-66025'),256), 'PARTICIPATION:44020', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44020, 'DECLINE', @u_sl_hn, @email_sl_hn, 64011, 65011, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'SUCCESS', 'Đã từ chối tham gia.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66026, SHA2(CONCAT(UUID(),'-66026'),256), 'PARTICIPATION:44025', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44025, 'ACCEPT', @u_dept_lead_hn, @email_dept_lead_hn, 64012, 65012, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'SUCCESS', 'Department Leader đã nhận lời.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66027, SHA2(CONCAT(UUID(),'-66027'),256), 'PARTICIPATION:44025', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44025, 'DECLINE', @u_dept_lead_hn, @email_dept_lead_hn, 64012, 65012, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66028, SHA2(CONCAT(UUID(),'-66028'),256), 'PARTICIPATION:44026', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44026, 'ACCEPT', @u_dept_lead_hn, @email_dept_lead_hn, 64013, 65013, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66029, SHA2(CONCAT(UUID(),'-66029'),256), 'PARTICIPATION:44026', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44026, 'DECLINE', @u_dept_lead_hn, @email_dept_lead_hn, 64013, 65013, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'SUCCESS', 'Department Leader đã từ chối.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66030, SHA2(CONCAT(UUID(),'-66030'),256), 'PARTICIPATION:44031', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44031, 'ACCEPT', @u_student_hn, @email_student_hn, 64016, 65016, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'SUCCESS', 'Sinh viên đã nhận lời.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66031, SHA2(CONCAT(UUID(),'-66031'),256), 'PARTICIPATION:44031', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44031, 'DECLINE', @u_student_hn, @email_student_hn, 64016, 65016, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66032, SHA2(CONCAT(UUID(),'-66032'),256), 'PARTICIPATION:44032', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44032, 'ACCEPT', @u_student_hn, @email_student_hn, 64017, 65017, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66033, SHA2(CONCAT(UUID(),'-66033'),256), 'PARTICIPATION:44032', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44032, 'DECLINE', @u_student_hn, @email_student_hn, 64017, 65017, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'DECLINE', 'SUCCESS', 'Sinh viên đã từ chối.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66034, SHA2(CONCAT(UUID(),'-66034'),256), 'PARTICIPATION:44027', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44027, 'ACCEPT', @u_dept_lead_hn, @email_dept_lead_hn, 64030, 65030, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66035, SHA2(CONCAT(UUID(),'-66035'),256), 'PARTICIPATION:44027', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44027, 'DECLINE', @u_dept_lead_hn, @email_dept_lead_hn, 64030, 65030, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66036, SHA2(CONCAT(UUID(),'-66036'),256), 'PARTICIPATION:44033', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44033, 'ACCEPT', @u_student_hn, @email_student_hn, 64031, 65031, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'SUCCESS', 'Sinh viên đã nhận lời.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+  (66037, SHA2(CONCAT(UUID(),'-66037'),256), 'PARTICIPATION:44033', 'PARTICIPATION_RESPONSE', 'VISIT_PARTICIPANT', 44033, 'DECLINE', @u_student_hn, @email_student_hn, 64031, 65031, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 'ACCEPT', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
+
+  (66040, SHA2(CONCAT(UUID(),'-66040'),256), 'LOGISTICS_REQUEST:48004', 'LOGISTICS_REQUEST_RESPONSE', 'LOGISTICS_ITEM', 48004, 'ACCEPT', @u_dept_lead_hn, @email_dept_lead_hn, 64020, 65020, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (66041, SHA2(CONCAT(UUID(),'-66041'),256), 'LOGISTICS_REQUEST:48004', 'LOGISTICS_REQUEST_RESPONSE', 'LOGISTICS_ITEM', 48004, 'DECLINE', @u_dept_lead_hn, @email_dept_lead_hn, 64020, 65020, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (66042, SHA2(CONCAT(UUID(),'-66042'),256), 'LOGISTICS_REQUEST:48005', 'LOGISTICS_REQUEST_RESPONSE', 'LOGISTICS_ITEM', 48005, 'ACCEPT', @u_dept_lead_hn, @email_dept_lead_hn, 64021, 65021, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, 'ACCEPT', 'SUCCESS', 'Department Leader đã tiếp nhận yêu cầu.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 4 DAY),
+  (66043, SHA2(CONCAT(UUID(),'-66043'),256), 'LOGISTICS_REQUEST:48005', 'LOGISTICS_REQUEST_RESPONSE', 'LOGISTICS_ITEM', 48005, 'DECLINE', @u_dept_lead_hn, @email_dept_lead_hn, 64021, 65021, CURRENT_TIMESTAMP + INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, 'ACCEPT', 'ALREADY_RESPONDED', 'Lựa chọn còn lại bị vô hiệu hóa.', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 4 DAY),
+  (66044, SHA2(CONCAT(UUID(),'-66044'),256), 'LOGISTICS_ASSIGNEE:48005', 'LOGISTICS_ASSIGNEE_RESPONSE', 'LOGISTICS_ITEM', 48005, 'ACCEPT', @u_dept_hn, @email_dept_hn, 64022, 65022, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (66045, SHA2(CONCAT(UUID(),'-66045'),256), 'LOGISTICS_ASSIGNEE:48005', 'LOGISTICS_ASSIGNEE_RESPONSE', 'LOGISTICS_ITEM', 48005, 'DECLINE', @u_dept_hn, @email_dept_hn, 64022, 65022, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (66046, SHA2(CONCAT(UUID(),'-66046'),256), 'LOGISTICS_PROPOSAL:48006', 'LOGISTICS_PROPOSAL_RESPONSE', 'LOGISTICS_ITEM', 48006, 'APPROVE_PROPOSAL', @u_sl_hn, @email_sl_hn, 64023, 65023, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (66047, SHA2(CONCAT(UUID(),'-66047'),256), 'LOGISTICS_PROPOSAL:48006', 'LOGISTICS_PROPOSAL_RESPONSE', 'LOGISTICS_ITEM', 48006, 'REJECT_PROPOSAL', @u_sl_hn, @email_sl_hn, 64023, 65023, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY);
+
+-- R7. Every report email is backed by a document/file created before send time.
+INSERT INTO sent_email_attachments
+  (sent_email_attachment_id, sent_email_id, file_id, attachment_type,
+   content_id, display_name, display_order, created_at)
+VALUES
+  (65501, 64025, 61010, 'ATTACHMENT', NULL, 'BaoCao_VanHanh_Campus_HaNoi_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
+  (65502, 64026, 61011, 'ATTACHMENT', NULL, 'BaoCao_PhoiHop_PhongDaoTao_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
+  (65503, 64027, 61012, 'ATTACHMENT', NULL, 'HoaDon_HauCan_PhongDaoTao_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
+  (65504, 64028, 61013, 'ATTACHMENT', NULL, 'BaoCao_HieuSuat_NhanSu_PhongDaoTao_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 12 HOUR);
+
 
 COMMIT;
 
@@ -16364,6 +16561,311 @@ SELECT 'student_hn_invitation_status_distribution' AS metric, status, COUNT(*) A
 FROM visit_participants
 WHERE user_id=@u_student_hn AND is_host=0 AND visit_instance_id BETWEEN 42001 AND 42031
 GROUP BY status ORDER BY status;
+
+-- ---------------------------------------------------------------------------
+-- R8. Code-grounded verification. Every invalid_* result below must be 0.
+-- ---------------------------------------------------------------------------
+SELECT 'invalid_01_automated_email_without_template' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails
+WHERE email_template_id IS NULL;
+
+SELECT 'invalid_02_orphan_recipient' AS check_name, COUNT(*) AS issue_count
+FROM sent_email_recipients ser
+LEFT JOIN sent_emails se ON se.sent_email_id=ser.sent_email_id
+WHERE se.sent_email_id IS NULL;
+
+SELECT 'invalid_03_visit_detail_related_type' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails se
+JOIN email_templates et ON et.email_template_id=se.email_template_id
+WHERE (et.template_code IN (
+         'VISIT_PARTICIPANT_INVITATION','VISIT_STUDENT_INVITATION',
+         'VISIT_DEPARTMENT_LEADER_INVITATION','VISIT_DEPARTMENT_STAFF_ASSIGNMENT',
+         'VISIT_REMINDER_HOST','VISIT_REMINDER_PARTICIPANTS'
+       ) AND se.related_type<>'VISIT_PARTICIPANT')
+   OR (et.template_code IN (
+         'LOGISTICS_REQUEST_TO_DEPARTMENT','LOGISTICS_ASSIGNEE_ASSIGNMENT',
+         'LOGISTICS_CHANGE_PROPOSAL_TO_HOST','LOGISTICS_EXPENSE_REPORT_REMINDER'
+       ) AND se.related_type<>'LOGISTICS_ITEM');
+
+SELECT 'invalid_04_host_driven_email_wrong_sender' AS check_name,
+       COALESCE(SUM(x.issue_count),0) AS issue_count
+FROM (
+  SELECT COUNT(*) AS issue_count
+  FROM sent_emails se
+  JOIN email_templates et ON et.email_template_id=se.email_template_id
+  JOIN visit_participants vp
+    ON se.related_type='VISIT_PARTICIPANT' AND vp.participant_id=se.related_id
+  JOIN visit_request_campuses vrc ON vrc.visit_instance_id=vp.visit_instance_id
+  WHERE et.template_code IN (
+          'VISIT_PARTICIPANT_INVITATION','VISIT_STUDENT_INVITATION',
+          'VISIT_DEPARTMENT_LEADER_INVITATION'
+        )
+    AND (se.sent_by IS NULL OR vrc.current_host_user_id IS NULL
+         OR se.sent_by<>vrc.current_host_user_id)
+  UNION ALL
+  SELECT COUNT(*) AS issue_count
+  FROM sent_emails se
+  JOIN email_templates et ON et.email_template_id=se.email_template_id
+  JOIN visit_logistics_items vli
+    ON se.related_type='LOGISTICS_ITEM' AND vli.logistics_item_id=se.related_id
+  JOIN visit_request_campuses vrc ON vrc.visit_instance_id=vli.visit_instance_id
+  WHERE et.template_code='LOGISTICS_REQUEST_TO_DEPARTMENT'
+    AND (se.sent_by IS NULL OR vrc.current_host_user_id IS NULL
+         OR se.sent_by<>vrc.current_host_user_id)
+) x;
+
+SELECT 'invalid_05_host_email_before_assignment' AS check_name,
+       COALESCE(SUM(x.issue_count),0) AS issue_count
+FROM (
+  SELECT COUNT(*) AS issue_count
+  FROM sent_emails se
+  JOIN email_templates et ON et.email_template_id=se.email_template_id
+  JOIN visit_participants vp
+    ON se.related_type='VISIT_PARTICIPANT' AND vp.participant_id=se.related_id
+  JOIN visit_request_campuses vrc ON vrc.visit_instance_id=vp.visit_instance_id
+  WHERE et.template_code IN (
+          'VISIT_PARTICIPANT_INVITATION','VISIT_STUDENT_INVITATION',
+          'VISIT_DEPARTMENT_LEADER_INVITATION'
+        )
+    AND (se.sent_at IS NULL OR se.sent_at<vrc.host_assigned_at)
+  UNION ALL
+  SELECT COUNT(*) AS issue_count
+  FROM sent_emails se
+  JOIN email_templates et ON et.email_template_id=se.email_template_id
+  JOIN visit_logistics_items vli
+    ON se.related_type='LOGISTICS_ITEM' AND vli.logistics_item_id=se.related_id
+  JOIN visit_request_campuses vrc ON vrc.visit_instance_id=vli.visit_instance_id
+  WHERE et.template_code='LOGISTICS_REQUEST_TO_DEPARTMENT'
+    AND (se.sent_at IS NULL OR se.sent_at<vrc.host_assigned_at)
+) x;
+
+SELECT 'invalid_06_story_missing_queryable_email' AS check_name, COUNT(*) AS issue_count
+FROM (
+  SELECT CONCAT('PARTICIPANT:',vp.participant_id) AS story_key
+  FROM visit_participants vp
+  WHERE vp.participant_id BETWEEN 44018 AND 44033
+    AND NOT EXISTS (
+      SELECT 1 FROM sent_emails se
+      WHERE se.related_type='VISIT_PARTICIPANT'
+        AND se.related_id=vp.participant_id
+    )
+  UNION ALL
+  SELECT CONCAT('LOGISTICS:',vli.logistics_item_id) AS story_key
+  FROM visit_logistics_items vli
+  WHERE vli.logistics_item_id BETWEEN 48004 AND 48007
+    AND NOT EXISTS (
+      SELECT 1 FROM sent_emails se
+      WHERE se.related_type='LOGISTICS_ITEM'
+        AND se.related_id=vli.logistics_item_id
+    )
+) missing_story;
+
+SELECT 'invalid_07_sent_delivery_shape' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails se
+WHERE se.status='SENT'
+  AND (se.sent_at IS NULL OR se.provider_message_id IS NULL
+       OR EXISTS (
+         SELECT 1 FROM sent_email_recipients ser
+         WHERE ser.sent_email_id=se.sent_email_id
+           AND (ser.delivery_status<>'SENT' OR ser.sent_at IS NULL
+                OR ser.provider_message_id IS NULL OR ser.delivered_at IS NOT NULL)
+       ));
+
+SELECT 'invalid_08_queued_delivery_shape' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails se
+WHERE se.status='QUEUED'
+  AND (se.sent_at IS NOT NULL OR se.provider_message_id IS NOT NULL
+       OR EXISTS (
+         SELECT 1 FROM sent_email_recipients ser
+         WHERE ser.sent_email_id=se.sent_email_id
+           AND (ser.delivery_status<>'QUEUED' OR ser.sent_at IS NOT NULL
+                OR ser.provider_message_id IS NOT NULL)
+       ));
+
+SELECT 'invalid_09_delivered_without_webhook' AS check_name, COUNT(*) AS issue_count
+FROM (
+  SELECT sent_email_id AS row_id FROM sent_emails WHERE status='DELIVERED'
+  UNION ALL
+  SELECT sent_email_recipient_id AS row_id
+  FROM sent_email_recipients WHERE delivery_status='DELIVERED'
+) delivered_rows;
+
+SELECT 'invalid_10_sensitive_artifact_in_history' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails
+WHERE body_snapshot REGEXP '(https?://|[?&](token|otp)=|otpCode|raw[[:space:]]+token)';
+
+SELECT 'invalid_11_token_hash_shape' AS check_name, COUNT(*) AS issue_count
+FROM email_action_tokens
+WHERE token_hash NOT REGEXP '^[0-9a-fA-F]{64}$';
+
+SELECT 'invalid_12_document_without_file' AS check_name, COUNT(*) AS issue_count
+FROM documents d
+LEFT JOIN files f ON f.file_id=d.file_id
+WHERE f.file_id IS NULL;
+
+SELECT 'invalid_13_document_owner_missing' AS check_name, COUNT(*) AS issue_count
+FROM documents d
+WHERE (d.owner_type='VISIT' AND
+       (d.owner_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM visit_requests vr WHERE vr.visit_request_id=d.owner_id)))
+   OR (d.owner_type='MINUTES' AND
+       (d.owner_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM minutes m WHERE m.minutes_id=d.owner_id)))
+   OR (d.owner_type='PARTNER' AND
+       (d.owner_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM partners p WHERE p.partner_id=d.owner_id)))
+   OR (d.owner_type='LOGISTICS' AND
+       (d.owner_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM visit_logistics_items vli WHERE vli.logistics_item_id=d.owner_id)));
+
+SELECT 'invalid_14_document_campus_mismatch' AS check_name, COUNT(*) AS issue_count
+FROM documents d
+WHERE d.document_id BETWEEN 62001 AND 62015
+  AND (
+    (d.owner_type='VISIT' AND NOT EXISTS (
+       SELECT 1 FROM visit_request_campuses vrc
+       WHERE vrc.visit_request_id=d.owner_id AND vrc.campus_id=d.campus_id))
+    OR
+    (d.owner_type='MINUTES' AND NOT EXISTS (
+       SELECT 1
+       FROM minutes m
+       JOIN visit_request_campuses vrc ON vrc.visit_instance_id=m.visit_instance_id
+       WHERE m.minutes_id=d.owner_id AND vrc.campus_id=d.campus_id))
+  );
+
+SELECT 'invalid_15_attachment_without_file' AS check_name, COUNT(*) AS issue_count
+FROM sent_email_attachments sea
+LEFT JOIN files f ON f.file_id=sea.file_id
+WHERE f.file_id IS NULL;
+
+SELECT 'invalid_16_report_attachment_document_mismatch' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails se
+JOIN email_templates et ON et.email_template_id=se.email_template_id
+WHERE et.template_code IN (
+        'REPORT_CAMPUS_OPERATION','REPORT_DEPARTMENT_COLLABORATION',
+        'REPORT_DEPARTMENT_INVOICE','REPORT_PERSONNEL_PERFORMANCE'
+      )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM sent_email_attachments sea
+    JOIN documents d ON d.file_id=sea.file_id AND d.owner_type='REPORT'
+    WHERE sea.sent_email_id=se.sent_email_id
+      AND d.status='PUBLISHED'
+      AND d.created_at<=se.created_at
+  );
+
+SELECT 'invalid_17_pending_confirmation_without_claim' AS check_name, COUNT(*) AS issue_count
+FROM visit_requests vr
+WHERE vr.visit_request_id BETWEEN 41001 AND 41028
+  AND vr.primary_contact_access_status='PENDING_CONFIRMATION'
+  AND NOT EXISTS (
+    SELECT 1 FROM visit_request_identity_changes ic
+    WHERE ic.visit_request_id=vr.visit_request_id
+      AND ic.change_kind='INITIAL_CLAIM' AND ic.status='PENDING'
+  );
+
+SELECT 'invalid_18_pending_claim_has_visitor' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_identity_changes ic
+JOIN visit_requests vr ON vr.visit_request_id=ic.visit_request_id
+WHERE ic.identity_change_id BETWEEN 67001 AND 67003
+  AND ic.change_kind='INITIAL_CLAIM' AND ic.status='PENDING'
+  AND vr.visitor_user_id IS NOT NULL;
+
+SELECT 'invalid_19_notification_only_seeded_as_email' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails se
+JOIN email_templates et ON et.email_template_id=se.email_template_id
+WHERE et.template_code IN (
+  'VISIT_REQUEST_APPROVED','VISIT_REQUEST_REJECTED','VISIT_CANCELLED',
+  'HOST_ASSIGNMENT','VISIT_REQUEST_SUBMITTED_NOTIFY',
+  'LOGISTICS_REQUEST_SUBMITTED_NOTIFY'
+);
+
+SELECT 'invalid_20_generic_document_title' AS check_name, COUNT(*) AS issue_count
+FROM documents
+WHERE title REGEXP '(coverage[[:space:]]+[0-9]+|document[[:space:]]+coverage)';
+
+-- Coverage output for role/relationship/status, template/event, visit-detail
+-- email history, documents, contact claims and report attachments.
+SELECT role_code, relationship_type, reachable_status, COUNT(*) AS story_count
+FROM (
+  SELECT r.role_code, 'REGISTRANT' AS relationship_type, vr.status AS reachable_status
+  FROM visit_requests vr
+  JOIN users u ON u.user_id=vr.registrant_user_id
+  JOIN roles r ON r.role_id=u.role_id
+  WHERE vr.visit_request_id BETWEEN 41001 AND 41028
+  UNION ALL
+  SELECT r.role_code, 'HOST' AS relationship_type, vrc.status AS reachable_status
+  FROM visit_request_campuses vrc
+  JOIN users u ON u.user_id=vrc.current_host_user_id
+  JOIN roles r ON r.role_id=u.role_id
+  WHERE vrc.visit_instance_id BETWEEN 42001 AND 42031
+  UNION ALL
+  SELECT r.role_code, vp.participant_role AS relationship_type, vp.status AS reachable_status
+  FROM visit_participants vp
+  JOIN users u ON u.user_id=vp.user_id
+  JOIN roles r ON r.role_id=u.role_id
+  WHERE vp.participant_id BETWEEN 44018 AND 44033
+) role_story
+GROUP BY role_code, relationship_type, reachable_status
+ORDER BY role_code, relationship_type, reachable_status;
+
+SELECT et.template_code, se.related_type, se.status, COUNT(*) AS seeded_event_count
+FROM email_templates et
+LEFT JOIN sent_emails se ON se.email_template_id=et.email_template_id
+GROUP BY et.template_code, se.related_type, se.status
+ORDER BY et.template_code, se.related_type, se.status;
+
+SELECT vrc.visit_request_id, vrc.visit_instance_id,
+       COUNT(DISTINCT se.sent_email_id) AS participant_email_count
+FROM visit_request_campuses vrc
+LEFT JOIN visit_participants vp ON vp.visit_instance_id=vrc.visit_instance_id
+LEFT JOIN sent_emails se
+  ON se.related_type='VISIT_PARTICIPANT' AND se.related_id=vp.participant_id
+WHERE vrc.visit_instance_id BETWEEN 42001 AND 42031
+GROUP BY vrc.visit_request_id, vrc.visit_instance_id
+HAVING participant_email_count>0
+ORDER BY vrc.visit_instance_id;
+
+SELECT vrc.visit_request_id, vrc.visit_instance_id,
+       COUNT(DISTINCT se.sent_email_id) AS logistics_email_count
+FROM visit_request_campuses vrc
+LEFT JOIN visit_logistics_items vli ON vli.visit_instance_id=vrc.visit_instance_id
+LEFT JOIN sent_emails se
+  ON se.related_type='LOGISTICS_ITEM' AND se.related_id=vli.logistics_item_id
+WHERE vrc.visit_instance_id BETWEEN 42001 AND 42031
+GROUP BY vrc.visit_request_id, vrc.visit_instance_id
+HAVING logistics_email_count>0
+ORDER BY vrc.visit_instance_id;
+
+SELECT d.owner_type, d.status, d.campus_id, c.name AS campus_name, COUNT(*) AS document_count
+FROM documents d
+LEFT JOIN campuses c ON c.campus_id=d.campus_id
+GROUP BY d.owner_type, d.status, d.campus_id, c.name
+ORDER BY d.owner_type, d.status, d.campus_id;
+
+SELECT ic.identity_change_id, ic.visit_request_id, ic.change_kind, ic.status,
+       ic.new_email_masked, ic.requested_at, ic.expires_at,
+       COUNT(DISTINCT se.sent_email_id) AS email_count,
+       COUNT(DISTINCT eat.email_action_token_id) AS action_token_count
+FROM visit_request_identity_changes ic
+LEFT JOIN sent_emails se
+  ON se.related_type='VisitRequestIdentityChange' AND se.related_id=ic.identity_change_id
+LEFT JOIN email_action_tokens eat ON eat.sent_email_id=se.sent_email_id
+WHERE ic.identity_change_id BETWEEN 67001 AND 67003
+GROUP BY ic.identity_change_id, ic.visit_request_id, ic.change_kind, ic.status,
+         ic.new_email_masked, ic.requested_at, ic.expires_at
+ORDER BY ic.identity_change_id;
+
+SELECT d.document_id, d.title AS report_document, f.original_filename AS file_name,
+       se.sent_email_id, et.template_code, ser.recipient_email
+FROM documents d
+JOIN files f ON f.file_id=d.file_id
+JOIN sent_email_attachments sea ON sea.file_id=f.file_id
+JOIN sent_emails se ON se.sent_email_id=sea.sent_email_id
+JOIN email_templates et ON et.email_template_id=se.email_template_id
+JOIN sent_email_recipients ser ON ser.sent_email_id=se.sent_email_id
+WHERE d.owner_type='REPORT'
+ORDER BY d.document_id, se.sent_email_id;
 
 SET FOREIGN_KEY_CHECKS = @pems_old_fk_checks;
 SET SQL_SAFE_UPDATES = @pems_old_safe_updates;

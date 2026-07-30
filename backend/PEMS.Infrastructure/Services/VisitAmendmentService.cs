@@ -80,7 +80,7 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         if (changes.Count == 0)
             throw new BusinessRuleException(
                 "Đề xuất không có thay đổi nào so với nội dung đang hiệu lực.",
-                VisitFormV2ErrorCodes.AmendmentNotEditable);
+                VisitFormV2ErrorCodes.AmendmentNoChanges);
 
         // Schedule proposals must still be a valid slot (server-side rule parity).
         if (proposal.PlannedEndAt <= proposal.PlannedStartAt
