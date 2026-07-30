@@ -97,6 +97,20 @@ const MIN_EXPECTED_TABLES = 70;
 const workDir = mkdtempSync(join(tmpdir(), 'pems-e2e-'));
 const publishDir = join(workDir, 'api');
 const inbox = join(workDir, 'inbox.jsonl');
+/**
+ * Opt-in SMTP PICKUP mode (`PEMS_E2E_SMTP_PICKUP=1`).
+ *
+ * The default FileSink records the three envelope groups separately, which is the only way to show a
+ * BCC address was ADDRESSED — no MIME message records that, by design. Pickup mode is its opposite
+ * number: the real `EmailService` serialises each message to a real `.eml`, so the run can show a BCC
+ * address appears in NO header. Both are needed, and no single artefact can carry both properties.
+ *
+ * `SmtpDeliveryMethod.SpecifiedPickupDirectory` writes files and never opens a connection — this is
+ * still "no real SMTP, no real mail". Host/User/Password are blanked as well so that remains true even
+ * if the dispatch path is changed later.
+ */
+const smtpPickup = process.env.PEMS_E2E_SMTP_PICKUP === '1';
+const pickupDir = join(workDir, 'pickup');
 // Fail-closed E2E test-auth: a fresh run-scoped secret (never on disk, never logged) + a server-side profile
 // file (opaque keys → seeded identities, NO secret) written under the temp workDir and deleted in cleanup.
 const authSecret = randomBytes(32).toString('hex');
@@ -276,7 +290,8 @@ try {
   await run('dotnet', ['publish', API_PROJ, '-c', 'Debug', '-o', publishDir, '--nologo', '-v', 'q',
     `-p:BaseOutputPath=${join(workDir, 'binout')}\\`]);
 
-  console.log(`[e2e] start backend on :${API_PORT} (Testing, flags ON, sink)`);
+  console.log(`[e2e] start backend on :${API_PORT} (Testing, flags ON, ` +
+    `${smtpPickup ? `SMTP pickup -> ${pickupDir}` : 'FileSink'})`);
   writeFileSync(inbox, '');
   // The API's own output is discarded by default: it is noisy and the specs assert on the sink, not on
   // logs. Set PEMS_E2E_API_LOG to a path to keep it instead — without that, a 500 from the running host
@@ -297,8 +312,26 @@ try {
       PerCampusFormV2__Enabled: 'true',
       PerCampusFormV2Write__Enabled: 'true',
       Cors__AllowedOrigins__0: `http://localhost:${FE_PORT}`,
-      Smtp__Enabled: 'false',
-      PEMS_E2E_TEST_SINK_ENABLED: 'true',
+      ...(smtpPickup
+        ? {
+            // Real EmailService → real MIME on disk. No sink, no network: pickup returns before any
+            // SmtpClient is constructed, and the credentials it would have used are blanked anyway.
+            Smtp__Enabled: 'true',
+            Smtp__PickupDirectory: pickupDir,
+            // Host stays EMPTY so there is no server to reach even in principle. User/Password are
+            // placeholders, not credentials: `SecretConfigurationValidator` requires both to be present
+            // whenever SMTP is enabled, and `DispatchAsync` returns at the pickup branch before an
+            // SmtpClient is ever constructed, so nothing here is read by anything.
+            Smtp__Host: '',
+            Smtp__User: 'pickup-mode-no-login',
+            Smtp__Password: 'pickup-mode-no-login',
+            Smtp__FromEmail: 'no-reply@pems.test',
+            Smtp__FromName: 'PEMS',
+          }
+        : {
+            Smtp__Enabled: 'false',
+            PEMS_E2E_TEST_SINK_ENABLED: 'true',
+          }),
       PEMS_E2E_TEST_SINK_PATH: inbox,
       // Fail-closed test-auth (four gates): Testing env + explicit flag + run secret + profile file.
       PEMS_E2E_TEST_AUTH_ENABLED: 'true',
@@ -324,6 +357,11 @@ try {
       PEMS_E2E_TEST_SINK_PATH: inbox,
       PEMS_E2E_API_BASE: `http://localhost:${API_PORT}/api`,
       PEMS_E2E_FRONTEND_PORT: FE_PORT,
+      // Set ONLY in pickup mode: the email specs read it to decide which witness they can assert on.
+      ...(smtpPickup ? { PEMS_E2E_PICKUP_DIR: pickupDir } : {}),
+      // Named explicitly so a read-only verification query can never be aimed at a different database
+      // than the one this run created.
+      PEMS_E2E_DB: DB,
       // The specs inject the run secret + a profile key on backend requests (never persisted; never logged).
       PEMS_E2E_AUTH_SECRET: authSecret,
     },

@@ -209,4 +209,142 @@ public class SentEmailAccessTests
 
         Assert.Equal(SentEmailAccess.Relation.None, relation);
     }
+
+    // ── Whether to offer a reply ──────────────────────────────────────────────
+    //
+    // The detail response used to carry no `canReply` at all, so the screen read `undefined` and the
+    // button never appeared: the reply command existed with nothing able to call it. The flag is decided
+    // here rather than on the client, because only the server knows the viewer's relation to the envelope.
+
+    [Fact]
+    public void The_primary_recipient_is_offered_a_reply()
+        => Assert.True(SentEmailAccess.CanOfferReply(Relation(RecipientB, B), SenderA));
+
+    [Fact]
+    public void A_copied_reader_is_offered_a_reply()
+        => Assert.True(SentEmailAccess.CanOfferReply(Relation(CopiedC, C), SenderA));
+
+    [Fact]
+    public void A_blind_copy_is_offered_a_reply_like_any_other_addressee()
+        // Being blind-copied is still being party to the conversation, and the reply command accepts
+        // them. Their reply carries their own address, as any reply does — that is the sender's choice.
+        => Assert.True(SentEmailAccess.CanOfferReply(Relation(BlindD, D), SenderA));
+
+    [Fact]
+    public void The_author_is_not_offered_a_reply_to_their_own_message()
+        // The command would allow it and address the reply back to the author. Mailing yourself your own
+        // message is not a reply, and the list query has always reported CanReply = false for SENT.
+        => Assert.False(SentEmailAccess.CanOfferReply(Relation(SenderA, A), SenderA));
+
+    [Fact]
+    public void A_reader_who_arrived_through_the_linked_object_is_not_offered_a_reply()
+    {
+        var relation = Relation(CoordinatorF, F, linkedObject: true);
+
+        Assert.Equal(SentEmailAccess.Relation.LinkedObject, relation);
+        // The reply command resolves the relation from the envelope alone, so it refuses this reader.
+        // Offering the button would promise something the server then denies.
+        Assert.False(SentEmailAccess.CanOfferReply(relation, SenderA));
+    }
+
+    [Fact]
+    public void An_unrelated_reader_is_not_offered_a_reply()
+        => Assert.False(SentEmailAccess.CanOfferReply(Relation(UnrelatedG, G), SenderA));
+
+    [Fact]
+    public void Nobody_is_offered_a_reply_to_a_system_message()
+        // No person behind it to answer; the command refuses with a conflict.
+        => Assert.False(SentEmailAccess.CanOfferReply(SentEmailAccess.Relation.VisibleRecipient, null));
+
+    [Fact]
+    public void Offering_a_reply_never_exceeds_what_the_reply_command_accepts()
+    {
+        // The command's own precondition, verbatim: a viewer it will let through, and a real sender to
+        // answer. This asserts the direction of the implication for every combination, so widening the
+        // affordance without widening the command fails here rather than at a user's 403.
+        foreach (SentEmailAccess.Relation relation in Enum.GetValues<SentEmailAccess.Relation>())
+        {
+            foreach (var sender in new ulong?[] { null, SenderA })
+            {
+                var offered = SentEmailAccess.CanOfferReply(relation, sender);
+                var commandWouldAccept = SentEmailAccess.CanView(relation) && sender is not null;
+
+                if (offered)
+                    Assert.True(commandWouldAccept,
+                        $"CanOfferReply({relation}, sender={sender?.ToString() ?? "null"}) is offered but the reply command would refuse it.");
+            }
+        }
+    }
+
+    // ── Whether to offer "đánh dấu đã xử lý" ──────────────────────────────────
+    //
+    // The same shape of bug as the reply flag, one step further along: the detail payload carried no
+    // completion flag either, so the button was invisible to everyone while the command stood ready to
+    // accept the call. Both sides now read this one predicate.
+
+    private static readonly DateTime? NotCompleted = null;
+    private static readonly DateTime? AlreadyCompleted = new DateTime(2026, 7, 1, 9, 0, 0);
+
+    [Fact]
+    public void The_author_may_close_their_own_message()
+        => Assert.True(SentEmailAccess.CanMarkComplete(Relation(SenderA, A), NotCompleted));
+
+    [Fact]
+    public void The_primary_recipient_may_close_the_message()
+        => Assert.True(SentEmailAccess.CanMarkComplete(Relation(RecipientB, B), NotCompleted));
+
+    [Fact]
+    public void A_copied_reader_may_close_the_message()
+        => Assert.True(SentEmailAccess.CanMarkComplete(Relation(CopiedC, C), NotCompleted));
+
+    [Fact]
+    public void A_blind_copy_may_close_the_message()
+        // Blind or not, they were addressed. The command matches against the recipient list without
+        // caring which group the row is in, so the affordance must not be narrower.
+        => Assert.True(SentEmailAccess.CanMarkComplete(Relation(BlindD, D), NotCompleted));
+
+    [Fact]
+    public void A_reader_who_arrived_through_the_linked_object_may_not_close_it()
+    {
+        var relation = Relation(CoordinatorF, F, linkedObject: true);
+
+        Assert.Equal(SentEmailAccess.Relation.LinkedObject, relation);
+        // They can read the message because they can open the visit it belongs to. Closing somebody
+        // else's correspondence is a different thing, and the command refuses them.
+        Assert.False(SentEmailAccess.CanMarkComplete(relation, NotCompleted));
+    }
+
+    [Fact]
+    public void An_unrelated_reader_may_not_close_the_message()
+        => Assert.False(SentEmailAccess.CanMarkComplete(Relation(UnrelatedG, G), NotCompleted));
+
+    [Fact]
+    public void A_message_already_closed_is_not_offered_again()
+        // The command answers "đã được đánh dấu hoàn thành từ trước"; the button must not invite that.
+        => Assert.False(SentEmailAccess.CanMarkComplete(Relation(RecipientB, B), AlreadyCompleted));
+
+    [Fact]
+    public void The_author_is_not_offered_a_message_that_is_already_closed()
+        => Assert.False(SentEmailAccess.CanMarkComplete(Relation(SenderA, A), AlreadyCompleted));
+
+    [Fact]
+    public void Offering_completion_matches_what_the_command_accepts_exactly()
+    {
+        // Equality, not implication: this affordance and the command are the same predicate, so a
+        // divergence in either direction — a dead button, or one the server refuses — fails here.
+        foreach (SentEmailAccess.Relation relation in Enum.GetValues<SentEmailAccess.Relation>())
+        {
+            foreach (var completedAt in new[] { NotCompleted, AlreadyCompleted })
+            {
+                var offered = SentEmailAccess.CanMarkComplete(relation, completedAt);
+                var commandWouldAccept = completedAt is null
+                    && relation is SentEmailAccess.Relation.Sender
+                                or SentEmailAccess.Relation.VisibleRecipient
+                                or SentEmailAccess.Relation.BlindCopy;
+
+                Assert.True(offered == commandWouldAccept,
+                    $"CanMarkComplete({relation}, completed={completedAt is not null}) disagrees with the command.");
+            }
+        }
+    }
 }

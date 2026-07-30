@@ -110,6 +110,7 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<EmailDraftRecipient>();
         modelBuilder.Ignore<EmailDraftAttachment>();
         modelBuilder.Ignore<EmailActionToken>();
+        modelBuilder.Ignore<EmailSendIdempotency>();
         modelBuilder.Ignore<Notification>();
         modelBuilder.Ignore<CalendarEvent>();
         modelBuilder.Ignore<ApiConfiguration>();
@@ -206,6 +207,7 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
     DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
+    DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<Notification> IApplicationDbContext.Notifications => Set<Notification>();
     DbSet<CalendarEvent> IApplicationDbContext.CalendarEvents => Set<CalendarEvent>();
     DbSet<ApiConfiguration> IApplicationDbContext.ApiConfigurations => Set<ApiConfiguration>();
