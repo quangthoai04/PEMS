@@ -21,7 +21,8 @@ import {
   ArrowRightCircle,
   Wand2,
   Download,
-  FileText
+  FileText,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
@@ -340,6 +341,36 @@ export function VisitProcess() {
     if (!value) return null;
     return value.length === 16 ? `${value}:00` : value; // "YYYY-MM-DDTHH:mm" -> "YYYY-MM-DDTHH:mm:ss"
   };
+
+  const getDatePart = (localStr?: string | null): string => {
+    if (!localStr) return '';
+    return localStr.slice(0, 10);
+  };
+
+  const getTimePart = (localStr?: string | null): string => {
+    if (!localStr || localStr.length < 16) return '';
+    return localStr.slice(11, 16);
+  };
+
+  const isSingleDayVisit = React.useMemo(() => {
+    if (detail?.plannedStartAt && detail?.plannedEndAt) {
+      const sDate = detail.plannedStartAt.replace(' ', 'T').slice(0, 10);
+      const eDate = detail.plannedEndAt.replace(' ', 'T').slice(0, 10);
+      if (sDate && eDate) {
+        return sDate === eDate;
+      }
+    }
+    if (agendaItems.length > 0) {
+      const dates = new Set(
+        agendaItems
+          .map((it) => (it.startLocal ? it.startLocal.slice(0, 10) : ''))
+          .filter(Boolean)
+      );
+      if (dates.size === 1) return true;
+      if (dates.size > 1) return false;
+    }
+    return true;
+  }, [detail?.plannedStartAt, detail?.plannedEndAt, agendaItems]);
 
   const loadDetail = React.useCallback(async () => {
     if (!perm) { setDetail(null); setAgendaItems([]); setDetailLoading(false); return; }
@@ -1003,7 +1034,7 @@ export function VisitProcess() {
                             )}
                             {agendaItems.length > 0 && (
                               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                                <div className="hidden md:grid grid-cols-[44px_220px_minmax(240px,1fr)_160px_260px_36px] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                                <div className="hidden md:grid grid-cols-[44px_235px_minmax(200px,1fr)_150px_220px_36px] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 border-b border-slate-200">
                                   <span className="text-center">#</span>
                                   <span>Thời gian</span>
                                   <span>Nội dung</span>
@@ -1014,9 +1045,9 @@ export function VisitProcess() {
                                 <div className="divide-y divide-slate-100">
                                   {agendaItems.map((it, idx) => {
                                     const ghostInputClass = "h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
-                                    const ghostTimeClass = "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 text-sm font-semibold text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
+                                    const ghostTimeClass = "h-8 w-[130px] shrink-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
                                     return (
-                                      <div key={idx} className="grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[44px_220px_minmax(240px,1fr)_160px_260px_36px] md:items-start md:gap-3">
+                                      <div key={idx} className="grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[44px_235px_minmax(200px,1fr)_150px_220px_36px] md:items-start md:gap-3">
                                         {/* Order number — leads the row so the eye scans it first. */}
                                         <div className="flex items-center md:justify-center">
                                           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-50 text-xs font-bold text-[#F37021]">
@@ -1024,20 +1055,168 @@ export function VisitProcess() {
                                           </span>
                                         </div>
 
-                                        {/* Time range — datetime-local keeps date + time together so multi-day agendas stay
-                                            correct; stacked (not side-by-side) so the full date/time never gets clipped. */}
+                                        {/* Time range — conditionally rendered based on single-day vs multi-day visit */}
                                         <div className="pl-9 md:pl-0">
                                           <label className="block text-[10px] font-bold uppercase text-slate-400 md:hidden">Thời gian</label>
-                                          <div className="grid grid-cols-[14px_1fr] items-center gap-x-2 gap-y-1">
-                                            <span />
-                                            <input type="datetime-local" value={it.startLocal} disabled={!canEditAgenda}
-                                              onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: e.target.value } : p))}
-                                              className={ghostTimeClass} />
-                                            <span className="text-center text-slate-400">→</span>
-                                            <input type="datetime-local" value={it.endLocal} disabled={!canEditAgenda}
-                                              onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: e.target.value } : p))}
-                                              className={ghostTimeClass} />
-                                          </div>
+                                          {isSingleDayVisit ? (
+                                            /* 1-Day Visit: Only show time inputs (HH:mm) with Clock icon on the left */
+                                            <div className="flex items-center gap-1.5 pt-0.5">
+                                              <div
+                                                onClick={(e) => {
+                                                  if (!canEditAgenda) return;
+                                                  const input = e.currentTarget.querySelector('input');
+                                                  if (input) { try { input.showPicker?.(); } catch {} }
+                                                }}
+                                                className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                              >
+                                                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                                <input
+                                                  type="time"
+                                                  value={getTimePart(it.startLocal)}
+                                                  disabled={!canEditAgenda}
+                                                  onChange={(e) => {
+                                                    const timeVal = e.target.value;
+                                                    const dateVal = getDatePart(it.startLocal) || getDatePart(detail?.plannedStartAt) || '2026-01-01';
+                                                    const newStart = timeVal ? `${dateVal}T${timeVal}` : it.startLocal;
+                                                    setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: newStart } : p));
+                                                  }}
+                                                  className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                />
+                                              </div>
+                                              <span className="text-slate-400 font-bold text-xs shrink-0">→</span>
+                                              <div
+                                                onClick={(e) => {
+                                                  if (!canEditAgenda) return;
+                                                  const input = e.currentTarget.querySelector('input');
+                                                  if (input) { try { input.showPicker?.(); } catch {} }
+                                                }}
+                                                className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                              >
+                                                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                                <input
+                                                  type="time"
+                                                  value={getTimePart(it.endLocal)}
+                                                  disabled={!canEditAgenda}
+                                                  onChange={(e) => {
+                                                    const timeVal = e.target.value;
+                                                    const dateVal = getDatePart(it.endLocal) || getDatePart(it.startLocal) || getDatePart(detail?.plannedStartAt) || '2026-01-01';
+                                                    const newEnd = timeVal ? `${dateVal}T${timeVal}` : it.endLocal;
+                                                    setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: newEnd } : p));
+                                                  }}
+                                                  className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                />
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            /* Multi-Day Visit (2+ days) */
+                                            (() => {
+                                              const startDate = getDatePart(it.startLocal);
+                                              const endDate = getDatePart(it.endLocal);
+                                              const isSameDate = startDate && endDate && startDate === endDate;
+
+                                              if (isSameDate) {
+                                                /* Same start & end date: Show date ONCE on top, then time range below */
+                                                return (
+                                                  <div className="flex flex-col gap-1.5">
+                                                    <div
+                                                      onClick={(e) => {
+                                                        if (!canEditAgenda) return;
+                                                        const input = e.currentTarget.querySelector('input');
+                                                        if (input) { try { input.showPicker?.(); } catch {} }
+                                                      }}
+                                                      className={`flex items-center gap-1 rounded-lg border border-slate-200/60 bg-slate-50/70 px-2 py-0.5 w-max ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'}`}
+                                                    >
+                                                      <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                                      <input
+                                                        type="date"
+                                                        value={startDate}
+                                                        disabled={!canEditAgenda}
+                                                        onChange={(e) => {
+                                                          const newDate = e.target.value;
+                                                          if (!newDate) return;
+                                                          const sTime = getTimePart(it.startLocal) || '00:00';
+                                                          const eTime = getTimePart(it.endLocal) || '00:00';
+                                                          setAgendaItems((prev) =>
+                                                            prev.map((p, i) =>
+                                                              i === idx ? { ...p, startLocal: `${newDate}T${sTime}`, endLocal: `${newDate}T${eTime}` } : p
+                                                            )
+                                                          );
+                                                        }}
+                                                        className="h-6 min-w-0 border-none bg-transparent p-0 text-xs font-bold text-slate-700 outline-none cursor-pointer disabled:cursor-not-allowed"
+                                                      />
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                      <div
+                                                        onClick={(e) => {
+                                                          if (!canEditAgenda) return;
+                                                          const input = e.currentTarget.querySelector('input');
+                                                          if (input) { try { input.showPicker?.(); } catch {} }
+                                                        }}
+                                                        className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                                      >
+                                                        <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                                        <input
+                                                          type="time"
+                                                          value={getTimePart(it.startLocal)}
+                                                          disabled={!canEditAgenda}
+                                                          onChange={(e) => {
+                                                            const timeVal = e.target.value;
+                                                            const newStart = timeVal ? `${startDate}T${timeVal}` : it.startLocal;
+                                                            setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: newStart } : p));
+                                                          }}
+                                                          className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                        />
+                                                      </div>
+                                                      <span className="text-slate-400 font-bold text-xs shrink-0">→</span>
+                                                      <div
+                                                        onClick={(e) => {
+                                                          if (!canEditAgenda) return;
+                                                          const input = e.currentTarget.querySelector('input');
+                                                          if (input) { try { input.showPicker?.(); } catch {} }
+                                                        }}
+                                                        className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                                      >
+                                                        <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                                        <input
+                                                          type="time"
+                                                          value={getTimePart(it.endLocal)}
+                                                          disabled={!canEditAgenda}
+                                                          onChange={(e) => {
+                                                            const timeVal = e.target.value;
+                                                            const newEnd = timeVal ? `${endDate}T${timeVal}` : it.endLocal;
+                                                            setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: newEnd } : p));
+                                                          }}
+                                                          className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                        />
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                );
+                                              } else {
+                                                /* Spans across midnight (different start & end dates) */
+                                                return (
+                                                  <div className="grid grid-cols-[14px_1fr] items-center gap-x-2 gap-y-1">
+                                                    <span />
+                                                    <input
+                                                      type="datetime-local"
+                                                      value={it.startLocal}
+                                                      disabled={!canEditAgenda}
+                                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: e.target.value } : p))}
+                                                      className={ghostTimeClass}
+                                                    />
+                                                    <span className="text-center text-slate-400 font-bold text-xs">→</span>
+                                                    <input
+                                                      type="datetime-local"
+                                                      value={it.endLocal}
+                                                      disabled={!canEditAgenda}
+                                                      onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: e.target.value } : p))}
+                                                      className={ghostTimeClass}
+                                                    />
+                                                  </div>
+                                                );
+                                              }
+                                            })()
+                                          )}
                                         </div>
 
                                         {/* Content */}

@@ -6,7 +6,7 @@
  * instance hoặc bỏ qua → xác nhận (batch) → photo_face_tags + lịch sử quét.
  * Backend là nguồn quyền/dữ liệu duy nhất — không có mock/fallback giả khi API lỗi.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -44,6 +44,11 @@ interface FaceScanPanelProps {
   onRefreshPhotos?: () => void | Promise<void>;
 }
 
+/** Imperative handle — cho phép nơi nhúng (header ngoài) mở modal "Chọn từ thư mục ảnh đoàn" mà không cần nâng state isAlbumModalOpen lên. */
+export interface FaceScanPanelHandle {
+  openAlbumModal: () => void;
+}
+
 function PhotoThumbnail({ url, alt }: { url: string; alt: string }) {
   const src = useAuthenticatedImage(url);
   return src ? (
@@ -63,9 +68,9 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
-export function FaceScanPanel({
+export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>(function FaceScanPanel({
   visitInstanceId, photos, isReadOnly, onUploadClick, folderUrl, onRefreshPhotos,
-}: FaceScanPanelProps) {
+}, ref) {
   const { t } = useTranslation('visitFaceScan');
 
   const [selectedPhotoId, setSelectedPhotoId] = useState<number | null>(photos[0]?.visitPhotoId ?? null);
@@ -79,6 +84,13 @@ export function FaceScanPanel({
   const [pendingActions, setPendingActions] = useState<Record<number, { guestMemberId: number | null; ignored: boolean }>>({});
   const [searchGuestKeyword, setSearchGuestKeyword] = useState('');
   const [isAlbumModalOpen, setIsAlbumModalOpen] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    openAlbumModal: () => {
+      if (onRefreshPhotos) void onRefreshPhotos();
+      setIsAlbumModalOpen(true);
+    },
+  }), [onRefreshPhotos]);
 
   const selectedPhoto = photos.find((p) => p.visitPhotoId === selectedPhotoId) ?? null;
   const currentScan = scans[0] ?? null; // scans are ordered newest-first by the backend
@@ -264,63 +276,9 @@ export function FaceScanPanel({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Column left side: Album items list & upload control */}
-      <div className="lg:col-span-1 space-y-4 flex flex-col justify-between animate-fadeIn">
-        <div className="space-y-3">
-          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-            {photos.length === 0 && (
-              <p className="text-xs text-gray-400 font-medium px-1 py-3 text-center">{t('album.empty')}</p>
-            )}
-            {photos.map((photo) => (
-              <div
-                key={photo.visitPhotoId}
-                onClick={() => setSelectedPhotoId(photo.visitPhotoId)}
-                className={`flex items-center gap-3 p-2 rounded-xl border cursor-pointer group transition-all ${selectedPhotoId === photo.visitPhotoId ? 'bg-[#004c91]/5 border-[#004c91] ring-2 ring-[#004c91]/10' : 'bg-white border-gray-100 hover:border-gray-300'}`}
-              >
-                <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0 border border-gray-200 relative">
-                  <PhotoThumbnail url={photo.url} alt={photo.name} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-gray-800 truncate" title={photo.name}>{photo.name}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {photos.length > 0 && (
-          <div className="pt-2 space-y-1.5 text-center border-t border-gray-100">
-            {!isReadOnly && (
-              <button
-                type="button"
-                onClick={onUploadClick}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#004c91] text-white hover:bg-[#00386b] rounded-xl font-bold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer"
-              >
-                <Upload className="w-4 h-4" /> {t('album.uploadButton')}
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                if (onRefreshPhotos) void onRefreshPhotos();
-                setIsAlbumModalOpen(true);
-              }}
-              className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[#004c91] hover:bg-blue-50 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-            >
-              <FolderOpen className="w-3.5 h-3.5" /> Thư mục ảnh đoàn (Google Drive)
-            </button>
-
-            {!isReadOnly && (
-              <p className="text-[10px] text-gray-400 text-center font-medium">{t('album.uploadHint')}</p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Column right side: interactive preview + scan controls */}
-      <div className="lg:col-span-3 border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 flex flex-col min-h-[420px] relative">
+    <div className="animate-fadeIn">
+      {/* Interactive preview + scan controls — full width (danh sách ảnh bên trái đã bỏ, chọn ảnh qua modal "Chọn từ thư mục ảnh đoàn"). */}
+      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 flex flex-col min-h-[85vh] relative">
         {selectedPhoto ? (
           <>
             <div className="bg-white px-5 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
@@ -372,12 +330,12 @@ export function FaceScanPanel({
             )}
 
             <div className="flex-1 flex items-center justify-center p-3 relative select-none">
-              <div className="relative max-w-full max-h-[380px] rounded-lg border border-gray-300 bg-white">
+              <div className="relative max-w-full max-h-[80vh] rounded-lg border border-gray-300 bg-white">
                 {selectedImageUrl ? (
                   <img
                     src={selectedImageUrl}
                     alt={selectedPhoto.name}
-                    className={`max-w-full max-h-[360px] object-contain rounded-lg transition-all ${scanning ? 'brightness-50' : ''}`}
+                    className={`max-w-full max-h-[78vh] object-contain rounded-lg transition-all ${scanning ? 'brightness-50' : ''}`}
                   />
                 ) : (
                   <div className="w-[320px] h-[240px] flex items-center justify-center">
@@ -861,4 +819,4 @@ export function FaceScanPanel({
       )}
     </div>
   );
-}
+});

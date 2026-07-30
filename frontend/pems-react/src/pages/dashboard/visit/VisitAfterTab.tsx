@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, AlertCircle,
-  FolderOpen, ExternalLink, RefreshCw,
+  FolderOpen, Eye, UploadCloud, X, Camera, RefreshCw,
   Check, Star, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,7 +16,8 @@ import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { VisitNewsSection } from './VisitNewsSection';
 import { LogisticsHandoverSection } from '../../../features/delegations/components/LogisticsHandoverSection';
 import { GeneralExpensePanel } from './GeneralExpensePanel';
-import { FaceScanPanel } from '../../../features/delegations/components/FaceScanPanel';
+import { FaceScanPanel, type FaceScanPanelHandle } from '../../../features/delegations/components/FaceScanPanel';
+import { VisitPhotoPanel } from '../../../features/delegations/components/VisitPhotoPanel';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import { useVisitFeedback } from '../../../features/feedbacks/hooks/useVisitFeedback';
 import { FeedbackGroupSection } from '../../../features/feedbacks/components/FeedbackGroupSection';
@@ -208,7 +209,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
     lastSynced: '-',
     uploaderName: '-'
   });
-  const [isDriveConfirmed, setIsDriveConfirmed] = useState(isReadOnly);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
 
   // "Lưu ý" info modal. The real "đóng đoàn" CTA lives ONLY in the VisitProcess stage bar (single
   // source of truth); this tab no longer owns a close button so the same action can never appear
@@ -258,6 +259,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
   // Handle real file upload to backend
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const faceScanPanelRef = useRef<FaceScanPanelHandle>(null);
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0 && visitInstanceId) {
@@ -304,6 +306,16 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
   return (
     <div className="space-y-8 text-left">
+
+      {/* Input file dùng chung cho nút "Upload ảnh" (subsection 1) và Face Scan Panel (subsection 2) */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+        multiple
+        className="hidden"
+      />
 
       {/* Ký trả tài sản hậu cần — phần đầu tiên của tab Sau tiếp khách (real handover API). */}
       {visitInstanceId && !isStudent && (
@@ -362,14 +374,13 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                     Thư mục: <span className="font-mono font-bold text-gray-700">{driveConfig.folderName}</span>
                   </p>
                   <div className="flex items-center gap-3 mt-2">
-                    <a 
-                      href={driveConfig.folderUrl} 
-                      target="_blank" 
-                      rel="noreferrer" 
+                    <button
+                      type="button"
+                      onClick={() => setShowPhotoModal(true)}
                       className="text-[#004c91] hover:text-[#00386b] hover:underline font-extrabold text-xs inline-flex items-center gap-1 bg-white hover:bg-slate-50 px-3 py-1.5 border border-gray-200 rounded-lg shadow-sm transition-colors cursor-pointer"
                     >
-                      Mở link Drive <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                      <Eye className="w-3.5 h-3.5" /> Mở thư mục ảnh
+                    </button>
                     <span className="text-gray-300 text-xs">|</span>
                     <div className="text-gray-500 text-xs flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 font-semibold">
                       <span className="flex items-center gap-1">
@@ -389,27 +400,15 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                 </div>
               </div>
 
-              {!isDept && (
-                <div className={`p-4 rounded-xl border transition-all duration-200 shrink-0 md:max-w-xs xl:max-w-sm flex items-center ${
-                  isDriveConfirmed 
-                    ? 'bg-emerald-50/70 border-emerald-200 hover:border-emerald-300 shadow-inner' 
-                    : 'bg-white border-gray-200 hover:border-gray-300'
-                } shadow-sm`}>
-                  <label className="flex items-center gap-3.5 cursor-pointer select-none w-full">
-                    <input 
-                      type="checkbox" 
-                      checked={isDriveConfirmed}
-                      disabled={isReadOnly}
-                      onChange={(e) => setIsDriveConfirmed(e.target.checked)}
-                      className={`w-5 h-5 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91] cursor-pointer transition-transform duration-100 ${isReadOnly ? 'cursor-not-allowed opacity-50' : 'active:scale-95'}`}
-                    />
-                    <div className="text-left font-sans">
-                      <p className="text-xs sm:text-sm font-extrabold text-gray-800 leading-snug whitespace-nowrap">Xác nhận lưu trữ đầy đủ</p>
-                      <p className="text-[10px] text-gray-400 font-semibold mt-0.5 leading-normal">
-                        Đã đồng bộ ảnh & biên bản lên Drive
-                      </p>
-                    </div>
-                  </label>
+              {!isDept && !isReadOnly && (
+                <div className="shrink-0 flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-5 py-3.5 bg-[#004c91] hover:bg-[#00386b] text-white font-extrabold text-sm rounded-xl shadow-sm active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <UploadCloud className="w-4 h-4" /> Upload ảnh
+                  </button>
                 </div>
               )}
             </div>
@@ -425,30 +424,44 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
               {/* SUBSECTION 2: FACE SCANNING — real Google Cloud Vision face detection + manual
                   guest tagging (FaceScanPanel owns all scan/tag state, fetched from the backend). */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-lg bg-[#004c91]/10 flex items-center justify-center text-xs font-bold text-[#004c91]">2</span>
-                  <h3 className="text-base font-semibold text-[#004c91]">{t('title')}</h3>
+                <div className="flex items-center justify-between flex-wrap gap-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-[#004c91]/10 flex items-center justify-center text-xs font-bold text-[#004c91]">2</span>
+                    <h3 className="text-base font-semibold text-[#004c91]">{t('title')}</h3>
+                  </div>
+
+                  {visitInstanceId && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5" /> Tải lên ảnh chụp thực tế
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => faceScanPanelRef.current?.openAlbumModal()}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-[#004c91] border border-[#004c91] hover:bg-blue-50 rounded-lg text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" /> Chọn từ thư mục ảnh đoàn
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {visitInstanceId && (
-                  <>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                      multiple
-                      className="hidden"
-                    />
-                    <FaceScanPanel
-                      visitInstanceId={visitInstanceId}
-                      photos={uploadedImages.map((img) => ({ visitPhotoId: img.id, url: img.url, name: img.name }))}
-                      isReadOnly={isReadOnly}
-                      onUploadClick={() => fileInputRef.current?.click()}
-                      folderUrl={driveConfig.folderUrl}
-                      onRefreshPhotos={loadDriveMetadata}
-                    />
-                  </>
+                  <FaceScanPanel
+                    ref={faceScanPanelRef}
+                    visitInstanceId={visitInstanceId}
+                    photos={uploadedImages.map((img) => ({ visitPhotoId: img.id, url: img.url, name: img.name }))}
+                    isReadOnly={isReadOnly}
+                    onUploadClick={() => fileInputRef.current?.click()}
+                    folderUrl={driveConfig.folderUrl}
+                    onRefreshPhotos={loadDriveMetadata}
+                  />
                 )}
               </div>
             </>
@@ -564,6 +577,40 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
           </div>
         )}
       </AnimatePresence>
+
+      {/* PHOTO FOLDER MODAL — cùng giao diện với modal "Xem ảnh" trong Quản lý ảnh đoàn khách. */}
+      {showPhotoModal && visitInstanceId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50 shrink-0">
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 border border-orange-100 shadow-sm">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#004c91] truncate">Thư mục ảnh đoàn khách</h3>
+                  <p className="text-xs text-slate-500 font-medium truncate">{driveConfig.folderName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowPhotoModal(false); loadDriveMetadata(); }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                aria-label="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 bg-white">
+              <VisitPhotoPanel
+                visitInstanceId={visitInstanceId}
+                mode={isReadOnly ? 'view' : 'edit'}
+                showFaceTags={!isStudent}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
