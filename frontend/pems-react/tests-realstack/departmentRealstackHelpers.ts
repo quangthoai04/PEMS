@@ -68,7 +68,11 @@ export function queryDb(sql: string): string[][] {
     { encoding: 'utf8' },
   );
   if (r.status !== 0) throw new Error(`queryDb failed: ${r.stderr}`);
-  return (r.stdout ?? '').trim().split('\n').filter(Boolean).map(line => line.split('\t'));
+  // Split on \r?\n, not \n. mysql.exe terminates lines with CRLF, so splitting on \n alone leaves a
+  // stray \r on the LAST column of every row except the final one, which `.trim()` happens to clean.
+  // That makes this helper exact for a single-row answer and quietly wrong for a multi-row one — an
+  // exact comparison on the last column fails even when the data is right.
+  return (r.stdout ?? '').trim().split(/\r?\n/).filter(Boolean).map(line => line.split('\t'));
 }
 
 /** Convenience for a single scalar. Returns null when the query matched no row. */

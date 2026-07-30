@@ -66,6 +66,7 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     public DbSet<SentEmailRecipient> SentEmailRecipients => Set<SentEmailRecipient>();
     public DbSet<SentEmailAttachment> Attachments => Set<SentEmailAttachment>();
     public DbSet<EmailActionToken> EmailActionTokens => Set<EmailActionToken>();
+    public DbSet<EmailSendIdempotency> EmailSendIdempotencies => Set<EmailSendIdempotency>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
