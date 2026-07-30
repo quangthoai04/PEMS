@@ -126,7 +126,10 @@ public sealed class SaveVisitAgendaCommandHandler
         string delegationName = (await Services.VisitFormRead.VisitInstanceEffectiveName
             .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
             .GetValueOrDefault(instance.VisitInstanceId) ?? "Đoàn khách";
-        var agendaActionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
+        // Chỉ Host mới lưu được lịch trình (guard phía trên), nên notifyParticipantIds bên dưới luôn
+        // là non-Host — participant khác Host chỉ có quyền vào trang "Đóng góp kết quả", không phải
+        // "Quy trình tiếp khách" (đúng rule đã áp cho thông báo biên bản trong SaveMinutesCommandHandler).
+        var agendaActionUrl = $"/dashboard/visit/contribution/{instance.VisitInstanceId}";
 
         // Notify Accepted participants
         var notifyParticipantIds = await _db.VisitParticipants

@@ -86,6 +86,15 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
     if (item.actionType === 'OPEN_VISIT_INVITATION' && isProcessDetailLink && item.visitRequestId) {
       return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
     }
+
+    // Student/Department không bao giờ là Host (theo thiết kế vai trò) — trang "Quy trình tiếp
+    // khách" (process) chỉ dành cho Host. Notification cũ (tạo trước khi backend đổi ActionUrl
+    // sang trang "Đóng góp kết quả") vẫn có thể còn trỏ vào /process/ — luôn rewrite về đúng trang
+    // của 2 role này, tính theo dữ liệu hiện tại thay vì tin URL đã lưu sẵn.
+    const isNeverHostRole = ['STUDENT', 'DEPARTMENT'].includes(user.roleCode?.toUpperCase() || '');
+    if (isNeverHostRole && isProcessDetailLink && item.visitInstanceId) {
+      return `/dashboard/visit/contribution/${item.visitInstanceId}`;
+    }
   }
 
   return link;
