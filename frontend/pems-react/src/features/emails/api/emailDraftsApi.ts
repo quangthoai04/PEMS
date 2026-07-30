@@ -98,7 +98,30 @@ export interface DiscardEmailDraftResult {
   status: EmailDraftStatus;
 }
 
+/**
+ * A row in the "Nháp" list. Deliberately without a body or recipient addresses — the list only needs
+ * enough to recognise and reopen a draft, and the full content comes from `getDraft`.
+ */
+export interface EmailDraftSummaryDto {
+  emailDraftId: number;
+  subject?: string | null;
+  updatedAt: string;
+  recipientCount: number;
+  attachmentCount: number;
+}
+
+export interface ListEmailDraftsResult {
+  items: EmailDraftSummaryDto[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+}
+
 export const emailDraftsApi = {
+  listDrafts: async (params: { page?: number; pageSize?: number } = {}): Promise<ListEmailDraftsResult> => {
+    const { data } = await httpClient.get('/Emails/drafts', { params });
+    return data;
+  },
   createDraft: async (payload: CreateEmailDraftPayload): Promise<EmailDraftDto> => {
     const { data } = await httpClient.post('/Emails/drafts', payload);
     return data;
