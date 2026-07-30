@@ -42,16 +42,7 @@ export const minutesApi = {
     window.URL.revokeObjectURL(url);
   },
 
-  acquireLock: async (minutesId: number): Promise<{ editLockToken: string }> => {
-    const { data } = await httpClient.post(`/meetingminutes/${minutesId}/acquire-lock`);
-    return data;
-  },
-
-  save: async (minutesId: number, payload: any): Promise<void> => {
-    await httpClient.put(`/meetingminutes/${minutesId}`, payload);
-  },
-
-  releaseLock: async (minutesId: number, editLockToken: string): Promise<void> => {
-    await httpClient.post(`/meetingminutes/${minutesId}/release-lock`, { editLockToken });
-  }
+  // Trang "Quản lý biên bản" chỉ XEM — không có quyền chỉnh sửa. Chỉnh sửa biên bản (khóa sửa/lưu)
+  // chỉ thực hiện qua MinutesCard.tsx (trong Quy trình tiếp khách), nên các API acquire-lock/save/
+  // release-lock không có ở đây.
 };

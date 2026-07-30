@@ -77,6 +77,11 @@ export interface MinuteActionItemDto {
   minutesId: number;
   title: string;
   note: string | null;
+  /** Người phụ trách (minute_action_items.assigned_to_user_id) — trang này chỉ XEM, không chỉnh sửa
+   * (chỉnh sửa chỉ thực hiện qua MinutesCard.tsx trong Quy trình tiếp khách). */
+  assignedToUserId: number | null;
+  /** Tên hiển thị của người phụ trách (join Users tại thời điểm đọc) — null khi chưa gán. */
+  assignedToUserName: string | null;
   dueDate: string | null;
   status: MinuteActionItemStatus;
   completedAt: string | null;
