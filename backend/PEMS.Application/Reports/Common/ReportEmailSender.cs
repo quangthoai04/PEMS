@@ -7,6 +7,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Domain.Entities.Documents;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
@@ -26,15 +27,23 @@ public sealed class ReportEmailSender : IReportEmailSender
     private readonly IApplicationDbContext _db;
     private readonly IFileStorageService _storage;
     private readonly ISystemEmailDispatcher _dispatcher;
+    private readonly EmailSendAttempt? _attempt;
 
+    /// <param name="attempt">
+    /// The send reservation, when the request is running under one (G11 / R-103). Optional because this
+    /// sender is also constructed directly by tests and would otherwise force every one of them to build
+    /// idempotency plumbing they are not exercising; a null attempt simply records no transitions.
+    /// </param>
     public ReportEmailSender(
         IApplicationDbContext db,
         IFileStorageService storage,
-        ISystemEmailDispatcher dispatcher)
+        ISystemEmailDispatcher dispatcher,
+        EmailSendAttempt? attempt = null)
     {
         _db = db;
         _storage = storage;
         _dispatcher = dispatcher;
+        _attempt = attempt;
     }
 
     public async Task<ulong> SendAsync(ReportEmailMessage message, CancellationToken cancellationToken = default)
@@ -90,7 +99,14 @@ public sealed class ReportEmailSender : IReportEmailSender
             throw;
         }
 
-        // 5) Deliver the exact bytes that were stored and recorded — no regeneration between the snapshot
+        // 5) The point of no return. Everything above can be repeated safely; from the next statement on
+        //    it cannot, because the provider may accept a message whose outcome never reaches us. The
+        //    transition is committed BEFORE the call, so a crash in the middle leaves a row that says
+        //    "a send was in flight" rather than one that says "nothing happened".
+        _attempt?.RecordSentEmail(prepared.SentEmailId);
+        if (_attempt is not null) await _attempt.MarkDispatchingAsync(cancellationToken);
+
+        // 6) Deliver the exact bytes that were stored and recorded — no regeneration between the snapshot
         //    and the send, so the document in the recipient's inbox is the one the history describes.
         var delivery = await _dispatcher.DeliverAsync(
             prepared with
@@ -109,13 +125,21 @@ public sealed class ReportEmailSender : IReportEmailSender
             },
             cancellationToken);
 
-        // 6) Mandatory: the user pressed "gửi", so anything short of provider acceptance is a failed
+        // 7) Mandatory: the user pressed "gửi", so anything short of provider acceptance is a failed
         //    command. The history row keeps the truthful FAILED/QUEUED status written above — this throws
         //    after it, so raising the error never costs the evidence of what happened.
         if (delivery.Status != EmailDeliveryStatus.Sent)
+        {
+            // A refusal decided before the provider was contacted is a CLEAN failure, and saying so is
+            // what lets the user press the same button again with the same key once the configuration is
+            // fixed. Anything else keeps the dispatch claim and therefore reads as an unknown outcome.
+            if (_attempt is not null && EmailDeliveryCodes.ProvesNothingWasSent(delivery))
+                _attempt.WithdrawDispatchClaim();
+
             throw new BusinessRuleException(
                 "Không gửi được email báo cáo. Vui lòng thử lại hoặc liên hệ quản trị hệ thống.",
                 EmailErrorCodes.ReportDeliveryFailed);
+        }
 
         return prepared.SentEmailId;
     }

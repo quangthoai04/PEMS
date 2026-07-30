@@ -9,6 +9,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportV2;
 
@@ -21,12 +22,22 @@ namespace PEMS.Application.Reports.Commands.SendDeptLeaderInvoiceToStaffLeader;
 /// <c>email_templates</c> (REPORT_DEPARTMENT_INVOICE — dùng chung với chiều ngược lại);
 /// bảng kê đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendDeptLeaderInvoiceToStaffLeaderCommand : IRequest<SendDeptLeaderInvoiceToStaffLeaderResult>
+public sealed class SendDeptLeaderInvoiceToStaffLeaderCommand : IRequest<SendDeptLeaderInvoiceToStaffLeaderResult>, IIdempotentEmailSend
 {
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public string? Note { get; set; }
     public List<SendDeptLeaderInvoiceLineItem> Items { get; set; } = new();
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.DeptLeaderInvoiceToStaffLeader;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note)
+               .Lines("items", Items.Select(i => (i.LogisticsItemId, i.UnitPrice)));
 }
 
 public sealed class SendDeptLeaderInvoiceLineItem
@@ -35,7 +46,7 @@ public sealed class SendDeptLeaderInvoiceLineItem
     public decimal UnitPrice { get; set; }
 }
 
-public sealed class SendDeptLeaderInvoiceToStaffLeaderResult
+public sealed class SendDeptLeaderInvoiceToStaffLeaderResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
@@ -63,8 +74,6 @@ public sealed class SendDeptLeaderInvoiceToStaffLeaderCommandHandler
 
         if (request.Items.Count == 0)
             throw new ValidationException("Chọn ít nhất một đơn yêu cầu để gửi hóa đơn.");
-        if (request.Items.Any(i => i.UnitPrice < 0))
-            throw new ValidationException("Đơn giá phải lớn hơn hoặc bằng 0.");
 
         var dept = await _db.Departments.AsNoTracking()
             .Where(d => d.DepartmentId == deptId)
@@ -103,14 +112,18 @@ public sealed class SendDeptLeaderInvoiceToStaffLeaderCommandHandler
             .ToListAsync(cancellationToken);
 
         var lines = new List<InvoiceLine>();
+        var grandTotal = 0m;
         foreach (var input in request.Items)
         {
+            // Scope first: the price is only ever applied to a line already proven to belong here.
             var db = dbItems.FirstOrDefault(x => x.LogisticsItemId == input.LogisticsItemId)
                 ?? throw new ValidationException($"Đơn #{input.LogisticsItemId} không thuộc phòng ban của bạn.");
+            InvoiceMoney.ValidateUnitPrice(input.UnitPrice, db.Title);
             var qty = db.Quantity ?? 1;
-            lines.Add(new InvoiceLine(db.Title, db.DelegationName ?? "", db.StartAt, qty, input.UnitPrice, qty * input.UnitPrice));
+            var amount = InvoiceMoney.Multiply(qty, input.UnitPrice, $"Thành tiền của '{db.Title}'");
+            lines.Add(new InvoiceLine(db.Title, db.DelegationName ?? "", db.StartAt, qty, input.UnitPrice, amount));
+            grandTotal = InvoiceMoney.Add(grandTotal, amount, "Tổng tiền hóa đơn");
         }
-        var grandTotal = lines.Sum(l => l.Amount);
 
         var leaderName = await _db.Users.AsNoTracking()
             .Where(u => u.UserId == _currentUser.UserId)

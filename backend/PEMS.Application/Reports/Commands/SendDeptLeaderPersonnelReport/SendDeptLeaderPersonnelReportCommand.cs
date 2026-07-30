@@ -10,6 +10,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportV2;
 
@@ -20,15 +21,25 @@ namespace PEMS.Application.Reports.Commands.SendDeptLeaderPersonnelReport;
 /// báo cáo của Department Leader. Nội dung thư đến từ <c>email_templates</c>
 /// (REPORT_PERSONNEL_PERFORMANCE); số liệu và danh sách nhiệm vụ đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendDeptLeaderPersonnelReportCommand : IRequest<SendDeptLeaderPersonnelReportResult>
+public sealed class SendDeptLeaderPersonnelReportCommand : IRequest<SendDeptLeaderPersonnelReportResult>, IIdempotentEmailSend
 {
     public ulong UserId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public string? Note { get; set; }
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.DeptLeaderPersonnelReport;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Id("user", UserId)
+               .Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note);
 }
 
-public sealed class SendDeptLeaderPersonnelReportResult
+public sealed class SendDeptLeaderPersonnelReportResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
