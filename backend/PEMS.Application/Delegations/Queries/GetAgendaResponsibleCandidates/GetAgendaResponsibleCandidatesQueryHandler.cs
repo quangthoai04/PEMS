@@ -7,6 +7,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -51,62 +52,18 @@ public sealed class GetAgendaResponsibleCandidatesQueryHandler
         if (!(isHost || isStaffLeaderOfCampus || isHo || isAcceptedParticipant))
             throw new ForbiddenException("Bạn không có quyền xem danh sách người phụ trách của chuyến này.");
 
-        // Only ACCEPTED supporting roles are eligible (never INVITED / ASSIGNED / DECLINED / REMOVED).
-        var allowedRoles = new[]
+        var eligible = await ResponsibleCandidateEligibility.GetEligibleUsersAsync(
+            _db, instance.VisitInstanceId, instance.CurrentHostUserId, cancellationToken);
+
+        var candidates = eligible.Select(u => new AgendaResponsibleCandidateDto
         {
-            ParticipantRoles.IcSupport, ParticipantRoles.DeptSupport, ParticipantRoles.Student,
-        };
-
-        var candidates = new List<AgendaResponsibleCandidateDto>();
-        var seen = new HashSet<ulong>();
-
-        // 1) Main host (must be ACTIVE). Always listed first, with the "Host chính" label.
-        if (instance.CurrentHostUserId.HasValue)
-        {
-            var host = await _db.Users
-                .Where(u => u.UserId == instance.CurrentHostUserId.Value && u.Status == UserStatuses.Active)
-                .Select(u => new { u.UserId, u.FullName, u.Email })
-                .FirstOrDefaultAsync(cancellationToken);
-            if (host != null)
-            {
-                candidates.Add(new AgendaResponsibleCandidateDto
-                {
-                    UserId = host.UserId,
-                    FullName = host.FullName,
-                    Email = host.Email,
-                    ParticipantRole = ParticipantRoles.IcHost,
-                    DisplayRole = "Host chính",
-                    IsMainHost = true,
-                });
-                seen.Add(host.UserId);
-            }
-        }
-
-        // 2) ACCEPTED supporting participants (active users only).
-        var participants = await (
-            from p in _db.VisitParticipants
-            join u in _db.Users on p.UserId equals u.UserId
-            where p.VisitInstanceId == instance.VisitInstanceId
-                  && p.Status == ParticipantStatuses.Accepted
-                  && allowedRoles.Contains(p.ParticipantRole)
-                  && u.Status == UserStatuses.Active
-            select new { u.UserId, u.FullName, u.Email, p.ParticipantRole }
-        ).ToListAsync(cancellationToken);
-
-        foreach (var p in participants)
-        {
-            // Dedupe by user_id — if the host also appears as a participant, keep the "Host chính" row.
-            if (!seen.Add(p.UserId)) continue;
-            candidates.Add(new AgendaResponsibleCandidateDto
-            {
-                UserId = p.UserId,
-                FullName = p.FullName,
-                Email = p.Email,
-                ParticipantRole = p.ParticipantRole,
-                DisplayRole = DisplayRoleOf(p.ParticipantRole),
-                IsMainHost = false,
-            });
-        }
+            UserId = u.UserId,
+            FullName = u.FullName,
+            Email = u.Email,
+            ParticipantRole = u.ParticipantRole!,
+            DisplayRole = u.IsMainHost ? "Host chính" : DisplayRoleOf(u.ParticipantRole!),
+            IsMainHost = u.IsMainHost,
+        }).ToList();
 
         // Sort: Host chính → IC Support → Department Support → Student Support → full_name.
         return candidates

@@ -2,7 +2,10 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Entities.Minutes;
 
 namespace PEMS.Application.Delegations.Minutes;
@@ -13,18 +16,22 @@ public sealed class SaveMinutesCommandHandler
     private static readonly HashSet<string> AttendanceStatuses = new() { "PRESENT", "ABSENT", "EXCUSED" };
     private static readonly HashSet<string> ActionStatuses = new() { "TODO", "IN_PROGRESS", "DONE", "CANCELLED" };
     private const string ActionDone = "DONE";
+    private const string ActionCancelled = "CANCELLED";
 
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly IEmailService _email;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public SaveMinutesCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        IEmailService email, PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _email = email;
         _notificationService = notificationService;
     }
 
@@ -88,8 +95,14 @@ public sealed class SaveMinutesCommandHandler
         if (request.Participants != null)
             await ReconcileParticipants(minute.MinutesId, instance.VisitRequestId, request.Participants, userId, now, cancellationToken);
 
+        List<MinuteActionItem> newlyAssignedItems = new();
         if (request.ActionItems != null)
-            await ReconcileActionItems(minute.MinutesId, request.ActionItems, userId, now, cancellationToken);
+        {
+            var eligibleAssigneeIds = await ResponsibleCandidateEligibility.GetEligibleUserIdsAsync(
+                _db, instance.VisitInstanceId, instance.CurrentHostUserId, cancellationToken);
+            newlyAssignedItems = await ReconcileActionItems(
+                minute.MinutesId, request.ActionItems, eligibleAssigneeIds, userId, now, cancellationToken);
+        }
 
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
@@ -107,6 +120,42 @@ public sealed class SaveMinutesCommandHandler
         string ActionUrlFor(ulong recipientUserId) => recipientUserId == instance.CurrentHostUserId
             ? $"/dashboard/visit/process/{instance.VisitInstanceId}"
             : $"/dashboard/visit/contribution/{instance.VisitInstanceId}";
+
+        // Notify + email the person newly assigned (or re-assigned) to an action item — only fires
+        // for items whose assignee just changed, never on every re-save of an unrelated edit.
+        if (newlyAssignedItems.Count > 0)
+        {
+            var assigneeIds = newlyAssignedItems.Select(a => a.AssignedToUserId!.Value).Distinct().ToList();
+            var assigneeUsers = await _db.Users
+                .Where(u => assigneeIds.Contains(u.UserId))
+                .Select(u => new { u.UserId, u.FullName, u.Email })
+                .ToDictionaryAsync(u => u.UserId, cancellationToken);
+
+            foreach (var item in newlyAssignedItems)
+            {
+                if (!assigneeUsers.TryGetValue(item.AssignedToUserId!.Value, out var assignee)) continue;
+
+                notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: assignee.UserId,
+                    Title: "Bạn được giao đầu việc",
+                    Message: $"Bạn được phân công phụ trách \"{item.Title}\" trong biên bản của đoàn {delegationName}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.ActionItemAssigned,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.MinuteActionItem,
+                    RelatedId: item.ActionItemId,
+                    ActorUserId: userId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                    VisitInstanceId: instance.VisitInstanceId,
+                    CampusId: instance.CampusId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    // Khác với "Biên bản cập nhật" (trỏ về đúng trang biên bản theo role), thông báo
+                    // giao việc trỏ thẳng tới "Quản lý việc sau tiếp khách" lọc đúng 1 đầu việc này.
+                    ActionUrl: $"/dashboard/post-visit-tasks?actionItemId={item.ActionItemId}"
+                ));
+
+                if (!string.IsNullOrWhiteSpace(assignee.Email))
+                    await SendActionItemAssignedEmailAsync(item, assignee.Email, assignee.FullName, delegationName, userId, now, cancellationToken);
+            }
+        }
 
         // Notify Accepted participants
         var notifyParticipantIds = await _db.VisitParticipants
@@ -303,14 +352,17 @@ public sealed class SaveMinutesCommandHandler
                 _db.MinuteParticipants.Remove(row);
     }
 
-    private async Task ReconcileActionItems(
-        ulong minutesId, IReadOnlyList<SaveMinuteActionItemInput> inputs, ulong userId, DateTime now, CancellationToken ct)
+    private async Task<List<MinuteActionItem>> ReconcileActionItems(
+        ulong minutesId, IReadOnlyList<SaveMinuteActionItemInput> inputs, HashSet<ulong> eligibleAssigneeIds,
+        ulong userId, DateTime now, CancellationToken ct)
     {
         var existing = await _db.MinuteActionItems
             .Where(a => a.MinutesId == minutesId)
             .ToListAsync(ct);
         var byId = existing.ToDictionary(a => a.ActionItemId);
         var processed = new HashSet<ulong>();
+        // Items whose assignee is newly set or changed this save — the caller emails/notifies these.
+        var newlyAssigned = new List<MinuteActionItem>();
 
         for (int i = 0; i < inputs.Count; i++)
         {
@@ -321,6 +373,9 @@ public sealed class SaveMinutesCommandHandler
             var status = (input.Status ?? string.Empty).Trim().ToUpperInvariant();
             if (!ActionStatuses.Contains(status))
                 throw new BusinessRuleException($"Trạng thái đầu mục công việc không hợp lệ: '{input.Status}'.");
+            if (input.AssignedToUserId.HasValue && !eligibleAssigneeIds.Contains(input.AssignedToUserId.Value))
+                throw new BusinessRuleException(
+                    "Người phụ trách không hợp lệ hoặc chưa chấp nhận tham gia chuyến tiếp khách này.");
             var note = Clean(input.Note);
             int order = i + 1;
 
@@ -328,8 +383,13 @@ public sealed class SaveMinutesCommandHandler
             {
                 processed.Add(id);
                 bool wasDone = row.Status == ActionDone;
+                bool assigneeChanged = row.AssignedToUserId != input.AssignedToUserId;
+                // Only re-arm the due-reminder when the due date or assignee actually changed — never
+                // on an unrelated re-save, or an already-sent reminder would fire again next tick.
+                if (assigneeChanged || row.DueDate != input.DueDate) row.DueReminderSentAt = null;
                 row.Title = title;
                 row.Note = note;
+                row.AssignedToUserId = input.AssignedToUserId;
                 row.DueDate = input.DueDate;
                 row.Status = status;
                 row.DisplayOrder = order;
@@ -337,6 +397,7 @@ public sealed class SaveMinutesCommandHandler
                 row.UpdatedBy = userId;
                 if (status == ActionDone && !wasDone) row.CompletedAt = now;
                 else if (status != ActionDone) row.CompletedAt = null;
+                if (assigneeChanged && input.AssignedToUserId.HasValue) newlyAssigned.Add(row);
                 continue;
             }
 
@@ -345,6 +406,7 @@ public sealed class SaveMinutesCommandHandler
                 MinutesId = minutesId,
                 Title = title,
                 Note = note,
+                AssignedToUserId = input.AssignedToUserId,
                 DueDate = input.DueDate,
                 Status = status,
                 DisplayOrder = order,
@@ -353,16 +415,104 @@ public sealed class SaveMinutesCommandHandler
                 CreatedBy = userId,
             };
             _db.MinuteActionItems.Add(newItem);
+            if (input.AssignedToUserId.HasValue) newlyAssigned.Add(newItem);
         }
 
+        // Rows the client dropped from the list: never hard-delete once persisted (an assignee may
+        // already have been notified about it) — soft-cancel instead, so it still shows as "Đã hủy" on
+        // the assignee's own task list. A DONE item cannot be dropped at all (unchanged rule).
         foreach (var row in existing)
         {
             if (processed.Contains(row.ActionItemId)) continue;
             if (row.Status == ActionDone)
                 throw new BusinessRuleException("Không thể xóa đầu mục công việc đã hoàn thành.");
-            _db.MinuteActionItems.Remove(row);
+            if (row.Status == ActionCancelled) continue; // already cancelled — nothing to do
+            row.Status = ActionCancelled;
+            row.UpdatedAt = now;
+            row.UpdatedBy = userId;
+        }
+
+        return newlyAssigned;
+    }
+
+    private async Task SendActionItemAssignedEmailAsync(
+        MinuteActionItem item, string recipientEmail, string recipientName, string delegationName,
+        ulong actorUserId, DateTime now, CancellationToken ct)
+    {
+        var dueDateText = item.DueDate?.ToString("HH:mm dd/MM/yyyy");
+        var subject = ActionItemEmailContent.AssignedSubject(item.Title);
+        var body = EmailComposition.BrandedShell(
+            ActionItemEmailContent.AssignedBodyHtml(recipientName, item.Title, dueDateText, delegationName));
+
+        ulong sentEmailId, sentEmailRecipientId;
+        await using (var transaction = await _db.BeginTransactionAsync(ct))
+        {
+            var sentEmail = new SentEmail
+            {
+                RelatedType = PEMS.Application.Notifications.Common.NotificationRelatedTypes.MinuteActionItem,
+                RelatedId = item.ActionItemId,
+                Subject = subject,
+                BodySnapshot = body,
+                Status = "QUEUED",
+                SentBy = actorUserId,
+                CreatedAt = now,
+            };
+            _db.SentEmails.Add(sentEmail);
+            await _db.SaveChangesAsync(ct);
+
+            var sentRecipient = new SentEmailRecipient
+            {
+                SentEmailId = sentEmail.SentEmailId,
+                RecipientEmail = recipientEmail,
+                RecipientName = recipientName,
+                RecipientType = "TO",
+                DeliveryStatus = "QUEUED",
+                CreatedAt = now,
+            };
+            _db.SentEmailRecipients.Add(sentRecipient);
+            await _db.SaveChangesAsync(ct);
+
+            sentEmailId = sentEmail.SentEmailId;
+            sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
+            await transaction.CommitAsync(ct);
+        }
+
+        try
+        {
+            await _email.SendAsync(recipientEmail, subject, body, ct);
+            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorUserId, now, null, ct);
+        }
+        catch (Exception ex)
+        {
+            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", actorUserId, now, ex.Message, ct);
         }
     }
+
+    private async Task UpdateEmailStatusAsync(
+        ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
+        string? error, CancellationToken ct)
+    {
+        var sentEmail = await _db.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
+        if (sentEmail != null)
+        {
+            sentEmail.Status = status;
+            sentEmail.LastAttemptAt = now;
+            sentEmail.RetryCount += 1;
+            if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
+            else { sentEmail.ErrorMessage = Truncate(error, 1000); }
+        }
+        var rec = await _db.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
+        if (rec != null)
+        {
+            rec.DeliveryStatus = status;
+            if (status == "SENT") rec.SentAt = now;
+            else rec.ErrorMessage = Truncate(error, 1000);
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string? Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 
     private static string? Clean(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

@@ -47,6 +47,7 @@ import { DocumentManagement } from './pages/dashboard/documents/DocumentManageme
 import { GalleryManagement } from './pages/dashboard/gallery/GalleryManagement';
 import { LocationManagement } from './pages/dashboard/gallery/LocationManagement';
 import { MinuteManagement } from './pages/dashboard/minutes/MinuteManagement';
+import { PostVisitTaskManagement } from './pages/dashboard/post-visit-tasks/PostVisitTaskManagement';
 import { HoReportManagement } from './pages/dashboard/reports/HoReportManagement';
 import { StaffLeaderReportManagement } from './pages/dashboard/reports/StaffLeaderReportManagement';
 import { FeedbackManagement } from './pages/dashboard/feedback/FeedbackManagement';
@@ -221,6 +222,7 @@ export default function App() {
             <Route path="gallery" element={<GalleryManagement />} />
             <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
+            <Route path="post-visit-tasks" element={<PostVisitTaskManagement />} />
             <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DeptReportManagement /> : isHO ? <HoReportManagement /> : isStaffLeader ? <StaffLeaderReportManagement /> : <Navigate to="/dashboard" replace />}</ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />

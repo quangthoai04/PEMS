@@ -2191,7 +2191,10 @@ CREATE TABLE minute_action_items (
   title VARCHAR(255) NOT NULL COMMENT 'Tên đầu việc',
   note TEXT NULL COMMENT 'Ghi chú thêm cho đầu việc',
 
+  assigned_to_user_id BIGINT UNSIGNED NULL COMMENT 'Người phụ trách đầu mục — Host hoặc participant ACCEPTED (IC_SUPPORT/DEPT_SUPPORT/STUDENT) của chuyến thăm',
+
   due_date DATETIME NULL COMMENT 'Deadline ngày giờ của đầu việc',
+  due_reminder_sent_at DATETIME NULL COMMENT 'Thời điểm đã gửi mail/thông báo nhắc hạn cho người phụ trách; NULL = chưa nhắc',
 
   status ENUM('TODO','IN_PROGRESS','DONE','CANCELLED') NOT NULL DEFAULT 'TODO'
     COMMENT 'TODO=chưa làm, IN_PROGRESS=đang làm, DONE=hoàn thành, CANCELLED=đã hủy/không cần làm nữa',
@@ -2211,10 +2214,14 @@ CREATE TABLE minute_action_items (
   KEY idx_action_items_status_due (status, due_date),
   KEY idx_action_items_order (minutes_id, display_order),
   KEY idx_action_items_created_by_time (created_by, created_at),
+  KEY idx_action_items_assignee (assigned_to_user_id, status),
 
   CONSTRAINT fk_action_items_minutes
     FOREIGN KEY (minutes_id) REFERENCES minutes(minutes_id)
     ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_action_items_assignee
+    FOREIGN KEY (assigned_to_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
 
   CONSTRAINT fk_action_items_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)

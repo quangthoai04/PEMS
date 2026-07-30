@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.Minutes;
+using PEMS.Application.Delegations.Minutes.Queries.GetMyActionItems;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -82,6 +83,16 @@ namespace PEMS.Api.Controllers
         [HttpGet("visit-instances/{visitInstanceId}/user-search")]
         public async Task<IActionResult> UserSearch(ulong visitInstanceId, [FromQuery] string? query, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new SearchMinuteUsersQuery(visitInstanceId, query), cancellationToken));
+
+        // ── "Quản lý việc sau tiếp khách" — action items assigned to the caller only ──
+        [HttpGet("my-action-items")]
+        public async Task<IActionResult> GetMyActionItems([FromQuery] GetMyActionItemsQuery query, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(query, cancellationToken));
+
+        // "Tích hoàn thành" from the caller's own task list — one-way, no un-checking.
+        [HttpPost("action-items/{actionItemId}/mark-done")]
+        public async Task<IActionResult> MarkActionItemDone(ulong actionItemId, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new MarkActionItemDoneCommand(actionItemId), cancellationToken));
     }
 
     public sealed record CreateOrLockMinutesBody(string? Title);

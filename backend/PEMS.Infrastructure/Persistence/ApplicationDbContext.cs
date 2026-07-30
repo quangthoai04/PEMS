@@ -1072,6 +1072,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<MinuteActionItem>()
             .HasOne(a => a.Minute).WithMany(m => m.ActionItems)
             .HasForeignKey(a => a.MinutesId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<MinuteActionItem>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(a => a.AssignedToUserId).OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<MinuteParticipant>()
             .HasOne(a => a.Minute).WithMany(m => m.Participants)

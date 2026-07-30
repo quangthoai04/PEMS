@@ -16,6 +16,8 @@ import type {
   MinuteUserSearchItem,
   SaveMinuteParticipantPayload,
   SaveMinuteActionItemPayload,
+  MyActionItemsFilterParams,
+  MyActionItemsResponse,
   VisitNews,
   VisitNewsList,
   VisitParticipantListItem,
@@ -505,6 +507,16 @@ export const delegationsApi = {
       const { data } = await httpClient.get<MinuteUserSearchItem[]>(
         API_ENDPOINTS.meetingMinutes.userSearch(visitInstanceId), { params: { query } });
       return data;
+    },
+    /** "Quản lý việc sau tiếp khách" — action items assigned to the caller (search/filter/sort/paginate). */
+    async myActionItems(params: MyActionItemsFilterParams): Promise<MyActionItemsResponse> {
+      const { data } = await httpClient.get<MyActionItemsResponse>(
+        API_ENDPOINTS.meetingMinutes.myActionItems, { params });
+      return data;
+    },
+    /** "Tích hoàn thành" from the caller's own task list — one-way, no un-checking. */
+    async markActionItemDone(actionItemId: number | string): Promise<void> {
+      await httpClient.post(API_ENDPOINTS.meetingMinutes.markActionItemDone(actionItemId), {});
     },
   },
 

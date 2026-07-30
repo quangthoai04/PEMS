@@ -739,12 +739,19 @@ export interface MinuteParticipant {
   guestNationality: string | null;
 }
 
-/** One action item (minute_action_items). No assignee column exists in SQL. */
+/** One action item (minute_action_items). */
 export interface MinuteActionItem {
   actionItemId: number;
   minutesId: number;
   title: string;
   note: string | null;
+  /** Người phụ trách (minute_action_items.assigned_to_user_id) — Host hoặc participant ACCEPTED
+   * (IC_SUPPORT/DEPT_SUPPORT/STUDENT). Null = chưa gán. */
+  assignedToUserId: number | null;
+  /** Tên hiển thị của người phụ trách (join Users tại thời điểm đọc) — null khi chưa gán. Dùng field
+   * này để hiển thị (không phụ thuộc responsibleCandidates — danh sách đó chỉ phản ánh candidate
+   * ĐANG hợp lệ, có thể không còn chứa người đã được gán trước đó nếu participant status đổi). */
+  assignedToUserName: string | null;
   dueDate: string | null; // ISO; render with first 10 chars for a date input
   status: string; // TODO | IN_PROGRESS | DONE | CANCELLED
   completedAt: string | null;
@@ -805,6 +812,7 @@ export interface SaveMinuteActionItemPayload {
   actionItemId: number | null;
   title: string;
   note: string | null;
+  assignedToUserId: number | null;
   dueDate: string | null; // business wall-clock datetime "YYYY-MM-DDTHH:mm:ss" (no timezone) or null
   status: string;
 }

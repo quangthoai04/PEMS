@@ -302,6 +302,9 @@ export const API_ENDPOINTS = {
     releaseLock: (minutesId: string | number) => `/meetingminutes/${minutesId}/release-lock`,
     newParticipantCandidates: (minutesId: string | number) => `/meetingminutes/${minutesId}/new-participant-candidates`,
     userSearch: (visitInstanceId: string | number) => `/meetingminutes/visit-instances/${visitInstanceId}/user-search`,
+    // "Quản lý việc sau tiếp khách" — action items assigned to the caller.
+    myActionItems: '/meetingminutes/my-action-items',
+    markActionItemDone: (actionItemId: string | number) => `/meetingminutes/action-items/${actionItemId}/mark-done`,
   },
   // Student visit photos (ảnh đoàn khách) — visit_photos/visit_photo_folders, độc lập Gallery.
   visitPhotos: {

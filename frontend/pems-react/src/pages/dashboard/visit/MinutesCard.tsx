@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type {
-  VisitMinute, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
+  VisitMinute, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload, AgendaResponsibleCandidate,
 } from '../../../features/delegations/types/delegations.types';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
@@ -73,6 +73,9 @@ type DraftActionItem = {
   actionItemId: number; // 0 = new
   title: string;
   note: string;
+  assignedToUserId: number | null;
+  /** Tên hiển thị người phụ trách từ server — chỉ dùng cho view-only (editing mode chọn qua responsibleCandidates). */
+  assignedToUserName: string | null;
   dueDate: string; // datetime-local "YYYY-MM-DDTHH:mm" or ''
   status: string;
 };
@@ -92,7 +95,9 @@ const ACTION_STATUS_META: Record<string, { label: string; cls: string }> = {
   DONE: { label: 'Hoàn thành', cls: 'bg-green-50 text-green-700 border-green-200' },
   CANCELLED: { label: 'Đã hủy', cls: 'bg-red-50 text-red-600 border-red-200' },
 };
-const ACTION_STATUS_OPTIONS = Object.keys(ACTION_STATUS_META).map((value) => ({ value, label: ACTION_STATUS_META[value].label }));
+// Dropdown chỉ cho chọn tay 2 trạng thái — "Đang làm" (dữ liệu cũ) và "Đã hủy" (chỉ sinh ra khi Host
+// xóa đầu mục, không phải lựa chọn thủ công) vẫn hiển thị đúng màu qua ACTION_STATUS_META ở trên.
+const ACTION_STATUS_OPTIONS = ['TODO', 'DONE'].map((value) => ({ value, label: ACTION_STATUS_META[value].label }));
 
 export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInstanceId: number; isReadOnly?: boolean }) {
   const [expanded, setExpanded] = useState(true);
@@ -129,6 +134,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const [draftContent, setDraftContent] = useState('');
   const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
   const [draftActionItems, setDraftActionItems] = useState<DraftActionItem[]>([]);
+  // "Người phụ trách" picker for action items — Host + ACCEPTED IC_SUPPORT/DEPT_SUPPORT/STUDENT
+  // participants of this instance (never guests). Reuses the endpoint built for the Agenda editor.
+  const [responsibleCandidates, setResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
   const tokenRef = useRef<string | null>(null);
   const minutesIdRef = useRef<number | null>(null);
   const rowVersionRef = useRef<number>(0);
@@ -160,6 +168,12 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     catch { setPartnerLinks([]); }
   }, [visitInstanceId]);
   useEffect(() => { void loadPartnerLinks(); }, [loadPartnerLinks]);
+
+  const loadResponsibleCandidates = useCallback(async () => {
+    try { setResponsibleCandidates(await delegationsApi.getAgendaResponsibleCandidates(visitInstanceId)); }
+    catch { setResponsibleCandidates([]); }
+  }, [visitInstanceId]);
+  useEffect(() => { void loadResponsibleCandidates(); }, [loadResponsibleCandidates]);
   const findPartnerLink = (p: { minuteParticipantId: number; guestMemberId: number | null }) =>
     partnerLinks.find(
       (l) =>
@@ -206,6 +220,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       actionItemId: a.actionItemId,
       title: a.title ?? '',
       note: a.note ?? '',
+      assignedToUserId: a.assignedToUserId ?? null,
+      assignedToUserName: a.assignedToUserName ?? null,
       dueDate: toDateTimeLocalValue(a.dueDate),
       status: a.status || 'TODO',
     })));
@@ -234,7 +250,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
 
   // A row the user never touched (default empty) — must NOT be sent to the backend.
   const isBlankActionItem = (a: DraftActionItem) =>
-    !a.title.trim() && !a.note.trim() && !a.dueDate && a.status === 'TODO';
+    !a.title.trim() && !a.note.trim() && !a.dueDate && !a.assignedToUserId && a.status === 'TODO';
 
   const handleSave = async () => {
     if (!minutesIdRef.current || !tokenRef.current) return;
@@ -301,6 +317,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       actionItemId: a.actionItemId > 0 ? a.actionItemId : null,
       title: a.title.trim(),
       note: a.note.trim() || null,
+      assignedToUserId: a.assignedToUserId ?? null,
       dueDate: a.dueDate ? toPayloadDateTime(a.dueDate) : null,
       status: a.status,
     }));
@@ -442,6 +459,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         actionItemId: a.actionItemId,
         title: a.title ?? '',
         note: a.note ?? '',
+        assignedToUserId: a.assignedToUserId ?? null,
+        assignedToUserName: a.assignedToUserName ?? null,
         dueDate: toDateTimeLocalValue(a.dueDate),
         status: a.status || 'TODO',
       }));
@@ -790,6 +809,27 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     <span className={`flex-1 text-sm font-medium ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{a.title || '-'}</span>
                                   )}
                                   <div className="flex items-center gap-2">
+                                    <UserPlus className="w-4 h-4 text-[#004c91] shrink-0" />
+                                    {editing ? (
+                                      <select value={a.assignedToUserId ?? ''}
+                                        onChange={(e) => updateActionItem(a._key, { assignedToUserId: e.target.value ? Number(e.target.value) : null })}
+                                        className="text-xs font-bold rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white max-w-[190px]">
+                                        <option value="">Chưa chọn người phụ trách</option>
+                                        {responsibleCandidates.map((c) => (
+                                          <option key={c.userId} value={c.userId}>{c.fullName} — {c.displayRole}</option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <span className="text-xs font-semibold text-[#004c91]">
+                                        {a.assignedToUserId
+                                          ? (a.assignedToUserName
+                                              ?? responsibleCandidates.find((c) => c.userId === a.assignedToUserId)?.fullName
+                                              ?? `Người dùng #${a.assignedToUserId}`)
+                                          : 'Chưa phân công'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2">
                                     <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
                                     {editing ? (
                                       <input type="datetime-local" value={a.dueDate} min={vietnamNowDateTimeLocal()}
@@ -828,7 +868,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                           })}
                           {editing && (
                             <button type="button"
-                              onClick={() => setDraftActionItems((prev) => [...prev, { _key: nextKey('a'), actionItemId: 0, title: '', note: '', dueDate: '', status: 'TODO' }])}
+                              onClick={() => setDraftActionItems((prev) => [...prev, { _key: nextKey('a'), actionItemId: 0, title: '', note: '', assignedToUserId: null, assignedToUserName: null, dueDate: '', status: 'TODO' }])}
                               className="text-sm font-bold text-[#004c91] hover:text-[#003366] flex items-center gap-1.5 px-2 py-1 outline-none">
                               <Plus className="w-4 h-4" /> Thêm đầu mục công việc
                             </button>

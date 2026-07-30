@@ -91,6 +91,17 @@ public sealed class MinutesMutationScopeV2Tests
         public Task CreateAsync(CreateNotificationRequest r, CancellationToken ct) => Task.CompletedTask;
     }
 
+    private sealed class SilentEmail : IEmailService
+    {
+        public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SendAsync(OutboundEmail message, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.FromResult(EmailDeliveryResult.Sent());
+        public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SendVisitorAccountCreatedOrLinkedEmailAsync(string toEmail, string contactFullName, string delegationName, string requestCode, string visitScope, string plannedTime, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SendRegistrantConfirmationAsync(string toEmail, string registrantFullName, string contactFullName, string contactEmail, string delegationName, string requestCode, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     private static readonly PerCampusFormV2Options ReadOn = new() { Enabled = true };
     private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };
 
@@ -142,7 +153,7 @@ public sealed class MinutesMutationScopeV2Tests
         => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn), new FixedClock());
 
     private static SaveMinutesCommandHandler SaveHandler(ApplicationDbContext db, ulong actor)
-        => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn), new FixedClock(), new SilentNotifications());
+        => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn), new FixedClock(), new SilentEmail(), new SilentNotifications());
 
     private static async Task CleanupAsync(ulong requestId)
     {

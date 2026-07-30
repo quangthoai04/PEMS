@@ -56,12 +56,28 @@ internal static class MinuteChildren
             .OrderBy(a => a.DisplayOrder).ThenBy(a => a.ActionItemId)
             .ToListAsync(ct);
 
+        var assigneeIds = actionItems
+            .Where(a => a.AssignedToUserId.HasValue)
+            .Select(a => a.AssignedToUserId!.Value)
+            .Distinct()
+            .ToList();
+        var assigneeNameById = assigneeIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await db.Users
+                .Where(u => assigneeIds.Contains(u.UserId))
+                .Select(u => new { u.UserId, u.FullName })
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
+
         dto.ActionItems = actionItems.Select(a => new MinuteActionItemDto
         {
             ActionItemId = a.ActionItemId,
             MinutesId = a.MinutesId,
             Title = a.Title,
             Note = a.Note,
+            AssignedToUserId = a.AssignedToUserId,
+            AssignedToUserName = a.AssignedToUserId.HasValue
+                ? assigneeNameById.GetValueOrDefault(a.AssignedToUserId.Value)
+                : null,
             DueDate = a.DueDate,
             Status = a.Status,
             CompletedAt = a.CompletedAt,

@@ -45,4 +45,7 @@ public sealed record SaveMinuteActionItemInput(
     string Title,
     string? Note,
     DateTime? DueDate,
-    string Status);
+    string Status,
+    // Free choice among the instance's eligible responsible candidates (Host or ACCEPTED
+    // IC_SUPPORT/DEPT_SUPPORT/STUDENT participant). Null = unassigned. Validated in the handler.
+    ulong? AssignedToUserId = null);

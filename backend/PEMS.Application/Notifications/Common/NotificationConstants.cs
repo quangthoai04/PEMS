@@ -36,6 +36,7 @@ public static class NotificationTypes
     public const string MinutesCreated = "MINUTES_CREATED";
     public const string MinutesUpdated = "MINUTES_UPDATED";
     public const string ActionItemAssigned = "ACTION_ITEM_ASSIGNED";
+    public const string ActionItemDue = "ACTION_ITEM_DUE";
 
     public const string NewsPendingApproval = "NEWS_PENDING_APPROVAL";
     public const string NewsReviewed = "NEWS_REVIEWED";

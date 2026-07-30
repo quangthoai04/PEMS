@@ -144,6 +144,10 @@ public static class DependencyInjection
         // and auto-cancel long-unconfirmed pending accounts, releasing any reserved Head slot.
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.AccountEmailConfirmationMaintenanceHostedService>();
 
+        // Background job — once-only "đến hạn" reminder for meeting-minutes action items
+        // (minute_action_items.due_reminder_sent_at).
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.ActionItemDueReminderHostedService>();
+
         return services;
     }
 }
