@@ -25,13 +25,13 @@ export function FeedbackTable({ summaries, loading, currentPage, pageSize, onVie
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">STT</th>
-              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Đoàn khách / Phạm vi</th>
-              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Điểm TB</th>
-              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Feedback mới nhất</th>
-              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Cảnh báo</th>
-              <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Hành động</th>
+            <tr className="bg-[#004c91] text-white border-b border-[#004c91]">
+              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center text-white">STT</th>
+              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-white">Đoàn khách / Phạm vi</th>
+              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center text-white">Điểm TB</th>
+              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-white">Feedback mới nhất</th>
+              <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center text-white">Cảnh báo</th>
+              <th className="p-4 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap text-white">Hành động</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

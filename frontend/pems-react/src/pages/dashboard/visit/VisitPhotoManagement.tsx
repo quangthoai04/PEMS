@@ -21,12 +21,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, Image as ImageIcon, Calendar, Sparkles, RefreshCw, FileText } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Eye, Pencil, Search, X, Folder, FolderOpen, Upload, Image as ImageIcon, Calendar, Sparkles, RefreshCw, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { visitPhotosApi } from '../../../features/delegations/api/visitPhotosApi';
 import { VisitPhotoPanel } from '../../../features/delegations/components/VisitPhotoPanel';
-import { FaceScanPanel, type FaceScanPhoto } from '../../../features/delegations/components/FaceScanPanel';
+import { FaceScanPanel, type FaceScanPhoto, type FaceScanPanelHandle } from '../../../features/delegations/components/FaceScanPanel';
 import type { MyVisitPhotoFolderItem, MyVisitPhotoFoldersPage, VisitInstancePhotos } from '../../../features/delegations/types/visitPhotos.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 import { validateFile } from '../../../shared/utils/fileValidation';
@@ -58,6 +58,7 @@ function FaceScanModalContent({
   const [photosData, setPhotosData] = useState<VisitInstancePhotos | null>(null);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const faceScanPanelRef = useRef<FaceScanPanelHandle>(null);
 
   const loadPhotos = useCallback(async () => {
     setLoadingPhotos(true);
@@ -127,14 +128,38 @@ function FaceScanModalContent({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onClose(true)}
-          className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-          aria-label="Đóng"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleUpload}
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            multiple
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5" /> Tải lên ảnh chụp thực tế
+          </button>
+          <button
+            type="button"
+            onClick={() => faceScanPanelRef.current?.openAlbumModal()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-[#004c91] border border-[#004c91] hover:bg-blue-50 rounded-lg text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+          >
+            <FolderOpen className="w-3.5 h-3.5" /> Chọn từ thư mục ảnh đoàn
+          </button>
+          <button
+            type="button"
+            onClick={() => onClose(true)}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+            aria-label="Đóng"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Modal Body */}
@@ -145,24 +170,15 @@ function FaceScanModalContent({
             <span className="text-xs font-bold text-gray-600">Đang tải công cụ định danh khuôn mặt...</span>
           </div>
         ) : (
-          <>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleUpload}
-              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-              multiple
-              className="hidden"
-            />
-            <FaceScanPanel
-              visitInstanceId={item.visitInstanceId}
-              photos={faceScanPhotos}
-              isReadOnly={false}
-              onUploadClick={() => fileInputRef.current?.click()}
-              folderUrl={photosData?.folderWebViewUrl ?? undefined}
-              onRefreshPhotos={loadPhotos}
-            />
-          </>
+          <FaceScanPanel
+            ref={faceScanPanelRef}
+            visitInstanceId={item.visitInstanceId}
+            photos={faceScanPhotos}
+            isReadOnly={false}
+            onUploadClick={() => fileInputRef.current?.click()}
+            folderUrl={photosData?.folderWebViewUrl ?? undefined}
+            onRefreshPhotos={loadPhotos}
+          />
         )}
       </div>
     </div>
@@ -405,7 +421,7 @@ export function VisitPhotoManagement() {
                 {relatedNews.map((news) => (
                   <div
                     key={news.newsId}
-                    onClick={() => navigate(`/dashboard/news/detail/${news.newsId}`)}
+                    onClick={() => navigate(`/dashboard/news/${news.newsId}`)}
                     className="bg-white border border-slate-200 hover:border-[#004c91] hover:shadow-md rounded-xl p-3.5 transition-all cursor-pointer flex flex-col justify-between group"
                   >
                     <div className="space-y-2">
@@ -463,7 +479,7 @@ export function VisitPhotoManagement() {
           /* Mode 1: Table Thư Mục Đoàn */
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm min-w-[760px]">
-              <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 font-extrabold border-b border-gray-200">
+              <thead className="bg-[#004c91] text-white text-[12px] uppercase tracking-wider font-extrabold">
                 <tr>
                   <th className="px-5 py-3.5 w-14 text-center">STT</th>
                   <th className="px-4 py-3.5">Tên đoàn khách / Chuyến thăm</th>
@@ -481,9 +497,6 @@ export function VisitPhotoManagement() {
                     <td className="px-4 py-4">
                       <p className="font-bold text-slate-900 group-hover:text-[#004c91] transition-colors">{item.delegationName || '—'}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                          {item.campusName || '—'}
-                        </span>
                         <span className="text-[11px] font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded-md">
                           {INSTANCE_STATUS_LABELS[item.instanceStatus] || item.instanceStatus}
                         </span>
@@ -568,7 +581,7 @@ export function VisitPhotoManagement() {
                         {item.delegationName}
                       </h4>
                       <p className="text-[11px] text-gray-500 font-semibold truncate mt-0.5">
-                        {item.campusName} · {formatVietnamDate(item.plannedStartAt)}
+                        {formatVietnamDate(item.plannedStartAt)}
                       </p>
                     </div>
                   </div>
