@@ -24,7 +24,10 @@ public sealed class ViewListFAQQueryHandler
         var page = request.Page;
         var pageSize = request.PageSize;
 
-        var keyword = request.Keyword?.Trim();
+        var keyword = request.Keyword is { } kw
+            ? System.Text.RegularExpressions.Regex.Replace(kw.Trim(), @"\s+", " ")
+            : null;
+        if (string.IsNullOrEmpty(keyword)) keyword = null;
         var faqType = request.FaqType?.Trim();
         var status = request.Status?.Trim();
         var sortBy = request.SortBy?.Trim();

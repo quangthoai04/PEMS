@@ -43,7 +43,6 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
         if (faq is null)
             throw new NotFoundException($"FAQ with ID {request.FaqId} was not found.");
 
-        var faqType = request.FaqType.Trim();
         var sanitizedQuestion = _sanitizer.Sanitize(request.Question).Trim();
         var sanitizedAnswer = _sanitizer.Sanitize(request.Answer).Trim();
 
@@ -53,8 +52,7 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
         if (string.IsNullOrWhiteSpace(sanitizedAnswer))
             throw new ValidationException("Answer is required.");
 
-        var viChanged = !string.Equals(faq.FaqType, faqType, StringComparison.Ordinal)
-            || !string.Equals(faq.Question, sanitizedQuestion, StringComparison.Ordinal)
+        var viChanged = !string.Equals(faq.Question, sanitizedQuestion, StringComparison.Ordinal)
             || !string.Equals(faq.Answer, sanitizedAnswer, StringComparison.Ordinal);
 
         if (viChanged)
@@ -79,7 +77,6 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
         {
             if (viChanged)
             {
-                faq.FaqType = faqType;
                 faq.Question = sanitizedQuestion;
                 faq.Answer = sanitizedAnswer;
                 faq.UpdatedAt = now;
