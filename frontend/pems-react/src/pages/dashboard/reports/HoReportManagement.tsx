@@ -17,6 +17,8 @@ import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { reportsApi } from '../../../features/reports/api/reportsApi';
+import { useGuardedSend } from '../../../features/reports/hooks/useGuardedSend';
+import { useIdempotentSend, attemptIsOver, sendFailureMessage } from '../../../features/reports/hooks/useIdempotentSend';
 import type {
   HoReportV2, HoV2CampusRow, HoV2Filters, HoV2Preset,
 } from '../../../features/reports/types/hoReportsV2.types';
@@ -157,24 +159,30 @@ export function HoReportManagement() {
 
   // ── Gửi email báo cáo từng campus ──
   const [campusNotes, setCampusNotes] = useState<Record<number, string>>({});
-  const [sendingCampusId, setSendingCampusId] = useState<number | null>(null);
+  const campusSend = useGuardedSend<number>();
+  // Same key across a retry of the SAME send; a new key only when the attempt is over (G11 / R-103).
+  const idem = useIdempotentSend();
 
-  const sendCampusReport = async (row: HoV2CampusRow) => {
-    setSendingCampusId(row.campusId);
-    try {
-      const res = await reportsApi.sendHoCampusReport({
-        campusId: row.campusId,
-        fromDate: data?.fromDate,
-        toDate: data?.toDate,
-        note: campusNotes[row.campusId]?.trim() || undefined,
-      });
-      toast.success(res.message || 'Đã gửi báo cáo.');
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
-    } finally {
-      setSendingCampusId(null);
-    }
-  };
+  // Guarded per row: a repeat click while this campus is sending does nothing, and a send started on
+  // another campus no longer clears this one's flag (see useGuardedSend).
+  const sendCampusReport = (row: HoV2CampusRow) =>
+    campusSend.send(row.campusId, async () => {
+      try {
+        const res = await reportsApi.sendHoCampusReport({
+          campusId: row.campusId,
+          fromDate: data?.fromDate,
+          toDate: data?.toDate,
+          note: campusNotes[row.campusId]?.trim() || undefined,
+        }, idem.keyFor('ho-campus-report', row.campusId));
+        // Success ends the attempt, so the next click is a NEW send with a new key.
+        idem.complete('ho-campus-report', row.campusId);
+        toast.success(res.message || 'Đã gửi báo cáo.');
+      } catch (e: any) {
+        // A timeout keeps the key: the retry must be recognisable as the same attempt.
+        if (attemptIsOver(e)) idem.complete('ho-campus-report', row.campusId);
+        toast.error(sendFailureMessage(e, 'Gửi báo cáo thất bại.'));
+      }
+    });
 
   // Biểu đồ đa campus: chuyển trend về dạng phẳng { monthLabel, [tên campus]: số đoàn }.
   const campusTrendRows = useMemo(() => {
@@ -432,11 +440,11 @@ export function HoReportManagement() {
                           <button
                             type="button"
                             onClick={() => sendCampusReport(row)}
-                            disabled={sendingCampusId === row.campusId}
+                            disabled={campusSend.isSending(row.campusId)}
                             title={`Gửi báo cáo qua email cho Staff Leader ${row.name}`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
                           >
-                            {sendingCampusId === row.campusId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            {campusSend.isSending(row.campusId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             Gửi
                           </button>
                         </td>

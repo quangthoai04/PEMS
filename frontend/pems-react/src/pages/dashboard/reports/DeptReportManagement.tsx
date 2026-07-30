@@ -22,6 +22,14 @@ import type {
   DeptLeaderV2PersonnelRow, DeptLeaderV2Preset,
 } from '../../../features/reports/types/deptLeaderReportsV2.types';
 import { TaskHandoverModal } from '../departments/TaskHandoverModal';
+import { useGuardedSend } from '../../../features/reports/hooks/useGuardedSend';
+import { useIdempotentSend, attemptIsOver, sendFailureMessage } from '../../../features/reports/hooks/useIdempotentSend';
+import { renderPrintDocument } from '../../../features/reports/print/printDocument';
+import {
+  DEPT_INVOICE_STATS_CSS,
+  buildDeptInvoiceStatsDocument,
+  deptInvoiceStatsTitle,
+} from '../../../features/reports/print/deptInvoiceStatsDocument';
 
 const CHART_BLUE = '#1e6fc0';
 const CHART_GREEN = '#0a8a44';
@@ -231,7 +239,9 @@ export function DeptReportManagement() {
 
   // ── Phần 2: bảng nhân sự ──
   const [personnelNotes, setPersonnelNotes] = useState<Record<number, string>>({});
-  const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+  const personnelSend = useGuardedSend<number>();
+  // Same key across a retry of the SAME send; a new key only when the attempt is over (G11 / R-103).
+  const idem = useIdempotentSend();
   const [personnelSort, setPersonnelSort] = useState<RankSort>('DEFAULT');
   const [personnelPage, setPersonnelPage] = useState(1);
 
@@ -249,22 +259,24 @@ export function DeptReportManagement() {
   // Dữ liệu kỳ mới → quay về trang 1.
   useEffect(() => { setPersonnelPage(1); }, [data]);
 
-  const sendPersonnelReport = async (row: DeptLeaderV2PersonnelRow) => {
-    setSendingUserId(row.userId);
-    try {
-      const res = await reportsApi.sendDeptLeaderPersonnelReport({
-        userId: row.userId,
-        fromDate: data?.fromDate,
-        toDate: data?.toDate,
-        note: personnelNotes[row.userId]?.trim() || undefined,
-      });
-      toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
-    } finally {
-      setSendingUserId(null);
-    }
-  };
+  // Guarded per row: a repeat click while this row is sending does nothing, and a send started on
+  // another row no longer clears this row's flag (see useGuardedSend).
+  const sendPersonnelReport = (row: DeptLeaderV2PersonnelRow) =>
+    personnelSend.send(row.userId, async () => {
+      try {
+        const res = await reportsApi.sendDeptLeaderPersonnelReport({
+          userId: row.userId,
+          fromDate: data?.fromDate,
+          toDate: data?.toDate,
+          note: personnelNotes[row.userId]?.trim() || undefined,
+        }, idem.keyFor('dl-personnel-report', row.userId));
+        idem.complete('dl-personnel-report', row.userId);
+        toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
+      } catch (e: any) {
+        if (attemptIsOver(e)) idem.complete('dl-personnel-report', row.userId);
+        toast.error(sendFailureMessage(e, 'Gửi báo cáo thất bại.'));
+      }
+    });
 
   // ── Phần 3: xuất hóa đơn ──
   const [invoiceRange, setInvoiceRange] = useState<{ fromDate: string; toDate: string }>({ fromDate: '', toDate: '' });
@@ -303,72 +315,41 @@ export function DeptReportManagement() {
   // chi phí" có totalExpense = 0 nên cộng thẳng).
   const invoiceTotal = invoiceItems.reduce((s, it) => s + it.totalExpense, 0);
 
-  // "Xuất thống kê PDF" mở hộp thoại IN qua 1 cửa sổ mới chỉ chứa HTML thống kê —
+  // "Xuất thống kê PDF" mở hộp thoại IN qua 1 cửa sổ mới chỉ chứa bảng thống kê —
   // không phụ thuộc CSS/layout của trang dashboard nên không bị in trắng.
+  // Tài liệu được dựng bằng DOM (createElement/textContent), không nối chuỗi HTML:
+  // xem features/reports/print/printDocument.ts.
   const exportInvoicePdf = () => {
     if (invoiceItems.length === 0) {
       toast.error('Chưa có đơn nào để xuất thống kê.');
       return;
     }
-    const esc = (s: string | null | undefined) =>
-      (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const rowsHtml = invoiceItems.map((it, idx) => `
-      <tr>
-        <td style="text-align:center">${idx + 1}</td>
-        <td>${esc(it.title)}</td>
-        <td>${esc(it.delegationName)}</td>
-        <td style="text-align:center">${fmtDate(it.usageStartAt)}</td>
-        <td style="text-align:center">${it.quantity}</td>
-        <td style="text-align:right">${it.noExpense ? '<i style="color:#64748b">Không có chi phí</i>' : it.totalExpense.toLocaleString('vi-VN')}</td>
-      </tr>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8" />
-      <title>Thống kê chi phí hậu cần — ${esc(data?.departmentName)}</title>
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 28px; }
-        .top { display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 22px; font-size: 12px; }
-        h2 { text-align: center; text-transform: uppercase; margin: 4px 0 2px; font-size: 20px; }
-        .sub { text-align: center; font-size: 14px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { border: 1px solid #475569; padding: 6px 8px; }
-        th { background: #f1f5f9; }
-        .total td { font-weight: 700; background: #fff7ed; }
-        .sign { display: flex; justify-content: space-between; margin-top: 44px; text-align: center; font-size: 14px; }
-        .sign div { width: 48%; }
-        .sign .hint { font-size: 11px; color: #64748b; }
-      </style></head><body>
-      <div class="top">
-        <div>
-          <div style="font-weight:800;text-transform:uppercase;font-size:13px">TRƯỜNG ĐẠI HỌC FPT</div>
-          <div style="color:#64748b;font-weight:600">${esc(data?.departmentName)} · Hệ thống PEMS</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-weight:800;font-size:11px">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-          <div style="font-weight:800;font-size:11px;color:#f37021">Độc lập - Tự do - Hạnh phúc</div>
-        </div>
-      </div>
-      <h2>THỐNG KÊ CHI PHÍ HẬU CẦN TIẾP KHÁCH</h2>
-      <p class="sub">Phòng ban: <b>${esc(data?.departmentName)}</b> · Kỳ: <b>${fmtDate(invoiceRange.fromDate)} – ${fmtDate(invoiceRange.toDate)}</b> · ${invoiceItems.length} đơn đã hoàn thành</p>
-      <table>
-        <thead><tr><th>STT</th><th>Hạng mục</th><th>Đoàn khách</th><th>Ngày</th><th>SL</th><th style="width:120px">Số tiền (₫)</th></tr></thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-        <tfoot>
-          <tr class="total"><td colspan="5" style="text-align:right;text-transform:uppercase">Tổng số tiền</td><td style="text-align:right">${invoiceTotal.toLocaleString('vi-VN')}</td></tr>
-        </tfoot>
-      </table>
-      <div class="sign">
-        <div><b>ĐẠI DIỆN PHÒNG BAN</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-        <div><b>ĐẠI DIỆN VĂN PHÒNG IC</b><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-      </div>
-      </body></html>`;
+
+    const root = buildDeptInvoiceStatsDocument({
+      departmentName: data?.departmentName ?? '',
+      periodFrom: fmtDate(invoiceRange.fromDate),
+      periodTo: fmtDate(invoiceRange.toDate),
+      grandTotal: invoiceTotal,
+      lines: invoiceItems.map(it => ({
+        title: it.title,
+        delegationName: it.delegationName,
+        usageDate: fmtDate(it.usageStartAt),
+        quantity: it.quantity,
+        totalExpense: it.totalExpense,
+        noExpense: it.noExpense,
+      })),
+    });
+
     const win = window.open('', '_blank', 'width=980,height=720');
     if (!win) {
       toast.error('Trình duyệt đang chặn popup — hãy cho phép popup cho trang này rồi thử lại.');
       return;
     }
-    win.document.write(html);
-    win.document.close();
+    renderPrintDocument(win, {
+      title: deptInvoiceStatsTitle(data?.departmentName ?? ''),
+      css: DEPT_INVOICE_STATS_CSS,
+      root,
+    });
     win.focus();
     setTimeout(() => win.print(), 350);
     toast.success('Đã mở bản in thống kê — chọn "Save as PDF" để lưu.');
@@ -649,11 +630,11 @@ export function DeptReportManagement() {
                           <button
                             type="button"
                             onClick={() => sendPersonnelReport(row)}
-                            disabled={sendingUserId === row.userId}
+                            disabled={personnelSend.isSending(row.userId)}
                             title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
                           >
-                            {sendingUserId === row.userId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            {personnelSend.isSending(row.userId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             Gửi
                           </button>
                         </td>

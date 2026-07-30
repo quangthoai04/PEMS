@@ -5,12 +5,11 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Trash2, Reply, Send, FileText, Clock, AlertTriangle, Paperclip, Bold, Italic, Underline, Link, ImageIcon, List, ListOrdered, Check, AlertCircle } from 'lucide-react';
+import { ChevronLeft, Trash2, Reply, ReplyAll, Send, FileText, Clock, AlertTriangle, Paperclip, Bold, Italic, Underline, Link, ImageIcon, List, ListOrdered, Check, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
 
 import { emailsApi } from '../../../features/emails/api/emailsApi';
+import { ReplyComposer } from '../../../features/emails/components/ReplyComposer';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import { sanitizeHtml, sanitizeSentEmailPreviewHtml } from '../../../shared/security/sanitizeHtml';
@@ -20,8 +19,9 @@ export function SentEmailDetail() {
   const navigate = useNavigate();
   const { sourceType, id } = useParams();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [replyContent, setReplyContent] = useState('');
   const [activeReplyId, setActiveReplyId] = useState<number | null>(null);
+  /** Which of the two reply shapes the open composer is: set by whichever button opened it. */
+  const [replyAll, setReplyAll] = useState(false);
   const [emailData, setEmailData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,30 +44,17 @@ export function SentEmailDetail() {
     }
   };
 
-  const handleReply = async () => {
-    if (!replyContent.trim() || !emailData) return;
-    setIsSubmitting(true);
-    try {
-      await emailsApi.replyEmail({
-        originalEmailId: emailData.id,
-        body: replyContent
-      });
-      toast.success('Phản hồi thành công!');
-      setReplyContent('');
-      setActiveReplyId(null);
-      fetchEmailDetail();
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Phản hồi thất bại');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleReplied = () => {
+    toast.success('Phản hồi thành công!');
+    setActiveReplyId(null);
+    fetchEmailDetail();
   };
 
   const handleComplete = async () => {
     if (!emailData) return;
     setIsSubmitting(true);
     try {
-      const res = await emailsApi.markCompleted(emailData.id);
+      const res = await emailsApi.markCompleted(emailData.sentEmailId);
       if (res.data && res.data.success === false) {
           toast.error(res.data.message || 'Thao tác thất bại');
       } else {
@@ -241,13 +228,27 @@ export function SentEmailDetail() {
           )}
           
           <div className="mt-6 flex justify-end gap-3">
-            {emailData.canReply && (
-              <button 
-                onClick={() => setActiveReplyId(emailData.id)}
+            {emailData.canReply && activeReplyId === null && (
+              <button
+                onClick={() => { setReplyAll(false); setActiveReplyId(emailData.sentEmailId); }}
                 className="px-6 py-2.5 rounded-xl border border-[#004c91] text-[#004c91] font-bold hover:bg-blue-50 transition-colors shadow-sm flex items-center gap-2 outline-none"
               >
                 <Reply className="w-4 h-4" />
                 Phản hồi
+              </button>
+            )}
+            {/* Reply All. Offered on the same right as Reply — being party to the message — because the
+                server applies the identical check to both. No recipient list is assembled here: the
+                server reads the parent's VISIBLE recipients and drops its blind copies, so this button
+                cannot expose who was on BCC even in principle. */}
+            {emailData.canReply && activeReplyId === null && (
+              <button
+                data-testid="reply-all"
+                onClick={() => { setReplyAll(true); setActiveReplyId(emailData.sentEmailId); }}
+                className="px-6 py-2.5 rounded-xl border border-[#004c91] text-[#004c91] font-bold hover:bg-blue-50 transition-colors shadow-sm flex items-center gap-2 outline-none"
+              >
+                <ReplyAll className="w-4 h-4" />
+                Phản hồi tất cả
               </button>
             )}
             {emailData.canMarkComplete && (
@@ -262,51 +263,20 @@ export function SentEmailDetail() {
             )}
           </div>
           
-          {/* Quick Reply Form for Original Email */}
-          {activeReplyId === emailData.id && (
-            <div className="mt-6 animate-in slide-in-from-top-2 fade-in duration-200">
-              <div className="border border-[#cde0f5] rounded-xl overflow-hidden bg-white shadow-sm focus-within:border-[#004c91] focus-within:ring-1 focus-within:ring-[#004c91] transition-all flex flex-col">
-                <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-                  <div className="flex items-center gap-2 text-[14px] mt-1.5">
-                    <span className="text-gray-500 w-10">Tới:</span>
-                    <span className="font-semibold text-gray-800">{emailData.senderName}</span>
-                    <span className="text-gray-500">&lt;{emailData.senderEmail}&gt;</span>
-                  </div>
-                </div>
-                <div className="bg-white">
-                  <ReactQuill 
-                    theme="snow" 
-                    value={replyContent} 
-                    onChange={setReplyContent}
-                    placeholder="Nhập nội dung phản hồi..."
-                    className="custom-quill-no-border min-h-[150px]"
-                    modules={{
-                      toolbar: [
-                        ['bold', 'italic', 'underline', 'strike'],
-                        [{'list': 'ordered'}, {'list': 'bullet'}],
-                        ['link', 'image'],
-                        ['clean']
-                      ]
-                    }}
-                  />
-                </div>
-                <div className="bg-white px-4 py-3 flex justify-end gap-3 rounded-b-xl border-t border-gray-100">
-                  <button 
-                    onClick={() => setActiveReplyId(null)}
-                    className="px-5 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:border-[#004c91] hover:text-[#004c91] hover:bg-blue-50 font-medium transition-all outline-none cursor-pointer"
-                  >
-                    Hủy
-                  </button>
-                  <button 
-                    onClick={handleReply}
-                    className="bg-[#004c91] hover:bg-[#003a70] text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm outline-none cursor-pointer disabled:opacity-50"
-                    disabled={!replyContent.trim() || isSubmitting}
-                  >
-                    <Send className="w-4 h-4" /> Gửi
-                  </button>
-                </div>
-              </div>
-            </div>
+          {/* Reply. TO/CC/BCC and the whole envelope contract live in ReplyComposer; nothing about the
+              original message's recipients is passed in, because a reply must not inherit them. */}
+          {activeReplyId === emailData.sentEmailId && (
+            <ReplyComposer
+              originalEmailId={emailData.sentEmailId}
+              resolvedTo={
+                emailData.sender?.email
+                  ? { email: emailData.sender.email, name: emailData.sender.fullName ?? undefined }
+                  : null
+              }
+              onCancel={() => setActiveReplyId(null)}
+              onReplied={handleReplied}
+              replyAll={replyAll}
+            />
           )}
         </div>
       </div>

@@ -21,6 +21,14 @@ import type {
   StaffLeaderReportV2, StaffLeaderV2DepartmentRow,
   StaffLeaderV2Filters, StaffLeaderV2PersonnelRow, StaffLeaderV2Preset,
 } from '../../../features/reports/types/staffLeaderReportsV2.types';
+import { useGuardedSend } from '../../../features/reports/hooks/useGuardedSend';
+import { useIdempotentSend, attemptIsOver, sendFailureMessage } from '../../../features/reports/hooks/useIdempotentSend';
+import { renderPrintDocument } from '../../../features/reports/print/printDocument';
+import {
+  STAFF_LEADER_EXPENSE_CSS,
+  buildStaffLeaderExpenseDocument,
+  staffLeaderExpenseTitle,
+} from '../../../features/reports/print/staffLeaderExpenseDocument';
 
 // Palette chart đã validate CVD/contrast.
 const CHART_BLUE = '#1e6fc0';
@@ -234,7 +242,9 @@ export function StaffLeaderReportManagement() {
   // ── Phần 2: bảng nhân sự ──
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'STAFF' | 'STUDENT'>('ALL');
   const [personnelNotes, setPersonnelNotes] = useState<Record<number, string>>({});
-  const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+  const personnelSend = useGuardedSend<number>();
+  // Same key across a retry of the SAME send; a new key only when the attempt is over (G11 / R-103).
+  const idem = useIdempotentSend();
   const [personnelSort, setPersonnelSort] = useState<RankSort>('DEFAULT');
   const [personnelPage, setPersonnelPage] = useState(1);
 
@@ -255,26 +265,28 @@ export function StaffLeaderReportManagement() {
   }, [personnelRows, personnelSort]);
   const pagedPersonnelRows = rankedPersonnelRows.slice((personnelPage - 1) * PAGE_SIZE, personnelPage * PAGE_SIZE);
 
-  const sendPersonnelReport = async (row: StaffLeaderV2PersonnelRow) => {
-    setSendingUserId(row.userId);
-    try {
-      const res = await reportsApi.sendStaffLeaderPersonnelReport({
-        userId: row.userId,
-        fromDate: data?.fromDate,
-        toDate: data?.toDate,
-        note: personnelNotes[row.userId]?.trim() || undefined,
-      });
-      toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
-    } finally {
-      setSendingUserId(null);
-    }
-  };
+  // Guarded per row: a repeat click while this row is sending does nothing, and a send started on
+  // another row no longer clears this row's flag (see useGuardedSend).
+  const sendPersonnelReport = (row: StaffLeaderV2PersonnelRow) =>
+    personnelSend.send(row.userId, async () => {
+      try {
+        const res = await reportsApi.sendStaffLeaderPersonnelReport({
+          userId: row.userId,
+          fromDate: data?.fromDate,
+          toDate: data?.toDate,
+          note: personnelNotes[row.userId]?.trim() || undefined,
+        }, idem.keyFor('sl-personnel-report', row.userId));
+        idem.complete('sl-personnel-report', row.userId);
+        toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
+      } catch (e: any) {
+        if (attemptIsOver(e)) idem.complete('sl-personnel-report', row.userId);
+        toast.error(sendFailureMessage(e, 'Gửi báo cáo thất bại.'));
+      }
+    });
 
   // ── Phần 3: ghi chú + gửi email báo cáo phối hợp cho từng phòng ban ──
   const [deptNotes, setDeptNotes] = useState<Record<number, string>>({});
-  const [sendingDeptId, setSendingDeptId] = useState<number | null>(null);
+  const departmentSend = useGuardedSend<number>();
   const [deptSort, setDeptSort] = useState<RankSort>('DEFAULT');
   const [deptPage, setDeptPage] = useState(1);
 
@@ -292,22 +304,23 @@ export function StaffLeaderReportManagement() {
   // Dữ liệu kỳ mới → quay về trang 1 của các bảng.
   useEffect(() => { setPersonnelPage(1); setDeptPage(1); }, [data]);
 
-  const sendDepartmentReport = async (row: StaffLeaderV2DepartmentRow) => {
-    setSendingDeptId(row.departmentId);
-    try {
-      const res = await reportsApi.sendStaffLeaderDepartmentReport({
-        departmentId: row.departmentId,
-        fromDate: data?.fromDate,
-        toDate: data?.toDate,
-        note: deptNotes[row.departmentId]?.trim() || undefined,
-      });
-      toast.success(res.message || `Đã gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}.`);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Gửi báo cáo thất bại.');
-    } finally {
-      setSendingDeptId(null);
-    }
-  };
+  // Guarded per row — same rule as the personnel table above.
+  const sendDepartmentReport = (row: StaffLeaderV2DepartmentRow) =>
+    departmentSend.send(row.departmentId, async () => {
+      try {
+        const res = await reportsApi.sendStaffLeaderDepartmentReport({
+          departmentId: row.departmentId,
+          fromDate: data?.fromDate,
+          toDate: data?.toDate,
+          note: deptNotes[row.departmentId]?.trim() || undefined,
+        }, idem.keyFor('sl-department-report', row.departmentId));
+        idem.complete('sl-department-report', row.departmentId);
+        toast.success(res.message || `Đã gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}.`);
+      } catch (e: any) {
+        if (attemptIsOver(e)) idem.complete('sl-department-report', row.departmentId);
+        toast.error(sendFailureMessage(e, 'Gửi báo cáo thất bại.'));
+      }
+    });
 
   // ── Phần 4: thống kê chi phí các đoàn (panel tải theo khoảng ngày riêng) ──
   const [expenseRange, setExpenseRange] = useState<{ fromDate: string; toDate: string }>({ fromDate: '', toDate: '' });
@@ -338,47 +351,17 @@ export function StaffLeaderReportManagement() {
     }
   };
 
-  // "Xuất thống kê PDF" chi phí: cửa sổ in riêng (như exportInvoicePdf) gồm 2 phần —
-  // (1) gộp bảng kê chi phí của từng đoàn, (2) thống kê theo loại + số tiền phải trả
-  // từng phòng ban. Giữ bố cục gọn: mỗi đoàn 1 khối trong cùng 1 bảng.
+  // "Xuất thống kê PDF" chi phí: cửa sổ in riêng (như exportInvoicePdf) gồm 3 phần —
+  // (1) bảng kê chi phí của từng đoàn, (2) thống kê theo loại, (3) số tiền phải trả
+  // từng phòng ban. Tài liệu dựng bằng DOM, không nối chuỗi HTML —
+  // xem features/reports/print/printDocument.ts.
   const exportExpensePdf = () => {
     if (!expenseData || expenseData.rows.length === 0) {
       toast.error('Chưa có dữ liệu chi phí để xuất thống kê.');
       return;
     }
-    const esc = (s: string | null | undefined) =>
-      (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const num = (v: number) => v.toLocaleString('vi-VN');
 
-    // Phần 1 — chi tiết theo từng đoàn.
-    const visitBlocks = expenseData.rows.map((v2, vIdx) => {
-      const reportRows = v2.reports.map((r) => {
-        const source = r.reportScope === 'GENERAL' ? 'Host' : (r.departmentName ?? 'Phòng ban');
-        if (r.noExpense) {
-          const title = r.logisticsItemTitle ?? 'Đơn yêu cầu';
-          return `<tr><td colspan="5" style="color:#64748b">${esc(title)} — ${esc(source)}: <i>Không có chi phí</i></td><td style="text-align:right">0</td></tr>`;
-        }
-        const itemRows = r.items.map((it) => `
-          <tr>
-            <td>${esc(it.itemName)}</td>
-            <td>${r.reportScope === 'LOGISTICS' ? 'Hạng mục yêu cầu' : esc(ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin)}</td>
-            <td>${esc(source)}</td>
-            <td style="text-align:right">${it.quantity}</td>
-            <td style="text-align:right">${num(it.unitPrice)}</td>
-            <td style="text-align:right">${num(it.totalAmount)}</td>
-          </tr>`).join('');
-        const noteRow = r.reportNote
-          ? `<tr><td colspan="6" style="color:#64748b;font-style:italic">Ghi chú (${esc(source)}): ${esc(r.reportNote)}</td></tr>`
-          : '';
-        return itemRows + noteRow;
-      }).join('');
-      return `
-        <tr style="background:#eef2f7"><td colspan="5" style="font-weight:700">${vIdx + 1}. ${esc(v2.delegationName)} (${esc(v2.requestCode)}) — ${fmtDate(v2.visitDate)}</td>
-          <td style="text-align:right;font-weight:700">${num(v2.totalExpense)}</td></tr>
-        ${reportRows}`;
-    }).join('');
-
-    // Phần 2 — theo loại (bảng kê phòng ban tính là "Hạng mục yêu cầu") + theo phòng ban.
+    // Phần 2 + 3 — tổng hợp theo loại chi phí và theo phòng ban phải thanh toán.
     const byType = new Map<string, { count: number; total: number }>();
     const byDept = new Map<string, { count: number; total: number }>();
     for (const v2 of expenseData.rows) {
@@ -398,65 +381,54 @@ export function StaffLeaderReportManagement() {
         }
       }
     }
-    const typeRows = [...byType.entries()].sort((a, b) => b[1].total - a[1].total)
-      .map(([label, t2]) => `<tr><td>${esc(label)}</td><td style="text-align:right">${t2.count}</td><td style="text-align:right">${num(t2.total)}</td></tr>`)
-      .join('');
-    const deptRows2 = [...byDept.entries()].sort((a, b) => b[1].total - a[1].total)
-      .map(([name, d2]) => `<tr><td>${esc(name)}</td><td style="text-align:right">${d2.count}</td><td style="text-align:right">${num(d2.total)}</td></tr>`)
-      .join('');
+    const toRows = (m: Map<string, { count: number; total: number }>) =>
+      [...m.entries()].sort((a, b) => b[1].total - a[1].total)
+        .map(([label, t]) => ({ label, count: t.count, total: t.total }));
 
-    const html = `<!doctype html><html><head><meta charset="utf-8" />
-      <title>Thống kê chi phí tiếp khách — ${esc(data?.campusName)}</title>
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 28px; }
-        .top { display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 22px; font-size: 12px; }
-        h2 { text-align: center; text-transform: uppercase; margin: 4px 0 2px; font-size: 20px; }
-        h3 { font-size: 14px; text-transform: uppercase; color: #004c91; margin: 22px 0 8px; }
-        .sub { text-align: center; font-size: 14px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th, td { border: 1px solid #475569; padding: 5px 7px; }
-        th { background: #f1f5f9; }
-        .total td { font-weight: 700; background: #fff7ed; }
-      </style></head><body>
-      <div class="top">
-        <div>
-          <div style="font-weight:800;text-transform:uppercase;font-size:13px">TRƯỜNG ĐẠI HỌC FPT — ${esc(data?.campusName)}</div>
-          <div style="color:#64748b;font-weight:600">Văn phòng IC · Hệ thống PEMS</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-weight:800;font-size:11px">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-          <div style="font-weight:800;font-size:11px;color:#f37021">Độc lập - Tự do - Hạnh phúc</div>
-        </div>
-      </div>
-      <h2>BẢNG THỐNG KÊ CHI PHÍ TIẾP KHÁCH</h2>
-      <p class="sub">Kỳ: <b>${fmtDate(expenseRange.fromDate)} – ${fmtDate(expenseRange.toDate)}</b> · ${expenseData.rows.length} đoàn</p>
+    const root = buildStaffLeaderExpenseDocument({
+      campusName: data?.campusName ?? '',
+      periodFrom: fmtDate(expenseRange.fromDate),
+      periodTo: fmtDate(expenseRange.toDate),
+      grandTotal: expenseData.totalAmount,
+      byType: toRows(byType),
+      byDepartment: toRows(byDept),
+      visits: expenseData.rows.map(v2 => ({
+        delegationName: v2.delegationName,
+        requestCode: v2.requestCode,
+        visitDate: fmtDate(v2.visitDate),
+        totalExpense: v2.totalExpense,
+        reports: v2.reports.map(r => {
+          const source = r.reportScope === 'GENERAL' ? 'Host' : (r.departmentName ?? 'Phòng ban');
+          return {
+            source,
+            noExpense: r.noExpense,
+            title: r.logisticsItemTitle ?? 'Đơn yêu cầu',
+            note: r.reportNote,
+            items: r.items.map(it => ({
+              itemName: it.itemName,
+              typeLabel: r.reportScope === 'LOGISTICS'
+                ? 'Hạng mục yêu cầu'
+                : (ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin),
+              source,
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              totalAmount: it.totalAmount,
+            })),
+          };
+        }),
+      })),
+    });
 
-      <h3>Phần 1 · Chi phí theo từng đoàn</h3>
-      <table>
-        <thead><tr><th>Hạng mục</th><th>Loại</th><th>Bên kê khai</th><th>SL</th><th>Đơn giá (₫)</th><th>Thành tiền (₫)</th></tr></thead>
-        <tbody>${visitBlocks}</tbody>
-        <tfoot><tr class="total"><td colspan="5" style="text-align:right;text-transform:uppercase">Tổng chi phí các đoàn</td><td style="text-align:right">${num(expenseData.totalAmount)}</td></tr></tfoot>
-      </table>
-
-      <h3>Phần 2 · Thống kê theo loại chi phí</h3>
-      <table>
-        <thead><tr><th>Loại</th><th style="width:90px">Số hạng mục</th><th style="width:130px">Tổng tiền (₫)</th></tr></thead>
-        <tbody>${typeRows || '<tr><td colspan="3" style="text-align:center;color:#64748b">Không có hạng mục nào</td></tr>'}</tbody>
-      </table>
-
-      <h3>Phần 3 · Chi phí phải thanh toán cho từng phòng ban</h3>
-      <table>
-        <thead><tr><th>Phòng ban</th><th style="width:90px">Số đơn</th><th style="width:130px">Tổng tiền (₫)</th></tr></thead>
-        <tbody>${deptRows2 || '<tr><td colspan="3" style="text-align:center;color:#64748b">Không có phòng ban nào kê khai chi phí</td></tr>'}</tbody>
-      </table>
-      </body></html>`;
     const win = window.open('', '_blank', 'width=980,height=720');
     if (!win) {
       toast.error('Trình duyệt đang chặn popup — hãy cho phép popup cho trang này rồi thử lại.');
       return;
     }
-    win.document.write(html);
-    win.document.close();
+    renderPrintDocument(win, {
+      title: staffLeaderExpenseTitle(data?.campusName ?? ''),
+      css: STAFF_LEADER_EXPENSE_CSS,
+      root,
+    });
     win.focus();
     setTimeout(() => win.print(), 350);
     toast.success('Đã mở bản in thống kê — chọn "Save as PDF" để lưu.');
@@ -751,11 +723,11 @@ export function StaffLeaderReportManagement() {
                           <button
                             type="button"
                             onClick={() => sendPersonnelReport(row)}
-                            disabled={sendingUserId === row.userId}
+                            disabled={personnelSend.isSending(row.userId)}
                             title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
                           >
-                            {sendingUserId === row.userId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            {personnelSend.isSending(row.userId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             Gửi
                           </button>
                         </td>
@@ -847,11 +819,11 @@ export function StaffLeaderReportManagement() {
                           <button
                             type="button"
                             onClick={() => sendDepartmentReport(row)}
-                            disabled={sendingDeptId === row.departmentId}
+                            disabled={departmentSend.isSending(row.departmentId)}
                             title={`Gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
                           >
-                            {sendingDeptId === row.departmentId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            {departmentSend.isSending(row.departmentId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             Gửi
                           </button>
                         </td>
