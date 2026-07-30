@@ -81,6 +81,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<SentEmail>();
         modelBuilder.Ignore<SentEmailRecipient>();
         modelBuilder.Ignore<EmailActionToken>();
+        modelBuilder.Ignore<EmailSendIdempotency>();
         modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<AuditLog>();
         modelBuilder.Ignore<Document>();
@@ -203,6 +204,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
     DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
+    DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
     DbSet<Notification> IApplicationDbContext.Notifications => Set<Notification>();
     DbSet<CalendarEvent> IApplicationDbContext.CalendarEvents => Set<CalendarEvent>();

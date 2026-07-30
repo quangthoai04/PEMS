@@ -108,6 +108,7 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<EmailDraftRecipient>();
         modelBuilder.Ignore<EmailDraftAttachment>();
         modelBuilder.Ignore<EmailActionToken>();
+        modelBuilder.Ignore<EmailSendIdempotency>();
         modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<Notification>();
         modelBuilder.Ignore<CalendarEvent>();
@@ -185,6 +186,7 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
     DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
     DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
+    DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
     DbSet<Notification> IApplicationDbContext.Notifications => Set<Notification>();
     DbSet<CalendarEvent> IApplicationDbContext.CalendarEvents => Set<CalendarEvent>();
