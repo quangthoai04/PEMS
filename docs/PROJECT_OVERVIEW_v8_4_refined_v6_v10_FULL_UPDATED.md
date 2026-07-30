@@ -94,9 +94,33 @@ FAQ public/internal chỉ dùng tiếng Việt, không còn language switch.
 
 File SQL fresh-create đã đổi tên thành `docs/database/scripts/pems_full_v10_new_final_visit_lifecycle_cancel_rules_fixed.sql`, 58 bảng (tăng từ 49).
 
-## V11.2 Cảnh báo bảo mật (ghi nhận, không thuộc phạm vi sửa của addendum này)
+## V11.2 Cảnh báo bảo mật — ĐÃ LỖI THỜI MỘT PHẦN (đo lại 2026-07-29 tại `c39e6f04`)
 
-`DepartmentsController`, `ReportsController`, `FeedbacksController`, `ApiIntegrationsController` hiện không có `[Authorize]`/`[RoleAuthorize]` nào — gọi được ẩn danh, trái với scope mô tả ở mục "4. Scope dữ liệu theo role". `DashboardController` có endpoint debug cấp JWT ẩn danh cho bất kỳ email nào. Đây là lỗ hổng bảo mật thật cần xử lý riêng.
+> Nội dung gốc của mục này ghi rằng `DepartmentsController`, `ReportsController`, `FeedbacksController`,
+> `ApiIntegrationsController` "không có `[Authorize]`/`[RoleAuthorize]` nào — gọi được ẩn danh". Điều đó
+> **không còn đúng**. Đo lại trực tiếp trên mã nguồn tại `c39e6f04`:
+
+| Controller | `[Authorize]` cấp class | `[RoleAuthorize]` | Gọi ẩn danh được? |
+|---|---|---|---|
+| `DepartmentsController` | có | 0 | không |
+| `ReportsController` | có | 24 endpoint | không |
+| `FeedbacksController` | có | 0 | không |
+| `ApiIntegrationsController` | có | 0 | không |
+
+Ba endpoint scaffold của `ReportsController` — `viewdashboardstatistics`, `exportstatisticsreport`,
+`filterdashboardbytime` — chặn ẩn danh nhờ `[Authorize]` cấp class nhưng **chưa có `[RoleAuthorize]`
+riêng**. Cả ba handler vẫn `throw new NotImplementedException(...)`, nên không lộ dữ liệu; đây là nợ
+defense-in-depth, không phải lỗ hổng đang khai thác được. Trước khi bỏ `NotImplementedException` phải
+chốt hợp đồng role, vì hai tài liệu canonical đang mâu thuẫn:
+
+- `docs/permissions/PERMISSION_MATRIX.md` — HO + Staff Leader + **Department Lead**, UC-69/70/71;
+- mục "5. Major features" FE-08 của chính tài liệu này — HO + Staff Leader, UC-66/67/68.
+
+Cả role lẫn mã UC đều lệch. Người chủ sản phẩm phải chọn, không suy đoán từ mã.
+
+`DashboardController` **vẫn** có `[AllowAnonymous]` (1 chỗ) và không có `[Authorize]` cấp class. Cảnh báo
+gốc về endpoint debug cấp JWT ẩn danh chưa được kiểm chứng lại trong đợt này và **giữ nguyên** — nó nằm
+ngoài phạm vi chuẩn hoá email.
 
 ## V11.3 Tình trạng thật của các Major Features (bảng "5. Major features")
 
