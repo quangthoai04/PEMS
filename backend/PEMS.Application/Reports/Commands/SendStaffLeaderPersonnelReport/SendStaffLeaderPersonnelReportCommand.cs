@@ -10,6 +10,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Shared;
@@ -21,16 +22,26 @@ namespace PEMS.Application.Reports.Commands.SendStaffLeaderPersonnelReport;
 /// báo cáo của Staff Leader. Nội dung thư đến từ <c>email_templates</c>
 /// (REPORT_PERSONNEL_PERFORMANCE); số liệu và danh sách đoàn đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendStaffLeaderPersonnelReportCommand : IRequest<SendStaffLeaderPersonnelReportResult>
+public sealed class SendStaffLeaderPersonnelReportCommand : IRequest<SendStaffLeaderPersonnelReportResult>, IIdempotentEmailSend
 {
     public ulong UserId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     /// <summary>Ghi chú của Staff Leader nhập trên bảng (đưa vào báo cáo).</summary>
     public string? Note { get; set; }
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.StaffLeaderPersonnelReport;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Id("user", UserId)
+               .Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note);
 }
 
-public sealed class SendStaffLeaderPersonnelReportResult
+public sealed class SendStaffLeaderPersonnelReportResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;

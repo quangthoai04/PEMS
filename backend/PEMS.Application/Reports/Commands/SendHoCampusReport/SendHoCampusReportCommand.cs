@@ -10,6 +10,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
 using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetHoReportV2;
 using PEMS.Shared;
@@ -21,16 +22,26 @@ namespace PEMS.Application.Reports.Commands.SendHoCampusReport;
 /// cho Staff Leader của campus đó. Nội dung thư đến từ <c>email_templates</c>
 /// (REPORT_CAMPUS_OPERATION); các con số đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendHoCampusReportCommand : IRequest<SendHoCampusReportResult>
+public sealed class SendHoCampusReportCommand : IRequest<SendHoCampusReportResult>, IIdempotentEmailSend
 {
     public ulong CampusId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     /// <summary>Ghi chú HO nhập trên bảng campus (đưa vào báo cáo).</summary>
     public string? Note { get; set; }
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.HoCampusReport;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Id("campus", CampusId)
+               .Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note);
 }
 
-public sealed class SendHoCampusReportResult
+public sealed class SendHoCampusReportResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
