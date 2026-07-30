@@ -18,6 +18,7 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly Reports.Common.IReportArchiveService _reportArchive;
 
     private static readonly string PrimaryColor = Colors.Blue.Darken2;
     private static readonly string BorderColor = Colors.Grey.Lighten1;
@@ -25,10 +26,12 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
     private static readonly string ZebraBg = Colors.Grey.Lighten4;
     private static readonly string MutedText = Colors.Grey.Darken1;
 
-    public ExportMinutesPdfQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public ExportMinutesPdfQueryHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, Reports.Common.IReportArchiveService reportArchive)
     {
         _db = db;
         _currentUser = currentUser;
+        _reportArchive = reportArchive;
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
@@ -222,6 +225,13 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
                 });
             });
         }).GeneratePdf();
+
+        if (_currentUser.UserId is { } userId)
+        {
+            var fileName = $"PEMS_BienBanCuocHop_MIN{minute.MinutesId}_{VietnamTime.Now():yyyyMMdd_HHmm}.pdf";
+            await _reportArchive.ArchiveAsync(
+                pdfData, fileName, "application/pdf", "MEETING_MINUTES", vrc?.CampusId, userId, cancellationToken);
+        }
 
         return pdfData;
     }
