@@ -285,10 +285,10 @@ export function VisitContributionPage() {
                     </div>
                     <div className="min-w-0 border-l-2 border-slate-100 pl-3">
                       <p className="text-sm font-bold text-slate-800">{a.title}</p>
-                      {(a.location || a.responsibleUserName || a.templateResponsibleRoleLabel) && (
+                      {(a.location || a.responsibleName || a.templateResponsibleRoleLabel) && (
                         <p className="text-xs text-slate-500 font-semibold mt-0.5">
                           {a.location && <span className="inline-flex items-center gap-1 mr-3"><MapPin className="w-3 h-3" /> {a.location}</span>}
-                          {(a.responsibleUserName || a.templateResponsibleRoleLabel) && <>Phụ trách: {a.responsibleUserName || a.templateResponsibleRoleLabel}</>}
+                          {(a.responsibleName || a.templateResponsibleRoleLabel) && <>Phụ trách: {a.responsibleName || a.templateResponsibleRoleLabel}</>}
                         </p>
                       )}
                     </div>

@@ -351,7 +351,7 @@ export const delegationsApi = {
   async saveVisitAgenda(
     visitRequestId: number | string,
     visitInstanceId: number | string,
-    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null; responsibleUserId?: number | null }>,
+    items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null; responsibleName?: string | null }>,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });

@@ -1805,6 +1805,7 @@ CREATE TABLE visit_agendas (
   end_time DATETIME NULL,
   location VARCHAR(255) NULL,
   responsible_user_id BIGINT UNSIGNED NULL,
+  responsible_name VARCHAR(255) NULL COMMENT 'Tên người phụ trách (nhập tay tự do, không ràng buộc user thật)',
   source_template_item_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,

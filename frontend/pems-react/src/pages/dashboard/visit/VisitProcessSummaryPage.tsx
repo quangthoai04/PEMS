@@ -276,7 +276,7 @@ export function VisitProcessSummaryPage() {
                   {item.description && <p className="text-sm text-gray-600">{item.description}</p>}
                   <div className="flex items-center gap-4 text-xs font-medium text-gray-500 mt-2">
                     <span className="flex items-center gap-1"><Info className="w-3 h-3" /> {item.location || 'Chưa cập nhật địa điểm'}</span>
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Phụ trách: {item.responsibleUserName || 'Chưa phân công'}</span>
+                    <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Phụ trách: {item.responsibleName || 'Chưa phân công'}</span>
                   </div>
                 </div>
               ))}

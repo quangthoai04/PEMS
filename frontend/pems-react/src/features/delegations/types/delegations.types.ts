@@ -279,12 +279,40 @@ export interface VisitAgendaItem {
   endTime?: string | null;
   description?: string | null;
   location?: string | null;
-  /** Concrete assigned person (visit_agendas.responsible_user_id). Null = unassigned. */
-  responsibleUserId?: number | null;
-  responsibleUserName?: string | null;
-  responsibleUserEmail?: string | null;
+  /** Free-typed name of the responsible person (visit_agendas.responsible_name). Plain text, not
+   * tied to a real user account. Null = unassigned. */
+  responsibleName?: string | null;
   /** Suggested role text from the source template item (display-only hint, NOT a person). */
   templateResponsibleRoleLabel?: string | null;
+}
+
+/** One row of "Quản lý việc sau tiếp khách" — an action item assigned to the caller. */
+export interface MyActionItem {
+  actionItemId: number;
+  title: string;
+  note: string | null;
+  dueDate: string | null;
+  status: string; // TODO | IN_PROGRESS | DONE | CANCELLED
+  visitInstanceId: number;
+  visitRequestId: number | null;
+  delegationName: string;
+}
+
+export interface MyActionItemsFilterParams {
+  q?: string;
+  /** Deep-link từ chuông thông báo — có giá trị thì backend trả đúng 1 item này, bỏ qua các filter khác. */
+  actionItemId?: number;
+  status?: 'ALL' | 'TODO' | 'DONE' | 'CANCELLED';
+  fromDate?: string;
+  toDate?: string;
+  sortDir?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface MyActionItemsResponse {
+  items: MyActionItem[];
+  totalCount: number;
 }
 
 /** A person eligible to be the responsible person of an agenda item: the active host or an ACCEPTED

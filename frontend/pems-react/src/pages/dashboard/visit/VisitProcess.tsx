@@ -28,7 +28,7 @@ import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitProcessPermission, VisitProcessDetail, AgendaResponsibleCandidate } from '../../../features/delegations/types/delegations.types';
+import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
 import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
@@ -36,7 +36,7 @@ import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../feature
 import { VisitorVisitDetailPage } from './VisitorVisitDetailPage';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
 import { StaleDataBanner } from '../../../shared/components/state';
-import { canSubmitReminders, canAssignResponsible, candidatesAreGenuinelyEmpty } from './visitProcessGuards';
+import { canSubmitReminders } from './visitProcessGuards';
 
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
@@ -312,10 +312,9 @@ export function VisitProcess() {
     startLocal: string;
     endLocal: string;
     location: string;
-    // Concrete assigned person (real user). Null = unassigned. Distinct from the template's
-    // suggested role label below, which is display-only.
-    responsibleUserId: number | null;
-    responsibleUserName: string | null;
+    // Free-typed name of the responsible person (plain text, not tied to a real user account).
+    // Distinct from the template's suggested role label below, which is display-only.
+    responsibleName: string;
     templateResponsibleRoleLabel: string | null;
   };
   const [detail, setDetail] = useState<VisitProcessDetail | null>(null);
@@ -323,9 +322,6 @@ export function VisitProcess() {
   const [detailLoadError, setDetailLoadError] = useState(false);
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
   const [isSavingAgenda, setIsSavingAgenda] = useState(false);
-  const [agendaResponsibleCandidates, setAgendaResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
-  // A failed dependency load must NOT masquerade as "empty" — it blocks the action that consumes it.
-  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
   const [remindersLoadFailed, setRemindersLoadFailed] = useState(false);
 
   // ── Datetime serialization (PEMS rule: MySQL DATETIME is LOCAL wall-clock, never UTC). ──
@@ -360,8 +356,7 @@ export function VisitProcess() {
         startLocal: toDatetimeLocalInputValue(a.startTime),
         endLocal: toDatetimeLocalInputValue(a.endTime),
         location: a.location ?? '',
-        responsibleUserId: a.responsibleUserId ?? null,
-        responsibleUserName: a.responsibleUserName ?? null,
+        responsibleName: a.responsibleName ?? '',
         templateResponsibleRoleLabel: a.templateResponsibleRoleLabel ?? null,
       })));
     } catch {
@@ -460,34 +455,12 @@ export function VisitProcess() {
     }
   };
 
-  // Responsible-person candidates (active host + ACCEPTED supporting participants of THIS instance).
-  // Loaded once per instance; on failure we keep an empty list (dropdown just shows "Chưa chọn").
-  const loadAgendaResponsibleCandidates = React.useCallback(async () => {
-    if (!perm) { setAgendaResponsibleCandidates([]); setCandidatesLoadFailed(false); return; }
-    try {
-      const list = await delegationsApi.getAgendaResponsibleCandidates(perm.visitInstanceId);
-      setAgendaResponsibleCandidates(Array.isArray(list) ? list : []);
-      setCandidatesLoadFailed(false);
-    } catch {
-      // Do NOT let a failed load read as "no candidates" — clear the list AND flag the failure so the
-      // assign dropdown is disabled and a retry is offered instead of a misleading empty picker.
-      setAgendaResponsibleCandidates([]);
-      setCandidatesLoadFailed(true);
-    }
-  }, [perm?.visitInstanceId]);
-  useEffect(() => { void loadAgendaResponsibleCandidates(); }, [loadAgendaResponsibleCandidates]);
-
   const canEditAgenda = !!detail?.canEditBefore;
   const hasCurrentAgenda = agendaItems.length > 0;
   // Reminders + preparation note are editable by the instance Host during the prep window. This is
   // independent of the (always-false) SETUP_SAVE_AVAILABLE gate — the backend re-checks the same rule.
   const canConfigurePrep = !isClosed && detail?.relation === 'HOST'
     && (detail?.instanceStatus === 'ASSIGNED' || detail?.instanceStatus === 'BEFORE_VISIT');
-  // Dependency gates: block the action whose data failed to load (never mutate on blank defaults).
-  // `remindersActionEnabled` also folds in the in-flight `savingReminders` flag at the button site.
-  const responsibleAssignEnabled = canAssignResponsible({ canEditAgenda, candidatesLoadFailed });
-  const supportingCandidateCount = agendaResponsibleCandidates.filter((c) => !c.isMainHost).length;
-  const showNoSupportingCandidatesHint = candidatesAreGenuinelyEmpty({ candidatesLoadFailed, supportingCandidateCount });
 
   // ── "Áp dụng mẫu Agenda" panel visibility ──
   // The apply-template panel is a heavy form (dropdown + preview table); leaving it always-open made
@@ -509,13 +482,6 @@ export function VisitProcess() {
     // Double-submit guard: spamming the button must never fire a 2nd request while the 1st is in
     // flight (a stale response could otherwise overwrite a newer one).
     if (isSavingAgenda) return;
-    // The responsible-person validation below checks each assignee against the candidate list. If that
-    // list failed to load it is empty, which would falsely reject every VALID existing assignee. Refuse
-    // the save and prompt a reload instead of corrupting the agenda on a dependency failure.
-    if (candidatesLoadFailed) {
-      pushToast('error', 'Chưa tải được danh sách người phụ trách. Vui lòng thử lại trước khi lưu lịch trình.');
-      return;
-    }
 
     // ── Validation (front-end). On failure we NEVER hit the API. ──
     for (const it of agendaItems) {
@@ -537,13 +503,6 @@ export function VisitProcess() {
         pushToast('error', 'Thời gian kết thúc phải sau thời gian bắt đầu.');
         return;
       }
-      // Người phụ trách is optional, but if chosen it MUST be one of the valid candidates (the
-      // backend re-validates this too — we just fail fast and avoid a doomed API call).
-      if (it.responsibleUserId != null
-          && !agendaResponsibleCandidates.some((c) => c.userId === it.responsibleUserId)) {
-        pushToast('error', 'Người phụ trách đã chọn không hợp lệ. Vui lòng chọn lại.');
-        return;
-      }
     }
 
     setIsSavingAgenda(true);
@@ -556,7 +515,7 @@ export function VisitProcess() {
         startTime: fromDatetimeLocalInputValueToApi(it.startLocal)!,
         endTime: fromDatetimeLocalInputValueToApi(it.endLocal),
         location: it.location?.trim() || null,
-        responsibleUserId: it.responsibleUserId ?? null,
+        responsibleName: it.responsibleName.trim() || null,
       }));
       await delegationsApi.saveVisitAgenda(perm.visitRequestId, perm.visitInstanceId, items);
       pushToast('success', 'Lưu lịch trình thành công. Lịch trình và người phụ trách đã được cập nhật.');
@@ -1054,13 +1013,7 @@ export function VisitProcess() {
                                 </div>
                                 <div className="divide-y divide-slate-100">
                                   {agendaItems.map((it, idx) => {
-                                    // A previously-assigned responsible who is no longer a valid candidate
-                                    // (e.g. later declined/removed) — keep them visible so the row doesn't
-                                    // look unassigned; the host must re-pick before saving (validation guards it).
-                                    const responsibleStale = it.responsibleUserId != null
-                                      && !agendaResponsibleCandidates.some((c) => c.userId === it.responsibleUserId);
                                     const ghostInputClass = "h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
-                                    const ghostSelectClass = "h-9 w-full rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium text-slate-700 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
                                     const ghostTimeClass = "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 text-sm font-semibold text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
                                     return (
                                       <div key={idx} className="grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[44px_220px_minmax(240px,1fr)_160px_260px_36px] md:items-start md:gap-3">
@@ -1103,32 +1056,12 @@ export function VisitProcess() {
                                             className={ghostInputClass} />
                                         </div>
 
-                                        {/* Responsible person (real user) + the template's suggested role hint */}
+                                        {/* Responsible person (free text) */}
                                         <div className="pl-9 md:pl-0">
                                           <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Người phụ trách</label>
-                                          <select
-                                            value={it.responsibleUserId ?? ''}
-                                            disabled={!responsibleAssignEnabled}
-                                            onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleUserId: e.target.value ? Number(e.target.value) : null } : p))}
-                                            className={ghostSelectClass}
-                                          >
-                                            <option value="">Chưa chọn người phụ trách</option>
-                                            {responsibleStale && (
-                                              <option value={it.responsibleUserId as number}>
-                                                {(it.responsibleUserName ?? `Người dùng #${it.responsibleUserId}`)} (không còn khả dụng)
-                                              </option>
-                                            )}
-                                            {agendaResponsibleCandidates.map((candidate) => (
-                                              <option key={candidate.userId} value={candidate.userId}>
-                                                {candidate.fullName} — {candidate.displayRole}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          {it.templateResponsibleRoleLabel && (
-                                            <p className="mt-1 text-[11px] font-medium text-slate-500">
-                                              Gợi ý: <span className="font-bold text-[#004c91]">{it.templateResponsibleRoleLabel}</span>
-                                            </p>
-                                          )}
+                                          <input type="text" value={it.responsibleName} disabled={!canEditAgenda} placeholder="Tên người phụ trách"
+                                            onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleName: e.target.value } : p))}
+                                            className={ghostInputClass} />
                                         </div>
 
                                         {/* Delete */}
@@ -1147,22 +1080,10 @@ export function VisitProcess() {
                                 </div>
                               </div>
                             )}
-                            {canEditAgenda && candidatesLoadFailed && (
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                                <span>Không tải được danh sách người phụ trách. Không thể chọn người phụ trách cho tới khi tải lại.</span>
-                                <button type="button" onClick={() => { void loadAgendaResponsibleCandidates(); }}
-                                  className="inline-flex items-center gap-1 underline hover:no-underline">Thử lại</button>
-                              </div>
-                            )}
-                            {canEditAgenda && showNoSupportingCandidatesHint && (
-                              <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                                Chưa có người tham gia nào đã chấp nhận lời mời. Hiện tại chỉ người phụ trách tiếp đón có thể được chọn.
-                              </p>
-                            )}
                             {canEditAgenda && (
                               <div className="flex flex-wrap items-center gap-3 pt-2">
                                 <button type="button"
-                                  onClick={() => setAgendaItems((prev) => [...prev, { agendaId: null, title: '', startLocal: toDatetimeLocalInputValue(detail?.plannedStartAt), endLocal: toDatetimeLocalInputValue(detail?.plannedEndAt), location: '', responsibleUserId: null, responsibleUserName: null, templateResponsibleRoleLabel: null }])}
+                                  onClick={() => setAgendaItems((prev) => [...prev, { agendaId: null, title: '', startLocal: toDatetimeLocalInputValue(detail?.plannedStartAt), endLocal: toDatetimeLocalInputValue(detail?.plannedEndAt), location: '', responsibleName: detail?.hostName ?? '', templateResponsibleRoleLabel: null }])}
                                   className="inline-flex items-center gap-1.5 rounded-xl border-2 border-dashed border-[#f37021]/40 px-4 py-2 text-sm font-bold text-[#f37021] hover:bg-orange-50 outline-none">
                                   <Plus className="w-4 h-4" /> Thêm mục
                                 </button>

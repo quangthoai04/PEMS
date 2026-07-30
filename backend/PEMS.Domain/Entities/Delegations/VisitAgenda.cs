@@ -31,6 +31,11 @@ public class VisitAgenda
     [Column("responsible_user_id")]
     public ulong? ResponsibleUserId { get; set; }
 
+    /// <summary>Free-typed name of the person responsible for this agenda item — not tied to a real
+    /// user account. Defaults to the host's name in the UI but is fully editable free text.</summary>
+    [Column("responsible_name")]
+    public string? ResponsibleName { get; set; }
+
     /// <summary>
     /// The agenda_template_items row this agenda row was generated from when a template was applied,
     /// or null for manually-entered rows. The source template is traced via this FK

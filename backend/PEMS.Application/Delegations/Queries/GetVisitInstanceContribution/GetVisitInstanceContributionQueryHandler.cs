@@ -152,7 +152,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 .Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
 
-        // Agenda (+ responsible-user name enrichment in-memory — Pomelo correlated-subquery pitfall).
+        // Agenda.
         var agenda = await _db.VisitAgendas
             .Where(a => a.VisitInstanceId == instance.VisitInstanceId)
             .OrderBy(a => a.SequenceOrder).ThenBy(a => a.StartTime)
@@ -165,29 +165,9 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 Description = a.Description,
                 Location = a.Location,
                 SourceTemplateItemId = a.SourceTemplateItemId,
-                ResponsibleUserId = a.ResponsibleUserId,
+                ResponsibleName = a.ResponsibleName,
             })
             .ToListAsync(cancellationToken);
-
-        var responsibleUserIds = agenda
-            .Where(a => a.ResponsibleUserId.HasValue)
-            .Select(a => a.ResponsibleUserId!.Value).Distinct().ToList();
-        if (responsibleUserIds.Count > 0)
-        {
-            var userById = (await _db.Users
-                    .Where(u => responsibleUserIds.Contains(u.UserId))
-                    .Select(u => new { u.UserId, u.FullName, u.Email })
-                    .ToListAsync(cancellationToken))
-                .ToDictionary(u => u.UserId);
-            foreach (var a in agenda)
-            {
-                if (a.ResponsibleUserId.HasValue && userById.TryGetValue(a.ResponsibleUserId.Value, out var u))
-                {
-                    a.ResponsibleUserName = u.FullName;
-                    a.ResponsibleUserEmail = u.Email;
-                }
-            }
-        }
 
         // ── INSTANCE-LEVEL form content (keyed by visit_instance_id → a MIXED request still returns 200).
         // Pure V2: source ONLY the TARGET instance's detail + its own member links, never a sibling

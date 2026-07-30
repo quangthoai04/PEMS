@@ -16,27 +16,3 @@ export function canSubmitReminders(args: {
 }): boolean {
   return args.canConfigurePrep && !args.remindersLoadFailed && !args.busy;
 }
-
-/**
- * Assigning a responsible person on an agenda row. The candidate list is loaded separately; a failed
- * load yields an empty dropdown that must NOT be read as "no candidates exist". Block assignment
- * (and, by extension, saving an agenda that needs an assignee) until the candidates reload.
- */
-export function canAssignResponsible(args: {
-  canEditAgenda: boolean;
-  candidatesLoadFailed: boolean;
-}): boolean {
-  return args.canEditAgenda && !args.candidatesLoadFailed;
-}
-
-/**
- * Whether the "no supporting candidates — add an agenda item instead" hint is truthful. It is only
- * truthful when the candidate list actually LOADED and is empty; on a failed load the emptiness is an
- * artifact of the failure, so the hint must be suppressed in favour of a retry.
- */
-export function candidatesAreGenuinelyEmpty(args: {
-  candidatesLoadFailed: boolean;
-  supportingCandidateCount: number;
-}): boolean {
-  return !args.candidatesLoadFailed && args.supportingCandidateCount === 0;
-}

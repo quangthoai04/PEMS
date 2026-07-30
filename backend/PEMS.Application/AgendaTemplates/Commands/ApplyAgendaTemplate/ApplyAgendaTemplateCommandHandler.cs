@@ -107,7 +107,7 @@ public sealed class ApplyAgendaTemplateCommandHandler
                 StartTime = start,
                 EndTime = end,
                 Location = item.Location,
-                ResponsibleUserId = null,
+                ResponsibleName = null,
                 SourceTemplateItemId = item.AgendaTemplateItemId,
                 CreatedAt = now,
                 CreatedBy = actorId,

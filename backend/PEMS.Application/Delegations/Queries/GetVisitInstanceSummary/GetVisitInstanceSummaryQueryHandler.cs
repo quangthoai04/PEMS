@@ -158,29 +158,9 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
                 Description = a.Description,
                 Location = a.Location,
                 SourceTemplateItemId = a.SourceTemplateItemId,
-                ResponsibleUserId = a.ResponsibleUserId,
+                ResponsibleName = a.ResponsibleName,
             })
             .ToListAsync(cancellationToken);
-
-        var responsibleUserIds = agenda
-            .Where(a => a.ResponsibleUserId.HasValue)
-            .Select(a => a.ResponsibleUserId!.Value).Distinct().ToList();
-        if (responsibleUserIds.Count > 0)
-        {
-            var userById = (await _db.Users
-                    .Where(u => responsibleUserIds.Contains(u.UserId))
-                    .Select(u => new { u.UserId, u.FullName, u.Email })
-                    .ToListAsync(cancellationToken))
-                .ToDictionary(u => u.UserId);
-            foreach (var a in agenda)
-            {
-                if (a.ResponsibleUserId.HasValue && userById.TryGetValue(a.ResponsibleUserId.Value, out var u))
-                {
-                    a.ResponsibleUserName = u.FullName;
-                    a.ResponsibleUserEmail = u.Email;
-                }
-            }
-        }
 
         var sourceTemplateItemIds = agenda
             .Where(a => a.SourceTemplateItemId.HasValue)

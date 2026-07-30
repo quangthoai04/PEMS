@@ -251,47 +251,35 @@ public sealed class VisitAgendaScopeV2Tests
     }
 
     [Fact]
-    public async Task A_responsible_person_must_belong_to_this_instance()
+    public async Task Responsible_person_is_free_text_not_tied_to_any_user_account()
     {
         RequireDb();
         ulong requestId = 0;
         try
         {
             var start = Now.AddDays(22);
-            requestId = await CreateAsync(
-                Campus("HN", start, "Đoàn HN"),
-                Campus("HCM", start.AddDays(1), "Đoàn HCM"));
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn HN"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
-            await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, HostHcm);
             var hn = instances[CampusHn];
 
-            // HostHcm is the host of the SIBLING instance, not a participant of HN, so they are not a
-            // valid responsible person for an HN agenda item — assigning them is refused.
-            using (var db = NewContext())
-                await Assert.ThrowsAsync<BusinessRuleException>(() =>
-                    Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
-                        new List<SaveVisitAgendaItem>
-                        {
-                            new(null, "Mục có người phụ trách", Now.AddDays(5).Date.AddHours(9),
-                                Now.AddDays(5).Date.AddHours(10), null, "Phòng họp", HostHcm),
-                        }), CancellationToken.None));
-
-            // The host themself IS a valid responsible person for their own instance.
+            // Any free-typed name is accepted — it is plain text, never validated against a user list
+            // (unlike the old responsible_user_id link it replaces).
             using (var db = NewContext())
             {
                 var res = await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
                     new List<SaveVisitAgendaItem>
                     {
-                        new(null, "Mục host phụ trách", Now.AddDays(5).Date.AddHours(9),
-                            Now.AddDays(5).Date.AddHours(10), null, "Phòng họp", HostHn),
+                        new(null, "Mục có người phụ trách", Now.AddDays(5).Date.AddHours(9),
+                            Now.AddDays(5).Date.AddHours(10), null, "Phòng họp", "Nguyễn Văn A (khách mời ngoài hệ thống)"),
                     }), CancellationToken.None);
                 Assert.Equal(1, res.Count);
             }
             using (var db = NewContext())
             {
                 var agenda = Assert.Single(await db.VisitAgendas.AsNoTracking().Where(a => a.VisitInstanceId == hn).ToListAsync());
-                Assert.Equal(HostHn, agenda.ResponsibleUserId);
+                Assert.Equal("Nguyễn Văn A (khách mời ngoài hệ thống)", agenda.ResponsibleName);
+                Assert.Null(agenda.ResponsibleUserId); // no longer written by SaveVisitAgenda
             }
         }
         finally { await CleanupAsync(requestId); }

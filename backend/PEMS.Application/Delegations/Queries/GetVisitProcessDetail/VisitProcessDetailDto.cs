@@ -147,11 +147,9 @@ public sealed class AgendaItemDto
     /// traced via visit_agendas → agenda_template_items → agenda_templates. Null for manual rows.</summary>
     public ulong? SourceTemplateItemId { get; set; }
 
-    /// <summary>The concrete user assigned to run this agenda item (visit_agendas.responsible_user_id).
-    /// Null when unassigned. This is a REAL user — distinct from the template's suggested role label.</summary>
-    public ulong? ResponsibleUserId { get; set; }
-    public string? ResponsibleUserName { get; set; }
-    public string? ResponsibleUserEmail { get; set; }
+    /// <summary>Free-typed name of the person responsible for this agenda item (visit_agendas.
+    /// responsible_name). Not tied to a real user account — plain text, editable, may be null.</summary>
+    public string? ResponsibleName { get; set; }
 
     /// <summary>The suggested role text from the source template item (agenda_template_items.
     /// responsible_role_label), e.g. "IC Host". Display-only hint; NOT a person. Null for manual rows
