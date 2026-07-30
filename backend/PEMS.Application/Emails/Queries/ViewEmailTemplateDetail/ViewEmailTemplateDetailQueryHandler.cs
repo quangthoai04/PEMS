@@ -42,6 +42,8 @@ public sealed class ViewEmailTemplateDetailQueryHandler : IRequestHandler<ViewEm
             BodyFormat = template.BodyFormat.ToString(),
             VariablesText = template.VariablesText,
             Status = template.Status,
+            Revision = template.Revision,
+            HasShippedDefault = Emails.Common.EmailTemplateDefaults.For(template.TemplateCode) is not null,
             CreatedAt = template.CreatedAt,
             UpdatedAt = template.UpdatedAt
         };

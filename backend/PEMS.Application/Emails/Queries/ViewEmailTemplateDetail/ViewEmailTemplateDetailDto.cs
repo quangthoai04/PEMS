@@ -17,6 +17,17 @@ public sealed class ViewEmailTemplateDetailDto
     public string BodyFormat { get; set; } = null!;
     public string? VariablesText { get; set; }
     public string Status { get; set; } = null!;
+
+    /// <summary>
+    /// The optimistic-concurrency token the editor must send back on save or restore. Read it here, not
+    /// from <see cref="UpdatedAt"/>: a DATETIME with second resolution cannot distinguish two saves
+    /// inside the same second, and this can.
+    /// </summary>
+    public uint Revision { get; set; }
+
+    /// <summary>Whether PEMS ships a default for this code — i.e. whether restore is offered at all.</summary>
+    public bool HasShippedDefault { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

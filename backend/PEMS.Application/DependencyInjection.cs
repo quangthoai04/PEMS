@@ -20,6 +20,16 @@ public static class DependencyInjection
         // FluentValidation runs as a MediatR pipeline behaviour for every request.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>));
 
+        // Send idempotency (G11 / R-103). Registered AFTER validation so a malformed request is refused
+        // before a reservation is taken — a rejected payload must not spend the user's key. It does
+        // nothing at all unless the request implements IIdempotentEmailSend.
+        services.AddTransient(typeof(IPipelineBehavior<,>),
+            typeof(PEMS.Application.Emails.Idempotency.EmailSendIdempotencyBehaviour<,>));
+
+        // The reservation the current request is running under: written by the behaviour, read by
+        // ReportEmailSender at the moment it is about to call the provider.
+        services.AddScoped<PEMS.Application.Emails.Idempotency.EmailSendAttempt>();
+
         // Shared file-upload foundation (reused by avatar / gallery / news / document / minutes …).
         // The folder resolver + low-level Drive client are registered in Infrastructure.
         services.AddSingleton<IFileChecksumService, FileChecksumService>();

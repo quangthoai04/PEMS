@@ -26,9 +26,15 @@ namespace PEMS.Application.Emails.Commands.ReplytoEmail;
 /// effect, fabricating a delivery confirmation on a record the reply had no business touching.
 /// </para>
 /// <para>
-/// <b>Reply, not Reply All.</b> The reply is addressed to the original sender. The previous recipients are
-/// not copied — and the blind copies least of all: BCC is a fact about the original send, and forwarding
-/// it into a new message would tell the whole thread who was quietly included.
+/// <b>Reply and Reply All.</b> Reply is addressed to the original sender alone. Reply All adds the
+/// original's VISIBLE recipients and drops the replier's own mailbox. Neither carries the original's blind
+/// copies: BCC is a fact about that send, and forwarding it into a new message would tell the whole thread
+/// who had been included quietly. The BCC rows are filtered out before the planner is even called, so
+/// there is no ordering mistake that could leak them.
+/// </para>
+/// <para>
+/// Re-authorisation happens on every reply, in both modes, against the message as it stands now — being
+/// party to the conversation is checked at send time, not inherited from whenever the reader opened it.
 /// </para>
 /// </summary>
 public class ReplytoEmailCommandHandler : IRequestHandler<ReplytoEmailCommand, ReplytoEmailResponse>
@@ -94,13 +100,24 @@ public class ReplytoEmailCommandHandler : IRequestHandler<ReplytoEmailCommand, R
         var content = ManualEmailContent.Validate(
             subject, request.Body, EmailBodyFormat.HTML, _sanitizer);
 
-        // The reply's own envelope: the original sender, plus whatever copies THIS author chose. Nothing
-        // is carried over from the message being answered.
-        var envelope = EmailRecipientValidator.Validate(
-            new[] { new EmailRecipient(originalSender.Email, originalSender.FullName) },
+        // Who the reply goes to. In Reply mode: the original sender plus this author's own copies. In
+        // Reply All: additionally the original's VISIBLE recipients, minus this author's own mailbox.
+        // The planner is never given the original's BCC rows, so no path exists by which they could
+        // reappear — and the caller cannot assert recipients either, because only `ReplyAll` crosses the
+        // wire, not a list of addresses.
+        var plan = ReplyRecipientPlanner.Plan(
+            request.ReplyAll ? ReplyMode.All : ReplyMode.SenderOnly,
+            new EmailRecipient(originalSender.Email, originalSender.FullName),
+            originalRecipients
+                .Where(r => !string.Equals(r.RecipientType, EmailRecipientTypes.Bcc, StringComparison.OrdinalIgnoreCase))
+                .Select(r => new ReplySourceRecipient(r.RecipientEmail, r.RecipientName, r.RecipientType))
+                .ToList(),
             Map(request.Cc),
             Map(request.Bcc),
-            _recipientOptions.MaxRecipients);
+            viewerEmail);
+
+        var envelope = EmailRecipientValidator.Validate(
+            plan.To, plan.Cc, plan.Bcc, _recipientOptions.MaxRecipients);
 
         var result = await _sender.SendAsync(new ManualEmailMessage(
             SenderUserId: userId,
