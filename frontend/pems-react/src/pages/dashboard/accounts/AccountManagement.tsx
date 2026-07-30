@@ -10,7 +10,7 @@ import {
   Users, UserCheck, UserX, Clock, Search,
   Shield, CheckCircle, XCircle, MoreVertical, Eye,
   Edit, Key, RefreshCw, Plus, X, UserCog, Briefcase, GraduationCap,
-  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle, Mail
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle, Mail, Lock
 } from 'lucide-react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useAccountList } from '../../../features/account-management/hooks/useAccountList';
@@ -2184,14 +2184,38 @@ export function AccountManagement() {
                     </div>
                   );
 
+                  // ── One visual language for the whole edit grid (spec §4.6) ──────────────────
+                  // Which fields a caller may actually change varies by role, sub-role and campus
+                  // scope, so the operator cannot work it out from the labels — the field itself has
+                  // to say so. Editable is WHITE on a brand-tinted border; locked is FILLED slate.
+                  // The previous styling made the two nearly indistinguishable (locked fields sat on
+                  // `bg-gray-50/50` while editable selects sat on `bg-gray-50`, i.e. the locked ones
+                  // were the LIGHTER of the pair) — which is how an operator ends up clicking a field,
+                  // getting no caret, and assuming the page is broken.
+                  //
+                  // Colour is never the only signal: locked fields also carry a lock glyph, so the
+                  // distinction survives for anyone who cannot separate white from pale slate.
+                  // Chrome only — each call site adds its own text colour, so the MSSV field can stay
+                  // brand-bold without two competing `text-*` classes racing in the stylesheet.
+                  const EDITABLE_FIELD =
+                    'bg-white border-[#004c91]/35 hover:border-[#004c91]/60 focus:ring-2 focus:ring-[#004c91]';
+                  const LOCKED_FIELD = 'bg-slate-100 border-slate-200 text-slate-500';
+
                   // Read-only labelled field: renders the snapshot value, or "-" when empty
                   // (spec §3.1 — null/undefined/'' must show "-", never a fallback like "Nam").
+                  //
+                  // Always styled locked, because that is what it always is. `highlight` tints only the
+                  // LABEL now: a field the operator cannot touch must not be dressed as an active input
+                  // just because its value matters (read-only MSSV was the one case).
                   const DisplayField = ({ label, value, highlight = false, colSpan = false }: any) => (
                     <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
                       <span className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${highlight ? 'text-[#004c91]/80' : 'text-gray-500'}`}>{label}</span>
-                      <span className={`block text-sm p-2.5 rounded-lg border break-words ${highlight ? 'font-black text-[#004c91] bg-blue-50/30 border-blue-100' : 'font-bold text-gray-900 bg-gray-50/50 border-gray-100'}`}>
-                        {value === null || value === undefined || value === '' ? '-' : value}
-                      </span>
+                      <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-2.5 ${LOCKED_FIELD}`}>
+                        <span className="min-w-0 flex-1 break-words text-sm font-semibold">
+                          {value === null || value === undefined || value === '' ? '-' : value}
+                        </span>
+                        <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+                      </div>
                     </div>
                   );
 
@@ -2226,17 +2250,25 @@ export function AccountManagement() {
                       : [{ value: 'ADMIN', label: 'ADMIN' }, { value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'STAFF' }, { value: 'DEPARTMENT', label: 'DEPARTMENT' }, { value: 'STUDENT', label: 'STUDENT' }, { value: 'VISITOR', label: 'VISITOR' }];
 
                   const selectClass = (disabled = false) =>
-                    `px-3 py-2 pr-8 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all appearance-none w-full ${disabled ? 'opacity-70 cursor-not-allowed border-gray-200' : 'border-gray-200 focus:bg-white'}`;
+                    `px-3 py-2 pr-8 border rounded-lg text-sm font-medium focus:outline-none transition-all appearance-none w-full ${
+                      disabled ? `${LOCKED_FIELD} cursor-not-allowed` : `${EDITABLE_FIELD} text-gray-900`
+                    }`;
 
-                  // Gray, clearly-disabled styling for locked fields (spec §4.6); red border while
-                  // the field has a validation error (identity spec §7.4).
+                  // The chevron follows its select: a brand-tinted arrow on a slate box would read as
+                  // an affordance that is not there.
+                  const chevronClass = (disabled = false) =>
+                    `w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${
+                      disabled ? 'text-slate-400' : 'text-[#004c91]/50'
+                    }`;
+
+                  // Red border while the field has a validation error (identity spec §7.4).
                   const identityInputClass = (disabled: boolean, hasError = false) =>
-                    `px-3 py-2 border rounded-lg text-sm font-medium text-gray-900 focus:outline-none transition-all w-full ${
+                    `px-3 py-2 border rounded-lg text-sm font-medium focus:outline-none transition-all w-full ${
                       disabled
-                        ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed focus:ring-2 focus:ring-[#004c91]'
+                        ? `${LOCKED_FIELD} cursor-not-allowed`
                         : hasError
-                          ? 'bg-white border-red-400 focus:ring-2 focus:ring-red-400'
-                          : 'bg-white border-gray-200 focus:bg-white focus:ring-2 focus:ring-[#004c91]'
+                          ? 'bg-white border-red-400 text-gray-900 focus:ring-2 focus:ring-red-400'
+                          : `${EDITABLE_FIELD} text-gray-900`
                     }`;
 
                   // Locked-target identity display value (snapshot); editable value comes from the form.
@@ -2322,7 +2354,7 @@ export function AccountManagement() {
                               <option key={o.value} value={o.value}>{o.label}</option>
                             ))}
                           </select>
-                          <ChevronDown className={`w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${isHO ? 'text-slate-400' : 'text-gray-400'}`} />
+                          <ChevronDown className={chevronClass(isHO)} />
                         </div>
                       </div>
 
@@ -2349,12 +2381,13 @@ export function AccountManagement() {
                       {isStaffLeader && editRoleCode === 'STAFF' && (
                         <>
                           <DisplayField label="Chức vụ" value="Nhân viên" />
-                          <div className="flex flex-col min-w-0">
-                            <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Phòng ban</span>
-                            <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">
-                              {roleOptionsLoading ? 'Đang tải...' : (roleOptions?.icDepartment?.name ?? 'Không có Phòng Hợp tác Quốc tế đang hoạt động')}
-                            </span>
-                          </div>
+                          {/* Auto-assigned from the campus IC department — a value, never a choice. */}
+                          <DisplayField
+                            label="Phòng ban"
+                            value={roleOptionsLoading
+                              ? 'Đang tải...'
+                              : (roleOptions?.icDepartment?.name ?? 'Không có Phòng Hợp tác Quốc tế đang hoạt động')}
+                          />
                         </>
                       )}
 
@@ -2377,7 +2410,7 @@ export function AccountManagement() {
                                   </option>
                                 ))}
                               </select>
-                              <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <ChevronDown className={chevronClass(roleOptionsLoading)} />
                             </div>
                             {roleOptionsLoading && <p className="mt-1.5 text-xs text-gray-500">Đang tải danh sách phòng ban...</p>}
                             {!roleOptionsLoading && !roleOptionsError && (roleOptions?.generalDepartments.length ?? 0) === 0 && (
@@ -2395,7 +2428,9 @@ export function AccountManagement() {
                             maxLength={30}
                             onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, studentCode: e.target.value } : prev))}
                             placeholder="Nhập mã số sinh viên"
-                            className="px-3 py-2 border border-blue-200 rounded-lg text-sm font-black text-[#004c91] focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-blue-50/30 focus:bg-white transition-all w-full"
+                            // Same editable chrome as every other open field; the brand-bold value is
+                            // what marks it as the key identifier, not a different background.
+                            className={`px-3 py-2 border rounded-lg text-sm font-black text-[#004c91] focus:outline-none transition-all w-full ${EDITABLE_FIELD}`}
                           />
                         </div>
                       )}
@@ -2424,7 +2459,7 @@ export function AccountManagement() {
                                     <option key={c.userId} value={c.userId}>{c.fullName} — {c.email}</option>
                                   ))}
                                 </select>
-                                <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                <ChevronDown className={chevronClass(roleOptionsLoading)} />
                               </div>
                               <p className="mt-1.5 text-xs text-gray-500">
                                 Tài khoản này đang là Trưởng phòng của {headedDepartment.name}. Người được chọn sẽ nhận vai trò Trưởng phòng ngay khi lưu thay đổi.
