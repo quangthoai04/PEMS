@@ -62,6 +62,13 @@ public static class DependencyInjection
         // can send a "see attached" message with nothing attached.
         services.AddScoped<PEMS.Application.Reports.Common.IReportEmailSender,
             PEMS.Application.Reports.Common.ReportEmailSender>();
+        // Send idempotency (G11 / R-103): the durable reservation behind the six report/invoice sends,
+        // and the request-scoped reader for the Idempotency-Key header. Persistence lives here because
+        // the guarantee is the database's unique constraint plus a row lock, not application logic.
+        services.AddScoped<PEMS.Application.Emails.Idempotency.IEmailSendReservationStore,
+            EmailSendReservationStore>();
+        services.AddScoped<PEMS.Application.Emails.Idempotency.IIdempotencyKeyAccessor,
+            HttpIdempotencyKeyAccessor>();
         // Manual mail (compose / draft-send / reply): record one message, send one MIME for the whole
         // TO+CC+BCC envelope, write back the outcome that actually happened. Shared so the three handlers
         // cannot disagree again about what a CC is.

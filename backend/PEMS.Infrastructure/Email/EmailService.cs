@@ -125,6 +125,14 @@ public class EmailService : IEmailService
                 new MemoryStream(f.Content), f.FileName, f.ContentType ?? "application/octet-stream"));
         }
 
+        // Identity comes from the pipeline, never from the bag. Message-Id is set from the typed field so
+        // the delivered message carries the same identifier that was written to sent_emails.
+        if (!string.IsNullOrWhiteSpace(email.MessageId))
+        {
+            EmailRecipientValidator.AssertNoHeaderBreak(email.MessageId!, "Message-Id");
+            message.Headers.Add("Message-Id", email.MessageId!);
+        }
+
         if (email.Headers is { Count: > 0 })
         {
             foreach (var (name, value) in email.Headers)
@@ -133,6 +141,8 @@ public class EmailService : IEmailService
                 // A header value carrying a newline would append headers of its own.
                 EmailRecipientValidator.AssertNoHeaderBreak(name, "tên header");
                 EmailRecipientValidator.AssertNoHeaderBreak(value, $"header '{name}'");
+                // …and a caller may not smuggle in a From, a Bcc or a Return-Path this way.
+                EmailRecipientValidator.AssertHeaderNameAllowed(name);
                 message.Headers.Add(name, value);
             }
         }
@@ -177,7 +187,7 @@ public class EmailService : IEmailService
         // ── SMTP not usable (disabled OR no host, and no pickup directory) ──────
         if (!enabled || (string.IsNullOrWhiteSpace(host) && !usePickup))
         {
-            var reason = !enabled ? "SMTP_DISABLED" : "SMTP_MISCONFIGURED";
+            var reason = !enabled ? EmailDeliveryCodes.SmtpDisabled : EmailDeliveryCodes.SmtpMisconfigured;
 
             // Metadata ONLY — the body may carry OTP codes, action tokens or confirmation URLs, so it must
             // never reach the logs; recipients are reduced to their domain (no address local-part persisted).
@@ -222,7 +232,7 @@ public class EmailService : IEmailService
             _logger.LogError(ex,
                 "[EmailService] SMTP send FAILED. To:{To} Subject:{Subject}",
                 MaskAll(envelope.To), message.Subject);
-            return EmailDeliveryResult.Failed("SMTP_SEND_FAILED", "Email delivery failed.");
+            return EmailDeliveryResult.Failed(EmailDeliveryCodes.SmtpSendFailed, "Email delivery failed.");
         }
     }
 

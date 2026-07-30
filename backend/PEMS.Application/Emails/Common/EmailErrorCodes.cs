@@ -140,4 +140,81 @@ public static class EmailErrorCodes
     /// "gửi", so a Skipped or Failed delivery must surface as a failed command, never as a quiet success.
     /// </summary>
     public const string ReportDeliveryFailed = "EMAIL_REPORT_DELIVERY_FAILED";
+
+    // ── Send idempotency (G11 / R-103) ───────────────────────────────────────
+
+    /// <summary>
+    /// A report/invoice send arrived without an <c>Idempotency-Key</c>. Refused rather than sent: a
+    /// keyless path would make the whole guarantee optional, and the caller that forgot the header is
+    /// exactly the caller whose retry would send twice.
+    /// </summary>
+    public const string IdempotencyKeyRequired = "EMAIL_IDEMPOTENCY_KEY_REQUIRED";
+
+    /// <summary>The key is empty, too short, too long, or contains a control character.</summary>
+    public const string IdempotencyKeyInvalid = "EMAIL_IDEMPOTENCY_KEY_INVALID";
+
+    /// <summary>Another request with this key is still running. Wait for it; do not send again.</summary>
+    public const string IdempotencyInProgress = "EMAIL_IDEMPOTENCY_IN_PROGRESS";
+
+    /// <summary>
+    /// This key was already used for a DIFFERENT request. Nothing is sent — the alternative would be to
+    /// guess which of the two the user meant.
+    /// </summary>
+    public const string IdempotencyKeyReused = "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST";
+
+    /// <summary>
+    /// A previous attempt under this key reached the provider and its result was never established. The
+    /// message may have been delivered, so it is not retried automatically; sending again is a decision
+    /// a person makes, with a new key.
+    /// </summary>
+    public const string IdempotencyOutcomeUnknown = "EMAIL_IDEMPOTENCY_OUTCOME_UNKNOWN";
+
+    // ── Template editing (G11-J / G11-I) ─────────────────────────────────────
+    // These are FIELD-LEVEL codes: each one arrives attached to subjectVi/subjectEn/bodyVi/bodyEn and,
+    // where it applies, to the variable at fault. The screen used to render one sentence — "Một số biến
+    // chưa được định nghĩa hoặc sai định dạng" — for every one of these situations, which told the
+    // operator neither where the problem was nor what to change.
+
+    // An edit that uses a variable the template does not declare reuses the existing
+    // TemplateVariableUnknown above: it is the same fault, whether the caller supplied the stray
+    // variable at send time or an operator typed it into the body.
+
+    /// <summary>A brace-shaped fragment that is not a well-formed <c>{{camelCase}}</c> placeholder.</summary>
+    public const string TemplateVariableMalformed = "EMAIL_TEMPLATE_VARIABLE_MALFORMED";
+
+    /// <summary>The edit removed a variable this template cannot send a usable message without.</summary>
+    public const string TemplateRequiredVariableMissing = "EMAIL_TEMPLATE_REQUIRED_VARIABLE_MISSING";
+
+    /// <summary>A placeholder is present but no caller supplies a value for it at send time.</summary>
+    public const string TemplateRuntimeVariableMissing = "EMAIL_TEMPLATE_RUNTIME_VARIABLE_MISSING";
+
+    /// <summary>A credential or trusted block was placed in a subject, which is stored and displayed.</summary>
+    public const string TemplateSubjectForbiddenSensitiveVariable =
+        "EMAIL_TEMPLATE_SUBJECT_FORBIDDEN_SENSITIVE_VARIABLE";
+
+    /// <summary>The edit removed <c>{{actionBlock}}</c> from a template whose message is the action.</summary>
+    public const string TemplateActionBlockRequired = "EMAIL_TEMPLATE_ACTION_BLOCK_REQUIRED";
+
+    /// <summary>
+    /// A create, delete, clone or status change was attempted against the system template catalog. The
+    /// catalog is fixed in code: a template code exists because a caller in a release sends it, so one
+    /// invented through the API would be a row nothing can ever address.
+    /// </summary>
+    public const string TemplateCatalogFixed = "EMAIL_TEMPLATE_CATALOG_FIXED";
+
+    /// <summary>
+    /// An update tried to change a field that is not the operator's to change — the code, the module, the
+    /// security classification, the status or the variable contract.
+    /// </summary>
+    public const string TemplateFieldImmutable = "EMAIL_TEMPLATE_FIELD_IMMUTABLE";
+
+    /// <summary>
+    /// The template was modified by somebody else after this editor loaded it. Refused rather than
+    /// last-write-wins: two operators editing the same message would otherwise silently discard one
+    /// person's wording with no trace that it ever existed.
+    /// </summary>
+    public const string TemplateConcurrencyConflict = "EMAIL_TEMPLATE_CONCURRENCY_CONFLICT";
+
+    /// <summary>The template code has no shipped default recorded, so there is nothing to restore to.</summary>
+    public const string TemplateDefaultUnavailable = "EMAIL_TEMPLATE_DEFAULT_UNAVAILABLE";
 }

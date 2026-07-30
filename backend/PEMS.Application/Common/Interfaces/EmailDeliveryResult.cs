@@ -44,3 +44,34 @@ public sealed record EmailDeliveryResult(
     public static EmailDeliveryResult Failed(string code, string safeMessage)
         => new(EmailDeliveryStatus.Failed, code, safeMessage);
 }
+
+/// <summary>
+/// The <see cref="EmailDeliveryResult.Code"/> values the email service produces, and the one question
+/// that has to be asked of them: <b>can the system prove nothing left the process?</b>
+///
+/// <para>
+/// Send idempotency turns on that distinction (G11 / R-103). A configuration refusal happens before any
+/// socket is opened, so a retry is provably safe. An exception from the SMTP client is not the same
+/// thing at all — it cannot tell "the server refused the message" apart from "the server accepted it and
+/// the acknowledgement was lost" — so it must never be reported as a clean failure.
+/// </para>
+/// </summary>
+public static class EmailDeliveryCodes
+{
+    /// <summary>SMTP is switched off for this environment. Nothing was attempted.</summary>
+    public const string SmtpDisabled = "SMTP_DISABLED";
+
+    /// <summary>No host and no pickup directory. Nothing was attempted.</summary>
+    public const string SmtpMisconfigured = "SMTP_MISCONFIGURED";
+
+    /// <summary>The SMTP client threw. What the provider did with the message is NOT known.</summary>
+    public const string SmtpSendFailed = "SMTP_SEND_FAILED";
+
+    /// <summary>
+    /// True only for outcomes decided before the provider was contacted. Deliberately a closed list:
+    /// a code nobody has classified reads as "unknown", which is the safe direction to be wrong in.
+    /// </summary>
+    public static bool ProvesNothingWasSent(EmailDeliveryResult delivery)
+        => delivery.Status == EmailDeliveryStatus.Skipped
+           || delivery.Code is SmtpDisabled or SmtpMisconfigured;
+}
