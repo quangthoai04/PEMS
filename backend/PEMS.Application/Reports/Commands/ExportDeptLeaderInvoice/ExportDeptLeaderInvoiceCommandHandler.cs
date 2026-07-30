@@ -12,6 +12,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Delegations.VisitPhotos;
 using Microsoft.Extensions.Logging;
+using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetDeptLeaderInvoiceData;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportOverview;
 using PEMS.Domain.Constants;
@@ -63,8 +64,13 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
 
         if (request.Items.Count == 0)
             throw new ValidationException("Chọn ít nhất một hạng mục để xuất hóa đơn.");
-        if (request.Items.Any(i => i.UnitPrice < 0))
-            throw new ValidationException("Đơn giá phải lớn hơn hoặc bằng 0.");
+
+        // Unit prices are NOT checked here. A pre-pass over request.Items used to reject negatives with a
+        // message of its own, before scope had been established — so the three invoice paths disagreed
+        // about both the wording and the order of checks, and this one told a caller their price was
+        // invalid on an item that was not even in their department. InvoiceMoney.ValidateUnitPrice runs
+        // per item below, after the item has been matched to a row the caller owns, and covers the range
+        // and scale this pre-pass never did.
 
         // Visit must be in the leader's department scope.
         var visit = await _db.VisitRequestCampuses.AsNoTracking()
@@ -101,11 +107,15 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
             .ToListAsync(cancellationToken);
 
         var lines = new List<InvoiceLine>();
+        var grandTotal = 0m;
         foreach (var input in request.Items)
         {
+            // Scope first: the price is only ever applied to a line already proven to belong here.
             var dbItem = dbItems.FirstOrDefault(x => x.LogisticsItemId == input.LogisticsItemId)
                 ?? throw new ValidationException($"Hạng mục #{input.LogisticsItemId} không thuộc chuyến thăm/phòng ban của bạn.");
+            InvoiceMoney.ValidateUnitPrice(input.UnitPrice, dbItem.Title);
             var quantity = dbItem.Quantity ?? 1;
+            var amount = InvoiceMoney.Multiply(quantity, input.UnitPrice, $"Thành tiền của '{dbItem.Title}'");
             lines.Add(new InvoiceLine
             {
                 ItemName = dbItem.Title,
@@ -113,11 +123,11 @@ public sealed class ExportDeptLeaderInvoiceCommandHandler
                 Quantity = quantity,
                 Unit = string.IsNullOrWhiteSpace(input.Unit) ? "—" : input.Unit!.Trim(),
                 UnitPrice = input.UnitPrice,
-                Amount = quantity * input.UnitPrice,
+                Amount = amount,
                 Note = input.Note?.Trim() ?? string.Empty,
             });
+            grandTotal = InvoiceMoney.Add(grandTotal, amount, "Tổng tiền hóa đơn");
         }
-        var grandTotal = lines.Sum(l => l.Amount);
 
         // Header metadata.
         var deptInfo = await _db.Departments.AsNoTracking()
