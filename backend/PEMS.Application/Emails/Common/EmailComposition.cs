@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Emails.Common;
 
@@ -173,6 +174,35 @@ public static class EmailComposition
         => $@"<div style=""text-align:center;margin:24px 0"">
             <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
         </div>";
+
+    /// <summary>
+    /// Preview stand-in for a template that carries <c>{{actionBlock}}</c> but has no entry in
+    /// <see cref="EmailActionTemplates"/> (G11 / R-106).
+    ///
+    /// <para>
+    /// Nine of the fourteen templates that use the placeholder are in this position, and before this
+    /// existed they could not be previewed at all: with no trusted block supplied, <c>{{actionBlock}}</c>
+    /// survived rendering and the renderer refused the whole message. An operator editing one of those
+    /// templates got an error instead of a preview, which is a poor way to learn that the registry is
+    /// incomplete.
+    /// </para>
+    /// <para>
+    /// It deliberately names NO business outcome — no "Chấp nhận", no "Từ chối", no "Xác nhận". What
+    /// buttons those emails should carry is a product decision that has not been made, and inventing
+    /// labels here would put an answer to it in front of operators as though it had been. The block shows
+    /// where the action area sits and says who fills it in; nothing more.
+    /// </para>
+    /// </summary>
+    public static string DisabledUnspecifiedActionBlock(string language)
+    {
+        var text = EmailLanguages.Normalize(language) == EmailLanguages.En
+            ? "Action area — the system adds the buttons and their one-time links when the email is sent."
+            : "Khu vực nút thao tác — hệ thống gắn nút và liên kết một lần khi gửi email thật.";
+
+        return $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;border:1px dashed #9aa6b2;color:#6b7280;font-size:13px;padding:12px 22px;border-radius:10px"">{HE(text)}</span>
+        </div>";
+    }
 
     public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
     {

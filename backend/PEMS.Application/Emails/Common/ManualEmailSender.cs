@@ -152,7 +152,8 @@ public sealed class ManualEmailSender : IManualEmailSender
             Attachments = message.Attachments.Select(a => a.Outbound).ToList(),
             // No TemplateCode: manual mail has no template policy to re-check. CC/BCC are the sender's
             // choice here, which is exactly the freedom the single-recipient system templates deny.
-            Headers = BuildThreadHeaders(messageId, message.InReplyTo),
+            MessageId = messageId,
+            Headers = BuildThreadHeaders(message.InReplyTo),
         }, cancellationToken);
 
         // ── 3. Write back what actually happened ──────────────────────────────
@@ -224,13 +225,19 @@ public sealed class ManualEmailSender : IManualEmailSender
     }
 
     /// <summary>
-    /// <c>Message-Id</c> always; <c>In-Reply-To</c>/<c>References</c> only when the parent really has an
-    /// id to point at. A reply to a message sent before ids were recorded simply carries no threading
-    /// headers rather than a fabricated one.
+    /// <c>In-Reply-To</c>/<c>References</c>, and only when the parent really has an id to point at. A
+    /// reply to a message sent before ids were recorded simply carries no threading headers rather than a
+    /// fabricated one.
+    ///
+    /// <para>
+    /// <c>Message-Id</c> used to be built here too. It moved to <c>OutboundEmail.MessageId</c> when the
+    /// header bag stopped accepting anything that decides a message's identity — the id belongs to the
+    /// message, not to a bag of thread references a caller assembles.
+    /// </para>
     /// </summary>
-    private static IReadOnlyDictionary<string, string> BuildThreadHeaders(string messageId, SentEmail? parent)
+    private static IReadOnlyDictionary<string, string> BuildThreadHeaders(SentEmail? parent)
     {
-        var headers = new Dictionary<string, string> { ["Message-Id"] = messageId };
+        var headers = new Dictionary<string, string>();
 
         if (parent is null || string.IsNullOrWhiteSpace(parent.ProviderMessageId))
             return headers;

@@ -91,6 +91,49 @@ public static class SentEmailAccess
     public static bool CanView(Relation relation) => relation != Relation.None;
 
     /// <summary>
+    /// Whether a reply should be offered on a message.
+    ///
+    /// <para>
+    /// This is the affordance rule, and it is deliberately never wider than what
+    /// <c>ReplytoEmailCommandHandler</c> will accept: it requires the same envelope relation and the same
+    /// real sender to answer. It is narrower in one place — the sender's own message. The command would
+    /// permit that (the reply would be addressed back to the author), but a button that mails you your own
+    /// message is not a reply, and the list query has always reported <c>CanReply = false</c> for SENT.
+    /// </para>
+    /// <para>
+    /// <paramref name="relation"/> must be the relation resolved from the ENVELOPE alone. A viewer who
+    /// reached the message through its linked business object is not party to the conversation, and the
+    /// reply command refuses them — offering the button would promise something the server then denies.
+    /// </para>
+    /// </summary>
+    public static bool CanOfferReply(Relation relation, ulong? senderUserId)
+        => CanView(relation)
+           && relation != Relation.Sender
+           && relation != Relation.LinkedObject
+           && senderUserId is not null;
+
+    /// <summary>
+    /// Whether "đánh dấu đã xử lý" should be offered, and — because both sides call this — whether the
+    /// command will accept it.
+    ///
+    /// <para>
+    /// The two must agree. The detail screen reads <c>canMarkComplete</c> off the payload, and the payload
+    /// did not carry the field: it was always <c>undefined</c>, so the button never appeared for anyone,
+    /// while <c>MarkEmailCompletedCommandHandler</c> was perfectly willing to accept the call. A dead
+    /// affordance is the quiet half of that bug; the loud half would be showing a button the server then
+    /// refuses. One predicate consulted by both is what keeps them from drifting apart again.
+    /// </para>
+    /// <para>
+    /// Party to the envelope, and not yet completed. A linked-object viewer is excluded on purpose: they
+    /// can read the message because they can open the visit it belongs to, which is not the same as being
+    /// in the conversation, and closing somebody else's correspondence is not theirs to do.
+    /// </para>
+    /// </summary>
+    public static bool CanMarkComplete(Relation relation, DateTime? deliveredAt)
+        => deliveredAt is null
+           && relation is Relation.Sender or Relation.VisibleRecipient or Relation.BlindCopy;
+
+    /// <summary>
     /// The recipient rows this viewer may see.
     ///
     /// <list type="bullet">

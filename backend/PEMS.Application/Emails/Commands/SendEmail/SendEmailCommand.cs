@@ -13,8 +13,23 @@ namespace PEMS.Application.Emails.Commands.SendEmail;
 /// preserve it through to the message.
 /// </para>
 /// </summary>
-public class SendEmailCommand : IRequest<SendEmailResponse>
+public class SendEmailCommand : IRequest<SendEmailResponse>, PEMS.Application.Emails.Idempotency.IIdempotentEmailSend
 {
+    public string OperationCode => PEMS.Application.Emails.Idempotency.EmailSendOperations.ManualCompose;
+
+    /// <summary>
+    /// What makes this compose request itself: the subject, the body, and the three recipient groups
+    /// normalised to addresses only (see <c>Recipients</c>). A retry of the same click is recognised;
+    /// adding or removing an address is not, and is refused rather than answered "already sent".
+    /// </summary>
+    public void DescribeRequest(PEMS.Application.Emails.Idempotency.EmailSendFingerprintBuilder builder) =>
+        builder.Id("template", TemplateId is null ? null : (ulong)TemplateId.Value)
+               .Text("subject", Subject)
+               .Text("body", Body)
+               .Recipients("to", To?.Select(r => r?.Email ?? string.Empty))
+               .Recipients("cc", Cc?.Select(r => r?.Email ?? string.Empty))
+               .Recipients("bcc", Bcc?.Select(r => r?.Email ?? string.Empty));
+
     /// <summary>
     /// The template the composer started from, if any. Recorded nowhere on the sent message: once a person
     /// has edited the text, the message is theirs, and pointing <c>sent_emails.email_template_id</c> at a

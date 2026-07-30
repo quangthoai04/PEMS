@@ -59,8 +59,26 @@ public sealed class OutboundEmail
     public EmailRecipient? ReplyTo { get; init; }
 
     /// <summary>
+    /// This message's RFC 5322 <c>Message-Id</c>, minted by the caller because the same value is written
+    /// to <c>sent_emails.provider_message_id</c> and is what a later reply threads against.
+    ///
+    /// <para>
+    /// It is a typed field rather than a header-bag entry so that <c>Message-Id</c> can be on the reserved
+    /// list with everything else that decides a message's identity. Null leaves it to the transport.
+    /// </para>
+    /// </summary>
+    public string? MessageId { get; init; }
+
+    /// <summary>
     /// Extra headers to preserve a mail thread (<c>In-Reply-To</c>, <c>References</c>). Values are
     /// header-validated like any other address/subject; no header may contain CR/LF.
+    ///
+    /// <para>
+    /// This bag may not carry anything that decides who the message is from or who it reaches — see
+    /// <c>EmailRecipientValidator.ReservedHeaderNames</c>. Those come from configuration and from the
+    /// typed recipient lists, and a bag entry that disagreed with them would make the delivered message
+    /// and its history row describe different things.
+    /// </para>
     /// </summary>
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
 
