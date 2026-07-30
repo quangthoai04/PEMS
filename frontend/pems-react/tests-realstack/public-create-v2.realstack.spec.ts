@@ -1,4 +1,4 @@
-/**
+﻿/**
  * REAL-STACK E2E — public per-campus v2 create (journey A).
  *
  * real Chromium → real React (Vite) → real .NET API (Testing, flags ON) → real disposable MySQL.
@@ -9,6 +9,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { type SinkRecord, sinkAddressed } from './sinkRecord';
 import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
 
 /** The FormField (label→control wrapper) whose visible label contains `label`. */
@@ -40,8 +41,8 @@ async function readOtpFromSink(email: string): Promise<string> {
     } catch { /* file may not exist yet */ }
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
-        const rec = JSON.parse(lines[i]) as { to?: string; kind?: string; code?: string };
-        if (rec.kind === 'VISIT_REQUEST_OTP' && rec.to === target && rec.code) return rec.code;
+        const rec = JSON.parse(lines[i]) as SinkRecord;
+        if (rec.kind === 'VISIT_REQUEST_OTP' && sinkAddressed(rec, target) && rec.code) return rec.code;
       } catch { /* skip malformed */ }
     }
     await new Promise(r => setTimeout(r, 250));

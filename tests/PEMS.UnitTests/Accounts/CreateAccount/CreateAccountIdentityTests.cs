@@ -27,29 +27,24 @@ public class CreateAccountIdentityTests
         public FakeCurrentUserService Actor { get; } = new();     // Staff Leader, id 900, campus 1
         public FakeDateTimeService Clock { get; } = new();
         public Mock<IPasswordHasher> Hasher { get; } = new();
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
         public Mock<INotificationService> Notifications { get; } = new();
         public Mock<PEMS.Application.Accounts.Common.IAccountEmailConfirmationService> Confirmations { get; } = new();
         public CreateAccountCommandHandler Handler { get; }
 
         public Harness()
         {
-            Email.Setup(e => e.SendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-            Email.Setup(e => e.TrySendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(EmailDeliveryResult.Sent());
             Confirmations.Setup(c => c.IssuePendingAsync(
                     It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("raw-token");
             Confirmations.Setup(c => c.BuildConfirmUrl(It.IsAny<string>()))
                 .Returns("http://localhost:5173/confirm-email?token=raw-token");
+            Confirmations.Setup(c => c.ExpiryHours).Returns(24);
             Notifications.Setup(n => n.CreateAsync(
                     It.IsAny<CreateNotificationRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
             Handler = new CreateAccountCommandHandler(
-                Db, Actor, Hasher.Object, Clock, new AuthOptions(), Email.Object, Notifications.Object, Confirmations.Object);
+                Db, Actor, Hasher.Object, Clock, new AuthOptions(), Dispatcher, Notifications.Object, Confirmations.Object);
         }
 
         public Task<CreateAccountResponse> Run(CreateAccountCommand cmd) => Handler.Handle(cmd, CancellationToken.None);
@@ -75,7 +70,6 @@ public class CreateAccountIdentityTests
     [Theory]
     [InlineData("new.student@gmail.com")]
     [InlineData("new.student@fpt.edu.vn")]
-    [InlineData("new.student@fe.edu.vn")]
     public async Task AllowedDomains_AreAccepted(string email)
     {
         var h = CreateHarness();
@@ -114,7 +108,9 @@ public class CreateAccountIdentityTests
 
     [Theory]
     [InlineData("Trần Văn C", "student@yahoo.com")]                  // domain not allowed
+    [InlineData("Trần Văn C", "student@fe.edu.vn")]                  // dropped from the allowlist
     [InlineData("Trần Văn C", "student@student.fpt.edu.vn")]         // subdomain, not an exact match
+    [InlineData("Trần Văn C", "student@gmail.com.vn")]               // look-alike, not an exact match
     [InlineData("Trần Văn C", "student+test@gmail.com")]             // plus addressing
     [InlineData("Trần Văn C", "abc..def@gmail.com")]                 // malformed local-part
     [InlineData("Trần Văn C", "abc")]                                // not an email at all
@@ -127,7 +123,13 @@ public class CreateAccountIdentityTests
 
         await Assert.ThrowsAsync<ValidationException>(() => h.Run(Cmd(fullName, email)));
 
+        // Nothing at all is left behind: no account, no pending-confirmation row, no mail.
         Assert.False(await h.Db.Users.AnyAsync());
+        Assert.False(await h.Db.AccountEmailConfirmations.AnyAsync());
+        Assert.Empty(h.Dispatcher.Sent);
+        h.Confirmations.Verify(
+            c => c.IssuePendingAsync(It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

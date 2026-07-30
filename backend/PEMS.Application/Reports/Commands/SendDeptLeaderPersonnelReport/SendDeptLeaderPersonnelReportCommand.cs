@@ -2,36 +2,44 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Net;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using PEMS.Domain.Constants;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
+using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetDeptLeaderReportV2;
-using PEMS.Shared;
 
 namespace PEMS.Application.Reports.Commands.SendDeptLeaderPersonnelReport;
 
 /// <summary>
-/// Gửi email báo cáo hiệu suất cá nhân (dạng chuyên nghiệp) cho 1 nhân sự phòng ban
-/// từ bảng nhân sự trên trang báo cáo của Department Leader. Nội dung: các thông số
-/// của người đó trong kỳ + danh sách toàn bộ nhiệm vụ (thư mời/đơn) đã tham gia; nếu
-/// feedback trung bình dưới 2★ thì kèm khối cảnh báo.
+/// Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự phòng ban từ bảng nhân sự trên trang
+/// báo cáo của Department Leader. Nội dung thư đến từ <c>email_templates</c>
+/// (REPORT_PERSONNEL_PERFORMANCE); số liệu và danh sách nhiệm vụ đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendDeptLeaderPersonnelReportCommand : IRequest<SendDeptLeaderPersonnelReportResult>
+public sealed class SendDeptLeaderPersonnelReportCommand : IRequest<SendDeptLeaderPersonnelReportResult>, IIdempotentEmailSend
 {
     public ulong UserId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public string? Note { get; set; }
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.DeptLeaderPersonnelReport;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Id("user", UserId)
+               .Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note);
 }
 
-public sealed class SendDeptLeaderPersonnelReportResult
+public sealed class SendDeptLeaderPersonnelReportResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
@@ -40,16 +48,18 @@ public sealed class SendDeptLeaderPersonnelReportResult
 public sealed class SendDeptLeaderPersonnelReportCommandHandler
     : IRequestHandler<SendDeptLeaderPersonnelReportCommand, SendDeptLeaderPersonnelReportResult>
 {
+    private static readonly CultureInfo Vi = CultureInfo.GetCultureInfo("vi-VN");
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
-    private readonly IEmailService _email;
+    private readonly IReportEmailSender _reportEmail;
 
     public SendDeptLeaderPersonnelReportCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IEmailService email)
+        IApplicationDbContext db, ICurrentUserService currentUser, IReportEmailSender reportEmail)
     {
         _db = db;
         _currentUser = currentUser;
-        _email = email;
+        _reportEmail = reportEmail;
     }
 
     public async Task<SendDeptLeaderPersonnelReportResult> Handle(
@@ -149,89 +159,92 @@ public sealed class SendDeptLeaderPersonnelReportCommandHandler
             .Select(u => u.FullName)
             .FirstOrDefaultAsync(cancellationToken) ?? "Department Leader";
 
-        var html = BuildEmailHtml(
-            person.FullName, roleLabel, deptName, leaderName,
-            fromVn, toVnExclusive.AddDays(-1),
-            taskRows, totalHours, avg, ratings.Count, declinedCount, request.Note);
+        var scopeLabel = PersonnelReportScopes.Label(PersonnelReportScope.VisitAssignments, EmailLanguages.Vi);
+        var (periodFrom, periodTo) = ReportPeriod.Labels(fromVn, toVnExclusive);
 
-        var subject = $"[PEMS] Báo cáo hiệu suất nhiệm vụ tiếp khách — {person.FullName} ({fromVn:dd/MM/yyyy} – {toVnExclusive.AddDays(-1):dd/MM/yyyy})";
-        await _email.SendAsync(person.Email, subject, html, cancellationToken);
+        var pdf = ReportPdf.Render(BuildDocument(
+            person.FullName, roleLabel, deptName, leaderName, scopeLabel,
+            periodFrom, periodTo, nowVn,
+            taskRows, totalHours, avg, ratings.Count, declinedCount, request.Note));
+
+        await _reportEmail.SendAsync(
+            new ReportEmailMessage(
+                SystemEmailTemplates.ReportPersonnelPerformance,
+                new EmailRecipient(person.Email!, person.FullName),
+                new Dictionary<string, string>
+                {
+                    ["personName"] = person.FullName,
+                    ["scopeLabel"] = scopeLabel,
+                    ["periodFrom"] = periodFrom,
+                    ["periodTo"] = periodTo,
+                },
+                ReportAttachmentName.Build("BaoCao_HieuSuat_CaNhan", nowVn),
+                pdf,
+                _currentUser.UserId,
+                ReportEmailRelatedTypes.User,
+                person.UserId),
+            cancellationToken);
 
         return new SendDeptLeaderPersonnelReportResult { Success = true, Message = $"Đã gửi báo cáo tới {person.Email}." };
     }
 
-    private static string BuildEmailHtml(
-        string fullName, string roleLabel, string deptName, string leaderName,
-        DateTime fromVn, DateTime toVn,
+    private static ReportPdfModel BuildDocument(
+        string fullName, string roleLabel, string deptName, string leaderName, string scopeLabel,
+        string periodFrom, string periodTo, DateTime nowVn,
         List<(string Code, string Delegation, DateTime Start, DateTime End, string Status, string Kind)> tasks,
         double totalHours, double? avgFeedback, int feedbackCount, int declinedCount, string? note)
     {
-        var vi = CultureInfo.GetCultureInfo("vi-VN");
-        string E(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
-
-        var sb = new StringBuilder();
-        sb.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;color:#1f2937\">");
-        sb.Append("<div style=\"background:#004c91;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0\">");
-        sb.Append("<div style=\"font-size:12px;letter-spacing:2px;opacity:.85\">FPT UNIVERSITY • PEMS</div>");
-        sb.Append("<div style=\"font-size:20px;font-weight:700;margin-top:4px\">Báo cáo hiệu suất nhiệm vụ tiếp khách</div>");
-        sb.Append($"<div style=\"font-size:13px;opacity:.9;margin-top:2px\">Kỳ báo cáo: {fromVn:dd/MM/yyyy} – {toVn:dd/MM/yyyy} · {E(deptName)}</div>");
-        sb.Append("</div>");
-        sb.Append("<div style=\"border:1px solid #e5e7eb;border-top:0;padding:24px;border-radius:0 0 12px 12px\">");
-
-        sb.Append($"<p>Xin chào <b>{E(fullName)}</b> ({E(roleLabel)}),</p>");
-        sb.Append("<p>Dưới đây là báo cáo tổng hợp hiệu suất của bạn trong kỳ, được gửi bởi Trưởng phòng ban.</p>");
+        var blocks = new List<ReportPdfBlock>();
 
         if (avgFeedback != null && avgFeedback < 2)
         {
-            sb.Append("<div style=\"background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:14px 0\">");
-            sb.Append($"<b style=\"color:#b91c1c\">⚠ Cảnh báo chất lượng:</b> <span style=\"color:#7f1d1d\">Điểm feedback trung bình của bạn trong kỳ là <b>{avgFeedback.Value.ToString("0.0", vi)}★</b> (dưới 2★). Vui lòng chủ động trao đổi với Trưởng phòng ban để cải thiện chất lượng phối hợp.</span>");
-            sb.Append("</div>");
+            blocks.Add(new ReportPdfBlock.Warning(
+                $"Cảnh báo chất lượng: Điểm feedback trung bình của bạn trong kỳ là "
+                + $"{avgFeedback.Value.ToString("0.0", Vi)}★ (dưới 2★). Vui lòng chủ động trao đổi với "
+                + "Trưởng phòng ban để cải thiện chất lượng phối hợp."));
         }
 
-        sb.Append("<table style=\"width:100%;border-collapse:collapse;margin:14px 0\">");
-        void Metric(string label, string value)
-            => sb.Append($"<tr><td style=\"padding:8px 12px;border:1px solid #e5e7eb;background:#f8fafc;font-weight:600;width:45%\">{label}</td><td style=\"padding:8px 12px;border:1px solid #e5e7eb\">{value}</td></tr>");
-        Metric("Số nhiệm vụ phụ trách", tasks.Count.ToString(vi));
-        Metric("Tổng giờ làm việc", $"{totalHours.ToString("0.#", vi)} giờ");
-        Metric("Feedback trung bình", avgFeedback != null ? $"{avgFeedback.Value.ToString("0.0", vi)}★ ({feedbackCount} lượt đánh giá)" : "Chưa có đánh giá");
-        Metric("Số lần từ chối", declinedCount.ToString(vi));
-        if (!string.IsNullOrWhiteSpace(note)) Metric("Ghi chú của Trưởng phòng ban", E(note.Trim()));
-        sb.Append("</table>");
+        var metrics = new List<ReportPdfMetric>
+        {
+            new("Số nhiệm vụ phụ trách", tasks.Count.ToString(Vi)),
+            new("Tổng giờ làm việc", $"{totalHours.ToString("0.#", Vi)} giờ"),
+            new("Feedback trung bình", avgFeedback != null
+                ? $"{avgFeedback.Value.ToString("0.0", Vi)}★ ({feedbackCount} lượt đánh giá)"
+                : "Chưa có đánh giá"),
+            new("Số lần từ chối", declinedCount.ToString(Vi)),
+        };
+        if (!string.IsNullOrWhiteSpace(note))
+            metrics.Add(new ReportPdfMetric("Ghi chú của Trưởng phòng ban", note.Trim()));
+        blocks.Add(new ReportPdfBlock.Metrics(metrics));
 
-        sb.Append($"<div style=\"font-weight:700;color:#004c91;margin:18px 0 8px\">Danh sách nhiệm vụ đã tham gia ({tasks.Count})</div>");
-        if (tasks.Count == 0)
-        {
-            sb.Append("<p style=\"color:#6b7280\">Không có nhiệm vụ nào trong kỳ báo cáo.</p>");
-        }
-        else
-        {
-            sb.Append("<table style=\"width:100%;border-collapse:collapse;font-size:13px\">");
-            sb.Append("<tr style=\"background:#004c91;color:#fff\">"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">STT</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Loại</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Mã đơn</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Đoàn khách</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Thời gian</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Số giờ</th></tr>");
-            var i = 0;
-            foreach (var t in tasks)
+        blocks.Add(new ReportPdfBlock.Table(
+            "Danh sách nhiệm vụ đã tham gia",
+            new[]
             {
-                i++;
-                var hours = Math.Max(0, (t.End - t.Start).TotalHours);
-                sb.Append($"<tr{(i % 2 == 0 ? " style=\"background:#f8fafc\"" : "")}>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{i}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.Kind)}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.Code)}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.Delegation)}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{t.Start:HH:mm dd/MM/yyyy} – {t.End:HH:mm dd/MM/yyyy}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{hours.ToString("0.#", vi)}</td></tr>");
-            }
-            sb.Append("</table>");
-        }
+                new ReportPdfColumn("STT", 28, Fixed: true),
+                new ReportPdfColumn("Loại", 1.2f),
+                new ReportPdfColumn("Mã đơn", 1.4f),
+                new ReportPdfColumn("Đoàn khách", 2.4f),
+                new ReportPdfColumn("Thời gian", 2.6f),
+                new ReportPdfColumn("Số giờ", 0.9f, AlignRight: true),
+            },
+            tasks.Select((t, i) => (IReadOnlyList<string>)new[]
+            {
+                (i + 1).ToString(Vi),
+                t.Kind,
+                t.Code,
+                t.Delegation,
+                $"{t.Start:HH:mm dd/MM/yyyy} – {t.End:HH:mm dd/MM/yyyy}",
+                Math.Max(0, (t.End - t.Start).TotalHours).ToString("0.#", Vi),
+            }).ToList(),
+            "Không có nhiệm vụ nào trong kỳ báo cáo."));
 
-        sb.Append($"<p style=\"margin-top:20px\">Trân trọng,<br/><b>{E(leaderName)}</b><br/>Department Leader · {E(deptName)}</p>");
-        sb.Append("<p style=\"font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px\">Email được tạo tự động từ hệ thống PEMS — Partnership Engagement Management System.</p>");
-        sb.Append("</div></div>");
-        return sb.ToString();
+        blocks.Add(new ReportPdfBlock.Note("Người gửi", $"{leaderName} · Department Leader · {deptName}"));
+
+        return new ReportPdfModel(
+            $"BÁO CÁO HIỆU SUẤT {scopeLabel.ToUpperInvariant()}",
+            $"{fullName} · {roleLabel} · {deptName} · Kỳ {periodFrom} – {periodTo} "
+            + $"· Lập lúc {nowVn:HH:mm dd/MM/yyyy}",
+            blocks);
     }
 }

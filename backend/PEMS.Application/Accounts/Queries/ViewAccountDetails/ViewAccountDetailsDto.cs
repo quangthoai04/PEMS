@@ -47,4 +47,25 @@ public sealed class ViewAccountDetailsDto
 
     /// <summary>Reason the basic-info edit is disabled for an HO caller (null when allowed).</summary>
     public string? EditBasicInfoDisabledReason { get; init; }
+
+    /// <summary>
+    /// True when THIS caller may re-issue the confirmation link for this account — i.e. it is still
+    /// PENDING_EMAIL_CONFIRMATION and the caller is authorized to manage it. Drives the "Gửi lại email
+    /// xác nhận" button.
+    ///
+    /// <para>
+    /// Computed here rather than left to the client so the button follows one rule instead of a
+    /// re-implementation of it: the frontend cannot see sub-roles, campus scope and self-account rules
+    /// together as reliably as the query already does. It remains a display hint — every mutation
+    /// re-checks the same scope server-side, so a client that ignores this flag gains nothing.
+    /// </para>
+    /// </summary>
+    public bool CanResendEmailConfirmation { get; init; }
+
+    /// <summary>
+    /// True when THIS caller may correct a still-pending account's email (which re-issues the
+    /// activation link rather than mailing a change notice). Same scope as
+    /// <see cref="CanResendEmailConfirmation"/> — both are the "manage a pending account" permission.
+    /// </summary>
+    public bool CanEditPendingEmail { get; init; }
 }

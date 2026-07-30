@@ -160,6 +160,22 @@ function fmtDateTime(value?: string | null): string {
   return hm ? `${hm} ${day}/${m}/${y}` : `${day}/${m}/${y}`;
 }
 
+/**
+ * The response deadline the BACKEND will compute for a SYSTEM_REQUEST: 24h before the usage window
+ * opens (PrepareVisitLogisticsCommandHandler). The Host no longer sets a due date — the field was
+ * removed from the request — so the preview reproduces the server's rule rather than echoing an input
+ * that no longer exists. Showing a placeholder here would preview a different email from the one sent.
+ */
+function deadlineFor(usageStartAt?: string | null): string | null {
+  if (!usageStartAt) return null;
+  const start = new Date(usageStartAt.replace(' ', 'T'));
+  if (Number.isNaN(start.getTime())) return null;
+  start.setHours(start.getHours() - 24);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+    + `T${pad(start.getHours())}:${pad(start.getMinutes())}`;
+}
+
 export function LogisticsRequestSection({
   visitInstanceId, relation, instanceStatus, delegationName, campusName, hostName,
   plannedStartAt, plannedEndAt, pushToast,
@@ -300,24 +316,20 @@ export function LogisticsRequestSection({
   const activeItem = (itemType: LogisticsItemType, title: string): VisitInstanceLogisticsItem | null =>
     items.find((i) => i.itemType === itemType && i.title === title && isActive(i)) ?? null;
 
+  // Exactly the nine variables LOGISTICS_REQUEST_TO_DEPARTMENT declares. The preview shares the send's
+  // renderer, which rejects an undeclared or missing key instead of substituting a placeholder — so the
+  // display value for an empty field is decided here, by the caller, and is the same wording the send
+  // would use.
   const ctxFor = (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null) => ({
-    visitName: delegationName,
-    campusName: campusName,
-    hostName: hostName,
+    departmentLeaderName: dept?.leaderName || 'Trưởng phòng',
     requesterName: hostName,
-    departmentName: dept?.departmentName || '',
-    departmentHeadName: dept?.leaderName || '',
-    departmentLeaderName: dept?.leaderName || '',
-    departmentHeadEmail: dept?.leaderEmail || '',
     logisticsTitle: payload.title,
-    logisticsItemTitle: payload.title,
     logisticsItemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
-    itemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
-    logisticsDescription: payload.description || '',
-    quantity: payload.quantity != null ? String(payload.quantity) : '',
-    usageStartAt: fmtDateTime(payload.usageStartAt) || '',
-    usageEndAt: fmtDateTime(payload.usageEndAt) || '',
-    coordinationNote: payload.offlineCoordinationNote || '',
+    quantity: payload.quantity != null ? String(payload.quantity) : 'Chưa nhập',
+    usageStartAt: fmtDateTime(payload.usageStartAt) || 'Chưa chọn thời gian',
+    usageEndAt: fmtDateTime(payload.usageEndAt) || 'Chưa chọn thời gian',
+    dueAt: fmtDateTime(deadlineFor(payload.usageStartAt)) || 'Chưa đặt hạn',
+    coordinationNote: payload.offlineCoordinationNote || 'Không có ghi chú phối hợp.',
   });
 
   const submitRequest = async (key: string, payload: PrepareVisitLogisticsPayload): Promise<boolean> => {

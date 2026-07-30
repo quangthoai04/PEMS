@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Emails.Common;
 
@@ -21,19 +24,6 @@ public static class EmailComposition
     public const string ActionBlockStart = "<!-- PEMS_ACTION_BLOCK_START -->";
     public const string ActionBlockEnd = "<!-- PEMS_ACTION_BLOCK_END -->";
     private static string WrapActionBlock(string inner) => ActionBlockStart + inner + ActionBlockEnd;
-
-    /// <summary>System action/detail-URL variables the backend ALWAYS injects itself (via the canonical
-    /// action block) — they are NEVER rendered into the editable body. Includes detailUrl: in the action
-    /// email flows (logistics request / assignee) the detail button lives in the action block, so the
-    /// body's {{detailUrl}} must be stripped. Reminders use their OWN renderer + provide a real detailUrl,
-    /// so they are unaffected by this set.</summary>
-    private static readonly System.Collections.Generic.HashSet<string> ActionUrlVarNames =
-        new(System.StringComparer.OrdinalIgnoreCase)
-        {
-            "acceptUrl", "declineUrl", "negotiateUrl", "approveProposalUrl",
-            "rejectProposalUrl", "confirmBorrowUrl", "confirmReturnUrl", "assignUrl",
-            "detailUrl", "DETAIL_URL",
-        };
 
     /// <summary>Regex alternation of every action/detail-URL var name used by the cleaner.</summary>
     private const string ActionVarAlternation =
@@ -111,7 +101,62 @@ public static class EmailComposition
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
+    /// <summary>
+    /// The reminder's "open the visit" button. A plain login-required link — no token, nothing to
+    /// consume, nothing that grants access on its own. That is why a reminder's body is kept in full in
+    /// the email history while the token-bearing mails have theirs stripped.
+    /// </summary>
+    public static string VisitDetailBlock(string detailUrl)
+        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xem chi tiết chuyến tiếp khách</a>
+        </div>
+        <p style=""color:#6b7280;font-size:12px"">Liên kết yêu cầu đăng nhập hệ thống PEMS.</p>");
+
+    // ── Account action blocks ──
+    // The URL is built by the backend from App:FrontendBaseUrl and, for confirmation, carries a
+    // one-time token. Neither ever appears in the editable template body — a template author must not be
+    // able to move, delete or fabricate the button that activates an account.
+
+    /// <summary>Confirm-email button plus the same link in plain text, for clients that strip buttons.</summary>
+    public static string ConfirmEmailBlock(string confirmUrl)
+        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+            <a href=""{HE(confirmUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xác nhận email &amp; kích hoạt tài khoản</a>
+        </div>
+        <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(confirmUrl)}</p>");
+
+    /// <summary>Sign-in button for the activated-account notice. No token — just the portal address.</summary>
+    public static string LoginBlock(string loginUrl)
+        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+            <a href=""{HE(loginUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Đăng nhập Internal Portal</a>
+        </div>
+        <p style=""color:#6b7280;font-size:12px"">Đăng nhập bằng chính địa chỉ email này qua SSO / Google / FEID.</p>");
+
+    /// <summary>
+    /// The claim/transfer invitation button: one link to a page that asks the reader to sign in with the
+    /// Google account of THIS address before accepting or declining. Deliberately not a direct-execute
+    /// link — opening a mail preview must not accept a role on somebody's behalf.
+    /// </summary>
+    public static string ContactRoleInvitationBlock(string invitationUrl, DateTime expiresAt)
+        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+            <a href=""{HE(invitationUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Mở trang xác nhận</a>
+        </div>
+        <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(invitationUrl)}</p>
+        <p style=""color:#6b7280;font-size:12px"">Liên kết có hiệu lực đến <strong>{expiresAt:HH:mm dd/MM/yyyy}</strong>. Vui lòng đăng nhập bằng đúng tài khoản Google của email này trước khi xác nhận.</p>");
+
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
+
+    /// <summary>Preview stand-in for <see cref="ConfirmEmailBlock"/> — no token is minted.</summary>
+    public static string DisabledConfirmEmailBlock()
+        => @"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xác nhận email &amp; kích hoạt tài khoản</span>
+        </div>";
+
+    /// <summary>Preview stand-in for <see cref="LoginBlock"/>.</summary>
+    public static string DisabledLoginBlock()
+        => @"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Đăng nhập Internal Portal</span>
+        </div>";
+
 
     public static string DisabledAcceptDeclineBlock(bool withAssign = false)
     {
@@ -129,6 +174,35 @@ public static class EmailComposition
         => $@"<div style=""text-align:center;margin:24px 0"">
             <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
         </div>";
+
+    /// <summary>
+    /// Preview stand-in for a template that carries <c>{{actionBlock}}</c> but has no entry in
+    /// <see cref="EmailActionTemplates"/> (G11 / R-106).
+    ///
+    /// <para>
+    /// Nine of the fourteen templates that use the placeholder are in this position, and before this
+    /// existed they could not be previewed at all: with no trusted block supplied, <c>{{actionBlock}}</c>
+    /// survived rendering and the renderer refused the whole message. An operator editing one of those
+    /// templates got an error instead of a preview, which is a poor way to learn that the registry is
+    /// incomplete.
+    /// </para>
+    /// <para>
+    /// It deliberately names NO business outcome — no "Chấp nhận", no "Từ chối", no "Xác nhận". What
+    /// buttons those emails should carry is a product decision that has not been made, and inventing
+    /// labels here would put an answer to it in front of operators as though it had been. The block shows
+    /// where the action area sits and says who fills it in; nothing more.
+    /// </para>
+    /// </summary>
+    public static string DisabledUnspecifiedActionBlock(string language)
+    {
+        var text = EmailLanguages.Normalize(language) == EmailLanguages.En
+            ? "Action area — the system adds the buttons and their one-time links when the email is sent."
+            : "Khu vực nút thao tác — hệ thống gắn nút và liên kết một lần khi gửi email thật.";
+
+        return $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;border:1px dashed #9aa6b2;color:#6b7280;font-size:13px;padding:12px 22px;border-radius:10px"">{HE(text)}</span>
+        </div>";
+    }
 
     public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
     {
@@ -156,6 +230,13 @@ public static class EmailComposition
     public static string StripActionArtifacts(string html)
     {
         if (string.IsNullOrEmpty(html)) return html ?? string.Empty;
+
+        // Refuse malformed markers rather than doing a best-effort removal. Step 0 below deletes
+        // everything between START and END; if the markers do not form exactly one well-ordered block,
+        // that deletion removes the wrong span — and the caller most in need of it is the email history,
+        // where "the wrong span" means a live one-time link stays in a table every internal role can read.
+        AssertActionBlockStructure(html);
+
         var s = html;
 
         // 0) Drop any previously-injected canonical action block (idempotent re-send/re-edit).
@@ -195,6 +276,93 @@ public static class EmailComposition
         s = Regex.Replace(s, @"<(p|div)(?:\s[^>]*)?>(?:\s|\||&nbsp;|&amp;|<br\s*/?>)*</\1>", string.Empty, RegexOptions.IgnoreCase);
 
         return s.Trim();
+    }
+
+    // ── Action-block integrity ──
+
+    /// <summary>Matches either canonical marker, however the surrounding comment syntax is written.</summary>
+    private static readonly Regex ActionBlockMarkerPattern =
+        new(@"PEMS_ACTION_BLOCK_(START|END)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>Regex for pulling the real URLs back out of a built action block.</summary>
+    private static readonly Regex HrefPattern =
+        new(@"href\s*=\s*""([^""]+)""", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>True when the content mentions an action-block marker at all.</summary>
+    public static bool ContainsActionBlockMarker(string? html)
+        => !string.IsNullOrEmpty(html) && ActionBlockMarkerPattern.IsMatch(html!);
+
+    /// <summary>
+    /// Asserts the content contains either no action-block markers, or exactly one START…END pair in that
+    /// order. Anything else — a stray END, an unclosed START, nesting, or a second block — is refused
+    /// with <see cref="EmailErrorCodes.ActionBlockMalformed"/>.
+    ///
+    /// <para>
+    /// Zero markers is valid and common: template bodies and freshly authored content have none. What is
+    /// never valid is a shape where "the action block" does not identify a single unambiguous span, since
+    /// both the stripper and the history policy are defined in terms of that span.
+    /// </para>
+    /// </summary>
+    public static void AssertActionBlockStructure(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) return;
+
+        var open = false;
+        var completed = 0;
+
+        foreach (Match m in ActionBlockMarkerPattern.Matches(html!))
+        {
+            var isStart = string.Equals(m.Groups[1].Value, "START", StringComparison.OrdinalIgnoreCase);
+
+            if (isStart)
+            {
+                if (open) throw Malformed("khối hành động lồng nhau");
+                open = true;
+            }
+            else
+            {
+                if (!open) throw Malformed("dấu kết thúc khối hành động đứng trước dấu bắt đầu");
+                open = false;
+                completed++;
+            }
+        }
+
+        if (open) throw Malformed("khối hành động thiếu dấu kết thúc");
+        if (completed > 1) throw Malformed($"có {completed} khối hành động (chỉ cho phép 1)");
+    }
+
+    private static PEMS.Application.Common.Exceptions.BusinessRuleException Malformed(string detail)
+        => new($"Nội dung email có cấu trúc khối hành động không hợp lệ: {detail}.",
+            EmailErrorCodes.ActionBlockMalformed);
+
+    /// <summary>
+    /// Every URL a built trusted block links to, in the exact spelling the block writes into the body
+    /// (HTML-encoded), plus the decoded spelling. Used to PROVE afterwards that a stripped body no longer
+    /// carries the one-time link — a check that needs the real URLs and therefore cannot be done by
+    /// pattern-matching the body alone.
+    /// </summary>
+    public static IReadOnlyList<string> ExtractActionUrls(
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? trustedBlocks)
+    {
+        var urls = new System.Collections.Generic.List<string>();
+        if (trustedBlocks is null) return urls;
+
+        foreach (var html in trustedBlocks.Values)
+        {
+            if (string.IsNullOrEmpty(html)) continue;
+
+            foreach (Match m in HrefPattern.Matches(html))
+            {
+                var encoded = m.Groups[1].Value;
+                if (string.IsNullOrWhiteSpace(encoded)) continue;
+
+                urls.Add(encoded);
+                var decoded = WebUtility.HtmlDecode(encoded);
+                if (!string.Equals(decoded, encoded, StringComparison.Ordinal)) urls.Add(decoded);
+            }
+        }
+
+        return urls;
     }
 
     /// <summary>
@@ -242,81 +410,4 @@ public static class EmailComposition
     public static string ResolveEditableHtml(EmailOverride ov)
         => !string.IsNullOrWhiteSpace(ov.BodyText) ? PlainTextToHtml(ov.BodyText) : (ov.BodyHtml ?? string.Empty);
 
-    /// <summary>
-    /// Replaces {{variable}} placeholders with context values, applying fallbacks for missing values.
-    /// </summary>
-    public static string RenderTemplate(string template, System.Collections.Generic.Dictionary<string, string> context, string contextType = "GENERAL")
-    {
-        if (string.IsNullOrEmpty(template)) return template;
-
-        // Rich editors (Quill) URL-encode braces inside href attributes, so a template link like
-        // href="{{AcceptUrl}}" comes back as href="%7B%7BAcceptUrl%7D%7D". Normalize the encoded
-        // double-brace form back to {{ }} (both upper/lower hex) before matching so it still resolves.
-        template = Regex.Replace(template, "%7[Bb]\\s*%7[Bb]", "{{");
-        template = Regex.Replace(template, "%7[Dd]\\s*%7[Dd]", "}}");
-
-        var fallbacks = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
-        {
-            { "coordinationNote", "Không có ghi chú phối hợp." },
-            { "quantity", "Chưa nhập" },
-            { "usageStartAt", "Chưa chọn thời gian" },
-            { "usageEndAt", "Chưa chọn thời gian" },
-            { "departmentName", "Chưa chọn phòng ban" },
-            { "departmentHeadName", "Chưa chọn phòng ban" },
-            { "departmentHeadEmail", "Chưa chọn phòng ban" },
-            { "headName", "Chưa chọn phòng ban" },
-            { "headEmail", "Chưa chọn phòng ban" },
-            { "logisticsItemTitle", "Chưa có thông tin" },
-            { "logisticsItemType", "Chưa có thông tin" },
-            { "logisticsDescription", "Chưa có thông tin" }
-        };
-
-        return Regex.Replace(template, @"\{\{\s*([\w]+)\s*\}\}", match =>
-        {
-            var key = match.Groups[1].Value;
-
-            // System action-URL vars are NEVER substituted into the editable body — leave the
-            // placeholder intact so StripActionArtifacts removes the whole anchor afterwards (the
-            // backend injects the real action block). This prevents the generic "Chưa có thông tin"
-            // fallback from blanking the placeholder and leaving the legacy anchor behind (duplicate).
-            if (ActionUrlVarNames.Contains(key))
-                return match.Value;
-
-            // Check provided context first (case-insensitive)
-            foreach (var kvp in context)
-            {
-                if (string.Equals(kvp.Key, key, System.StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrWhiteSpace(kvp.Value) && kvp.Value != "Chưa có thông tin")
-                        return kvp.Value;
-                }
-            }
-
-            // Apply specific fallback based on contextType
-            if (contextType == "PARTICIPANT_INVITATION")
-            {
-                if (string.Equals(key, "coordinationNote", System.StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "LogisticsNote", System.StringComparison.OrdinalIgnoreCase))
-                {
-                    // Log warning here if possible, but we don't have logger inject. Just return empty string to strip it.
-                    return string.Empty;
-                }
-            }
-
-            if (contextType == "LOGISTICS_REQUEST" || contextType == "GENERAL")
-            {
-                if (string.Equals(key, "coordinationNote", System.StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "LogisticsNote", System.StringComparison.OrdinalIgnoreCase))
-                {
-                    return "Không có ghi chú phối hợp.";
-                }
-            }
-
-            if (fallbacks.TryGetValue(key, out var fallbackValue))
-                return fallbackValue;
-                
-            // Generic fallback so no token is exposed
-            return "Chưa có thông tin";
-        });
-    }
 }

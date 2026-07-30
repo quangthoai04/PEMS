@@ -6,74 +6,103 @@ using System.Net.Mime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 
 namespace PEMS.Infrastructure.Email;
 
 /// <summary>
-/// SMTP email sender.
+/// SMTP email sender — the one place a PEMS message becomes MIME and leaves the process.
 ///
+/// <para>
+/// <b>The envelope is honoured exactly.</b> TO goes in the To header, CC in the Cc header, and BCC only
+/// into the SMTP envelope — <see cref="MailMessage.Bcc"/> is expanded into RCPT TO commands but is never
+/// written into the message, so no TO/CC recipient can see who was blind-copied. One message is sent for
+/// the whole envelope; the previous code looped per recipient, which turned every CC into a TO and made
+/// a "carbon copy" indistinguishable from a direct one.
+/// </para>
+/// <para>
 /// Delivery status is TRUTHFUL and environment-aware:
-///   • <c>Smtp:Enabled=false</c> in a NON-production environment → <see cref="EmailDeliveryStatus.Skipped"/>
-///     (nothing sent; metadata-only log). It is never reported as "sent".
-///   • <c>Smtp:Enabled=false</c> or misconfigured in Production → <see cref="EmailDeliveryStatus.Failed"/>
-///     (fail-closed: email is a required feature and must not be silently dropped).
-///   • provider accepted → <see cref="EmailDeliveryStatus.Sent"/>; provider error → Failed.
-///
-/// It never logs the OTP, action token, confirmation URL or the message body; the recipient is reduced to
-/// its domain in metadata logs.
+/// <list type="bullet">
+/// <item><c>Smtp:Enabled=false</c> in a NON-production environment → <see cref="EmailDeliveryStatus.Skipped"/>
+/// (nothing sent; metadata-only log). It is never reported as "sent".</item>
+/// <item><c>Smtp:Enabled=false</c> or misconfigured in Production → <see cref="EmailDeliveryStatus.Failed"/>
+/// (fail-closed: email is a required feature and must not be silently dropped).</item>
+/// <item>provider accepted → <see cref="EmailDeliveryStatus.Sent"/>; provider error → Failed.</item>
+/// </list>
+/// Provider acceptance is NOT delivery: nothing here ever reports <c>DELIVERED</c>, because PEMS has no
+/// delivery webhook to learn that from.
+/// </para>
+/// <para>
+/// It never logs the OTP, action token, confirmation URL or the message body; recipients are reduced to
+/// their domain in metadata logs.
+/// </para>
 /// </summary>
 public class EmailService : IEmailService
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<EmailService> _logger;
     private readonly IHostEnvironment _environment;
+    private readonly EmailRecipientOptions _recipientOptions;
 
-    public EmailService(IConfiguration configuration, ILogger<EmailService> logger, IHostEnvironment environment)
+    public EmailService(
+        IConfiguration configuration,
+        ILogger<EmailService> logger,
+        IHostEnvironment environment,
+        IOptions<EmailRecipientOptions> recipientOptions)
     {
-        _configuration = configuration;
-        _logger        = logger;
-        _environment   = environment;
+        _configuration    = configuration;
+        _logger           = logger;
+        _environment      = environment;
+        _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
     }
 
-    // ── Generic send ──────────────────────────────────────────────────────────
+    // ── Envelope-aware send ───────────────────────────────────────────────────
 
-    public async Task SendAsync(string toEmail, string subject, string htmlBody,
-        CancellationToken cancellationToken = default)
+    public async Task<EmailDeliveryResult> TrySendAsync(
+        OutboundEmail email, CancellationToken cancellationToken = default)
     {
-        using var message = new MailMessage { Subject = subject, Body = htmlBody, IsBodyHtml = true };
-        message.To.Add(toEmail);
-        ThrowIfFailed(await SendCoreAsync(message, cancellationToken));
-    }
+        // Validation and policy live HERE, at the last gate before dispatch, rather than only in the
+        // handlers. A handler can be added or edited without remembering the rules; this cannot be
+        // bypassed by any caller.
+        var envelope = EmailRecipientValidator.Validate(email, _recipientOptions.MaxRecipients);
+        EmailRecipientPolicyEnforcer.Assert(email.TemplateCode, envelope);
+        EmailRecipientValidator.AssertNoHeaderBreak(email.Subject ?? string.Empty, "tiêu đề email");
 
-    /// <summary>Truthful send: returns Sent/Skipped/Failed without throwing on a delivery outcome.</summary>
-    public async Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody,
-        CancellationToken cancellationToken = default)
-    {
-        using var message = new MailMessage { Subject = subject, Body = htmlBody, IsBodyHtml = true };
-        message.To.Add(toEmail);
-        return await SendCoreAsync(message, cancellationToken);
+        using var message = BuildMessage(email, envelope);
+        return await SendCoreAsync(message, envelope, cancellationToken);
     }
-
-    // ── Rich send: real MIME with attachments + inline (cid) images ─────────────
 
     public async Task SendAsync(OutboundEmail email, CancellationToken cancellationToken = default)
-    {
-        using var message = new MailMessage { Subject = email.Subject };
-        message.To.Add(email.ToEmail);
+        => ThrowIfFailed(await TrySendAsync(email, cancellationToken));
 
-        var inline = email.Attachments.Where(a => a.IsInline && !string.IsNullOrWhiteSpace(a.ContentId)).ToList();
-        var files  = email.Attachments.Where(a => !a.IsInline || string.IsNullOrWhiteSpace(a.ContentId)).ToList();
+    /// <summary>
+    /// Builds the MIME message. Inline images become linked resources on the HTML alternate view so
+    /// <c>&lt;img src="cid:…"&gt;</c> resolves in Gmail/Outlook; everything else becomes an attachment.
+    /// </summary>
+    private static MailMessage BuildMessage(OutboundEmail email, ValidatedEnvelope envelope)
+    {
+        var message = new MailMessage { Subject = email.Subject ?? string.Empty };
+
+        foreach (var r in envelope.To) message.To.Add(ToMailAddress(r));
+        foreach (var r in envelope.Cc) message.CC.Add(ToMailAddress(r));
+        foreach (var r in envelope.Bcc) message.Bcc.Add(ToMailAddress(r));
+
+        var inline = email.Attachments
+            .Where(a => a.IsInline && !string.IsNullOrWhiteSpace(a.ContentId)).ToList();
+        var files = email.Attachments
+            .Where(a => !a.IsInline || string.IsNullOrWhiteSpace(a.ContentId)).ToList();
 
         if (email.IsHtml)
         {
-            // HTML alternate view carries the inline images as linked resources so <img src="cid:..">
-            // resolves in Gmail/Outlook. A MemoryStream per resource — disposed with the MailMessage.
             var htmlView = AlternateView.CreateAlternateViewFromString(
                 email.Body ?? string.Empty, null, MediaTypeNames.Text.Html);
+
             foreach (var img in inline)
             {
-                var lr = new LinkedResource(new MemoryStream(img.Content), img.ContentType ?? "application/octet-stream")
+                var lr = new LinkedResource(
+                    new MemoryStream(img.Content), img.ContentType ?? "application/octet-stream")
                 {
                     ContentId = img.ContentId,
                     TransferEncoding = TransferEncoding.Base64,
@@ -81,6 +110,7 @@ public class EmailService : IEmailService
                 lr.ContentType.Name = img.FileName;
                 htmlView.LinkedResources.Add(lr);
             }
+
             message.AlternateViews.Add(htmlView);
         }
         else
@@ -91,47 +121,81 @@ public class EmailService : IEmailService
 
         foreach (var f in files)
         {
-            var att = new Attachment(new MemoryStream(f.Content), f.FileName, f.ContentType ?? "application/octet-stream");
-            message.Attachments.Add(att);
+            message.Attachments.Add(new Attachment(
+                new MemoryStream(f.Content), f.FileName, f.ContentType ?? "application/octet-stream"));
         }
 
-        ThrowIfFailed(await SendCoreAsync(message, cancellationToken));
+        // Identity comes from the pipeline, never from the bag. Message-Id is set from the typed field so
+        // the delivered message carries the same identifier that was written to sent_emails.
+        if (!string.IsNullOrWhiteSpace(email.MessageId))
+        {
+            EmailRecipientValidator.AssertNoHeaderBreak(email.MessageId!, "Message-Id");
+            message.Headers.Add("Message-Id", email.MessageId!);
+        }
+
+        if (email.Headers is { Count: > 0 })
+        {
+            foreach (var (name, value) in email.Headers)
+            {
+                if (string.IsNullOrWhiteSpace(name) || value is null) continue;
+                // A header value carrying a newline would append headers of its own.
+                EmailRecipientValidator.AssertNoHeaderBreak(name, "tên header");
+                EmailRecipientValidator.AssertNoHeaderBreak(value, $"header '{name}'");
+                // …and a caller may not smuggle in a From, a Bcc or a Return-Path this way.
+                EmailRecipientValidator.AssertHeaderNameAllowed(name);
+                message.Headers.Add(name, value);
+            }
+        }
+
+        return message;
     }
+
+    private static MailAddress ToMailAddress(EmailRecipient recipient)
+        => string.IsNullOrWhiteSpace(recipient.DisplayName)
+            ? new MailAddress(recipient.Email)
+            // The encoding argument makes .NET RFC 2047-encode a non-ASCII display name (Vietnamese
+            // diacritics) instead of emitting raw bytes into the header.
+            : new MailAddress(recipient.Email, recipient.DisplayName, System.Text.Encoding.UTF8);
 
     /// <summary>
     /// Resolves SMTP config and dispatches the message, returning the TRUTHFUL outcome. Disabled/misconfigured
     /// is Skipped in non-production but Failed (fail-closed) in Production; provider errors are Failed.
     /// </summary>
-    private async Task<EmailDeliveryResult> SendCoreAsync(MailMessage message, CancellationToken cancellationToken)
+    private async Task<EmailDeliveryResult> SendCoreAsync(
+        MailMessage message, ValidatedEnvelope envelope, CancellationToken cancellationToken)
     {
         var smtp    = _configuration.GetSection("Smtp");
         var enabled = bool.TryParse(smtp["Enabled"], out var e) && e;
 
         var fromEmail = smtp["FromEmail"] ?? smtp["User"] ?? "no-reply@pems.local";
         var fromName  = smtp["FromName"] ?? "PEMS";
-        message.From = new MailAddress(fromEmail, fromName);
+        message.From = new MailAddress(fromEmail, fromName, System.Text.Encoding.UTF8);
 
-        var replyToEmail = smtp["ReplyToEmail"];
-        var replyToName = smtp["ReplyToName"] ?? "PEMS";
-        if (!string.IsNullOrWhiteSpace(replyToEmail))
+        if (message.ReplyToList.Count == 0)
         {
-            message.ReplyToList.Add(new MailAddress(replyToEmail, replyToName));
+            var replyToEmail = smtp["ReplyToEmail"];
+            var replyToName  = smtp["ReplyToName"] ?? "PEMS";
+            if (!string.IsNullOrWhiteSpace(replyToEmail))
+                message.ReplyToList.Add(new MailAddress(replyToEmail, replyToName, System.Text.Encoding.UTF8));
         }
 
-        var to        = message.To.Count > 0 ? message.To[0].Address : "(none)";
-        var host      = smtp["Host"];
+        var host        = smtp["Host"];
+        var pickupDir   = smtp["PickupDirectory"];
+        var usePickup   = !string.IsNullOrWhiteSpace(pickupDir);
         var inlineCount = message.AlternateViews.Count > 0 ? message.AlternateViews[0].LinkedResources.Count : 0;
 
-        // ── SMTP not usable (disabled OR no host) ────────────────────────────────
-        if (!enabled || string.IsNullOrWhiteSpace(host))
+        // ── SMTP not usable (disabled OR no host, and no pickup directory) ──────
+        if (!enabled || (string.IsNullOrWhiteSpace(host) && !usePickup))
         {
-            var reason = !enabled ? "SMTP_DISABLED" : "SMTP_MISCONFIGURED";
+            var reason = !enabled ? EmailDeliveryCodes.SmtpDisabled : EmailDeliveryCodes.SmtpMisconfigured;
 
             // Metadata ONLY — the body may carry OTP codes, action tokens or confirmation URLs, so it must
-            // never reach the logs; the recipient is reduced to its domain (no address local-part persisted).
+            // never reach the logs; recipients are reduced to their domain (no address local-part persisted).
             _logger.LogInformation(
-                "[EmailService] {Reason} — email NOT sent. To:{ToDomain} Subject:{Subject} Attachments:{Att} Inline:{Inline} Env:{Env}",
-                reason, MaskEmail(to), message.Subject, message.Attachments.Count, inlineCount, _environment.EnvironmentName);
+                "[EmailService] {Reason} — email NOT sent. To:{To} Cc:{Cc} Bcc:{Bcc} Subject:{Subject} " +
+                "Attachments:{Att} Inline:{Inline} Env:{Env}",
+                reason, MaskAll(envelope.To), MaskAll(envelope.Cc), MaskAll(envelope.Bcc),
+                message.Subject, message.Attachments.Count, inlineCount, _environment.EnvironmentName);
 
             if (_environment.IsProduction())
             {
@@ -150,14 +214,15 @@ public class EmailService : IEmailService
         var user      = smtp["User"];
         var password  = smtp["Password"];
         var enableSsl = !bool.TryParse(smtp["EnableSsl"], out var ssl) || ssl;
-        var config    = new SmtpConfig(host, port, user, password, enableSsl);
+        var config    = new SmtpConfig(host, port, user, password, enableSsl, pickupDir);
 
         try
         {
             await DispatchAsync(message, config, cancellationToken);
             _logger.LogInformation(
-                "Sent email to {ToDomain} (subject: {Subject}, attachments: {Att}).",
-                MaskEmail(to), message.Subject, message.Attachments.Count);
+                "Sent email. To:{To} Cc:{Cc} Bcc:{Bcc} Subject:{Subject} Attachments:{Att}",
+                MaskAll(envelope.To), MaskAll(envelope.Cc), MaskAll(envelope.Bcc),
+                message.Subject, message.Attachments.Count);
             return EmailDeliveryResult.Sent();
         }
         catch (Exception ex)
@@ -165,17 +230,36 @@ public class EmailService : IEmailService
             // Log the failure WITHOUT the body/recipient local-part/secret. The SmtpClient exception text is
             // operational (host/status), never a user secret, but the safe message returned stays generic.
             _logger.LogError(ex,
-                "[EmailService] SMTP send FAILED. To:{ToDomain} Subject:{Subject}", MaskEmail(to), message.Subject);
-            return EmailDeliveryResult.Failed("SMTP_SEND_FAILED", "Email delivery failed.");
+                "[EmailService] SMTP send FAILED. To:{To} Subject:{Subject}",
+                MaskAll(envelope.To), message.Subject);
+            return EmailDeliveryResult.Failed(EmailDeliveryCodes.SmtpSendFailed, "Email delivery failed.");
         }
     }
 
     /// <summary>
-    /// Dispatches the built message over SMTP. Virtual so tests can simulate provider success/failure
+    /// Dispatches the built message. Virtual so tests can simulate provider success/failure
     /// deterministically without any network I/O.
+    ///
+    /// When <c>Smtp:PickupDirectory</c> is configured, .NET serialises the message to a real
+    /// <c>.eml</c> file instead of connecting anywhere. That is how the integration suite inspects
+    /// genuine MIME — including proving that BCC addresses appear in no header — rather than trusting a
+    /// hand-rolled mock to have modelled the format correctly.
     /// </summary>
-    protected virtual async Task DispatchAsync(MailMessage message, SmtpConfig config, CancellationToken cancellationToken)
+    protected virtual async Task DispatchAsync(
+        MailMessage message, SmtpConfig config, CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(config.PickupDirectory))
+        {
+            Directory.CreateDirectory(config.PickupDirectory!);
+            using var pickupClient = new SmtpClient
+            {
+                DeliveryMethod = SmtpDeliveryMethod.SpecifiedPickupDirectory,
+                PickupDirectoryLocation = config.PickupDirectory,
+            };
+            await pickupClient.SendMailAsync(message, cancellationToken);
+            return;
+        }
+
         using var client = new SmtpClient(config.Host, config.Port) { EnableSsl = config.EnableSsl };
         client.UseDefaultCredentials = false;
         if (!string.IsNullOrEmpty(config.User))
@@ -188,178 +272,37 @@ public class EmailService : IEmailService
     private static void ThrowIfFailed(EmailDeliveryResult result)
     {
         if (result.Status == EmailDeliveryStatus.Failed)
-            throw new EmailDeliveryException(result.Code ?? "EMAIL_SEND_FAILED", result.SafeMessage ?? "Email delivery failed.");
+            throw new EmailDeliveryException(
+                result.Code ?? "EMAIL_SEND_FAILED", result.SafeMessage ?? "Email delivery failed.");
     }
 
-    // ── Password reset ────────────────────────────────────────────────────────
+    // ── Legacy surface — removed once Giai đoạn 4 finishes migrating callers ──
 
-    public Task SendPasswordResetAsync(string toEmail, string fullName, string code,
+    [System.Obsolete("Render from email_templates and use SendAsync(OutboundEmail).")]
+    public Task SendAsync(string toEmail, string subject, string htmlBody,
         CancellationToken cancellationToken = default)
-    {
-        const string subject = "PEMS — Mã đặt lại mật khẩu";
-        var body =
-            $"<p>Xin chào {HE(fullName)},</p>" +
-            $"<p>Mã đặt lại mật khẩu của bạn là: <strong style=\"font-size:20px;letter-spacing:4px\">{HE(code)}</strong></p>" +
-            "<p>Mã này sẽ hết hạn sau 15 phút. Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.</p>" +
-            "<p>— PEMS System</p>";
+        => SendAsync(LegacySingle(toEmail, subject, htmlBody), cancellationToken);
 
-        return SendAsync(toEmail, subject, body, cancellationToken);
-    }
-
-    // ── Visit request OTP ─────────────────────────────────────────────────────
-
-    public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code,
+    [System.Obsolete("Render from email_templates and use TrySendAsync(OutboundEmail).")]
+    public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody,
         CancellationToken cancellationToken = default)
-    {
-        const string subject = "PEMS — Xác thực đăng ký tham quan";
-        var body = $@"
-<!DOCTYPE html>
-<html lang=""vi"">
-<head><meta charset=""UTF-8""></head>
-<body style=""font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:20px"">
-  <div style=""max-width:520px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)"">
-    <div style=""background:linear-gradient(135deg,#004c91,#013565);padding:28px 32px"">
-      <h1 style=""color:#fff;margin:0;font-size:22px"">PEMS — Campus Visit</h1>
-      <p style=""color:#b3c8e8;margin:6px 0 0;font-size:13px"">FPT University</p>
-    </div>
-    <div style=""padding:32px"">
-      <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(fullName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">
-        Bạn đang đăng ký tham quan FPT University. Vui lòng nhập mã xác thực bên dưới để hoàn tất đơn đăng ký.
-      </p>
-      <div style=""text-align:center;margin:28px 0"">
-        <div style=""display:inline-block;background:#f0f7ff;border:2px dashed #004c91;border-radius:12px;padding:16px 40px"">
-          <span style=""font-size:36px;font-weight:900;letter-spacing:10px;color:#004c91"">{HE(code)}</span>
-        </div>
-        <p style=""color:#9ca3af;font-size:12px;margin-top:10px"">Mã có hiệu lực trong <strong>5 phút</strong></p>
-      </div>
-      <p style=""color:#6b7280;font-size:12px"">
-        Nếu bạn không thực hiện thao tác này, vui lòng bỏ qua email này.
-      </p>
-    </div>
-    <div style=""background:#f9fafb;padding:16px 32px;text-align:center"">
-      <p style=""color:#9ca3af;font-size:11px;margin:0"">© 2026 PEMS — FPT University. Không trả lời email này.</p>
-    </div>
-  </div>
-</body>
-</html>";
+        => TrySendAsync(LegacySingle(toEmail, subject, htmlBody), cancellationToken);
 
-        return SendAsync(toEmail, subject, body, cancellationToken);
-    }
+    private static OutboundEmail LegacySingle(
+        string toEmail, string subject, string htmlBody, string? templateCode = null)
+        => new()
+        {
+            To = new[] { new EmailRecipient(toEmail) },
+            Subject = subject,
+            Body = htmlBody,
+            IsHtml = true,
+            TemplateCode = templateCode,
+        };
 
-    // ── Visit request confirmation ────────────────────────────────────────────
+    // The hard-coded password-reset email used to live here. Batch 2 moved it into
+    // AUTH_PASSWORD_RESET_OTP; the copy is deleted rather than kept "just in case", because a second
+    // source of the same message is exactly how the account mails drifted apart before.
 
-    public Task SendVisitorAccountCreatedOrLinkedEmailAsync(
-        string toEmail, string contactFullName, string delegationName,
-        string requestCode, string visitScope, string plannedTime,
-        CancellationToken cancellationToken = default)
-    {
-        const string subject = "PEMS — Yêu cầu tham quan của bạn đã được ghi nhận";
-        string visitScopeDisplay = visitScope == "MULTI_CAMPUS" ? "Liên cơ sở" : "Đơn cơ sở";
-        
-        var body = $@"
-<!DOCTYPE html>
-<html lang=""vi"">
-<head><meta charset=""UTF-8""></head>
-<body style=""font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:20px"">
-  <div style=""max-width:560px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)"">
-    <div style=""background:linear-gradient(135deg,#004c91,#013565);padding:28px 32px"">
-      <h1 style=""color:#fff;margin:0;font-size:22px"">PEMS — Campus Visit</h1>
-      <p style=""color:#b3c8e8;margin:6px 0 0;font-size:13px"">FPT University</p>
-    </div>
-    <div style=""padding:32px"">
-      <div style=""text-align:center;margin-bottom:24px"">
-        <div style=""width:56px;height:56px;background:#d1fae5;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px"">✓</div>
-      </div>
-      <h2 style=""text-align:center;color:#065f46;font-size:18px;margin:0 0 16px"">Đơn đăng ký đã được ghi nhận!</h2>
-      <p style=""color:#374151;font-size:14px"">Xin chào <strong>{HE(contactFullName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">
-        Yêu cầu tham quan của đoàn <strong>{HE(delegationName)}</strong> đã được hệ thống PEMS ghi nhận thành công.
-      </p>
-      
-      <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
-        <p style=""margin:0 0 8px;color:#374151;font-size:14px""><strong>Thông tin yêu cầu:</strong></p>
-        <ul style=""margin:0;padding-left:20px;color:#374151;font-size:13px;line-height:1.6"">
-          <li><strong>Mã yêu cầu:</strong> <span style=""color:#004c91;font-weight:bold"">{HE(requestCode)}</span></li>
-          <li><strong>Trạng thái:</strong> <span style=""color:#d97706;font-weight:bold"">Chờ duyệt</span></li>
-          <li><strong>Phạm vi tham quan:</strong> {HE(visitScopeDisplay)}</li>
-          <li><strong>Thời gian dự kiến:</strong> {HE(plannedTime)}</li>
-        </ul>
-      </div>
-
-      <p style=""color:#374151;font-size:14px"">
-        Email <strong>{HE(toEmail)}</strong> đã được sử dụng làm tài khoản VISITOR để theo dõi yêu cầu này.
-      </p>
-      
-      <div style=""background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin:16px 0"">
-        <p style=""margin:0;color:#374151;font-size:13px"">
-          Sử dụng nút <strong>Đăng nhập bằng Google</strong> với tài khoản email này tại cổng VISITOR của PEMS để xem trạng thái xử lý trong những lần sau.
-        </p>
-        <p style=""margin:8px 0 0;color:#dc2626;font-size:12px;font-style:italic"">
-          Lưu ý: Hệ thống không tạo hoặc gửi mật khẩu. Vui lòng sử dụng đăng nhập Google.
-        </p>
-      </div>
-      
-      <p style=""color:#6b7280;font-size:12px;margin-top:20px"">
-        Trân trọng,<br/>PEMS - FPT University
-      </p>
-    </div>
-    <div style=""background:#f9fafb;padding:16px 32px;text-align:center"">
-      <p style=""color:#9ca3af;font-size:11px;margin:0"">© 2026 PEMS — FPT University. Không trả lời email này.</p>
-    </div>
-  </div>
-</body>
-</html>";
-
-        return SendAsync(toEmail, subject, body, cancellationToken);
-    }
-
-    public Task SendRegistrantConfirmationAsync(
-        string toEmail, string registrantFullName, string contactFullName, 
-        string contactEmail, string delegationName, string requestCode,
-        CancellationToken cancellationToken = default)
-    {
-        const string subject = "PEMS — Gửi yêu cầu tham quan thành công";
-        var body = $@"
-<!DOCTYPE html>
-<html lang=""vi"">
-<head><meta charset=""UTF-8""></head>
-<body style=""font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:20px"">
-  <div style=""max-width:560px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)"">
-    <div style=""background:linear-gradient(135deg,#004c91,#013565);padding:28px 32px"">
-      <h1 style=""color:#fff;margin:0;font-size:22px"">PEMS — Campus Visit</h1>
-      <p style=""color:#b3c8e8;margin:6px 0 0;font-size:13px"">FPT University</p>
-    </div>
-    <div style=""padding:32px"">
-      <p style=""color:#374151;font-size:14px"">Xin chào <strong>{HE(registrantFullName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">
-        Bạn đã gửi yêu cầu tham quan cho đoàn <strong>{HE(delegationName)}</strong> thành công với mã yêu cầu là <strong>{HE(requestCode)}</strong>.
-      </p>
-      
-      <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
-        <p style=""margin:0 0 8px;color:#374151;font-size:13px""><strong>Thông tin đầu mối liên hệ được ghi nhận:</strong></p>
-        <ul style=""margin:0;padding-left:20px;color:#374151;font-size:13px"">
-          <li><strong>Họ và tên:</strong> {HE(contactFullName)}</li>
-          <li><strong>Email:</strong> {HE(contactEmail)}</li>
-        </ul>
-      </div>
-
-      <p style=""color:#374151;font-size:14px"">
-        Thông tin tài khoản để theo dõi yêu cầu đã được gửi đến email của đầu mối liên hệ trên.
-      </p>
-      
-      <p style=""color:#6b7280;font-size:12px;margin-top:20px"">
-        Trân trọng,<br/>PEMS - FPT University
-      </p>
-    </div>
-    <div style=""background:#f9fafb;padding:16px 32px;text-align:center"">
-      <p style=""color:#9ca3af;font-size:11px;margin:0"">© 2026 PEMS — FPT University. Không trả lời email này.</p>
-    </div>
-  </div>
-</body>
-</html>";
-        return SendAsync(toEmail, subject, body, cancellationToken);
-    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -372,14 +315,23 @@ public class EmailService : IEmailService
     /// </summary>
     private static string MaskEmail(string? address)
     {
-        if (string.IsNullOrWhiteSpace(address) || address == "(none)") return "(none)";
+        if (string.IsNullOrWhiteSpace(address)) return "(none)";
         var at = address.LastIndexOf('@');
         return at > 0 ? "***@" + address[(at + 1)..] : "***";
     }
+
+    /// <summary>Masked, comma-joined form of a recipient group for metadata logging.</summary>
+    private static string MaskAll(IReadOnlyList<EmailRecipient> recipients)
+        => recipients.Count == 0 ? "(none)" : string.Join(",", recipients.Select(r => MaskEmail(r.Email)));
 }
 
-/// <summary>Resolved SMTP connection settings passed to <see cref="EmailService.DispatchAsync"/>.</summary>
-public readonly record struct SmtpConfig(string? Host, int Port, string? User, string? Password, bool EnableSsl);
+/// <summary>
+/// Resolved SMTP connection settings passed to <see cref="EmailService.DispatchAsync"/>.
+/// <paramref name="PickupDirectory"/>, when set, replaces the network connection with a real
+/// <c>.eml</c> file drop (used by tests to inspect genuine MIME).
+/// </summary>
+public readonly record struct SmtpConfig(
+    string? Host, int Port, string? User, string? Password, bool EnableSsl, string? PickupDirectory = null);
 
 /// <summary>
 /// Thrown by the void send contract when delivery hard-fails (provider error, or fail-closed in

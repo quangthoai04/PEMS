@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Security;
@@ -64,8 +65,42 @@ public sealed class ExceptionHandlingMiddleware
         {
             case ValidationException validation:
                 status = StatusCodes.Status400BadRequest;
-                payload = new { success = false, message = validation.Message, errors = validation.Errors, traceId };
-                _logger.LogInformation("Validation failed: {Message}", validation.Message);
+                payload = new
+                {
+                    success = false,
+                    errorCode = validation.ErrorCode,
+                    message = validation.Message,
+                    errors = validation.Errors,
+                    traceId,
+                };
+                _logger.LogInformation(
+                    "Validation failed ({Code}): {Message}", validation.ErrorCode ?? "n/a", validation.Message);
+                break;
+
+            // Refused template content answers "which field, which variable, why" for EVERY problem at
+            // once. The editor has four content fields; a single sentence cannot say which of them to
+            // look at, and parsing one would break the moment the wording changed.
+            case PEMS.Application.Emails.Common.EmailTemplateContentException templateContent:
+                status = StatusCodes.Status400BadRequest;
+                payload = new
+                {
+                    success = false,
+                    errorCode = templateContent.ErrorCode,
+                    message = templateContent.Message,
+                    issues = templateContent.Issues.Select(i => new
+                    {
+                        field = i.Field,
+                        code = i.Code,
+                        variableName = i.VariableName,
+                        messageVi = i.MessageVi,
+                        messageEn = i.MessageEn,
+                        severity = i.Severity,
+                    }),
+                    traceId,
+                };
+                _logger.LogInformation(
+                    "Email template content refused ({Code}, {Count} issue(s)) on {Path}.",
+                    templateContent.ErrorCode, templateContent.Issues.Count, context.Request.Path);
                 break;
 
             case AuthBusinessException authBiz:
@@ -87,7 +122,7 @@ public sealed class ExceptionHandlingMiddleware
 
             case NotFoundException notFound:
                 status = StatusCodes.Status404NotFound;
-                payload = new { success = false, message = notFound.Message, traceId };
+                payload = new { success = false, errorCode = notFound.ErrorCode, message = notFound.Message, traceId };
                 break;
 
             case OtpChallengeException otp:

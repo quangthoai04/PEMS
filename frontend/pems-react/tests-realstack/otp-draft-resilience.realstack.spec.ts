@@ -1,4 +1,4 @@
-/**
+﻿/**
  * REAL-STACK E2E — the draft survives the OTP round trip (plan §22 journeys A, B, C and D).
  *
  * real Chromium → real React (Vite) → real .NET API (Testing, flags ON) → real disposable MySQL.
@@ -13,6 +13,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { type SinkRecord, sinkAddressed } from './sinkRecord';
 import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
 
 /** The FormField (label→control wrapper) whose visible label contains `label`. */
@@ -41,8 +42,8 @@ function otpCodesFor(email: string): string[] {
   const codes: string[] = [];
   for (const line of lines) {
     try {
-      const rec = JSON.parse(line) as { to?: string; kind?: string; code?: string };
-      if (rec.kind === 'VISIT_REQUEST_OTP' && rec.to === target && rec.code) codes.push(rec.code);
+      const rec = JSON.parse(line) as SinkRecord;
+      if (rec.kind === 'VISIT_REQUEST_OTP' && sinkAddressed(rec, target) && rec.code) codes.push(rec.code);
     } catch { /* skip malformed */ }
   }
   return codes;

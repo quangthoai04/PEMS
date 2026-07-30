@@ -1,4 +1,4 @@
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Commands.CancelPendingAccount;
@@ -28,6 +28,19 @@ public class CancelPendingAccountTests
         return (handler, db, actor);
     }
 
+    /// <summary>
+    /// The account these tests cancel is a pending STAFF/LEADER — a campus's incoming IC head. That is
+    /// an HO's target, not another Staff Leader's: a leader has no authority over a peer, so the actor
+    /// is promoted here rather than the scope rule being relaxed for the test's convenience.
+    /// </summary>
+    private static (CancelPendingAccountCommandHandler handler, TestApplicationDbContext db, FakeCurrentUserService actor) BuildForHo()
+    {
+        var (handler, db, actor) = Build();
+        actor.RoleCode = RoleCodes.Ho;
+        actor.SubRole = null;
+        return (handler, db, actor);
+    }
+
     private static User SeedPending(TestApplicationDbContext db, ulong campus = CampusA)
     {
         var user = Uc106TestData.CreateUser(TargetUserId, Uc106TestData.StaffRoleId, UserSubRoles.Leader, campus);
@@ -49,7 +62,7 @@ public class CancelPendingAccountTests
     [Fact]
     public async Task Cancel_releases_the_reserved_campus_ic_head_slot()
     {
-        var (handler, db, _) = Build();
+        var (handler, db, _) = BuildForHo();
         SeedPending(db);
         var campus = Uc106TestData.CreateCampus(CampusA);
         campus.IcHeadUserId = TargetUserId;         // reserved by the pending user
@@ -68,7 +81,7 @@ public class CancelPendingAccountTests
     [Fact]
     public async Task Cancel_releases_the_reserved_department_head_slot()
     {
-        var (handler, db, _) = Build();
+        var (handler, db, _) = BuildForHo();
         SeedPending(db);
         var dept = Uc106TestData.CreateGeneralDepartment(10, CampusA);
         dept.HeadUserId = TargetUserId;
@@ -94,9 +107,22 @@ public class CancelPendingAccountTests
     }
 
     [Fact]
+    public async Task A_staff_leader_cannot_cancel_another_staff_leader_on_their_own_campus()
+    {
+        // Sharing a campus is not authority over a peer: the seeded target is a pending STAFF/LEADER,
+        // and cancelling it would let one campus leader retire the other's account.
+        var (handler, db, _) = Build();
+        SeedPending(db);
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => handler.Handle(new CancelPendingAccountCommand { UserId = TargetUserId }, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Cannot_cancel_an_already_active_account()
     {
-        var (handler, db, _) = Build();
+        var (handler, db, _) = BuildForHo();
         var user = SeedPending(db);
         user.Status = UserStatuses.Active;
         db.SaveChanges();

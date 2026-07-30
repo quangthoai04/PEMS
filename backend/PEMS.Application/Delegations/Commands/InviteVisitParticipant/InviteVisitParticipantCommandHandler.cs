@@ -22,6 +22,19 @@ namespace PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 /// INVITED), persists a sent_emails record + ACCEPT/DECLINE email_action_tokens (one-time, hashed),
 /// then sends the invitation email best-effort. The participant is committed BEFORE the email is
 /// sent, so a transient SMTP failure never loses the invitation (spec §21.5/§21.6).
+///
+/// <para>
+/// Content comes from <c>email_templates</c> — <c>VISIT_PARTICIPANT_INVITATION</c>,
+/// <c>VISIT_STUDENT_INVITATION</c> or <c>VISIT_DEPARTMENT_LEADER_INVITATION</c> depending on who is being
+/// invited — unless the Host rewrote it, which is a named content mode rather than a bypass: authored
+/// content is validated, sanitised, rendered and guarded by the same pipeline, and the accept/decline
+/// buttons are still minted by the backend from the real tokens.
+/// </para>
+/// <para>
+/// The message is RECORDED inside this handler's transaction and SENT after it commits. That split is
+/// what lets <c>email_action_tokens.sent_email_id</c> (NOT NULL) be written atomically with the tokens it
+/// belongs to, without handing anything to SMTP that a rollback would then erase.
+/// </para>
 /// </summary>
 public sealed class InviteVisitParticipantCommandHandler
     : IRequestHandler<InviteVisitParticipantCommand, InviteVisitParticipantResponse>
@@ -31,7 +44,7 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
@@ -42,7 +55,7 @@ public sealed class InviteVisitParticipantCommandHandler
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
+        ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
         IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
         PEMS.Application.Notifications.Common.INotificationService notificationService,
         PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formReadService,
@@ -52,7 +65,7 @@ public sealed class InviteVisitParticipantCommandHandler
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
-        _email = email;
+        _dispatcher = dispatcher;
         _tokens = tokens;
         _sanitizer = sanitizer;
         _storage = storage;
@@ -117,27 +130,22 @@ public sealed class InviteVisitParticipantCommandHandler
 
         var now = _clock.VietnamNow;
 
-        // ── Validate the optional host-edited email content + attachments (Part C / rich editor) ──
-        var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+        // ── The optional host-edited email content + attachments (Part C / rich editor) ──
+        // Validation and sanitising happen inside AuthoredByUser.Create — an unchecked instance of that
+        // type cannot exist — so a rejected edit throws here, before anything is written or sent.
+        var content = await ResolveContentAsync(request.EmailOverride, cancellationToken);
         var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
         await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
-        // Link the sent_email back to its source template for traceability.
+        // Which template this message is. The invitee's role decides it; the Host never picks.
         var templateCode = participantRole == ParticipantRoles.DeptSupport
-            ? EmailActionTemplates.DepartmentLeaderInvitation
+            ? SystemEmailTemplates.VisitDepartmentLeaderInvitation
             : participantRole == ParticipantRoles.Student
-                ? EmailActionTemplates.StudentInvitation
-                : EmailActionTemplates.ParticipantInvitation;
-        var templateId = await _db.EmailTemplates
-            .Where(t => t.TemplateCode == templateCode)
-            .Select(t => (ulong?)t.EmailTemplateId)
-            .FirstOrDefaultAsync(cancellationToken);
+                ? SystemEmailTemplates.VisitStudentInvitation
+                : SystemEmailTemplates.VisitParticipantInvitation;
 
         VisitParticipant participant;
-        ulong sentEmailId;
-        ulong sentEmailRecipientId;
-        string finalSubject;
-        string finalBody;
+        PreparedSystemEmail prepared;
 
         await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
         {
@@ -188,8 +196,9 @@ public sealed class InviteVisitParticipantCommandHandler
             }
             await _db.SaveChangesAsync(cancellationToken);
 
-            // 2) Mint the real one-time tokens FIRST so the body can carry the live URLs, then build
-            //    the final subject/body (edited content + system action block, or the default email).
+            // 2) Mint the real one-time tokens FIRST so the action block can carry the live URLs. The
+            //    block is built here, by the backend, in both content modes — a Host who rewrites the
+            //    message never gets to write, move or omit the buttons that carry these tokens.
             var acceptRaw = _tokens.GenerateRawToken();
             var declineRaw = _tokens.GenerateRawToken();
             var groupKey = Guid.NewGuid().ToString("N");
@@ -200,63 +209,41 @@ public sealed class InviteVisitParticipantCommandHandler
                 ? _tokens.BuildDepartmentAssignmentUrl(instance.VisitInstanceId, participant.ParticipantId)
                 : null;
 
-            if (editedContent != null)
-            {
-                // Host-edited: trust only the content; the backend injects the real action block.
-                finalSubject = request.EmailOverride!.Subject!.Trim();
-                var content = EmailComposition.StripActionArtifacts(editedContent);
-                finalBody = EmailComposition.BrandedShell(
-                    content + EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl, assignUrl));
-            }
-            else
-            {
-                var mail = ParticipantInvitationEmailBuilder.Build(
-                    recipientName: recipient.FullName,
-                    participantRoleLabel: roleLabel,
-                    delegationName: delegationName,
-                    campusName: campusName,
-                    plannedTimeText: FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt),
-                    hostName: hostName,
-                    acceptUrl: acceptUrl, declineUrl: declineUrl, assignStaffUrl: assignUrl, message: request.Message);
-                finalSubject = mail.Subject;
-                finalBody = mail.HtmlBody;
-            }
-            
-            finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
+            // 3) Render + record, inside this transaction. Nothing is sent yet: the tokens below must be
+            //    written atomically with the sent_emails row they point at.
+            prepared = await _dispatcher.PrepareAsync(
+                new SystemEmailRequest(
+                    templateCode,
+                    new EmailRecipient(recipient.Email, recipient.FullName),
+                    new Dictionary<string, string>
+                    {
+                        ["recipientName"] = recipient.FullName,
+                        ["delegationName"] = delegationName,
+                        ["campusName"] = campusName,
+                        ["plannedTime"] = FormatWindow(instance.PlannedStartAt, instance.PlannedEndAt),
+                        ["hostName"] = hostName,
+                        ["roleLabel"] = roleLabel,
+                        ["hostMessage"] = request.Message?.Trim() ?? string.Empty,
+                    },
+                    TrustedBlocks: new Dictionary<string, string>
+                    {
+                        [EmailTrustedBlocks.ActionBlock] =
+                            EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl, assignUrl),
+                    },
+                    RelatedType: EmailActionTargetTypes.VisitParticipant,
+                    RelatedId: participant.ParticipantId,
+                    SentBy: actorId)
+                {
+                    Content = content,
+                },
+                cancellationToken);
 
-            // 3) sent_emails + recipient — body_snapshot is the FINAL content actually sent.
-            var sentEmail = new SentEmail
-            {
-                EmailTemplateId = templateId,
-                RelatedType = EmailActionTargetTypes.VisitParticipant,
-                RelatedId = participant.ParticipantId,
-                Subject = finalSubject,
-                BodySnapshot = finalBody,
-                BodyFormat = PEMS.Domain.Enums.EmailBodyFormat.HTML,
-                Status = "QUEUED",
-                SentBy = actorId,
-                CreatedAt = now,
-            };
-            // Inline images + file attachments (cascade-insert with the sent_emails row).
-            OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
-            _db.SentEmails.Add(sentEmail);
-            await _db.SaveChangesAsync(cancellationToken);
-
-            var sentRecipient = new SentEmailRecipient
-            {
-                SentEmailId = sentEmail.SentEmailId,
-                RecipientEmail = recipient.Email,
-                RecipientName = recipient.FullName,
-                RecipientType = "TO",
-                DeliveryStatus = "QUEUED",
-                CreatedAt = now,
-            };
-            _db.SentEmailRecipients.Add(sentRecipient);
-            await _db.SaveChangesAsync(cancellationToken);
+            // Inline images + file attachments, linked to the row the dispatcher just wrote.
+            AttachTo(prepared.SentEmailId, attachInputs, now);
 
             // 4) ACCEPT + DECLINE one-time tokens (share an action_group_key). Only the hash is stored.
-            _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, participant.ParticipantId, targetUserId, recipient.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
-            _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, participant.ParticipantId, targetUserId, recipient.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+            _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, participant.ParticipantId, targetUserId, recipient.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
+            _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, participant.ParticipantId, targetUserId, recipient.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
 
             // 5) audit + an in-app notification for the invitee.
             _db.AuditLogs.Add(new AuditLog
@@ -293,72 +280,111 @@ public sealed class InviteVisitParticipantCommandHandler
             );
             await _db.SaveChangesAsync(cancellationToken);
 
-            sentEmailId = sentEmail.SentEmailId;
-            sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
-
             await transaction.CommitAsync(cancellationToken);
         }
 
-        // ── Send the FINAL body AFTER the participant + tokens are durably committed ──
-        bool emailQueued;
-        string emailStatus;
+        // ── Send AFTER the participant + tokens are durably committed ──
+        // Attachment bytes are streamed here rather than inside the transaction, so a slow or unavailable
+        // file store cannot hold a database transaction open — and cannot lose an invitation that is
+        // already valid. A failure at this point leaves the message FAILED and resendable.
+        EmailDeliveryResult delivery;
         try
         {
-            // Real MIME path (HTML body) with the host's inline images (cid) + file attachments
-            // streamed from storage (Google Drive / local) once and reused.
-            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_db, _storage, attachInputs, cancellationToken);
-            await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
-            {
-                ToEmail = recipient.Email,
-                Subject = finalSubject,
-                Body = finalBody,
-                IsHtml = true,
-                Attachments = outboundAttachments,
-            }, cancellationToken);
-            emailQueued = true;
-            emailStatus = "SENT";
-            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
+            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(
+                _db, _storage, attachInputs, cancellationToken);
+
+            delivery = await _dispatcher.DeliverAsync(
+                prepared with { Attachments = outboundAttachments }, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // The invitation is already persisted; record the failure so it can be retried/resent.
-            emailQueued = false;
-            emailStatus = "FAILED";
-            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", actorId, now, ex.Message, cancellationToken);
+            // The exception text is not recorded: an attachment failure can name a storage path or a
+            // signed URL, and this message is shown in the email history.
+            delivery = EmailDeliveryResult.Failed(
+                "ATTACHMENT_LOAD_FAILED", "Không đọc được tệp đính kèm khi gửi email.");
+            await MarkDeliveryFailedAsync(prepared, delivery.SafeMessage, cancellationToken);
         }
 
-        var message = emailQueued
-            ? "Đã gửi lời mời."
-            : "Đã tạo lời mời nhưng gửi email thất bại.";
+        var status = new SystemEmailDispatchResult(delivery, prepared.SentEmailId, prepared.EmailTemplateId)
+            .NotificationStatus;
+        var emailQueued = delivery.Status != EmailDeliveryStatus.Failed;
+
+        var message = delivery.Status switch
+        {
+            EmailDeliveryStatus.Sent => "Đã gửi lời mời.",
+            EmailDeliveryStatus.Skipped => "Đã tạo lời mời; email chưa được gửi (SMTP đang tắt).",
+            _ => "Đã tạo lời mời nhưng gửi email thất bại.",
+        };
 
         return new InviteVisitParticipantResponse(
             participant.ParticipantId, targetUserId, participantRole, participant.Status,
-            emailQueued, recipient.Email, message, emailStatus, sentEmailId);
+            emailQueued, recipient.Email, message, status, prepared.SentEmailId);
     }
 
-    /// <summary>Validates + sanitizes the optional host-edited email; returns the sanitized content
-    /// HTML, or null when no override was supplied.</summary>
-    private string? ValidateAndSanitizeOverride(EmailOverride? ov)
+    /// <summary>
+    /// Turns the optional host edit into a content mode. No override, or an override the Host left
+    /// switched off, means the template is the content — which is the normal case and the only case
+    /// before this screen let anyone edit anything.
+    /// </summary>
+    private async Task<SystemEmailContent> ResolveContentAsync(EmailOverride? ov, CancellationToken ct)
     {
-        if (ov is null || !ov.UseEditedContent) return null;
+        if (ov is null || !ov.UseEditedContent) return SystemEmailContent.FromTemplate.Instance;
 
-        if (string.IsNullOrWhiteSpace(ov.Subject))
-            throw new ValidationException("Tiêu đề email không được để trống.");
-        if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
-            throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
+        // Prefer the host-edited plain text (bodyText) → safe HTML; fall back to legacy bodyHtml. Inline
+        // images are normalised BEFORE the content is fixed, because the normaliser exists for images the
+        // Host pasted — the template body has none.
+        var rawHtml = await _normalizer.NormalizeHtmlAsync(EmailComposition.ResolveEditableHtml(ov), ct);
 
-        // Prefer the host-edited plain text (bodyText) → safe HTML; fall back to legacy bodyHtml.
-        var rawHtml = EmailComposition.ResolveEditableHtml(ov);
-        if (string.IsNullOrWhiteSpace(rawHtml))
-            throw new ValidationException("Nội dung email không được để trống.");
-        if (rawHtml.Length > EmailOverrideLimits.BodyMax)
-            throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
+        return SystemEmailContent.AuthoredByUser.Create(ov.Subject, rawHtml, _sanitizer);
+    }
 
-        // Email-profile sanitize so inline-image <img src="cid:..."> + data-* refs survive.
-        var sanitized = _sanitizer.SanitizeEmailHtml(rawHtml);
-        if (string.IsNullOrWhiteSpace(sanitized))
-            throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
-        return sanitized;
+    /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
+    private void AttachTo(ulong sentEmailId, IReadOnlyList<EmailDraftAttachmentInput> inputs, DateTime now)
+    {
+        var order = 0;
+        foreach (var a in inputs)
+        {
+            _db.SentEmailAttachments.Add(new SentEmailAttachment
+            {
+                SentEmailId = sentEmailId,
+                FileId = a.FileId,
+                AttachmentType = EmailDraftWriter.ParseAttachmentType(a.AttachmentType),
+                ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId!.Trim(),
+                DisplayName = a.DisplayName,
+                DisplayOrder = a.DisplayOrder > 0 ? (uint)a.DisplayOrder : (uint)order,
+                CreatedAt = now,
+            });
+            order++;
+        }
+    }
+
+    /// <summary>
+    /// Records a failure that happened before the sender was reached at all — loading an attachment, for
+    /// instance. The dispatcher writes the outcome for everything it handles itself; this covers the gap
+    /// between "the message is recorded" and "the message reached the sender".
+    /// </summary>
+    private async Task MarkDeliveryFailedAsync(PreparedSystemEmail prepared, string? error, CancellationToken ct)
+    {
+        var now = _clock.VietnamNow;
+
+        var sentEmail = await _db.SentEmails
+            .FirstOrDefaultAsync(e => e.SentEmailId == prepared.SentEmailId, ct);
+        if (sentEmail is not null)
+        {
+            sentEmail.Status = "FAILED";
+            sentEmail.LastAttemptAt = now;
+            sentEmail.ErrorMessage = Truncate(error, 1000);
+        }
+
+        var rec = await _db.SentEmailRecipients
+            .FirstOrDefaultAsync(r => r.SentEmailRecipientId == prepared.SentEmailRecipientId, ct);
+        if (rec is not null)
+        {
+            rec.DeliveryStatus = "FAILED";
+            rec.ErrorMessage = Truncate(error, 1000);
+        }
+
+        await _db.SaveChangesAsync(ct);
     }
 
     // ── helpers ──
@@ -472,29 +498,6 @@ public sealed class InviteVisitParticipantCommandHandler
             ResultStatus = EmailActionResultStatuses.Pending,
             CreatedAt = now,
         };
-
-    private async Task UpdateEmailStatusAsync(
-        ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
-        string? error, CancellationToken ct)
-    {
-        var sentEmail = await _db.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
-        if (sentEmail != null)
-        {
-            sentEmail.Status = status;
-            sentEmail.LastAttemptAt = now;
-            sentEmail.RetryCount += 1;
-            if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
-            else { sentEmail.ErrorMessage = Truncate(error, 1000); }
-        }
-        var rec = await _db.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
-        if (rec != null)
-        {
-            rec.DeliveryStatus = status;
-            if (status == "SENT") rec.SentAt = now;
-            else rec.ErrorMessage = Truncate(error, 1000);
-        }
-        await _db.SaveChangesAsync(ct);
-    }
 
     private static string FormatWindow(DateTime start, DateTime end)
         => $"{start:HH:mm dd/MM/yyyy} - {end:HH:mm dd/MM/yyyy}";

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.VisitRequestOtp;
@@ -30,7 +31,7 @@ public sealed class InitiateVisitRequestV2CommandHandler
 
     private readonly IApplicationDbContext _db;
     private readonly IOtpService _otpService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IUserProvisionService _userProvisionService;
     private readonly IRequestMetadataService _requestMetadata;
     private readonly IDateTimeService _clock;
@@ -41,7 +42,7 @@ public sealed class InitiateVisitRequestV2CommandHandler
     public InitiateVisitRequestV2CommandHandler(
         IApplicationDbContext db,
         IOtpService otpService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IUserProvisionService userProvisionService,
         IRequestMetadataService requestMetadata,
         IDateTimeService clock,
@@ -51,7 +52,7 @@ public sealed class InitiateVisitRequestV2CommandHandler
     {
         _db = db;
         _otpService = otpService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _userProvisionService = userProvisionService;
         _requestMetadata = requestMetadata;
         _clock = clock;
@@ -101,16 +102,10 @@ public sealed class InitiateVisitRequestV2CommandHandler
         // ── Bind the canonical v2 snapshot to this submission intent (create or refresh; survives resends). ──
         await BindPendingSnapshotAsync(form, email, now, cancellationToken);
 
-        // ── Deliver the code. ──
-        try
-        {
-            await _emailService.SendVisitRequestOtpAsync(
-                email, form.Registrant.FullName, issue.Code, cancellationToken);
-        }
-        catch (Exception)
-        {
-            throw new BusinessRuleException("Không thể gửi mã OTP. Vui lòng thử lại sau.", "OTP_SEND_FAILED");
-        }
+        // ── Deliver the code. The snapshot above is already persisted, so a delivery failure below
+        //    reports OTP_SEND_FAILED without losing the submission — exactly as before. ──
+        await VisitRequestOtpMail.SendAsync(
+            _dispatcher, _otpService, email, form.Registrant.FullName, issue.Code, cancellationToken);
 
         var isEmailEnabled = bool.TryParse(_configuration["Smtp:Enabled"], out var e) && e;
         var msg = isEmailEnabled

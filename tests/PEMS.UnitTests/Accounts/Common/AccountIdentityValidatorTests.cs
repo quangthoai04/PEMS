@@ -46,7 +46,7 @@ public class AccountIdentityValidatorTests
     [Theory]
     [InlineData("Nguyễn Văn An", "an.nv@fpt.edu.vn", null)]
     [InlineData("O'Connor", "oconnor@gmail.com", null)]
-    [InlineData("An", "an@fe.edu.vn", null)]
+    [InlineData("An", "an@gmail.com", null)]
     [InlineData("", "an@gmail.com", AccountIdentityRules.FullNameRequiredMessage)]
     [InlineData("A", "an@gmail.com", AccountIdentityRules.FullNameTooShortMessage)]
     [InlineData("Nguyễn Văn 123", "an@gmail.com", AccountIdentityRules.FullNameInvalidCharsMessage)]
@@ -57,6 +57,9 @@ public class AccountIdentityValidatorTests
     [InlineData("Nguyễn Văn An", "an+test@gmail.com", AccountIdentityRules.EmailPlusNotAllowedMessage)]
     [InlineData("Nguyễn Văn An", "an@yahoo.com", AccountIdentityRules.EmailDomainNotAllowedMessage)]
     [InlineData("Nguyễn Văn An", "an@student.fpt.edu.vn", AccountIdentityRules.EmailDomainNotAllowedMessage)]
+    // fe.edu.vn is no longer accepted — and it is refused identically in all three flows.
+    [InlineData("Nguyễn Văn An", "an@fe.edu.vn", AccountIdentityRules.EmailDomainNotAllowedMessage)]
+    [InlineData("Nguyễn Văn An", "an@gmail.com.vn", AccountIdentityRules.EmailDomainNotAllowedMessage)]
     public void AllThreeFlows_ShareTheSameIdentityVerdict(string fullName, string email, string? expected)
     {
         Assert.Equal(expected, CreateError(fullName, email));

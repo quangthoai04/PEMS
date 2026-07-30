@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,7 +21,7 @@ public class ChangePersonnelStatusCommandTests
     private const ulong TargetId = 901;
 
     private static ChangePersonnelStatusCommandHandler Handler(DepartmentLeaderTestHarness h)
-        => new(h.Db, h.Scope, h.Locks, h.Sessions, h.Email.Object, h.Clock);
+        => new(h.Db, h.Scope, h.Locks, h.Sessions, h.Dispatcher, h.Clock);
 
     private static Task<ChangePersonnelStatusResponse> Run(
         DepartmentLeaderTestHarness h, string targetStatus, ulong userId = TargetId, string? reason = null)

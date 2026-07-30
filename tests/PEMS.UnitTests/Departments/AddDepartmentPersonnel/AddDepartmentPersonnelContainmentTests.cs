@@ -6,6 +6,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Departments.Commands.AddDepartmentPersonnel;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.UnitTests.TestInfrastructure;
 
@@ -31,19 +32,18 @@ public class AddDepartmentPersonnelContainmentTests
     {
         public TestApplicationDbContext Db { get; } = TestApplicationDbContext.Create();
         public FakeCurrentUserService Actor { get; } = new();   // Staff Leader, campus 1, id 900
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
         public Mock<IAccountEmailConfirmationService> Confirmations { get; } = new();
         public FakeDateTimeService Clock { get; } = new();
         public AddDepartmentPersonnelCommandHandler Handler { get; }
 
         public Harness()
         {
-            Email.Setup(e => e.TrySendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(EmailDeliveryResult.Sent());
             Confirmations.Setup(c => c.IssuePendingAsync(It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("raw");
             Confirmations.Setup(c => c.BuildConfirmUrl(It.IsAny<string>())).Returns("http://x/confirm-email?token=raw");
-            Handler = new AddDepartmentPersonnelCommandHandler(Db, Actor, Email.Object, Confirmations.Object, Clock);
+            Confirmations.Setup(c => c.ExpiryHours).Returns(24);
+            Handler = new AddDepartmentPersonnelCommandHandler(Db, Actor, Dispatcher, Confirmations.Object, Clock);
         }
 
         public Task<AddDepartmentPersonnelResponse> Run(AddDepartmentPersonnelCommand cmd) => Handler.Handle(cmd, CancellationToken.None);
@@ -132,6 +132,12 @@ public class AddDepartmentPersonnelContainmentTests
         Assert.Equal(UserStatuses.PendingEmailConfirmation, user.Status);   // NOT active — no direct bypass
         Assert.Equal(UserSubRoles.Staff, user.SubRole);
         h.Confirmations.Verify(c => c.IssuePendingAsync(user.UserId, NewEmail, false, It.IsAny<CancellationToken>()), Times.Once);
+
+        // Same confirmation template as every other account-creating path — this handler no longer has an
+        // email of its own. The link is a trusted block, never a variable, and never a literal in code.
+        var sent = h.Dispatcher.Single(SystemEmailTemplates.AccountEmailConfirmation);
+        Assert.Equal(NewEmail, sent.To.Email);
+        Assert.Contains("confirm-email?token=raw", sent.TrustedBlocks![EmailTrustedBlocks.ActionBlock]);
     }
 
     [Fact]

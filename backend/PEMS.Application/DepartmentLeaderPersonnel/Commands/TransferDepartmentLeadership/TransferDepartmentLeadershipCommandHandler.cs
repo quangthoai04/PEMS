@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -33,7 +34,7 @@ public sealed class TransferDepartmentLeadershipCommandHandler
     private readonly IDepartmentLeaderPersonnelScopeService _scopeService;
     private readonly IUserMutationLockService _lockService;
     private readonly ISessionService _sessionService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IDateTimeService _clock;
 
     public TransferDepartmentLeadershipCommandHandler(
@@ -41,14 +42,14 @@ public sealed class TransferDepartmentLeadershipCommandHandler
         IDepartmentLeaderPersonnelScopeService scopeService,
         IUserMutationLockService lockService,
         ISessionService sessionService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IDateTimeService clock)
     {
         _db = db;
         _scopeService = scopeService;
         _lockService = lockService;
         _sessionService = sessionService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _clock = clock;
     }
 
@@ -181,8 +182,9 @@ public sealed class TransferDepartmentLeadershipCommandHandler
 
         // 16. Notify both parties. Best-effort.
         var emailStatus = await SendTransferMailsAsync(
-            previousLeaderName, previousLeaderEmail, newLeaderName, newLeaderEmail,
-            scope.DepartmentName, cancellationToken);
+            previousLeaderId, previousLeaderName, previousLeaderEmail,
+            request.NewLeaderUserId, newLeaderName, newLeaderEmail,
+            scope.DepartmentName, scope.ActorUserId, cancellationToken);
 
         return new TransferDepartmentLeadershipResponse
         {
@@ -241,24 +243,39 @@ public sealed class TransferDepartmentLeadershipCommandHandler
     }
 
     private async Task<string> SendTransferMailsAsync(
+        ulong previousLeaderUserId,
         string previousLeaderName,
         string previousLeaderEmail,
+        ulong newLeaderUserId,
         string newLeaderName,
         string newLeaderEmail,
         string departmentName,
+        ulong? actorId,
         CancellationToken cancellationToken)
     {
-        var newOk = await TrySendAsync(
-            newLeaderEmail,
-            DepartmentPersonnelEmails.LeadershipGrantedSubject,
-            DepartmentPersonnelEmails.BuildLeadershipGrantedNotice(newLeaderName, departmentName),
-            cancellationToken);
+        var newOk = await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.DeptLeadershipGranted,
+            new EmailRecipient(newLeaderEmail, newLeaderName),
+            new Dictionary<string, string>
+            {
+                ["fullName"] = newLeaderName,
+                ["departmentName"] = departmentName,
+            },
+            RelatedType: "User",
+            RelatedId: newLeaderUserId,
+            SentBy: actorId), cancellationToken);
 
-        var oldOk = await TrySendAsync(
-            previousLeaderEmail,
-            DepartmentPersonnelEmails.LeadershipHandedOverSubject,
-            DepartmentPersonnelEmails.BuildLeadershipHandedOverNotice(previousLeaderName, departmentName),
-            cancellationToken);
+        var oldOk = await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.DeptLeadershipHandedOver,
+            new EmailRecipient(previousLeaderEmail, previousLeaderName),
+            new Dictionary<string, string>
+            {
+                ["fullName"] = previousLeaderName,
+                ["departmentName"] = departmentName,
+            },
+            RelatedType: "User",
+            RelatedId: previousLeaderUserId,
+            SentBy: actorId), cancellationToken);
 
         return (oldOk, newOk) switch
         {
@@ -268,13 +285,12 @@ public sealed class TransferDepartmentLeadershipCommandHandler
         };
     }
 
-    private async Task<bool> TrySendAsync(
-        string toEmail, string subject, string html, CancellationToken cancellationToken)
+    private async Task<bool> TrySendAsync(SystemEmailRequest request, CancellationToken cancellationToken)
     {
         try
         {
-            var result = await _emailService.TrySendAsync(toEmail, subject, html, cancellationToken);
-            return result.Status == EmailDeliveryStatus.Sent;
+            var result = await _dispatcher.SendAsync(request, cancellationToken);
+            return result.Delivery.Status == EmailDeliveryStatus.Sent;
         }
         catch
         {

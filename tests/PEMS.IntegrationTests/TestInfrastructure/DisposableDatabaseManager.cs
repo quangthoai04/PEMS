@@ -23,8 +23,9 @@ public static class DisposableDatabaseManager
     /// <remarks>
     /// 82 since the P0 account-email-confirmation work added <c>account_email_confirmations</c>; the constant
     /// had been left at 81, which made every disposable import abort before a single test ran.
+    /// 83 since G11 added <c>email_send_idempotency</c> (R-103).
     /// </remarks>
-    public const int ExpectedBaseTableCount = 82;
+    public const int ExpectedBaseTableCount = 83;
 
     /// <summary>Number of triggers the canonical schema must produce.</summary>
     public const int ExpectedTriggerCount = 32;

@@ -21,6 +21,21 @@ public class ViewEmailDto
     public DateTime? SentAt { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>
+    /// Whether this viewer may reply to this message — see <see cref="Common.SentEmailAccess.CanOfferReply"/>.
+    /// The screen used to read a <c>canReply</c> that no detail response ever carried, so the reply
+    /// affordance was permanently hidden; the value is computed here rather than guessed on the client,
+    /// because only the server knows the viewer's relation to the envelope.
+    /// </summary>
+    public bool CanReply { get; set; }
+
+    /// <summary>
+    /// Whether this viewer may close the message off ("đánh dấu đã xử lý"). Same predicate the command
+    /// enforces (<see cref="PEMS.Application.Emails.Common.SentEmailAccess.CanMarkComplete"/>), so the
+    /// button appears exactly when pressing it would work.
+    /// </summary>
+    public bool CanMarkComplete { get; set; }
+
     public SentEmailSenderDto? Sender { get; set; }
     public List<SentEmailRecipientDto> Recipients { get; set; } = new();
     public List<SentEmailAttachmentDto> Attachments { get; set; } = new();

@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -29,23 +31,29 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
     private readonly ICurrentUserService _currentUser;
     private readonly ISessionService _sessionService;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IUserMutationLockService _lockService;
+    private readonly IPendingAccountEmailChangeService _pendingEmailChange;
+    private readonly IAccountEmailConfirmationService _confirmations;
 
     public UpdateAccountRoleCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         ISessionService sessionService,
         IDateTimeService clock,
-        IEmailService emailService,
-        IUserMutationLockService lockService)
+        ISystemEmailDispatcher dispatcher,
+        IUserMutationLockService lockService,
+        IPendingAccountEmailChangeService pendingEmailChange,
+        IAccountEmailConfirmationService confirmations)
     {
         _db = db;
         _currentUser = currentUser;
         _sessionService = sessionService;
         _clock = clock;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _lockService = lockService;
+        _pendingEmailChange = pendingEmailChange;
+        _confirmations = confirmations;
     }
 
     public async Task<UpdateAccountRoleResponse> Handle(UpdateAccountRoleCommand request, CancellationToken cancellationToken)
@@ -199,8 +207,24 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             || oldSubRole != shape.SubRole
             || oldDepartmentId != shape.DepartmentId
             || oldPrimaryCampusId != shape.PrimaryCampusId;
-        var hasIdentityChange = resolvedFullName != oldFullName || resolvedEmail != oldEmail;
+        var emailChanged = resolvedEmail != oldEmail;
+        var hasIdentityChange = resolvedFullName != oldFullName || emailChanged;
         var hasStudentCodeChange = resolvedStudentCode != oldStudentCode;
+
+        // Read BEFORE anything is written, and from the database rather than the request: what the
+        // account's address change means depends entirely on whether it had ever confirmed one.
+        var wasPending = user.Status == UserStatuses.PendingEmailConfirmation;
+
+        // Only a genuine role/sub-role move justifies ACCOUNT_ROLE_CHANGED — that mail says nothing
+        // but "your role went from X to Y", so sending it for an MSSV correction or a department move
+        // would tell the holder their role changed when it did not. Deliberately NARROWER than
+        // hasStructuralChange, which also fires on a department/campus move: those resolve to the SAME
+        // role label, so the mail would read "từ Trưởng phòng ban sang Trưởng phòng ban". And
+        // deliberately not hasAnyChange, which would mail a role notice for a renamed account.
+        //
+        // The account's STATUS is not part of this: whether it has confirmed its address decides which
+        // confirmation flow runs, never whether the holder is told their role moved.
+        var roleChanged = oldRoleCode != shape.RoleCode || oldSubRole != shape.SubRole;
         var hasAnyChange = hasStructuralChange || hasIdentityChange || hasStudentCodeChange;
 
         // Pure no-op: no audit, no UpdatedAt, no session revoke, no email, no department write.
@@ -305,8 +329,42 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         }
 
         // ── Everything validated: only now does the entity change. ──
-        user.FullName = resolvedFullName;
-        user.Email = resolvedEmail;
+        //
+        // The address change is applied FIRST and in this same transaction, because for a pending
+        // account it is not a field assignment: it re-points the authentication bindings and issues a
+        // confirmation token that supersedes the live one. Doing that through a second API call after
+        // the role change — the obvious-looking alternative — is what produces the half-applied states
+        // this flow must not have: a role that moved while the only live activation link still points
+        // at the old address, or an address that moved while the role did not. Both commit here or
+        // neither does.
+        string? pendingConfirmationToken = null;
+        if (emailChanged && wasPending)
+        {
+            // The name travels with it when it is actually being edited — the confirmation email
+            // greets the holder by name, and a rename saved a moment later by a separate statement
+            // could miss that mail entirely. Passing null when it is NOT being edited is deliberate:
+            // an existing name that predates today's rules must not block an address correction it has
+            // nothing to do with.
+            var change = await _pendingEmailChange.PrepareAsync(
+                user, resolvedEmail,
+                resolvedFullName == oldFullName ? null : resolvedFullName,
+                cancellationToken);
+            pendingConfirmationToken = change.RawToken;
+        }
+        else
+        {
+            user.FullName = resolvedFullName;
+            user.Email = resolvedEmail;
+
+            // An account that HAS proven an address keeps its bindings pointed at the current one and
+            // must re-verify: same policy as the HO basic-info edit, applied from the one shared place.
+            if (emailChanged)
+            {
+                await AccountAuthProviderSync.RepointAsync(_db, user.UserId, resolvedEmail, cancellationToken);
+                user.EmailVerifiedAt = null;
+            }
+        }
+
         user.RoleId = shape.RoleId;
         user.SubRole = shape.SubRole;
         user.DepartmentId = shape.DepartmentId;
@@ -349,11 +407,47 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
 
         // ── Post-commit side effects, in this order. Neither may run for a refused request, and a
         //    failure here must not undo a committed role change (spec §12.5). ──
+        //
+        // Sessions go regardless of which field moved: a role change strips permissions the live
+        // tokens were issued against, and an email change means the identity those tokens were issued
+        // to no longer signs in here. The reason names whichever one drove it.
         var revoked = await _sessionService.RevokeAllActiveSessionsAsync(
-            user.UserId, SessionRevokeReasons.RoleChanged, actorId, cancellationToken);
+            user.UserId,
+            emailChanged && !roleChanged
+                ? SessionRevokeReasons.AccountEmailChanged
+                : SessionRevokeReasons.RoleChanged,
+            actorId, cancellationToken);
 
-        // ── UC-100-SL BR-100SL-08: notify the user their role changed. Non-fatal. ──
-        await SendRoleChangedNotificationAsync(user, shape, cancellationToken);
+        // Each mail is dispatched and reported on its own. They answer different questions — "can this
+        // account be activated?" and "does the holder know their role moved?" — so neither may be
+        // skipped because the other is due, and neither's failure may be reported as the other's.
+        var confirmationEmailStatus = "NOT_REQUIRED";
+        var emailNotificationStatus = "NOT_REQUIRED";
+        var pendingEmailChanged = emailChanged && wasPending;
+
+        if (pendingEmailChanged)
+        {
+            // The account has still never proven an address, so the NEW one gets the activation mail
+            // — the same one the create flow sends — describing the account AS IT NOW IS.
+            confirmationEmailStatus = await SendPendingConfirmationAsync(
+                user, shape, pendingConfirmationToken!, oldEmail, actorId, cancellationToken);
+            emailNotificationStatus = confirmationEmailStatus;
+        }
+        else if (emailChanged)
+        {
+            emailNotificationStatus = await SendEmailChangeNoticesAsync(
+                user, oldEmail, actorId, cancellationToken);
+        }
+
+        // ── UC-100-SL BR-100SL-08: the holder is told their role moved. Non-fatal, and NOT conditional
+        //    on the account's status. A pending account was skipped here before, on the theory that its
+        //    activation mail already names the final role — but that mail only exists when the address
+        //    moved too, so re-roling a pending account changed its permissions and told nobody. The
+        //    role change is a fact about the account regardless of whether it can log in yet. ──
+        var roleChangeEmailStatus = "NOT_REQUIRED";
+        if (roleChanged)
+            roleChangeEmailStatus = await SendRoleChangedNotificationAsync(
+                user, shape, oldRoleCode, oldSubRole, actorId, cancellationToken);
 
         return new UpdateAccountRoleResponse
         {
@@ -361,7 +455,124 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             RoleCode = shape.RoleCode,
             PrimaryCampusId = shape.PrimaryCampusId,
             RevokedSessions = revoked,
+            EmailChanged = emailChanged,
+            RoleChanged = roleChanged,
+            // The status the account was in when the request arrived — and still is: nothing in this
+            // flow activates an account.
+            RequiresEmailConfirmation = wasPending,
+            EmailNotificationStatus = emailNotificationStatus,
+            ConfirmationEmailNotificationStatus = confirmationEmailStatus,
+            RoleChangeEmailNotificationStatus = roleChangeEmailStatus,
+            Message = BuildMessage(emailChanged, wasPending),
         };
+    }
+
+    private static string BuildMessage(bool emailChanged, bool wasPending) => (emailChanged, wasPending) switch
+    {
+        (true, true) => "Đã cập nhật tài khoản. Tài khoản vẫn ở trạng thái chờ xác nhận email cho đến khi "
+            + "người nhận hoàn tất xác nhận tại địa chỉ mới.",
+        (true, false) => "Đã cập nhật tài khoản. Email đăng nhập đã thay đổi và các phiên hiện tại đã bị thu hồi.",
+        // Still pending: telling this holder to "đăng nhập lại" would be telling them to do something
+        // they have never been able to do.
+        (false, true) => "Đã cập nhật tài khoản. Tài khoản vẫn ở trạng thái chờ xác nhận email.",
+        _ => "Cập nhật tài khoản thành công. Người dùng cần đăng nhập lại qua cổng nội bộ.",
+    };
+
+    /// <summary>
+    /// Mails the activation link to a pending account's NEW address, then a neutral notice to the old
+    /// one. Returns the delivery outcome of the FIRST only: that is the mail which decides whether this
+    /// account can ever be activated, and the notice to an address that may have been a stranger's typo
+    /// must never be able to downgrade it. Both are best-effort — the account is already committed and
+    /// correct, and "Gửi lại email xác nhận" is the way back from a failed send.
+    /// </summary>
+    private async Task<string> SendPendingConfirmationAsync(
+        User user, AccountProvisioningRules.ResolvedShape shape, string rawToken,
+        string oldEmail, ulong? actorId, CancellationToken cancellationToken)
+    {
+        var status = "FAILED";
+        try
+        {
+            // Every variable is read from the RESOLVED shape, never the pre-change snapshot: when a
+            // role and an email move together, the confirmation must state the role the holder is
+            // actually being activated into.
+            var result = await _dispatcher.SendAsync(
+                await PendingAccountEmailChangeMails.BuildConfirmationAsync(
+                    _db, _confirmations, user.UserId, user.FullName, shape.RoleCode, shape.SubRole,
+                    shape.PrimaryCampusId, user.Email, rawToken, actorId, cancellationToken),
+                cancellationToken);
+            status = result.NotificationStatus;
+        }
+        catch
+        {
+            // Reported as FAILED rather than thrown: the caller must be told the account WAS updated,
+            // which a 500 would hide.
+        }
+
+        try
+        {
+            await _dispatcher.SendAsync(
+                PendingAccountEmailChangeMails.BuildOldAddressNotice(user.UserId, oldEmail, actorId),
+                cancellationToken);
+        }
+        catch { /* notice is best-effort */ }
+
+        return status;
+    }
+
+    /// <summary>
+    /// The pair of notices an account that HAS confirmed an address gets when that address moves: a
+    /// removal notice to the old one, a change notice to the new one. Both matter to the holder, so
+    /// the reported status covers both — SENT / SKIPPED (mail off in this environment) / FAILED when
+    /// they agree, PARTIAL when they do not. Same messages and same anonymity policy as the HO
+    /// basic-info flow.
+    /// </summary>
+    private async Task<string> SendEmailChangeNoticesAsync(
+        User user, string oldEmail, ulong? actorId, CancellationToken cancellationToken)
+    {
+        // Anonymous by design: the address being unlinked may belong to somebody with no connection to
+        // this account, so it learns that a change happened and nothing else.
+        var oldStatus = await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailChangedOldNotice,
+            new EmailRecipient(oldEmail),
+            new Dictionary<string, string>(),
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: actorId), cancellationToken);
+
+        var newStatus = await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountEmailChangedNewNotice,
+            new EmailRecipient(user.Email, user.FullName),
+            new Dictionary<string, string>
+            {
+                ["fullName"] = user.FullName,
+                // Masked, not in full: the holder is entitled to know WHICH address was unlinked, and
+                // seeing part of it is enough to recognise it.
+                ["oldEmailMasked"] = AccountEmailVariables.MaskEmail(oldEmail),
+            },
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: actorId), cancellationToken);
+
+        return oldStatus == newStatus ? oldStatus : "PARTIAL";
+    }
+
+    /// <summary>
+    /// Sends one message and reports what became of it — SENT / SKIPPED / FAILED — without ever
+    /// throwing. SKIPPED is kept distinct from SENT on purpose: a message the environment declined to
+    /// send did not reach anybody, and reporting it as delivered would send the caller away waiting on
+    /// a mail that cannot arrive.
+    /// </summary>
+    private async Task<string> TrySendAsync(SystemEmailRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _dispatcher.SendAsync(request, cancellationToken);
+            return result.NotificationStatus;
+        }
+        catch
+        {
+            return "FAILED";   // non-fatal: the account is already committed and must not roll back
+        }
     }
 
     /// <summary>
@@ -488,8 +699,22 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
                 "Bạn chỉ được chuyển tài khoản sang Staff, Trưởng phòng ban hoặc Sinh viên.");
     }
 
-    private async Task SendRoleChangedNotificationAsync(
-        User user, AccountProvisioningRules.ResolvedShape shape, CancellationToken cancellationToken)
+    /// <summary>
+    /// Tells the holder their role moved, and reports what became of that message — SENT / SKIPPED /
+    /// FAILED — rather than swallowing the outcome. The account is already committed, so the send is
+    /// best-effort; but a caller told "đã gửi email thông báo" over a message nobody received has no
+    /// way to know the holder is still working from the old role.
+    ///
+    /// <para>
+    /// Every value is read AFTER the mutation: <c>user.Email</c> is the new address when the request
+    /// moved it (a notice sent to the address the holder just left is a notice they never see), and the
+    /// role labels bracket the change — the old shape from the pre-change snapshot, the new one from the
+    /// resolved shape, never from whatever the caller's screen happened to be showing.
+    /// </para>
+    /// </summary>
+    private async Task<string> SendRoleChangedNotificationAsync(
+        User user, AccountProvisioningRules.ResolvedShape shape,
+        string oldRoleCode, string? oldSubRole, ulong? actorId, CancellationToken cancellationToken)
     {
         var campusName = shape.PrimaryCampusId is null
             ? null
@@ -498,44 +723,21 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
                 .Select(c => c.Name)
                 .FirstOrDefaultAsync(cancellationToken);
 
-        var departmentName = shape.DepartmentId is null
-            ? null
-            : await _db.Departments.AsNoTracking()
-                .Where(d => d.DepartmentId == shape.DepartmentId)
-                .Select(d => d.Name)
-                .FirstOrDefaultAsync(cancellationToken);
-
-        var name = System.Net.WebUtility.HtmlEncode(user.FullName);
-        var emailEnc = System.Net.WebUtility.HtmlEncode(user.Email);
-        var roleEnc = System.Net.WebUtility.HtmlEncode(ResolveRoleDisplayName(shape.RoleCode, shape.SubRole));
-        var campusEnc = System.Net.WebUtility.HtmlEncode(campusName ?? "—");
-
-        var html =
-            $"<p>Xin chào {name},</p>" +
-            "<p>Vai trò tài khoản PEMS của bạn đã được cập nhật.</p>" +
-            "<p><strong>Thông tin mới:</strong></p>" +
-            "<ul>" +
-            $"<li>Email đăng nhập: <strong>{emailEnc}</strong></li>" +
-            $"<li>Vai trò mới: <strong>{roleEnc}</strong></li>" +
-            $"<li>Cơ sở: <strong>{campusEnc}</strong></li>" +
-            (departmentName is null ? "" : $"<li>Phòng ban: <strong>{System.Net.WebUtility.HtmlEncode(departmentName)}</strong></li>") +
-            (shape.RoleCode == RoleCodes.Student && !string.IsNullOrWhiteSpace(user.StudentCode)
-                ? $"<li>Mã số sinh viên: <strong>{System.Net.WebUtility.HtmlEncode(user.StudentCode)}</strong></li>"
-                : "") +
-            "</ul>" +
-            "<p>Thay đổi này có thể yêu cầu bạn đăng nhập lại để hệ thống áp dụng quyền truy cập mới.</p>" +
-            "<p>Nếu bạn cho rằng thông tin này chưa chính xác, vui lòng liên hệ Staff Leader hoặc quản trị hệ thống để được hỗ trợ.</p>" +
-            "<p>Trân trọng,<br/>PEMS System</p>";
-
-        try
-        {
-            await _emailService.SendAsync(
-                user.Email, "Vai trò tài khoản của bạn đã được cập nhật", html, cancellationToken);
-        }
-        catch
-        {
-            // Role change is already committed; a failed notification must not fail the request.
-        }
+        return await TrySendAsync(new SystemEmailRequest(
+            SystemEmailTemplates.AccountRoleChanged,
+            new EmailRecipient(user.Email, user.FullName),
+            new Dictionary<string, string>
+            {
+                ["fullName"] = user.FullName,
+                // Both sides are stated: "your role changed" is not actionable without saying from
+                // what. The labels are the same ones the account screens show.
+                ["oldRoleName"] = ResolveRoleDisplayName(oldRoleCode, oldSubRole),
+                ["newRoleName"] = ResolveRoleDisplayName(shape.RoleCode, shape.SubRole),
+                ["campusName"] = string.IsNullOrWhiteSpace(campusName) ? "—" : campusName,
+            },
+            RelatedType: "User",
+            RelatedId: user.UserId,
+            SentBy: actorId), cancellationToken);
     }
 
     /// <summary>Human-readable role label shown in the role-changed email.</summary>

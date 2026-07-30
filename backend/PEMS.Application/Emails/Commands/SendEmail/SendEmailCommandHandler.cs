@@ -1,124 +1,88 @@
-using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.Extensions.Options;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
-using PEMS.Domain.Entities.Emails;
+using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 
-using PEMS.Application.Common;
 namespace PEMS.Application.Emails.Commands.SendEmail;
 
+/// <summary>
+/// Manual compose. Validates what the sender wrote, then hands the whole envelope to the shared manual
+/// pipeline, which records one <c>sent_emails</c> row and sends exactly one MIME message.
+///
+/// <para>
+/// What this handler no longer does: loop the recipients and call SMTP once each (which turned every
+/// addressee into a lone TO), hard-code <c>recipient_type = 'TO'</c> for all of them, mark them
+/// <c>DELIVERED</c> on the strength of provider acceptance, or write the raw exception text into
+/// <c>error_message</c>.
+/// </para>
+/// </summary>
 public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, SendEmailResponse>
 {
-    private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
-    private readonly IEmailService _emailService;
+    private readonly IHtmlSanitizerService _sanitizer;
+    private readonly IManualEmailSender _sender;
     private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
+    private readonly EmailRecipientOptions _recipientOptions;
 
     public SendEmailCommandHandler(
-        IApplicationDbContext context,
         ICurrentUserService currentUserService,
-        IEmailService emailService,
-        PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer)
+        IHtmlSanitizerService sanitizer,
+        IManualEmailSender sender,
+        PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
+        IOptions<EmailRecipientOptions> recipientOptions)
     {
-        _context = context;
         _currentUserService = currentUserService;
-        _emailService = emailService;
+        _sanitizer = sanitizer;
+        _sender = sender;
         _normalizer = normalizer;
+        _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
     }
 
     public async Task<SendEmailResponse> Handle(SendEmailCommand request, CancellationToken cancellationToken)
     {
-        var now = VietnamTime.Now();
-        var normalizedBody = await _normalizer.NormalizeHtmlAsync(request.Body, cancellationToken);
+        if (!_currentUserService.IsAuthenticated || _currentUserService.UserId is not { } userId)
+            throw new ForbiddenException();
 
-        var sentEmail = new SentEmail
-        {
-            EmailTemplateId = request.TemplateId.HasValue ? (ulong?)request.TemplateId.Value : null,
-            RelatedType = "GENERAL",
-            Subject = request.Subject,
-            BodySnapshot = normalizedBody,
-            Status = "QUEUED",
-            SentBy = _currentUserService.UserId,
-            CreatedAt = now,
-            LastAttemptAt = now,
-        };
+        // Content and envelope are both checked BEFORE any row is written, so a rejected message leaves
+        // nothing behind in the history.
+        var format = EmailDraftWriter.ParseBodyFormat(request.BodyFormat);
+        var content = ManualEmailContent.Validate(request.Subject, request.Body, format, _sanitizer);
 
-        foreach (var recipient in request.To)
-        {
-            var email = recipient.Email.Trim();
-            if (string.IsNullOrWhiteSpace(email)) continue;
+        var envelope = EmailRecipientValidator.Validate(
+            Map(request.To), Map(request.Cc), Map(request.Bcc), _recipientOptions.MaxRecipients);
 
-            sentEmail.Recipients.Add(new SentEmailRecipient
-            {
-                RecipientEmail = email,
-                RecipientName = email,
-                RecipientType = "TO",
-                DeliveryStatus = "QUEUED",
-                CreatedAt = now,
-            });
-        }
+        var body = content.IsHtml
+            ? await _normalizer.NormalizeHtmlAsync(content.Body, cancellationToken)
+            : content.Body;
 
-        _context.SentEmails.Add(sentEmail);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        var hasFailure = false;
-        foreach (var recipient in sentEmail.Recipients)
-        {
-            recipient.SentAt = VietnamTime.Now();
-            try
-            {
-                await _emailService.SendAsync(recipient.RecipientEmail, request.Subject, normalizedBody, cancellationToken);
-                recipient.DeliveryStatus = "DELIVERED";
-                recipient.DeliveredAt = VietnamTime.Now();
-            }
-            catch (Exception ex)
-            {
-                hasFailure = true;
-                recipient.DeliveryStatus = "FAILED";
-                recipient.ErrorMessage = ex.Message;
-            }
-        }
-
-        sentEmail.SentAt = VietnamTime.Now();
-        sentEmail.LastAttemptAt = sentEmail.SentAt;
-
-        // Compute aggregated status: ALL ok → SENT; ALL failed → FAILED; mixed → PARTIAL_FAILED.
-        var allFailed = sentEmail.Recipients.All(r => r.DeliveryStatus == "FAILED");
-        if (!hasFailure)
-        {
-            sentEmail.Status = "SENT";
-            sentEmail.DeliveredAt = sentEmail.SentAt;
-            sentEmail.ErrorMessage = null;
-        }
-        else if (allFailed)
-        {
-            sentEmail.Status = "FAILED";
-            sentEmail.DeliveredAt = null;
-            sentEmail.ErrorMessage = "Tất cả người nhận gửi thất bại.";
-        }
-        else
-        {
-            sentEmail.Status = "PARTIAL_FAILED";
-            sentEmail.DeliveredAt = null;
-            sentEmail.ErrorMessage = "Một hoặc nhiều người nhận gửi thất bại.";
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        var message = sentEmail.Status switch
-        {
-            "SENT" => "Gửi email thành công.",
-            "FAILED" => "Gửi email thất bại với tất cả người nhận.",
-            _ => "Gửi email thất bại với một hoặc nhiều người nhận.",
-        };
+        var result = await _sender.SendAsync(new ManualEmailMessage(
+            SenderUserId: userId,
+            Subject: content.Subject,
+            Body: body,
+            BodyFormat: format,
+            Envelope: envelope,
+            Attachments: new List<ManualEmailAttachment>(),
+            RelatedType: "GENERAL"), cancellationToken);
 
         return new SendEmailResponse
         {
-            SentEmailId = sentEmail.SentEmailId,
-            Status = sentEmail.Status,
-            Success = sentEmail.Status == "SENT",
-            Message = message,
+            SentEmailId = result.SentEmailId,
+            Status = result.Status,
+            Success = result.Success,
+            Message = result.Message,
         };
     }
+
+    private static List<EmailRecipient> Map(List<EmailRecipientDto>? source)
+        => source is null
+            ? new List<EmailRecipient>()
+            : source.Where(r => r is not null)
+                    .Select(r => new EmailRecipient(r.Email ?? string.Empty, r.Name))
+                    .ToList();
 }

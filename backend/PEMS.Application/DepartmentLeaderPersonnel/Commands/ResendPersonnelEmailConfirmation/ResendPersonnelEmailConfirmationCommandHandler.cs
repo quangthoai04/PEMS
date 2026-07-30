@@ -9,6 +9,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -29,20 +30,20 @@ public sealed class ResendPersonnelEmailConfirmationCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly IDepartmentLeaderPersonnelScopeService _scopeService;
     private readonly IAccountEmailConfirmationService _confirmations;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IDateTimeService _clock;
 
     public ResendPersonnelEmailConfirmationCommandHandler(
         IApplicationDbContext db,
         IDepartmentLeaderPersonnelScopeService scopeService,
         IAccountEmailConfirmationService confirmations,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IDateTimeService clock)
     {
         _db = db;
         _scopeService = scopeService;
         _confirmations = confirmations;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _clock = clock;
     }
 
@@ -107,13 +108,30 @@ public sealed class ResendPersonnelEmailConfirmationCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        var delivery = await _emailService.TrySendAsync(
-            email,
-            AccountConfirmationEmail.Subject,
-            AccountConfirmationEmail.BuildHtml(target.FullName, _confirmations.BuildConfirmUrl(rawToken)),
-            cancellationToken);
+        // Same template as every other confirmation path — the resend must not be a different message
+        // from the one the account holder is being asked to re-read.
+        string deliveryStatus;
+        try
+        {
+            var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountEmailConfirmation,
+                new EmailRecipient(email, target.FullName),
+                await AccountEmailVariables.ForConfirmationAsync(
+                    _db, target.FullName, RoleCodes.Department, target.SubRole,
+                    target.PrimaryCampusId, _confirmations.ExpiryHours, cancellationToken),
+                TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(
+                    _confirmations.BuildConfirmUrl(rawToken)),
+                RelatedType: "User",
+                RelatedId: target.UserId,
+                SentBy: scope.ActorUserId), cancellationToken);
 
-        var deliveryStatus = AccountConfirmationEmail.MapStatus(delivery.Status);
+            deliveryStatus = result.NotificationStatus;
+        }
+        catch
+        {
+            deliveryStatus = DepartmentPersonnelEmails.StatusFailed;
+        }
+
         var resendCount = (latest?.Status == AccountEmailConfirmationStatuses.Pending ? latest.ResendCount : 0) + 1;
 
         return new ResendPersonnelEmailConfirmationResponse

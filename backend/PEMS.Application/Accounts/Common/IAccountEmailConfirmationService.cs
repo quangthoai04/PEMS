@@ -17,4 +17,14 @@ public interface IAccountEmailConfirmationService
 
     /// <summary>The frontend confirmation-page URL carrying the raw token (built from App:FrontendBaseUrl).</summary>
     string BuildConfirmUrl(string rawToken);
+
+    /// <summary>
+    /// How many hours a confirmation link stays valid. Exposed because the email says so in words: the
+    /// template renders it as a variable rather than hard-coding "24", so the sentence can never drift
+    /// away from the expiry the service actually applies.
+    /// </summary>
+    int ExpiryHours { get; }
+
+    /// <summary>The Internal Portal sign-in URL (built from App:FrontendBaseUrl).</summary>
+    string BuildLoginUrl();
 }

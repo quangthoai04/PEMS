@@ -20,7 +20,7 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IEmailActionTokenService _tokens;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
@@ -28,14 +28,14 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
         IApplicationDbContext context,
         ICurrentUserService currentUserService,
         IDateTimeService clock,
-        IEmailService email,
+        ISystemEmailDispatcher dispatcher,
         IEmailActionTokenService tokens,
         PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _context = context;
         _currentUserService = currentUserService;
         _clock = clock;
-        _email = email;
+        _dispatcher = dispatcher;
         _tokens = tokens;
         _notificationService = notificationService;
     }
@@ -91,7 +91,9 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
             .GetValueOrDefault(request.VisitInstanceId) ?? "FPT University";
 
         var now = _clock.VietnamNow;
-        var emailsToSend = new List<(ulong SentEmailId, ulong RecipientRowId, string Email, string Subject, string Body)>();
+        // One message per person — the recipient list comes from the items being chased, never from the
+        // template, and nobody is added as a silent copy.
+        var prepared = new List<PreparedSystemEmail>();
 
         await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
         {
@@ -120,7 +122,6 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
                     ? $"/dashboard/departments/{item.RequestedToDepartmentId.Value}/tasks/{item.LogisticsItemId}"
                     : $"/dashboard/visit/process/{item.VisitInstanceId}";
                 var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
-                var subject = $"[PEMS] Nhắc nhở kê khai chi phí — {item.Title}";
 
                 foreach (var recipient in recipients)
                 {
@@ -140,36 +141,29 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
                             ActionUrl: actionUrl),
                         cancellationToken);
 
-                    var body = EmailComposition.BrandedShell(
-                        ReminderContentHtml(recipient.FullName, delegationName, item.Title)
-                        + EmailComposition.DetailLinkBlock(detailUrl, "Mở biên bản để kê khai chi phí"));
+                    prepared.Add(await _dispatcher.PrepareAsync(
+                        new SystemEmailRequest(
+                            SystemEmailTemplates.LogisticsExpenseReportReminder,
+                            new EmailRecipient(recipient.Email, recipient.FullName),
+                            new Dictionary<string, string>
+                            {
+                                ["recipientName"] = recipient.FullName,
+                                ["itemTitle"] = item.Title,
+                                ["dueAt"] = item.DueAt?.ToString("HH:mm dd/MM/yyyy") ?? "Chưa đặt hạn",
+                                ["delegationName"] = delegationName,
+                            },
+                            TrustedBlocks: new Dictionary<string, string>
+                            {
+                                // A login-required detail link, not a one-time token: this reminder grants
+                                // nothing on its own, which is why its body is kept in full.
+                                [EmailTrustedBlocks.ActionBlock] =
+                                    EmailComposition.DetailLinkBlock(detailUrl, "Mở biên bản để kê khai chi phí"),
+                            },
+                            RelatedType: EmailActionTargetTypes.LogisticsItem,
+                            RelatedId: item.LogisticsItemId,
+                            SentBy: currentUserId),
+                        cancellationToken));
 
-                    var sentEmail = new SentEmail
-                    {
-                        RelatedType = EmailActionTargetTypes.LogisticsItem,
-                        RelatedId = item.LogisticsItemId,
-                        Subject = subject,
-                        BodySnapshot = body,
-                        Status = "QUEUED",
-                        SentBy = currentUserId,
-                        CreatedAt = now,
-                    };
-                    _context.SentEmails.Add(sentEmail);
-                    await _context.SaveChangesAsync(cancellationToken);
-
-                    var sentRecipient = new SentEmailRecipient
-                    {
-                        SentEmailId = sentEmail.SentEmailId,
-                        RecipientEmail = recipient.Email,
-                        RecipientName = recipient.FullName,
-                        RecipientType = "TO",
-                        DeliveryStatus = "QUEUED",
-                        CreatedAt = now,
-                    };
-                    _context.SentEmailRecipients.Add(sentRecipient);
-                    await _context.SaveChangesAsync(cancellationToken);
-
-                    emailsToSend.Add((sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, recipient.Email, subject, body));
                     if (!result.Recipients.Contains(recipient.FullName))
                         result.Recipients.Add(recipient.FullName);
                 }
@@ -180,61 +174,12 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
             await transaction.CommitAsync(cancellationToken);
         }
 
-        // Gửi mail sau khi đã commit — lỗi SMTP không làm mất thông báo hệ thống.
-        foreach (var mail in emailsToSend)
-        {
-            try
-            {
-                await _email.SendAsync(mail.Email, mail.Subject, mail.Body, cancellationToken);
-                await UpdateEmailStatusAsync(mail.SentEmailId, mail.RecipientRowId, "SENT", now, null, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                await UpdateEmailStatusAsync(mail.SentEmailId, mail.RecipientRowId, "FAILED", now, ex.Message, cancellationToken);
-            }
-        }
+        // Gửi mail sau khi đã commit — lỗi SMTP không làm mất thông báo hệ thống. The dispatcher records
+        // each outcome truthfully and never throws on a delivery failure, so one bad address cannot stop
+        // the rest of the reminders.
+        foreach (var message in prepared)
+            await _dispatcher.DeliverAsync(message, cancellationToken);
 
         return result;
     }
-
-    private static string ReminderContentHtml(string recipientName, string delegationName, string itemTitle)
-    {
-        string HE(string? s) => EmailComposition.HE(s);
-        return $@"<p>Xin chào <strong>{HE(recipientName)}</strong>,</p>
-<p>Host đón tiếp nhắc bạn hoàn tất <strong>ghi chú chi phí</strong> cho hạng mục hậu cần
-<strong>{HE(itemTitle)}</strong> của đoàn <strong>{HE(delegationName)}</strong>.</p>
-<div style=""background:#fff7ed;border-left:4px solid #f37021;border-radius:8px;padding:16px 20px;margin:20px 0"">
-  <p style=""margin:0;line-height:1.7"">Vui lòng mở biên bản bàn giao &amp; nghiệm thu của đơn yêu cầu và:</p>
-  <ul style=""margin:8px 0 0;padding-left:20px;line-height:1.7"">
-    <li>Nhập bảng kê chi phí thực tế; hoặc</li>
-    <li>Bấm <strong>“Không có chi phí”</strong> nếu hạng mục không phát sinh chi phí.</li>
-  </ul>
-</div>
-<p>Đoàn chỉ có thể chốt hồ sơ sau khi tất cả chi phí đã được xác nhận.</p>";
-    }
-
-    private async Task UpdateEmailStatusAsync(
-        ulong sentEmailId, ulong sentEmailRecipientId, string status, DateTime now, string? error, CancellationToken ct)
-    {
-        var sentEmail = await _context.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
-        if (sentEmail != null)
-        {
-            sentEmail.Status = status;
-            sentEmail.LastAttemptAt = now;
-            sentEmail.RetryCount += 1;
-            if (status == "SENT") sentEmail.SentAt = now;
-            else sentEmail.ErrorMessage = Truncate(error, 1000);
-        }
-        var rec = await _context.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
-        if (rec != null)
-        {
-            rec.DeliveryStatus = status;
-            if (status == "SENT") rec.SentAt = now;
-            else rec.ErrorMessage = Truncate(error, 1000);
-        }
-        await _context.SaveChangesAsync(ct);
-    }
-
-    private static string? Truncate(string? s, int max)
-        => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 }

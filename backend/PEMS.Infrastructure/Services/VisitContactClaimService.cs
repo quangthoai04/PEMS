@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Emails;
 
@@ -13,7 +14,7 @@ public sealed class VisitContactClaimService : IVisitContactClaimService
 {
     private readonly IApplicationDbContext _db;
     private readonly IEmailActionTokenService _tokens;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IDateTimeService _clock;
     private readonly ILogger<VisitContactClaimService> _logger;
     private readonly string _frontendBaseUrl;
@@ -21,14 +22,14 @@ public sealed class VisitContactClaimService : IVisitContactClaimService
     public VisitContactClaimService(
         IApplicationDbContext db,
         IEmailActionTokenService tokens,
-        IEmailService email,
+        ISystemEmailDispatcher dispatcher,
         IDateTimeService clock,
         ILogger<VisitContactClaimService> logger,
         IConfiguration configuration)
     {
         _db = db;
         _tokens = tokens;
-        _email = email;
+        _dispatcher = dispatcher;
         _clock = clock;
         _logger = logger;
         _frontendBaseUrl = (configuration["App:FrontendBaseUrl"] ?? "http://localhost:5173").TrimEnd('/');
@@ -83,19 +84,24 @@ public sealed class VisitContactClaimService : IVisitContactClaimService
         var claimUrl = $"{_frontendBaseUrl}/visit-contact-claim/{raw}";
         try
         {
-            var subject = $"[FPTU PEMS] Xác nhận vai trò đầu mối liên hệ — {request.RequestCode}";
-            var html = $@"
-<p>Xin chào {System.Net.WebUtility.HtmlEncode(request.ContactPersonFullName)},</p>
-<p>Bạn được <b>{System.Net.WebUtility.HtmlEncode(request.RegistrantFullName)}</b> chỉ định làm <b>đầu mối liên hệ</b>
-cho đơn đăng ký tham quan <b>{System.Net.WebUtility.HtmlEncode(request.DelegationName)}</b>
-(mã đơn <b>{request.RequestCode}</b>) tại Trường Đại học FPT.</p>
-<p>Để xác nhận, vui lòng mở liên kết dưới đây và <b>đăng nhập bằng đúng tài khoản Google của email này</b>,
-sau đó bấm <b>Chấp nhận</b>:</p>
-<p><a href=""{claimUrl}"">{claimUrl}</a></p>
-<p>Liên kết có hiệu lực đến <b>{claim.ExpiresAt:HH:mm dd/MM/yyyy}</b>. Nếu bạn không nhận vai trò này,
-bạn có thể từ chối trong trang trên hoặc bỏ qua email (lời mời sẽ tự hết hạn; đơn đăng ký không bị hủy).</p>
-<p>Trân trọng,<br/>FPTU PEMS</p>";
-            await _email.SendAsync(claim.NewEmailNormalized!, subject, html, cancellationToken);
+            await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.VisitContactClaim,
+                new EmailRecipient(claim.NewEmailNormalized!, request.ContactPersonFullName),
+                new Dictionary<string, string>
+                {
+                    ["contactFullName"] = request.ContactPersonFullName ?? string.Empty,
+                    ["requestCode"] = request.RequestCode,
+                    ["delegationName"] = request.DelegationName ?? string.Empty,
+                },
+                TrustedBlocks: new Dictionary<string, string>
+                {
+                    // The one-time link exists only inside the action block, which is also why the
+                    // rendered body is not kept in the email history.
+                    [EmailTrustedBlocks.ActionBlock] =
+                        EmailComposition.ContactRoleInvitationBlock(claimUrl, claim.ExpiresAt),
+                },
+                RelatedType: "VisitRequestIdentityChange",
+                RelatedId: claim.IdentityChangeId), cancellationToken);
         }
         catch (Exception ex)
         {
@@ -155,19 +161,28 @@ bạn có thể từ chối trong trang trên hoặc bỏ qua email (lời mời
         var transferUrl = $"{_frontendBaseUrl}/visit-contact-transfer/{raw}";
         try
         {
-            var subject = $"[FPTU PEMS] Lời mời nhận vai trò đầu mối liên hệ — {request.RequestCode}";
-            var html = $@"
-<p>Xin chào,</p>
-<p>Bạn được đề nghị <b>tiếp nhận vai trò đầu mối liên hệ</b> cho đơn đăng ký tham quan
-<b>{System.Net.WebUtility.HtmlEncode(request.DelegationName)}</b> (mã đơn <b>{request.RequestCode}</b>)
-tại Trường Đại học FPT, thay cho đầu mối hiện tại.</p>
-<p>Để xác nhận, vui lòng mở liên kết dưới đây và <b>đăng nhập bằng đúng tài khoản Google của email này</b>,
-sau đó bấm <b>Chấp nhận</b>. Đầu mối hiện tại vẫn giữ quyền cho tới khi bạn xác nhận:</p>
-<p><a href=""{transferUrl}"">{transferUrl}</a></p>
-<p>Liên kết có hiệu lực đến <b>{claim.ExpiresAt:HH:mm dd/MM/yyyy}</b> (24 giờ). Nếu bạn không nhận vai trò
-này, bạn có thể từ chối trong trang trên hoặc bỏ qua email — mọi quyền hiện tại được giữ nguyên.</p>
-<p>Trân trọng,<br/>FPTU PEMS</p>";
-            await _email.SendAsync(claim.NewEmailNormalized!, subject, html, cancellationToken);
+            await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.VisitContactTransfer,
+                // The invitee's own name is not known here — the identity change carries only their
+                // address — so the greeting uses the address, and the envelope carries no display name
+                // that would claim otherwise.
+                new EmailRecipient(claim.NewEmailNormalized!),
+                new Dictionary<string, string>
+                {
+                    ["contactFullName"] = claim.NewEmailNormalized!,
+                    ["requestCode"] = request.RequestCode,
+                    ["delegationName"] = request.DelegationName ?? string.Empty,
+                    // The person handing the role over. Naming them is what makes the invitation
+                    // verifiable to somebody who was not expecting it.
+                    ["currentContactName"] = request.ContactPersonFullName ?? string.Empty,
+                },
+                TrustedBlocks: new Dictionary<string, string>
+                {
+                    [EmailTrustedBlocks.ActionBlock] =
+                        EmailComposition.ContactRoleInvitationBlock(transferUrl, claim.ExpiresAt),
+                },
+                RelatedType: "VisitRequestIdentityChange",
+                RelatedId: claim.IdentityChangeId), cancellationToken);
         }
         catch (Exception ex)
         {

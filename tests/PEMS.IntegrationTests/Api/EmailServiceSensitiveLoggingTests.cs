@@ -5,6 +5,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Infrastructure.Email;
 using Xunit;
 
@@ -44,7 +46,8 @@ public sealed class EmailServiceSensitiveLoggingTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Smtp:Enabled"] = "false" })
             .Build();
         logger = new CapturingLogger<EmailService>();
-        return new EmailService(config, logger, new FakeHostEnvironment("Development"));
+        return new EmailService(config, logger, new FakeHostEnvironment("Development"),
+            Microsoft.Extensions.Options.Options.Create(new PEMS.Application.Emails.Common.EmailRecipientOptions()));
     }
 
     [Fact]
@@ -52,7 +55,13 @@ public sealed class EmailServiceSensitiveLoggingTests
     {
         var svc = DisabledService(out var logger);
 
-        await svc.SendVisitRequestOtpAsync("victim.person@partner.example.com", "Nguyen Van A", "654321");
+        await svc.SendAsync(new OutboundEmail
+        {
+            To = new[] { new EmailRecipient("victim.person@partner.example.com") },
+            Subject = "[PEMS] Xác thực đăng ký tham quan",
+            Body = "<!DOCTYPE html><p>Mã: 654321</p>",
+            TemplateCode = SystemEmailTemplates.VisitRequestOtp,
+        });
 
         var log = string.Join("\n", logger.Messages);
         Assert.DoesNotContain("654321", log);          // the OTP code itself
@@ -80,7 +89,13 @@ public sealed class EmailServiceSensitiveLoggingTests
     {
         var svc = DisabledService(out var logger);
 
-        await svc.SendVisitRequestOtpAsync("victim.person@partner.example.com", "Nguyen Van A", "654321");
+        await svc.SendAsync(new OutboundEmail
+        {
+            To = new[] { new EmailRecipient("victim.person@partner.example.com") },
+            Subject = "[PEMS] Xác thực đăng ký tham quan",
+            Body = "<!DOCTYPE html><p>Mã: 654321</p>",
+            TemplateCode = SystemEmailTemplates.VisitRequestOtp,
+        });
 
         var log = string.Join("\n", logger.Messages);
         Assert.NotEmpty(logger.Messages);

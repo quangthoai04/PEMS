@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Emails.Common;
 
+
 /// <summary>
 /// Re-reads an email draft (header + recipients + attachments + file metadata) and assembles the
 /// <see cref="EmailDraftDto"/>. Loads each table separately and joins in memory (Pomelo: avoid
@@ -106,7 +107,27 @@ public static class EmailDraftMapper
             CreatedAt = draft.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
             UpdatedAt = draft.UpdatedAt?.ToString("yyyy-MM-ddTHH:mm:ss"),
             Recipients = recipients,
+            To = OfType(recipients, EmailRecipientTypes.To),
+            Cc = OfType(recipients, EmailRecipientTypes.Cc),
+            Bcc = OfType(recipients, EmailRecipientTypes.Bcc),
             Attachments = attachments,
         };
+    }
+
+    /// <summary>
+    /// One group of the envelope. An unrecognised or missing type reads as TO, matching the column default
+    /// — a recipient with no group is a primary one, never a silently blind one.
+    /// </summary>
+    private static List<EmailDraftRecipientDto> OfType(List<EmailDraftRecipientDto> rows, string type)
+    {
+        var wanted = type == EmailRecipientTypes.To;
+        return rows.Where(r =>
+        {
+            var t = string.IsNullOrWhiteSpace(r.RecipientType)
+                ? EmailRecipientTypes.To
+                : r.RecipientType.Trim().ToUpperInvariant();
+            return t == type
+                || (wanted && t != EmailRecipientTypes.Cc && t != EmailRecipientTypes.Bcc);
+        }).ToList();
     }
 }

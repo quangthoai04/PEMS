@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -12,8 +13,10 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.InitiateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.VerifyAndCreateVisitRequestV2;
+using PEMS.Application.Emails.Common;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Infrastructure.Email;
 using PEMS.Infrastructure.Identity;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -68,19 +71,32 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
         public string? UserAgent => null;
     }
 
-    /// <summary>Captures the raw OTP code the initiate handler emails so verify can use it.</summary>
+    /// <summary>
+    /// Captures the raw OTP code the initiate handler emails so verify can use it. It reads the code from
+    /// the rendered body as well as from the legacy typed method, so it keeps working either side of the
+    /// migration that moves OTP content into <c>email_templates</c>.
+    /// </summary>
     private sealed class CapturingEmail : IEmailService
     {
         public string? LastCode { get; private set; }
         public int SendCount { get; private set; }
+
+        public Task<EmailDeliveryResult> TrySendAsync(OutboundEmail message, CancellationToken ct = default)
+        { Capture(message); return Task.FromResult(EmailDeliveryResult.Sent()); }
+        public Task SendAsync(OutboundEmail message, CancellationToken ct = default)
+        { Capture(message); return Task.CompletedTask; }
+
+        private void Capture(OutboundEmail message)
+        {
+            var text = Regex.Replace(message.Body ?? string.Empty, "<[^>]+>", " ");
+            var m = Regex.Match(text, @"(?<!\d)(\d{6})(?!\d)");
+            if (!m.Success) return;
+            LastCode = m.Groups[1].Value;
+            SendCount++;
+        }
+
         public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendAsync(OutboundEmail message, CancellationToken ct = default) => Task.CompletedTask;
         public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.FromResult(EmailDeliveryResult.Sent());
-        public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken ct = default)
-        { LastCode = code; SendCount++; return Task.CompletedTask; }
-        public Task SendVisitorAccountCreatedOrLinkedEmailAsync(string toEmail, string contactName, string delegationName, string requestCode, string visitScope, string plannedTimeText, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendRegistrantConfirmationAsync(string toEmail, string registrantName, string contactName, string contactEmail, string delegationName, string requestCode, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class FakeProvision : IUserProvisionService
@@ -99,8 +115,16 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
         public Task CreateAsync(CreateNotificationRequest request, CancellationToken ct) => Task.CompletedTask;
     }
 
+    /// <summary>
+    /// The REAL dispatcher and the REAL renderer, with the capturing fake standing in only for SMTP.
+    /// The OTP therefore travels the same path it does in production — rendered from the seeded
+    /// VISIT_REQUEST_OTP row — and the tests still read the code out of the produced message.
+    /// </summary>
+    private static SystemEmailDispatcher Dispatcher(ApplicationDbContext db, IEmailService sender)
+        => new(db, new EmailTemplateRenderer(db), sender);
+
     private static InitiateVisitRequestV2CommandHandler InitiateHandler(ApplicationDbContext db, CapturingEmail email)
-        => new(db, new OtpService(db, new FixedClock(), EmptyConfig), email, new FakeProvision(),
+        => new(db, new OtpService(db, new FixedClock(), EmptyConfig), Dispatcher(db, email), new FakeProvision(),
             new NoMetadata(), new FixedClock(), EmptyConfig,
             new PerCampusFormV2Options { Enabled = true }, new PerCampusFormV2WriteOptions { Enabled = true });
 

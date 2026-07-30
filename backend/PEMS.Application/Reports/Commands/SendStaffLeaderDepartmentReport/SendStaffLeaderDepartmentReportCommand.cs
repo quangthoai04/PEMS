@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Net;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -11,6 +9,9 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Idempotency;
+using PEMS.Application.Reports.Common;
 using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Shared;
 
@@ -19,21 +20,29 @@ namespace PEMS.Application.Reports.Commands.SendStaffLeaderDepartmentReport;
 /// <summary>
 /// Gửi email báo cáo hiệu suất phối hợp cho 1 PHÒNG BAN từ bảng "Báo cáo phòng ban khác"
 /// trên trang báo cáo của Staff Leader. Người nhận: trưởng phòng (Department Leader) của
-/// phòng ban đó. Nội dung: các thông số trong bảng (tổng đơn/thư, hoàn thành, từ chối,
-/// feedback) + ghi chú của Staff Leader + danh sách đơn hậu cần và thư mời hỗ trợ mà
-/// phòng ban đã nhận trong khoảng thời gian đang lọc; nếu feedback trung bình dưới 2★
-/// thì kèm khối cảnh báo chất lượng.
+/// phòng ban đó — mỗi người một thư riêng. Nội dung thư đến từ <c>email_templates</c>
+/// (REPORT_DEPARTMENT_COLLABORATION); số liệu và danh sách nhiệm vụ đi kèm trong tệp PDF.
 /// </summary>
-public sealed class SendStaffLeaderDepartmentReportCommand : IRequest<SendStaffLeaderDepartmentReportResult>
+public sealed class SendStaffLeaderDepartmentReportCommand : IRequest<SendStaffLeaderDepartmentReportResult>, IIdempotentEmailSend
 {
     public ulong DepartmentId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
-    /// <summary>Ghi chú của Staff Leader nhập trên bảng (đưa vào email).</summary>
+    /// <summary>Ghi chú của Staff Leader nhập trên bảng (đưa vào báo cáo).</summary>
     public string? Note { get; set; }
+
+    /// <inheritdoc />
+    public string OperationCode => EmailSendOperations.StaffLeaderDepartmentReport;
+
+    /// <inheritdoc />
+    public void DescribeRequest(EmailSendFingerprintBuilder builder) =>
+        builder.Id("department", DepartmentId)
+               .Date("from", FromDate)
+               .Date("to", ToDate)
+               .Text("note", Note);
 }
 
-public sealed class SendStaffLeaderDepartmentReportResult
+public sealed class SendStaffLeaderDepartmentReportResult : IEmailSendResult
 {
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
@@ -42,16 +51,18 @@ public sealed class SendStaffLeaderDepartmentReportResult
 public sealed class SendStaffLeaderDepartmentReportCommandHandler
     : IRequestHandler<SendStaffLeaderDepartmentReportCommand, SendStaffLeaderDepartmentReportResult>
 {
+    private static readonly CultureInfo Vi = CultureInfo.GetCultureInfo("vi-VN");
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
-    private readonly IEmailService _email;
+    private readonly IReportEmailSender _reportEmail;
 
     public SendStaffLeaderDepartmentReportCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IEmailService email)
+        IApplicationDbContext db, ICurrentUserService currentUser, IReportEmailSender reportEmail)
     {
         _db = db;
         _currentUser = currentUser;
-        _email = email;
+        _reportEmail = reportEmail;
     }
 
     public async Task<SendStaffLeaderDepartmentReportResult> Handle(
@@ -164,7 +175,7 @@ public sealed class SendStaffLeaderDepartmentReportCommandHandler
             .Select(u => u.FullName)
             .FirstOrDefaultAsync(cancellationToken) ?? "Staff Leader";
 
-        // ── Danh sách nhiệm vụ (đơn + thư mời) đưa vào email ──
+        // ── Danh sách nhiệm vụ (đơn + thư mời) đưa vào báo cáo ──
         var taskRows = logisticsRows
             .Select(l => (Kind: "Đơn hậu cần", Content: l.Title, l.DelegationName, Time: l.StartAt, Status: LogisticsStatusLabel(l.Status)))
             .Concat(invitationGroups.Select(g => (Kind: "Thư mời hỗ trợ", Content: "Tham gia hỗ trợ tiếp khách",
@@ -172,15 +183,36 @@ public sealed class SendStaffLeaderDepartmentReportCommandHandler
             .OrderBy(t => t.Time)
             .ToList();
 
-        var html = BuildEmailHtml(
-            dept.Name, campusName, leaderName,
-            fromVn, toVnExclusive.AddDays(-1),
-            totalRequests, completedCount, rejectedCount, avgFeedback, ratings.Count,
-            taskRows, request.Note);
+        var (periodFrom, periodTo) = ReportPeriod.Labels(fromVn, toVnExclusive);
 
-        var subject = $"[PEMS] Báo cáo phối hợp tiếp khách — {dept.Name} ({fromVn:dd/MM/yyyy} – {toVnExclusive.AddDays(-1):dd/MM/yyyy})";
+        // Cùng một phòng ban → cùng một báo cáo; dựng PDF một lần và gửi cho từng trưởng phòng.
+        var pdf = ReportPdf.Render(BuildDocument(
+            dept.Name, campusName, leaderName, periodFrom, periodTo, nowVn,
+            totalRequests, completedCount, rejectedCount, avgFeedback, ratings.Count,
+            taskRows, request.Note));
+        var fileName = ReportAttachmentName.Build("BaoCao_PhoiHop_PhongBan", nowVn);
+
+        // Mỗi trưởng phòng một thư riêng — không ai nhìn thấy địa chỉ của người còn lại.
         foreach (var leader in leaders)
-            await _email.SendAsync(leader.Email!, subject, html, cancellationToken);
+        {
+            await _reportEmail.SendAsync(
+                new ReportEmailMessage(
+                    SystemEmailTemplates.ReportDepartmentCollaboration,
+                    new EmailRecipient(leader.Email!, leader.FullName),
+                    new Dictionary<string, string>
+                    {
+                        ["recipientName"] = leader.FullName,
+                        ["departmentName"] = dept.Name,
+                        ["periodFrom"] = periodFrom,
+                        ["periodTo"] = periodTo,
+                    },
+                    fileName,
+                    pdf,
+                    _currentUser.UserId,
+                    ReportEmailRelatedTypes.Department,
+                    dept.DepartmentId),
+                cancellationToken);
+        }
 
         return new SendStaffLeaderDepartmentReportResult
         {
@@ -210,81 +242,63 @@ public sealed class SendStaffLeaderDepartmentReportCommandHandler
         _ => "Chờ phản hồi",
     };
 
-    private static string BuildEmailHtml(
+    private static ReportPdfModel BuildDocument(
         string deptName, string campusName, string leaderName,
-        DateTime fromVn, DateTime toVn,
+        string periodFrom, string periodTo, DateTime nowVn,
         int totalRequests, int completedCount, int rejectedCount, double? avgFeedback, int feedbackCount,
         List<(string Kind, string Content, string DelegationName, DateTime Time, string Status)> tasks,
         string? note)
     {
-        var vi = CultureInfo.GetCultureInfo("vi-VN");
-        string E(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+        var blocks = new List<ReportPdfBlock>();
 
-        var sb = new StringBuilder();
-        sb.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;color:#1f2937\">");
-        sb.Append("<div style=\"background:#004c91;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0\">");
-        sb.Append("<div style=\"font-size:12px;letter-spacing:2px;opacity:.85\">FPT UNIVERSITY • PEMS</div>");
-        sb.Append("<div style=\"font-size:20px;font-weight:700;margin-top:4px\">Báo cáo phối hợp tiếp khách của phòng ban</div>");
-        sb.Append($"<div style=\"font-size:13px;opacity:.9;margin-top:2px\">Kỳ báo cáo: {fromVn:dd/MM/yyyy} – {toVn:dd/MM/yyyy} · {E(campusName)}</div>");
-        sb.Append("</div>");
-        sb.Append("<div style=\"border:1px solid #e5e7eb;border-top:0;padding:24px;border-radius:0 0 12px 12px\">");
-
-        sb.Append($"<p>Kính gửi <b>{E(deptName)}</b>,</p>");
-        sb.Append("<p>Dưới đây là báo cáo tổng hợp phối hợp tiếp khách của phòng ban trong kỳ, được gửi bởi Staff Leader phụ trách campus.</p>");
-
-        // Khối cảnh báo khi feedback trung bình dưới 2★.
         if (avgFeedback != null && avgFeedback < 2)
         {
-            sb.Append("<div style=\"background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:14px 0\">");
-            sb.Append($"<b style=\"color:#b91c1c\">⚠ Cảnh báo chất lượng:</b> <span style=\"color:#7f1d1d\">Điểm feedback trung bình của phòng ban trong kỳ là <b>{avgFeedback.Value.ToString("0.0", vi)}★</b> (dưới 2★). Đề nghị phòng ban rà soát chất lượng hỗ trợ tiếp khách và trao đổi với Văn phòng IC để cải thiện.</span>");
-            sb.Append("</div>");
+            blocks.Add(new ReportPdfBlock.Warning(
+                $"Cảnh báo chất lượng: Điểm feedback trung bình của phòng ban trong kỳ là "
+                + $"{avgFeedback.Value.ToString("0.0", Vi)}★ (dưới 2★). Đề nghị phòng ban rà soát chất lượng "
+                + "hỗ trợ tiếp khách và trao đổi với Văn phòng IC để cải thiện."));
         }
 
-        // Bảng thông số (đúng các cột trong bảng phần 3).
-        sb.Append("<table style=\"width:100%;border-collapse:collapse;margin:14px 0\">");
-        void Metric(string label, string value)
-            => sb.Append($"<tr><td style=\"padding:8px 12px;border:1px solid #e5e7eb;background:#f8fafc;font-weight:600;width:45%\">{label}</td><td style=\"padding:8px 12px;border:1px solid #e5e7eb\">{value}</td></tr>");
-        Metric("Tổng đơn/thư yêu cầu", totalRequests.ToString(vi));
-        Metric("Hoàn thành", completedCount.ToString(vi));
-        Metric("Từ chối", rejectedCount.ToString(vi));
-        Metric("Feedback trung bình", avgFeedback != null ? $"{avgFeedback.Value.ToString("0.0", vi)}★ ({feedbackCount} lượt đánh giá)" : "Chưa có đánh giá");
-        if (!string.IsNullOrWhiteSpace(note)) Metric("Ghi chú của Staff Leader", E(note.Trim()));
-        sb.Append("</table>");
+        var metrics = new List<ReportPdfMetric>
+        {
+            new("Tổng đơn/thư yêu cầu", totalRequests.ToString(Vi)),
+            new("Hoàn thành", completedCount.ToString(Vi)),
+            new("Từ chối", rejectedCount.ToString(Vi)),
+            new("Feedback trung bình", avgFeedback != null
+                ? $"{avgFeedback.Value.ToString("0.0", Vi)}★ ({feedbackCount} lượt đánh giá)"
+                : "Chưa có đánh giá"),
+        };
+        if (!string.IsNullOrWhiteSpace(note))
+            metrics.Add(new ReportPdfMetric("Ghi chú của Staff Leader", note.Trim()));
+        blocks.Add(new ReportPdfBlock.Metrics(metrics));
 
-        // Danh sách đơn/thư mời phòng ban đã nhận trong kỳ.
-        sb.Append($"<div style=\"font-weight:700;color:#004c91;margin:18px 0 8px\">Danh sách nhiệm vụ phòng ban đã nhận trong kỳ ({tasks.Count})</div>");
-        if (tasks.Count == 0)
-        {
-            sb.Append("<p style=\"color:#6b7280\">Phòng ban không nhận đơn yêu cầu/thư mời nào trong kỳ báo cáo.</p>");
-        }
-        else
-        {
-            sb.Append("<table style=\"width:100%;border-collapse:collapse;font-size:13px\">");
-            sb.Append("<tr style=\"background:#004c91;color:#fff\">"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">STT</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Loại</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Nội dung</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Đoàn khách</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Thời gian</th>"
-                + "<th style=\"padding:8px;border:1px solid #e5e7eb;text-align:left\">Trạng thái</th></tr>");
-            var i = 0;
-            foreach (var t in tasks)
+        blocks.Add(new ReportPdfBlock.Table(
+            "Danh sách nhiệm vụ phòng ban đã nhận trong kỳ",
+            new[]
             {
-                i++;
-                sb.Append($"<tr{(i % 2 == 0 ? " style=\"background:#f8fafc\"" : "")}>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{i}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.Kind)}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.Content)}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.DelegationName)}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{t.Time:HH:mm dd/MM/yyyy}</td>"
-                    + $"<td style=\"padding:7px 8px;border:1px solid #e5e7eb\">{E(t.Status)}</td></tr>");
-            }
-            sb.Append("</table>");
-        }
+                new ReportPdfColumn("STT", 28, Fixed: true),
+                new ReportPdfColumn("Loại", 1.4f),
+                new ReportPdfColumn("Nội dung", 2.6f),
+                new ReportPdfColumn("Đoàn khách", 2.2f),
+                new ReportPdfColumn("Thời gian", 1.8f),
+                new ReportPdfColumn("Trạng thái", 1.4f),
+            },
+            tasks.Select((t, i) => (IReadOnlyList<string>)new[]
+            {
+                (i + 1).ToString(Vi),
+                t.Kind,
+                t.Content,
+                t.DelegationName ?? string.Empty,
+                t.Time.ToString("HH:mm dd/MM/yyyy"),
+                t.Status,
+            }).ToList(),
+            "Phòng ban không nhận đơn yêu cầu/thư mời nào trong kỳ báo cáo."));
 
-        sb.Append($"<p style=\"margin-top:20px\">Trân trọng,<br/><b>{E(leaderName)}</b><br/>Staff Leader · {E(campusName)}</p>");
-        sb.Append("<p style=\"font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px\">Email được tạo tự động từ hệ thống PEMS — Partnership Engagement Management System.</p>");
-        sb.Append("</div></div>");
-        return sb.ToString();
+        blocks.Add(new ReportPdfBlock.Note("Người gửi", $"{leaderName} · Staff Leader · {campusName}"));
+
+        return new ReportPdfModel(
+            "BÁO CÁO PHỐI HỢP TIẾP KHÁCH CỦA PHÒNG BAN",
+            $"{deptName} · {campusName} · Kỳ {periodFrom} – {periodTo} · Lập lúc {nowVn:HH:mm dd/MM/yyyy}",
+            blocks);
     }
 }

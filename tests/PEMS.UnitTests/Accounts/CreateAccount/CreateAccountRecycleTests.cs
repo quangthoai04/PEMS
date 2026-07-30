@@ -36,9 +36,7 @@ public class CreateAccountRecycleTests
         db.Roles.Add(Uc106TestData.CreateRole(Uc106TestData.StudentRoleId, RoleCodes.Student));
         db.SaveChanges();
 
-        var email = new Mock<IEmailService>();
-        email.Setup(e => e.TrySendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(EmailDeliveryResult.Sent());
+        var dispatcher = new FakeSystemEmailDispatcher();
         var notifications = new Mock<INotificationService>();
         notifications.Setup(n => n.CreateAsync(It.IsAny<CreateNotificationRequest>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -46,10 +44,11 @@ public class CreateAccountRecycleTests
         confirmations.Setup(c => c.IssuePendingAsync(It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("raw");
         confirmations.Setup(c => c.BuildConfirmUrl(It.IsAny<string>())).Returns("http://x/confirm-email?token=raw");
+        confirmations.Setup(c => c.ExpiryHours).Returns(24);
 
         var handler = new CreateAccountCommandHandler(
             db, new FakeCurrentUserService(), new Mock<IPasswordHasher>().Object, new FakeDateTimeService(),
-            new AuthOptions(), email.Object, notifications.Object, confirmations.Object);
+            new AuthOptions(), dispatcher, notifications.Object, confirmations.Object);
         return (handler, db);
     }
 

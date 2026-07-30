@@ -8,6 +8,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -31,7 +32,7 @@ public sealed class CreateDepartmentPersonnelCommandHandler
     private readonly IDepartmentLeaderPersonnelScopeService _scopeService;
     private readonly IUserMutationLockService _lockService;
     private readonly IAccountEmailConfirmationService _confirmations;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IDateTimeService _clock;
 
     public CreateDepartmentPersonnelCommandHandler(
@@ -39,14 +40,14 @@ public sealed class CreateDepartmentPersonnelCommandHandler
         IDepartmentLeaderPersonnelScopeService scopeService,
         IUserMutationLockService lockService,
         IAccountEmailConfirmationService confirmations,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IDateTimeService clock)
     {
         _db = db;
         _scopeService = scopeService;
         _lockService = lockService;
         _confirmations = confirmations;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _clock = clock;
     }
 
@@ -83,6 +84,8 @@ public sealed class CreateDepartmentPersonnelCommandHandler
         var now = _clock.VietnamNow;
         User user;
         var confirmationToken = string.Empty;
+        // Captured inside the transaction; the confirmation mail (sent after commit) names the campus.
+        ulong campusId;
 
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         try
@@ -106,6 +109,8 @@ public sealed class CreateDepartmentPersonnelCommandHandler
                 throw new BusinessRuleException(
                     "Cơ sở đã ngừng hoạt động nên không thể thêm nhân sự.",
                     DepartmentLeaderErrorCodes.DepartmentNotActive);
+
+            campusId = department.CampusId;
 
             if (department.HeadUserId != scope.ActorUserId)
                 throw new AuthBusinessException(
@@ -184,13 +189,12 @@ public sealed class CreateDepartmentPersonnelCommandHandler
 
         // ── After commit. A delivery failure leaves the PENDING account in place on purpose: the
         //    operator resends rather than losing the record (spec §10). ──
-        var delivery = await _emailService.TrySendAsync(
-            email,
-            AccountConfirmationEmail.Subject,
-            AccountConfirmationEmail.BuildHtml(fullName, _confirmations.BuildConfirmUrl(confirmationToken)),
-            cancellationToken);
-
-        var deliveryStatus = AccountConfirmationEmail.MapStatus(delivery.Status);
+        //
+        // The confirmation mail is the SAME message the HO/Staff-Leader create path sends, so it names
+        // the same template rather than composing a second copy of it: this handler used to build its
+        // own HTML, which is how "one email" quietly became two that had already drifted apart.
+        var deliveryStatus = await SendConfirmationEmailAsync(
+            user, fullName, email, campusId, confirmationToken, scope.ActorUserId, cancellationToken);
 
         return new CreateDepartmentPersonnelResponse
         {
@@ -207,5 +211,36 @@ public sealed class CreateDepartmentPersonnelCommandHandler
                 ? "Đã tạo nhân sự và gửi email xác nhận. Tài khoản sẽ hoạt động sau khi nhân sự xác nhận email."
                 : "Đã tạo nhân sự nhưng chưa gửi được email xác nhận. Vui lòng dùng chức năng gửi lại email xác nhận.",
         };
+    }
+
+    /// <summary>
+    /// Sends ACCOUNT_EMAIL_CONFIRMATION through the dispatcher, which records the message in
+    /// <c>sent_emails</c> and reports a truthful outcome. A throw is swallowed into FAILED: the account
+    /// is already committed, and the operator's remedy is to resend, not to lose the record.
+    /// </summary>
+    private async Task<string> SendConfirmationEmailAsync(
+        User user, string fullName, string email, ulong campusId,
+        string confirmationToken, ulong? actorId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountEmailConfirmation,
+                new EmailRecipient(email, fullName),
+                await AccountEmailVariables.ForConfirmationAsync(
+                    _db, fullName, RoleCodes.Department, UserSubRoles.Staff,
+                    campusId, _confirmations.ExpiryHours, cancellationToken),
+                TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(
+                    _confirmations.BuildConfirmUrl(confirmationToken)),
+                RelatedType: "User",
+                RelatedId: user.UserId,
+                SentBy: actorId), cancellationToken);
+
+            return result.NotificationStatus;
+        }
+        catch
+        {
+            return DepartmentPersonnelEmails.StatusFailed;
+        }
     }
 }

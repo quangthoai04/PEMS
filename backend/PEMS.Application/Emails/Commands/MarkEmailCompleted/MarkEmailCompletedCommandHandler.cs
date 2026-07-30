@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using PEMS.Application.Common;
+using PEMS.Application.Emails.Common;
 namespace PEMS.Application.Emails.Commands.MarkEmailCompleted;
 
 public class MarkEmailCompletedCommandHandler : IRequestHandler<MarkEmailCompletedCommand, MarkEmailCompletedResponse>
@@ -38,17 +39,19 @@ public class MarkEmailCompletedCommandHandler : IRequestHandler<MarkEmailComplet
             currentUserEmail = user?.Email ?? "";
         }
 
-        bool isSender = email.SentBy == _currentUserService.UserId;
-        bool isRecipient = email.Recipients.Any(r => r.RecipientEmail == currentUserEmail);
+        // The same relation the detail query resolves, so the button the screen shows and the answer this
+        // command gives are decided by one rule rather than by two hand-written ones. The previous check
+        // compared recipient addresses with a case-sensitive == , which quietly refused anyone whose stored
+        // address differed only in case from the one on their token.
+        var relation = SentEmailAccess.Resolve(
+            _currentUserService.UserId, currentUserEmail, email.SentBy, email.Recipients,
+            r => r.RecipientEmail, r => r.RecipientType);
 
-        if (!isSender && !isRecipient)
+        if (!SentEmailAccess.CanMarkComplete(relation, email.DeliveredAt))
         {
-            return new MarkEmailCompletedResponse { Success = false, Message = "Bạn không có quyền thao tác trên email này." };
-        }
-
-        if (email.DeliveredAt.HasValue)
-        {
-            return new MarkEmailCompletedResponse { Success = false, Message = "Email đã được đánh dấu hoàn thành từ trước." };
+            return email.DeliveredAt.HasValue
+                ? new MarkEmailCompletedResponse { Success = false, Message = "Email đã được đánh dấu hoàn thành từ trước." }
+                : new MarkEmailCompletedResponse { Success = false, Message = "Bạn không có quyền thao tác trên email này." };
         }
 
         email.DeliveredAt = VietnamTime.Now();

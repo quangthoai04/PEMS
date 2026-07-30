@@ -210,21 +210,25 @@ export function ParticipantInvitationSection({
 
   // Real merge context from the actual instance + the bound recipient (no mock values). Empty fields
   // fall back to a friendly label instead of "undefined"/"null".
+  //
+  // These keys are EXACTLY the variables the three invitation templates declare — no more, no fewer.
+  // The preview now goes through the same renderer as the send, which refuses an unknown or missing
+  // variable rather than quietly substituting a placeholder, so a drifted key here would surface as a
+  // failed preview instead of a preview that no recipient could ever receive.
   const FB = 'Chưa có thông tin';
   const previewContext = (target: PreviewTarget | null): Record<string, string> => {
     const r = target?.recipient;
+    const start = fmtDateTime(plannedStartAt);
+    const end = fmtDateTime(plannedEndAt);
     return {
       recipientName: r?.name || FB,
-      recipientEmail: r?.email || FB,
-      DelegationName: delegationName || FB,
-      CampusName: campusName || r?.campusName || 'FPT University',
-      plannedStartAt: fmtDateTime(plannedStartAt),
-      plannedEndAt: fmtDateTime(plannedEndAt),
+      delegationName: delegationName || FB,
+      campusName: campusName || r?.campusName || 'FPT University',
+      plannedTime: end ? `${start} - ${end}` : start,
       hostName: host?.fullName ?? 'Host',
-      requesterName: host?.fullName ?? 'Host',
-      participantRoleLabel: r?.roleLabel || FB,
-      departmentName: r?.departmentName || FB,
-      departmentLeaderName: r?.roleLabel === 'Trưởng phòng' ? (r?.name || FB) : (host?.fullName ?? 'Host'),
+      roleLabel: r?.roleLabel || FB,
+      // The host has not written anything yet when the modal opens.
+      hostMessage: '',
     };
   };
 

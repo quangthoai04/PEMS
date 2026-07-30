@@ -16,6 +16,32 @@ using PEMS.Domain.Entities.Notifications;
 
 namespace PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
 
+/// <summary>
+/// A Department Leader hands one of their own staff a visit they were invited to support.
+///
+/// <para>
+/// The message is a <c>VISIT_DEPARTMENT_STAFF_ASSIGNMENT</c>, not an invitation: the recipient is being
+/// told they have been assigned, by name, by their own department. It still carries accept/decline
+/// buttons so the reception owner learns whether the person can actually come.
+/// </para>
+/// <para>
+/// The whole sequence runs inside one transaction that opens by locking the staff account (see
+/// <see cref="IUserMutationLockService"/>), so an assignment cannot interleave with a role change on
+/// the same account. Recording the message before the tokens is what keeps
+/// <c>email_action_tokens.sent_email_id</c> pointing at a row that exists, and the transaction commits
+/// before anything is handed to SMTP — a transient delivery failure never loses the assignment.
+/// </para>
+/// <para>
+/// The transaction and the lock were lost when Dev was merged into Cảnh-Iter1 and restored only after a
+/// human review caught it (finding C-1); this paragraph had gone on describing them the whole time.
+/// <c>AssignDepartmentStaffAtomicityTests</c> exists so a future removal fails a test rather than
+/// needing a reviewer to notice: it asserts that a failure after the participant is written leaves no
+/// participant, token, notification or sent-email row behind, and it drives a real second connection to
+/// prove the lock actually serialises this flow against <c>UpdateAccountRole</c>. Both assertions were
+/// verified to FAIL against the handler as the merge left it, and neither can pass without a genuine
+/// transaction and a genuine row lock — which is precisely what the unit suite cannot see.
+/// </para>
+/// </summary>
 public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<AssignDepartmentStaffCommand, ulong>
 {
     private static readonly TimeSpan TokenTtl = TimeSpan.FromDays(14);
@@ -23,7 +49,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
@@ -34,22 +60,22 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IDateTimeService clock,
-        IEmailService email,
+        ISystemEmailDispatcher dispatcher,
         IEmailActionTokenService tokens,
         IHtmlSanitizerService sanitizer,
         IFileStorageService storage,
         IVisitFormReadService formReadService,
         IUserMutationLockService lockService)
     {
-        _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
-        _email = email;
+        _dispatcher = dispatcher;
         _tokens = tokens;
         _sanitizer = sanitizer;
         _storage = storage;
         _formReadService = formReadService;
+        _lockService = lockService;
     }
 
     public async Task<ulong> Handle(AssignDepartmentStaffCommand request, CancellationToken cancellationToken)
@@ -62,6 +88,13 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         // Assigning the staff member creates an ASSIGNED participant row for them — a live
         // responsibility. Lock the account first (see IUserMutationLockService) so this cannot
         // interleave with a role change; every eligibility read below then sees committed state.
+        //
+        // Restored from Dev after a human review found the merge had dropped both the transaction and
+        // this lock while the documentation continued to describe them (finding C-1). Without the lock
+        // the status/role/department re-checks below are not serialised against UpdateAccountRole,
+        // which takes the same lock and expects assignment flows to contend on it; without the
+        // transaction the participant row, tokens and notification commit separately, so a failure
+        // part-way through can leave somebody assigned with no way to accept or decline.
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         await _lockService.LockUsersAsync(new[] { request.DepartmentStaffUserId }, cancellationToken);
 
@@ -89,8 +122,15 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         if (targetStaff.Role?.RoleCode != RoleCodes.Department || targetStaff.DepartmentId != _currentUser.DepartmentId)
             throw new ConflictException("Người được phân công phải thuộc cùng phòng ban.");
 
+        // Read under the lock taken at the top of Handle, so this sees committed state. Role and department alone are
+        // not enough: a deactivated, locked or not-yet-confirmed account holds no effective authority
+        // (see UserStatuses), and assigning it a live visit responsibility would create a task nobody
+        // can act on. Every sibling assignment flow already re-checks status here.
+        if (targetStaff.Status != UserStatuses.Active)
+            throw new ConflictException("Người được phân công phải là tài khoản đang hoạt động.");
+
         var now = _clock.VietnamNow;
-        var editedContent = ValidateAndSanitizeOverride(request.EmailOverride);
+        var content = ResolveContent(request.EmailOverride);
         var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
         await OutboundEmailAttachments.ValidateAsync(_db, userId, attachInputs, cancellationToken);
 
@@ -101,6 +141,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             select new
             {
                 vr.VisitRequestId,
+                inst.CampusId,
                 inst.PlannedStartAt,
                 inst.PlannedEndAt
             }).FirstOrDefaultAsync(cancellationToken);
@@ -116,19 +157,20 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
                 visit, new[] { leaderParticipant.VisitInstanceId }, cancellationToken);
             delegationName = formContent[leaderParticipant.VisitInstanceId].DelegationName;
         }
-        var templateId = await _db.EmailTemplates
-            .Where(t => t.TemplateCode == EmailActionTemplates.ParticipantInvitation)
-            .Select(t => (ulong?)t.EmailTemplateId)
-            .FirstOrDefaultAsync(cancellationToken);
+
+        // The message names the campus and the department, because "you have been assigned" is only
+        // actionable if the reader can tell which visit and on whose authority.
+        var campusName = instanceInfo is null ? "FPT University" : await _db.Campuses
+            .Where(c => c.CampusId == instanceInfo.CampusId).Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
+        var departmentName = await _db.Departments
+            .Where(d => d.DepartmentId == targetStaff.DepartmentId).Select(d => d.Name)
+            .FirstOrDefaultAsync(cancellationToken) ?? "Phòng ban";
 
         var existingParticipant = await _db.VisitParticipants
             .FirstOrDefaultAsync(p => p.VisitInstanceId == leaderParticipant.VisitInstanceId && p.UserId == targetStaff.UserId, cancellationToken);
 
         VisitParticipant assignedParticipant;
-        ulong sentEmailId;
-        ulong sentEmailRecipientId;
-        string finalSubject;
-        string finalBody;
         if (existingParticipant != null)
         {
             // Nếu đã tham gia, cập nhật role và status nếu cần thiết
@@ -181,48 +223,36 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
         var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
 
-        if (editedContent != null)
-        {
-            finalSubject = request.EmailOverride!.Subject!.Trim();
-            var content = EmailComposition.StripActionArtifacts(editedContent);
-            finalBody = EmailComposition.BrandedShell(content + EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl));
-        }
-        else
-        {
-            finalSubject = $"[PEMS] Bạn được ủy quyền tham gia đón tiếp — {delegationName}";
-            finalBody = EmailComposition.BrandedShell(DefaultContentHtml(targetStaff.FullName, delegationName, instanceInfo?.PlannedStartAt, instanceInfo?.PlannedEndAt)
-                + EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl));
-        }
+        // Record the message (content from email_templates, or the Leader's own words) BEFORE the tokens,
+        // so both point at a sent_emails row that already exists. Nothing is sent yet.
+        var prepared = await _dispatcher.PrepareAsync(
+            new SystemEmailRequest(
+                SystemEmailTemplates.VisitDepartmentStaffAssignment,
+                new EmailRecipient(targetStaff.Email, targetStaff.FullName),
+                new System.Collections.Generic.Dictionary<string, string>
+                {
+                    ["recipientName"] = targetStaff.FullName,
+                    ["delegationName"] = delegationName,
+                    ["campusName"] = campusName,
+                    ["plannedTime"] = FormatWindow(instanceInfo?.PlannedStartAt, instanceInfo?.PlannedEndAt),
+                    ["departmentName"] = departmentName,
+                },
+                TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>
+                {
+                    [EmailTrustedBlocks.ActionBlock] = EmailComposition.AcceptDeclineBlock(acceptUrl, declineUrl),
+                },
+                RelatedType: EmailActionTargetTypes.VisitParticipant,
+                RelatedId: assignedParticipant.ParticipantId,
+                SentBy: userId)
+            {
+                Content = content,
+            },
+            cancellationToken);
 
-        var sentEmail = new SentEmail
-        {
-            EmailTemplateId = templateId,
-            RelatedType = EmailActionTargetTypes.VisitParticipant,
-            RelatedId = assignedParticipant.ParticipantId,
-            Subject = finalSubject,
-            BodySnapshot = finalBody,
-            Status = "QUEUED",
-            SentBy = userId,
-            CreatedAt = now,
-        };
-        OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
-        _db.SentEmails.Add(sentEmail);
-        await _db.SaveChangesAsync(cancellationToken);
+        AttachTo(prepared.SentEmailId, attachInputs, now);
 
-        var sentRecipient = new SentEmailRecipient
-        {
-            SentEmailId = sentEmail.SentEmailId,
-            RecipientEmail = targetStaff.Email,
-            RecipientName = targetStaff.FullName,
-            RecipientType = "TO",
-            DeliveryStatus = "QUEUED",
-            CreatedAt = now,
-        };
-        _db.SentEmailRecipients.Add(sentRecipient);
-        await _db.SaveChangesAsync(cancellationToken);
-
-        _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, assignedParticipant.ParticipantId, targetStaff.UserId, targetStaff.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
-        _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, assignedParticipant.ParticipantId, targetStaff.UserId, targetStaff.Email, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+        _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, assignedParticipant.ParticipantId, targetStaff.UserId, targetStaff.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
+        _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, assignedParticipant.ParticipantId, targetStaff.UserId, targetStaff.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
         _db.Notifications.Add(new Notification
         {
             RecipientUserId = targetStaff.UserId,
@@ -239,67 +269,93 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             CreatedAt = now,
         });
         await _db.SaveChangesAsync(cancellationToken);
+
         // Durable before the email goes out: a transient SMTP failure must never lose the assignment.
+        // Everything above — participant row, invalidated tokens, sent_emails, attachments, the new
+        // accept/decline tokens and the notification — becomes visible in this single commit, so there
+        // is no window in which the recipient is assigned but has no way to answer.
         await transaction.CommitAsync(cancellationToken);
 
-        sentEmailId = sentEmail.SentEmailId;
-        sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
-
+        // Attachment bytes are streamed after the commit, so a slow file store cannot delay the
+        // assignment itself; a failure here leaves the message FAILED and resendable, and the
+        // assignment stays durable because it is already committed.
         try
         {
-            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_db, _storage, attachInputs, cancellationToken);
-            await _email.SendAsync(new OutboundEmail
-            {
-                ToEmail = targetStaff.Email,
-                Subject = finalSubject,
-                Body = finalBody,
-                IsHtml = true,
-                Attachments = outboundAttachments,
-            }, cancellationToken);
-            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", userId, now, null, cancellationToken);
+            var outboundAttachments = await OutboundEmailAttachments.LoadAsync(
+                _db, _storage, attachInputs, cancellationToken);
+
+            await _dispatcher.DeliverAsync(
+                prepared with { Attachments = outboundAttachments }, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", userId, now, ex.Message, cancellationToken);
+            // The exception text is not recorded: a storage failure can name a path or a signed URL, and
+            // this message is shown in the email history.
+            await MarkDeliveryFailedAsync(
+                prepared, "Không đọc được tệp đính kèm khi gửi email.", now, cancellationToken);
         }
 
         return assignedParticipant.ParticipantId;
     }
 
-    private string? ValidateAndSanitizeOverride(EmailOverride? ov)
-    {
-        if (ov is null || !ov.UseEditedContent) return null;
-        if (string.IsNullOrWhiteSpace(ov.Subject))
-            throw new ValidationException("Tiêu đề email không được để trống.");
-        if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
-            throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
-        if (string.IsNullOrWhiteSpace(ov.BodyHtml))
-            throw new ValidationException("Nội dung email không được để trống.");
-        if (ov.BodyHtml.Length > EmailOverrideLimits.BodyMax)
-            throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
+    /// <summary>
+    /// Turns the optional Leader edit into a content mode. Validation and sanitising happen inside
+    /// <see cref="SystemEmailContent.AuthoredByUser.Create"/>, which is the only way to build the type.
+    /// </summary>
+    private SystemEmailContent ResolveContent(EmailOverride? ov)
+        => ov is null || !ov.UseEditedContent
+            ? SystemEmailContent.FromTemplate.Instance
+            : SystemEmailContent.AuthoredByUser.Create(
+                ov.Subject, EmailComposition.ResolveEditableHtml(ov), _sanitizer);
 
-        var sanitized = _sanitizer.SanitizeEmailHtml(ov.BodyHtml);
-        if (string.IsNullOrWhiteSpace(sanitized))
-            throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
-        return sanitized;
+    /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
+    private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput> inputs, DateTime now)
+    {
+        var order = 0;
+        foreach (var a in inputs)
+        {
+            _db.SentEmailAttachments.Add(new SentEmailAttachment
+            {
+                SentEmailId = sentEmailId,
+                FileId = a.FileId,
+                AttachmentType = EmailDraftWriter.ParseAttachmentType(a.AttachmentType),
+                ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId!.Trim(),
+                DisplayName = a.DisplayName,
+                DisplayOrder = a.DisplayOrder > 0 ? (uint)a.DisplayOrder : (uint)order,
+                CreatedAt = now,
+            });
+            order++;
+        }
     }
 
-    private static string DefaultContentHtml(string assigneeName, string delegationName, DateTime? startAt, DateTime? endAt)
+    /// <summary>Records a failure that happened before the sender was reached at all.</summary>
+    private async Task MarkDeliveryFailedAsync(
+        PreparedSystemEmail prepared, string safeMessage, DateTime now, CancellationToken ct)
     {
-        string HE(string? s) => EmailComposition.HE(s);
-        var time = startAt.HasValue
-            ? $"{startAt.Value:HH:mm dd/MM/yyyy}{(endAt.HasValue ? $" - {endAt.Value:HH:mm dd/MM/yyyy}" : string.Empty)}"
+        var sentEmail = await _db.SentEmails
+            .FirstOrDefaultAsync(e => e.SentEmailId == prepared.SentEmailId, ct);
+        if (sentEmail is not null)
+        {
+            sentEmail.Status = "FAILED";
+            sentEmail.LastAttemptAt = now;
+            sentEmail.ErrorMessage = safeMessage;
+        }
+
+        var rec = await _db.SentEmailRecipients
+            .FirstOrDefaultAsync(r => r.SentEmailRecipientId == prepared.SentEmailRecipientId, ct);
+        if (rec is not null)
+        {
+            rec.DeliveryStatus = "FAILED";
+            rec.ErrorMessage = safeMessage;
+        }
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string FormatWindow(DateTime? start, DateTime? end)
+        => start.HasValue
+            ? $"{start.Value:HH:mm dd/MM/yyyy}{(end.HasValue ? $" - {end.Value:HH:mm dd/MM/yyyy}" : string.Empty)}"
             : "Chưa có thông tin";
-        return $@"<p>Xin chào <strong>{HE(assigneeName)}</strong>,</p>
-<p>Bạn được ủy quyền tham gia đón tiếp đoàn <strong>{HE(delegationName)}</strong>.</p>
-<div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
-  <ul style=""margin:0;padding-left:20px;line-height:1.7"">
-    <li><strong>Đoàn khách:</strong> {HE(delegationName)}</li>
-    <li><strong>Thời gian:</strong> {HE(time)}</li>
-  </ul>
-</div>
-<p>Vui lòng phản hồi bằng một trong các nút dưới đây.</p>";
-    }
 
     private static EmailActionToken NewToken(
         string tokenHash, string intendedAction, string groupKey, ulong participantId,
@@ -321,31 +377,4 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             CreatedAt = now,
         };
 
-    private async Task UpdateEmailStatusAsync(
-        ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
-        string? error, CancellationToken ct)
-    {
-        var sentEmail = await _db.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
-        if (sentEmail != null)
-        {
-            sentEmail.Status = status;
-            sentEmail.LastAttemptAt = now;
-            sentEmail.RetryCount += 1;
-            if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
-            else { sentEmail.ErrorMessage = Truncate(error, 1000); }
-        }
-
-        var rec = await _db.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
-        if (rec != null)
-        {
-            rec.DeliveryStatus = status;
-            if (status == "SENT") rec.SentAt = now;
-            else rec.ErrorMessage = Truncate(error, 1000);
-        }
-
-        await _db.SaveChangesAsync(ct);
-    }
-
-    private static string? Truncate(string? s, int max)
-        => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 }

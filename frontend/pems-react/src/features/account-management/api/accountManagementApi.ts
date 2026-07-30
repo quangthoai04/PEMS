@@ -9,6 +9,8 @@ import type {
   CampusDepartmentOption,
   CreateAccountRequest,
   CreateAccountResponse,
+  EditPendingAccountEmailRequest,
+  EditPendingAccountEmailResponse,
   HoCampusCheck,
   ManageAccountStatusRequest,
   ManageAccountStatusResponse,
@@ -18,6 +20,8 @@ import type {
   RelatedVisitorQueryParams,
   ReplaceStaffLeaderRequest,
   ReplaceStaffLeaderResponse,
+  ResendAccountEmailConfirmationRequest,
+  ResendAccountEmailConfirmationResponse,
   RoleAssignmentOptions,
   StaffLeaderAvailability,
   StaffLeaderReplacementPreview,
@@ -148,6 +152,40 @@ export const accountManagementApi = {
   async updateBasicAccountInfo(payload: UpdateBasicAccountInfoRequest): Promise<UpdateBasicAccountInfoResponse> {
     const { data } = await httpClient.post<UpdateBasicAccountInfoResponse>(
       API_ENDPOINTS.accounts.updateBasicInfo,
+      payload,
+    );
+    return data;
+  },
+
+  /**
+   * Re-issues the email-confirmation link for an account still awaiting confirmation. The backend
+   * supersedes the previous token (so the old link dies), enforces the cooldown and the resend cap,
+   * and reports the delivery outcome truthfully — the account stays pending either way.
+   */
+  async resendEmailConfirmation(
+    payload: ResendAccountEmailConfirmationRequest,
+  ): Promise<ResendAccountEmailConfirmationResponse> {
+    const { data } = await httpClient.post<ResendAccountEmailConfirmationResponse>(
+      API_ENDPOINTS.accounts.resendEmailConfirmation,
+      payload,
+    );
+    return data;
+  },
+
+  /**
+   * Corrects the address of an account still awaiting confirmation, optionally renaming it in the
+   * same transaction. The backend supersedes the old token and mails the SAME activation email the
+   * create flow sends to the new address — the account stays pending until its holder clicks it.
+   *
+   * Use this instead of {@link updateBasicAccountInfo} whenever a pending account's email changes:
+   * the basic-info flow only sends a "your address changed" notice, which carries no activation link
+   * and therefore leaves such an account with no way to ever log in.
+   */
+  async editPendingAccountEmail(
+    payload: EditPendingAccountEmailRequest,
+  ): Promise<EditPendingAccountEmailResponse> {
+    const { data } = await httpClient.post<EditPendingAccountEmailResponse>(
+      API_ENDPOINTS.accounts.editPendingEmail,
       payload,
     );
     return data;

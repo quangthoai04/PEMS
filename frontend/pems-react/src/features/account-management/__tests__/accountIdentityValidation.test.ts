@@ -81,7 +81,6 @@ describe('validateAccountEmail', () => {
     'user.name@gmail.com',
     'user_name-2@gmail.com',
     'user@fpt.edu.vn',
-    'user@fe.edu.vn',
     'USER@FPT.EDU.VN',
     '  User@Gmail.Com  ',
   ])('accepts %j', (value) => {
@@ -105,8 +104,19 @@ describe('validateAccountEmail', () => {
     ['abc@student.fpt.edu.vn', M.emailDomainNotAllowed],
     ['abc@gmail.com.example.com', M.emailDomainNotAllowed],
     ['abc@fakefpt.edu.vn', M.emailDomainNotAllowed],
+    // Dropped from the allowlist — HO accounts now log in with @gmail.com or @fpt.edu.vn only.
+    ['abc@fe.edu.vn', M.emailDomainNotAllowed],
+    ['abc@edu.vn', M.emailDomainNotAllowed],
+    ['abc@sub.gmail.com', M.emailDomainNotAllowed],
+    ['abc@gmail.com.vn', M.emailDomainNotAllowed],
+    ['abc@fpt.edu.vn.evil.com', M.emailDomainNotAllowed],
   ])('rejects %j', (value, expected) => {
     expect(validateAccountEmail(value)).toBe(expected);
+  });
+
+  it('states both allowed domains, and only those, in the message', () => {
+    expect(M.emailDomainNotAllowed).toBe('Chỉ chấp nhận @gmail.com và @fpt.edu.vn.');
+    expect(M.emailDomainNotAllowed).not.toContain('fe.edu.vn');
   });
 
   it('enforces the 64-character local-part limit', () => {

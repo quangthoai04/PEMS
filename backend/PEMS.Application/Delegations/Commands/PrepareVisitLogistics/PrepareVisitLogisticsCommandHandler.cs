@@ -20,8 +20,16 @@ namespace PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 
 /// <summary>
 /// Implements the Host → Department logistics request: creates the REQUESTED item, notifies the
-/// department's active leader, and emails them a login-required detail link (no public token). The
-/// logistics item is committed BEFORE the email is sent, so a transient SMTP failure never loses it.
+/// department's active leader, and emails them accept/decline/detail buttons carrying real one-time
+/// tokens. The logistics item is committed BEFORE the email is sent, so a transient SMTP failure never
+/// loses it.
+///
+/// <para>
+/// Content comes from <c>LOGISTICS_REQUEST_TO_DEPARTMENT</c> unless the Host rewrote it. There is no
+/// fallback: a missing, inactive or half-translated template fails with a stable error rather than
+/// quietly sending something this file made up — which is what used to happen, twice over
+/// (<c>SubjectVi ?? "…"</c> and a whole hard-coded body for the no-template case).
+/// </para>
 /// </summary>
 public sealed class PrepareVisitLogisticsCommandHandler
     : IRequestHandler<PrepareVisitLogisticsCommand, PrepareVisitLogisticsResponse>
@@ -29,7 +37,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IEmailActionTokenService _tokens;
     private readonly IHtmlSanitizerService _sanitizer;
     private readonly IFileStorageService _storage;
@@ -38,14 +46,14 @@ public sealed class PrepareVisitLogisticsCommandHandler
 
     public PrepareVisitLogisticsCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IEmailService email, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
+        ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
         IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
         PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
-        _email = email;
+        _dispatcher = dispatcher;
         _tokens = tokens;
         _sanitizer = sanitizer;
         _storage = storage;
@@ -122,7 +130,9 @@ public sealed class PrepareVisitLogisticsCommandHandler
             throw new ValidationException("Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).");
 
         // Offline-coordinated requests don't send an email, so any email override is ignored.
-        var editedContent = offline ? null : ValidateAndSanitizeOverride(request.EmailOverride);
+        var content = offline
+            ? SystemEmailContent.FromTemplate.Instance
+            : await ResolveContentAsync(request.EmailOverride, cancellationToken);
         var attachInputs = offline
             ? System.Array.Empty<EmailDraftAttachmentInput>()
             : OutboundEmailAttachments.From(request.EmailOverride);
@@ -138,11 +148,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
         var requesterName = await _db.Users
             .Where(u => u.UserId == actorId).Select(u => u.FullName)
             .FirstOrDefaultAsync(cancellationToken) ?? "Host";
-
-        var template = await _db.EmailTemplates
-            .Where(t => t.TemplateCode == EmailActionTemplates.LogisticsRequestToDepartment)
-            .FirstOrDefaultAsync(cancellationToken);
-        var templateId = template?.EmailTemplateId;
 
         var now = _clock.VietnamNow;
         var itemType = request.ItemType.Trim().ToUpperInvariant();
@@ -177,10 +182,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         }
 
         VisitLogisticsItem item;
-        ulong sentEmailId = 0;
-        ulong sentEmailRecipientId = 0;
-        string finalSubject = string.Empty;
-        string finalBody = string.Empty;
+        PreparedSystemEmail? prepared = null;
 
         await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
         {
@@ -220,78 +222,41 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
                 var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
 
-                if (editedContent != null)
-                {
-                    finalSubject = request.EmailOverride!.Subject!.Trim();
-                    var content = EmailComposition.StripActionArtifacts(editedContent);
-                    finalBody = EmailComposition.BrandedShell(content + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
-                }
-                else if (template != null)
-                {
-                    var context = new System.Collections.Generic.Dictionary<string, string>
+                // Render + record, inside this transaction. The caller supplies the FINAL display value
+                // for every declared variable: a renderer that substitutes "Chưa có thông tin" for a
+                // value nobody passed is a fallback, and a fallback is how a template edit stops mattering.
+                prepared = await _dispatcher.PrepareAsync(
+                    new SystemEmailRequest(
+                        SystemEmailTemplates.LogisticsRequestToDepartment,
+                        new EmailRecipient(leaderEmail!, leaderName),
+                        new System.Collections.Generic.Dictionary<string, string>
+                        {
+                            ["departmentLeaderName"] = leaderName ?? string.Empty,
+                            ["requesterName"] = requesterName,
+                            ["logisticsTitle"] = item.Title,
+                            ["logisticsItemType"] = item.ItemType,
+                            ["quantity"] = item.Quantity?.ToString() ?? "Chưa nhập",
+                            ["usageStartAt"] = FormatMoment(usageStart) ?? "Chưa chọn thời gian",
+                            ["usageEndAt"] = FormatMoment(usageEnd) ?? "Chưa chọn thời gian",
+                            ["dueAt"] = FormatMoment(dueAt) ?? "Chưa đặt hạn",
+                            ["coordinationNote"] = string.IsNullOrWhiteSpace(item.Description)
+                                ? "Không có ghi chú phối hợp."
+                                : item.Description!,
+                        },
+                        TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>
+                        {
+                            [EmailTrustedBlocks.ActionBlock] =
+                                EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl),
+                        },
+                        RelatedType: EmailActionTargetTypes.LogisticsItem,
+                        RelatedId: item.LogisticsItemId,
+                        SentBy: actorId)
                     {
-                        { "departmentLeaderName", leaderName ?? string.Empty },
-                        { "departmentHeadName", leaderName ?? string.Empty },
-                        { "requesterName", requesterName },
-                        { "DelegationName", delegationName },
-                        { "visitName", delegationName },
-                        { "CampusName", campusName },
-                        { "campusName", campusName },
-                        { "logisticsTitle", item.Title },
-                        { "logisticsItemTitle", item.Title },
-                        { "itemType", item.ItemType },
-                        { "quantity", item.Quantity?.ToString() ?? "—" },
-                        { "usageStartAt", usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
-                        { "usageEndAt", usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—" },
-                        { "detailUrl", detailUrl }
-                    };
-                    finalSubject = EmailComposition.RenderTemplate(template.SubjectVi ?? $"[PEMS] Yêu cầu hậu cần mới — {item.Title}", context, "LOGISTICS_REQUEST");
-                    var contentHtml = EmailComposition.RenderTemplate(template.BodyVi ?? string.Empty, context, "LOGISTICS_REQUEST");
-                    
-                    // The DB template might contain old detail link HTML. We strip it and always append the full 3-button logistics action block.
-                    contentHtml = EmailComposition.StripActionArtifacts(contentHtml);
-                    contentHtml += EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl);
+                        Content = content,
+                    },
+                    cancellationToken);
 
-                    finalBody = EmailComposition.BrandedShell(contentHtml);
-                }
-                else
-                {
-                    finalSubject = $"[PEMS] Yêu cầu hậu cần mới — {item.Title}";
-                    finalBody = EmailComposition.BrandedShell(
-                        DefaultContentHtml(leaderName!, requesterName, delegationName, campusName, item, usageStart, usageEnd)
-                        + EmailComposition.LogisticsActionBlock(acceptUrl, declineUrl, detailUrl));
-                }
-
-                finalBody = await _normalizer.NormalizeHtmlAsync(finalBody, cancellationToken);
-
-                var sentEmail = new SentEmail
-                {
-                    EmailTemplateId = templateId,
-                    RelatedType = EmailActionTargetTypes.LogisticsItem,
-                    RelatedId = item.LogisticsItemId,
-                    Subject = finalSubject,
-                    BodySnapshot = finalBody,
-                    BodyFormat = PEMS.Domain.Enums.EmailBodyFormat.HTML,
-                    Status = "QUEUED",
-                    SentBy = actorId,
-                    CreatedAt = now,
-                };
-                // Inline images + file attachments (cascade-insert with the sent_emails row).
-                OutboundEmailAttachments.Attach(sentEmail, attachInputs, now);
-                _db.SentEmails.Add(sentEmail);
-                await _db.SaveChangesAsync(cancellationToken);
-
-                var sentRecipient = new SentEmailRecipient
-                {
-                    SentEmailId = sentEmail.SentEmailId,
-                    RecipientEmail = leaderEmail!,
-                    RecipientName = leaderName!,
-                    RecipientType = "TO",
-                    DeliveryStatus = "QUEUED",
-                    CreatedAt = now,
-                };
-                _db.SentEmailRecipients.Add(sentRecipient);
-                await _db.SaveChangesAsync(cancellationToken);
+                AttachTo(prepared.SentEmailId, attachInputs, now);
 
                 await _notificationService.CreateAsync(
                     new PEMS.Application.Notifications.Common.CreateNotificationRequest(
@@ -312,16 +277,11 @@ public sealed class PrepareVisitLogisticsCommandHandler
                     cancellationToken
                 );
 
-                // Flush changes so sentEmail and sentRecipient get their autoincrement IDs
-                await _db.SaveChangesAsync(cancellationToken);
-
-                // Insert Email Action Tokens for Accept/Decline using the generated IDs
-                _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, item.LogisticsItemId, leaderUserId.Value, leaderEmail!, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
-                _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, item.LogisticsItemId, leaderUserId.Value, leaderEmail!, sentEmail.SentEmailId, sentRecipient.SentEmailRecipientId, now));
+                // Accept/decline tokens, pointing at the message the dispatcher just recorded.
+                _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, item.LogisticsItemId, leaderUserId.Value, leaderEmail!, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
+                _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, item.LogisticsItemId, leaderUserId.Value, leaderEmail!, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
 
                 await _db.SaveChangesAsync(cancellationToken);
-                sentEmailId = sentEmail.SentEmailId;
-                sentEmailRecipientId = sentRecipient.SentEmailRecipientId;
             }
 
             _db.AuditLogs.Add(new AuditLog
@@ -344,77 +304,98 @@ public sealed class PrepareVisitLogisticsCommandHandler
                 true, true, item.LogisticsItemId, "SKIPPED", 0,
                 "Đã lưu yêu cầu hậu cần (đã trao đổi bên ngoài hệ thống).");
 
-        string emailStatus;
+        EmailDeliveryResult delivery;
         try
         {
             // Real MIME path (HTML body) with the host's inline images (cid) + file attachments
             // streamed from storage (Google Drive / local) once and reused.
             var outboundAttachments = await OutboundEmailAttachments.LoadAsync(_db, _storage, attachInputs, cancellationToken);
-            await _email.SendAsync(new PEMS.Application.Common.Interfaces.OutboundEmail
-            {
-                ToEmail = leaderEmail!,
-                Subject = finalSubject,
-                Body = finalBody,
-                IsHtml = true,
-                Attachments = outboundAttachments,
-            }, cancellationToken);
-            emailStatus = "SENT";
-            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "SENT", actorId, now, null, cancellationToken);
+            delivery = await _dispatcher.DeliverAsync(
+                prepared! with { Attachments = outboundAttachments }, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            emailStatus = "FAILED";
-            await UpdateEmailStatusAsync(sentEmailId, sentEmailRecipientId, "FAILED", actorId, now, ex.Message, cancellationToken);
+            // The exception text is not recorded: a storage failure can name a path or a signed URL, and
+            // this message is shown in the email history.
+            delivery = EmailDeliveryResult.Failed(
+                "ATTACHMENT_LOAD_FAILED", "Không đọc được tệp đính kèm khi gửi email.");
+            await MarkDeliveryFailedAsync(prepared!, delivery.SafeMessage, now, cancellationToken);
         }
 
-        var message = emailStatus == "SENT"
-            ? "Đã gửi yêu cầu hậu cần."
-            : "Đã tạo yêu cầu hậu cần nhưng gửi email thất bại.";
+        var emailStatus = new SystemEmailDispatchResult(
+            delivery, prepared!.SentEmailId, prepared.EmailTemplateId).NotificationStatus;
 
-        return new PrepareVisitLogisticsResponse(true, true, item.LogisticsItemId, emailStatus, sentEmailId, message);
+        var message = delivery.Status switch
+        {
+            EmailDeliveryStatus.Sent => "Đã gửi yêu cầu hậu cần.",
+            EmailDeliveryStatus.Skipped => "Đã tạo yêu cầu hậu cần; email chưa được gửi (SMTP đang tắt).",
+            _ => "Đã tạo yêu cầu hậu cần nhưng gửi email thất bại.",
+        };
+
+        return new PrepareVisitLogisticsResponse(
+            true, true, item.LogisticsItemId, emailStatus, prepared.SentEmailId, message);
     }
 
-    private string? ValidateAndSanitizeOverride(EmailOverride? ov)
+    /// <summary>
+    /// Turns the optional Host edit into a content mode. Validation and sanitising happen inside
+    /// <see cref="SystemEmailContent.AuthoredByUser.Create"/>, which is the only way to build the type.
+    /// </summary>
+    private async Task<SystemEmailContent> ResolveContentAsync(EmailOverride? ov, CancellationToken ct)
     {
-        if (ov is null || !ov.UseEditedContent) return null;
-        if (string.IsNullOrWhiteSpace(ov.Subject))
-            throw new ValidationException("Tiêu đề email không được để trống.");
-        if (ov.Subject.Trim().Length > EmailOverrideLimits.SubjectMax)
-            throw new ValidationException($"Tiêu đề email tối đa {EmailOverrideLimits.SubjectMax} ký tự.");
+        if (ov is null || !ov.UseEditedContent) return SystemEmailContent.FromTemplate.Instance;
 
-        // Prefer the host-edited plain text (bodyText) → safe HTML; fall back to legacy bodyHtml.
-        var rawHtml = EmailComposition.ResolveEditableHtml(ov);
-        if (string.IsNullOrWhiteSpace(rawHtml))
-            throw new ValidationException("Nội dung email không được để trống.");
-        if (rawHtml.Length > EmailOverrideLimits.BodyMax)
-            throw new ValidationException($"Nội dung email vượt quá {EmailOverrideLimits.BodyMax} ký tự.");
-        // Email-profile sanitize so inline-image <img src="cid:..."> + data-* refs survive.
-        var sanitized = _sanitizer.SanitizeEmailHtml(rawHtml);
-        if (string.IsNullOrWhiteSpace(sanitized))
-            throw new ValidationException("Nội dung email không hợp lệ sau khi lọc.");
-        return sanitized;
+        // Inline images are normalised BEFORE the content is fixed — the normaliser exists for images
+        // the Host pasted, and the template body has none.
+        var rawHtml = await _normalizer.NormalizeHtmlAsync(EmailComposition.ResolveEditableHtml(ov), ct);
+        return SystemEmailContent.AuthoredByUser.Create(ov.Subject, rawHtml, _sanitizer);
     }
 
-    private static string DefaultContentHtml(
-        string leaderName, string requesterName, string delegationName, string campusName,
-        VisitLogisticsItem item, DateTime? usageStart, DateTime? usageEnd)
+    /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
+    private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput> inputs, DateTime now)
     {
-        string HE(string? s) => EmailComposition.HE(s);
-        var usage = (usageStart.HasValue || usageEnd.HasValue)
-            ? $"<li><strong>Thời gian sử dụng:</strong> {HE(usageStart?.ToString("HH:mm dd/MM/yyyy") ?? "—")} - {HE(usageEnd?.ToString("HH:mm dd/MM/yyyy") ?? "—")}</li>"
-            : string.Empty;
-        var qty = item.Quantity.HasValue ? $"<li><strong>Số lượng dự kiến:</strong> {item.Quantity}</li>" : string.Empty;
-        return $@"<p>Xin chào <strong>{HE(leaderName)}</strong>,</p>
-<p>Host <strong>{HE(requesterName)}</strong> đã gửi một yêu cầu hậu cần cho đoàn <strong>{HE(delegationName)}</strong> tại {HE(campusName)}.</p>
-<div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0"">
-  <ul style=""margin:0;padding-left:20px;line-height:1.7"">
-    <li><strong>Hạng mục:</strong> {HE(item.Title)} ({HE(item.ItemType)})</li>
-    {qty}
-    {usage}
-  </ul>
-</div>
-<p>Vui lòng đăng nhập hệ thống để tiếp nhận, đề xuất thay đổi hoặc phân công nhân sự xử lý.</p>";
+        var order = 0;
+        foreach (var a in inputs)
+        {
+            _db.SentEmailAttachments.Add(new SentEmailAttachment
+            {
+                SentEmailId = sentEmailId,
+                FileId = a.FileId,
+                AttachmentType = EmailDraftWriter.ParseAttachmentType(a.AttachmentType),
+                ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId!.Trim(),
+                DisplayName = a.DisplayName,
+                DisplayOrder = a.DisplayOrder > 0 ? (uint)a.DisplayOrder : (uint)order,
+                CreatedAt = now,
+            });
+            order++;
+        }
     }
+
+    /// <summary>Records a failure that happened before the sender was reached at all.</summary>
+    private async Task MarkDeliveryFailedAsync(
+        PreparedSystemEmail prepared, string? safeMessage, DateTime now, CancellationToken ct)
+    {
+        var sentEmail = await _db.SentEmails
+            .FirstOrDefaultAsync(e => e.SentEmailId == prepared.SentEmailId, ct);
+        if (sentEmail is not null)
+        {
+            sentEmail.Status = "FAILED";
+            sentEmail.LastAttemptAt = now;
+            sentEmail.ErrorMessage = safeMessage;
+        }
+
+        var rec = await _db.SentEmailRecipients
+            .FirstOrDefaultAsync(r => r.SentEmailRecipientId == prepared.SentEmailRecipientId, ct);
+        if (rec is not null)
+        {
+            rec.DeliveryStatus = "FAILED";
+            rec.ErrorMessage = safeMessage;
+        }
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string? FormatMoment(DateTime? value)
+        => value?.ToString("HH:mm dd/MM/yyyy");
 
     private static DateTime? ParseLocal(string? value)
     {
@@ -423,32 +404,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
             ? DateTime.SpecifyKind(dt, DateTimeKind.Unspecified)
             : (DateTime?)null;
     }
-
-    private async Task UpdateEmailStatusAsync(
-        ulong sentEmailId, ulong sentEmailRecipientId, string status, ulong actorId, DateTime now,
-        string? error, CancellationToken ct)
-    {
-        var sentEmail = await _db.SentEmails.FirstOrDefaultAsync(e => e.SentEmailId == sentEmailId, ct);
-        if (sentEmail != null)
-        {
-            sentEmail.Status = status;
-            sentEmail.LastAttemptAt = now;
-            sentEmail.RetryCount += 1;
-            if (status == "SENT") { sentEmail.SentBy = actorId; sentEmail.SentAt = now; }
-            else { sentEmail.ErrorMessage = Truncate(error, 1000); }
-        }
-        var rec = await _db.SentEmailRecipients.FirstOrDefaultAsync(r => r.SentEmailRecipientId == sentEmailRecipientId, ct);
-        if (rec != null)
-        {
-            rec.DeliveryStatus = status;
-            if (status == "SENT") rec.SentAt = now;
-            else rec.ErrorMessage = Truncate(error, 1000);
-        }
-        await _db.SaveChangesAsync(ct);
-    }
-
-    private static string? Truncate(string? s, int max)
-        => string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 
     private static EmailActionToken NewToken(
         string tokenHash, string intendedAction, string groupKey,

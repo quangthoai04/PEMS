@@ -10,6 +10,8 @@ using PEMS.Application.Reports.Queries.GetStaffLeaderReportV2;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReport;
 using PEMS.Application.Reports.Commands.SendStaffLeaderPersonnelReport;
 using PEMS.Application.Reports.Commands.SendStaffLeaderDepartmentReport;
+using PEMS.Application.Reports.Commands.SendStaffLeaderDeptInvoice;
+using PEMS.Application.Reports.Commands.SendDeptLeaderInvoiceToStaffLeader;
 using PEMS.Application.Reports.Commands.ExportStaffLeaderReportV2;
 using PEMS.Application.Reports.Queries.GetHoReportV2;
 using PEMS.Application.Reports.Commands.SendHoCampusReport;
@@ -125,6 +127,21 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// Gửi hóa đơn hậu cần của 1 phòng ban qua email cho trưởng phòng đó (Staff Leader).
+        /// Phòng ban đến từ route; campus suy từ người gọi và được handler kiểm tra — người gọi
+        /// không chọn được người nhận.
+        /// </summary>
+        [HttpPost("staff-leader-report-v2/departments/{departmentId}/send-invoice")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        public async Task<IActionResult> SendStaffLeaderDeptInvoice(
+            ulong departmentId, [FromBody] SendStaffLeaderDeptInvoiceCommand command, CancellationToken cancellationToken)
+        {
+            command.DepartmentId = departmentId;
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         /// <summary>Gửi email báo cáo hiệu suất cá nhân cho 1 nhân sự/student (Staff Leader).</summary>
         [HttpPost("staff-leader-report-v2/send-personnel-report")]
         [RoleAuthorize(EffectiveRole.StaffLeader)]
@@ -178,6 +195,20 @@ namespace PEMS.Api.Controllers
         [RoleAuthorize(EffectiveRole.DepartmentLead)]
         public async Task<IActionResult> SendDeptLeaderPersonnelReport(
             [FromBody] SendDeptLeaderPersonnelReportCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Gửi hóa đơn hậu cần đã hoàn thành lên Staff Leader của campus (Department Leader).
+        /// Phòng ban suy từ người gọi và Staff Leader nhận thư do backend xác định theo campus —
+        /// request không có trường nào để chọn phòng ban khác hay người nhận khác.
+        /// </summary>
+        [HttpPost("dept-leader-report-v2/send-invoice")]
+        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        public async Task<IActionResult> SendDeptLeaderInvoiceToStaffLeader(
+            [FromBody] SendDeptLeaderInvoiceToStaffLeaderCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
@@ -237,26 +268,39 @@ namespace PEMS.Api.Controllers
             return File(result.Content, result.ContentType, result.FileName);
         }
 
+        // ── UC-69..71 dashboard statistics: declared, not built ──────────────
+        //
+        // The three handlers behind these URLs are scaffolds that throw NotImplementedException, so
+        // every call used to surface as a 500 — an unhandled fault, indistinguishable in logs and
+        // monitoring from a real one. 501 says the same thing truthfully: the route exists, the
+        // feature does not.
+        //
+        // Deliberately NOT decided here: who may call them. PERMISSION_MATRIX §5.11 and
+        // PROJECT_OVERVIEW FE-08 disagree on both the role set and the UC ids (R-104), and answering
+        // 501 for every authenticated role settles nothing by implementation. The class-level
+        // [Authorize] still holds, so an anonymous caller is challenged before reaching this.
+
+        /// <summary>Stable code for the three unbuilt dashboard routes — the contract clients may branch on.</summary>
+        public const string DashboardNotImplementedErrorCode = "REPORT_DASHBOARD_NOT_IMPLEMENTED";
+
+        private IActionResult NotImplementedYet() => StatusCode(
+            StatusCodes.Status501NotImplemented,
+            new
+            {
+                success = false,
+                errorCode = DashboardNotImplementedErrorCode,
+                message = "Chức năng này chưa được triển khai.",
+                traceId = System.Diagnostics.Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+            });
+
         [HttpGet("viewdashboardstatistics")]
-        public async Task<IActionResult> ViewDashboardStatistics([FromQuery] PEMS.Application.Reports.Queries.ViewDashboardStatistics.ViewDashboardStatisticsQuery query, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult ViewDashboardStatistics() => NotImplementedYet();
 
         [HttpPost("exportstatisticsreport")]
-        public async Task<IActionResult> ExportStatisticsReport([FromBody] PEMS.Application.Reports.Commands.ExportStatisticsReport.ExportStatisticsReportCommand command, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult ExportStatisticsReport() => NotImplementedYet();
 
         [HttpGet("filterdashboardbytime")]
-        public async Task<IActionResult> FilterDashboardByTime([FromQuery] PEMS.Application.Reports.Queries.FilterDashboardByTime.FilterDashboardByTimeQuery query, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
+        public IActionResult FilterDashboardByTime() => NotImplementedYet();
 
     }
 }

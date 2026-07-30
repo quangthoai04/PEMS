@@ -123,6 +123,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<EmailDraftRecipient> EmailDraftRecipients { get; set; }
     public DbSet<EmailDraftAttachment> EmailDraftAttachments { get; set; }
     public DbSet<EmailActionToken> EmailActionTokens { get; set; }
+    public DbSet<EmailSendIdempotency> EmailSendIdempotencies { get; set; }
     public DbSet<Notification> Notifications { get; set; }
 
     // ── Calendar + Agenda Template ────────────────────────────────────────

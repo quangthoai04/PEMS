@@ -1,9 +1,10 @@
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
-using Moq;
 using PEMS.Application.Accounts.Commands.UpdateBasicAccountInfo;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.UnitTests.TestInfrastructure;
@@ -37,33 +38,26 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         };
         public FakeDateTimeService Clock { get; } = new();
         public RecordingSessionService Sessions { get; }
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
         public UpdateBasicAccountInfoCommandHandler Handler { get; }
 
-        /// <summary>Every (to, subject, body) sent through IEmailService.SendAsync, in order.</summary>
-        public List<(string To, string Subject, string Body)> Sent { get; } = new();
-
-        /// <summary>Addresses whose send should throw (simulates an SMTP failure). Empty = all succeed.</summary>
+        /// <summary>Addresses whose send should fail (simulates an SMTP failure). Empty = all succeed.</summary>
         public HashSet<string> FailFor { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public Harness()
         {
             Sessions = new RecordingSessionService(Db);
-            Email.Setup(e => e.SendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns((string to, string subject, string body, CancellationToken _) =>
-                {
-                    Sent.Add((to, subject, body));
-                    return FailFor.Contains(to)
-                        ? Task.FromException(new InvalidOperationException("SMTP down"))
-                        : Task.CompletedTask;
-                });
+            Dispatcher.OutcomeFor = r => FailFor.Contains(r.To.Email)
+                ? EmailDeliveryResult.Failed("SMTP_SEND_FAILED", "SMTP down")
+                : EmailDeliveryResult.Sent();
             Handler = new UpdateBasicAccountInfoCommandHandler(
-                Db, Actor, new RoleAccessPolicy(), Sessions, Clock, Email.Object);
+                Db, Actor, new RoleAccessPolicy(), Sessions, Clock, Dispatcher);
         }
 
-        public (string To, string Subject, string Body) SentTo(string email)
-            => Sent.Single(m => string.Equals(m.To, email, StringComparison.OrdinalIgnoreCase));
+        public List<SystemEmailRequest> Sent => Dispatcher.Sent;
+
+        public SystemEmailRequest SentTo(string email)
+            => Sent.Single(m => string.Equals(m.To.Email, email, StringComparison.OrdinalIgnoreCase));
 
         public Task<UpdateBasicAccountInfoResponse> Run(UpdateBasicAccountInfoCommand cmd)
             => Handler.Handle(cmd, CancellationToken.None);
@@ -259,24 +253,20 @@ public class UpdateBasicAccountInfoCommandHandlerTests
             Email = "new.leader@fpt.edu.vn",
         });
 
+        // The address being unlinked may belong to somebody with no connection to the account, so the
+        // notice is anonymous BY CONSTRUCTION: the template declares no variables and the handler passes
+        // none, so there is no holder name, no new address and no role/campus/department to leak — not
+        // even a display name on the envelope. (The wording itself lives in the template; that it renders
+        // with nothing unresolved is proven in the renderer + seed-contract integration tests.)
         var mail = h.SentTo("old.leader@fpt.edu.vn");
-        Assert.Equal("Địa chỉ email này đã được gỡ khỏi một tài khoản PEMS", mail.Subject);
-        // Anonymous: no new address, no holder name, no role label / campus / department, no id.
-        // ("Staff Leader" as a bare phrase legitimately appears in the "contact your Staff Leader"
-        //  instruction, so we assert the account's full role LABEL is absent, not that word.)
-        Assert.DoesNotContain("new.leader@fpt.edu.vn", mail.Body);
-        Assert.DoesNotContain("Trần Văn Lãnh Đạo", mail.Body);
-        Assert.DoesNotContain("Staff Leader — Trưởng phòng IC", mail.Body);
-        Assert.DoesNotContain("Phòng Hợp tác Quốc tế", mail.Body);
-        Assert.DoesNotContain("Campus 1", mail.Body);
-        Assert.DoesNotContain("830", mail.Body);
-        // But it does say the address is unlinked and sessions were revoked.
-        Assert.Contains("không còn được sử dụng để đăng nhập", mail.Body);
-        Assert.Contains("thu hồi", mail.Body);
+        Assert.Equal(SystemEmailTemplates.AccountEmailChangedOldNotice, mail.TemplateCode);
+        Assert.Empty(mail.Variables);
+        Assert.Null(mail.TrustedBlocks);
+        Assert.Null(mail.To.DisplayName);
     }
 
     [Fact]
-    public async Task EmailChange_StaffLeaderNewAddressMail_ShowsFullAccountSnapshot()
+    public async Task EmailChange_NewAddressMail_NamesTheHolder_AndMasksTheOldAddress()
     {
         var h = CreateHarness();
         h.Db.Users.Add(StaffLeaderWithDepartment(h, 830, "old.leader@fpt.edu.vn", "Phòng IC"));
@@ -290,22 +280,19 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         });
 
         var mail = h.SentTo("leader.new@fpt.edu.vn");
-        Assert.Equal("Email đăng nhập tài khoản PEMS của bạn đã được cập nhật", mail.Subject);
-        Assert.Contains("Nguyễn Thị Trưởng Phòng", mail.Body);
-        Assert.Contains("leader.new@fpt.edu.vn", mail.Body);
-        Assert.Contains("Staff Leader — Trưởng phòng IC", mail.Body);
-        Assert.Contains("Campus 1", mail.Body);            // campus name from DB
-        Assert.Contains("Phòng IC", mail.Body);            // department name from DB
-        Assert.DoesNotContain("old.leader@fpt.edu.vn", mail.Body);
-        Assert.Contains("SSO, Google hoặc FEID", mail.Body);
-        Assert.Contains("thu hồi", mail.Body);
+        Assert.Equal(SystemEmailTemplates.AccountEmailChangedNewNotice, mail.TemplateCode);
+        Assert.Equal("Nguyễn Thị Trưởng Phòng", mail.Variables["fullName"]);
+        // The holder is entitled to know WHICH address was unlinked, but the mail carries only enough of
+        // it to recognise — never the address in full.
+        Assert.Equal("ol***@fpt.edu.vn", mail.Variables["oldEmailMasked"]);
+        Assert.DoesNotContain(mail.Variables.Values, v => v.Contains("old.leader@fpt.edu.vn"));
     }
 
     [Fact]
-    public async Task EmailChange_HoNewAddressMail_OmitsDepartmentLine_NoNullText()
+    public async Task EmailChange_SendsExactlyTwoMessages_OneToEachAddress()
     {
         var h = CreateHarness();
-        h.Db.Users.Add(Ho(840, "old.ho2@fpt.edu.vn"));   // HO has no department
+        h.Db.Users.Add(Ho(840, "old.ho2@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         await h.Run(new UpdateBasicAccountInfoCommand
@@ -315,12 +302,12 @@ public class UpdateBasicAccountInfoCommandHandlerTests
             Email = "ho2.new@fpt.edu.vn",
         });
 
-        var mail = h.SentTo("ho2.new@fpt.edu.vn");
-        Assert.Contains("Head Office", mail.Body);
-        Assert.Contains("Campus 1", mail.Body);
-        Assert.DoesNotContain("Phòng ban:", mail.Body);   // department line dropped entirely
-        Assert.DoesNotContain("null", mail.Body);
-        Assert.DoesNotContain("old.ho2@fpt.edu.vn", mail.Body);
+        // One message per person — never one message addressing both, which would hand each of them the
+        // other's address.
+        Assert.Equal(2, h.Sent.Count);
+        Assert.Equal(
+            new[] { "ho2.new@fpt.edu.vn", "old.ho2@fpt.edu.vn" },
+            h.Sent.Select(m => m.To.Email).OrderBy(e => e, StringComparer.Ordinal).ToArray());
     }
 
     [Theory]
@@ -355,29 +342,26 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     }
 
     [Fact]
-    public async Task EmailChange_NewAddressMail_HtmlEncodesDynamicValues_NoInjection()
+    public async Task EmailChange_PassesVariablesRaw_LeavingTheEncodingToTheRenderer()
     {
-        // The department name comes straight from the DB (this command never validates it), so it is
-        // the realistic injection vector — full name is already restricted to letters/spaces/./'/-
-        // by the identity validator, which rejects markup upstream.
+        // Escaping now happens in exactly ONE place — the renderer HTML-encodes every variable value
+        // before substituting it (proven against a real template in EmailTemplateRendererTests). A
+        // handler that pre-encoded here would double-escape, so the contract is: pass the value as it
+        // is in the database and let the renderer do its job.
         var h = CreateHarness();
-        h.Db.Users.Add(StaffLeaderWithDepartment(h, 830, "old.leader@fpt.edu.vn", "R&D <script>Phòng</script>"));
+        h.Db.Users.Add(Ho(860, "r&d.old@fpt.edu.vn"));
         h.Db.SaveChanges();
 
         await h.Run(new UpdateBasicAccountInfoCommand
         {
-            UserId = 830,
+            UserId = 860,
             FullName = "Lê Văn Ánh",
             Email = "encode.new@fpt.edu.vn",
         });
 
         var mail = h.SentTo("encode.new@fpt.edu.vn");
-        // The raw markup must never reach the body verbatim.
-        Assert.DoesNotContain("<script>", mail.Body);
-        Assert.DoesNotContain("R&D <script>", mail.Body);
-        // It appears encoded instead — while Vietnamese stays readable.
-        Assert.Contains("R&amp;D &lt;script&gt;Phòng&lt;/script&gt;", mail.Body);
-        Assert.Contains("Lê Văn Ánh", mail.Body);
+        Assert.Equal("Lê Văn Ánh", mail.Variables["fullName"]);           // not "L&#234;..."
+        Assert.Equal("r&***@fpt.edu.vn", mail.Variables["oldEmailMasked"]); // not "r&amp;***@..."
     }
 
     // ── Guards ────────────────────────────────────────────────────────────────
@@ -468,7 +452,9 @@ public class UpdateBasicAccountInfoCommandHandlerTests
 
     [Theory]
     [InlineData("Nguyễn Văn Tám Mười", "target@yahoo.com")]              // domain not allowed
+    [InlineData("Nguyễn Văn Tám Mười", "target@fe.edu.vn")]              // dropped from the allowlist
     [InlineData("Nguyễn Văn Tám Mười", "target@student.fpt.edu.vn")]     // subdomain, not exact
+    [InlineData("Nguyễn Văn Tám Mười", "target@gmail.com.vn")]           // look-alike, not exact
     [InlineData("Nguyễn Văn Tám Mười", "target+test@gmail.com")]         // plus addressing
     [InlineData("Nguyễn Văn Tám Mười", "abc..def@gmail.com")]            // malformed local-part
     [InlineData("Nguyễn Văn 123", "target.ho@fpt.edu.vn")]               // digits in the name
@@ -484,9 +470,13 @@ public class UpdateBasicAccountInfoCommandHandlerTests
             UserId = 810, FullName = fullName, Email = email,
         }));
 
+        // The rejection happens before any mutation: the address stands, no session is cut, nobody
+        // is notified and no success audit is written.
         var user = await h.Db.Users.SingleAsync(u => u.UserId == 810);
         Assert.Equal("target.ho@fpt.edu.vn", user.Email);
         Assert.Empty(h.Sessions.RevokeAllCalls);
+        Assert.Empty(h.Sent);
+        Assert.False(await h.Db.AuditLogs.AnyAsync());
     }
 
     /// <summary>Re-saving the target's own email must not trip the uniqueness check (§5.6).</summary>

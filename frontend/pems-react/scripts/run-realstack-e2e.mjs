@@ -18,7 +18,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,6 +97,20 @@ const MIN_EXPECTED_TABLES = 70;
 const workDir = mkdtempSync(join(tmpdir(), 'pems-e2e-'));
 const publishDir = join(workDir, 'api');
 const inbox = join(workDir, 'inbox.jsonl');
+/**
+ * Opt-in SMTP PICKUP mode (`PEMS_E2E_SMTP_PICKUP=1`).
+ *
+ * The default FileSink records the three envelope groups separately, which is the only way to show a
+ * BCC address was ADDRESSED — no MIME message records that, by design. Pickup mode is its opposite
+ * number: the real `EmailService` serialises each message to a real `.eml`, so the run can show a BCC
+ * address appears in NO header. Both are needed, and no single artefact can carry both properties.
+ *
+ * `SmtpDeliveryMethod.SpecifiedPickupDirectory` writes files and never opens a connection — this is
+ * still "no real SMTP, no real mail". Host/User/Password are blanked as well so that remains true even
+ * if the dispatch path is changed later.
+ */
+const smtpPickup = process.env.PEMS_E2E_SMTP_PICKUP === '1';
+const pickupDir = join(workDir, 'pickup');
 // Fail-closed E2E test-auth: a fresh run-scoped secret (never on disk, never logged) + a server-side profile
 // file (opaque keys → seeded identities, NO secret) written under the temp workDir and deleted in cleanup.
 const authSecret = randomBytes(32).toString('hex');
@@ -144,19 +158,26 @@ const assertTargetPopulated = () => {
 // Resolve the seeded identities (by stable email) and write the opaque-key → identity profile file. The
 // browser only ever sends a profile KEY + the run secret; role/campus come from HERE, never a header.
 const writeAuthProfiles = () => {
+  // department_id is selected because the department flows (personnel management, logistics) resolve
+  // scope from the DepartmentId claim — a profile without it authenticates but has no department, and
+  // every department-scoped endpoint refuses it for the wrong reason.
   const q = spawnSync(MYSQL, [`-u${MYSQL_USER}`, `-p${MYSQL_PW}`, `-h${MYSQL_HOST}`, `-P${MYSQL_PORT}`,
     '-N', '-B', '--default-character-set=utf8mb4', DB, '-e',
-    "SELECT u.user_id, u.email, r.role_code, COALESCE(u.sub_role,''), COALESCE(u.primary_campus_id,'') " +
+    "SELECT u.user_id, u.email, r.role_code, COALESCE(u.sub_role,''), COALESCE(u.primary_campus_id,''), " +
+    "COALESCE(u.department_id,'') " +
     "FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.email IN " +
-    "('ho@fpt.edu.vn','staff.leader.hn@fpt.edu.vn','staff.leader.hcm@fpt.edu.vn','visitor@example.com')"],
+    "('ho@fpt.edu.vn','staff.leader.hn@fpt.edu.vn','staff.leader.hcm@fpt.edu.vn','visitor@example.com'," +
+    "'dept.leader.hn@fpt.edu.vn','dept.hn@fpt.edu.vn'," +
+    "'facilities.leader.hn@fpt.edu.vn','facilities.staff.hn@fpt.edu.vn')"],
     { encoding: 'utf8' });
   if (q.status !== 0) throw new Error(`auth profile seed query failed: ${q.stderr}`);
   const byEmail = {};
   for (const line of q.stdout.trim().split('\n').filter(Boolean)) {
-    const [userId, email, roleCode, subRole, campus] = line.split('\t');
+    const [userId, email, roleCode, subRole, campus, dept] = line.split('\t');
     byEmail[email] = {
       userId: Number(userId), email, roleCode,
       subRole: subRole || null, primaryCampusId: campus ? Number(campus) : null,
+      departmentId: dept ? Number(dept) : null,
     };
   }
   const pick = (key, email) => {
@@ -169,6 +190,13 @@ const writeAuthProfiles = () => {
     pick('campus_leader_hn', 'staff.leader.hn@fpt.edu.vn'),
     pick('campus_leader_hcm', 'staff.leader.hcm@fpt.edu.vn'),
     pick('visitor_owner', 'visitor@example.com'),
+    // Two GENERAL departments on campus 1, each with its own Leader and Staff. Two are needed rather
+    // than one: cross-department refusal is only a real test when the other department actually exists
+    // and is populated, otherwise "no data" and "correctly denied" look identical from the browser.
+    pick('dept_leader_hn', 'dept.leader.hn@fpt.edu.vn'),           // Đào tạo HN
+    pick('dept_staff_hn', 'dept.hn@fpt.edu.vn'),
+    pick('facilities_leader_hn', 'facilities.leader.hn@fpt.edu.vn'), // Cơ sở vật chất HN
+    pick('facilities_staff_hn', 'facilities.staff.hn@fpt.edu.vn'),
   ];
   // Seed an ACTIVE session per profile so the real SessionValidationMiddleware accepts the E2E actor exactly
   // like a logged-in user (no production middleware bypass). login_portal follows the account kind.
@@ -184,6 +212,29 @@ const writeAuthProfiles = () => {
     p.sessionId = Number(s.stdout.trim());
   }
   writeFileSync(profileFile, JSON.stringify(profiles));
+  return profiles;
+};
+
+/**
+ * Seat each GENERAL department's Leader in `departments.head_user_id`.
+ *
+ * The canonical seed leaves `head_user_id` NULL everywhere, but a Department Leader's authority is not
+ * taken from their sub-role — `DepartmentLeaderPersonnelScopeService` re-reads the department and
+ * refuses anyone who is not the *seated* head (403 DEPARTMENT_SCOPE_FORBIDDEN). Without this the
+ * personnel journeys would all fail on authorization and prove nothing about the screens.
+ *
+ * This is ordinary application state, not a shortcut: a department with a seated head is what
+ * /transfer-leadership produces. It is applied through UPDATE rather than by editing the canonical
+ * script, so the schema file stays byte-identical to the one the SHA guard pins.
+ */
+const seedDepartmentHeads = (profiles) => {
+  const heads = profiles.filter(p => p.roleCode === 'DEPARTMENT' && p.subRole === 'LEADER' && p.departmentId);
+  for (const h of heads) {
+    const r = mysql(
+      `UPDATE departments SET head_user_id = ${h.userId} WHERE department_id = ${h.departmentId}`, DB);
+    if (r.status !== 0) throw new Error(`department head seed failed for ${h.email}: ${r.stderr}`);
+  }
+  console.log(`[e2e] seated ${heads.length} department head(s)`);
 };
 
 const waitHealthy = async (url, timeoutMs) => {
@@ -231,7 +282,7 @@ try {
   assertTargetPopulated();
 
   console.log('[e2e] write server-side auth profiles from actual seeded IDs');
-  writeAuthProfiles();
+  seedDepartmentHeads(writeAuthProfiles());
 
   console.log('[e2e] publish backend');
   // Build intermediates to a temp BaseOutputPath so a running dev server holding the repo bin/ lock never
@@ -239,11 +290,20 @@ try {
   await run('dotnet', ['publish', API_PROJ, '-c', 'Debug', '-o', publishDir, '--nologo', '-v', 'q',
     `-p:BaseOutputPath=${join(workDir, 'binout')}\\`]);
 
-  console.log(`[e2e] start backend on :${API_PORT} (Testing, flags ON, sink)`);
+  console.log(`[e2e] start backend on :${API_PORT} (Testing, flags ON, ` +
+    `${smtpPickup ? `SMTP pickup -> ${pickupDir}` : 'FileSink'})`);
   writeFileSync(inbox, '');
+  // The API's own output is discarded by default: it is noisy and the specs assert on the sink, not on
+  // logs. Set PEMS_E2E_API_LOG to a path to keep it instead — without that, a 500 from the running host
+  // shows up in a spec only as "INTERNAL_SERVER_ERROR" plus a trace id, and the stack trace that would
+  // name the cause is thrown away with the process.
+  const apiLog = process.env.PEMS_E2E_API_LOG;
+  const apiLogFd = apiLog ? openSync(apiLog, 'w') : null;
+  if (apiLog) console.log(`[e2e] backend log -> ${apiLog}`);
+
   backend = spawn('dotnet', [join(publishDir, 'PEMS.Api.dll')], {
     cwd: publishDir,
-    stdio: 'ignore',
+    stdio: apiLogFd === null ? 'ignore' : ['ignore', apiLogFd, apiLogFd],
     env: {
       ...process.env,
       ASPNETCORE_ENVIRONMENT: 'Testing',
@@ -252,8 +312,26 @@ try {
       PerCampusFormV2__Enabled: 'true',
       PerCampusFormV2Write__Enabled: 'true',
       Cors__AllowedOrigins__0: `http://localhost:${FE_PORT}`,
-      Smtp__Enabled: 'false',
-      PEMS_E2E_TEST_SINK_ENABLED: 'true',
+      ...(smtpPickup
+        ? {
+            // Real EmailService → real MIME on disk. No sink, no network: pickup returns before any
+            // SmtpClient is constructed, and the credentials it would have used are blanked anyway.
+            Smtp__Enabled: 'true',
+            Smtp__PickupDirectory: pickupDir,
+            // Host stays EMPTY so there is no server to reach even in principle. User/Password are
+            // placeholders, not credentials: `SecretConfigurationValidator` requires both to be present
+            // whenever SMTP is enabled, and `DispatchAsync` returns at the pickup branch before an
+            // SmtpClient is ever constructed, so nothing here is read by anything.
+            Smtp__Host: '',
+            Smtp__User: 'pickup-mode-no-login',
+            Smtp__Password: 'pickup-mode-no-login',
+            Smtp__FromEmail: 'no-reply@pems.test',
+            Smtp__FromName: 'PEMS',
+          }
+        : {
+            Smtp__Enabled: 'false',
+            PEMS_E2E_TEST_SINK_ENABLED: 'true',
+          }),
       PEMS_E2E_TEST_SINK_PATH: inbox,
       // Fail-closed test-auth (four gates): Testing env + explicit flag + run secret + profile file.
       PEMS_E2E_TEST_AUTH_ENABLED: 'true',
@@ -268,13 +346,22 @@ try {
   console.log('[e2e] run real-stack Playwright specs');
   // Optional PEMS_E2E_GREP narrows the run to matching titles (debugging a subset); default = full suite.
   const grepArgs = process.env.PEMS_E2E_GREP ? ['--grep', process.env.PEMS_E2E_GREP] : [];
-  await run('npx', ['playwright', 'test', '--config', 'playwright.realstack.config.ts', ...grepArgs], {
+  // Extra Playwright flags, space-separated (e.g. PEMS_E2E_PW_ARGS="--repeat-each=3"). Without this the
+  // only way to run a stability check was to edit the config, so "it passed three times" was never
+  // something a reviewer could reproduce from a command line.
+  const extraArgs = (process.env.PEMS_E2E_PW_ARGS ?? '').split(' ').filter(Boolean);
+  await run('npx', ['playwright', 'test', '--config', 'playwright.realstack.config.ts', ...grepArgs, ...extraArgs], {
     cwd: join(REPO, 'frontend', 'pems-react'),
     env: {
       ...process.env,
       PEMS_E2E_TEST_SINK_PATH: inbox,
       PEMS_E2E_API_BASE: `http://localhost:${API_PORT}/api`,
       PEMS_E2E_FRONTEND_PORT: FE_PORT,
+      // Set ONLY in pickup mode: the email specs read it to decide which witness they can assert on.
+      ...(smtpPickup ? { PEMS_E2E_PICKUP_DIR: pickupDir } : {}),
+      // Named explicitly so a read-only verification query can never be aimed at a different database
+      // than the one this run created.
+      PEMS_E2E_DB: DB,
       // The specs inject the run secret + a profile key on backend requests (never persisted; never logged).
       PEMS_E2E_AUTH_SECRET: authSecret,
     },

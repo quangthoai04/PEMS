@@ -1,7 +1,8 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Moq;
+using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.DepartmentLeaderPersonnel.Commands.CreateDepartmentPersonnel;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
@@ -18,7 +19,7 @@ namespace PEMS.UnitTests.DepartmentLeaderPersonnel;
 public class CreateDepartmentPersonnelCommandTests
 {
     private static CreateDepartmentPersonnelCommandHandler Handler(DepartmentLeaderTestHarness h)
-        => new(h.Db, h.Scope, h.Locks, h.Confirmations.Object, h.Email.Object, h.Clock);
+        => new(h.Db, h.Scope, h.Locks, h.Confirmations.Object, h.Dispatcher, h.Clock);
 
     private static CreateDepartmentPersonnelCommand Command(
         string email = "moi@fpt.edu.vn", string gender = "MALE") => new()
@@ -188,5 +189,98 @@ public class CreateDepartmentPersonnelCommandTests
 
         await Assert.ThrowsAsync<AuthBusinessException>(() => Run(h, Command()));
         Assert.Empty(h.Db.Users.Where(u => u.Email == "moi@fpt.edu.vn"));
+    }
+
+    // ── Login-email domain whitelist (spec §11, §18.1) ───────────────────────
+
+    [Theory]
+    [InlineData("moi@gmail.com")]
+    [InlineData("moi@fpt.edu.vn")]
+    [InlineData("MOI@GMAIL.COM")]        // normalized first, then accepted
+    [InlineData("  MOI@FPT.EDU.VN  ")]
+    [InlineData("moi.nhan_su-01@gmail.com")]
+    public async Task Allowed_domains_are_accepted(string email)
+    {
+        var h = DepartmentLeaderTestHarness.Create();
+
+        var result = await Run(h, Command(email: email));
+
+        Assert.True(result.Success);
+        Assert.Equal(AccountIdentityRules.NormalizeEmail(email), result.Email);
+    }
+
+    /// <summary>
+    /// The whitelist is an EXACT match, so a subdomain, a suffixed look-alike and a prefixed
+    /// look-alike are all outsiders. A handler written with <c>EndsWith</c> would accept
+    /// <c>fake-fpt.edu.vn</c>; one written with <c>Contains</c> would accept
+    /// <c>fpt.edu.vn.evil.com</c>. Both are domains the organisation does not control.
+    /// </summary>
+    [Theory]
+    [InlineData("moi@fe.edu.vn")]              // the domain this rule removed
+    [InlineData("MOI@FE.EDU.VN")]
+    [InlineData("moi@yahoo.com")]
+    [InlineData("moi@outlook.com")]
+    [InlineData("moi@student.fpt.edu.vn")]     // subdomain
+    [InlineData("moi@mail.gmail.com")]         // subdomain
+    [InlineData("moi@gmail.com.vn")]           // suffixed look-alike
+    [InlineData("moi@fpt.edu.vn.evil.com")]    // wrapped look-alike
+    [InlineData("moi@fake-fpt.edu.vn")]        // prefixed look-alike
+    [InlineData("moi+tag@gmail.com")]          // plus addressing
+    public async Task Disallowed_addresses_are_refused(string email)
+    {
+        var h = DepartmentLeaderTestHarness.Create();
+
+        await Assert.ThrowsAsync<ValidationException>(() => Run(h, Command(email: email)));
+    }
+
+    /// <summary>
+    /// The refusal has to happen BEFORE any mutation. A rejected address must leave no user row, no
+    /// confirmation token, no audit entry and no sent mail behind — a half-created account is worse
+    /// than none, because the operator cannot see it and the address stays taken.
+    /// </summary>
+    [Fact]
+    public async Task A_refused_domain_writes_nothing_and_sends_nothing()
+    {
+        var h = DepartmentLeaderTestHarness.Create();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(
+            () => Run(h, Command(email: "moi@fe.edu.vn")));
+
+        Assert.Equal(AccountIdentityRules.EmailDomainNotAllowedMessage, ex.Message);
+        Assert.Empty(h.Db.Users.Where(u => u.Email == "moi@fe.edu.vn"));
+        Assert.Empty(h.Db.AuditLogs);
+        Assert.Empty(h.Db.AccountEmailConfirmations);
+        Assert.Empty(h.Dispatcher.Sent);
+        h.Confirmations.Verify(c => c.IssuePendingAsync(
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// The handler re-validates rather than trusting the FluentValidation pipeline: this test calls
+    /// the handler directly, exactly as a mis-wired MediatR registration would, and the refusal must
+    /// still stand. Frontend validation is a courtesy; this is the boundary.
+    /// </summary>
+    [Fact]
+    public async Task The_handler_refuses_on_its_own_without_the_validator_pipeline()
+    {
+        var h = DepartmentLeaderTestHarness.Create();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(
+            () => Handler(h).Handle(Command(email: "moi@fe.edu.vn"), CancellationToken.None));
+
+        Assert.Equal(AccountIdentityRules.EmailDomainNotAllowedMessage, ex.Message);
+    }
+
+    [Fact]
+    public void The_validator_reports_the_same_refusal_as_the_handler()
+    {
+        var result = new CreateDepartmentPersonnelCommandValidator()
+            .Validate(Command(email: "moi@fe.edu.vn"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e =>
+            e.PropertyName == nameof(CreateDepartmentPersonnelCommand.Email)
+            && e.ErrorMessage == AccountIdentityRules.EmailDomainNotAllowedMessage);
     }
 }

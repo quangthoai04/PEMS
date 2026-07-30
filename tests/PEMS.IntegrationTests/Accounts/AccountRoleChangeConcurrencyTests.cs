@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -194,8 +195,16 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
     [Fact]
     public async Task RoleChangeHoldsTheLock_AssignmentWaitsThenSeesTheNewRole()
     {
-        var roleChangeCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var assignmentStartedWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // A holds the lock for this long AFTER B is known to be contending for it, so B's wait is
+        // caused by the lock rather than by B simply starting late.
+        var hold = TimeSpan.FromMilliseconds(500);
+
+        // Scheduling noise is single-digit milliseconds; an unlocked SELECT returns in ~0. A floor at
+        // half the hold separates "genuinely blocked" from "not blocked" without depending on runner speed.
+        var blockedFloor = TimeSpan.FromMilliseconds(250);
+
+        var roleChangeHoldsTheLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var assignmentIsContending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Transaction A: lock the account, change its role, commit.
         var roleChange = Task.Run(async () =>
@@ -206,10 +215,11 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
 
             await using var tx = await db.Database.BeginTransactionAsync();
             await locks.LockUsersAsync(new[] { _targetUserId }, CancellationToken.None);
+            roleChangeHoldsTheLock.SetResult();
 
-            // Hold the lock until B has definitely started contending for it.
-            assignmentStartedWaiting.SetResult();
-            await Task.Delay(500);
+            // Keep holding until B has asked for the same lock, then a while longer.
+            await assignmentIsContending.Task.WaitAsync(LockWait);
+            await Task.Delay(hold);
 
             var studentRoleId = await db.Roles.AsNoTracking()
                 .Where(r => r.RoleCode == RoleCodes.Student).Select(r => r.RoleId).FirstAsync();
@@ -218,24 +228,25 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
                 studentRoleId, _targetUserId);
 
             await tx.CommitAsync();
-            roleChangeCommitted.SetResult();
         });
 
         // Transaction B: wants the same lock in order to assign a Host.
         var assignment = Task.Run(async () =>
         {
-            await assignmentStartedWaiting.Task;
+            await roleChangeHoldsTheLock.Task.WaitAsync(LockWait);
 
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var locks = new MySqlUserMutationLockService(db);
 
+            // Open the transaction before announcing, so the announcement means "asking for the lock now"
+            // and not "still opening a connection".
             await using var tx = await db.Database.BeginTransactionAsync();
-            await locks.LockUsersAsync(new[] { _targetUserId }, CancellationToken.None);
 
-            // Reaching here means A already committed — the lock is what serialized us.
-            Assert.True(roleChangeCommitted.Task.IsCompletedSuccessfully,
-                "The assignment acquired the user lock before the role change committed — the lock is not serializing the two flows.");
+            assignmentIsContending.SetResult();
+            var startedWaiting = Stopwatch.StartNew();
+            await locks.LockUsersAsync(new[] { _targetUserId }, CancellationToken.None);
+            startedWaiting.Stop();
 
             // Eligibility is re-read AFTER the lock, so it observes the committed role.
             var roleCode = await db.Users.AsNoTracking()
@@ -244,13 +255,18 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
                 .FirstAsync();
 
             await tx.RollbackAsync();
-            return roleCode;
+            return (RoleCode: roleCode, Waited: startedWaiting.Elapsed);
         });
 
         await roleChange.WaitAsync(LockWait);
-        var observedRole = await assignment.WaitAsync(LockWait);
+        var (observedRole, waited) = await assignment.WaitAsync(LockWait);
 
-        // The assignment flow sees STUDENT and refuses to make this account a Host.
+        // B was blocked while A held the row: the lock really is what serialized the two flows.
+        Assert.True(waited >= blockedFloor,
+            $"The assignment acquired the user lock after only {waited.TotalMilliseconds:F0} ms while the role " +
+            $"change held it for {hold.TotalMilliseconds:F0} ms — the lock is not serializing the two flows.");
+
+        // And having waited, it reads committed state: STUDENT, so it refuses to make this account a Host.
         Assert.Equal(RoleCodes.Student, observedRole);
     }
 
@@ -398,13 +414,18 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
         // the new head). A blocker found a moment later must take it back down with it — otherwise a
         // refused role change would still have moved a department to a new head. Only a real
         // transaction can prove this, which is why the assertion lives here and not in the unit suite.
-        await MakeTargetDepartmentLeaderAndHeadAsync();
-
+        // Host FIRST, department head second — that order is the only one the schema allows, and it is
+        // also the real sequence: a campus host is an IC Staff member, and only afterwards were they
+        // moved into the GENERAL department and given the head seat. Assigning the host after the move
+        // would ask the database to accept a DEPARTMENT account as a campus host, which
+        // trg_visit_campuses_assignment_validate_bu refuses outright.
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             await AssignHostAsync(db, _visitInstanceId, _targetUserId);
         }
+
+        await MakeTargetDepartmentLeaderAndHeadAsync();
 
         using (var roleScope = _factory.Services.CreateScope())
         {
@@ -494,14 +515,29 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
             new StaticCurrentUser(_leaderUserId, _campusId, _icDepartmentId),
             new NoopSessionService(),
             new SystemClock(),
-            new NoopEmailService(),
+            new NoopEmailDispatcher(),
             new MySqlUserMutationLockService(db));
 
-    private static async Task AssignHostAsync(ApplicationDbContext db, ulong instanceId, ulong hostUserId)
+    /// <summary>
+    /// Puts the campus instance into the state a real host assignment leaves behind: ASSIGNED, with the
+    /// host AND the decision metadata that authorised it.
+    ///
+    /// <para>
+    /// Setting <c>current_host_user_id</c> alone is rejected by
+    /// <c>trg_visit_campuses_assignment_validate_bu</c> — a WAITING_REQUEST_APPROVAL row may carry no host
+    /// or decision data, and an ASSIGNED row must carry both. Writing only the host column produced a row
+    /// the application could never create, so the blocker was being proved against a state that does not
+    /// exist in production.
+    /// </para>
+    /// </summary>
+    private async Task AssignHostAsync(ApplicationDbContext db, ulong instanceId, ulong hostUserId)
     {
         await db.Database.ExecuteSqlRawAsync(
-            "UPDATE visit_request_campuses SET current_host_user_id = {0} WHERE visit_instance_id = {1}",
-            hostUserId, instanceId);
+            "UPDATE visit_request_campuses SET status = 'ASSIGNED', current_host_user_id = {0}, "
+            + "host_assigned_by = {1}, host_assigned_at = NOW(), decided_by = {1}, decided_at = NOW(), "
+            + "decision_actor_role = 'STAFF_LEADER', decision_source = 'STANDARD_CAMPUS_REVIEW' "
+            + "WHERE visit_instance_id = {2}",
+            hostUserId, _leaderUserId, instanceId);
     }
 
     private async Task<ulong> MakeTargetDepartmentLeaderAndHeadAsync()
@@ -590,30 +626,23 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
             => throw new NotSupportedException();
     }
 
-    private sealed class NoopEmailService : IEmailService
+    /// <summary>
+    /// Swallows the role-changed notification. This suite is about the LOCK, and the mail is sent
+    /// after the transaction commits — so the dispatcher only has to not throw.
+    /// </summary>
+    private sealed class NoopEmailDispatcher : PEMS.Application.Emails.Common.ISystemEmailDispatcher
     {
-        public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        public Task<PEMS.Application.Emails.Common.SystemEmailDispatchResult> SendAsync(
+            PEMS.Application.Emails.Common.SystemEmailRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new PEMS.Application.Emails.Common.SystemEmailDispatchResult(
+                EmailDeliveryResult.Sent(), SentEmailId: 0, EmailTemplateId: 0));
 
-        public Task<EmailDeliveryResult> TrySendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
+        public Task<PEMS.Application.Emails.Common.PreparedSystemEmail> PrepareAsync(
+            PEMS.Application.Emails.Common.SystemEmailRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public Task SendAsync(OutboundEmail message, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task SendPasswordResetAsync(string toEmail, string fullName, string code, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task SendVisitRequestOtpAsync(string toEmail, string fullName, string code, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task SendVisitorAccountCreatedOrLinkedEmailAsync(string toEmail, string contactFullName,
-            string delegationName, string requestCode, string visitScope, string plannedTime,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task SendRegistrantConfirmationAsync(string toEmail, string registrantFullName, string contactFullName,
-            string contactEmail, string delegationName, string requestCode, CancellationToken cancellationToken = default)
+        public Task<EmailDeliveryResult> DeliverAsync(
+            PEMS.Application.Emails.Common.PreparedSystemEmail prepared, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 }

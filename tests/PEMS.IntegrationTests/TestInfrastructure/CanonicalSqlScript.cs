@@ -24,7 +24,7 @@ public static class CanonicalSqlScript
 {
     /// <summary>The only accepted schema script. No wildcards, no fallback to historical names.</summary>
     public const string FileName =
-        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY.sql";
+        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql";
 
     /// <summary>
     /// SHA-256 of the canonical script this test suite is written against. Changing the schema is allowed,
@@ -57,8 +57,133 @@ public static class CanonicalSqlScript
     /// dialog and stored verbatim in visit_request_campuses.decision_note. Replaced with the short factual
     /// "Campus {name} xác nhận tiếp nhận đoàn. Người phụ trách tiếp đón đã được phân công." No DDL, no
     /// trigger, no row count changed.
+    /// (2026-07-26, sixth bump) EMAIL TEMPLATE CATALOG. Seed data only — no DDL, no trigger, and
+    /// ExpectedBaseTableCount (82) / ExpectedTriggerCount (32) are both unchanged, verified by a fresh
+    /// import before this constant was touched. What changed:
+    ///   • the two legacy email_templates INSERT blocks (16 rows, hard-coded email_template_id 1..16)
+    ///     are replaced by ONE canonical block of 26 rows that writes no id at all;
+    ///   • the 16 follow-up "UPDATE … WHERE email_template_id = N" statements are gone, as is the later
+    ///     patch that set content by template_code for codes the seed never contained
+    ///     (VISIT_INVITATION, NEWS_REVIEW);
+    ///   • the 25 seeded sent_emails rows keep their id, subject, body_snapshot, recipients, status and
+    ///     provider/thread metadata, but their email_template_id becomes NULL, because every one of them
+    ///     referenced a template that is no longer part of the catalog. Nothing was re-pointed at a
+    ///     different template.
+    /// (2026-07-26, seventh bump) FOUR ACCOUNT TEMPLATES, seed text only. Reconciling the catalog with
+    /// behaviour the code already had:
+    ///   • ACCOUNT_EMAIL_CHANGED_OLD_NOTICE and ACCOUNT_PENDING_EMAIL_CHANGED_OLD_NOTICE now carry NO
+    ///     variables. They go to the address that was just unlinked, which may belong to somebody who
+    ///     mistyped their own — naming the account holder or the new address to them is a leak the
+    ///     handlers deliberately avoided, and the first draft of this catalog would have introduced it;
+    ///   • ACCOUNT_STAFF_LEADER_ASSIGNED and _REPLACED gained {{reason}}, which both emails already
+    ///     showed and which is a required input of the replace-leader command.
+    /// No DDL, no trigger, no row count changed.
+    /// (2026-07-28, eighth bump) MERGE of Dev into Cảnh-Iter1. Two things happened at once, and this is
+    /// the first bump where the FILE ITSELF changed identity:
+    ///   • Dev renamed the canonical script to PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql
+    ///     while Cảnh-Iter1 was editing the old name — a rename/modify conflict. The renamed file is the
+    ///     canonical one; FileName above moves with it and the old name no longer exists on disk;
+    ///   • the merged file carries BOTH sides: Dev's Document-AI/OCR fixes, Department-Leader personnel
+    ///     support and logistics proposed_quantity/proposed_usage_* columns, and Cảnh-Iter1's whole email
+    ///     schema (email_templates, sent_email*, email_draft*, email_action_tokens,
+    ///     account_email_confirmations) plus the template catalog.
+    /// Seed text also changed in two deliberate places:
+    ///   • LOGISTICS_CHANGE_PROPOSAL_TO_HOST now renders the proposal ITSELF — proposed quantity against
+    ///     the original, the proposed window, the proposed content — instead of the rationale alone, which
+    ///     forced the Host into the portal to see what they were approving;
+    ///   • four DEPT_* templates were added (personnel disabled/enabled, leadership granted/handed over)
+    ///     when the Department-Leader module stopped composing its own HTML and moved onto the dispatcher.
+    ///     The catalog is 30 codes, and the code-side registry is asserted equal to it in both directions.
+    /// ExpectedBaseTableCount (82) and ExpectedTriggerCount (32) are unchanged, verified by a fresh import
+    /// into a disposable database before this constant was touched.
+    /// (2026-07-29, ninth bump) NOT A SCHEMA CHANGE — the .sql file is byte-for-byte the one the eighth
+    /// bump pinned. What changed is the HASHING RULE, from raw file bytes to the line-ending-normalised
+    /// text (see <see cref="ComputeNormalizedSha256"/>).
+    ///   • old raw-byte hash, Windows CRLF checkout: 322a8a94c2dc61192e46d14769acb41af287c486b8e942fbf5850655702d68a0
+    ///   • old raw-byte hash, Linux LF checkout:     18e97d4dce754353f5d19decc304c46f4d8f8dab3364d24ebdec9ba907e286b8
+    /// Both were "correct"; the pin could satisfy one platform at a time and no more. Every local gate on
+    /// this branch was green on Windows while CI was red on Linux for this single reason. The normalised
+    /// hash equals the LF value, because the repository stores the file with LF — so this is not a third
+    /// form, it is the form git has held all along.
+    /// A fresh import was re-run against a disposable database after the change: 82 tables, 32 triggers,
+    /// 252 foreign keys, 30 templates, 0 duplicate codes — identical to the eighth bump's baseline.
+    /// (2026-07-29, tenth bump) G11 / R-103 — ONE new table, <c>email_send_idempotency</c>, so that a
+    /// report/invoice send carries a persistent reservation and a retried request cannot become a second
+    /// outbound message. Exactly three hunks, all of them that table:
+    ///   • its <c>DROP TABLE IF EXISTS</c> in the reset list, before `sent_emails` (it is a child of it);
+    ///   • the <c>CREATE TABLE</c> itself, after `account_email_confirmations`;
+    ///   • the file's own <c>merged_runtime_table_count</c> assertion, 81 → 83. That assertion was ALREADY
+    ///     wrong before G11: it read 81 while the script produced 82, and this file's own header comment
+    ///     said 82, so every import reported a permanent issue_count of 1. It is corrected here rather
+    ///     than left one further out of date.
+    /// No seed row, no template, no trigger and no other table changed — verified by diffing the hunks.
+    /// Measured on a fresh disposable import after the change: 83 tables, 32 triggers, 254 foreign keys,
+    /// 30 templates, 22 historical sent_emails. A pre-G11 database migrated with
+    /// <c>docs/database/scripts/email_dispatch_idempotency/02_up_additive.sql</c> was then compared to the
+    /// fresh import column by column, index by index, constraint by constraint, with comments compared as
+    /// raw bytes: identical.
+    /// (2026-07-30, eleventh bump) G12 — contact-guard closure. NO schema change at all: not one table,
+    /// column, index, constraint or seed row differs. The diff is confined to the five primary-contact
+    /// guard triggers and the self-test procedure that measures them.
+    ///
+    /// The headline finding is that the guards were never broken. The import had reported
+    /// <c>contact_guard_negative_failures = 14</c> — every negative case — and the reason was the
+    /// measuring instrument, not the database. Each handler ran
+    /// <c>SET v_raised = TRUE;</c> BEFORE <c>GET DIAGNOSTICS CONDITION 1</c>. MySQL clears the
+    /// diagnostics area on the first successful statement inside a handler, so the subsequent read
+    /// returned NULL for both RETURNED_SQLSTATE and MESSAGE_TEXT; <c>v_sqlstate = '45000'</c> then
+    /// evaluated to UNKNOWN, every case scored FAIL, and the report printed the exact opposite of the
+    /// truth: "Operation unexpectedly succeeded". A direct probe against the same database rejected the
+    /// same statement with 45000 and the right message. Reordering those two statements in all 21
+    /// handlers turned the counters to 0/0 with no trigger change whatsoever.
+    ///
+    /// Three genuine defects in the trigger bodies were then found by probing, and fixed:
+    ///   • <c>v_user_status</c> was VARCHAR(20) while users.status is an ENUM whose longest member,
+    ///     PENDING_EMAIL_CONFIRMATION, is 26 characters. A visitor in that state — the state every new
+    ///     account starts in — made the guard raise <c>22001 Data too long</c> from inside the trigger.
+    ///     The write was still refused, but with a storage error in place of the business code.
+    ///   • roles was INNER JOINed, so a user whose role row could not be read collapsed COUNT(*) to 0
+    ///     and was reported as PRIMARY_CONTACT_USER_NOT_FOUND — untrue, and it hides the real fault.
+    ///   • <c>trg_users_protect_active_primary_contact_bu</c> compared a role code that a zero-row
+    ///     <c>SELECT ... INTO</c> leaves NULL. <c>NULL &lt;&gt; 'VISITOR'</c> is UNKNOWN, which IF treats
+    ///     as false, so on that path the guard silently stopped guarding.
+    ///
+    /// Five self-test cases were added for the paths none of the original 21 reached: NEG-15 (user id
+    /// that does not exist), NEG-16 and NEG-18 (the unconfirmed-account state, on both the request and
+    /// identity-change guards), NEG-17 (an UPDATE that writes visitor_user_id alone, leaving the access
+    /// status untouched) and POS-08 (a visitor linked only to a CANCELLED request may still be
+    /// deactivated — the documented exclusion, asserted so the guard cannot start over-blocking).
+    ///
+    /// Measured on a fresh disposable import after the change: 83 tables, 32 triggers, 254 foreign keys,
+    /// 30 templates, 22 historical sent_emails — identical to the tenth bump's baseline, and
+    /// contact_guard_negative_failures = 0, contact_guard_positive_failures = 0 across 18 negative and
+    /// 8 positive cases. A pre-G12 database migrated with
+    /// <c>docs/database/scripts/contact_guard_closure/02_up_replace_triggers.sql</c> was compared to the
+    /// fresh import: all 32 trigger bodies identical as raw bytes, template content digest identical.
+    ///
+    /// ── Twelfth bump (G11 final closure) ────────────────────────────────────────────────────────
+    ///
+    /// One additive column: <c>email_templates.revision INT UNSIGNED NOT NULL DEFAULT 1</c>. Nothing else
+    /// in the script changed — no table, no index, no trigger, no seed row.
+    ///
+    /// It exists because the optimistic-concurrency token for UC-44 was <c>updated_at</c>, and that column
+    /// cannot do the job: it is DATETIME with no fractional part, so two saves inside the SAME second
+    /// stored an identical stamp, compared equal, and the second silently overwrote the first. The blind
+    /// spot sat exactly at the resolution where concurrent edits collide. Content writes now issue a
+    /// conditional UPDATE carrying <c>AND revision = :expected</c> and bump the column in the same
+    /// statement, so the database decides the winner and the loser writes nothing at all.
+    ///
+    /// The same column is what makes restore-to-default safe: a restore is a full content overwrite, and
+    /// restoring over a colleague's unseen edit is the same lost update as saving over it.
+    ///
+    /// Measured on a fresh disposable import after the change: 83 tables, 32 triggers, 254 foreign keys,
+    /// 30 templates all revision 1, and contact_guard_negative_failures = 0 /
+    /// contact_guard_positive_failures = 0 — unchanged from the eleventh bump, as an additive column
+    /// should leave them. A pre-G11FC database migrated with
+    /// <c>docs/database/scripts/email_template_revision/02_up_add_revision.sql</c> was compared to the
+    /// fresh import: identical column definition, identical row count, identical template content digest.
     public const string ExpectedSha256 =
-        "5ba7daac9667e1b06eee4e6c28c02b120472b4ad37e90732328966f87c8b24ce";
+        "16010f54de2282aa0cbaa11909000b74c59d27b7184715f72a7875bdb854f2f0";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
@@ -120,28 +245,81 @@ public static class CanonicalSqlScript
         return path;
     }
 
-    /// <summary>Lower-case hex SHA-256 of the file's bytes.</summary>
-    public static string ComputeSha256(string path)
+    /// <summary>UTF-8 without a BOM, and strict: a decoding error must fail loudly, not produce U+FFFD.</summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>
+    /// Canonicalises the script text so that the SAME SQL yields the SAME hash on every platform.
+    ///
+    /// <para>
+    /// Exactly three things are neutralised, all of them artefacts of how a file was checked out rather
+    /// than of what it says: a leading BOM, CRLF line endings, and lone CR line endings. Nothing else is
+    /// touched — no trimming, no whitespace collapsing, no Unicode normalisation — because every one of
+    /// those would let a real content change slip through the guard. A space added inside a SIGNAL message
+    /// or a trailing space after a column definition still changes the hash, exactly as it should.
+    /// </para>
+    /// </summary>
+    public static string NormalizeForHashing(string text)
     {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        // Exactly one leading BOM, and only at position 0. A U+FEFF anywhere else is real content.
+        if (text.Length > 0 && text[0] == '\uFEFF')
+            text = text[1..];
+
+        // CRLF first so the second pass only sees genuinely lone CRs (old-Mac endings).
+        return text.Replace("\r\n", "\n").Replace("\r", "\n");
     }
 
-    /// <summary>Reads the canonical script, failing when its hash does not match <see cref="ExpectedSha256"/>.</summary>
+    /// <summary>Lower-case hex SHA-256 of the line-ending-normalised text, encoded UTF-8 without a BOM.</summary>
+    public static string ComputeNormalizedSha256OfText(string text) =>
+        Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(NormalizeForHashing(text)))).ToLowerInvariant();
+
+    /// <summary>
+    /// Lower-case hex SHA-256 of the canonical script, independent of how it was checked out.
+    ///
+    /// <para>
+    /// This replaces a raw-byte hash of the file. The repository stores this script with LF (<c>.gitattributes</c>
+    /// declares <c>* text=auto</c>), so a Windows worktree holds it with CRLF and a Linux runner holds it with LF —
+    /// the same 1.7 MB of SQL, two different SHA-256 values. A raw-byte pin can therefore be green on one platform
+    /// only, which is precisely how CI first went red on a branch whose every local gate passed. Hashing what the
+    /// file SAYS rather than how its lines happen to end is what makes the schema contract portable.
+    /// </para>
+    /// </summary>
+    public static string ComputeNormalizedSha256(string path) =>
+        ComputeNormalizedSha256OfText(StrictUtf8.GetString(File.ReadAllBytes(path)));
+
+    /// <summary>
+    /// Reads the canonical script, failing when its hash does not match <see cref="ExpectedSha256"/>.
+    ///
+    /// <para>
+    /// Returns the NORMALISED text, which is also the text that was hashed. That matters beyond tidiness:
+    /// two of this script's CRLFs fall INSIDE string literals — the seeded <c>note_to_fptu</c> values for
+    /// visit requests 1002 and 3048/3049, each built with <c>CONCAT</c> around an embedded newline — and
+    /// <c>MySqlScript</c>, which <see cref="DisposableDatabaseManager"/> imports through, passes them to the
+    /// server unchanged (measured, not assumed). So before this change the suite's disposable database held
+    /// those two rows with <c>\r\n</c> on Windows and <c>\n</c> on Linux. Two rows is a small discrepancy,
+    /// but it is exactly the kind that survives for years: it lives in seed data nobody diffs, on a path
+    /// where the <c>mysql</c> command-line client — which strips CR line by line, so manual and CI imports
+    /// never showed it — behaves differently from the driver.
+    /// Feeding the normalised text to the import makes a disposable database byte-identical wherever the
+    /// suite runs, and keeps "what was verified" and "what was imported" the same string.
+    /// </para>
+    /// </summary>
     public static string ReadVerified(string? repositoryRoot = null)
     {
         var path = ResolvePath(repositoryRoot);
-        var actual = ComputeSha256(path);
+        var actual = ComputeNormalizedSha256(path);
 
         if (!string.Equals(actual, ExpectedSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"Canonical SQL hash mismatch for '{Path.GetFileName(path)}'.{Environment.NewLine}" +
-                $"  expected SHA-256: {ExpectedSha256}{Environment.NewLine}" +
-                $"  actual   SHA-256: {actual}{Environment.NewLine}" +
+                $"  expected normalized SHA-256: {ExpectedSha256}{Environment.NewLine}" +
+                $"  actual   normalized SHA-256: {actual}{Environment.NewLine}" +
+                "This hash ignores line endings and a leading BOM, so a CRLF/LF checkout difference cannot " +
+                "cause it. The script's content really did change." + Environment.NewLine +
                 $"If the schema changed on purpose, update {nameof(CanonicalSqlScript)}.{nameof(ExpectedSha256)} " +
                 "in the same commit.");
 
-        return File.ReadAllText(path);
+        return NormalizeForHashing(StrictUtf8.GetString(File.ReadAllBytes(path)));
     }
 
     /// <summary>

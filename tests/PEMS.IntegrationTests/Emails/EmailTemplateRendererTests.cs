@@ -1,0 +1,489 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
+using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Emails;
+using PEMS.Domain.Enums;
+using PEMS.Infrastructure.Email;
+using PEMS.Infrastructure.Persistence;
+using Xunit;
+
+namespace PEMS.IntegrationTests.Emails;
+
+/// <summary>
+/// The renderer contract, exercised against a real MySQL disposable database so the EF query, the
+/// <c>ACTIVE</c> check and the "no cache" promise are proven rather than asserted about a fake.
+///
+/// <para>
+/// Every negative case here is a way the old code silently produced wrong mail: a missing variable became
+/// the literal text "Chưa có thông tin", an untranslated template quietly fell back to Vietnamese, and a
+/// value containing markup was written into the HTML body unescaped.
+/// </para>
+/// <para>Each test runs inside a transaction that is rolled back, so no template row survives it.</para>
+/// </summary>
+public sealed class EmailTemplateRendererTests
+{
+    private static string ConnString =>
+        PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString(
+            "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
+
+    private static bool? _dbUp;
+    private static string? _dbFailure;
+
+    private static ApplicationDbContext NewContext()
+        => new(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseMySql(ConnString, ServerVersion.AutoDetect(ConnString)).Options);
+
+    private static void RequireDb()
+    {
+        if (_dbUp is null)
+        {
+            try
+            {
+                // Probe through EF/Pomelo, not a raw MySql.Data connection: the canonical connection
+                // string carries Pomelo-only options (GuidFormat) that MySql.Data rejects outright.
+                using var db = NewContext();
+                _dbUp = db.Database.CanConnect();
+            }
+            catch (Exception ex)
+            {
+                // Keep the reason: "not reachable" alone hides a hash mismatch or a failed import, which
+                // are the failures worth acting on.
+                _dbUp = false;
+                _dbFailure = ex.ToString();
+            }
+        }
+
+        Assert.True(_dbUp, "Disposable MySQL database is not reachable. " + _dbFailure);
+    }
+
+    /// <summary>
+    /// The code these tests take over. Since the canonical seed now contains all 26 registered codes,
+    /// a test cannot simply insert one — it replaces the seeded row inside a transaction it rolls back,
+    /// so it controls the exact content under test without leaving anything behind.
+    /// </summary>
+    private const string Code = SystemEmailTemplates.AccountActivated;
+
+    /// <summary>
+    /// Removes the seeded row for <see cref="Code"/> and installs <paramref name="row"/> in its place.
+    /// Always called inside a transaction that is rolled back.
+    /// </summary>
+    private static async Task ReplaceSeededAsync(ApplicationDbContext db, EmailTemplate? row)
+    {
+        var seeded = await db.EmailTemplates.FirstOrDefaultAsync(t => t.TemplateCode == Code);
+        if (seeded is not null) db.EmailTemplates.Remove(seeded);
+        await db.SaveChangesAsync();
+
+        if (row is not null)
+        {
+            db.EmailTemplates.Add(row);
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private static EmailTemplate Row(
+        string? subjectVi = "Xin chào {{fullName}}",
+        string? bodyVi = "<p>Xin chào {{fullName}}, vai trò {{roleName}} tại {{campusName}}.</p>",
+        string? subjectEn = "Hello {{fullName}}",
+        string? bodyEn = "<p>Hello {{fullName}}, role {{roleName}} at {{campusName}}.</p>",
+        string? variables = "fullName, roleName, campusName",
+        string status = "ACTIVE",
+        EmailBodyFormat format = EmailBodyFormat.HTML)
+        => new()
+        {
+            TemplateCode = Code,
+            Name = "Test — account activated",
+            Purpose = EmailTemplatePurposes.Account,
+            Status = status,
+            SubjectVi = subjectVi,
+            BodyVi = bodyVi,
+            SubjectEn = subjectEn,
+            BodyEn = bodyEn,
+            BodyFormat = format,
+            VariablesText = variables,
+            CreatedAt = DateTime.Now,
+        };
+
+    private static Dictionary<string, string> Vars(
+        string fullName = "Nguyễn Văn A", string roleName = "Staff", string campusName = "HCM")
+        => new() { ["fullName"] = fullName, ["roleName"] = roleName, ["campusName"] = campusName };
+
+    private static EmailRenderRequest Request(
+        IReadOnlyDictionary<string, string>? variables = null,
+        string language = EmailLanguages.Vi,
+        IReadOnlyDictionary<string, string>? trusted = null)
+        => new(Code, language, variables ?? Vars(), trusted);
+
+    // ── Happy path ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Renders_subject_and_body_from_the_database_row()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var result = await new EmailTemplateRenderer(db).RenderAsync(Request());
+
+        Assert.Equal(Code, result.TemplateCode);
+        Assert.Equal(EmailLanguages.Vi, result.LanguageUsed);
+        Assert.Equal("Xin chào Nguyễn Văn A", result.Subject);
+        Assert.Contains("vai trò Staff tại HCM", result.Body);
+        Assert.True(result.EmailTemplateId > 0);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Renders_the_english_content_when_english_is_requested()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(language: EmailLanguages.En));
+
+        Assert.Equal(EmailLanguages.En, result.LanguageUsed);
+        Assert.Equal("Hello Nguyễn Văn A", result.Subject);
+        Assert.Contains("role Staff at HCM", result.Body);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task An_edit_to_the_row_is_visible_on_the_very_next_render()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var row = Row();
+        await ReplaceSeededAsync(db, row);
+
+        var renderer = new EmailTemplateRenderer(db);
+        var before = await renderer.RenderAsync(Request());
+        Assert.Equal("Xin chào Nguyễn Văn A", before.Subject);
+
+        // An operator edits the template. No deploy, no restart, no cache to invalidate.
+        row.SubjectVi = "Kính gửi {{fullName}}";
+        await db.SaveChangesAsync();
+
+        var after = await renderer.RenderAsync(Request());
+        Assert.Equal("Kính gửi Nguyễn Văn A", after.Subject);
+
+        await tx.RollbackAsync();
+    }
+
+    // ── Resolution failures ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_unregistered_code_is_rejected_before_the_database_is_consulted()
+    {
+        RequireDb();
+        using var db = NewContext();
+
+        var ex = await Assert.ThrowsAsync<NotFoundException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(
+                new EmailRenderRequest("NOT_A_REGISTERED_CODE", EmailLanguages.Vi, Vars())));
+
+        Assert.Equal(EmailErrorCodes.TemplateNotFound, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task A_registered_code_with_no_row_fails_instead_of_falling_back_to_hard_coded_content()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Remove the seeded row and put nothing back: a registered caller whose template is missing
+        // must fail loudly rather than reach for hard-coded content.
+        await ReplaceSeededAsync(db, null);
+
+        var ex = await Assert.ThrowsAsync<NotFoundException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request()));
+
+        Assert.Equal(EmailErrorCodes.TemplateNotFound, ex.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task An_inactive_template_is_refused()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row(status: "INACTIVE"));
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request()));
+
+        Assert.Equal(EmailErrorCodes.TemplateInactive, ex.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
+
+    [Theory]
+    [InlineData(true, false)]  // missing EN subject
+    [InlineData(false, true)]  // missing EN body
+    public async Task A_half_translated_template_fails_rather_than_silently_serving_vietnamese(
+        bool clearSubject, bool clearBody)
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row(
+            subjectEn: clearSubject ? null : "Hello {{fullName}}",
+            bodyEn: clearBody ? null : "<p>Hello {{fullName}}, role {{roleName}} at {{campusName}}.</p>"));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request(language: EmailLanguages.En)));
+
+        Assert.Equal(EmailErrorCodes.TemplateLanguageContentMissing, ex.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
+
+    // ── Variable contract ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_missing_variable_is_an_error_not_a_placeholder_message()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var incomplete = new Dictionary<string, string> { ["fullName"] = "A", ["roleName"] = "Staff" };
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request(incomplete)));
+
+        Assert.Equal(EmailErrorCodes.TemplateVariableMissing, ex.ErrorCode);
+        Assert.Contains("campusName", ex.Message);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task An_undeclared_variable_is_an_error()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var extra = Vars();
+        extra["somethingElse"] = "x";
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request(extra)));
+
+        Assert.Equal(EmailErrorCodes.TemplateVariableUnknown, ex.ErrorCode);
+        Assert.Contains("somethingElse", ex.Message);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_pascal_case_key_does_not_satisfy_a_camel_case_declaration()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var wrongCase = new Dictionary<string, string>
+        {
+            ["FullName"] = "A", ["roleName"] = "Staff", ["campusName"] = "HCM",
+        };
+
+        // Accepting this would let the legacy PascalCase spellings survive indefinitely.
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request(wrongCase)));
+
+        Assert.Equal(EmailErrorCodes.TemplateVariableMissing, ex.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_placeholder_the_template_never_declared_is_reported_not_shipped()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // The body references {{RequestCode}} but variables_text does not declare it — the exact drift
+        // the legacy seed contained.
+        await ReplaceSeededAsync(db, Row(
+            bodyVi: "<p>Xin chào {{fullName}} — đơn {{RequestCode}} ({{roleName}}, {{campusName}}).</p>"));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request()));
+
+        Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, ex.ErrorCode);
+        Assert.Contains("RequestCode", ex.Message);
+
+        await tx.RollbackAsync();
+    }
+
+    // ── Encoding and injection ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_variable_containing_markup_is_encoded_in_an_html_body()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var result = await new EmailTemplateRenderer(db)
+            .RenderAsync(Request(Vars(fullName: "<script>alert('x')</script>")));
+
+        Assert.DoesNotContain("<script>", result.Body);
+        Assert.Contains("&lt;script&gt;", result.Body);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_subject_variable_is_not_html_encoded()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        // A subject is a header, not markup: encoding here would show the recipient "A &amp; B".
+        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(Vars(fullName: "A & B")));
+
+        Assert.Equal("Xin chào A & B", result.Subject);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_variable_carrying_a_newline_cannot_break_the_subject_header()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(
+                Request(Vars(fullName: "A\r\nBcc: attacker@evil.test"))));
+
+        Assert.Equal(EmailErrorCodes.HeaderInvalid, ex.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_plain_text_body_is_not_html_encoded()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row(
+            bodyVi: "Xin chào {{fullName}} — {{roleName}} tại {{campusName}}",
+            format: EmailBodyFormat.PLAIN_TEXT));
+
+        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(Vars(fullName: "A & B")));
+
+        Assert.Equal(EmailBodyFormat.PLAIN_TEXT, result.BodyFormat);
+        Assert.Contains("A & B", result.Body);
+        Assert.DoesNotContain("&amp;", result.Body);
+
+        await tx.RollbackAsync();
+    }
+
+    // ── Trusted blocks ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_trusted_block_is_injected_as_markup_without_being_declared_as_a_variable()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row(
+            bodyVi: "<p>Xin chào {{fullName}} ({{roleName}}, {{campusName}})</p>{{actionBlock}}"));
+
+        var trusted = new Dictionary<string, string>
+        {
+            [EmailTrustedBlocks.ActionBlock] = "<a href=\"https://pems.test/accept/abc\">Chấp nhận</a>",
+        };
+
+        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(trusted: trusted));
+
+        // The backend's own markup survives intact…
+        Assert.Contains("<a href=\"https://pems.test/accept/abc\">", result.Body);
+        // …and it did not have to be declared in variables_text to do so.
+        Assert.DoesNotContain("{{actionBlock}}", result.Body);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task A_body_referencing_a_trusted_block_that_the_caller_did_not_supply_is_reported()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row(
+            bodyVi: "<p>Xin chào {{fullName}} ({{roleName}}, {{campusName}})</p>{{actionBlock}}"));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            new EmailTemplateRenderer(db).RenderAsync(Request()));
+
+        Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, ex.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
+
+    // ── variables_text parsing ───────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("fullName, roleName, campusName")]
+    [InlineData("fullName,roleName,campusName")]
+    [InlineData("{{fullName}}, {{roleName}}, {{campusName}}")]
+    [InlineData("fullName;roleName;campusName")]
+    public void Declared_variables_parse_from_every_shape_the_seed_uses(string variablesText)
+    {
+        var parsed = EmailTemplateVariables.ParseDeclared(variablesText);
+
+        Assert.Equal(3, parsed.Count);
+        Assert.Contains("fullName", parsed);
+        Assert.Contains("roleName", parsed);
+        Assert.Contains("campusName", parsed);
+    }
+
+    [Fact]
+    public void A_template_declaring_no_variables_parses_to_an_empty_set()
+    {
+        Assert.Empty(EmailTemplateVariables.ParseDeclared(null));
+        Assert.Empty(EmailTemplateVariables.ParseDeclared("   "));
+    }
+}

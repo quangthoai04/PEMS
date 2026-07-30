@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Queries.GetVisitInstanceSentEmails;
@@ -28,7 +29,7 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
     public async Task<GetVisitInstanceSentEmailsResponse> Handle(
         GetVisitInstanceSentEmailsQuery request, CancellationToken cancellationToken)
     {
-        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is not { } viewerId)
             throw new ForbiddenException();
 
         var instance = await _db.VisitRequestCampuses
@@ -180,10 +181,29 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
         var wantRecipient = string.IsNullOrWhiteSpace(request.RecipientEmail)
             ? null : request.RecipientEmail.Trim();
 
+        // Reaching this point means the viewer may open the visit, which is what earns them the linked
+        // objects' mail. It does not earn them the blind copies: those are filtered per message below,
+        // exactly as they are on the standalone detail screen.
+        var viewerEmail = await _db.Users
+            .Where(u => u.UserId == viewerId)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var items = new List<SentEmailHistoryDto>(emails.Count);
         foreach (var e in emails)
         {
-            var recipients = recipientsByEmail.TryGetValue(e.SentEmailId, out var rs) ? rs : new();
+            var allRecipients = recipientsByEmail.TryGetValue(e.SentEmailId, out var rs) ? rs : new();
+
+            var relation = SentEmailAccess.Resolve(
+                viewerId, viewerEmail, e.SentBy, allRecipients,
+                r => r.RecipientEmail, r => r.RecipientType,
+                hasLinkedObjectAccess: true);
+
+            var recipients = SentEmailAccess.FilterRecipients(
+                allRecipients, relation, viewerEmail, r => r.RecipientEmail, r => r.RecipientType);
+
+            // Narrowing by address searches only what this viewer may see — otherwise a search for a blind
+            // copy's address would confirm its membership by which messages came back.
             if (wantRecipient is not null
                 && !recipients.Any(r => string.Equals(r.RecipientEmail, wantRecipient, System.StringComparison.OrdinalIgnoreCase)))
                 continue;

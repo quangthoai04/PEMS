@@ -25,4 +25,11 @@ public interface IEmailActionTokenService
     /// <summary>Internal, login-required URL to a logistics request's detail page (Department flow).
     /// Used by the logistics-request email — no public token (reject/assign require authentication).</summary>
     string BuildLogisticsDetailUrl(ulong logisticsItemId);
+
+    /// <summary>
+    /// Internal, login-required URL to a campus visit instance. Used by the reminder emails, which carry
+    /// no one-time token at all: a reminder asks somebody to look at something they already have access
+    /// to, so there is nothing for a token to grant.
+    /// </summary>
+    string BuildVisitInstanceDetailUrl(ulong visitRequestId, ulong visitInstanceId);
 }

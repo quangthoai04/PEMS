@@ -79,11 +79,55 @@ public class AccountIdentityRulesTests
     [InlineData("user.name@gmail.com")]
     [InlineData("user_name-2@gmail.com")]
     [InlineData("user@fpt.edu.vn")]
-    [InlineData("user@fe.edu.vn")]
     [InlineData("USER@FPT.EDU.VN")]          // normalized before checking
     [InlineData("  User@Gmail.Com  ")]
     public void ValidateEmail_AcceptsAllowedDomains(string value)
         => Assert.Null(AccountIdentityRules.ValidateEmail(value));
+
+    [Fact]
+    public void ValidateEmail_AllowsGmail()
+        => Assert.Null(AccountIdentityRules.ValidateEmail("an.nguyen@gmail.com"));
+
+    [Fact]
+    public void ValidateEmail_AllowsFptEduVn()
+        => Assert.Null(AccountIdentityRules.ValidateEmail("an.nguyen@fpt.edu.vn"));
+
+    /// <summary>
+    /// fe.edu.vn was an accepted login domain until the HO account rules were narrowed to two
+    /// domains. It is now an ordinary rejected domain — no grandfathering anywhere in the stack.
+    /// </summary>
+    [Fact]
+    public void ValidateEmail_RejectsFeEduVn()
+        => Assert.Equal(
+            AccountIdentityRules.EmailDomainNotAllowedMessage,
+            AccountIdentityRules.ValidateEmail("an.nguyen@fe.edu.vn"));
+
+    [Theory]
+    [InlineData("a@sub.gmail.com")]
+    [InlineData("a@student.fpt.edu.vn")]
+    [InlineData("a@sub.fpt.edu.vn")]
+    public void ValidateEmail_RejectsSubdomain(string value)
+        => Assert.Equal(
+            AccountIdentityRules.EmailDomainNotAllowedMessage, AccountIdentityRules.ValidateEmail(value));
+
+    /// <summary>Domains that would slip past a naive EndsWith / StartsWith check.</summary>
+    [Theory]
+    [InlineData("a@gmail.com.vn")]
+    [InlineData("a@fpt.edu.vn.evil.com")]
+    [InlineData("a@fakefpt.edu.vn")]
+    [InlineData("a@fakegmail.com")]
+    [InlineData("a@edu.vn")]
+    public void ValidateEmail_RejectsLookalikeDomain(string value)
+        => Assert.Equal(
+            AccountIdentityRules.EmailDomainNotAllowedMessage, AccountIdentityRules.ValidateEmail(value));
+
+    [Fact]
+    public void EmailDomainNotAllowedMessage_NamesBothAllowedDomains_AndNothingElse()
+    {
+        Assert.Equal("Chỉ chấp nhận @gmail.com và @fpt.edu.vn.", AccountIdentityRules.EmailDomainNotAllowedMessage);
+        Assert.DoesNotContain("fe.edu.vn", AccountIdentityRules.EmailDomainNotAllowedMessage);
+        Assert.Equal(new[] { "fpt.edu.vn", "gmail.com" }, AccountIdentityRules.AllowedEmailDomains.OrderBy(d => d, StringComparer.Ordinal));
+    }
 
     [Theory]
     [InlineData("", AccountIdentityRules.EmailRequiredMessage)]

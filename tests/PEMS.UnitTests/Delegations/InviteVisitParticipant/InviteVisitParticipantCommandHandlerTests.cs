@@ -1,6 +1,8 @@
 using Moq;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.UnitTests.TestInfrastructure;
 
@@ -18,7 +20,8 @@ public class InviteVisitParticipantCommandHandlerTests
     private const ulong StaffLeaderId = 102;
 
     private static (DelegationsTestDbContext Db, InviteVisitParticipantCommandHandler Handler,
-        FakeDelegationsCurrentUser User, DelegationsHandlerMocks Mocks) CreateSut()
+        FakeDelegationsCurrentUser User, DelegationsHandlerMocks Mocks,
+        FakeDelegationsEmailDispatcher Dispatcher) CreateSut()
     {
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db);
@@ -44,11 +47,12 @@ public class InviteVisitParticipantCommandHandlerTests
                             DelegationName = "Đoàn khách kiểm thử",
                         })
                    as IReadOnlyDictionary<ulong, PEMS.Application.Delegations.Services.VisitFormRead.VisitCampusFormContent>);
+        var dispatcher = mocks.DispatcherFor(db);
         var handler = new InviteVisitParticipantCommandHandler(
-            db, user, mocks.Clock, mocks.Email.Object, mocks.Tokens.Object, mocks.Sanitizer.Object,
+            db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
             mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object,
             new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
-        return (db, handler, user, mocks);
+        return (db, handler, user, mocks, dispatcher);
     }
 
     private static InviteVisitParticipantCommand IcSupportCommand(ulong userId) =>
@@ -57,7 +61,7 @@ public class InviteVisitParticipantCommandHandlerTests
     [Fact]
     public async Task InviteStaffLeader_CreatesIcSupportParticipant_AndSendsEmail()
     {
-        var (db, handler, _, mocks) = CreateSut();
+        var (db, handler, _, mocks, dispatcher) = CreateSut();
 
         var response = await handler.Handle(IcSupportCommand(StaffLeaderId), default);
 
@@ -73,18 +77,60 @@ public class InviteVisitParticipantCommandHandlerTests
         Assert.Equal(DelegationsTestData.HostUserId, row.InvitedBy);
 
         var mail = Assert.Single(mocks.SentEmails);
-        Assert.Equal($"user{StaffLeaderId}@test.local", mail.ToEmail);
-        // ACCEPT + DECLINE one-time tokens persisted for the participant.
-        Assert.Equal(2, db.EmailActionTokens.Count(t => t.TargetId == row.ParticipantId));
+        Assert.Equal($"user{StaffLeaderId}@test.local", Assert.Single(mail.To).Email);
+
+        // The content comes from a named template rather than from this handler.
+        var sent = dispatcher.Single(SystemEmailTemplates.VisitParticipantInvitation);
+        Assert.Equal(SystemEmailContent.FromTemplate.Instance, sent.Content);
+        Assert.Equal("Đoàn khách kiểm thử", sent.Variables["delegationName"]);
+        Assert.Equal("Staff Leader hỗ trợ IC", sent.Variables["roleLabel"]);
+        Assert.Contains(EmailTrustedBlocks.ActionBlock, sent.TrustedBlocks!.Keys);
+
+        // ACCEPT + DECLINE one-time tokens persisted for the participant, both pointing at the message.
+        var tokens = db.EmailActionTokens.Where(t => t.TargetId == row.ParticipantId).ToList();
+        Assert.Equal(2, tokens.Count);
+        Assert.All(tokens, t => Assert.Equal(db.SentEmails.Single().SentEmailId, t.SentEmailId));
+
         mocks.Notifications.Verify(n => n.CreateAsync(
             It.Is<PEMS.Application.Notifications.Common.CreateNotificationRequest>(r => r.RecipientUserId == StaffLeaderId),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
+    public async Task TheHostEditingTheMessage_IsANamedContentMode_NotABypass()
+    {
+        var (db, handler, _, _, dispatcher) = CreateSut();
+
+        var command = new InviteVisitParticipantCommand(
+            DelegationsTestData.VisitInstanceId, "IC_SUPPORT", StaffLeaderId, null, null,
+            new PEMS.Application.Emails.Common.EmailOverride(
+                UseEditedContent: true,
+                Subject: "Nhờ anh hỗ trợ đoàn Kyoto",
+                BodyHtml: null,
+                BodyText: "Chào anh, đoàn tới sáng thứ Ba. Nhờ anh hỗ trợ phiên dịch."));
+
+        var response = await handler.Handle(command, default);
+        Assert.True(response.EmailQueued);
+
+        var sent = dispatcher.Single(SystemEmailTemplates.VisitParticipantInvitation);
+        var authored = Assert.IsType<SystemEmailContent.AuthoredByUser>(sent.Content);
+        Assert.Equal("Nhờ anh hỗ trợ đoàn Kyoto", authored.Subject);
+        // The plain text the Host typed is HTML-encoded on the way in (contract C-07), so the assertion
+        // has to be against the encoded spelling — that IS what will be in the message.
+        Assert.Contains(System.Net.WebUtility.HtmlEncode("phiên dịch"), authored.BodyHtml);
+
+        // Editing the words changes neither which template this is, nor who receives it, nor the fact
+        // that the backend supplies the buttons.
+        Assert.Equal($"user{StaffLeaderId}@test.local", sent.To.Email);
+        Assert.Contains(EmailTrustedBlocks.ActionBlock, sent.TrustedBlocks!.Keys);
+        Assert.DoesNotContain(EmailComposition.ActionBlockStart, authored.BodyHtml);
+        Assert.Equal(2, db.EmailActionTokens.Count());
+    }
+
+    [Fact]
     public async Task InviteIcStaff_StillWorks()
     {
-        var (db, handler, _, _) = CreateSut();
+        var (db, handler, _, _, _) = CreateSut();
 
         var response = await handler.Handle(IcSupportCommand(IcStaffId), default);
 
@@ -96,7 +142,7 @@ public class InviteVisitParticipantCommandHandlerTests
     [Fact]
     public async Task InvitingTheCurrentHost_IsRejected_EvenWhenTheHostIsAStaffLeader()
     {
-        var (db, handler, _, _) = CreateSut();
+        var (db, handler, _, _, _) = CreateSut();
         var host = db.Users.Single(u => u.UserId == DelegationsTestData.HostUserId);
         host.SubRole = UserSubRoles.Leader;
         db.SaveChanges();
@@ -112,7 +158,7 @@ public class InviteVisitParticipantCommandHandlerTests
     [InlineData(ParticipantStatuses.Assigned)]
     public async Task DuplicateActiveParticipant_ReturnsConflict(string participantStatus)
     {
-        var (db, handler, _, mocks) = CreateSut();
+        var (db, handler, _, mocks, _) = CreateSut();
         db.VisitParticipants.Add(DelegationsTestData.CreateParticipant(500, StaffLeaderId, ParticipantRoles.IcSupport, participantStatus));
         db.SaveChanges();
 
@@ -123,7 +169,7 @@ public class InviteVisitParticipantCommandHandlerTests
     [Fact]
     public async Task StaffLeaderOutsideScope_IsRejected()
     {
-        var (db, handler, _, _) = CreateSut();
+        var (db, handler, _, _, _) = CreateSut();
         db.Departments.AddRange(
             DelegationsTestData.CreateDepartment(901, departmentType: "IC", campusId: DelegationsTestData.OtherCampusId),
             DelegationsTestData.CreateDepartment(902), // GENERAL — not IC
@@ -147,7 +193,7 @@ public class InviteVisitParticipantCommandHandlerTests
     [InlineData(ParticipantStatuses.Removed)]
     public async Task ReinvitingAClosedSlot_ReusesTheExistingRow(string previousStatus)
     {
-        var (db, handler, _, _) = CreateSut();
+        var (db, handler, _, _, _) = CreateSut();
         db.VisitParticipants.Add(DelegationsTestData.CreateParticipant(500, StaffLeaderId, ParticipantRoles.IcSupport, previousStatus));
         db.SaveChanges();
 
@@ -163,7 +209,7 @@ public class InviteVisitParticipantCommandHandlerTests
     [Fact]
     public async Task EmailFailure_DoesNotLoseTheCommittedInvitation()
     {
-        var (db, handler, _, mocks) = CreateSut();
+        var (db, handler, _, mocks, _) = CreateSut();
         mocks.FailEmail = true;
 
         var response = await handler.Handle(IcSupportCommand(StaffLeaderId), default);

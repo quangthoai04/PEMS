@@ -20,7 +20,10 @@ namespace PEMS.Infrastructure.Email;
 public sealed class AccountEmailConfirmationService : IAccountEmailConfirmationService
 {
     /// <summary>Lifetime of a confirmation link. Short enough to bound a mistyped-address window.</summary>
-    private const int ExpiryHours = 24;
+    private const int ConfirmationExpiryHours = 24;
+
+    /// <inheritdoc />
+    public int ExpiryHours => ConfirmationExpiryHours;
 
     private readonly IApplicationDbContext _db;
     private readonly IEmailActionTokenService _tokens;
@@ -62,7 +65,7 @@ public sealed class AccountEmailConfirmationService : IAccountEmailConfirmationS
             TargetEmail = normalizedTargetEmail,
             TokenHash = _tokens.Hash(raw),
             Status = AccountEmailConfirmationStatuses.Pending,
-            ExpiresAt = now.AddHours(ExpiryHours),
+            ExpiresAt = now.AddHours(ConfirmationExpiryHours),
             ResendCount = isResend ? priorResend + 1 : 0,
             CreatedAt = now,
         });
@@ -72,4 +75,6 @@ public sealed class AccountEmailConfirmationService : IAccountEmailConfirmationS
 
     public string BuildConfirmUrl(string rawToken)
         => $"{_frontendBaseUrl}/confirm-email?token={Uri.EscapeDataString(rawToken)}";
+
+    public string BuildLoginUrl() => $"{_frontendBaseUrl}/login";
 }

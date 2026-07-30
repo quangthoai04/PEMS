@@ -273,16 +273,20 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     delegationName?: string;
   } | null>(null);
 
-  const openLogisticsAssignPreview = async (p: { logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string }) => {
+  const openLogisticsAssignPreview = async (p: { logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string; campusName?: string }) => {
     setPendingAssign({ ...p, itemType: 'REQUEST' });
     setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
     try {
       const res = await delegationsApi.previewEmailTemplate({
+        // Exactly the five variables LOGISTICS_ASSIGNEE_ASSIGNMENT declares — the preview shares the
+        // send's renderer, which refuses an undeclared or missing key.
         templateCode: 'LOGISTICS_ASSIGNEE_ASSIGNMENT',
         context: {
           assigneeName: p.staffName,
-          DelegationName: p.delegationName ?? 'đoàn khách',
           logisticsTitle: p.title ?? 'hạng mục hậu cần',
+          dueAt: 'Chưa đặt hạn',
+          campusName: p.campusName ?? 'FPT University',
+          delegationName: p.delegationName ?? 'đoàn khách',
         },
       });
       setAssignPreview((s) => ({
@@ -297,18 +301,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
   };
 
-  const openInvitationAssignPreview = async (p: { participantId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string }) => {
+  const openInvitationAssignPreview = async (p: { participantId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string; campusName?: string; plannedTime?: string; hostName?: string }) => {
     setPendingAssign({ ...p, itemType: 'INVITATION' });
     setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
     try {
       const res = await delegationsApi.previewEmailTemplate({
+        // Exactly the seven variables VISIT_PARTICIPANT_INVITATION declares.
         templateCode: 'VISIT_PARTICIPANT_INVITATION',
         context: {
           recipientName: p.staffName,
-          assigneeName: p.staffName,
-          DelegationName: p.delegationName ?? p.title ?? 'đoàn khách',
-          eventTitle: p.title ?? p.delegationName ?? 'lịch tiếp khách',
-          coordinationNote: 'Bạn được Trưởng phòng ủy quyền tham gia đón tiếp.',
+          delegationName: p.delegationName ?? p.title ?? 'đoàn khách',
+          campusName: p.campusName ?? 'FPT University',
+          plannedTime: p.plannedTime ?? 'Chưa có thông tin',
+          hostName: p.hostName ?? 'Host',
+          roleLabel: 'Nhân sự phòng ban',
+          hostMessage: 'Bạn được Trưởng phòng ủy quyền tham gia đón tiếp.',
         },
       });
       setAssignPreview((s) => ({

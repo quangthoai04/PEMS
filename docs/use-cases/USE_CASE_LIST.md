@@ -80,7 +80,7 @@
 | UC-42  | View Email Template List         |
 | UC-43  | View Email Template Detail       |
 | UC-44  | Update Email Template            |
-| UC-45  | Create Email Template            |
+| UC-45  | ~~Create Email Template~~ — **DEPRECATED / NOT AVAILABLE** (xem ghi chú dưới bảng) |
 | UC-46  | Edit Email Content               |
 | UC-47  | Send Email                       |
 | UC-48  | View Email                       |
@@ -172,3 +172,27 @@
 | UC-134 | View Agenda Template List        |
 | UC-135 | View Agenda Template Detail      |
 | UC-136 | Cancel Visit Request              |
+
+---
+
+## Ghi chú — UC-45 `Create Email Template` (DEPRECATED, 2026-07-30)
+
+Danh mục mẫu email là **catalog hệ thống cố định**, do backend registry
+(`SystemEmailTemplates`) quyết định. Một `templateCode` tồn tại vì có caller trong một bản release
+gửi nó; mã do người dùng tự tạo qua API là một dòng dữ liệu **không có gì gọi tới được** — không
+handler nào tham chiếu, không dispatcher nào resolve, và nó sẽ không bao giờ đến tay người nhận.
+Đây chính là cách catalog từng phình lên 9 mã chết.
+
+Vì vậy:
+
+- **UC-45 không còn khả dụng.** Nút "Thêm mẫu mới" đã bỏ khỏi giao diện, và `POST /api/email-templates`
+  trả về lỗi nghiệp vụ ổn định `EMAIL_TEMPLATE_CATALOG_FIXED` — chặn ở handler chứ không chỉ ẩn ở UI.
+- **UC-44 `Update Email Template` giữ nguyên cho HO** (quyền `E`), nhưng chỉ với các trường nội dung:
+  `name`, `description`, `subjectVi`, `subjectEn`, `bodyVi`, `bodyEn`. Mã mẫu, module, trạng thái,
+  định dạng và hợp đồng biến đều do registry sở hữu.
+- **Đổi trạng thái mẫu hệ thống cũng bị chặn** (cùng mã lỗi). Tắt một mẫu không phải là tắt một chức
+  năng — renderer từ chối mẫu không ACTIVE, nên tắt `ACCOUNT_EMAIL_CONFIRMATION` sẽ khiến mọi tài khoản
+  mới nằm lại ở trạng thái chưa xác nhận mà không có gì trên màn hình giải thích tại sao.
+
+Số hiệu UC-45 **được giữ lại** thay vì đánh số lại toàn bộ danh sách; nó chỉ được đánh dấu là không
+khả dụng. Không UC nào khác bị renumber.

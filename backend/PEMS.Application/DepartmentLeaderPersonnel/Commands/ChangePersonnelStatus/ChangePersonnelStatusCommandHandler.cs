@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -31,7 +32,7 @@ public sealed class ChangePersonnelStatusCommandHandler
     private readonly IDepartmentLeaderPersonnelScopeService _scopeService;
     private readonly IUserMutationLockService _lockService;
     private readonly ISessionService _sessionService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IDateTimeService _clock;
 
     public ChangePersonnelStatusCommandHandler(
@@ -39,14 +40,14 @@ public sealed class ChangePersonnelStatusCommandHandler
         IDepartmentLeaderPersonnelScopeService scopeService,
         IUserMutationLockService lockService,
         ISessionService sessionService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IDateTimeService clock)
     {
         _db = db;
         _scopeService = scopeService;
         _lockService = lockService;
         _sessionService = sessionService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _clock = clock;
     }
 
@@ -162,7 +163,8 @@ public sealed class ChangePersonnelStatusCommandHandler
         }
 
         var emailStatus = await SendStatusMailAsync(
-            targetStatus, fullName, email, scope.DepartmentName, reason, cancellationToken);
+            request.UserId, targetStatus, fullName, email, scope.DepartmentName, reason,
+            scope.ActorUserId, cancellationToken);
 
         return new ChangePersonnelStatusResponse
         {
@@ -206,23 +208,45 @@ public sealed class ChangePersonnelStatusCommandHandler
 
     /// <summary>Best-effort notification. A delivery failure never rolls the committed status back.</summary>
     private async Task<string> SendStatusMailAsync(
+        ulong targetUserId,
         string targetStatus,
         string fullName,
         string email,
         string departmentName,
         string? reason,
+        ulong? actorId,
         CancellationToken cancellationToken)
     {
-        var (subject, body) = targetStatus == UserStatuses.Inactive
-            ? (DepartmentPersonnelEmails.DisabledSubject,
-               DepartmentPersonnelEmails.BuildDisabledNotice(fullName, departmentName, reason))
-            : (DepartmentPersonnelEmails.EnabledSubject,
-               DepartmentPersonnelEmails.BuildEnabledNotice(fullName, departmentName));
+        var disabling = targetStatus == UserStatuses.Inactive;
+
+        var variables = new Dictionary<string, string>
+        {
+            ["fullName"] = fullName,
+            ["departmentName"] = departmentName,
+        };
+
+        if (disabling)
+        {
+            // The template always renders the reason line, so an omitted reason has to say so rather
+            // than leave the recipient reading a blank label.
+            variables["reason"] = string.IsNullOrWhiteSpace(reason)
+                ? "Không có lý do được cung cấp."
+                : reason!;
+        }
 
         try
         {
-            var result = await _emailService.TrySendAsync(email, subject, body, cancellationToken);
-            return result.Status switch
+            var result = await _dispatcher.SendAsync(new SystemEmailRequest(
+                disabling
+                    ? SystemEmailTemplates.DeptPersonnelAccountDisabled
+                    : SystemEmailTemplates.DeptPersonnelAccountEnabled,
+                new EmailRecipient(email, fullName),
+                variables,
+                RelatedType: "User",
+                RelatedId: targetUserId,
+                SentBy: actorId), cancellationToken);
+
+            return result.Delivery.Status switch
             {
                 EmailDeliveryStatus.Sent => DepartmentPersonnelEmails.StatusSent,
                 EmailDeliveryStatus.Skipped => DepartmentPersonnelEmails.StatusSkipped,

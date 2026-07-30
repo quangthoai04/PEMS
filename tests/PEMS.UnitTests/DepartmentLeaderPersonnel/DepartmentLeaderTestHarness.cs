@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Moq;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Departments;
 using PEMS.Domain.Entities.Users;
@@ -34,15 +36,21 @@ public sealed class DepartmentLeaderTestHarness
     public FakeDateTimeService Clock { get; }
     public RecordingUserMutationLockService Locks { get; }
     public RecordingSessionService Sessions { get; }
-    public Mock<IEmailService> Email { get; }
+    public FakeSystemEmailDispatcher Dispatcher { get; }
     public Mock<IAccountEmailConfirmationService> Confirmations { get; }
     public IDepartmentLeaderPersonnelScopeService Scope { get; }
 
-    /// <summary>Every address the email service was asked to send to, in call order.</summary>
-    public List<string> SentTo { get; } = new();
+    /// <summary>Every address the dispatcher was asked to send to, in call order.</summary>
+    public List<string> SentTo => Dispatcher.Sent.Select(r => r.To.Email).ToList();
 
-    /// <summary>Subjects paired with recipients, for asserting WHICH message went WHERE.</summary>
-    public List<(string To, string Subject, string Html)> SentMessages { get; } = new();
+    /// <summary>
+    /// The message sent to <paramref name="toEmail"/> — asserted on by TEMPLATE CODE and VARIABLES
+    /// rather than rendered HTML, because the body now lives in <c>email_templates</c>. That is the
+    /// stronger check: a template declaring no variables cannot leak a value at all, whereas a body
+    /// that merely happens not to contain a string today could start containing it tomorrow.
+    /// </summary>
+    public SystemEmailRequest MessageTo(string toEmail)
+        => Dispatcher.Sent.Single(r => r.To.Email == toEmail);
 
     private DepartmentLeaderTestHarness()
     {
@@ -58,17 +66,8 @@ public sealed class DepartmentLeaderTestHarness
         Clock = new FakeDateTimeService();
         Locks = new RecordingUserMutationLockService();
         Sessions = new RecordingSessionService(Db);
-        Email = new Mock<IEmailService>();
+        Dispatcher = new FakeSystemEmailDispatcher();
         Confirmations = new Mock<IAccountEmailConfirmationService>();
-
-        Email.Setup(e => e.TrySendAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<string, string, string, CancellationToken>((to, subject, html, _) =>
-            {
-                SentTo.Add(to);
-                SentMessages.Add((to, subject, html));
-            })
-            .ReturnsAsync(EmailDeliveryResult.Sent());
 
         Confirmations.Setup(c => c.IssuePendingAsync(
                 It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
@@ -79,13 +78,15 @@ public sealed class DepartmentLeaderTestHarness
         Scope = new DepartmentLeaderPersonnelScopeService(Db, Actor);
     }
 
-    /// <summary>Makes the email service report a hard failure, so "email failed" paths can be tested.</summary>
+    /// <summary>Makes the dispatcher report a hard failure, so "email failed" paths can be tested.</summary>
     public void MakeEmailFail()
-    {
-        Email.Setup(e => e.TrySendAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(EmailDeliveryResult.Failed("SMTP_ERROR", "Không gửi được email."));
-    }
+        => Dispatcher.Outcome = EmailDeliveryResult.Failed("SMTP_ERROR", "Không gửi được email.");
+
+    /// <summary>Fails only the message addressed to <paramref name="toEmail"/>, for partial-outcome tests.</summary>
+    public void MakeEmailFailFor(string toEmail)
+        => Dispatcher.OutcomeFor = request => request.To.Email == toEmail
+            ? EmailDeliveryResult.Failed("SMTP_ERROR", "Không gửi được email.")
+            : EmailDeliveryResult.Sent();
 
     /// <summary>
     /// A campus + DEPARTMENT/STAFF roles + an ACTIVE GENERAL department headed by <see cref="LeaderId"/>.

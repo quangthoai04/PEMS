@@ -1,4 +1,4 @@
-/**
+﻿/**
  * REAL-STACK E2E — plan §26: importing a list, entering a schedule, and hitting a length limit.
  *
  * real Chromium → real React (Vite) → real .NET API (Testing, flags ON) → real disposable MySQL.
@@ -15,6 +15,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { type SinkRecord, sinkAddressed } from './sinkRecord';
 import * as XLSX from 'xlsx';
 import { fillSchedule, fillOperationalOrganization, dateKey, timeKey } from './realstackHelpers';
 
@@ -39,8 +40,8 @@ async function readOtpFromSink(email: string): Promise<string> {
     try { lines = readFileSync(SINK, 'utf8').split('\n').filter(Boolean); } catch { /* not written yet */ }
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
-        const rec = JSON.parse(lines[i]) as { to?: string; kind?: string; code?: string };
-        if (rec.kind === 'VISIT_REQUEST_OTP' && rec.to === target && rec.code) return rec.code;
+        const rec = JSON.parse(lines[i]) as SinkRecord;
+        if (rec.kind === 'VISIT_REQUEST_OTP' && sinkAddressed(rec, target) && rec.code) return rec.code;
       } catch { /* skip malformed */ }
     }
     await new Promise(r => setTimeout(r, 250));

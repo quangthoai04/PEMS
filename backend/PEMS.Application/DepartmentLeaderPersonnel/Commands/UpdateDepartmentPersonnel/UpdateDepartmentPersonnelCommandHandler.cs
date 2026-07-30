@@ -10,6 +10,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Common;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 
@@ -45,7 +46,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
     private readonly IUserMutationLockService _lockService;
     private readonly IAccountEmailConfirmationService _confirmations;
     private readonly ISessionService _sessionService;
-    private readonly IEmailService _emailService;
+    private readonly ISystemEmailDispatcher _dispatcher;
     private readonly IDateTimeService _clock;
 
     public UpdateDepartmentPersonnelCommandHandler(
@@ -54,7 +55,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
         IUserMutationLockService lockService,
         IAccountEmailConfirmationService confirmations,
         ISessionService sessionService,
-        IEmailService emailService,
+        ISystemEmailDispatcher dispatcher,
         IDateTimeService clock)
     {
         _db = db;
@@ -62,7 +63,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
         _lockService = lockService;
         _confirmations = confirmations;
         _sessionService = sessionService;
-        _emailService = emailService;
+        _dispatcher = dispatcher;
         _clock = clock;
     }
 
@@ -98,6 +99,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
         bool relinkRequired = false;
         string? rawConfirmationToken = null;
         string targetFullName;
+        string? targetSubRole = null;
 
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         try
@@ -122,6 +124,9 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
             oldEmail = user.Email;
             accountStatus = user.Status;
             targetFullName = newFullName;
+            // Captured under the lock: the confirmation mail names the account's role, and a Leader
+            // being edited must not be described as a Staff member.
+            targetSubRole = user.SubRole;
 
             var oldFullName = user.FullName;
             var oldPhone = user.Phone;
@@ -258,7 +263,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
 
         var emailStatus = emailChanged
             ? await SendIdentityChangeMailsAsync(
-                targetFullName, oldEmail, newEmail, accountStatus, scope,
+                request.UserId, targetFullName, targetSubRole, oldEmail, newEmail, accountStatus, scope,
                 rawConfirmationToken, cancellationToken)
             : DepartmentPersonnelEmails.StatusNotRequired;
 
@@ -362,7 +367,9 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
     /// still attempts the other; neither can throw, because the identity change is already committed.
     /// </summary>
     private async Task<string> SendIdentityChangeMailsAsync(
+        ulong targetUserId,
         string fullName,
+        string? subRole,
         string oldEmail,
         string newEmail,
         string accountStatus,
@@ -370,31 +377,53 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
         string? rawConfirmationToken,
         CancellationToken cancellationToken)
     {
-        var oldOk = await TrySendAsync(
-            oldEmail,
-            DepartmentPersonnelEmails.OldAddressSubject,
-            DepartmentPersonnelEmails.BuildOldAddressNotice(),
-            cancellationToken);
+        // The unlinked address gets the SAME anonymous notice the account-management edit path sends:
+        // it may belong to somebody reached by a typo, so it carries no name, no new address and no
+        // role — which is exactly why these two templates declare no variables at all.
+        var pending = accountStatus == UserStatuses.PendingEmailConfirmation && rawConfirmationToken is not null;
+
+        var oldOk = await TrySendAsync(new SystemEmailRequest(
+            pending
+                ? SystemEmailTemplates.AccountPendingEmailChangedOldNotice
+                : SystemEmailTemplates.AccountEmailChangedOldNotice,
+            new EmailRecipient(oldEmail),
+            new Dictionary<string, string>(),
+            RelatedType: "User",
+            RelatedId: targetUserId,
+            SentBy: scope.ActorUserId), cancellationToken);
 
         bool newOk;
-        if (accountStatus == UserStatuses.PendingEmailConfirmation && rawConfirmationToken is not null)
+        if (pending)
         {
             // Still unconfirmed — the new address gets a live confirmation link, not a "your login
             // changed" notice.
-            newOk = await TrySendAsync(
-                newEmail,
-                AccountConfirmationEmail.Subject,
-                AccountConfirmationEmail.BuildHtml(fullName, _confirmations.BuildConfirmUrl(rawConfirmationToken)),
-                cancellationToken);
+            newOk = await TrySendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountEmailConfirmation,
+                new EmailRecipient(newEmail, fullName),
+                await AccountEmailVariables.ForConfirmationAsync(
+                    _db, fullName, RoleCodes.Department, subRole,
+                    scope.CampusId, _confirmations.ExpiryHours, cancellationToken),
+                TrustedBlocks: AccountEmailVariables.ConfirmationBlocks(
+                    _confirmations.BuildConfirmUrl(rawConfirmationToken!)),
+                RelatedType: "User",
+                RelatedId: targetUserId,
+                SentBy: scope.ActorUserId), cancellationToken);
         }
         else
         {
-            newOk = await TrySendAsync(
-                newEmail,
-                DepartmentPersonnelEmails.NewAddressSubject,
-                DepartmentPersonnelEmails.BuildNewAddressNotice(
-                    fullName, newEmail, scope.DepartmentName, scope.CampusName, accountStatus),
-                cancellationToken);
+            newOk = await TrySendAsync(new SystemEmailRequest(
+                SystemEmailTemplates.AccountEmailChangedNewNotice,
+                new EmailRecipient(newEmail, fullName),
+                new Dictionary<string, string>
+                {
+                    ["fullName"] = fullName,
+                    // Masked, not in full: the holder is entitled to know WHICH address was unlinked,
+                    // and seeing part of it is enough to recognise it.
+                    ["oldEmailMasked"] = DepartmentPersonnelAudit.MaskEmail(oldEmail),
+                },
+                RelatedType: "User",
+                RelatedId: targetUserId,
+                SentBy: scope.ActorUserId), cancellationToken);
         }
 
         return (oldOk, newOk) switch
@@ -405,13 +434,12 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
         };
     }
 
-    private async Task<bool> TrySendAsync(
-        string toEmail, string subject, string html, CancellationToken cancellationToken)
+    private async Task<bool> TrySendAsync(SystemEmailRequest request, CancellationToken cancellationToken)
     {
         try
         {
-            var result = await _emailService.TrySendAsync(toEmail, subject, html, cancellationToken);
-            return result.Status == EmailDeliveryStatus.Sent;
+            var result = await _dispatcher.SendAsync(request, cancellationToken);
+            return result.Delivery.Status == EmailDeliveryStatus.Sent;
         }
         catch
         {

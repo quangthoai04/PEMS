@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Accounts.Commands.ResendAccountEmailConfirmation;
@@ -26,17 +27,17 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly IAccountEmailConfirmationService _confirmations;
-    private readonly IEmailService _email;
+    private readonly ISystemEmailDispatcher _dispatcher;
 
     public ResendAccountEmailConfirmationCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IAccountEmailConfirmationService confirmations, IEmailService email)
+        IAccountEmailConfirmationService confirmations, ISystemEmailDispatcher dispatcher)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _confirmations = confirmations;
-        _email = email;
+        _dispatcher = dispatcher;
     }
 
     public async Task<ResendAccountEmailConfirmationResponse> Handle(
@@ -45,7 +46,14 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
         var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken);
         if (user is null) throw new NotFoundException("Tài khoản không tồn tại.");
 
-        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user);
+        // The role is resolved before the scope check, not just for the email below: a Staff Leader's
+        // authority over an account depends on what that account IS, so the check cannot run without it.
+        var roleCode = await _db.Roles.AsNoTracking()
+            .Where(r => r.RoleId == user.RoleId)
+            .Select(r => r.RoleCode)
+            .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
+
+        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user, roleCode);
 
         if (user.Status != UserStatuses.PendingEmailConfirmation)
             throw new BusinessRuleException(
@@ -70,9 +78,13 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
         var rawToken = await _confirmations.IssuePendingAsync(user.UserId, user.Email, isResend: true, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
-        var result = await _email.TrySendAsync(
-            user.Email, AccountConfirmationEmail.Subject,
-            AccountConfirmationEmail.BuildHtml(user.FullName, _confirmations.BuildConfirmUrl(rawToken)),
+        // Built from the same helper as the create and email-edit flows, so the three activation mails
+        // cannot drift apart. The address is user.Email — a resend re-sends to where the account
+        // already points, never to an address supplied by the request.
+        var result = await _dispatcher.SendAsync(
+            await PendingAccountEmailChangeMails.BuildConfirmationAsync(
+                _db, _confirmations, user.UserId, user.FullName, roleCode, user.SubRole,
+                user.PrimaryCampusId, user.Email, rawToken, _currentUser.UserId, cancellationToken),
             cancellationToken);
 
         var newResendCount = (latest?.Status == AccountEmailConfirmationStatuses.Pending ? latest.ResendCount : 0) + 1;
@@ -80,7 +92,7 @@ public sealed class ResendAccountEmailConfirmationCommandHandler
         return new ResendAccountEmailConfirmationResponse
         {
             Success = true,
-            EmailNotificationStatus = AccountConfirmationEmail.MapStatus(result.Status),
+            EmailNotificationStatus = result.NotificationStatus,
             ResendCount = newResendCount,
             Message = "Đã gửi lại email xác nhận.",
         };

@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Moq;
 using PEMS.Application.Accounts.Commands.UpdateAccountRole;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Departments;
 using PEMS.Domain.Entities.Users;
@@ -30,26 +31,32 @@ public class UpdateAccountRoleCommandHandlerTests
         public FakeCurrentUserService Actor { get; } = new();     // Staff Leader, id 900, campus 1
         public FakeDateTimeService Clock { get; } = new();
         public RecordingSessionService Sessions { get; }
-        public Mock<IEmailService> Email { get; } = new();
+        public FakeSystemEmailDispatcher Dispatcher { get; } = new();
         public RecordingUserMutationLockService Locks { get; } = new();
+
+        /// <summary>
+        /// Issues real confirmation rows, so a pending account's email edit can be asserted the way it
+        /// actually behaves — the old token superseded, exactly one live token, bound to the new address.
+        /// </summary>
+        public RecordingConfirmationService Confirmations { get; }
         public UpdateAccountRoleCommandHandler Handler { get; }
 
         public Harness()
         {
             Sessions = new RecordingSessionService(Db);
-            Email.Setup(e => e.SendAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-            Handler = new UpdateAccountRoleCommandHandler(Db, Actor, Sessions, Clock, Email.Object, Locks);
+            Confirmations = new RecordingConfirmationService(Db, Clock);
+            Handler = new UpdateAccountRoleCommandHandler(
+                Db, Actor, Sessions, Clock, Dispatcher, Locks,
+                new PendingAccountEmailChangeService(Db, Confirmations), Confirmations);
         }
 
         /// <summary>Asserts the request neither sent an email nor revoked a session (spec §21).</summary>
         public void AssertNoSideEffects()
         {
             Assert.Empty(Sessions.RevokeAllCalls);
-            Email.Verify(e => e.SendAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
-                Times.Never);
+            // Asserted against the dispatcher rather than IEmailService: the handler no longer composes
+            // its own message, so "no email" now means "no template was dispatched".
+            Assert.Empty(Dispatcher.Sent);
             Assert.Empty(Db.AuditLogs);
         }
 
@@ -1389,6 +1396,603 @@ public class UpdateAccountRoleCommandHandlerTests
         });
 
         Assert.Empty(h.Locks.LockedDepartmentBatches);
+    }
+
+    // ── Email change: pending accounts (STAFF_LEADER_PENDING_EMAIL spec §11/§13/§15/§16/§17) ──
+    //
+    // The property under test throughout: a PENDING_EMAIL_CONFIRMATION account has never proven it
+    // owns an address, so moving that address must re-issue the ACTIVATION link — not mail a "your
+    // login email changed" notice, which carries no token and would strand the account forever.
+
+    /// <summary>A pending STAFF/STAFF target — the shape a Staff Leader may re-role and rename.</summary>
+    private static User PendingStaff(ulong id, string email = "old.holder@fpt.edu.vn")
+    {
+        var u = Uc106TestData.CreateUser(id, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        u.Email = email;
+        u.Status = UserStatuses.PendingEmailConfirmation;
+        u.EmailVerifiedAt = new DateTime(2026, 1, 2);
+        return u;
+    }
+
+    [Fact]
+    public async Task PendingAccount_EmailChange_MailsTheActivationLink_NotAChangeNotice()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "New.Holder@fpt.edu.vn",
+        });
+
+        var confirmation = h.Dispatcher.Single(SystemEmailTemplates.AccountEmailConfirmation);
+        Assert.Equal("new.holder@fpt.edu.vn", confirmation.To.Email);       // normalized
+        // The activation button is the whole point — a mail without it cannot activate anything.
+        Assert.Contains(
+            h.Confirmations.IssuedTokens.Last(),
+            confirmation.TrustedBlocks![EmailTrustedBlocks.ActionBlock]);
+
+        // The notice templates belong to accounts that HAVE confirmed an address. Neither may appear.
+        Assert.Empty(h.Dispatcher.All(SystemEmailTemplates.AccountEmailChangedNewNotice));
+        Assert.Empty(h.Dispatcher.All(SystemEmailTemplates.AccountEmailChangedOldNotice));
+
+        Assert.True(res.EmailChanged);
+        Assert.True(res.RequiresEmailConfirmation);
+        Assert.Equal("SENT", res.EmailNotificationStatus);
+    }
+
+    [Fact]
+    public async Task PendingAccount_EmailChange_SendsTheOldAddressNothingButANeutralNotice()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId, "typo@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160777",
+            FullName = "Nguyen Van A",
+            Email = "real.holder@fpt.edu.vn",
+        });
+
+        var notice = h.Dispatcher.Single(SystemEmailTemplates.AccountPendingEmailChangedOldNotice);
+        Assert.Equal("typo@fpt.edu.vn", notice.To.Email);
+        // The mistyped address may belong to a stranger: it learns that something changed, and nothing
+        // else. No name (not even on the envelope), no new address, no role, no token.
+        Assert.Empty(notice.Variables);
+        Assert.True(string.IsNullOrEmpty(notice.To.DisplayName));
+        Assert.Null(notice.TrustedBlocks);
+    }
+
+    [Fact]
+    public async Task PendingAccount_RoleAndEmailInOneRequest_ConfirmationStatesTheFinalRole()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160123",
+            FullName = "Tran Thi B",
+            Email = "student.b@fpt.edu.vn",
+        });
+
+        // Not the snapshot the account was created with: the holder is being activated INTO the new
+        // role, so that is the one the mail must name.
+        var confirmation = h.Dispatcher.Single(SystemEmailTemplates.AccountEmailConfirmation);
+        Assert.Equal("Tran Thi B", confirmation.Variables["fullName"]);
+        Assert.Equal(
+            AccountRoleDisplayNames.Resolve(RoleCodes.Student, null),
+            confirmation.Variables["roleName"]);
+    }
+
+    [Fact]
+    public async Task PendingAccount_RoleAndEmailCommitTogether_AndTheOldTokenDies()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        // A live link already mailed to the old address.
+        await h.Confirmations.IssuePendingAsync(TargetId, "old.holder@fpt.edu.vn", isResend: false, CancellationToken.None);
+        await h.Db.SaveChangesAsync();
+
+        await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160124",
+            Email = "moved@fpt.edu.vn",
+        });
+
+        var user = await h.Db.Users.SingleAsync(u => u.UserId == TargetId);
+        // One request, one transaction: neither half can land without the other.
+        Assert.Equal("moved@fpt.edu.vn", user.Email);
+        Assert.Equal(Uc106TestData.StudentRoleId, user.RoleId);
+        Assert.Equal("HE160124", user.StudentCode);
+        // Still pending — nothing here activates an account.
+        Assert.Equal(UserStatuses.PendingEmailConfirmation, user.Status);
+        Assert.Null(user.EmailVerifiedAt);
+
+        var tokens = await h.Db.AccountEmailConfirmations.Where(c => c.UserId == TargetId).ToListAsync();
+        var live = tokens.Where(c => c.Status == AccountEmailConfirmationStatuses.Pending).ToList();
+        Assert.Single(live);                                      // exactly one link can confirm
+        Assert.Equal("moved@fpt.edu.vn", live[0].TargetEmail);    // and it points at the new address
+        Assert.Contains(tokens, c => c.Status == AccountEmailConfirmationStatuses.Superseded);
+    }
+
+    // ── The role notice does not depend on the account's status (PENDING_ROLE_CHANGE_EMAIL spec) ──
+    //
+    // A pending account used to be skipped, on the theory that its activation mail already names the
+    // final role. But that mail only exists when the ADDRESS moved too — so re-roling a pending
+    // account changed the permissions it will wake up with and told nobody. Status decides which
+    // confirmation flow runs; it never decides whether the holder learns their role moved.
+
+    [Fact]
+    public async Task PendingAccount_RoleChangeOnly_IsStillToldTheirRoleMoved()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId, "pending.holder@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160126",
+        });
+
+        var mail = h.Dispatcher.Single(SystemEmailTemplates.AccountRoleChanged);
+        // The address it currently holds — the only one it has.
+        Assert.Equal("pending.holder@fpt.edu.vn", mail.To.Email);
+        Assert.Equal(
+            AccountRoleDisplayNames.Resolve(RoleCodes.Staff, UserSubRoles.Staff),
+            mail.Variables["oldRoleName"]);
+        Assert.Equal(
+            AccountRoleDisplayNames.Resolve(RoleCodes.Student, null),
+            mail.Variables["newRoleName"]);
+        // Campus is read from the RESOLVED shape, not the pre-change snapshot.
+        Assert.Equal($"Campus {Campus}", mail.Variables["campusName"]);
+        Assert.Equal(TargetId, mail.RelatedId);
+        Assert.Equal("User", mail.RelatedType);
+        Assert.Equal(h.Actor.UserId, mail.SentBy);
+
+        Assert.True(res.RoleChanged);
+        Assert.False(res.EmailChanged);
+        Assert.Equal("SENT", res.RoleChangeEmailNotificationStatus);
+        // Nothing about the address moved, so neither address-related mail was due.
+        Assert.Equal("NOT_REQUIRED", res.EmailNotificationStatus);
+        Assert.Equal("NOT_REQUIRED", res.ConfirmationEmailNotificationStatus);
+        Assert.True(res.RequiresEmailConfirmation);          // still pending, and says so
+    }
+
+    [Fact]
+    public async Task PendingAccount_RoleChangeOnly_LeavesTheConfirmationTokenExactlyAsItWas()
+    {
+        // The token proves the holder owns the ADDRESS. A role change does not touch that ownership, so
+        // re-issuing here would kill a live activation link — and burn a resend the operator still needs.
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        await h.Confirmations.IssuePendingAsync(
+            TargetId, "old.holder@fpt.edu.vn", isResend: true, CancellationToken.None);
+        await h.Db.SaveChangesAsync();
+        var issuedBefore = h.Confirmations.IssuedTokens.Count;
+
+        await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160127",
+        });
+
+        Assert.Equal(issuedBefore, h.Confirmations.IssuedTokens.Count);      // no new token
+        var token = Assert.Single(await h.Db.AccountEmailConfirmations
+            .Where(c => c.UserId == TargetId).ToListAsync());
+        Assert.Equal(AccountEmailConfirmationStatuses.Pending, token.Status);   // the live link survives
+        Assert.Equal("old.holder@fpt.edu.vn", token.TargetEmail);
+        Assert.Equal(1, token.ResendCount);                                 // not bumped
+
+        var user = await h.Db.Users.SingleAsync(u => u.UserId == TargetId);
+        Assert.Equal(UserStatuses.PendingEmailConfirmation, user.Status);    // never auto-activated
+        Assert.Empty(h.Dispatcher.All(SystemEmailTemplates.AccountEmailConfirmation));
+    }
+
+    [Fact]
+    public async Task PendingAccount_RoleAndEmail_SendsBothMailsToTheNewAddress()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId, "typo@fpt.edu.vn"));
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160125",
+            Email = "Again@fpt.edu.vn",
+        });
+
+        // Two facts, two messages — the activation link and the role notice — both aimed at the address
+        // the holder will actually be reading.
+        Assert.Equal("again@fpt.edu.vn",
+            h.Dispatcher.Single(SystemEmailTemplates.AccountEmailConfirmation).To.Email);
+        var roleMail = h.Dispatcher.Single(SystemEmailTemplates.AccountRoleChanged);
+        Assert.Equal("again@fpt.edu.vn", roleMail.To.Email);
+        // The old address gets nothing but the neutral notice: no role, no name, no token.
+        Assert.Equal("typo@fpt.edu.vn",
+            h.Dispatcher.Single(SystemEmailTemplates.AccountPendingEmailChangedOldNotice).To.Email);
+
+        Assert.True(res.RoleChanged);
+        Assert.True(res.EmailChanged);
+        Assert.True(res.RequiresEmailConfirmation);
+        Assert.Equal("SENT", res.ConfirmationEmailNotificationStatus);
+        Assert.Equal("SENT", res.RoleChangeEmailNotificationStatus);
+    }
+
+    [Fact]
+    public async Task PendingAccount_AFailedConfirmationStillLetsTheRoleNoticeGoOut()
+    {
+        // The two mails are independent in both directions. Suppressing the role notice because the
+        // activation link failed would lose the one message that CAN still be delivered.
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        h.Dispatcher.OutcomeFor = req =>
+            req.TemplateCode == SystemEmailTemplates.AccountEmailConfirmation
+                ? EmailDeliveryResult.Failed("SMTP", "không gửi được")
+                : EmailDeliveryResult.Sent();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160128",
+            Email = "reachable@fpt.edu.vn",
+        });
+
+        Assert.Single(h.Dispatcher.All(SystemEmailTemplates.AccountRoleChanged));
+        Assert.Equal("FAILED", res.ConfirmationEmailNotificationStatus);
+        Assert.Equal("SENT", res.RoleChangeEmailNotificationStatus);
+        // And the change itself stands: an undeliverable mail is not a reason to undo a commit.
+        Assert.Equal("reachable@fpt.edu.vn",
+            (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).Email);
+    }
+
+    [Theory]
+    [InlineData(EmailDeliveryStatus.Skipped, "SKIPPED")]
+    [InlineData(EmailDeliveryStatus.Failed, "FAILED")]
+    public async Task RoleNoticeDelivery_IsReportedTruthfully_AndNeverRollsTheRoleBack(
+        EmailDeliveryStatus delivery, string expected)
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        h.Dispatcher.Outcome = new EmailDeliveryResult(delivery);
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160129",
+        });
+
+        Assert.Equal(expected, res.RoleChangeEmailNotificationStatus);
+        // Reporting a failed mail as SENT would leave the operator believing the holder had been told.
+        Assert.NotEqual("SENT", res.RoleChangeEmailNotificationStatus);
+        var user = await h.Db.Users.SingleAsync(u => u.UserId == TargetId);
+        Assert.Equal(Uc106TestData.StudentRoleId, user.RoleId);
+        Assert.Equal("HE160129", user.StudentCode);
+    }
+
+    [Fact]
+    public async Task RoleNoticeThatThrows_IsReportedAsFailed_NotPropagated()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        h.Dispatcher.ThrowOnSend = new InvalidOperationException("dispatcher down");
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160130",
+        });
+
+        // A 500 here would tell the caller the role change failed, when it is committed and correct.
+        Assert.Equal("FAILED", res.RoleChangeEmailNotificationStatus);
+        Assert.Equal(Uc106TestData.StudentRoleId,
+            (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).RoleId);
+    }
+
+    [Fact]
+    public async Task PendingAccount_NameOnlyEdit_SendsNoRoleNotice()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,              // same shape
+            FullName = "Sửa Lại Tên",
+        });
+
+        // ACCOUNT_ROLE_CHANGED says only "your role went from X to Y". Nothing here moved a role.
+        Assert.Empty(h.Dispatcher.Sent);
+        Assert.False(res.RoleChanged);
+        Assert.Equal("NOT_REQUIRED", res.RoleChangeEmailNotificationStatus);
+        Assert.Equal("Sửa Lại Tên", (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).FullName);
+    }
+
+    [Fact]
+    public async Task PendingAccount_StudentCodeOnlyEdit_SendsNoRoleNotice()
+    {
+        var h = CreateHarness();
+        var pending = Student(TargetId, "HE160001");
+        pending.Status = UserStatuses.PendingEmailConfirmation;
+        h.Db.Users.Add(pending);
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,            // STUDENT → STUDENT
+            StudentCode = "HE160002",
+        });
+
+        Assert.Empty(h.Dispatcher.Sent);
+        Assert.False(res.RoleChanged);
+        Assert.Equal("NOT_REQUIRED", res.RoleChangeEmailNotificationStatus);
+        Assert.Equal("HE160002", (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).StudentCode);
+    }
+
+    [Fact]
+    public async Task InactiveAccount_RoleChange_IsToldToo()
+    {
+        // The status the account happens to be parked in never decides this.
+        var h = CreateHarness();
+        var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        user.Status = UserStatuses.Inactive;
+        user.Email = "inactive.holder@fpt.edu.vn";
+        h.Db.Users.Add(user);
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160131",
+        });
+
+        Assert.Equal("inactive.holder@fpt.edu.vn",
+            h.Dispatcher.Single(SystemEmailTemplates.AccountRoleChanged).To.Email);
+        Assert.True(res.RoleChanged);
+        Assert.Equal("SENT", res.RoleChangeEmailNotificationStatus);
+        Assert.False(res.RequiresEmailConfirmation);
+    }
+
+    [Theory]
+    [InlineData(EmailDeliveryStatus.Skipped, "SKIPPED")]
+    [InlineData(EmailDeliveryStatus.Failed, "FAILED")]
+    public async Task PendingAccount_ReportsTheConfirmationDeliveryTruthfully(
+        EmailDeliveryStatus delivery, string expected)
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        h.Dispatcher.Outcome = new EmailDeliveryResult(delivery);
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "undeliverable@fpt.edu.vn",
+        });
+
+        // Announcing success on a mail nobody received would send the caller away waiting for a
+        // confirmation that cannot arrive. The account change itself is committed regardless.
+        Assert.Equal(expected, res.EmailNotificationStatus);
+        Assert.Equal("undeliverable@fpt.edu.vn", (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).Email);
+    }
+
+    [Fact]
+    public async Task PendingAccount_AFailedOldNoticeDoesNotDowngradeTheConfirmation()
+    {
+        var h = CreateHarness();
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+        // Only the notice to the previous address fails.
+        h.Dispatcher.OutcomeFor = req =>
+            req.TemplateCode == SystemEmailTemplates.AccountPendingEmailChangedOldNotice
+                ? EmailDeliveryResult.Failed("SMTP", "không gửi được")
+                : EmailDeliveryResult.Sent();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "reachable@fpt.edu.vn",
+        });
+
+        // The mail that decides whether this account can ever be activated went out. A best-effort
+        // notice to an address that may be a stranger's must not be able to report otherwise.
+        Assert.Equal("SENT", res.EmailNotificationStatus);
+    }
+
+    [Fact]
+    public async Task PendingAccount_RejectsAnEmailAlreadyUsedElsewhere()
+    {
+        var h = CreateHarness();
+        var other = PendingStaff(200, "taken@fpt.edu.vn");
+        other.Status = UserStatuses.Active;
+        h.Db.Users.Add(other);
+        h.Db.Users.Add(PendingStaff(TargetId));
+        h.Db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "taken@fpt.edu.vn",
+        }));
+
+        // Refused means unchanged: no token issued, no mail, nothing written.
+        Assert.Empty(h.Confirmations.IssuedTokens);
+        Assert.Empty(h.Dispatcher.Sent);
+        Assert.Equal("old.holder@fpt.edu.vn", (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).Email);
+    }
+
+    // ── Email change: accounts that HAVE confirmed an address (spec §18/§19/§20) ──
+
+    [Fact]
+    public async Task ActiveAccount_EmailChange_SendsBothNotices_AndNoActivationLink()
+    {
+        var h = CreateHarness();
+        var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        user.Email = "before@fpt.edu.vn";
+        h.Db.Users.Add(user);
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "after@fpt.edu.vn",
+        });
+
+        Assert.Equal("before@fpt.edu.vn",
+            h.Dispatcher.Single(SystemEmailTemplates.AccountEmailChangedOldNotice).To.Email);
+        var newNotice = h.Dispatcher.Single(SystemEmailTemplates.AccountEmailChangedNewNotice);
+        Assert.Equal("after@fpt.edu.vn", newNotice.To.Email);
+        // Enough of the old address to recognise it, not enough to be a disclosure.
+        Assert.Equal(AccountEmailVariables.MaskEmail("before@fpt.edu.vn"), newNotice.Variables["oldEmailMasked"]);
+
+        // This account HAS proven an address; it is re-verifying, not activating.
+        Assert.Empty(h.Dispatcher.All(SystemEmailTemplates.AccountEmailConfirmation));
+        Assert.True(res.EmailChanged);
+        Assert.False(res.RequiresEmailConfirmation);
+        Assert.Equal("SENT", res.EmailNotificationStatus);
+    }
+
+    [Fact]
+    public async Task ActiveAccount_EmailChange_ClearsVerificationAndRevokesSessions()
+    {
+        var h = CreateHarness();
+        var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        user.Email = "before@fpt.edu.vn";
+        user.EmailVerifiedAt = new DateTime(2026, 1, 5);
+        h.Db.Users.Add(user);
+        h.Db.UserAuthProviders.AddRange(
+            new UserAuthProvider
+            {
+                UserId = TargetId, ProviderType = ProviderTypes.LocalPassword,
+                ProviderEmail = "before@fpt.edu.vn", IsEnabled = true, LinkedAt = new DateTime(2026, 1, 1),
+            },
+            new UserAuthProvider
+            {
+                UserId = TargetId, ProviderType = ProviderTypes.GoogleSso, ProviderSubject = "google-sub-1",
+                ProviderEmail = "before@fpt.edu.vn", IsEnabled = true, LinkedAt = new DateTime(2026, 1, 1),
+            });
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "after@fpt.edu.vn",
+        });
+
+        var saved = await h.Db.Users.SingleAsync(u => u.UserId == TargetId);
+        Assert.Null(saved.EmailVerifiedAt);                       // must prove the new address
+        Assert.NotEmpty(h.Sessions.RevokeAllCalls);               // the old identity stops signing in
+
+        var providers = await h.Db.UserAuthProviders.Where(p => p.UserId == TargetId).ToListAsync();
+        // The external binding was proven against the OLD address, so it goes; the local one follows.
+        Assert.DoesNotContain(providers, p => p.ProviderType == ProviderTypes.GoogleSso);
+        Assert.Equal("after@fpt.edu.vn",
+            providers.Single(p => p.ProviderType == ProviderTypes.LocalPassword).ProviderEmail);
+    }
+
+    [Fact]
+    public async Task ActiveAccount_RoleAndEmailChange_SendsTheRoleNoticeAsWell()
+    {
+        var h = CreateHarness();
+        var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        user.Email = "before@fpt.edu.vn";
+        h.Db.Users.Add(user);
+        h.Db.SaveChanges();
+
+        await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Student,
+            StudentCode = "HE160222",
+            Email = "after@fpt.edu.vn",
+        });
+
+        // Three separate facts, three separate messages — no combined template is invented for this.
+        Assert.Single(h.Dispatcher.All(SystemEmailTemplates.AccountEmailChangedOldNotice));
+        Assert.Single(h.Dispatcher.All(SystemEmailTemplates.AccountEmailChangedNewNotice));
+        Assert.Single(h.Dispatcher.All(SystemEmailTemplates.AccountRoleChanged));
+    }
+
+    [Fact]
+    public async Task ActiveAccount_OneNoticeFailing_IsReportedAsPartial()
+    {
+        var h = CreateHarness();
+        var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        user.Email = "before@fpt.edu.vn";
+        h.Db.Users.Add(user);
+        h.Db.SaveChanges();
+        h.Dispatcher.OutcomeFor = req =>
+            req.TemplateCode == SystemEmailTemplates.AccountEmailChangedOldNotice
+                ? EmailDeliveryResult.Failed("SMTP", "không gửi được")
+                : EmailDeliveryResult.Sent();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            Email = "after@fpt.edu.vn",
+        });
+
+        Assert.Equal("PARTIAL", res.EmailNotificationStatus);
+        // Partial delivery is a reporting fact, not a reason to undo a committed change.
+        Assert.Equal("after@fpt.edu.vn", (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).Email);
+    }
+
+    [Fact]
+    public async Task NameOnlyEdit_SendsNothingAtAll()
+    {
+        var h = CreateHarness();
+        var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
+        user.Email = "stable@fpt.edu.vn";
+        h.Db.Users.Add(user);
+        h.Db.SaveChanges();
+
+        var res = await h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = TargetId,
+            NewRoleCode = RoleCodes.Staff,
+            FullName = "Correcting A Typo",
+        });
+
+        // Neither the address nor the role moved. ACCOUNT_ROLE_CHANGED says only "your role went from
+        // X to Y" — sending it here would tell the holder something untrue.
+        Assert.Empty(h.Dispatcher.Sent);
+        Assert.False(res.EmailChanged);
+        Assert.Equal("NOT_REQUIRED", res.EmailNotificationStatus);
+        Assert.Equal("Correcting A Typo", (await h.Db.Users.SingleAsync(u => u.UserId == TargetId)).FullName);
     }
 
     // ── helpers for reading the structured 409 payload ────────────────────────

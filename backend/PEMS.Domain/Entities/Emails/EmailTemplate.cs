@@ -49,6 +49,25 @@ public class EmailTemplate
     [Column("variables_text")]
     public string? VariablesText { get; set; }
 
+    /// <summary>
+    /// SQL: revision INT UNSIGNED NOT NULL DEFAULT 1. The optimistic-concurrency token for content
+    /// writes (UC-44 update, and restore-to-default).
+    ///
+    /// <para>
+    /// Deliberately NOT mapped as an EF concurrency token. EF would put the value it loaded into the
+    /// WHERE clause, but the value that has to be checked is the one the OPERATOR was shown — a caller
+    /// who read revision 4, sat on the form while someone else saved 5, and then submits must be
+    /// refused. So both writers issue an explicit conditional UPDATE carrying the caller's expected
+    /// revision and bump this column in the same statement; a rows-affected of 0 IS the conflict.
+    /// </para>
+    /// <para>
+    /// Reading it is safe; assigning it from a handler is not — the increment belongs to SQL, because a
+    /// read-modify-write in C# reintroduces exactly the lost update this column exists to prevent.
+    /// </para>
+    /// </summary>
+    [Column("revision")]
+    public uint Revision { get; set; } = 1;
+
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
 
