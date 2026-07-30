@@ -8,6 +8,7 @@ import { departmentManagementApi } from '../../../features/department-management
 import { departmentLeaderDashboardApi } from '../../../features/dashboard/api/departmentLeaderDashboardApi';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import toast from 'react-hot-toast';
+import { validateLoginEmail } from '../../../shared/validation/loginEmailValidation';
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ChevronLeft,
@@ -251,9 +252,12 @@ export function DepartmentDetailDashboard() {
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newMemberData.email)) {
-      toast.error('Định dạng email không hợp lệ');
+    // The shared login-email rule, not a loose "something@something.tld" regex: this screen creates
+    // real login identities, and the server (AccountIdentityRules) refuses anything outside
+    // @gmail.com / @fpt.edu.vn. Validating differently here would only promise what it then rejects.
+    const emailError = validateLoginEmail(newMemberData.email);
+    if (emailError) {
+      toast.error(emailError);
       return;
     }
 

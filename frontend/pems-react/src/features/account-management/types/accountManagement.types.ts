@@ -322,6 +322,19 @@ export interface AccountDetails {
   /** HO_BASIC_INFO — true when an HO caller may edit this account's full name / email. */
   canEditBasicInfo?: boolean;
   editBasicInfoDisabledReason?: string | null;
+
+  /**
+   * True when THIS caller may re-issue the activation link for this account — it is still
+   * PENDING_EMAIL_CONFIRMATION and the backend has confirmed the caller's authority over it.
+   *
+   * Drives "Gửi lại email xác nhận". The backend decides because it can see sub-roles, campus scope
+   * and the self-account rule together; re-deriving that here from `roleCode` + `campusId` is how the
+   * button ends up offered to somebody who will then be refused with a 403.
+   */
+  canResendEmailConfirmation?: boolean;
+
+  /** True when this caller may correct a still-pending account's email (re-issues the link). */
+  canEditPendingEmail?: boolean;
 }
 
 /** HO_BASIC_INFO — request for POST /accounts/updatebasicaccountinfo (HO edits full name + email only). */
@@ -389,6 +402,58 @@ export interface ManageAccountStatusResponse {
   message: string;
 }
 
+/**
+ * Re-issue the confirmation link of an account still in PENDING_EMAIL_CONFIRMATION. The account is
+ * identified by id alone — the address is whatever the backend currently holds, never a value the
+ * caller supplies (correcting a typo is the separate edit-pending-email flow).
+ */
+export interface ResendAccountEmailConfirmationRequest {
+  userId: string | number;
+}
+
+export interface ResendAccountEmailConfirmationResponse {
+  success: boolean;
+  /**
+   * Truthful delivery outcome. `success: true` only means the request was processed and a fresh
+   * token issued — the mail itself may still have been SKIPPED (SMTP off) or FAILED, so the UI must
+   * branch on this field, never on `success`. Widened with `string` because the server may add
+   * outcomes this client has not been taught yet.
+   */
+  emailNotificationStatus: 'SENT' | 'SKIPPED' | 'FAILED' | string;
+  resendCount: number;
+  message: string;
+}
+
+/**
+ * Correct the address of an account still in PENDING_EMAIL_CONFIRMATION
+ * (POST /accounts/edit-pending-email). Mirrors backend EditPendingAccountEmailCommand.
+ *
+ * Separate from {@link UpdateBasicAccountInfoRequest} because the outcomes differ in kind: this one
+ * kills the old confirmation token and mails a fresh activation link to the new address, which is
+ * what such an account needs in order to ever become usable. `fullName` rides along so a modal that
+ * edits both fields commits them together — two calls could half-succeed.
+ */
+export interface EditPendingAccountEmailRequest {
+  userId: string | number;
+  newEmail: string;
+  /** Omit to leave the current name untouched. */
+  fullName?: string;
+}
+
+export interface EditPendingAccountEmailResponse {
+  success: boolean;
+  /** The stored (normalized) address. */
+  email: string;
+  /**
+   * Delivery outcome of the CONFIRMATION email sent to the new address — never the neutral notice
+   * sent to the old one. `success: true` only means the address was changed and a fresh token issued;
+   * the mail may still have been SKIPPED (SMTP off) or FAILED, so the UI must branch on this field.
+   * Widened with `string` because the server may add outcomes this client has not been taught yet.
+   */
+  emailNotificationStatus: 'SENT' | 'SKIPPED' | 'FAILED' | string;
+  message: string;
+}
+
 /** UC-100 Update Account Role request. Mirrors backend UpdateAccountRoleCommand. */
 export interface UpdateAccountRoleRequest {
   userId: string;
@@ -418,5 +483,63 @@ export interface UpdateAccountRoleResponse {
   roleCode: string;
   primaryCampusId?: string | null;
   revokedSessions: number;
+
+  /** True when this request changed the account's login email. */
+  emailChanged: boolean;
+
+  /**
+   * True when this request moved the account's role or sub-role — the one fact the role-changed email
+   * reports. A department move, a rename or an MSSV correction leaves it false, so the UI never
+   * announces a role change that did not happen.
+   */
+  roleChanged: boolean;
+
+  /**
+   * True when the account was still PENDING_EMAIL_CONFIRMATION when the request arrived — and therefore
+   * still is: nothing in this flow activates an account. "Đã cập nhật" and "đã kích hoạt" are different
+   * outcomes and only one of them is true here.
+   */
+  requiresEmailConfirmation: boolean;
+
+  /**
+   * What became of the message(s) sent because the ADDRESS moved, never what was attempted. `SENT` is
+   * the only value that means somebody received something; `SKIPPED` (mail off in this environment) and
+   * `FAILED` did not reach anyone, and `PARTIAL` means several were sent and not all landed. The account
+   * change is committed either way.
+   */
+  emailNotificationStatus:
+    | 'NOT_REQUIRED'
+    | 'SENT'
+    | 'SKIPPED'
+    | 'FAILED'
+    | 'PARTIAL'
+    | string;
+
+  /**
+   * Delivery outcome of the ACTIVATION link mailed to a still-pending account's new address —
+   * `NOT_REQUIRED` unless the account was pending AND its address moved. Kept apart from
+   * {@link UpdateAccountRoleResponse.roleChangeEmailNotificationStatus} because the consequences differ:
+   * this is the mail without which the account can never be activated, so its failure is what "Gửi lại
+   * email xác nhận" exists for.
+   */
+  confirmationEmailNotificationStatus:
+    | 'NOT_REQUIRED'
+    | 'SENT'
+    | 'SKIPPED'
+    | 'FAILED'
+    | string;
+
+  /**
+   * Delivery outcome of the role-changed notification — `NOT_REQUIRED` when the role did not move.
+   * Independent of the two fields above in both directions: a failed confirmation does not suppress this
+   * mail, and a failed role notice must not be shown as a failed confirmation.
+   */
+  roleChangeEmailNotificationStatus:
+    | 'NOT_REQUIRED'
+    | 'SENT'
+    | 'SKIPPED'
+    | 'FAILED'
+    | string;
+
   message: string;
 }

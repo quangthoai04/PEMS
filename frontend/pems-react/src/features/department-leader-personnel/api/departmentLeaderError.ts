@@ -1,5 +1,7 @@
 import { AxiosError } from 'axios';
+import { isLoginEmailMessage } from '../../../shared/validation/loginEmailValidation';
 import type { StatusImpactBlocker } from '../types/departmentLeaderPersonnel.types';
+import type { PersonnelFormErrors } from '../validation/personnelValidation';
 
 interface ApiErrorBody {
   message?: string;
@@ -81,6 +83,54 @@ export function getDepartmentLeaderErrorMessage(
   }
 
   return fallback;
+}
+
+/** Command property names as FluentValidation reports them, mapped to the modal's field names. */
+const FIELD_BY_PROPERTY: Record<string, keyof PersonnelFormErrors> = {
+  fullname: 'fullName',
+  email: 'email',
+  phone: 'phone',
+  gender: 'gender',
+};
+
+/** Error codes that are always the operator's fault on the email field specifically. */
+const EMAIL_FIELD_ERROR_CODES = new Set([
+  'ACCOUNT_EMAIL_ALREADY_EXISTS',
+  'AUTH_IDENTITY_CONFLICT',
+  'INVALID_EMAIL',
+  'EMAIL_UNCHANGED',
+]);
+
+/**
+ * Turns an API refusal into per-field errors the form can render inline.
+ *
+ * Frontend validation is only a UX aid — a stale client, a direct API call or a rule the server
+ * tightened first all produce rejections the modal never predicted. Those must land on the field
+ * that caused them, because a toast over a form that still looks valid tells the operator nothing
+ * about what to change.
+ *
+ * Three sources, most specific first: FluentValidation's per-property dictionary, the stable error
+ * code, and finally a handler-thrown message recognised as one of the login-email rules (a handler
+ * `ValidationException(message)` carries no property name at all).
+ */
+export function getDepartmentLeaderFieldErrors(error: unknown): PersonnelFormErrors {
+  const body = (error as AxiosError<ApiErrorBody>)?.response?.data;
+  const fieldErrors: PersonnelFormErrors = {};
+
+  for (const [property, messages] of Object.entries(body?.errors ?? {})) {
+    const field = FIELD_BY_PROPERTY[property.toLowerCase()];
+    if (field && messages?.length && !fieldErrors[field]) fieldErrors[field] = messages[0];
+  }
+
+  const message = body?.message;
+  if (!fieldErrors.email && message) {
+    const code = body?.errorCode;
+    if ((code && EMAIL_FIELD_ERROR_CODES.has(code)) || isLoginEmailMessage(message)) {
+      fieldErrors.email = code ? (DEPARTMENT_LEADER_ERROR_MESSAGES[code] ?? message) : message;
+    }
+  }
+
+  return fieldErrors;
 }
 
 /** The stable error code, when the backend supplied one. */

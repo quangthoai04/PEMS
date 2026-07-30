@@ -297,7 +297,7 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                       {fieldErrors.email ? (
                         <p id="replace-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.email}</p>
                       ) : (
-                        <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com, @fpt.edu.vn hoặc @fe.edu.vn.</p>
+                        <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com và @fpt.edu.vn.</p>
                       )}
                     </div>
                   </div>

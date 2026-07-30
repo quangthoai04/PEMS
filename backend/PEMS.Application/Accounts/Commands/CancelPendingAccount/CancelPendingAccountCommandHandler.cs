@@ -38,7 +38,15 @@ public sealed class CancelPendingAccountCommandHandler
         var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken);
         if (user is null) throw new NotFoundException("Tài khoản không tồn tại.");
 
-        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user);
+        // A Staff Leader's authority over an account turns on what that account IS, so the scope check
+        // needs its role — cancelling a pending account is as much an act of management as resending
+        // its link, and is held to the same three shapes.
+        var targetRoleCode = await _db.Roles.AsNoTracking()
+            .Where(r => r.RoleId == user.RoleId)
+            .Select(r => r.RoleCode)
+            .FirstOrDefaultAsync(cancellationToken) ?? RoleCodes.Staff;
+
+        PendingAccountAuthorization.EnsureCanManagePending(_currentUser, user, targetRoleCode);
 
         if (user.Status != UserStatuses.PendingEmailConfirmation)
             throw new BusinessRuleException(

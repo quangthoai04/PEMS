@@ -33,8 +33,10 @@ import {
 import { departmentLeaderPersonnelApi } from '../../../features/department-leader-personnel/api/departmentLeaderPersonnelApi';
 import {
   getDepartmentLeaderErrorMessage,
+  getDepartmentLeaderFieldErrors,
   isDepartmentLeaderScopeLost,
 } from '../../../features/department-leader-personnel/api/departmentLeaderError';
+import type { PersonnelFormErrors } from '../../../features/department-leader-personnel/validation/personnelValidation';
 import { useMyDepartmentPersonnel } from '../../../features/department-leader-personnel/hooks/useMyDepartmentPersonnel';
 import {
   STATUS_FILTER_OPTIONS,
@@ -64,6 +66,9 @@ export function MyDepartmentPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [formSubmitting, setFormSubmitting] = useState(false);
+  // Field-level rejections from the API, handed to the modal so they render under the offending
+  // input rather than only as a toast (a rule the server enforces but the client did not predict).
+  const [formServerErrors, setFormServerErrors] = useState<PersonnelFormErrors>({});
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -113,6 +118,7 @@ export function MyDepartmentPage() {
   const openCreate = () => {
     setFormMode('create');
     setDetail(null);
+    setFormServerErrors({});
     setFormOpen(true);
   };
 
@@ -120,6 +126,7 @@ export function MyDepartmentPage() {
     if (!detail) return;
     setFormMode('edit');
     setDetailOpen(false);
+    setFormServerErrors({});
     setFormOpen(true);
   };
 
@@ -130,6 +137,8 @@ export function MyDepartmentPage() {
     gender: PersonnelGender;
   }) => {
     setFormSubmitting(true);
+    // A retry starts from a clean slate: last attempt's server errors must not outlive it.
+    setFormServerErrors({});
     try {
       if (formMode === 'create') {
         const result = await departmentLeaderPersonnelApi.createPersonnel(values);
@@ -165,7 +174,9 @@ export function MyDepartmentPage() {
         toast.error(getDepartmentLeaderErrorMessage(error));
         return;
       }
-      // The modal stays open so the operator can correct the field and retry.
+      // The modal stays open so the operator can correct the field and retry — and the rejection is
+      // attached to the field that caused it, not just announced in a toast that scrolls away.
+      setFormServerErrors(getDepartmentLeaderFieldErrors(error));
       toast.error(getDepartmentLeaderErrorMessage(error));
     } finally {
       setFormSubmitting(false);
@@ -594,6 +605,7 @@ export function MyDepartmentPage() {
         mode={formMode}
         personnel={formMode === 'edit' ? detail : null}
         submitting={formSubmitting}
+        serverErrors={formServerErrors}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
       />

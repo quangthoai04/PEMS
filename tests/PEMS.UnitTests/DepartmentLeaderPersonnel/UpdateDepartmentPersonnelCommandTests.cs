@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Moq;
+using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentLeaderPersonnel.Commands.UpdateDepartmentPersonnel;
@@ -358,6 +359,150 @@ public class UpdateDepartmentPersonnelCommandTests
 
         await Assert.ThrowsAsync<ValidationException>(() => Run(h, Command(email: "moi@evil.com")));
         Assert.Equal(OldEmail, h.GetUser(TargetId).Email);
+    }
+
+    // ── Login-email domain whitelist, across every status (spec §12, §18.2) ──
+
+    /// <summary>
+    /// Every account status the feature supports. The list is spelled out rather than derived so a
+    /// new status cannot silently join the product without someone deciding what this rule means
+    /// for it.
+    /// </summary>
+    public static TheoryData<string> AllStatuses => new()
+    {
+        UserStatuses.Active,
+        UserStatuses.Inactive,
+        UserStatuses.PendingEmailConfirmation,
+        UserStatuses.Locked,
+    };
+
+    public static TheoryData<string, string> AllStatusesWithDisallowedEmail()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var status in new[]
+                 {
+                     UserStatuses.Active, UserStatuses.Inactive,
+                     UserStatuses.PendingEmailConfirmation, UserStatuses.Locked,
+                 })
+        {
+            foreach (var email in new[]
+                     {
+                         "moi@fe.edu.vn",              // the domain this rule removed
+                         "moi@yahoo.com",
+                         "moi@student.fpt.edu.vn",     // subdomain
+                         "moi@fpt.edu.vn.evil.com",    // wrapped look-alike
+                         "moi@fake-fpt.edu.vn",        // prefixed look-alike
+                         "moi+tag@gmail.com",          // plus addressing
+                     })
+            {
+                data.Add(status, email);
+            }
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// The property this whole feature rests on: <b>the status decides what an email change costs,
+    /// never which addresses are legal.</b> A refused address is refused identically whether the
+    /// account is ACTIVE, INACTIVE, PENDING or LOCKED.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllStatusesWithDisallowedEmail))]
+    public async Task Disallowed_domains_are_refused_in_every_status(string status, string email)
+    {
+        var h = WithTarget(status);
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Run(h, Command(email: email)));
+
+        // Same wording in every status — the operator must not have to guess why one screen differs.
+        Assert.False(string.IsNullOrWhiteSpace(ex.Message));
+        Assert.Equal(OldEmail, h.GetUser(TargetId).Email);
+        Assert.Equal(status, h.GetUser(TargetId).Status);
+    }
+
+    /// <summary>
+    /// A refused address must cost the account NOTHING. Not the identity, not the status, not the
+    /// live sessions, not the pending confirmation token, and no audit row claiming a change that
+    /// never happened — the whole point of validating before the transaction.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllStatuses))]
+    public async Task A_refused_domain_leaves_the_account_completely_untouched(string status)
+    {
+        var h = WithTarget(status);
+        h.AddAuthProvider(1, TargetId, ProviderTypes.GoogleSso, OldEmail);
+        var confirmation = h.AddPendingConfirmation(7001, TargetId, OldEmail);
+        var beforeName = h.GetUser(TargetId).FullName;
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(
+            () => Run(h, Command(email: "moi@fe.edu.vn")));
+        Assert.Equal("Chỉ chấp nhận @gmail.com và @fpt.edu.vn.", ex.Message);
+
+        h.Detach();
+        var target = h.GetUser(TargetId);
+        Assert.Equal(OldEmail, target.Email);
+        Assert.Equal(status, target.Status);
+        // The name is submitted in the same request; a rejected email must not let it through either.
+        Assert.Equal(beforeName, target.FullName);
+
+        Assert.Empty(h.Sessions.RevokeAllCalls);
+        Assert.Single(h.Db.UserAuthProviders, p => p.UserId == TargetId && p.ProviderEmail == OldEmail);
+        Assert.Equal(
+            AccountEmailConfirmationStatuses.Pending,
+            h.Db.AccountEmailConfirmations.Single(c => c.ConfirmationId == confirmation.ConfirmationId).Status);
+        h.Confirmations.Verify(c => c.IssuePendingAsync(
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        Assert.Empty(h.Dispatcher.Sent);
+        Assert.Empty(h.Db.AuditLogs);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllStatuses))]
+    public async Task Allowed_domains_are_accepted_in_every_status(string status)
+    {
+        foreach (var email in new[] { "moi@gmail.com", "moi@fpt.edu.vn", "  MOI@GMAIL.COM  " })
+        {
+            var h = WithTarget(status);
+
+            var result = await Run(h, Command(email: email));
+
+            Assert.True(result.EmailChanged);
+            Assert.Equal(AccountIdentityRules.NormalizeEmail(email), result.Email);
+            // Changing the address never changes the status — that is the invariant, in all four.
+            Assert.Equal(status, result.Status);
+            Assert.Equal(status, h.GetUser(TargetId).Status);
+        }
+    }
+
+    /// <summary>
+    /// Calls the handler directly, as a mis-wired MediatR registration would: the refusal must not
+    /// depend on the FluentValidation pipeline having run first.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllStatuses))]
+    public async Task The_handler_refuses_on_its_own_without_the_validator_pipeline(string status)
+    {
+        var h = WithTarget(status);
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(
+            () => Handler(h).Handle(Command(email: "moi@fe.edu.vn"), CancellationToken.None));
+
+        Assert.Equal(AccountIdentityRules.EmailDomainNotAllowedMessage, ex.Message);
+        Assert.Equal(OldEmail, h.GetUser(TargetId).Email);
+    }
+
+    [Fact]
+    public void The_validator_reports_the_same_refusal_as_the_handler()
+    {
+        var result = new UpdateDepartmentPersonnelCommandValidator()
+            .Validate(Command(email: "moi@fe.edu.vn"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e =>
+            e.PropertyName == nameof(UpdateDepartmentPersonnelCommand.Email)
+            && e.ErrorMessage == AccountIdentityRules.EmailDomainNotAllowedMessage);
     }
 
     // ── Scope + side-effect ordering ─────────────────────────────────────────

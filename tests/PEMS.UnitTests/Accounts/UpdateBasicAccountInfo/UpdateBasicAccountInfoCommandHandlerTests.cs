@@ -452,7 +452,9 @@ public class UpdateBasicAccountInfoCommandHandlerTests
 
     [Theory]
     [InlineData("Nguyễn Văn Tám Mười", "target@yahoo.com")]              // domain not allowed
+    [InlineData("Nguyễn Văn Tám Mười", "target@fe.edu.vn")]              // dropped from the allowlist
     [InlineData("Nguyễn Văn Tám Mười", "target@student.fpt.edu.vn")]     // subdomain, not exact
+    [InlineData("Nguyễn Văn Tám Mười", "target@gmail.com.vn")]           // look-alike, not exact
     [InlineData("Nguyễn Văn Tám Mười", "target+test@gmail.com")]         // plus addressing
     [InlineData("Nguyễn Văn Tám Mười", "abc..def@gmail.com")]            // malformed local-part
     [InlineData("Nguyễn Văn 123", "target.ho@fpt.edu.vn")]               // digits in the name
@@ -468,9 +470,13 @@ public class UpdateBasicAccountInfoCommandHandlerTests
             UserId = 810, FullName = fullName, Email = email,
         }));
 
+        // The rejection happens before any mutation: the address stands, no session is cut, nobody
+        // is notified and no success audit is written.
         var user = await h.Db.Users.SingleAsync(u => u.UserId == 810);
         Assert.Equal("target.ho@fpt.edu.vn", user.Email);
         Assert.Empty(h.Sessions.RevokeAllCalls);
+        Assert.Empty(h.Sent);
+        Assert.False(await h.Db.AuditLogs.AnyAsync());
     }
 
     /// <summary>Re-saving the target's own email must not trip the uniqueness check (§5.6).</summary>

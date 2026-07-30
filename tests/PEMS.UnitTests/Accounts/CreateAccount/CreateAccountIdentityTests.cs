@@ -70,7 +70,6 @@ public class CreateAccountIdentityTests
     [Theory]
     [InlineData("new.student@gmail.com")]
     [InlineData("new.student@fpt.edu.vn")]
-    [InlineData("new.student@fe.edu.vn")]
     public async Task AllowedDomains_AreAccepted(string email)
     {
         var h = CreateHarness();
@@ -109,7 +108,9 @@ public class CreateAccountIdentityTests
 
     [Theory]
     [InlineData("Trần Văn C", "student@yahoo.com")]                  // domain not allowed
+    [InlineData("Trần Văn C", "student@fe.edu.vn")]                  // dropped from the allowlist
     [InlineData("Trần Văn C", "student@student.fpt.edu.vn")]         // subdomain, not an exact match
+    [InlineData("Trần Văn C", "student@gmail.com.vn")]               // look-alike, not an exact match
     [InlineData("Trần Văn C", "student+test@gmail.com")]             // plus addressing
     [InlineData("Trần Văn C", "abc..def@gmail.com")]                 // malformed local-part
     [InlineData("Trần Văn C", "abc")]                                // not an email at all
@@ -122,7 +123,13 @@ public class CreateAccountIdentityTests
 
         await Assert.ThrowsAsync<ValidationException>(() => h.Run(Cmd(fullName, email)));
 
+        // Nothing at all is left behind: no account, no pending-confirmation row, no mail.
         Assert.False(await h.Db.Users.AnyAsync());
+        Assert.False(await h.Db.AccountEmailConfirmations.AnyAsync());
+        Assert.Empty(h.Dispatcher.Sent);
+        h.Confirmations.Verify(
+            c => c.IssuePendingAsync(It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
