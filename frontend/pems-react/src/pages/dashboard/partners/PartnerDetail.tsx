@@ -131,6 +131,17 @@ export function PartnerDetail() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docBusy, setDocBusy] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<PartnerDocument | null>(null);
+  // Chặn double-click khi tải file (thao tác có độ trễ) — id tài liệu / 'card' đang tải, null = rảnh.
+  const [downloadingKey, setDownloadingKey] = useState<number | 'card' | null>(null);
+  const handleDownloadDoc = async (key: number | 'card', path: string, fallbackName: string) => {
+    if (downloadingKey) return;
+    setDownloadingKey(key);
+    try {
+      await downloadAuthenticatedFile(path, fallbackName);
+    } finally {
+      setDownloadingKey(null);
+    }
+  };
 
   // OCR modal
   const [scanOpen, setScanOpen] = useState(false);
@@ -615,13 +626,12 @@ export function PartnerDetail() {
                       <Eye className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => void downloadAuthenticatedFile(
-                        API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title,
-                      )}
-                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
+                      onClick={() => void handleDownloadDoc(d.documentId, API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title)}
+                      disabled={downloadingKey !== null}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Tải xuống"
                     >
-                      <Download className="w-4 h-4" />
+                      {downloadingKey === d.documentId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
@@ -1053,12 +1063,11 @@ export function PartnerDetail() {
                     </div>
                   )}
                   <button
-                    onClick={() => void downloadAuthenticatedFile(
-                      API_ENDPOINTS.files.download(viewContact.scannedCardFileId!), 'card-visit',
-                    )}
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#004c91] hover:underline cursor-pointer"
+                    onClick={() => void handleDownloadDoc('card', API_ENDPOINTS.files.download(viewContact.scannedCardFileId!), 'card-visit')}
+                    disabled={downloadingKey !== null}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#004c91] hover:underline cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    <Download className="w-3.5 h-3.5" /> Tải xuống ảnh card
+                    {downloadingKey === 'card' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Tải xuống ảnh card
                   </button>
                 </div>
               )}
@@ -1122,7 +1131,16 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PartnerDocument; onClose:
     };
   }, [doc.fileId, isPdf]);
 
-  const download = () => void downloadAuthenticatedFile(API_ENDPOINTS.files.download(doc.fileId), doc.originalFilename || doc.title);
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadAuthenticatedFile(API_ENDPOINTS.files.download(doc.fileId), doc.originalFilename || doc.title);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -1142,22 +1160,23 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PartnerDocument; onClose:
             )
           ) : isPdf ? (
             pdfError ? (
-              <UnsupportedPreviewCard onDownload={download} />
+              <UnsupportedPreviewCard onDownload={download} downloading={downloading} />
             ) : pdfUrl ? (
               <iframe src={pdfUrl} title={doc.title} className="w-full h-[65vh] rounded-lg border border-gray-200 bg-white" />
             ) : (
               <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
             )
           ) : (
-            <UnsupportedPreviewCard onDownload={download} />
+            <UnsupportedPreviewCard onDownload={download} downloading={downloading} />
           )}
         </div>
         <div className="p-4 border-t border-gray-100 bg-white flex justify-end gap-3">
           <button
             onClick={download}
-            className="flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer"
+            disabled={downloading}
+            className="flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Download className="w-4 h-4" /> Tải xuống
+            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {downloading ? 'Đang tải...' : 'Tải xuống'}
           </button>
           <button onClick={onClose} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-colors cursor-pointer">
             Đóng
@@ -1168,16 +1187,17 @@ function DocumentPreviewModal({ doc, onClose }: { doc: PartnerDocument; onClose:
   );
 }
 
-function UnsupportedPreviewCard({ onDownload }: { onDownload: () => void }) {
+function UnsupportedPreviewCard({ onDownload, downloading }: { onDownload: () => void; downloading?: boolean }) {
   return (
     <div className="text-center py-8">
       <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
       <p className="text-sm font-medium text-gray-500">Không hỗ trợ xem trước trực tiếp, vui lòng tải xuống.</p>
       <button
         onClick={onDownload}
-        className="mt-4 inline-flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer"
+        disabled={downloading}
+        className="mt-4 inline-flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <Download className="w-4 h-4" /> Tải xuống
+        {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {downloading ? 'Đang tải...' : 'Tải xuống'}
       </button>
     </div>
   );

@@ -17,6 +17,7 @@ interface DocumentDetailModalProps {
 
 export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModalProps) {
   const { data: detail, isLoading, isError } = useDocumentDetail(documentId);
+  const [downloading, setDownloading] = React.useState(false);
 
   const handleShareZalo = (link: string) => {
     navigator.clipboard.writeText(link).then(() => {
@@ -34,6 +35,8 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
   };
 
   const handleDownload = async (fileId: number, filename: string) => {
+    if (downloading) return;
+    setDownloading(true);
     try {
       const toastId = toast.loading('Đang tải file...');
       const response = await httpClient.get(`/files/${fileId}/content`, {
@@ -50,6 +53,8 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
       toast.success('Tải file thành công!', { id: toastId });
     } catch (error) {
       toast.error('Có lỗi xảy ra hoặc bạn không có quyền tải file này.');
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -249,11 +254,12 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                       </div>
                       <div className="grid grid-cols-1 gap-2 pt-1">
                         {detail.file.fileId ? (
-                          <button 
+                          <button
                             onClick={() => handleDownload(detail.file.fileId, detail.file.originalFilename)}
-                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg transition-colors text-sm font-medium shadow-md shadow-[#004c91]/20 cursor-pointer"
+                            disabled={downloading}
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#004c91] hover:bg-[#00386b] text-white rounded-lg transition-colors text-sm font-medium shadow-md shadow-[#004c91]/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <Download className="w-4 h-4" /> Tải xuống máy
+                            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {downloading ? 'Đang tải...' : 'Tải xuống máy'}
                           </button>
                         ) : downloadLink ? (
                           <a 

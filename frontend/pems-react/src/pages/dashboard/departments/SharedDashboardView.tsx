@@ -251,6 +251,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [invitationStatus, setInvitationStatus] = useState<'pending' | 'rejecting' | 'rejected' | 'accepted' | 'assigned'>('pending');
   const [rejectReason, setRejectReason] = useState('');
   const [rejectSignature, setRejectSignature] = useState<{ name: string, time: string } | null>(null);
+  // Chặn double-click khi gửi phản hồi từ chối lời mời (thao tác có độ trễ).
+  const [isSendingInvitationReject, setIsSendingInvitationReject] = useState(false);
   const [acceptSignature, setAcceptSignature] = useState<{ name: string, time: string } | null>(null);
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [assignedPerson, setAssignedPerson] = useState<string | null>(null);
@@ -384,6 +386,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [requestAcceptSignature, setRequestAcceptSignature] = useState<{ name: string, time: string } | null>(null);
   const [requestRejectReason, setRequestRejectReason] = useState('');
   const [requestRejectSignature, setRequestRejectSignature] = useState<{ name: string, time: string } | null>(null);
+  // Chặn double-click khi gửi phản hồi từ chối nhiệm vụ (thao tác có độ trễ).
+  const [isSendingRequestReject, setIsSendingRequestReject] = useState(false);
   const [isProposing, setIsProposing] = useState(false);
   const [proposalContent, setProposalContent] = useState('');
   const [proposalNote, setProposalNote] = useState('');
@@ -3076,6 +3080,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </button>
                           <button
                             onClick={async () => {
+                              if (isSendingInvitationReject) return;
+                              setIsSendingInvitationReject(true);
                               try {
                                 if (activePopoverEvent?.rawId) {
                                   await departmentReceptionTasksApi.declineInvitation(activePopoverEvent.rawId, rejectReason);
@@ -3087,11 +3093,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   await fetchCalendarEvents();
                                 }
                               } catch (e) { console.error(e); toast.error('Gửi phản hồi thất bại'); }
+                              finally { setIsSendingInvitationReject(false); }
                             }}
-                            disabled={!rejectReason.trim()}
+                            disabled={!rejectReason.trim() || isSendingInvitationReject}
                             className="px-5 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold text-xs disabled:opacity-50"
                           >
-                            Gửi phản hồi
+                            {isSendingInvitationReject ? 'Đang gửi...' : 'Gửi phản hồi'}
                           </button>
                         </div>
                       </div>
@@ -3630,6 +3637,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </button>
                           <button
                             onClick={async () => {
+                              if (isSendingRequestReject) return;
+                              setIsSendingRequestReject(true);
                               try {
                                 if (activePopoverEvent?.rawId) {
                                   await departmentReceptionTasksApi.rejectRequest(activePopoverEvent.rawId, requestRejectReason);
@@ -3641,11 +3650,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   await Promise.all([fetchCalendarEvents(), fetchAssignmentsProgress()]);
                                 }
                               } catch (e) { console.error(e); toast.error('Từ chối thất bại'); }
+                              finally { setIsSendingRequestReject(false); }
                             }}
-                            disabled={!requestRejectReason.trim()}
+                            disabled={!requestRejectReason.trim() || isSendingRequestReject}
                             className="px-5 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold text-xs disabled:opacity-50"
                           >
-                            Gửi phản hồi
+                            {isSendingRequestReject ? 'Đang gửi...' : 'Gửi phản hồi'}
                           </button>
                         </div>
                       </div>
