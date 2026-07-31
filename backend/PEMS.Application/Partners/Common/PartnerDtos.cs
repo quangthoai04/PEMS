@@ -23,7 +23,12 @@ public sealed class PartnerListItemDto
     public DateTime? ReviewedAt { get; set; }
     /// <summary>Actions the CURRENT user may run on this row (view/edit/approve/reject).</summary>
     public List<string> AllowedActions { get; set; } = new();
+
+    public string? EnglishName { get; set; }
+    public string? EnglishShortName { get; set; }
+    public bool HasEnglishTranslation { get; set; }
 }
+
 
 public sealed class PartnerListResponse
 {

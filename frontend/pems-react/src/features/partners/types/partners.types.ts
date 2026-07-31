@@ -10,6 +10,9 @@ export interface PartnerListItem {
   partnerCode?: string | null;
   name: string;
   shortName?: string | null;
+  englishName?: string | null;
+  englishShortName?: string | null;
+  hasEnglishTranslation?: boolean;
   country?: string | null;
   city?: string | null;
   partnerType: PartnerType;
@@ -24,6 +27,7 @@ export interface PartnerListItem {
   reviewedAt?: string | null;
   allowedActions: PartnerAction[];
 }
+
 
 export interface PartnerListResponse {
   items: PartnerListItem[];

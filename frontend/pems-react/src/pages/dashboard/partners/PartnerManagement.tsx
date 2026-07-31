@@ -283,6 +283,8 @@ export function PartnerManagement() {
                         <span className="font-medium">{item.name}</span>
                       </div>
                     </td>
+
+
                     <td className="p-3 align-middle pl-6 text-sm text-gray-600 whitespace-nowrap text-left">
                       {item.country || '—'}
                     </td>

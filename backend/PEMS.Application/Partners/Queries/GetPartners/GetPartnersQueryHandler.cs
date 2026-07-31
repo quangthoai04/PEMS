@@ -101,6 +101,13 @@ public sealed class GetPartnersQueryHandler : IRequestHandler<GetPartnersQuery, 
                 .Select(u => new { u.UserId, u.FullName })
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
+        var partnerIds = rows.Select(r => r.PartnerId).ToList();
+        var englishByPartnerId = await _db.PartnerTranslations
+            .AsNoTracking()
+            .Where(t => partnerIds.Contains(t.PartnerId) && t.LanguageCode == "en")
+            .Select(t => new { t.PartnerId, t.Name, t.ShortName })
+            .ToDictionaryAsync(t => t.PartnerId, cancellationToken);
+
         var items = rows.Select(r =>
         {
             var actions = new List<string> { "VIEW" };
@@ -118,6 +125,8 @@ public sealed class GetPartnersQueryHandler : IRequestHandler<GetPartnersQuery, 
                 actions.Add("APPROVE");
                 actions.Add("REJECT");
             }
+
+            englishByPartnerId.TryGetValue(r.PartnerId, out var en);
 
             return new PartnerListItemDto
             {
@@ -138,8 +147,12 @@ public sealed class GetPartnersQueryHandler : IRequestHandler<GetPartnersQuery, 
                 CreatedAt = r.CreatedAt,
                 ReviewedAt = r.ReviewedAt,
                 AllowedActions = actions,
+                EnglishName = en?.Name,
+                EnglishShortName = en?.ShortName,
+                HasEnglishTranslation = en is not null,
             };
         }).ToList();
+
 
         return new PartnerListResponse
         {

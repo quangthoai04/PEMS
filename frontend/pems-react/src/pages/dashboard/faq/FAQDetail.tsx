@@ -54,8 +54,11 @@ export function FAQDetail() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  const [viewLang, setViewLang] = useState<'vi' | 'en'>('vi');
+
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ question: '', answer: '' });
+
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -230,15 +233,39 @@ export function FAQDetail() {
                 {getStatusBadge(faq.status)}
               </div>
 
-              {!isEditing && isHO && (
-                <button
-                  onClick={handleEdit}
-                  className="flex items-center gap-2 px-4 py-2 bg-white text-[#004c91] font-bold rounded-xl hover:bg-orange-50 hover:text-[#f37021] transition-all cursor-pointer shadow-sm"
-                  title="Chỉnh sửa"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  <span className="text-sm">Chỉnh sửa</span>
-                </button>
+              {!isEditing && (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center bg-white/10 p-1 rounded-xl border border-white/20">
+                    <button
+                      type="button"
+                      onClick={() => setViewLang('vi')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        viewLang === 'vi' ? 'bg-white text-[#004c91] shadow-sm' : 'text-white/80 hover:text-white'
+                      }`}
+                    >
+                      Tiếng Việt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewLang('en')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        viewLang === 'en' ? 'bg-white text-[#004c91] shadow-sm' : 'text-white/80 hover:text-white'
+                      }`}
+                    >
+                      English
+                    </button>
+                  </div>
+                  {isHO && (
+                    <button
+                      onClick={handleEdit}
+                      className="flex items-center gap-2 px-4 py-2 bg-white text-[#004c91] font-bold rounded-xl hover:bg-orange-50 hover:text-[#f37021] transition-all cursor-pointer shadow-sm"
+                      title="Chỉnh sửa"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      <span className="text-sm">Chỉnh sửa</span>
+                    </button>
+                  )}
+                </div>
               )}
 
               {isEditing && (
@@ -287,7 +314,7 @@ export function FAQDetail() {
                   />
                 ) : (
                   <h2 className="text-2xl md:text-3xl font-bold text-white leading-snug">
-                    {faq.question}
+                    {viewLang === 'en' ? (faq.englishQuestion || faq.question) : faq.question}
                   </h2>
                 )
               }
@@ -309,7 +336,7 @@ export function FAQDetail() {
         <div className="p-6 md:p-10">
           <h3 className="text-xs font-bold tracking-widest text-[#f37021] uppercase mb-4 flex items-center gap-2">
             <MessageCircle className="w-4 h-4" />
-            Câu trả lời
+            Câu trả lời {viewLang === 'en' ? '(English)' : '(Tiếng Việt)'}
           </h3>
           <div className="bg-[#e6eff7] rounded-2xl p-6 md:p-8 border border-blue-100/50 min-h-[200px]">
             <BilingualColumns
@@ -324,10 +351,11 @@ export function FAQDetail() {
                   />
                 ) : (
                   <p className="text-gray-700 leading-relaxed text-[15px] whitespace-pre-line font-medium">
-                    {faq.answer}
+                    {viewLang === 'en' ? (faq.englishAnswer || faq.answer) : faq.answer}
                   </p>
                 )
               }
+
               right={
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block">

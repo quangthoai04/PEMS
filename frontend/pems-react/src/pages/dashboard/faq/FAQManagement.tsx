@@ -23,6 +23,9 @@ interface FaqItem {
   faqTypeLabel: string;
   question: string;
   answer: string;
+  englishQuestion?: string | null;
+  englishAnswer?: string | null;
+  hasEnglishTranslation?: boolean;
   displayOrder: number;
   status: string;
   statusLabel: string;
@@ -66,6 +69,8 @@ export function FAQManagement() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [displayLang, setDisplayLang] = useState<'vi' | 'en'>('vi');
+
 
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
 
@@ -301,6 +306,28 @@ export function FAQManagement() {
             <option value="PUBLISHED">Hiển thị</option>
             <option value="HIDDEN">Ẩn</option>
           </select>
+
+          {/* Language Switcher Button next to filters */}
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200 shrink-0 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setDisplayLang('vi')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                displayLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              VI
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayLang('en')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                displayLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              EN
+            </button>
+          </div>
         </div>
 
         {isFullAccess && (
@@ -321,8 +348,12 @@ export function FAQManagement() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-16 text-center">STT</th>
                 <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[18%]">Loại</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[32%]">Câu hỏi</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[20%]">Trả lời</th>
+                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[32%]">
+                  Câu hỏi {displayLang === 'en' ? '(EN)' : '(VI)'}
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[20%]">
+                  Trả lời {displayLang === 'en' ? '(EN)' : '(VI)'}
+                </th>
                 <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[15%]">Trạng thái</th>
                 <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[15%]">Hành động</th>
               </tr>
@@ -354,11 +385,23 @@ export function FAQManagement() {
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <p className="text-sm font-bold text-gray-900 line-clamp-2">{item.question}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-gray-900 line-clamp-2">
+                          {displayLang === 'en' ? (item.englishQuestion || item.question) : item.question}
+                        </p>
+                        {item.hasEnglishTranslation && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-[#004c91] border border-blue-200" title="Có bản dịch tiếng Anh">
+                            EN
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-4">
-                      <p className="text-sm text-gray-500 line-clamp-2">{item.answer}</p>
+                      <p className="text-sm text-gray-500 line-clamp-2">
+                        {displayLang === 'en' ? (item.englishAnswer || item.answer) : item.answer}
+                      </p>
                     </td>
+
                     <td className="px-4 py-4 whitespace-nowrap text-center">
                       {getStatusBadge(item.statusLabel)}
                     </td>

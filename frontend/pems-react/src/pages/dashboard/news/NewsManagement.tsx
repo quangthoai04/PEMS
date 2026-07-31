@@ -84,6 +84,7 @@ export function NewsManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedLang, setSelectedLang] = useState<'vi' | 'en'>('vi');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | ''>('');
 
   // Debounce search 400ms
@@ -105,6 +106,7 @@ export function NewsManagement() {
         const params: Record<string, string | number> = {
           page,
           pageSize: itemsPerPage,
+          languageCode: selectedLang,
         };
         if (debouncedSearch) params.keyword = debouncedSearch;
         if (selectedStatus) params.status = selectedStatus;
@@ -128,7 +130,8 @@ export function NewsManagement() {
 
     fetchNews();
     return () => { cancelled = true; };
-  }, [page, itemsPerPage, debouncedSearch, selectedStatus, sortDirection, notificationNewsId]);
+  }, [page, itemsPerPage, debouncedSearch, selectedStatus, selectedLang, sortDirection, notificationNewsId]);
+
 
   // Bấm thông báo khi đang đứng ở trang khác trang 1 → về trang 1 để thấy đúng bài.
   useEffect(() => {
@@ -227,6 +230,29 @@ export function NewsManagement() {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+
+        {/* Language Switcher next to filters */}
+        <div className="flex items-center bg-gray-100 p-1 rounded-md border border-gray-300 shrink-0 shadow-sm">
+          <button
+            type="button"
+            onClick={() => { setSelectedLang('vi'); setPage(1); }}
+            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+              selectedLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            VI
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSelectedLang('en'); setPage(1); }}
+            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+              selectedLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            EN
+          </button>
+        </div>
+
 
         {canCreateNews && (
           <button

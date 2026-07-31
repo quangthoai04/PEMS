@@ -94,6 +94,8 @@ export function PartnerDetail() {
   const [partner, setPartner] = useState<PartnerDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [displayLang, setDisplayLang] = useState<'vi' | 'en'>('vi');
+
 
   // Approval panel
   const [busy, setBusy] = useState(false);
@@ -406,6 +408,28 @@ export function PartnerDetail() {
         </button>
 
         <div className="flex flex-wrap items-center gap-3 ml-auto">
+          {/* Language Switcher Toggle */}
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setDisplayLang('vi')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                displayLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Tiếng Việt
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayLang('en')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                displayLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              English
+            </button>
+          </div>
+
           {canManage && (
             <button
               onClick={() => setScanOpen(true)}
@@ -479,7 +503,9 @@ export function PartnerDetail() {
             )}
           </div>
           <div className="ml-4 sm:ml-6 mb-2 sm:mb-4 text-white z-10 min-w-0">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight drop-shadow-md truncate">{partner.name}</h1>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight drop-shadow-md truncate">
+              {displayLang === 'en' ? (partner.englishName || partner.name) : partner.name}
+            </h1>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 opacity-90 font-medium text-xs sm:text-sm">
               {partner.partnerCode && <span>Mã: {partner.partnerCode}</span>}
               {partner.country && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{partner.country}</span>}
@@ -493,12 +519,17 @@ export function PartnerDetail() {
       <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-gray-100 overflow-hidden mb-8">
         <div className="bg-[#004c91] px-6 py-4 flex items-center gap-2.5">
           <Info className="w-6 h-6 text-white" />
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider">Thông tin cơ bản</h2>
+          <h2 className="text-lg font-bold text-white uppercase tracking-wider">
+            Thông tin cơ bản {displayLang === 'en' ? '(English)' : '(Tiếng Việt)'}
+          </h2>
         </div>
         <div className="p-4 sm:p-6 md:p-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6">
             <Field label="Mã đối tác" value={partner.partnerCode || '—'} />
-            <Field label="Tên viết tắt" value={partner.shortName || '—'} />
+            <Field
+              label="Tên viết tắt"
+              value={(displayLang === 'en' ? (partner.englishShortName || partner.shortName) : partner.shortName) || '—'}
+            />
             <Field label="Loại đối tác" value={PARTNER_TYPE_LABELS[partner.partnerType] ?? partner.partnerType} />
 
             <Field label="Trạng thái hồ sơ" value={<ProfileStatusBadge status={partner.profileStatus} />} />
@@ -523,7 +554,7 @@ export function PartnerDetail() {
             <Field
               label="Địa chỉ"
               icon={<MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />}
-              value={partner.address || '—'}
+              value={(displayLang === 'en' ? (partner.englishAddress || partner.address) : partner.address) || '—'}
               className="md:col-span-2"
             />
             <Field label="Campus sở hữu" value={partner.ownerCampusName} />
@@ -545,13 +576,16 @@ export function PartnerDetail() {
 
           {/* Mô tả chung — full-width gray card, matches original row-3 style */}
           <div className="rounded-2xl bg-gray-50/80 p-5 border border-gray-100 mt-6">
-            <span className="block text-[13px] font-bold text-[#004c91] uppercase tracking-wider mb-2">Mô tả chung</span>
+            <span className="block text-[13px] font-bold text-[#004c91] uppercase tracking-wider mb-2">
+              Mô tả chung {displayLang === 'en' ? '(English)' : '(Tiếng Việt)'}
+            </span>
             <div className="text-[15px] font-medium text-gray-700 leading-relaxed whitespace-pre-line">
-              {partner.description || 'Chưa có mô tả.'}
+              {(displayLang === 'en' ? (partner.englishDescription || partner.description) : partner.description) || 'Chưa có mô tả.'}
             </div>
           </div>
         </div>
       </div>
+
 
       {/* Grid: Lịch sử hợp tác & Văn bản/Tài liệu */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">

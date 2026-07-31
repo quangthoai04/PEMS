@@ -145,7 +145,8 @@ public sealed class ViewNewsListQueryHandler
 
         var newsIds = rawItems.Select(n => n.NewsId).ToList();
 
-        // Batch fetch translations (prefer 'vi', fallback to first)
+        // Batch fetch translations (prefer requested language, fallback to 'vi' then first)
+        var requestedLang = !string.IsNullOrWhiteSpace(request.LanguageCode) ? request.LanguageCode.Trim().ToLowerInvariant() : "vi";
         var translations = await _dbContext.NewsTranslations
             .AsNoTracking()
             .Where(t => newsIds.Contains(t.NewsId))
@@ -156,7 +157,10 @@ public sealed class ViewNewsListQueryHandler
             .GroupBy(t => t.NewsId)
             .ToDictionary(
                 g => g.Key,
-                g => g.FirstOrDefault(t => t.LanguageCode == "vi") ?? g.First());
+                g => g.FirstOrDefault(t => t.LanguageCode.ToLower() == requestedLang)
+                     ?? g.FirstOrDefault(t => t.LanguageCode == "vi")
+                     ?? g.First());
+
 
         // Batch fetch cover image URLs
         var coverFileIds = rawItems
