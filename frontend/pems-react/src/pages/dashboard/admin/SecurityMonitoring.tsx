@@ -111,7 +111,6 @@ export function SecurityMonitoring() {
           <h1 className="text-3xl font-bold text-[#004c91] flex items-center gap-3">
             <Shield className="w-8 h-8" /> Giám sát bảo mật
           </h1>
-          <p className="text-gray-500 mt-1 font-medium">Lịch sử đăng nhập (login_logs) và sự kiện bảo mật (security_events)</p>
         </div>
         <button
           onClick={load}
@@ -234,82 +233,86 @@ export function SecurityMonitoring() {
               <button onClick={load} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
             </div>
           ) : tab === 'LOGIN_LOGS' ? (
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse table-fixed">
               <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
                 <tr>
-                  <th className="p-4 pl-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Thời gian</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Người dùng</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Portal / Provider</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Kết quả</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Lý do thất bại</th>
-                  <th className="p-4 pr-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">IP / Thiết bị</th>
+                  <th className="p-3 pl-4 w-12 text-[11px] font-black uppercase tracking-widest text-center">STT</th>
+                  <th className="p-3 w-[12%] text-[11px] font-black uppercase tracking-widest">Thời gian</th>
+                  <th className="p-3 w-[18%] text-[11px] font-black uppercase tracking-widest">Người dùng</th>
+                  <th className="p-3 w-[14%] text-[11px] font-black uppercase tracking-widest">Portal / Provider</th>
+                  <th className="p-3 w-[10%] text-[11px] font-black uppercase tracking-widest text-center">Kết quả</th>
+                  <th className="p-3 w-[17%] text-[11px] font-black uppercase tracking-widest">Lý do thất bại</th>
+                  <th className="p-3 pr-4 w-[19%] text-[11px] font-black uppercase tracking-widest">IP / Thiết bị</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {(loginLogs?.items.length ?? 0) === 0 ? (
-                  <tr><td colSpan={6} className="py-16 text-center text-gray-400 text-sm font-medium">Không có bản ghi nào phù hợp bộ lọc</td></tr>
-                ) : loginLogs!.items.map((log) => (
+                  <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">Không có bản ghi nào phù hợp bộ lọc</td></tr>
+                ) : loginLogs!.items.map((log, idx) => (
                   <tr key={log.loginLogId} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="p-4 pl-6 text-xs text-gray-500 whitespace-nowrap">{formatVietnamDateTime(log.createdAt)}</td>
-                    <td className="p-4">
-                      <p className="text-[13px] font-bold text-[#004c91] whitespace-nowrap">{log.fullName || '—'}</p>
-                      <p className="text-xs text-gray-500">{log.email}</p>
+                    <td className="p-3 pl-4 text-center text-xs font-bold text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
+                    <td className="p-3 text-xs text-gray-500 break-words">{formatVietnamDateTime(log.createdAt)}</td>
+                    <td className="p-3 break-words">
+                      <p className="text-[13px] font-bold text-[#004c91]">{log.fullName || '—'}</p>
+                      <p className="text-xs text-gray-500 break-all">{log.email}</p>
                     </td>
-                    <td className="p-4 text-[13px] text-gray-600 whitespace-nowrap">
+                    <td className="p-3 text-[13px] text-gray-600 break-words">
                       {log.loginPortal}{log.providerType ? ` · ${log.providerType}` : ''}
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-3 text-center">
                       {log.status === 'SUCCESS'
-                        ? <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold border bg-[#eaffe4] text-[#0aa14f] border-[#0aa14f]/30">Thành công</span>
-                        : <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold border bg-red-50 text-red-600 border-red-200">Thất bại</span>}
+                        ? <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold border bg-[#eaffe4] text-[#0aa14f] border-[#0aa14f]/30 whitespace-nowrap">Thành công</span>
+                        : <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold border bg-red-50 text-red-600 border-red-200 whitespace-nowrap">Thất bại</span>}
                     </td>
-                    <td className="p-4 text-xs text-gray-500 max-w-[200px] truncate" title={log.failureReason || undefined}>
+                    <td className="p-3 text-xs text-gray-500 break-words" title={log.failureReason || undefined}>
                       {log.failureReason || '—'}
                     </td>
-                    <td className="p-4 pr-6 text-xs text-gray-500 max-w-[220px]">
+                    <td className="p-3 pr-4 text-xs text-gray-500 break-words">
                       <p className="font-bold text-gray-600">{log.ipAddress || '—'}</p>
-                      <p className="truncate" title={log.userAgent || undefined}>{log.userAgent || '—'}</p>
+                      <p className="break-all" title={log.userAgent || undefined}>{log.userAgent || '—'}</p>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse table-fixed">
               <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
                 <tr>
-                  <th className="p-4 pl-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Thời gian</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Severity</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Sự kiện</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Người dùng</th>
-                  <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Portal / Provider</th>
-                  <th className="p-4 pr-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">IP / Chi tiết</th>
+                  <th className="p-3 pl-4 w-12 text-[11px] font-black uppercase tracking-widest text-center">STT</th>
+                  <th className="p-3 w-[11%] text-[11px] font-black uppercase tracking-widest">Thời gian</th>
+                  <th className="p-3 w-[9%] text-[11px] font-black uppercase tracking-widest text-center">Severity</th>
+                  <th className="p-3 w-[16%] text-[11px] font-black uppercase tracking-widest">Sự kiện</th>
+                  <th className="p-3 w-[15%] text-[11px] font-black uppercase tracking-widest">Người dùng</th>
+                  <th className="p-3 w-[14%] text-[11px] font-black uppercase tracking-widest">Portal / Provider</th>
+                  <th className="p-3 pr-4 w-[20%] text-[11px] font-black uppercase tracking-widest">IP / Chi tiết</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {(events?.items.length ?? 0) === 0 ? (
-                  <tr><td colSpan={6} className="py-16 text-center text-gray-400 text-sm font-medium">Không có sự kiện nào phù hợp bộ lọc</td></tr>
-                ) : events!.items.map((ev) => (
+                  <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">Không có sự kiện nào phù hợp bộ lọc</td></tr>
+                ) : events!.items.map((ev, idx) => (
                   <tr key={ev.securityEventId} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="p-4 pl-6 text-xs text-gray-500 whitespace-nowrap">{formatVietnamDateTime(ev.createdAt)}</td>
-                    <td className="p-4 text-center">
-                      <span className={`inline-flex px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider border ${SEVERITY_BADGE[ev.severity] ?? SEVERITY_BADGE.LOW}`}>
+                    <td className="p-3 pl-4 text-center text-xs font-bold text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
+                    <td className="p-3 text-xs text-gray-500 break-words">{formatVietnamDateTime(ev.createdAt)}</td>
+                    <td className="p-3 text-center">
+                      <span className={`inline-flex px-2 py-1 rounded-md text-[10px] font-black tracking-wider border whitespace-nowrap ${SEVERITY_BADGE[ev.severity] ?? SEVERITY_BADGE.LOW}`}>
                         {ev.severity}
                       </span>
                     </td>
-                    <td className="p-4">
-                      <p className="text-[13px] font-bold text-gray-700 whitespace-nowrap">{ev.eventType}</p>
+                    <td className="p-3 break-words">
+                      <p className="text-[13px] font-bold text-gray-700">{ev.eventType}</p>
                       <p className="text-xs text-gray-500">
                         {ev.result}{ev.failureReasonCode ? ` · ${ev.failureReasonCode}` : ''}
                       </p>
                     </td>
-                    <td className="p-4 text-xs text-gray-500 whitespace-nowrap">{ev.email || '—'}</td>
-                    <td className="p-4 text-[13px] text-gray-600 whitespace-nowrap">
+                    <td className="p-3 text-xs text-gray-500 break-words">{ev.email || '—'}</td>
+                    <td className="p-3 text-[13px] text-gray-600 break-words">
                       {ev.loginPortal || '—'}{ev.providerType ? ` · ${ev.providerType}` : ''}
                     </td>
-                    <td className="p-4 pr-6 text-xs text-gray-500 max-w-[260px]">
+                    <td className="p-3 pr-4 text-xs text-gray-500 break-words">
                       <p className="font-bold text-gray-600">{ev.ipAddress || '—'}</p>
-                      <p className="truncate" title={ev.detailText || undefined}>{ev.detailText || '—'}</p>
+                      <p className="break-all" title={ev.detailText || undefined}>{ev.detailText || '—'}</p>
                     </td>
                   </tr>
                 ))}

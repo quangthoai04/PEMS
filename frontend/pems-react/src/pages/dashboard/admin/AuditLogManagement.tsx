@@ -107,9 +107,6 @@ export function AuditLogManagement() {
           <h1 className="text-3xl font-bold text-[#004c91] flex items-center gap-3">
             <ScrollText className="w-8 h-8" /> Nhật ký kiểm toán
           </h1>
-          <p className="text-gray-500 mt-1 font-medium">
-            audit_logs + audit_log_changes — dữ liệu nhạy cảm đã được che (***MASKED***)
-          </p>
         </div>
         <button
           onClick={load}
@@ -152,50 +149,52 @@ export function AuditLogManagement() {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse table-fixed">
             <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
               <tr>
-                <th className="p-4 pl-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Thời gian</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Actor</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Action</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Entity</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Campus</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">IP</th>
-                <th className="p-4 pr-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Chi tiết</th>
+                <th className="p-3 pl-4 w-12 text-[11px] font-black uppercase tracking-widest text-center">STT</th>
+                <th className="p-3 w-[12%] text-[11px] font-black uppercase tracking-widest">Thời gian</th>
+                <th className="p-3 w-[18%] text-[11px] font-black uppercase tracking-widest">Actor</th>
+                <th className="p-3 w-[19%] text-[11px] font-black uppercase tracking-widest">Action</th>
+                <th className="p-3 w-[14%] text-[11px] font-black uppercase tracking-widest">Entity</th>
+                <th className="p-3 w-[12%] text-[11px] font-black uppercase tracking-widest">Campus</th>
+                <th className="p-3 w-[12%] text-[11px] font-black uppercase tracking-widest">IP</th>
+                <th className="p-3 pr-4 w-12 text-[11px] font-black uppercase tracking-widest text-center">Chi tiết</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Đang tải nhật ký...
                 </td></tr>
               ) : error ? (
-                <tr><td colSpan={7} className="py-16 text-center">
+                <tr><td colSpan={8} className="py-16 text-center">
                   <p className="text-sm font-bold text-red-500 mb-2">{error}</p>
                   <button onClick={load} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
                 </td></tr>
               ) : (data?.items.length ?? 0) === 0 ? (
-                <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
                   Không có bản ghi nào phù hợp bộ lọc
                 </td></tr>
-              ) : data!.items.map((log) => (
+              ) : data!.items.map((log, idx) => (
                 <tr key={log.auditLogId} className="hover:bg-blue-50/30 transition-colors">
-                  <td className="p-4 pl-6 text-xs text-gray-500 whitespace-nowrap">{formatVietnamDateTime(log.createdAt)}</td>
-                  <td className="p-4">
-                    <p className="text-[13px] font-bold text-[#004c91] whitespace-nowrap">{log.actorName || 'Hệ thống'}</p>
-                    <p className="text-xs text-gray-500">{log.actorEmail || '—'}</p>
+                  <td className="p-3 pl-4 text-center text-xs font-bold text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
+                  <td className="p-3 text-xs text-gray-500 break-words">{formatVietnamDateTime(log.createdAt)}</td>
+                  <td className="p-3 break-words">
+                    <p className="text-[13px] font-bold text-[#004c91]">{log.actorName || 'Hệ thống'}</p>
+                    <p className="text-xs text-gray-500 break-all">{log.actorEmail || '—'}</p>
                   </td>
-                  <td className="p-4">
-                    <span className="inline-flex px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 text-[#004c91] border border-blue-100 whitespace-nowrap">
+                  <td className="p-3">
+                    <span className="inline-block px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 text-[#004c91] border border-blue-100 break-words">
                       {log.action}
                     </span>
                   </td>
-                  <td className="p-4 text-[13px] text-gray-600 whitespace-nowrap">
+                  <td className="p-3 text-[13px] text-gray-600 break-words">
                     {log.entityType}{log.entityId ? ` #${log.entityId}` : ''}
                   </td>
-                  <td className="p-4 text-[13px] text-gray-600 whitespace-nowrap">{log.campusName || '—'}</td>
-                  <td className="p-4 text-xs text-gray-500 whitespace-nowrap">{log.ipAddress || '—'}</td>
-                  <td className="p-4 pr-6 text-center">
+                  <td className="p-3 text-[13px] text-gray-600 break-words">{log.campusName || '—'}</td>
+                  <td className="p-3 text-xs text-gray-500 break-words">{log.ipAddress || '—'}</td>
+                  <td className="p-3 pr-4 text-center">
                     <button
                       onClick={() => openDetail(log.auditLogId)}
                       className="p-2 text-gray-500 hover:text-[#004c91] hover:bg-blue-50/50 rounded-full transition-all cursor-pointer"
