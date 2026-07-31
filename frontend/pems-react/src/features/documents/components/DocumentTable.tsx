@@ -119,10 +119,10 @@ export function DocumentTable({
                 </td>
 
                 {/* File */}
-                <td className="px-4 py-2.5 whitespace-nowrap">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-bold text-slate-700 uppercase">
-                      {doc.mimeType?.split('/').pop() || doc.originalFilename?.split('.').pop() || 'N/A'}
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-col gap-0.5 w-[110px]">
+                    <span className="text-xs font-bold text-slate-700 uppercase break-words">
+                      {doc.originalFilename?.split('.').pop() || doc.mimeType?.split('/').pop() || 'N/A'}
                     </span>
                     <span className="text-[11px] font-medium text-slate-500">
                       {doc.fileSize ? formatFileSize(doc.fileSize) : 'N/A'}

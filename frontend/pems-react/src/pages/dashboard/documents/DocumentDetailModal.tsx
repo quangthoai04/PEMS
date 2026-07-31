@@ -4,6 +4,9 @@ import { X, FileText, Download, ExternalLink, Share2, Mail, Loader2 } from 'luci
 import { useDocumentDetail } from '../../../features/documents/hooks/useDocumentDetail';
 import { formatFileSize } from '../../../shared/utils/fileUtils';
 import { resolveFileUrl } from '../../../shared/utils/resolveFileUrl';
+import { fetchAuthenticatedBlobUrl } from '../../../shared/utils/fileDownload';
+import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
+import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import toast from 'react-hot-toast';
 import httpClient from '../../../shared/api/httpClient';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
@@ -19,19 +22,95 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
   const { data: detail, isLoading, isError } = useDocumentDetail(documentId);
   const [downloading, setDownloading] = React.useState(false);
 
-  const handleShareZalo = (link: string) => {
-    navigator.clipboard.writeText(link).then(() => {
-      toast.success('Đã sao chép link! Hãy dán vào Zalo để chia sẻ.');
-      window.open('https://chat.zalo.me', '_blank');
-    }).catch(() => {
-      toast.error('Không thể sao chép đường dẫn.');
-    });
-  };
+  const mimeType = detail?.file?.mimeType;
+  const isImage = mimeType?.startsWith('image/') ?? false;
+  const isPdf = mimeType === 'application/pdf';
+  const previewFileId = detail?.file?.fileId ?? null;
+  const imageUrl = useAuthenticatedImage(isImage && previewFileId ? `/api/files/${previewFileId}/content` : null);
+  const [pdfUrl, setPdfUrl] = React.useState<string | null>(null);
+  const [pdfError, setPdfError] = React.useState(false);
 
-  const handleShareGmail = (title: string, link: string) => {
-    const subject = title || 'Chia sẻ tài liệu';
-    const body = `Chào bạn,\n\nMình chia sẻ tài liệu: ${title}\nLink truy cập: ${link}`;
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+  React.useEffect(() => {
+    if (!isPdf || !previewFileId) return;
+    let cancelled = false;
+    let created: string | null = null;
+    setPdfError(false);
+    (async () => {
+      try {
+        const url = await fetchAuthenticatedBlobUrl(API_ENDPOINTS.files.content(previewFileId));
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        created = url;
+        setPdfUrl(url);
+      } catch {
+        if (!cancelled) setPdfError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+      setPdfUrl(null);
+    };
+  }, [isPdf, previewFileId]);
+
+  /**
+   * A browser tab (Gmail web, chat.zalo.me) can never have a file programmatically dropped into
+   * its attach box — that would cross an origin boundary the platform deliberately blocks. The
+   * only way to actually hand the real file to another app is the OS-level Web Share sheet
+   * (`navigator.share` with a `files` array), which lists whatever desktop apps are registered as
+   * share targets (Outlook, Mail, Zalo PC if it registers one — never Gmail web, since it isn't an
+   * installed app). Where that's unavailable we fall back to downloading the file locally and
+   * opening the compose window with a note to attach it by hand.
+   */
+  const handleShareFile = async (channel: 'zalo' | 'gmail') => {
+    if (!detail?.file?.fileId) return;
+
+    // If Web Share isn't supported at all in this browser, open the compose tab synchronously
+    // now (inside the click handler) so it isn't blocked as a popup once we go async below.
+    const canTryNativeShare = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
+    const composeWindow = !canTryNativeShare
+      ? (channel === 'gmail' ? window.open('about:blank', '_blank') : window.open('https://chat.zalo.me', '_blank'))
+      : null;
+
+    const filename = detail.file.originalFilename || detail.document.title || 'tai-lieu';
+    const subject = detail.document.title || 'Chia sẻ tài liệu';
+    const gmailComposeUrl = (note: string) =>
+      `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(note)}`;
+
+    const toastId = toast.loading('Đang chuẩn bị file...');
+    try {
+      const response = await httpClient.get<Blob>(`/files/${detail.file.fileId}/content`, { responseType: 'blob' });
+      const file = new File([response.data], filename, { type: detail.file.mimeType || response.data.type || 'application/octet-stream' });
+
+      if (canTryNativeShare && navigator.canShare!({ files: [file] })) {
+        toast.dismiss(toastId);
+        try {
+          await navigator.share!({ files: [file], title: detail.document.title, text: `Chia sẻ tài liệu: ${detail.document.title}` });
+        } catch (err: any) {
+          if (err?.name !== 'AbortError') toast.error('Không thể chia sẻ file.');
+        }
+        return;
+      }
+
+      // Fallback: download the real file locally, then point the compose window at it.
+      const blobUrl = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+
+      const note = `Chào bạn,\n\nMình gửi tài liệu: ${detail.document.title}\n(Tệp "${filename}" đã được tải về máy — vui lòng bấm đính kèm/attach và chọn tệp này trước khi gửi.)`;
+      if (channel === 'gmail') {
+        if (composeWindow) composeWindow.location.href = gmailComposeUrl(note);
+        else window.open(gmailComposeUrl(note), '_blank');
+      }
+      toast.success('Đã tải file về máy — vui lòng đính kèm thủ công.', { id: toastId });
+    } catch {
+      composeWindow?.close();
+      toast.error('Không thể tải file để chia sẻ.', { id: toastId });
+    }
   };
 
   const handleDownload = async (fileId: number, filename: string) => {
@@ -239,14 +318,14 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                     <div className="p-5 pt-4 border-t border-slate-100 bg-white shrink-0 space-y-3 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                       <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Chia sẻ & Tải xuống</p>
                       <div className="grid grid-cols-2 gap-2">
-                        <button 
-                          onClick={() => handleShareZalo(previewUrl || downloadLink)}
+                        <button
+                          onClick={() => void handleShareFile('zalo')}
                           className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors text-sm font-medium border border-blue-100 cursor-pointer"
                         >
                           <Share2 className="w-4 h-4" /> Zalo
                         </button>
-                        <button 
-                          onClick={() => handleShareGmail(detail.document.title, previewUrl || downloadLink)}
+                        <button
+                          onClick={() => void handleShareFile('gmail')}
                           className="flex items-center justify-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition-colors text-sm font-medium border border-red-100 cursor-pointer"
                         >
                           <Mail className="w-4 h-4" /> Gmail
@@ -294,19 +373,33 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                     </div>
                   </div>
                   
-                  {/* Right: Iframe Preview */}
+                  {/* Right: File Preview (served directly by our backend — no Google Drive access needed) */}
                   <div className="w-full md:w-[60%] relative bg-[#f1f3f4] min-h-[400px] flex items-center justify-center">
-                    {previewUrl ? (
-                      <iframe 
-                        src={previewUrl} 
-                        className="absolute inset-0 w-full h-full border-0"
-                        allow="autoplay"
-                        title={detail.document.title}
-                      />
+                    {isImage ? (
+                      imageUrl ? (
+                        <img src={imageUrl} alt={detail.document.title} className="max-w-full max-h-full object-contain p-4" />
+                      ) : (
+                        <Loader2 className="w-8 h-8 text-slate-300 animate-spin" />
+                      )
+                    ) : isPdf ? (
+                      pdfError ? (
+                        <div className="flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                          <FileText className="w-12 h-12 mb-3 text-slate-300" />
+                          <p className="text-sm text-slate-600 max-w-sm">Không thể tải file để xem trước. Vui lòng tải xuống máy.</p>
+                        </div>
+                      ) : pdfUrl ? (
+                        <iframe
+                          src={pdfUrl}
+                          className="absolute inset-0 w-full h-full border-0"
+                          title={detail.document.title}
+                        />
+                      ) : (
+                        <Loader2 className="w-8 h-8 text-slate-300 animate-spin" />
+                      )
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-400 p-6 text-center">
                         <FileText className="w-12 h-12 mb-3 text-slate-300" />
-                        <p className="text-sm text-slate-600 max-w-sm">Không thể xem trước. File chưa có liên kết Google Drive hợp lệ hoặc định dạng không hỗ trợ preview.</p>
+                        <p className="text-sm text-slate-600 max-w-sm">Định dạng file này không hỗ trợ xem trước. Vui lòng tải xuống máy.</p>
                       </div>
                     )}
                   </div>
