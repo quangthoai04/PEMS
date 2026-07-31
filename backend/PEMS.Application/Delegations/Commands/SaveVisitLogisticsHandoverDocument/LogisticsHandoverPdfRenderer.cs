@@ -15,6 +15,8 @@ namespace PEMS.Application.Delegations.Commands.SaveVisitLogisticsHandoverDocume
 /// </summary>
 public static class LogisticsHandoverPdfRenderer
 {
+    static LogisticsHandoverPdfRenderer() => QuestPDF.Settings.License = LicenseType.Community;
+
     private static readonly string PrimaryColor = Colors.Orange.Darken2;
     private static readonly string BorderColor = Colors.Grey.Lighten1;
     private static readonly string HeaderBg = Colors.Orange.Darken2;
