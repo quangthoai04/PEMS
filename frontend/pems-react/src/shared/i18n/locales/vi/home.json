@@ -62,5 +62,179 @@
   "galleryPreview": {
     "title": "Khám phá Visit FPTU",
     "viewAll": "Xem tất cả"
+  },
+  "internal": {
+    "hero": {
+      "portalBadge": "Cổng thông tin nội bộ PEMS",
+      "greeting": "Xin chào, {{name}}"
+    },
+    "roleLabels": {
+      "ADMIN": "Quản trị viên",
+      "HO": "Điều phối viên Head Office",
+      "STAFF_LEADER": "Trưởng phòng Hợp tác Quốc tế",
+      "STAFF": "Nhân viên Phòng Hợp tác Quốc tế",
+      "DEPARTMENT_LEADER": "Trưởng phòng ban",
+      "DEPARTMENT_STAFF": "Nhân viên phòng ban",
+      "STUDENT": "Sinh viên"
+    },
+    "quickAccess": {
+      "title": "Truy cập nhanh",
+      "ADMIN": {
+        "dashboard": {
+          "label": "Admin Dashboard",
+          "description": "Tổng quan hệ thống"
+        },
+        "apiIntegrations": {
+          "label": "Quản lý API tích hợp",
+          "description": "Cấu hình các API tích hợp hệ thống"
+        }
+      },
+      "HO": {
+        "dashboard": {
+          "label": "HO Dashboard",
+          "description": "Theo dõi visit và hoạt động theo scope"
+        },
+        "visitManagement": {
+          "label": "Quản lý tiếp khách",
+          "description": "Theo dõi yêu cầu tham quan liên cơ sở"
+        },
+        "newsManagement": {
+          "label": "Quản lý tin tức",
+          "description": "Duyệt và quản lý tin tức"
+        },
+        "faqManagement": {
+          "label": "Quản lý FAQ",
+          "description": "Quản lý câu hỏi thường gặp"
+        },
+        "campusManagement": {
+          "label": "Quản lý Campus",
+          "description": "Quản lý danh sách campus"
+        }
+      },
+      "STAFF_LEADER": {
+        "dashboard": {
+          "label": "Campus Dashboard",
+          "description": "Tổng quan hoạt động campus"
+        },
+        "visitManagement": {
+          "label": "Quản lý tiếp khách",
+          "description": "Duyệt đơn và gán host"
+        },
+        "accountManagement": {
+          "label": "Quản lý tài khoản",
+          "description": "Quản lý tài khoản trong campus"
+        },
+        "galleryManagement": {
+          "label": "Quản lý Gallery",
+          "description": "Quản lý ảnh/video Visit FPTU"
+        },
+        "newsManagement": {
+          "label": "Quản lý tin tức",
+          "description": "Duyệt và quản lý tin tức"
+        }
+      },
+      "STAFF": {
+        "workspace": {
+          "label": "My Workspace",
+          "description": "Vào không gian làm việc của bạn"
+        },
+        "assignedRequests": {
+          "label": "Đơn phụ trách",
+          "description": "Xem các đơn tham quan bạn phụ trách"
+        },
+        "minutesAndNews": {
+          "label": "Biên bản & Tin tức",
+          "description": "Đóng góp biên bản, tin tức, hình ảnh"
+        }
+      },
+      "DEPT_LEADER": {
+        "dashboard": {
+          "label": "Department Dashboard",
+          "description": "Tổng quan hoạt động phòng ban"
+        },
+        "myDepartment": {
+          "label": "Phòng ban của tôi",
+          "description": "Phân công nhân sự, quản lý nhiệm vụ phòng ban"
+        },
+        "departmentReports": {
+          "label": "Báo cáo phòng ban",
+          "description": "Xem báo cáo hoạt động"
+        }
+      },
+      "DEPT_STAFF": {
+        "myTasks": {
+          "label": "My Tasks",
+          "description": "Vào không gian làm việc của bạn"
+        },
+        "news": {
+          "label": "Tin tức",
+          "description": "Xem tin tức, đóng góp media hỗ trợ"
+        }
+      },
+      "STUDENT": {
+        "portal": {
+          "label": "Student Portal",
+          "description": "Vào không gian làm việc của bạn"
+        },
+        "supportInvitations": {
+          "label": "Lời mời tham gia hỗ trợ",
+          "description": "Xem và phản hồi lời mời tham gia đoàn"
+        },
+        "faq": {
+          "label": "Câu hỏi thường gặp",
+          "description": "Hướng dẫn khi tham gia hỗ trợ đoàn"
+        }
+      }
+    },
+    "guide": {
+      "title": "Hướng dẫn quy trình",
+      "roles": {
+        "ADMIN": {
+          "step1": "Quản lý tài khoản người dùng và phân quyền hệ thống.",
+          "step2": "Cấu hình các API tích hợp (OCR, dịch thuật, v.v.).",
+          "step3": "Theo dõi nhật ký hoạt động và bảo mật hệ thống."
+        },
+        "HO": {
+          "step1": "Theo dõi các yêu cầu tham quan liên cơ sở trong phạm vi phụ trách.",
+          "step2": "Quản lý tin tức và FAQ hiển thị công khai cho đối tác.",
+          "step3": "Cập nhật thông tin campus khi có thay đổi.",
+          "step4": "Giám sát tiến độ tiếp đón qua Dashboard."
+        },
+        "STAFF_LEADER": {
+          "step1": "Duyệt các yêu cầu tham quan mới trong campus.",
+          "step2": "Gán Host phụ trách tiếp đón cho từng đoàn.",
+          "step3": "Quản lý tài khoản và phòng ban trong campus.",
+          "step4": "Cập nhật Gallery/Tin tức giới thiệu campus."
+        },
+        "STAFF": {
+          "step1": "Kiểm tra các đơn tham quan được phân công phụ trách.",
+          "step2": "Chuẩn bị chương trình đón tiếp trước ngày visit.",
+          "step3": "Ghi nhận biên bản, tin tức, hình ảnh sau buổi tham quan."
+        },
+        "DEPT_LEADER": {
+          "step1": "Phân công nhân sự phòng ban hỗ trợ các đoàn tham quan.",
+          "step2": "Theo dõi nhiệm vụ và tiến độ của phòng ban.",
+          "step3": "Ký bàn giao khi hoàn tất công tác hỗ trợ.",
+          "step4": "Phối hợp với Phòng Hợp tác Quốc tế (IC) khi cần."
+        },
+        "DEPT_STAFF": {
+          "step1": "Xem lịch hỗ trợ được phòng ban phân công.",
+          "step2": "Phản hồi nhiệm vụ được giao đúng hạn.",
+          "step3": "Ký nhận / ký trả khi bàn giao công việc.",
+          "step4": "Cập nhật kết quả hỗ trợ sau khi hoàn tất."
+        },
+        "STUDENT": {
+          "step1": "Kiểm tra lời mời tham gia hỗ trợ đoàn tham quan trong Dashboard.",
+          "step2": "Chấp nhận hoặc từ chối lời mời trước hạn phản hồi.",
+          "step3": "Xem lịch hỗ trợ đã xác nhận và chuẩn bị theo hướng dẫn của Host.",
+          "step4": "Tham gia hỗ trợ đoàn đúng thời gian, địa điểm đã lên lịch."
+        }
+      }
+    },
+    "cta": {
+      "title": "Sẵn sàng tiếp tục công việc?",
+      "description": "Vào Dashboard để xử lý các nhiệm vụ và yêu cầu đang chờ bạn.",
+      "button": "Vào Dashboard"
+    }
   }
 }

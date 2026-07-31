@@ -4,8 +4,10 @@
  */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, School, Building2 } from 'lucide-react';
 import type { AuthUser } from '../../../features/authentication/types/authentication.types';
+import { resolveHomeRoleBucket, HomeRoleBucket } from '../../../shared/auth/resolveHomeRoleBucket';
 
 import bgHN from '../../../assets/FPTbanner_visit/hola_new.jpg';
 import bgHCM from '../../../assets/FPTbanner_visit/HCM.png';
@@ -14,13 +16,17 @@ import bgCT from '../../../assets/FPTbanner_visit/CanTho.png';
 import bgQN from '../../../assets/FPTbanner_visit/QuyNhon.png';
 import bgDefault from '../../../assets/FPTbanner_visit/5CS.png';
 
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: 'Quản trị viên',
-  HO: 'Head Office',
-  STAFF: 'Nhân viên Phòng HTQT',
-  DEPARTMENT: 'Nhân viên Phòng ban',
-  STUDENT: 'Sinh viên',
-  VISITOR: 'Khách',
+// Nhãn role hiển thị resolve từ home role bucket (cùng helper với Quick Access / Guide Steps),
+// KHÔNG lấy `user.roleName` làm nguồn chính — đó là chuỗi cố định tiếng Việt do backend trả về
+// nên không đổi theo ngôn ngữ. `roleName` chỉ còn là fallback cho bucket ngoài 7 role nội bộ.
+const ROLE_LABEL_KEY_BY_BUCKET: Partial<Record<HomeRoleBucket, string>> = {
+  ADMIN: 'internal.roleLabels.ADMIN',
+  HO: 'internal.roleLabels.HO',
+  STAFF_LEADER: 'internal.roleLabels.STAFF_LEADER',
+  STAFF: 'internal.roleLabels.STAFF',
+  DEPT_LEADER: 'internal.roleLabels.DEPARTMENT_LEADER',
+  DEPT_STAFF: 'internal.roleLabels.DEPARTMENT_STAFF',
+  STUDENT: 'internal.roleLabels.STUDENT',
 };
 
 // Banner theo cơ sở (campusCode) — cùng bộ ảnh với trang VisitFPTU công khai. Không khớp/không có
@@ -38,7 +44,10 @@ interface WelcomeHeroProps {
 }
 
 export function WelcomeHero({ user }: WelcomeHeroProps) {
-  const roleLabel = user.roleName ?? ROLE_LABELS[user.roleCode] ?? user.roleCode;
+  const { t } = useTranslation('home');
+  const bucket = resolveHomeRoleBucket(user);
+  const roleLabelKey = bucket ? ROLE_LABEL_KEY_BY_BUCKET[bucket] : undefined;
+  const roleLabel = roleLabelKey ? t(roleLabelKey) : user.roleName ?? user.roleCode;
   const bannerBg = (user.campusCode && CAMPUS_BANNERS[user.campusCode]) || bgDefault;
 
   const textShadow = { textShadow: '0 2px 4px rgba(0,0,0,0.85), 0 1px 12px rgba(0,0,0,0.6)' } as const;
@@ -55,13 +64,13 @@ export function WelcomeHero({ user }: WelcomeHeroProps) {
 
       <div className="w-full max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 pb-6 sm:pb-8 lg:pb-10 relative z-10">
         <span className="inline-block py-1 px-3 rounded-full bg-fpt-orange shadow-sm text-white font-semibold text-xs mb-4">
-          Cổng thông tin nội bộ PEMS
+          {t('internal.hero.portalBadge')}
         </span>
         <h1
           className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight mb-3"
           style={textStroke}
         >
-          Xin chào, {user.fullName}
+          {t('internal.hero.greeting', { name: user.fullName })}
         </h1>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-white text-base lg:text-lg" style={textShadow}>

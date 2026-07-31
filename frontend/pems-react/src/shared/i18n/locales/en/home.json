@@ -62,5 +62,179 @@
   "galleryPreview": {
     "title": "Explore Visit FPTU",
     "viewAll": "View all"
+  },
+  "internal": {
+    "hero": {
+      "portalBadge": "PEMS Internal Portal",
+      "greeting": "Welcome, {{name}}"
+    },
+    "roleLabels": {
+      "ADMIN": "Administrator",
+      "HO": "Head Office Coordinator",
+      "STAFF_LEADER": "International Relations Staff Leader",
+      "STAFF": "International Relations Staff",
+      "DEPARTMENT_LEADER": "Department Leader",
+      "DEPARTMENT_STAFF": "Department Staff",
+      "STUDENT": "Student"
+    },
+    "quickAccess": {
+      "title": "Quick Access",
+      "ADMIN": {
+        "dashboard": {
+          "label": "Admin Dashboard",
+          "description": "System overview"
+        },
+        "apiIntegrations": {
+          "label": "API Integrations",
+          "description": "Configure the system integration APIs"
+        }
+      },
+      "HO": {
+        "dashboard": {
+          "label": "HO Dashboard",
+          "description": "Track visits and activities within your scope"
+        },
+        "visitManagement": {
+          "label": "Visit Management",
+          "description": "Track cross-campus visit requests"
+        },
+        "newsManagement": {
+          "label": "News Management",
+          "description": "Review and manage news"
+        },
+        "faqManagement": {
+          "label": "FAQ Management",
+          "description": "Manage frequently asked questions"
+        },
+        "campusManagement": {
+          "label": "Campus Management",
+          "description": "Manage the campus list"
+        }
+      },
+      "STAFF_LEADER": {
+        "dashboard": {
+          "label": "Campus Dashboard",
+          "description": "Campus activity overview"
+        },
+        "visitManagement": {
+          "label": "Visit Management",
+          "description": "Approve requests and assign hosts"
+        },
+        "accountManagement": {
+          "label": "Account Management",
+          "description": "Manage accounts within the campus"
+        },
+        "galleryManagement": {
+          "label": "Gallery Management",
+          "description": "Manage Visit FPTU photos and videos"
+        },
+        "newsManagement": {
+          "label": "News Management",
+          "description": "Review and manage news"
+        }
+      },
+      "STAFF": {
+        "workspace": {
+          "label": "My Workspace",
+          "description": "Enter your workspace"
+        },
+        "assignedRequests": {
+          "label": "Assigned Requests",
+          "description": "View the visit requests you are responsible for"
+        },
+        "minutesAndNews": {
+          "label": "Minutes & News",
+          "description": "Contribute minutes, news and photos"
+        }
+      },
+      "DEPT_LEADER": {
+        "dashboard": {
+          "label": "Department Dashboard",
+          "description": "Department activity overview"
+        },
+        "myDepartment": {
+          "label": "My Department",
+          "description": "Assign personnel and manage department tasks"
+        },
+        "departmentReports": {
+          "label": "Department Reports",
+          "description": "View activity reports"
+        }
+      },
+      "DEPT_STAFF": {
+        "myTasks": {
+          "label": "My Tasks",
+          "description": "Enter your workspace"
+        },
+        "news": {
+          "label": "News",
+          "description": "View news and contribute supporting media"
+        }
+      },
+      "STUDENT": {
+        "portal": {
+          "label": "Student Portal",
+          "description": "Enter your workspace"
+        },
+        "supportInvitations": {
+          "label": "Support Invitations",
+          "description": "View and respond to delegation support invitations"
+        },
+        "faq": {
+          "label": "Frequently Asked Questions",
+          "description": "Guidance for supporting a delegation"
+        }
+      }
+    },
+    "guide": {
+      "title": "Process Guide",
+      "roles": {
+        "ADMIN": {
+          "step1": "Manage user accounts and system permissions.",
+          "step2": "Configure the integration APIs (OCR, translation, etc.).",
+          "step3": "Monitor system activity logs and security."
+        },
+        "HO": {
+          "step1": "Track cross-campus visit requests within your scope.",
+          "step2": "Manage the news and FAQs shown publicly to partners.",
+          "step3": "Update campus information whenever it changes.",
+          "step4": "Monitor reception progress through the Dashboard."
+        },
+        "STAFF_LEADER": {
+          "step1": "Approve new visit requests within the campus.",
+          "step2": "Assign the Host responsible for receiving each delegation.",
+          "step3": "Manage accounts and departments within the campus.",
+          "step4": "Update the Gallery and news introducing the campus."
+        },
+        "STAFF": {
+          "step1": "Check the visit requests assigned to you.",
+          "step2": "Prepare the reception programme before the visit date.",
+          "step3": "Record minutes, news and photos after the visit."
+        },
+        "DEPT_LEADER": {
+          "step1": "Assign department personnel to support visiting delegations.",
+          "step2": "Track the tasks and progress of your department.",
+          "step3": "Sign the handover once the support work is complete.",
+          "step4": "Coordinate with the International Relations Department (IC) when needed."
+        },
+        "DEPT_STAFF": {
+          "step1": "View the support schedule assigned by your department.",
+          "step2": "Respond to assigned tasks on time.",
+          "step3": "Sign for receipt / return when handing over work.",
+          "step4": "Update the support results once completed."
+        },
+        "STUDENT": {
+          "step1": "Check your delegation support invitations in the Dashboard.",
+          "step2": "Accept or decline the invitation before the response deadline.",
+          "step3": "Review the confirmed support schedule and prepare as instructed by the Host.",
+          "step4": "Join the delegation support at the scheduled time and place."
+        }
+      }
+    },
+    "cta": {
+      "title": "Ready to continue working?",
+      "description": "Go to the Dashboard to handle your pending tasks and requests.",
+      "button": "Go to Dashboard"
+    }
   }
 }
