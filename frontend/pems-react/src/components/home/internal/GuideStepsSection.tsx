@@ -4,50 +4,53 @@
  */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import type { AuthUser } from '../../../features/authentication/types/authentication.types';
 import { resolveHomeRoleBucket, HomeRoleBucket } from '../../../shared/auth/resolveHomeRoleBucket';
 
-const GUIDE_STEPS: Record<HomeRoleBucket, string[]> = {
+// Chỉ giữ KEY ở module scope — text thật resolve bằng t() trong component nên đổi ngôn ngữ
+// runtime là re-render, không cần reload. Số bước và thứ tự bước giữ nguyên như trước.
+const GUIDE_STEP_KEYS: Record<HomeRoleBucket, string[]> = {
   STUDENT: [
-    'Kiểm tra lời mời tham gia hỗ trợ đoàn tham quan trong Dashboard.',
-    'Chấp nhận hoặc từ chối lời mời trước hạn phản hồi.',
-    'Xem lịch hỗ trợ đã xác nhận và chuẩn bị theo hướng dẫn của Host.',
-    'Tham gia hỗ trợ đoàn đúng thời gian, địa điểm đã lên lịch.',
+    'internal.guide.roles.STUDENT.step1',
+    'internal.guide.roles.STUDENT.step2',
+    'internal.guide.roles.STUDENT.step3',
+    'internal.guide.roles.STUDENT.step4',
   ],
   HO: [
-    'Theo dõi các yêu cầu tham quan liên cơ sở trong phạm vi phụ trách.',
-    'Quản lý tin tức và FAQ hiển thị công khai cho đối tác.',
-    'Cập nhật thông tin campus khi có thay đổi.',
-    'Giám sát tiến độ tiếp đón qua Dashboard.',
+    'internal.guide.roles.HO.step1',
+    'internal.guide.roles.HO.step2',
+    'internal.guide.roles.HO.step3',
+    'internal.guide.roles.HO.step4',
   ],
   ADMIN: [
-    'Quản lý tài khoản người dùng và phân quyền hệ thống.',
-    'Cấu hình các API tích hợp (OCR, dịch thuật, v.v.).',
-    'Theo dõi nhật ký hoạt động và bảo mật hệ thống.',
+    'internal.guide.roles.ADMIN.step1',
+    'internal.guide.roles.ADMIN.step2',
+    'internal.guide.roles.ADMIN.step3',
   ],
   STAFF_LEADER: [
-    'Duyệt các yêu cầu tham quan mới trong campus.',
-    'Gán Host phụ trách tiếp đón cho từng đoàn.',
-    'Quản lý tài khoản và phòng ban trong campus.',
-    'Cập nhật Gallery/Tin tức giới thiệu campus.',
+    'internal.guide.roles.STAFF_LEADER.step1',
+    'internal.guide.roles.STAFF_LEADER.step2',
+    'internal.guide.roles.STAFF_LEADER.step3',
+    'internal.guide.roles.STAFF_LEADER.step4',
   ],
   STAFF: [
-    'Kiểm tra các đơn tham quan được phân công phụ trách.',
-    'Chuẩn bị chương trình đón tiếp trước ngày visit.',
-    'Ghi nhận biên bản, tin tức, hình ảnh sau buổi tham quan.',
+    'internal.guide.roles.STAFF.step1',
+    'internal.guide.roles.STAFF.step2',
+    'internal.guide.roles.STAFF.step3',
   ],
   DEPT_LEADER: [
-    'Phân công nhân sự phòng ban hỗ trợ các đoàn tham quan.',
-    'Theo dõi nhiệm vụ và tiến độ của phòng ban.',
-    'Ký bàn giao khi hoàn tất công tác hỗ trợ.',
-    'Phối hợp với Phòng Hợp tác Quốc tế (IC) khi cần.',
+    'internal.guide.roles.DEPT_LEADER.step1',
+    'internal.guide.roles.DEPT_LEADER.step2',
+    'internal.guide.roles.DEPT_LEADER.step3',
+    'internal.guide.roles.DEPT_LEADER.step4',
   ],
   DEPT_STAFF: [
-    'Xem lịch hỗ trợ được phòng ban phân công.',
-    'Phản hồi nhiệm vụ được giao đúng hạn.',
-    'Ký nhận / ký trả khi bàn giao công việc.',
-    'Cập nhật kết quả hỗ trợ sau khi hoàn tất.',
+    'internal.guide.roles.DEPT_STAFF.step1',
+    'internal.guide.roles.DEPT_STAFF.step2',
+    'internal.guide.roles.DEPT_STAFF.step3',
+    'internal.guide.roles.DEPT_STAFF.step4',
   ],
   VISITOR: [],
 };
@@ -57,24 +60,25 @@ interface GuideStepsSectionProps {
 }
 
 export function GuideStepsSection({ user }: GuideStepsSectionProps) {
+  const { t } = useTranslation('home');
   const bucket = resolveHomeRoleBucket(user);
   if (!bucket) return null;
 
-  const steps = GUIDE_STEPS[bucket];
-  if (!steps || steps.length === 0) return null;
+  const stepKeys = GUIDE_STEP_KEYS[bucket];
+  if (!stepKeys || stepKeys.length === 0) return null;
 
   return (
     <section className="py-14 sm:py-16 lg:py-20 bg-slate-50 relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-12">
-          <h2 className="text-3xl font-bold text-fpt-navy">Hướng dẫn quy trình</h2>
+          <h2 className="text-3xl font-bold text-fpt-navy">{t('internal.guide.title')}</h2>
           <div className="w-16 h-1.5 bg-fpt-orange mt-4 rounded-full"></div>
         </div>
 
         <div className="space-y-4">
-          {steps.map((step, idx) => (
+          {stepKeys.map((stepKey, idx) => (
             <motion.div
-              key={idx}
+              key={stepKey}
               initial={{ opacity: 0, x: -10 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
@@ -84,7 +88,7 @@ export function GuideStepsSection({ user }: GuideStepsSectionProps) {
               <div className="w-8 h-8 rounded-full bg-fpt-navy text-white font-bold text-sm flex items-center justify-center flex-shrink-0">
                 {idx + 1}
               </div>
-              <p className="text-slate-700 leading-relaxed pt-1">{step}</p>
+              <p className="text-slate-700 leading-relaxed pt-1">{t(stepKey)}</p>
             </motion.div>
           ))}
         </div>

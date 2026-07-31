@@ -16,6 +16,44 @@ if (typeof globalThis.crypto.randomUUID !== 'function') {
   (globalThis.crypto as any).randomUUID = randomUUID;
 }
 
+// jsdom does not implement IntersectionObserver. Any component using motion's `whileInView`
+// (or LazyGlobeShowcase) throws on mount without it. The stub reports every observed element as
+// immediately in view so scroll-reveal sections render their final state under test.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  class IntersectionObserverStub implements IntersectionObserver {
+    readonly root: Element | Document | null = null;
+    readonly rootMargin: string = '0px';
+    readonly thresholds: ReadonlyArray<number> = [0];
+
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+
+    observe(target: Element): void {
+      this.callback(
+        [
+          {
+            target,
+            isIntersecting: true,
+            intersectionRatio: 1,
+            time: 0,
+            boundingClientRect: target.getBoundingClientRect(),
+            intersectionRect: target.getBoundingClientRect(),
+            rootBounds: null,
+          } as IntersectionObserverEntry,
+        ],
+        this,
+      );
+    }
+
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+
+  globalThis.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+}
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
