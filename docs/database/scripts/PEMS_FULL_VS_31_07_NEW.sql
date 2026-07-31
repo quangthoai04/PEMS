@@ -1818,6 +1818,7 @@ CREATE TABLE visit_agendas (
   end_time DATETIME NULL,
   location VARCHAR(255) NULL,
   responsible_user_id BIGINT UNSIGNED NULL,
+  responsible_name VARCHAR(255) NULL COMMENT 'Tên người phụ trách (nhập tay tự do, không ràng buộc user thật)',
   source_template_item_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -1935,7 +1936,7 @@ CREATE TABLE visit_logistics_items (
   KEY idx_logistics_proposed_by_time (proposed_by, proposed_at),
   CHECK (quantity IS NULL OR quantity >= 1),
   CHECK (usage_end_at IS NULL OR usage_start_at IS NULL OR usage_end_at > usage_start_at),
-  CHECK (proposed_quantity IS NULL OR proposed_quantity >= 1),
+  CHECK (proposed_quantity IS NULL OR proposed_quantity >= 0),
   CHECK (proposed_usage_end_at IS NULL OR proposed_usage_start_at IS NULL OR proposed_usage_end_at > proposed_usage_start_at),
 
   CONSTRAINT fk_logistics_instance
@@ -2399,7 +2400,10 @@ CREATE TABLE minute_action_items (
   title VARCHAR(255) NOT NULL COMMENT 'Tên đầu việc',
   note TEXT NULL COMMENT 'Ghi chú thêm cho đầu việc',
 
+  assigned_to_user_id BIGINT UNSIGNED NULL COMMENT 'Người phụ trách đầu mục — Host hoặc participant ACCEPTED (IC_SUPPORT/DEPT_SUPPORT/STUDENT) của chuyến thăm',
+
   due_date DATETIME NULL COMMENT 'Deadline ngày giờ của đầu việc',
+  due_reminder_sent_at DATETIME NULL COMMENT 'Thời điểm đã gửi mail/thông báo nhắc hạn cho người phụ trách; NULL = chưa nhắc',
 
   status ENUM('TODO','IN_PROGRESS','DONE','CANCELLED') NOT NULL DEFAULT 'TODO'
     COMMENT 'TODO=chưa làm, IN_PROGRESS=đang làm, DONE=hoàn thành, CANCELLED=đã hủy/không cần làm nữa',
@@ -2419,10 +2423,14 @@ CREATE TABLE minute_action_items (
   KEY idx_action_items_status_due (status, due_date),
   KEY idx_action_items_order (minutes_id, display_order),
   KEY idx_action_items_created_by_time (created_by, created_at),
+  KEY idx_action_items_assignee (assigned_to_user_id, status),
 
   CONSTRAINT fk_action_items_minutes
     FOREIGN KEY (minutes_id) REFERENCES minutes(minutes_id)
     ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_action_items_assignee
+    FOREIGN KEY (assigned_to_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
 
   CONSTRAINT fk_action_items_created_by
     FOREIGN KEY (created_by) REFERENCES users(user_id)
@@ -2586,6 +2594,7 @@ CREATE TABLE news (
 
   published_at DATETIME NULL COMMENT 'Thời điểm bài viết được đăng',
   is_featured BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Bài viết nổi bật',
+  is_pinned BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Bài viết được ghim ở Dấu ấn các chuyến thăm',
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token, chống ghi đè khi cập nhật đồng thời',
 
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2599,6 +2608,7 @@ CREATE TABLE news (
   KEY idx_news_visit_instance_status (visit_instance_id, status),
   KEY idx_news_review (reviewed_by, reviewed_at),
   KEY idx_news_featured (is_featured, status, published_at),
+  KEY idx_news_pinned (is_pinned, status, published_at),
 
   CONSTRAINT fk_news_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
@@ -3076,12 +3086,6 @@ CREATE TABLE email_templates (
   body_format ENUM('PLAIN_TEXT','HTML') NOT NULL DEFAULT 'HTML'
     COMMENT 'Định dạng nội dung email template; HTML dùng cho rich text editor',
   variables_text VARCHAR(700) NULL,
-  -- Monotonic content revision — the optimistic-concurrency token for UC-44 update and restore.
-  -- updated_at cannot do this job: it is DATETIME with no fractional part, so two saves inside the
-  -- same second store an identical stamp and the second one silently overwrites the first. Every
-  -- content write must therefore be a conditional UPDATE carrying `AND revision = :expected` and
-  -- bumping this column by exactly one, so the database — not the handler — decides who wins.
-  -- Never written by an operator and never reset: it counts writes, it does not describe content.
   revision INT UNSIGNED NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
@@ -3131,6 +3135,7 @@ CREATE TABLE sent_emails (
     FOREIGN KEY (sent_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Sent email log; recipients stored in sent_email_recipients';
+
 
 CREATE TABLE sent_email_recipients (
   sent_email_recipient_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -4589,19 +4594,23 @@ BEGIN
   DECLARE v_valid_file INT DEFAULT 0;
 
   SELECT COUNT(*) INTO v_valid_participant
-  FROM visit_participants vp
-  JOIN users u ON u.user_id = vp.user_id
+  FROM visit_request_campuses vrc
+  JOIN users u ON u.user_id = NEW.uploaded_by
   JOIN roles r ON r.role_id = u.role_id
-  WHERE vp.visit_instance_id = NEW.visit_instance_id
+  LEFT JOIN visit_participants vp ON vp.visit_instance_id = NEW.visit_instance_id
     AND vp.user_id = NEW.uploaded_by
-    AND vp.participant_role = 'STUDENT'
-    AND vp.status = 'ACCEPTED'
-    AND r.role_code = 'STUDENT'
-    AND u.status = 'ACTIVE';
+    AND (vp.status = 'ACCEPTED' OR vp.status = 'ASSIGNED')
+  WHERE vrc.visit_instance_id = NEW.visit_instance_id
+    AND u.status = 'ACTIVE'
+    AND (
+      vrc.current_host_user_id = NEW.uploaded_by
+      OR r.role_code IN ('ADMIN', 'STAFF')
+      OR vp.participant_id IS NOT NULL
+    );
 
   IF v_valid_participant = 0 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE Student with ACCEPTED participation in this visit instance';
+      SET MESSAGE_TEXT = 'Visit photo uploader must be an ACTIVE user who is Host, Staff, Admin, or Participant of this visit instance';
   END IF;
 
   SELECT COUNT(*) INTO v_valid_file
@@ -10328,14 +10337,14 @@ SELECT
   'Google Document AI - Business Card OCR',
   'GOOGLE_DOCUMENT_AI',
   'BUSINESS_CARD_OCR',
-  'https://us-documentai.googleapis.com',
+  'https://asia-southeast1-documentai.googleapis.com',
   'POST',
   'CUSTOM',
   JSON_OBJECT(
-    'project_id', '',
-    'location', 'us',
-    'processor_id', '',
-    'endpoint', 'us-documentai.googleapis.com',
+    'project_id', 'pems-production',
+    'location', 'asia-southeast1',
+    'processor_id', '9f4642de7b8f8b25',
+    'endpoint', 'asia-southeast1-documentai.googleapis.com',
     'max_file_size_mb', 10,
     'allowed_mime_types', JSON_ARRAY('image/jpeg', 'image/png', 'image/webp', 'application/pdf')
   ),
@@ -14938,9 +14947,6 @@ WHERE table_schema = DATABASE()
   AND table_name = 'visit_request_fingerprint_guards'
   AND table_type = 'BASE TABLE';
 
--- 83 = 82 before G11, plus email_send_idempotency. This assertion previously read 81 while the file
--- actually produced 82 (and this file's own header comment said 82), so it had been reporting a
--- permanent issue_count of 1; the number is corrected here rather than left one further out of date.
 SELECT 'merged_runtime_table_count' AS check_name,
        CASE WHEN COUNT(*) = 83 THEN 0 ELSE ABS(COUNT(*) - 83) END AS issue_count
 FROM information_schema.tables
