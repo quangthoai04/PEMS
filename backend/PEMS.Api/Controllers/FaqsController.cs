@@ -58,7 +58,7 @@ namespace PEMS.Api.Controllers
             CancellationToken cancellationToken)
         {
             var command = new PEMS.Application.Faqs.Commands.UpdateFAQ.UpdateFAQCommand(
-                (ulong)faqId, body.FaqType, body.Question, body.Answer,
+                (ulong)faqId, body.Question, body.Answer,
                 body.EnglishQuestion, body.EnglishAnswer);
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);

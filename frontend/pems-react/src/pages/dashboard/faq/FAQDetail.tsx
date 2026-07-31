@@ -55,7 +55,7 @@ export function FAQDetail() {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ faqType: '', question: '', answer: '' });
+  const [editForm, setEditForm] = useState({ question: '', answer: '' });
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -115,7 +115,7 @@ export function FAQDetail() {
 
   const handleEdit = () => {
     if (!faq) return;
-    setEditForm({ faqType: faq.faqType, question: faq.question, answer: faq.answer });
+    setEditForm({ question: faq.question, answer: faq.answer });
     setHadEnglishAtEditStart(!!faq.hasEnglishTranslation);
     setAddingEnglish(false);
     setEnglishQuestion(faq.englishQuestion ?? '');
@@ -137,7 +137,6 @@ export function FAQDetail() {
     setSaveError(null);
     try {
       const { data } = await httpClient.put<FaqDetail>(`/faqs/${id}`, {
-        faqType: editForm.faqType,
         question: editForm.question,
         answer: editForm.answer,
         // Omitted entirely when the EN panel was never opened for a FAQ that has no EN yet — the
@@ -224,22 +223,10 @@ export function FAQDetail() {
           <div className="relative z-10 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {!isEditing ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full text-xs font-bold text-[#004c91] shadow-sm">
-                    <Info className="w-3.5 h-3.5" />
-                    {faq.faqTypeLabel}
-                  </span>
-                ) : (
-                  <select
-                    value={editForm.faqType}
-                    onChange={(e) => setEditForm({ ...editForm, faqType: e.target.value })}
-                    className="px-3 py-1 bg-white rounded-full text-xs font-bold text-[#004c91] shadow-sm outline-none border-none cursor-pointer"
-                  >
-                    {FAQ_TYPE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                )}
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full text-xs font-bold text-[#004c91] shadow-sm">
+                  <Info className="w-3.5 h-3.5" />
+                  {faq.faqTypeLabel}
+                </span>
                 {getStatusBadge(faq.status)}
               </div>
 

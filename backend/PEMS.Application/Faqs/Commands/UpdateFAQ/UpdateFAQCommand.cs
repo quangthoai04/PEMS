@@ -4,7 +4,6 @@ namespace PEMS.Application.Faqs.Commands.UpdateFAQ;
 
 public sealed record UpdateFAQCommand(
     ulong FaqId,
-    string FaqType,
     string Question,
     string Answer,
     /// <summary>
@@ -17,7 +16,6 @@ public sealed record UpdateFAQCommand(
 ) : IRequest<UpdateFAQResponse>;
 
 public sealed record UpdateFAQBody(
-    string FaqType,
     string Question,
     string Answer,
     string? EnglishQuestion = null,
