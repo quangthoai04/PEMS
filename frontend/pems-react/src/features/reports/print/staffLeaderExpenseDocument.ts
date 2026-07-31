@@ -93,7 +93,7 @@ function visitRows(visit: ExpenseVisitBlock, index: number): HTMLTableRowElement
         { text: item.itemName },
         { text: item.typeLabel },
         { text: item.source },
-        { text: String(item.quantity), align: 'right' },
+        { text: String(Math.floor(item.quantity || 0)), align: 'right' },
         { text: money(item.unitPrice), align: 'right' },
         { text: money(item.totalAmount), align: 'right' },
       ]));

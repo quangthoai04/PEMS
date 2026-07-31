@@ -18,6 +18,7 @@ import visitExpenseService, {
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitInstanceLogisticsItem } from '../../../features/delegations/types/delegations.types';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
+import { UnitPriceInput } from '../../../components/common/UnitPriceInput';
 
 interface Props {
   visitInstanceId: number;
@@ -343,8 +344,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                         className="w-full bg-transparent border-none text-xs font-semibold text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent" />
                     </td>
                     <td className="px-2.5 py-1">
-                      <input type="number" min="0" step="0.01" value={it.quantity}
-                        onChange={(e) => handleUpdateItem(idx, 'quantity', Number(e.target.value) || 0)}
+                      <input type="number" min="0" step="1" value={Math.floor(it.quantity || 0)}
+                        onChange={(e) => handleUpdateItem(idx, 'quantity', Math.max(0, parseInt(e.target.value, 10) || 0))}
                         disabled={readonly}
                         className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent" />
                     </td>
@@ -355,10 +356,13 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                         className="w-full bg-transparent border-none text-xs text-slate-600 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent" />
                     </td>
                     <td className="px-2.5 py-1">
-                      <input type="number" min="0" value={it.unitPrice}
-                        onChange={(e) => handleUpdateItem(idx, 'unitPrice', Number(e.target.value) || 0)}
+                      <UnitPriceInput
+                        value={it.unitPrice || 0}
+                        onChange={(val) => handleUpdateItem(idx, 'unitPrice', val)}
                         disabled={readonly}
-                        className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent" />
+                        step={1000}
+                        className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                      />
                     </td>
                     <td className="px-2.5 py-1 text-right font-black text-[#004c91]">
                       {((it.quantity || 0) * (it.unitPrice || 0)).toLocaleString('vi-VN')} ₫
@@ -479,7 +483,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                             <td className="border border-slate-500 p-2 text-center">{stt}</td>
                             <td className="border border-slate-500 p-2">Hạng mục yêu cầu</td>
                             <td className="border border-slate-500 p-2">{it.itemName}</td>
-                            <td className="border border-slate-500 p-2 text-center">{it.quantity}</td>
+                            <td className="border border-slate-500 p-2 text-center">{Math.floor(it.quantity || 0)}</td>
                             <td className="border border-slate-500 p-2 text-center">{it.unitName || ''}</td>
                             <td className="border border-slate-500 p-2 text-right">{it.unitPrice.toLocaleString('vi-VN')}</td>
                             <td className="border border-slate-500 p-2 text-right">{it.totalAmount.toLocaleString('vi-VN')}</td>
@@ -502,7 +506,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                           <td className="border border-slate-500 p-2 text-center">{stt}</td>
                           <td className="border border-slate-500 p-2">Hạng mục yêu cầu</td>
                           <td className="border border-slate-500 p-2">{it.itemName}</td>
-                          <td className="border border-slate-500 p-2 text-center">{it.quantity}</td>
+                          <td className="border border-slate-500 p-2 text-center">{Math.floor(it.quantity || 0)}</td>
                           <td className="border border-slate-500 p-2 text-center">{it.unitName || ''}</td>
                           <td className="border border-slate-500 p-2 text-right">{it.unitPrice.toLocaleString('vi-VN')}</td>
                           <td className="border border-slate-500 p-2 text-right">{it.totalAmount.toLocaleString('vi-VN')}</td>
@@ -524,7 +528,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                           <td className="border border-slate-500 p-2 text-center">{stt}</td>
                           <td className="border border-slate-500 p-2">{ORIGIN_LABELS[it.itemOrigin] || it.itemOrigin}</td>
                           <td className="border border-slate-500 p-2">{it.itemName}</td>
-                          <td className="border border-slate-500 p-2 text-center">{it.quantity}</td>
+                          <td className="border border-slate-500 p-2 text-center">{Math.floor(it.quantity || 0)}</td>
                           <td className="border border-slate-500 p-2 text-center">{it.unitName || ''}</td>
                           <td className="border border-slate-500 p-2 text-right">{it.unitPrice.toLocaleString('vi-VN')}</td>
                           <td className="border border-slate-500 p-2 text-right">{((it.quantity || 0) * (it.unitPrice || 0)).toLocaleString('vi-VN')}</td>

@@ -12,6 +12,7 @@ import { Loader2, Plus, Save, Trash2, DollarSign, CheckCircle2, Ban } from 'luci
 import toast from 'react-hot-toast';
 import visitExpenseService, { VisitExpenseReport, SaveExpenseReportCommand, SaveExpenseItemDto } from '../../../services/visit-expense.service';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
+import { UnitPriceInput } from '../../../components/common/UnitPriceInput';
 
 interface Props {
   logisticsItemId: number;
@@ -180,9 +181,9 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
                   </td>
                   <td className="px-2.5 py-1">
                     <input
-                      type="number" min="0" step="0.01"
-                      value={it.quantity}
-                      onChange={(e) => handleUpdateItem(idx, 'quantity', Number(e.target.value) || 0)}
+                      type="number" min="0" step="1"
+                      value={Math.floor(it.quantity || 0)}
+                      onChange={(e) => handleUpdateItem(idx, 'quantity', Math.max(0, parseInt(e.target.value, 10) || 0))}
                       disabled={locked}
                       className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                     />
@@ -198,11 +199,11 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
                     />
                   </td>
                   <td className="px-2.5 py-1">
-                    <input
-                      type="number" min="0"
-                      value={it.unitPrice}
-                      onChange={(e) => handleUpdateItem(idx, 'unitPrice', Number(e.target.value) || 0)}
+                    <UnitPriceInput
+                      value={it.unitPrice || 0}
+                      onChange={(val) => handleUpdateItem(idx, 'unitPrice', val)}
                       disabled={locked}
+                      step={1000}
                       className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                     />
                   </td>

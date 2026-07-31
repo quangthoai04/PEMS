@@ -62,7 +62,7 @@ export function buildDeptInvoiceStatsDocument(model: DeptInvoiceStatsModel): HTM
     { text: line.title },
     { text: line.delegationName },
     { text: line.usageDate, align: 'center' },
-    { text: String(line.quantity), align: 'center' },
+    { text: String(Math.floor(line.quantity || 0)), align: 'center' },
     line.noExpense
       ? { text: 'Không có chi phí', align: 'right', italic: true, color: '#64748b' }
       : { text: money(line.totalExpense), align: 'right' },
