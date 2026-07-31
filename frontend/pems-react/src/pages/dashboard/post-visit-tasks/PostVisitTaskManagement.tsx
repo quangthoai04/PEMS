@@ -4,7 +4,7 @@
  * (Quản lý biên bản/tài liệu): filter bar + bảng + phân trang 5/10/20/50.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Filter, ClipboardList, Eye, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, Building2, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -26,6 +26,7 @@ const isOverdue = (item: MyActionItem) =>
 const DEFAULT_FILTERS: MyActionItemsFilterParams = { page: 1, pageSize: 10, status: 'ALL', sortDir: 'asc' };
 
 export function PostVisitTaskManagement() {
+  const navigate = useNavigate();
   // Deep-link từ chuông thông báo "Bạn được giao đầu việc" / "Đến hạn hoàn thành công việc":
   // ?actionItemId=123 → chỉ hiển thị đúng 1 đầu việc đó, bỏ qua mọi filter mặc định.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -115,15 +116,16 @@ export function PostVisitTaskManagement() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-2xl bg-[#004c91]/10 flex items-center justify-center">
-          <ClipboardList className="w-6 h-6 text-[#004c91]" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Quản lý việc sau tiếp khách</h1>
-          <p className="text-sm text-slate-500">Các đầu việc trong biên bản cuộc họp mà bạn được phân công phụ trách.</p>
-        </div>
+    <div className="w-full pb-12 flex flex-col space-y-4 animate-in fade-in duration-300">
+      {/* Header & Navigation Layer */}
+      <div className="mb-1 flex items-center text-sm font-medium text-gray-500">
+        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>
+        <span className="mx-2">/</span>
+        <span className="text-[#004c91] font-bold">Quản lý việc sau tiếp khách</span>
+      </div>
+
+      <div className="border-b border-gray-100 pb-3">
+        <h1 className="text-3xl font-bold text-[#004c91]">Quản lý việc sau tiếp khách</h1>
       </div>
 
       {/* Banner khi mở từ chuông thông báo — chỉ đang hiện đúng 1 đầu việc, không phải toàn bộ danh sách. */}

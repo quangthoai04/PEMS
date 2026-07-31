@@ -253,12 +253,14 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   const confidenceBadge = useMemo(() => {
     const value = job?.confidenceScore ?? null;
     if (value == null) return null;
-    const color = value >= 90 ? 'bg-green-50 text-green-600'
-      : value >= 70 ? 'bg-yellow-50 text-yellow-600'
-        : 'bg-red-50 text-red-500';
+    const { label, color } = value > 90
+      ? { label: 'Cao', color: 'bg-green-50 text-green-600' }
+      : value >= 60
+        ? { label: 'Trung bình', color: 'bg-yellow-50 text-yellow-600' }
+        : { label: 'Thấp', color: 'bg-red-50 text-red-500' };
     return (
       <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${color}`}>
-        Độ tin cậy: {value.toFixed(0)}%
+        Độ tin cậy: {label}
       </span>
     );
   }, [job?.confidenceScore]);

@@ -773,7 +773,7 @@ export function PartnerDetail() {
                       <td className="p-3 text-center">
                         <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500">
                           {c.sourceType === 'BUSINESS_CARD_OCR'
-                            ? `OCR danh thiếp${c.ocrConfidence != null ? ` ${c.ocrConfidence}%` : ''}`
+                            ? `OCR danh thiếp${c.ocrConfidence != null ? ` - ${c.ocrConfidence > 90 ? 'Cao' : c.ocrConfidence >= 60 ? 'Trung bình' : 'Thấp'}` : ''}`
                             : c.sourceType === 'IMPORT' ? 'Import' : 'Nhập tay'}
                         </span>
                       </td>
@@ -1029,8 +1029,8 @@ export function PartnerDetail() {
       {/* Contact detail modal (read-only "Xem chi tiết") — restores the original popup */}
       {viewContact && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-[#00a651]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-[#00a651] shrink-0">
               <h3 className="text-xl font-bold text-white">Thông tin chi tiết</h3>
               <button
                 onClick={() => setViewContact(null)}
@@ -1040,7 +1040,7 @@ export function PartnerDetail() {
               </button>
             </div>
 
-            <div className="p-6 space-y-6 bg-gray-50/50">
+            <div className="p-6 space-y-6 bg-gray-50/50 overflow-y-auto">
               <div className="flex items-center gap-4 pb-4 border-b border-gray-200">
                 <div className="w-14 h-14 bg-gradient-to-br from-[#eaffe4] to-[#ceefda] rounded-xl flex items-center justify-center text-[#00a651] font-black text-2xl shrink-0 shadow-sm border border-[#00a651]/20 overflow-hidden">
                   <ContactAvatarImage fileId={viewContact.avatarFileId} url={viewContact.avatarUrl} alt={viewContact.fullName} />
@@ -1066,7 +1066,7 @@ export function PartnerDetail() {
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Nguồn</label>
                   <p className="text-[15px] font-medium text-gray-800">
                     {viewContact.sourceType === 'BUSINESS_CARD_OCR' ? 'Quét danh thiếp (OCR)' : viewContact.sourceType === 'IMPORT' ? 'Import' : 'Nhập tay'}
-                    {viewContact.ocrConfidence != null && ` • Độ tin cậy ${viewContact.ocrConfidence}%`}
+                    {viewContact.ocrConfidence != null && ` • Độ tin cậy ${viewContact.ocrConfidence > 90 ? 'Cao' : viewContact.ocrConfidence >= 60 ? 'Trung bình' : 'Thấp'}`}
                   </p>
                 </div>
                 <div>
@@ -1107,7 +1107,7 @@ export function PartnerDetail() {
               )}
             </div>
 
-            <div className="p-5 border-t border-gray-100 bg-white flex justify-end">
+            <div className="p-5 border-t border-gray-100 bg-white flex justify-end shrink-0">
               <button
                 onClick={() => setViewContact(null)}
                 className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors outline-none cursor-pointer"
