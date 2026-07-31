@@ -61,8 +61,8 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 interface RelatedVisitorsTabProps {
-  accountTypeFilter?: 'INTERNAL' | 'VISITOR';
-  onAccountTypeChange?: (val: 'INTERNAL' | 'VISITOR') => void;
+  accountTypeFilter?: 'ALL' | 'INTERNAL' | 'VISITOR';
+  onAccountTypeChange?: (val: 'ALL' | 'INTERNAL' | 'VISITOR') => void;
 }
 
 export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTypeChange }: RelatedVisitorsTabProps = {}) {
@@ -167,9 +167,10 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
           <div className="relative">
             <select
               value={accountTypeFilter}
-              onChange={(e) => onAccountTypeChange(e.target.value as 'INTERNAL' | 'VISITOR')}
+              onChange={(e) => onAccountTypeChange(e.target.value as 'ALL' | 'INTERNAL' | 'VISITOR')}
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
+              <option className="text-gray-900" value="ALL">Tất cả tài khoản</option>
               <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
               <option className="text-gray-900" value="VISITOR">Tài khoản khách</option>
             </select>

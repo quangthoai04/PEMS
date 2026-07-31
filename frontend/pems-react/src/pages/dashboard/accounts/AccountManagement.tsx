@@ -200,7 +200,9 @@ export function AccountManagement() {
   const setAccountTypeFilter = (val: string) => setCurrentFilters(prev => ({
     ...prev,
     accountType: val,
-    role: val === 'INTERNAL' && prev.role === 'VISITOR' ? '' : prev.role,
+    // Leaving VISITOR (to INTERNAL or ALL) drops the now-meaningless role=VISITOR filter,
+    // otherwise "Tất cả tài khoản" would still silently show only Visitor rows.
+    role: val !== 'VISITOR' && prev.role === 'VISITOR' ? '' : prev.role,
   }));
   const setRoleFilter = (val: string) => setCurrentFilters(prev => ({
     ...prev,
@@ -385,10 +387,15 @@ export function AccountManagement() {
       roleCode: roleFilter || undefined,
       status,
       campusId,
+      // Server-side INTERNAL/VISITOR split (AccountListQueryExecutor already supports it). Without
+      // this the split was only applied client-side to whatever 20 rows the current page happened
+      // to contain, so switching the filter could show 0 rows (or a wrong total) depending on which
+      // account types landed on that page.
+      accountType: (accountTypeFilter || undefined) as AccountListQueryParams['accountType'],
       sortBy: 'createdAt',
       sortDirection: 'desc',
     };
-  }, [isHO, isRealAdmin, campusFilter, campusOptions, statusFilter, currentPage, pageSize, debouncedSearch, roleFilter]);
+  }, [isHO, isRealAdmin, campusFilter, campusOptions, statusFilter, currentPage, pageSize, debouncedSearch, roleFilter, accountTypeFilter]);
 
   const {
     data: accountsData,
@@ -1587,7 +1594,11 @@ export function AccountManagement() {
         </div>
       )}
 
-      {accountTypeFilter === 'VISITOR' ? (
+      {/* "Related Visitor Accounts" tab is scoped server-side to a Staff Leader's own campus
+          (UC_StaffLeader_Related_Visitor_Accounts_Tab) — it 403s for any other role. ADMIN (and
+          anyone else who can reach the VISITOR account-type filter) must keep using the normal,
+          unscoped account list below, which already supports roleCode=VISITOR system-wide. */}
+      {accountTypeFilter === 'VISITOR' && isStaffLeader ? (
         <RelatedVisitorsTab
           accountTypeFilter={accountTypeFilter}
           onAccountTypeChange={(val) => setAccountTypeFilter(val)}
@@ -1642,8 +1653,9 @@ export function AccountManagement() {
             </div>
           )}
 
-          {/* Lọc Loại Tài khoản (Tài khoản nội bộ / Tài khoản khách). Ẩn với HO: HO chỉ làm việc
-              với tài khoản nội bộ, nên bộ lọc luôn ở INTERNAL (giá trị mặc định) và không hiển thị. */}
+          {/* Lọc Loại Tài khoản (Tất cả / Tài khoản nội bộ / Tài khoản khách). Ẩn với HO: HO chỉ
+              làm việc với tài khoản nội bộ, nên bộ lọc luôn ở INTERNAL (giá trị mặc định) và
+              không hiển thị. */}
           {!isHO && (
           <div className="relative">
             <select
@@ -1651,14 +1663,11 @@ export function AccountManagement() {
               onChange={(e) => {
                 const val = e.target.value;
                 setAccountTypeFilter(val);
-                if (val === 'VISITOR') {
-                  setRoleFilter('VISITOR');
-                } else if (val === 'INTERNAL' && roleFilter === 'VISITOR') {
-                  setRoleFilter('');
-                }
+                if (val === 'VISITOR') setRoleFilter('VISITOR');
               }}
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
+              <option className="text-gray-900" value="ALL">Tất cả tài khoản</option>
               <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
               <option className="text-gray-900" value="VISITOR">Tài khoản khách</option>
             </select>
