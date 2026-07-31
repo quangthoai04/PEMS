@@ -172,18 +172,18 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        /// <summary>Báo cáo phòng ban 2 phần của Department Leader (nhiệm vụ + nhân sự) — lọc theo thời gian.</summary>
+        /// <summary>Báo cáo phòng ban của Department Leader / Dept Staff — lọc theo thời gian.</summary>
         [HttpGet("dept-leader-report-v2")]
-        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        [RoleAuthorize(EffectiveRole.DepartmentLead, EffectiveRole.Department)]
         public async Task<IActionResult> GetDeptLeaderReportV2([FromQuery] GetDeptLeaderReportV2Query query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
-        /// <summary>Đơn hậu cần phòng ban ĐÃ HOÀN THÀNH trong khoảng ngày — panel xuất hóa đơn (Dept Leader).</summary>
+        /// <summary>Đơn hậu cần phòng ban ĐÃ HOÀN THÀNH trong khoảng ngày — panel xuất hóa đơn (Dept Leader / Dept Staff).</summary>
         [HttpGet("dept-leader-report-v2/invoice-items")]
-        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        [RoleAuthorize(EffectiveRole.DepartmentLead, EffectiveRole.Department)]
         public async Task<IActionResult> GetDeptLeaderInvoiceItemsV2([FromQuery] GetDeptLeaderInvoiceItemsV2Query query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -214,9 +214,9 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        /// <summary>Xuất báo cáo phòng ban (PDF/Excel/CSV) — chọn phần nhiệm vụ/nhân sự hoặc cả hai.</summary>
+        /// <summary>Xuất báo cáo phòng ban (PDF/Excel/CSV) — chọn phần nhiệm vụ hoặc cả hai.</summary>
         [HttpPost("dept-leader-report-v2/export")]
-        [RoleAuthorize(EffectiveRole.DepartmentLead)]
+        [RoleAuthorize(EffectiveRole.DepartmentLead, EffectiveRole.Department)]
         public async Task<IActionResult> ExportDeptLeaderReportV2([FromBody] ExportDeptLeaderReportV2Command command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);

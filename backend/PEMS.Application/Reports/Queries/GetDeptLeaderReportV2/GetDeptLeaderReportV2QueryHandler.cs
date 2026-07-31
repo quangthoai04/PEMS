@@ -32,7 +32,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
 
     public async Task<DeptLeaderReportV2Dto> Handle(GetDeptLeaderReportV2Query request, CancellationToken cancellationToken)
     {
-        var deptId = DeptLeaderReportV2Guard.RequireDepartmentLeader(_currentUser);
+        var (deptId, userId, isLeader) = DeptLeaderReportV2Guard.RequireDepartmentMember(_currentUser);
         var nowVn = VietnamTime.Now();
         var preset = DeptLeaderReportV2Guard.NormalizePreset(request.Preset);
         var (fromVn, toVnExclusive) = DeptLeaderReportV2Guard.ResolvePeriodVn(preset, request.FromDate, request.ToDate, nowVn);
@@ -48,6 +48,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                 join u in _db.Users.AsNoTracking() on p.UserId equals u.UserId
                 where u.DepartmentId == deptId && u.Role.RoleCode == "DEPARTMENT"
                       && p.AssignedBy != null && p.Status != "REMOVED"
+                      && (isLeader || p.UserId == userId)
                       && ci.PlannedStartAt >= fromVn && ci.PlannedStartAt < toVnExclusive
                 select new
                 {
@@ -69,6 +70,7 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                 let startAt = li.UsageStartAt ?? ci.PlannedStartAt
                 let endAt = li.UsageEndAt ?? ci.PlannedEndAt
                 where li.RequestedToDepartmentId == deptId
+                      && (isLeader || li.AssignedToUserId == userId)
                       && startAt >= fromVn && startAt < toVnExclusive
                 select new
                 {
@@ -97,10 +99,12 @@ public sealed class GetDeptLeaderReportV2QueryHandler
 
         // Feedback: host đánh giá người tham gia (HOST_PARTICIPANT, target là nhân sự phòng ban)
         // + host đánh giá hạng mục hậu cần (HOST_LOGISTICS, target_department hoặc target_logistics_item).
-        var deptUserIds = await _db.Users.AsNoTracking()
-            .Where(u => u.DepartmentId == deptId && u.Role.RoleCode == "DEPARTMENT")
-            .Select(u => u.UserId)
-            .ToListAsync(cancellationToken);
+        var deptUserIds = isLeader
+            ? await _db.Users.AsNoTracking()
+                .Where(u => u.DepartmentId == deptId && u.Role.RoleCode == "DEPARTMENT")
+                .Select(u => u.UserId)
+                .ToListAsync(cancellationToken)
+            : new List<ulong> { userId };
 
         var participantFbRows = await (
                 from f in _db.Feedbacks.AsNoTracking()
@@ -126,11 +130,18 @@ public sealed class GetDeptLeaderReportV2QueryHandler
                 .Where(li => fbItemIds.Contains(li.LogisticsItemId))
                 .Select(li => new { li.LogisticsItemId, li.AssignedToUserId })
                 .ToDictionaryAsync(x => x.LogisticsItemId, x => x.AssignedToUserId, cancellationToken);
-        var deptLogisticsFbRatings = logisticsFbRows
-            .Where(x => x.TargetDepartmentId == deptId
-                        || (x.TargetDepartmentId == null && x.TargetLogisticsItemId != null))
-            .Select(x => x.Rating)
-            .ToList();
+        var deptLogisticsFbRatings = isLeader
+            ? logisticsFbRows
+                .Where(x => x.TargetDepartmentId == deptId
+                            || (x.TargetDepartmentId == null && x.TargetLogisticsItemId != null))
+                .Select(x => x.Rating)
+                .ToList()
+            : logisticsFbRows
+                .Where(x => x.TargetLogisticsItemId != null
+                            && itemAssigneeMap.TryGetValue(x.TargetLogisticsItemId.Value, out var assignee)
+                            && assignee == userId)
+                .Select(x => x.Rating)
+                .ToList();
 
         var allTaskFbRatings = participantFbRows.Select(x => x.Rating)
             .Concat(deptLogisticsFbRatings)

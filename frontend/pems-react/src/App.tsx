@@ -231,7 +231,7 @@ export default function App() {
             <Route path="gallery/locations" element={<LocationManagement />} />
             <Route path="minutes" element={<MinuteManagement />} />
             <Route path="post-visit-tasks" element={<PostVisitTaskManagement />} />
-            <Route path="reports" element={<ProtectedRoute>{isDeptLeader ? <DeptReportManagement /> : isHO ? <HoReportManagement /> : isStaffLeader ? <StaffLeaderReportManagement /> : <Navigate to="/dashboard" replace />}</ProtectedRoute>} />
+            <Route path="reports" element={<ProtectedRoute>{(isDeptLeader || isDeptStaff) ? <DeptReportManagement /> : isHO ? <HoReportManagement /> : isStaffLeader ? <StaffLeaderReportManagement /> : <Navigate to="/dashboard" replace />}</ProtectedRoute>} />
             <Route path="feedback" element={<FeedbackManagement />} />
             <Route path="feedback/:id" element={<FeedbackDetail />} />
             <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />

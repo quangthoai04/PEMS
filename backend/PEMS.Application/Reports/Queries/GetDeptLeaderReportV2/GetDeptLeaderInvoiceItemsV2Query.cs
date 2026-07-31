@@ -68,7 +68,7 @@ public sealed class GetDeptLeaderInvoiceItemsV2QueryHandler
 
     public async Task<List<DeptLeaderInvoiceItemV2Dto>> Handle(GetDeptLeaderInvoiceItemsV2Query request, CancellationToken cancellationToken)
     {
-        var deptId = DeptLeaderReportV2Guard.RequireDepartmentLeader(_currentUser);
+        var (deptId, _, _) = DeptLeaderReportV2Guard.RequireDepartmentMember(_currentUser);
         var nowVn = VietnamTime.Now();
         var (fromVn, toVnExclusive) = DeptLeaderReportV2Guard.ResolvePeriodVn(
             "CUSTOM", request.FromDate, request.ToDate ?? nowVn, nowVn);

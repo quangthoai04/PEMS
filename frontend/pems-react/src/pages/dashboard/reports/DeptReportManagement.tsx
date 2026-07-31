@@ -176,6 +176,11 @@ function Section({ index, title, subtitle, open, onToggle, children }: {
 }
 
 export function DeptReportManagement() {
+  const userStr = typeof window !== 'undefined' ? localStorage.getItem("currentUser") : null;
+  const user = userStr ? JSON.parse(userStr) : null;
+  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
+  const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && !isDeptLeader;
+
   // ── Bộ lọc thời gian (chung cho cả 3 phần) ──
   const [filters, setFilters] = useState<DeptLeaderV2Filters>({ preset: 'THIS_YEAR', fromDate: '', toDate: '' });
   const [data, setData] = useState<DeptLeaderReportV2 | null>(null);
@@ -203,7 +208,7 @@ export function DeptReportManagement() {
 
   // ── Xuất báo cáo (PDF/Excel/CSV) — chọn phần ──
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const [exportSections, setExportSections] = useState<string[]>(['TASKS', 'PERSONNEL']);
+  const [exportSections, setExportSections] = useState<string[]>(isDeptStaff ? ['TASKS'] : ['TASKS', 'PERSONNEL']);
   const [exporting, setExporting] = useState(false);
   const toggleExportSection = (s: string) =>
     setExportSections((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
@@ -382,9 +387,15 @@ export function DeptReportManagement() {
       {/* ── Header + nút xuất báo cáo ── */}
       <div className="border-b border-gray-100 pb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-[#004c91]">Báo cáo phòng ban</h1>
+          <h1 className="text-3xl font-bold text-[#004c91]">
+            {isDeptStaff ? 'Báo cáo nhiệm vụ & Chi phí' : 'Báo cáo phòng ban'}
+          </h1>
           <p className="text-slate-500 mt-2">
-            {data ? `${data.departmentName} · Kỳ ${fmtDate(data.fromDate)} – ${fmtDate(data.toDate)}` : 'Báo cáo vận hành phòng ban của Department Leader.'}
+            {data
+              ? `${data.departmentName} · Kỳ ${fmtDate(data.fromDate)} – ${fmtDate(data.toDate)}`
+              : isDeptStaff
+                ? 'Báo cáo nhiệm vụ cá nhân và thống kê chi phí phòng ban.'
+                : 'Báo cáo vận hành phòng ban của Department Leader.'}
           </p>
         </div>
 
@@ -404,29 +415,43 @@ export function DeptReportManagement() {
               <div className="fixed inset-0 z-20" onClick={() => setExportMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-3 space-y-2">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide px-1">Chọn phần xuất</p>
-                {[
-                  { key: 'TASKS', label: 'Phần 1 · Nhiệm vụ' },
-                  { key: 'PERSONNEL', label: 'Phần 2 · Nhân sự' },
-                ].map((s) => (
-                  <label key={s.key} className="flex items-center gap-2 px-1 py-0.5 text-sm text-slate-700 cursor-pointer">
+                {!isDeptStaff ? (
+                  <>
+                    {[
+                      { key: 'TASKS', label: 'Phần 1 · Nhiệm vụ' },
+                      { key: 'PERSONNEL', label: 'Phần 2 · Nhân sự' },
+                    ].map((s) => (
+                      <label key={s.key} className="flex items-center gap-2 px-1 py-0.5 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={exportSections.includes(s.key)}
+                          onChange={() => toggleExportSection(s.key)}
+                          className="accent-[#004c91]"
+                        />
+                        {s.label}
+                      </label>
+                    ))}
+                    <label className="flex items-center gap-2 px-1 py-0.5 text-sm font-bold text-[#004c91] cursor-pointer border-t border-slate-100 pt-2">
+                      <input
+                        type="checkbox"
+                        checked={exportSections.length === 2}
+                        onChange={() => setExportSections(exportSections.length === 2 ? [] : ['TASKS', 'PERSONNEL'])}
+                        className="accent-[#004c91]"
+                      />
+                      Chọn tất cả
+                    </label>
+                  </>
+                ) : (
+                  <label className="flex items-center gap-2 px-1 py-0.5 text-sm font-bold text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={exportSections.includes(s.key)}
-                      onChange={() => toggleExportSection(s.key)}
+                      checked={exportSections.includes('TASKS')}
+                      onChange={() => toggleExportSection('TASKS')}
                       className="accent-[#004c91]"
                     />
-                    {s.label}
+                    Báo cáo nhiệm vụ
                   </label>
-                ))}
-                <label className="flex items-center gap-2 px-1 py-0.5 text-sm font-bold text-[#004c91] cursor-pointer border-t border-slate-100 pt-2">
-                  <input
-                    type="checkbox"
-                    checked={exportSections.length === 2}
-                    onChange={() => setExportSections(exportSections.length === 2 ? [] : ['TASKS', 'PERSONNEL'])}
-                    className="accent-[#004c91]"
-                  />
-                  Chọn tất cả
-                </label>
+                )}
                 <div className="border-t border-slate-100 pt-2 space-y-1">
                   {([['EXCEL', 'Excel (.xlsx)'], ['PDF', 'PDF (.pdf)'], ['CSV', 'CSV (.csv)']] as const).map(([fmt2, label]) => (
                     <button
@@ -510,7 +535,7 @@ export function DeptReportManagement() {
           <Section
             index={1}
             title="Báo cáo nhiệm vụ"
-            subtitle="Số liệu thư mời tham gia và đơn yêu cầu hậu cần gửi tới phòng ban trong kỳ."
+            subtitle={isDeptStaff ? "Số liệu thư mời tham gia và đơn yêu cầu hậu cần do bạn phụ trách trong kỳ." : "Số liệu thư mời tham gia và đơn yêu cầu hậu cần gửi tới phòng ban trong kỳ."}
             open={openSections.tasks}
             onToggle={() => toggleSection('tasks')}
           >
@@ -549,108 +574,110 @@ export function DeptReportManagement() {
             </div>
           </Section>
 
-          {/* ═══ 2 · Báo cáo nhân sự ═══ */}
-          <Section
-            index={2}
-            title="Báo cáo nhân sự"
-            subtitle="Hiệu suất của Department Leader và Dept Staff trong kỳ."
-            open={openSections.personnel}
-            onToggle={() => toggleSection('personnel')}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <StatTile label="Tổng nhân sự" value={p!.totalStaff} tone="blue" icon={<Users className="w-4 h-4 opacity-60" />} />
-              <StatTile
-                label="Feedback trung bình"
-                value={p!.averageFeedback != null ? `${p!.averageFeedback.toFixed(1)}★` : '—'}
-                tone="violet"
-                icon={<Star className="w-4 h-4 opacity-60" />}
-              />
-            </div>
-
-            {/* Xếp hạng nhân sự (hoàn thành + giờ làm + feedback) */}
-            <div className="flex items-center justify-end">
-              <RankSortButtons sort={personnelSort} onChange={(s) => { setPersonnelSort(s); setPersonnelPage(1); }} />
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className={thClass}>STT</th>
-                    <th className={thClass}>Tên</th>
-                    <th className={thClass}>Số nhiệm vụ phụ trách</th>
-                    <th className={thClass}>Tổng giờ làm việc</th>
-                    <th className={thClass}>Feedback</th>
-                    <th className={thClass}>Từ chối</th>
-                    <th className={thClass}>Ghi chú</th>
-                    <th className={thClass}></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {p!.rows.length === 0 && (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Không có nhân sự nào.</td></tr>
-                  )}
-                  {pagedPersonnelRows.map((row, idx) => {
-                    const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
-                    return (
-                      <tr key={row.userId} className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
-                        <td className={`${tdClass} whitespace-nowrap`}>{(personnelPage - 1) * PAGE_SIZE + idx + 1}</td>
-                        <td className={`${tdClass} font-semibold text-slate-800`}>
-                          <span className="flex items-center gap-1.5">
-                            {row.fullName}
-                            {row.role === 'DEPT_LEADER' && (
-                              <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" aria-label="Department Leader" />
-                            )}
-                          </span>
-                          <span className="block text-[11px] font-normal text-slate-400">{row.email}</span>
-                        </td>
-                        <td className={`${tdClass} whitespace-nowrap`}>{row.taskCount}</td>
-                        <td className={`${tdClass} whitespace-nowrap`}>{row.totalHours.toLocaleString('vi-VN')} giờ</td>
-                        <td className={`${tdClass} whitespace-nowrap`}>
-                          {row.feedbackAverage != null ? (
-                            <span className={`inline-flex items-center gap-1 font-bold ${lowFeedback ? 'text-rose-600' : 'text-slate-700'}`}>
-                              {row.feedbackAverage.toFixed(1)}★
-                              <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span>
-                              {lowFeedback && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" aria-label="Feedback dưới 2 sao" />}
-                            </span>
-                          ) : <span className="text-slate-400">—</span>}
-                        </td>
-                        <td className={`${tdClass} whitespace-nowrap`}>{row.declinedCount}</td>
-                        <td className={tdClass}>
-                          <input
-                            type="text"
-                            value={personnelNotes[row.userId] ?? ''}
-                            onChange={(e) => setPersonnelNotes((s) => ({ ...s, [row.userId]: e.target.value }))}
-                            placeholder="Ghi chú..."
-                            className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#004c91]"
-                          />
-                        </td>
-                        <td className={`${tdClass} whitespace-nowrap`}>
-                          <button
-                            type="button"
-                            onClick={() => sendPersonnelReport(row)}
-                            disabled={personnelSend.isSending(row.userId)}
-                            title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {personnelSend.isSending(row.userId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Gửi
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {/* ═══ 2 · Báo cáo nhân sự (Chỉ Dept Leader) ═══ */}
+          {!isDeptStaff && (
+            <Section
+              index={2}
+              title="Báo cáo nhân sự"
+              subtitle="Hiệu suất của Department Leader và Dept Staff trong kỳ."
+              open={openSections.personnel}
+              onToggle={() => toggleSection('personnel')}
+            >
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <StatTile label="Tổng nhân sự" value={p!.totalStaff} tone="blue" icon={<Users className="w-4 h-4 opacity-60" />} />
+                <StatTile
+                  label="Feedback trung bình"
+                  value={p!.averageFeedback != null ? `${p!.averageFeedback.toFixed(1)}★` : '—'}
+                  tone="violet"
+                  icon={<Star className="w-4 h-4 opacity-60" />}
+                />
               </div>
-              <Pagination page={personnelPage} total={rankedPersonnelRows.length} onChange={setPersonnelPage} />
-            </div>
-          </Section>
 
-          {/* ═══ 3 · Thống kê chi phí ═══ */}
+              {/* Xếp hạng nhân sự (hoàn thành + giờ làm + feedback) */}
+              <div className="flex items-center justify-end">
+                <RankSortButtons sort={personnelSort} onChange={(s) => { setPersonnelSort(s); setPersonnelPage(1); }} />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className={thClass}>STT</th>
+                      <th className={thClass}>Tên</th>
+                      <th className={thClass}>Số nhiệm vụ phụ trách</th>
+                      <th className={thClass}>Tổng giờ làm việc</th>
+                      <th className={thClass}>Feedback</th>
+                      <th className={thClass}>Từ chối</th>
+                      <th className={thClass}>Ghi chú</th>
+                      <th className={thClass}></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {p!.rows.length === 0 && (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Không có nhân sự nào.</td></tr>
+                    )}
+                    {pagedPersonnelRows.map((row, idx) => {
+                      const lowFeedback = row.feedbackAverage != null && row.feedbackAverage < 2;
+                      return (
+                        <tr key={row.userId} className={lowFeedback ? 'bg-rose-50/50' : idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
+                          <td className={`${tdClass} whitespace-nowrap`}>{(personnelPage - 1) * PAGE_SIZE + idx + 1}</td>
+                          <td className={`${tdClass} font-semibold text-slate-800`}>
+                            <span className="flex items-center gap-1.5">
+                              {row.fullName}
+                              {row.role === 'DEPT_LEADER' && (
+                                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" aria-label="Department Leader" />
+                              )}
+                            </span>
+                            <span className="block text-[11px] font-normal text-slate-400">{row.email}</span>
+                          </td>
+                          <td className={`${tdClass} whitespace-nowrap`}>{row.taskCount}</td>
+                          <td className={`${tdClass} whitespace-nowrap`}>{row.totalHours.toLocaleString('vi-VN')} giờ</td>
+                          <td className={`${tdClass} whitespace-nowrap`}>
+                            {row.feedbackAverage != null ? (
+                              <span className={`inline-flex items-center gap-1 font-bold ${lowFeedback ? 'text-rose-600' : 'text-slate-700'}`}>
+                                {row.feedbackAverage.toFixed(1)}★
+                                <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount})</span>
+                                {lowFeedback && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" aria-label="Feedback dưới 2 sao" />}
+                              </span>
+                            ) : <span className="text-slate-400">—</span>}
+                          </td>
+                          <td className={`${tdClass} whitespace-nowrap`}>{row.declinedCount}</td>
+                          <td className={tdClass}>
+                            <input
+                              type="text"
+                              value={personnelNotes[row.userId] ?? ''}
+                              onChange={(e) => setPersonnelNotes((s) => ({ ...s, [row.userId]: e.target.value }))}
+                              placeholder="Ghi chú..."
+                              className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#004c91]"
+                            />
+                          </td>
+                          <td className={`${tdClass} whitespace-nowrap`}>
+                            <button
+                              type="button"
+                              onClick={() => sendPersonnelReport(row)}
+                              disabled={personnelSend.isSending(row.userId)}
+                              title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              {personnelSend.isSending(row.userId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              Gửi
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                </div>
+                <Pagination page={personnelPage} total={rankedPersonnelRows.length} onChange={setPersonnelPage} />
+              </div>
+            </Section>
+          )}
+
+          {/* ═══ Thống kê chi phí ═══ */}
           <Section
-            index={3}
+            index={isDeptStaff ? 2 : 3}
             title="Thống kê chi phí"
             subtitle="Đơn hậu cần đã hoàn thành (đã ký nghiệm thu) kèm số tiền phòng ban đã kê khai trong khoảng ngày."
             open={openSections.invoice}

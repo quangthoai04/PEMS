@@ -109,6 +109,19 @@ public static class DeptLeaderReportV2Guard
             ?? throw new ForbiddenException("Tài khoản chưa được gán phòng ban.");
     }
 
+    public static (ulong DeptId, ulong UserId, bool IsLeader) RequireDepartmentMember(ICurrentUserService currentUser)
+    {
+        if (!currentUser.IsAuthenticated)
+            throw new ForbiddenException("Phiên đăng nhập không hợp lệ hoặc đã hết hạn.");
+        if (!string.Equals(currentUser.RoleCode, "DEPARTMENT", StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("Bạn không có quyền xem báo cáo phòng ban.");
+        var deptId = currentUser.DepartmentId
+            ?? throw new ForbiddenException("Tài khoản chưa được gán phòng ban.");
+        var userId = currentUser.UserId ?? 0;
+        var isLeader = string.Equals(currentUser.SubRole, "LEADER", StringComparison.OrdinalIgnoreCase);
+        return (deptId, userId, isLeader);
+    }
+
     public static string NormalizePreset(string? preset)
     {
         var p = preset?.Trim().ToUpperInvariant();
