@@ -408,13 +408,14 @@ DROP TABLE IF EXISTS `calendar_event_attendees`;
 DROP TABLE IF EXISTS `calendar_events`;
 DROP TABLE IF EXISTS `notifications`;
 DROP TABLE IF EXISTS `account_email_confirmations`;
+-- Child of both `users` and `sent_emails`, so it drops before either of them (G11 / R-103).
+DROP TABLE IF EXISTS `email_send_idempotency`;
 DROP TABLE IF EXISTS `email_action_tokens`;
 DROP TABLE IF EXISTS `email_draft_attachments`;
 DROP TABLE IF EXISTS `email_draft_recipients`;
 DROP TABLE IF EXISTS `email_drafts`;
 DROP TABLE IF EXISTS `sent_email_attachments`;
 DROP TABLE IF EXISTS `sent_email_recipients`;
-DROP TABLE IF EXISTS `email_send_idempotency`;
 DROP TABLE IF EXISTS `sent_emails`;
 DROP TABLE IF EXISTS `email_templates`;
 DROP TABLE IF EXISTS `visit_photo_face_detections`;
@@ -3135,30 +3136,6 @@ CREATE TABLE sent_emails (
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Sent email log; recipients stored in sent_email_recipients';
 
-CREATE TABLE email_send_idempotency (
-  email_send_idempotency_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  actor_user_id BIGINT UNSIGNED NOT NULL COMMENT 'Người bấm gửi, đọc từ JWT đã xác thực — không bao giờ từ payload',
-  operation_code VARCHAR(64) NOT NULL COMMENT 'Một trong sáu hành động gửi báo cáo/hóa đơn, ví dụ REPORT_HO_CAMPUS',
-  idempotency_key_hash CHAR(64) NOT NULL COMMENT 'SHA-256 (hex) của Idempotency-Key — KHÔNG lưu key gốc',
-  request_fingerprint CHAR(64) NOT NULL COMMENT 'SHA-256 (hex) của nội dung nghiệp vụ đã chuẩn hoá; cùng key khác fingerprint = từ chối, không gửi',
-  state VARCHAR(32) NOT NULL DEFAULT 'RESERVED' COMMENT 'RESERVED / PREPARING / DISPATCHING / SUCCEEDED / FAILED_BEFORE_DISPATCH / OUTCOME_UNKNOWN',
-  sent_email_id BIGINT UNSIGNED NULL COMMENT 'Bản ghi lịch sử của lần gửi thành công, để đối chiếu',
-  result_message VARCHAR(500) NULL COMMENT 'Thông báo thành công, phát lại nguyên văn cho lần gọi trùng',
-  failure_code VARCHAR(64) NULL COMMENT 'Mã lỗi ổn định; không chứa địa chỉ, số tiền, token hay nội dung thư',
-  attempt_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Số lần handler thực sự chạy dưới key này (chỉ tăng khi retry sau FAILED_BEFORE_DISPATCH)',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  dispatch_started_at DATETIME NULL COMMENT 'Thời điểm ngay trước lời gọi ra ngoài; có giá trị nghĩa là không thể khẳng định chưa gửi',
-  completed_at DATETIME NULL,
-  PRIMARY KEY (email_send_idempotency_id),
-  UNIQUE KEY uq_email_send_idempotency_actor_op_key (actor_user_id, operation_code, idempotency_key_hash),
-  KEY idx_email_send_idempotency_state (state, created_at),
-  KEY idx_email_send_idempotency_sent_email (sent_email_id),
-  CONSTRAINT chk_email_send_idempotency_state CHECK (state IN ('RESERVED','PREPARING','DISPATCHING','SUCCEEDED','FAILED_BEFORE_DISPATCH','OUTCOME_UNKNOWN')),
-  CONSTRAINT fk_email_send_idempotency_actor FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_email_send_idempotency_sent_email FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id) ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Chống gửi trùng cho sáu hành động gửi báo cáo/hóa đơn (G11 / R-103). Chỉ lưu hash của key và của yêu cầu.';
 
 CREATE TABLE sent_email_recipients (
   sent_email_recipient_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -3416,6 +3393,69 @@ CREATE TABLE account_email_confirmations (
     ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Bằng chứng sở hữu email một-lần cho tài khoản nội bộ mới (P0 #1).';
+
+-- G11 (R-103): one reservation per logical "gửi báo cáo/hóa đơn" action. The client sends an opaque
+-- Idempotency-Key and reuses it when retrying THE SAME action, so a network timeout can no longer turn
+-- one click into two outbound messages. Only hashes are stored — never the key, the note text, the
+-- recipient address or any monetary value.
+CREATE TABLE email_send_idempotency (
+  email_send_idempotency_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+  actor_user_id BIGINT UNSIGNED NOT NULL
+    COMMENT 'Người bấm gửi, đọc từ JWT đã xác thực — không bao giờ từ payload',
+  operation_code VARCHAR(64) NOT NULL
+    COMMENT 'Một trong sáu hành động gửi báo cáo/hóa đơn, ví dụ REPORT_HO_CAMPUS',
+  idempotency_key_hash CHAR(64) NOT NULL
+    COMMENT 'SHA-256 (hex) của Idempotency-Key — KHÔNG lưu key gốc',
+  request_fingerprint CHAR(64) NOT NULL
+    COMMENT 'SHA-256 (hex) của nội dung nghiệp vụ đã chuẩn hoá; cùng key khác fingerprint = từ chối, không gửi',
+
+  state VARCHAR(32) NOT NULL DEFAULT 'RESERVED'
+    COMMENT 'RESERVED / PREPARING / DISPATCHING / SUCCEEDED / FAILED_BEFORE_DISPATCH / OUTCOME_UNKNOWN',
+
+  sent_email_id BIGINT UNSIGNED NULL
+    COMMENT 'Bản ghi lịch sử của lần gửi thành công, để đối chiếu',
+  result_message VARCHAR(500) NULL
+    COMMENT 'Thông báo thành công, phát lại nguyên văn cho lần gọi trùng',
+  failure_code VARCHAR(64) NULL
+    COMMENT 'Mã lỗi ổn định; không chứa địa chỉ, số tiền, token hay nội dung thư',
+
+  attempt_count INT UNSIGNED NOT NULL DEFAULT 0
+    COMMENT 'Số lần handler thực sự chạy dưới key này (chỉ tăng khi retry sau FAILED_BEFORE_DISPATCH)',
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  dispatch_started_at DATETIME NULL
+    COMMENT 'Thời điểm ngay trước lời gọi ra ngoài; có giá trị nghĩa là không thể khẳng định chưa gửi',
+  completed_at DATETIME NULL,
+
+  PRIMARY KEY (email_send_idempotency_id),
+
+  -- The whole contract rests on this one constraint: two concurrent requests carrying the same key
+  -- collide in the database, not in application code.
+  UNIQUE KEY uq_email_send_idempotency_actor_op_key
+    (actor_user_id, operation_code, idempotency_key_hash),
+
+  KEY idx_email_send_idempotency_state (state, created_at),
+  KEY idx_email_send_idempotency_sent_email (sent_email_id),
+
+  CONSTRAINT chk_email_send_idempotency_state
+    CHECK (state IN ('RESERVED','PREPARING','DISPATCHING','SUCCEEDED',
+                     'FAILED_BEFORE_DISPATCH','OUTCOME_UNKNOWN')),
+
+  -- RESTRICT, not CASCADE: this table records what a person sent. Deleting the person must not delete
+  -- the evidence, and PEMS hard-deletes no user anywhere in the backend.
+  CONSTRAINT fk_email_send_idempotency_actor
+    FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+
+  -- SET NULL: if a history row is ever removed the reservation survives, because the fact that a send
+  -- happened is exactly what must not be lost.
+  CONSTRAINT fk_email_send_idempotency_sent_email
+    FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Chống gửi trùng cho sáu hành động gửi báo cáo/hóa đơn (G11 / R-103). Chỉ lưu hash của key và của yêu cầu.';
 
 CREATE TABLE notifications (
   notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -12423,6 +12463,20 @@ DELIMITER $$
 -- REQUEST-LEVEL PRIMARY CONTACT ACTIVE VISITOR GUARDS
 -- These triggers are intentionally created after seed normalization so the full
 -- fresh-create import can repair legacy rows first, then finish fail-closed.
+--
+-- Three lookup rules are shared by the four visitor-id guards below, and each of
+-- them is load-bearing:
+--   * v_user_status is VARCHAR(30), not (20). users.status is an ENUM whose longest
+--     member, PENDING_EMAIL_CONFIRMATION, is 26 characters; a VARCHAR(20) target made
+--     the SELECT ... INTO raise 22001 "Data too long" from inside the trigger. The
+--     operation was still rejected, but with a storage error instead of the stable
+--     business code, so a real and reachable account state produced an unreadable failure.
+--   * roles is LEFT JOINed. With an inner join, a user whose role row cannot be read
+--     collapses COUNT(*) to 0 and is reported as PRIMARY_CONTACT_USER_NOT_FOUND — untrue,
+--     and it hides the actual problem. The count now answers only "does this user exist",
+--     and <> 1 covers both absence and anything else abnormal.
+--   * Comparisons use <=> (NULL-safe). `NULL <> 'VISITOR'` evaluates to UNKNOWN, which IF
+--     treats as false, so an unreadable role or status would have slipped straight through.
 -- =====================================================================
 CREATE TRIGGER trg_visit_requests_primary_contact_guard_bi
 BEFORE INSERT ON visit_requests
@@ -12430,26 +12484,26 @@ FOR EACH ROW
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.visitor_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    LEFT JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.visitor_user_id;
 
-    IF v_user_count = 0 THEN
+    IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF v_role_code <> 'VISITOR' THEN
+    IF NOT (v_role_code <=> 'VISITOR') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF v_user_status <> 'ACTIVE' THEN
+    IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -12475,26 +12529,26 @@ FOLLOWS trg_visit_requests_cancel_validate_bu
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.visitor_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    LEFT JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.visitor_user_id;
 
-    IF v_user_count = 0 THEN
+    IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF v_role_code <> 'VISITOR' THEN
+    IF NOT (v_role_code <=> 'VISITOR') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF v_user_status <> 'ACTIVE' THEN
+    IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -12521,12 +12575,16 @@ FOR EACH ROW
 FOLLOWS trg_users_validate_bu
 BEGIN
   DECLARE v_new_role_code VARCHAR(30) DEFAULT NULL;
+  DECLARE v_new_role_count INT DEFAULT 0;
   DECLARE v_linked_request_count INT DEFAULT 0;
 
   IF NOT (NEW.role_id <=> OLD.role_id)
      OR NOT (NEW.status <=> OLD.status) THEN
-    SELECT role_code
-      INTO v_new_role_code
+    -- COUNT alongside the code so "no such role" is distinguishable from "role named VISITOR".
+    -- A bare SELECT ... INTO over zero rows leaves the variable NULL, and `NULL <> 'VISITOR'`
+    -- evaluates to UNKNOWN, which an IF treats as false — the change would have slipped through.
+    SELECT COUNT(*), MAX(role_code)
+      INTO v_new_role_count, v_new_role_code
     FROM roles
     WHERE role_id = NEW.role_id;
 
@@ -12537,14 +12595,17 @@ BEGIN
       AND vr.primary_contact_access_status = 'ACTIVE'
       AND vr.status <> 'CANCELLED';
 
-    IF v_linked_request_count > 0 AND v_new_role_code <> 'VISITOR' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE';
-    END IF;
+    IF v_linked_request_count > 0 THEN
+      -- Fail closed: only a role that reads back as exactly one row named VISITOR is accepted.
+      IF v_new_role_count <> 1 OR NOT (v_new_role_code <=> 'VISITOR') THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE';
+      END IF;
 
-    IF v_linked_request_count > 0 AND NEW.status <> 'ACTIVE' THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED';
+      IF NOT (NEW.status <=> 'ACTIVE') THEN
+        SIGNAL SQLSTATE '45000'
+          SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED';
+      END IF;
     END IF;
   END IF;
 END$$
@@ -12558,26 +12619,26 @@ FOLLOWS trg_identity_changes_transfer_bi
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.new_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    LEFT JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.new_user_id;
 
-    IF v_user_count = 0 THEN
+    IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF v_role_code <> 'VISITOR' THEN
+    IF NOT (v_role_code <=> 'VISITOR') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF v_user_status <> 'ACTIVE' THEN
+    IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -12591,26 +12652,26 @@ FOLLOWS trg_identity_changes_transfer_bu
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.new_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
       INTO v_user_count, v_role_code, v_user_status
     FROM users u
-    JOIN roles r ON r.role_id = u.role_id
+    LEFT JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.new_user_id;
 
-    IF v_user_count = 0 THEN
+    IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
     END IF;
 
-    IF v_role_code <> 'VISITOR' THEN
+    IF NOT (v_role_code <=> 'VISITOR') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
     END IF;
 
-    IF v_user_status <> 'ACTIVE' THEN
+    IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
     END IF;
@@ -13314,6 +13375,14 @@ BEGIN
   DECLARE v_message VARCHAR(1000) DEFAULT NULL;
   DECLARE v_raised BOOLEAN DEFAULT FALSE;
   DECLARE v_condition_ok INT DEFAULT 0;
+  DECLARE v_cancelled_req BIGINT UNSIGNED DEFAULT NULL;
+
+  -- Every handler below reads GET DIAGNOSTICS *before* setting any flag. MySQL clears the
+  -- diagnostics area on the first successful statement inside the handler, so the older
+  -- `SET v_raised = TRUE;` first ordering left RETURNED_SQLSTATE and MESSAGE_TEXT NULL. The
+  -- comparison `v_sqlstate = '45000'` then evaluated to UNKNOWN and every negative case was
+  -- scored FAIL and printed as "Operation unexpectedly succeeded" — while the triggers had in
+  -- fact rejected all fourteen. Do not reorder these two statements.
 
   -- NEG-01: INSERT request with ADMIN as visitor_user_id
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
@@ -13321,8 +13390,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (99790, 'VR-GUARD-TEMP-99790', 1, 8, NULL, 'VISITOR_SUBMITTED', 0, 'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester', '+84997000000', 'visitor@example.com', 'Test', 'SINGLE_CAMPUS', 'Guard Test Contact', 'Guard Test Organization', '+84997000001', 'guard.contact@example.test', 'ACTIVE', '2026-07-12 08:00:00', 'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0, '2026-07-12 08:00:00', 8, NULL, NULL);
@@ -13342,8 +13411,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 2, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13362,8 +13431,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 3, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13382,8 +13451,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 4, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13402,8 +13471,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 5, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13422,8 +13491,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 6, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13442,8 +13511,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 7, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13462,8 +13531,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 99680, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13482,8 +13551,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
   END;
@@ -13502,8 +13571,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = 8, primary_contact_access_status = 'PENDING_CONFIRMATION' WHERE visit_request_id = 1001;
   END;
@@ -13522,8 +13591,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE users SET role_id = 3, sub_role = 'STAFF', primary_campus_id = 1, department_id = 1 WHERE user_id = 8;
   END;
@@ -13542,8 +13611,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE users SET status = 'INACTIVE' WHERE user_id = 8;
   END;
@@ -13562,8 +13631,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     INSERT INTO visit_request_identity_changes
       (identity_change_id, visit_request_id, change_kind, target_relation,
@@ -13594,8 +13663,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_request_identity_changes SET new_user_id = 4, status = 'APPLIED', applied_at = '2026-07-12 08:05:00' WHERE identity_change_id = 99403;
   END;
@@ -13608,14 +13677,114 @@ BEGIN
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
      IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
 
+  -- NEG-15: a user_id that does not exist at all. The guard must answer before the foreign
+  -- key does, so the caller gets the business code rather than a generic constraint error.
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 99999999, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-15', 'Assign a non-existent user_id as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_NOT_FOUND',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_NOT_FOUND', 'PASS', 'FAIL'));
+
+  -- NEG-16: a VISITOR whose account has not confirmed its email yet. This is the account state
+  -- every new account starts in, so it is reachable in production — and it is 26 characters
+  -- long, which is what used to make the guard raise 22001 "Data too long" instead of a code.
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
+    VALUES (99791, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.pending.visitor@example.test', 'x', 'Guard Pending Visitor', 'PENDING_EMAIL_CONFIRMATION', NULL, NULL, '2026-07-12 08:00:00', NULL);
+    UPDATE visit_requests SET visitor_user_id = 99791, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-16', 'Assign a PENDING_EMAIL_CONFIRMATION VISITOR as visitor_user_id', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
+
+  -- NEG-17: the dedicated UPDATE path — only visitor_user_id is written, primary_contact_access_status
+  -- is left untouched. A guard keyed on the access status alone would let this through.
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    UPDATE visit_requests SET visitor_user_id = 4 WHERE visit_request_id = 1001;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-17', 'Update visitor_user_id alone to a STAFF account', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+
+  -- NEG-18: the same unconfirmed-account state, reached through the identity-change guard.
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
+    VALUES (99792, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.pending.transfer@example.test', 'x', 'Guard Pending Transfer', 'PENDING_EMAIL_CONFIRMATION', NULL, NULL, '2026-07-12 08:00:00', NULL);
+    INSERT INTO visit_request_identity_changes
+      (identity_change_id, visit_request_id, change_kind, target_relation,
+       confirmation_method, old_user_id, new_user_id, old_email_normalized,
+       new_email_normalized, new_email_masked, pending_snapshot_json, status,
+       expected_request_row_version, requested_by, requested_at, expires_at,
+       applied_at, reason, resend_count, created_at, updated_at)
+     VALUES
+      (99721, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 99792,
+       'visitor@example.com', 'guard.pending.transfer@example.test', 'g***@example.test',
+       JSON_OBJECT('seedCase','NEGATIVE_UNCONFIRMED_IDENTITY_TARGET'), 'APPLIED',
+       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
+       '2026-07-12 08:05:00', 'Rollback-safe negative test.', 0,
+       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-18', 'Identity change targeting a PENDING_EMAIL_CONFIRMATION VISITOR', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
+
   -- POS-01: INSERT request with ACTIVE VISITOR primary contact
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
   START TRANSACTION;
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (99790, 'VR-GUARD-TEMP-99790', 8, 8, NULL, 'VISITOR_SUBMITTED', 0, 'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester', '+84997000000', 'visitor@example.com', 'Test', 'SINGLE_CAMPUS', 'Guard Test Contact', 'Guard Test Organization', '+84997000001', 'guard.contact@example.test', 'ACTIVE', '2026-07-12 08:00:00', 'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0, '2026-07-12 08:00:00', 8, NULL, NULL);
@@ -13639,8 +13808,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'PENDING_CONFIRMATION', primary_contact_verified_at = NULL WHERE visit_request_id = 3048;
     IF NOT v_raised THEN
@@ -13663,8 +13832,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
     INSERT INTO visit_request_identity_changes
@@ -13700,8 +13869,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
     INSERT INTO visit_request_identity_changes
@@ -13742,8 +13911,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3046;
     IF NOT v_raised THEN
@@ -13766,8 +13935,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3047;
     IF NOT v_raised THEN
@@ -13790,8 +13959,8 @@ BEGIN
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
-      SET v_raised = TRUE;
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
     END;
     UPDATE visit_instance_form_details SET operational_contact_email = 'staff.hn@fpt.edu.vn' WHERE visit_instance_id = 5046;
     IF NOT v_raised THEN
@@ -13804,6 +13973,39 @@ BEGIN
      actual_sqlstate, actual_message, result)
   VALUES
     ('POSITIVE', 'POS-07', 'Operational contact may reuse a Staff email as a snapshot', 'NONE', 'ACCEPTED',
+     COALESCE(v_sqlstate, 'NONE'),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+
+  -- POS-08: a VISITOR whose only ACTIVE primary-contact link is on a CANCELLED request may still
+  -- be deactivated. This is the documented exclusion, and the guard must not over-block it. The
+  -- post-condition also asserts the fixture really was linked to a cancelled request, so the test
+  -- fails loudly rather than passing on an empty setup.
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0; SET v_cancelled_req = NULL;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    SELECT MIN(visit_request_id) INTO v_cancelled_req FROM visit_requests WHERE status = 'CANCELLED' AND primary_contact_access_status = 'ACTIVE';
+    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
+    VALUES (99793, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.cancelled.owner@example.test', 'x', 'Guard Cancelled Owner', 'ACTIVE', NULL, NULL, '2026-07-12 08:00:00', NULL);
+    UPDATE visit_requests SET visitor_user_id = 99793 WHERE visit_request_id = v_cancelled_req;
+    UPDATE users SET status = 'INACTIVE' WHERE user_id = 99793;
+    IF NOT v_raised THEN
+      SELECT CASE WHEN v_cancelled_req IS NOT NULL AND COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok
+      FROM users u JOIN visit_requests vr ON vr.visitor_user_id = u.user_id
+      WHERE u.user_id = 99793 AND u.status = 'INACTIVE' AND vr.status = 'CANCELLED';
+    END IF;
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('POSITIVE', 'POS-08', 'Deactivate a VISITOR linked only to a CANCELLED request', 'NONE', 'ACCEPTED',
      COALESCE(v_sqlstate, 'NONE'),
      IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
      IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
@@ -14746,7 +14948,7 @@ WHERE table_schema = DATABASE()
   AND table_type = 'BASE TABLE';
 
 SELECT 'merged_runtime_table_count' AS check_name,
-       CASE WHEN COUNT(*) = 81 THEN 0 ELSE ABS(COUNT(*) - 81) END AS issue_count
+       CASE WHEN COUNT(*) = 83 THEN 0 ELSE ABS(COUNT(*) - 83) END AS issue_count
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
   AND table_type = 'BASE TABLE';
