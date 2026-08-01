@@ -290,17 +290,31 @@ export interface SetupProgressEmailDraft {
   reportFileName: string;
   /** Vietnam wall-clock moment the attached report was rendered from live data. */
   reportGeneratedAt: string;
+  /**
+   * The body as generated. Empty when an existing draft was re-opened, because whether that draft was
+   * edited is not recorded — the composer then treats it as edited and warns before a sync overwrites it.
+   */
+  bodyHtml: string;
   /** Informational — a missing guest address, a fallback recipient. Not a send gate. */
   warnings: string[];
 }
 
-/** Response of regenerating the report on an existing setup-progress draft. */
+/**
+ * Response of re-syncing an existing setup-progress draft from current setup data.
+ *
+ * The report and the tables in the body are two renderings of ONE snapshot, so this rebuilds both;
+ * `reportGeneratedAt` is the moment that snapshot was taken and is stated in the body too.
+ */
 export interface SetupProgressEmailReport {
   draftId: number;
   reportFileId: number;
   reportFileName: string;
   reportGeneratedAt: string;
   languageCode: string;
+  /** The rebuilt body. The composer puts this in the editor, replacing any manual edits. */
+  bodyHtml: string;
+  /** Always true; stated explicitly so a client cannot mistake the rebuild for an additive update. */
+  bodyRewritten: boolean;
 }
 
 /** One agenda (lịch trình) item of a campus instance. */

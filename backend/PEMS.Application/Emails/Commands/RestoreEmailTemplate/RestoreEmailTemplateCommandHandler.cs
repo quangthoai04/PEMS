@@ -90,8 +90,9 @@ public sealed class RestoreEmailTemplateCommandHandler
             throw new EmailTemplateContentException(issues);
 
         // ── 4. Conditional write + audit, together or not at all ─────────────
+        // No trusted block is listed — see UpdateEmailTemplateCommandHandler for why.
         var variablesText = string.Join(",", contract.AllowedVariables
-            .Where(v => v != EmailTrustedBlocks.ActionBlock));
+            .Where(v => !EmailTrustedBlocks.All.Contains(v)));
 
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 

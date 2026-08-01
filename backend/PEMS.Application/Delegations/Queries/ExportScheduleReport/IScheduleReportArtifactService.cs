@@ -16,7 +16,21 @@ public sealed record ScheduleReportArtifact(
     byte[] Content,
     string FileName,
     string LanguageCode,
-    System.DateTime GeneratedAt);
+    System.DateTime GeneratedAt)
+{
+    /// <summary>
+    /// The data this PDF was drawn from, kept so a caller that ALSO renders the same facts another way
+    /// renders them from the same read.
+    ///
+    /// <para>
+    /// The setup-progress email needs exactly that: an HTML table of the agenda in the body and a PDF
+    /// of the agenda attached. Re-querying for the second one would let the two disagree whenever the
+    /// Host saves a change between the two reads — the message would then contradict its own
+    /// attachment, and nothing in the result would say which was right.
+    /// </para>
+    /// </summary>
+    public ScheduleReportDto? Data { get; init; }
+}
 
 /// <summary>
 /// Builds and stores the schedule report for ONE campus instance.

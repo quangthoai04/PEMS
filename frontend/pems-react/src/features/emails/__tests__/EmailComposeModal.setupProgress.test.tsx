@@ -39,9 +39,20 @@ vi.mock('../api/emailsApi', () => ({
 
 vi.mock('../../../shared/api/filesApi', () => ({ filesApi: { upload: vi.fn(), download: vi.fn() } }));
 
+// Renders the wording as well as the button: what the confirmation SAYS is the subject of the
+// overwrite tests below, not merely that some dialog appeared.
 vi.mock('../../../components/modals/ConfirmModal', () => ({
-  ConfirmModal: ({ isOpen, onConfirm }: { isOpen: boolean; onConfirm: () => void }) =>
-    isOpen ? <button type="button" onClick={onConfirm}>__confirm__</button> : null,
+  ConfirmModal: ({ isOpen, onConfirm, onClose, title, message }: {
+    isOpen: boolean; onConfirm: () => void; onClose: () => void; title?: string; message?: string;
+  }) =>
+    isOpen ? (
+      <div data-testid="confirm-dialog">
+        <p data-testid="confirm-title">{title}</p>
+        <p data-testid="confirm-message">{message}</p>
+        <button type="button" onClick={onConfirm}>__confirm__</button>
+        <button type="button" onClick={onClose}>__cancel__</button>
+      </div>
+    ) : null,
 }));
 vi.mock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 'test-token' } }));
 
@@ -170,7 +181,8 @@ describe('setup-progress composer', () => {
 
   it('moves the lock onto the regenerated report so the replacement is the protected one', async () => {
     const refresh = vi.fn().mockResolvedValue({ fileId: 950, name: 'PEMS_Schedule_Report_VR-10_new.pdf' });
-    renderSetupComposer({ onRefreshRequiredAttachment: refresh });
+    // Body matches what was generated, so this sync is the no-warning path.
+    renderSetupComposer({ onRefreshRequiredAttachment: refresh, initialBodyHtml: STORED_DRAFT.bodyContent });
     await hydrated();
 
     fireEvent.click(screen.getByTestId('refresh-required-attachment'));
@@ -184,6 +196,118 @@ describe('setup-progress composer', () => {
 
     // The Host's own attachment survives a report refresh; only the mandatory one is replaced.
     expect(screen.getByTestId('attachment').textContent).toContain('ghi-chu.pdf');
+  });
+});
+
+/**
+ * Syncing rebuilds the body as well as the PDF, because the two are renderings of one snapshot. That
+ * makes the button destructive to anything the Host has typed, so these cover the one rule that must
+ * hold: it never overwrites without asking, and asking must be honest about what is lost.
+ */
+describe('syncing from the latest setup data', () => {
+  const freshReport = {
+    fileId: 950,
+    name: 'PEMS_Schedule_Report_VR-10_new.pdf',
+    bodyHtml: '<p>bang du lieu moi</p>',
+  };
+
+  /** Opens on a draft whose body is exactly what the backend generated — nothing to lose yet. */
+  const renderUnedited = (refresh: ReturnType<typeof vi.fn>) =>
+    renderSetupComposer({
+      onRefreshRequiredAttachment: refresh,
+      initialBodyHtml: STORED_DRAFT.bodyContent,
+    });
+
+  it('rebuilds the body and the attachment together, without asking, when nothing was edited', async () => {
+    const refresh = vi.fn().mockResolvedValue(freshReport);
+    renderUnedited(refresh);
+    await hydrated();
+
+    fireEvent.click(screen.getByTestId('refresh-required-attachment'));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(screen.queryByTestId('confirm-dialog')).toBeNull();
+    await waitFor(() =>
+      expect((screen.getByLabelText('body') as HTMLTextAreaElement).value).toBe('<p>bang du lieu moi</p>'));
+    await waitFor(() =>
+      expect(screen.getByTestId('locked-attachment').textContent).toContain('PEMS_Schedule_Report_VR-10_new.pdf'));
+  });
+
+  it('warns before overwriting a body the host has edited, and does nothing until confirmed', async () => {
+    const refresh = vi.fn().mockResolvedValue(freshReport);
+    renderUnedited(refresh);
+    await hydrated();
+
+    fireEvent.change(screen.getByLabelText('body'), { target: { value: '<p>Host tu viet them</p>' } });
+    fireEvent.click(screen.getByTestId('refresh-required-attachment'));
+
+    expect(screen.getByTestId('confirm-dialog')).toBeTruthy();
+    // The warning has to name the consequence; "bạn có chắc không" would not tell the Host that the
+    // paragraphs they just wrote are what disappears.
+    expect(screen.getByTestId('confirm-title').textContent).toContain('ghi đè');
+    expect(screen.getByTestId('confirm-message').textContent).toContain('bạn tự sửa');
+    // …and reassure that addressing is not touched, because that is the other thing a Host would fear.
+    expect(screen.getByTestId('confirm-message').textContent).toContain('người nhận được giữ nguyên');
+
+    // Nothing has happened yet: no request, and the edit is still in the editor.
+    expect(refresh).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('body') as HTMLTextAreaElement).value).toBe('<p>Host tu viet them</p>');
+  });
+
+  it('replaces the edited body once the host confirms', async () => {
+    const refresh = vi.fn().mockResolvedValue(freshReport);
+    renderUnedited(refresh);
+    await hydrated();
+
+    fireEvent.change(screen.getByLabelText('body'), { target: { value: '<p>Host tu viet them</p>' } });
+    fireEvent.click(screen.getByTestId('refresh-required-attachment'));
+    fireEvent.click(screen.getByText('__confirm__'));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() =>
+      expect((screen.getByLabelText('body') as HTMLTextAreaElement).value).toBe('<p>bang du lieu moi</p>'));
+  });
+
+  it('keeps the edit and sends no request when the host cancels', async () => {
+    const refresh = vi.fn().mockResolvedValue(freshReport);
+    renderUnedited(refresh);
+    await hydrated();
+
+    fireEvent.change(screen.getByLabelText('body'), { target: { value: '<p>Host tu viet them</p>' } });
+    fireEvent.click(screen.getByTestId('refresh-required-attachment'));
+    fireEvent.click(screen.getByText('__cancel__'));
+
+    await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull());
+    expect(refresh).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('body') as HTMLTextAreaElement).value).toBe('<p>Host tu viet them</p>');
+    // The old report is still the locked one, since nothing was regenerated.
+    expect(screen.getByTestId('locked-attachment').textContent).toContain('PEMS_Schedule_Report_VR-10.pdf');
+  });
+
+  it('warns on a reopened draft, whose content cannot be proved unedited', async () => {
+    const refresh = vi.fn().mockResolvedValue(freshReport);
+    // Prepare returns an empty body when it re-opens an existing draft: nothing records whether that
+    // draft was edited in an earlier session, so the composer must assume it was.
+    renderSetupComposer({ onRefreshRequiredAttachment: refresh, initialBodyHtml: '' });
+    await hydrated();
+
+    fireEvent.click(screen.getByTestId('refresh-required-attachment'));
+
+    expect(screen.getByTestId('confirm-dialog')).toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('leaves the body alone when the backend returns none, so other callers keep the old behaviour', async () => {
+    const refresh = vi.fn().mockResolvedValue({ fileId: 950, name: 'chi-doi-tep.pdf' });
+    renderUnedited(refresh);
+    await hydrated();
+
+    fireEvent.click(screen.getByTestId('refresh-required-attachment'));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByTestId('locked-attachment').textContent).toContain('chi-doi-tep.pdf'));
+    expect((screen.getByLabelText('body') as HTMLTextAreaElement).value).toBe(STORED_DRAFT.bodyContent);
   });
 });
 

@@ -24,8 +24,16 @@ public static class EmailTrustedBlocks
     /// <summary>Accept/decline/detail buttons with real (or, in preview, disabled) action links.</summary>
     public const string ActionBlock = "actionBlock";
 
+    /// <summary>
+    /// The setup-progress email's HTML tables (overview, guests, participants, agenda, preparation
+    /// status). A block rather than variables because a table cannot survive HTML-encoding — and
+    /// because keeping it backend-generated means the allow-list of shareable fields lives in code
+    /// (see <c>VisitSetupSnapshot</c>) instead of in whatever an operator types into the template.
+    /// </summary>
+    public const string SetupSummaryBlock = "setupSummaryBlock";
+
     /// <summary>Every trusted block name — used by the contract test to exclude them from variable checks.</summary>
-    public static readonly IReadOnlyList<string> All = new[] { ActionBlock };
+    public static readonly IReadOnlyList<string> All = new[] { ActionBlock, SetupSummaryBlock };
 }
 
 /// <summary>

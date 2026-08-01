@@ -37,6 +37,19 @@ public sealed class PrepareVisitSetupProgressEmailDraftResponse
     public string ReportGeneratedAt { get; init; } = string.Empty;
 
     /// <summary>
+    /// The body as generated, which the draft was also saved with.
+    ///
+    /// <para>
+    /// Returned so the composer knows what the UNEDITED body looks like. It compares the draft it loads
+    /// against this to tell "the Host has written something" from "this is still the generated text",
+    /// and that single distinction is what decides whether re-syncing has to warn about overwriting
+    /// edits. Without it the composer would have to either warn every time — training the Host to click
+    /// through it — or never, which is the silent overwrite the warning exists to prevent.
+    /// </para>
+    /// </summary>
+    public string BodyHtml { get; init; } = string.Empty;
+
+    /// <summary>
     /// Things the Host should read before sending — a missing guest address, a fallback recipient. These
     /// are informational: whether the draft can be sent is decided by its TO group, not by this list.
     /// </summary>

@@ -94,11 +94,24 @@ interface Props {
   sendDraftOverride?: (draftId: number) => Promise<{ success: boolean; message?: string }>;
 
   /**
-   * Regenerates the locked attachment from current data and returns its new identity. When supplied,
-   * the composer offers a "tạo lại" control next to it. Only the file changes — recipients, subject
-   * and body are the author's and are never rewritten by this.
+   * Rebuilds the locked attachment — and, when the backend returns one, the body — from current data.
+   * When supplied, the composer offers a "đồng bộ" control next to the attachment.
+   *
+   * `bodyHtml` in the result is the whole point of the operation for the setup-progress flow: the PDF
+   * and the tables in the body are two renderings of ONE snapshot, so refreshing only the file would
+   * attach a report that contradicts the email around it. Recipients and subject are still the
+   * author's and are never rewritten.
+   *
+   * Because the returned body REPLACES what is in the editor, the composer asks first whenever the
+   * author has typed into it since the last generation — an unannounced overwrite of someone's own
+   * paragraphs is not an acceptable cost of pressing a sync button.
    */
-  onRefreshRequiredAttachment?: () => Promise<{ fileId: number; name: string; generatedAt?: string }>;
+  onRefreshRequiredAttachment?: () => Promise<{
+    fileId: number;
+    name: string;
+    generatedAt?: string;
+    bodyHtml?: string;
+  }>;
 
   /** Notices to show above the form (a missing guest address, a re-opened draft). Display only. */
   notices?: string[];
@@ -227,6 +240,20 @@ export function EmailComposeModal({
   const [lockedFileIds, setLockedFileIds] = useState<number[]>(lockedAttachmentFileIds ?? []);
   const isLocked = useCallback((fileId: number) => lockedFileIds.includes(fileId), [lockedFileIds]);
 
+  /**
+   * The body exactly as the backend last generated it. Compared against the editor's current value to
+   * tell "the author has written something here" from "this is still the generated text", which is the
+   * only thing that decides whether a sync needs to warn before overwriting.
+   *
+   * A ref, not state: it is never rendered, and re-rendering the Quill editor on every keystroke to
+   * track its own baseline would fight the editor for the caret.
+   */
+  const generatedBodyRef = useRef(initialBodyHtml);
+  const bodyWasEdited = useCallback(
+    () => (bodyHtml ?? '').trim() !== (generatedBodyRef.current ?? '').trim(),
+    [bodyHtml],
+  );
+
   // The ceiling comes from the server (EmailRecipientOptions). It is never assumed: when the request
   // fails the counter says so instead of showing a made-up denominator.
   const { limit: recipientLimit, status: limitStatus } = useRecipientLimit(open);
@@ -259,6 +286,10 @@ export function EmailComposeModal({
     hydratingRef.current = initialDraftId != null;
     setSubject(initialSubject);
     setBodyHtml(initialBodyHtml);
+    // The caller's initial body IS the generated one. When a stored draft is loaded a moment later its
+    // saved content is compared against this, so a draft reopened exactly as generated syncs without a
+    // prompt while one carrying edits from an earlier session still warns before they are overwritten.
+    generatedBodyRef.current = initialBodyHtml;
     setAttachments([]);
     setDraftId(null);
     setSavedAt(null);
@@ -589,11 +620,12 @@ export function EmailComposeModal({
   }, [sending, envelope, subject, buildPayload, validateRecipients, mapServerError, pushToast, onSent, onClose, sendDraftOverride]);
 
   /**
-   * Swaps the locked attachment for a freshly generated one. The new file id takes over the lock so
-   * the replacement is protected and the replaced one is not; nothing else about the draft is touched.
+   * Rebuilds the locked attachment, and the body with it when the backend returns one. The new file id
+   * takes over the lock so the replacement is protected and the replaced one is not. Recipients and
+   * subject are left alone.
    */
-  const handleRefreshRequiredAttachment = useCallback(async () => {
-    if (!onRefreshRequiredAttachment || refreshingAttachment) return;
+  const runRefreshRequiredAttachment = useCallback(async () => {
+    if (!onRefreshRequiredAttachment) return;
     setRefreshingAttachment(true);
     try {
       const fresh = await onRefreshRequiredAttachment();
@@ -602,13 +634,49 @@ export function EmailComposeModal({
         ...prev.filter(a => !isLocked(a.fileId)),
       ]);
       setLockedFileIds([fresh.fileId]);
-      pushToast?.('success', 'Đã tạo lại tệp đính kèm từ dữ liệu mới nhất.');
+
+      if (typeof fresh.bodyHtml === 'string' && fresh.bodyHtml.length > 0) {
+        setBodyHtml(fresh.bodyHtml);
+        generatedBodyRef.current = fresh.bodyHtml;
+        scheduleSave();
+        pushToast?.('success', 'Đã đồng bộ nội dung email và tệp báo cáo từ dữ liệu setup mới nhất.');
+      } else {
+        pushToast?.('success', 'Đã tạo lại tệp đính kèm từ dữ liệu mới nhất.');
+      }
     } catch (e: any) {
-      pushToast?.('error', e?.response?.data?.message || 'Không tạo lại được tệp đính kèm. Vui lòng thử lại.');
+      pushToast?.('error', e?.response?.data?.message || 'Không đồng bộ được từ dữ liệu mới nhất. Vui lòng thử lại.');
     } finally {
       setRefreshingAttachment(false);
     }
-  }, [onRefreshRequiredAttachment, refreshingAttachment, isLocked, pushToast]);
+  }, [onRefreshRequiredAttachment, isLocked, pushToast, scheduleSave]);
+
+  /**
+   * Asks before syncing when the author has typed into the body, because the sync replaces it. The
+   * check is on the body only: the attachment is regenerated either way, and subject and recipients
+   * are never rewritten, so there is nothing else of the author's to lose.
+   */
+  const handleRefreshRequiredAttachment = useCallback(() => {
+    if (!onRefreshRequiredAttachment || refreshingAttachment) return;
+
+    if (!bodyWasEdited()) {
+      void runRefreshRequiredAttachment();
+      return;
+    }
+
+    setConfirmState({
+      isOpen: true,
+      title: 'Đồng bộ sẽ ghi đè nội dung đã sửa',
+      message:
+        'Nội dung email đang có phần bạn tự sửa. Đồng bộ sẽ dựng lại toàn bộ nội dung và tệp báo cáo ' +
+        'đính kèm từ dữ liệu setup mới nhất, nên những chỗ bạn đã sửa sẽ bị thay thế. ' +
+        'Tiêu đề và danh sách người nhận được giữ nguyên. Bạn có muốn tiếp tục?',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+        void runRefreshRequiredAttachment();
+      },
+    });
+  }, [onRefreshRequiredAttachment, refreshingAttachment, bodyWasEdited, runRefreshRequiredAttachment]);
 
   const handleDiscard = useCallback(async () => {
     setConfirmState({
@@ -947,12 +1015,13 @@ export function EmailComposeModal({
                       <button
                         type="button"
                         data-testid="refresh-required-attachment"
-                        onClick={() => { void handleRefreshRequiredAttachment(); }}
+                        onClick={handleRefreshRequiredAttachment}
                         disabled={refreshingAttachment}
+                        title="Dựng lại nội dung email và tệp báo cáo từ dữ liệu setup mới nhất. Nội dung bạn tự sửa sẽ bị thay thế."
                         className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50 disabled:opacity-60"
                       >
                         {refreshingAttachment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                        Tạo lại báo cáo
+                        Đồng bộ dữ liệu mới nhất
                       </button>
                     )}
                     <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50">

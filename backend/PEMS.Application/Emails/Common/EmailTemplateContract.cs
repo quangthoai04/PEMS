@@ -66,6 +66,23 @@ public static class EmailTemplateContracts
     public const string ClassificationSensitive = "SENSITIVE";
     public const string ClassificationStandard = "STANDARD";
 
+    /// <summary>
+    /// Trusted blocks a specific template cannot do without, beyond the action block (whose requirement
+    /// is derived from <see cref="EmailActionTemplates"/> instead).
+    ///
+    /// <para>
+    /// Only the setup-progress update is listed. Its entire content is the setup tables the backend
+    /// builds; an operator who deletes the placeholder while rewording the covering sentence would ship
+    /// a mail that says an update is attached and then shows nothing, and no send-time check would catch
+    /// it because a missing trusted block is not a missing variable.
+    /// </para>
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> RequiredTrustedBlockByTemplate =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [SystemEmailTemplates.VisitSetupProgressUpdate] = EmailTrustedBlocks.SetupSummaryBlock,
+        };
+
     /// <summary>The contract for a system template, or null when the code is not a system template.</summary>
     public static EmailTemplateContract? For(string? templateCode)
     {
@@ -92,6 +109,17 @@ public static class EmailTemplateContracts
         // Narrow by design; see the class remarks.
         var required = new List<string>(sensitive);
         if (requiresActionBlock) required.Add(EmailTrustedBlocks.ActionBlock);
+
+        // Any other trusted block is allowed ONLY on the template that needs it. The blanket allowance
+        // above is specific to the action block and rests on a fact that holds for nothing else: many
+        // templates already write it. A block used by one template has no such history, so admitting it
+        // everywhere would only let an operator paste it somewhere it can never resolve and discover
+        // that at send time. Refused at save instead, where the mistake was made.
+        if (RequiredTrustedBlockByTemplate.TryGetValue(template.TemplateCode, out var mustHaveBlock))
+        {
+            allowed.Add(mustHaveBlock);
+            required.Add(mustHaveBlock);
+        }
 
         var optional = allowed.Where(v => !required.Contains(v, StringComparer.Ordinal)).ToList();
 
@@ -131,7 +159,7 @@ public static class EmailTemplateContracts
         var lang = EmailLanguages.Normalize(language);
 
         var variables = contract.AllowedVariables
-            .Where(name => name != EmailTrustedBlocks.ActionBlock)
+            .Where(name => !EmailTrustedBlocks.All.Contains(name))
             .Select(name => new EmailContractVariable(
                 name,
                 EmailVariableCatalog.Label(name, lang),
@@ -147,8 +175,9 @@ public static class EmailTemplateContracts
 
     /// <summary>
     /// Sample values for every variable a template declares, in the requested language — the dictionary
-    /// a preview renders with. The action block is NOT included: it is a trusted block, supplied by the
-    /// preview handler as inert markup, and a caller must never be able to pass one.
+    /// a preview renders with. Trusted blocks are NOT included: they are supplied by the preview handler
+    /// as inert markup, and a caller must never be able to pass one as a variable — <see cref="SystemEmailContent"/>
+    /// rejects the attempt outright, so including one here would break preview rather than enrich it.
     /// </summary>
     public static IReadOnlyDictionary<string, string> PreviewSample(string? templateCode, string? language)
     {
@@ -160,7 +189,7 @@ public static class EmailTemplateContracts
 
         foreach (var name in contract.AllowedVariables)
         {
-            if (name == EmailTrustedBlocks.ActionBlock) continue;
+            if (EmailTrustedBlocks.All.Contains(name)) continue;
             sample[name] = EmailVariableCatalog.Sample(name, lang);
         }
 

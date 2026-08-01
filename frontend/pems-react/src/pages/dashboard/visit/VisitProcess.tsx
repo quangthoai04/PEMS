@@ -1953,6 +1953,9 @@ export function VisitProcess() {
           pushToast={pushToast}
           contextTitle="Gửi cập nhật chuẩn bị"
           initialDraftId={setupEmail.draft.draftId}
+          // The body as generated. The composer compares the draft it loads against this to know
+          // whether the Host has edited it, and so whether a sync must warn before overwriting.
+          initialBodyHtml={setupEmail.draft.bodyHtml}
           relatedType="VISIT_INSTANCE"
           relatedId={Number(perm.visitInstanceId)}
           lockedTemplate
@@ -1964,7 +1967,13 @@ export function VisitProcess() {
             setSetupEmail(prev => prev.draft
               ? { ...prev, draft: { ...prev.draft, reportFileId: fresh.reportFileId, reportFileName: fresh.reportFileName, reportGeneratedAt: fresh.reportGeneratedAt } }
               : prev);
-            return { fileId: fresh.reportFileId, name: fresh.reportFileName, generatedAt: fresh.reportGeneratedAt };
+            // The body comes back too: it and the PDF are one snapshot, so the composer replaces both.
+            return {
+              fileId: fresh.reportFileId,
+              name: fresh.reportFileName,
+              generatedAt: fresh.reportGeneratedAt,
+              bodyHtml: fresh.bodyHtml,
+            };
           }}
           sendDraftOverride={(draftId) =>
             delegationsApi.sendSetupProgressEmailDraft(perm.visitRequestId, perm.visitInstanceId, draftId)}

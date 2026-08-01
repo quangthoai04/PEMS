@@ -72,6 +72,12 @@ public sealed class PreviewEmailTemplateQueryHandler
         {
             [EmailTrustedBlocks.ActionBlock] =
                 EmailComposition.ActionBlockStart + disabled + EmailComposition.ActionBlockEnd,
+
+            // Same reasoning as the action block above: supplied unconditionally because a template
+            // that does not use the placeholder never substitutes it, while a template that does would
+            // otherwise fail the preview closed on an unresolved variable.
+            [EmailTrustedBlocks.SetupSummaryBlock] =
+                EmailComposition.DisabledSetupSummaryBlock(language),
         };
 
         // Sample values come from the backend contract — never from a dictionary compiled into a

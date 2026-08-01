@@ -48,4 +48,17 @@ public sealed class ScheduleReportAgendaRowDto
     public string? Description { get; set; }
     /// <summary>Falls back to "FPT University" when the agenda row has no explicit location.</summary>
     public string Venue { get; set; } = default!;
+
+    /// <summary>
+    /// Who runs this item — the free-typed name the Host entered, falling back to "FPT University"
+    /// when they left it blank.
+    ///
+    /// <para>
+    /// The PDF's "Party in Charge" column used to print the literal string "FPT University" on every
+    /// row, so a guest reading the schedule could not tell who to look for at any point in the day.
+    /// It is a field now because the setup-progress email renders the same agenda as an HTML table
+    /// and has to show the same answer the PDF does.
+    /// </para>
+    /// </summary>
+    public string Responsible { get; set; } = "FPT University";
 }

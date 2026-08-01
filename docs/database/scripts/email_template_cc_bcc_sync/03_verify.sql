@@ -149,9 +149,17 @@ WHERE t.subject_vi IS NULL OR t.subject_vi = '' OR t.body_vi IS NULL OR t.body_v
 
 SELECT '── E. variables_text matches the placeholders actually used ────' AS ``;
 
--- Both sides expanded to rows, then compared as sets. {{actionBlock}} is excluded on the text side:
--- the backend injects it as trusted HTML and it is deliberately not an editable variable, so a
--- template that uses it must NOT list it.
+-- Both sides expanded to rows, then compared as sets. TRUSTED BLOCKS are excluded on the text side:
+-- the backend injects them as trusted HTML and they are deliberately not editable variables, so a
+-- template that uses one must NOT list it.
+--
+-- The set must stay in step with EmailTrustedBlocks in the backend (PEMS.Application.Common.Interfaces):
+--   actionBlock       — accept/decline/detail buttons carrying real one-time tokens
+--   setupSummaryBlock — the setup-progress tables (overview, guests, participants, schedule,
+--                       preparation status) built from VisitSetupSnapshot
+-- A block missing from this list makes E1 report the template as having an "unlisted" variable, and
+-- adding it to variables_text to silence that would be the wrong fix: it would offer an operator a
+-- field they must never be able to supply.
 DROP TEMPORARY TABLE IF EXISTS _pems_used_vars;
 CREATE TEMPORARY TABLE _pems_used_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
 
@@ -174,7 +182,8 @@ WITH RECURSIVE scan AS (
 )
 SELECT DISTINCT template_code, var_name
 FROM scan
-WHERE var_name IS NOT NULL AND var_name <> '' AND var_name <> 'actionBlock';
+WHERE var_name IS NOT NULL AND var_name <> ''
+  AND var_name NOT IN ('actionBlock', 'setupSummaryBlock');
 
 DROP TEMPORARY TABLE IF EXISTS _pems_listed_vars;
 CREATE TEMPORARY TABLE _pems_listed_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
@@ -228,15 +237,18 @@ FROM _pems_used_vars
 -- would match every name, and BINARY casts to the binary charset, which REGEXP_LIKE rejects.
 WHERE REGEXP_LIKE(var_name, '^[A-Z]', 'c');
 
--- E4: no token/OTP/action-URL variable may be an editable template variable. Those are minted per
--- send and injected as {{actionBlock}}; making one editable would let a template move or forge it.
+-- E4: no token/OTP/action-URL variable, and no trusted block, may be an editable template variable.
+-- Those are produced per send and injected by the backend; making one editable would let a template
+-- move or forge it. setupSummaryBlock is included for the same reason as actionBlock: listing it
+-- would offer an operator a field whose value is the shareable-data allow-list itself.
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'E4', 'no token/URL variable is editable content',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'none',
           CONCAT('offenders: ', GROUP_CONCAT(CONCAT(template_code, '.', var_name))))
 FROM _pems_listed_vars
-WHERE LOWER(var_name) IN ('actionblock','actionurl','token','rawtoken','confirmurl','reseturl','link','url');
+WHERE LOWER(var_name) IN ('actionblock','setupsummaryblock','actionurl','token','rawtoken',
+                          'confirmurl','reseturl','link','url');
 
 SELECT u.template_code, COUNT(*) AS placeholders_used
 FROM _pems_used_vars u GROUP BY u.template_code ORDER BY u.template_code;

@@ -160,17 +160,29 @@ public static class EmailTemplateContentValidator
             if (present.Contains(required)) continue;
 
             var isActionBlock = required == EmailTrustedBlocks.ActionBlock;
+            var isTrustedBlock = EmailTrustedBlocks.All.Contains(required);
+
+            var (vi, en) = required switch
+            {
+                _ when isActionBlock => (
+                    "Mẫu này cần {{actionBlock}} — đây là khu vực nút thao tác do hệ thống gắn khi gửi. Bỏ nó đi thì người nhận không có nút nào để bấm.",
+                    "This template needs {{actionBlock}} — the action area the system attaches when sending. Without it the recipient has no button to press."),
+
+                EmailTrustedBlocks.SetupSummaryBlock => (
+                    "Mẫu này cần {{setupSummaryBlock}} — đây là các bảng thông tin chuẩn bị do hệ thống dựng khi gửi. Bỏ nó đi thì email chỉ còn câu dẫn, không có nội dung cập nhật nào.",
+                    "This template needs {{setupSummaryBlock}} — the setup tables the system builds when sending. Without it the mail is a covering sentence with no update in it."),
+
+                _ => (
+                    $"Mẫu này bắt buộc phải chứa biến {{{{{required}}}}}; bỏ nó đi thì email gửi ra sẽ thiếu thông tin người nhận cần.",
+                    $"This template must contain {{{{{required}}}}}; without it the email would go out missing what the recipient needs."),
+            };
 
             issues.Add(new EmailTemplateIssue(
                 field,
-                isActionBlock ? EmailErrorCodes.TemplateActionBlockRequired : EmailErrorCodes.TemplateRequiredVariableMissing,
+                isTrustedBlock ? EmailErrorCodes.TemplateActionBlockRequired : EmailErrorCodes.TemplateRequiredVariableMissing,
                 required,
-                isActionBlock
-                    ? "Mẫu này cần {{actionBlock}} — đây là khu vực nút thao tác do hệ thống gắn khi gửi. Bỏ nó đi thì người nhận không có nút nào để bấm."
-                    : $"Mẫu này bắt buộc phải chứa biến {{{{{required}}}}}; bỏ nó đi thì email gửi ra sẽ thiếu thông tin người nhận cần.",
-                isActionBlock
-                    ? "This template needs {{actionBlock}} — the action area the system attaches when sending. Without it the recipient has no button to press."
-                    : $"This template must contain {{{{{required}}}}}; without it the email would go out missing what the recipient needs.",
+                vi,
+                en,
                 EmailTemplateIssueSeverity.Error));
         }
     }

@@ -92,6 +92,13 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
                         ReportFileId = report.Value.FileId,
                         ReportFileName = report.Value.FileName,
                         ReportGeneratedAt = report.Value.GeneratedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        // Deliberately NOT the stored body. This draft may have been edited in an
+                        // earlier session and nothing records whether it was, so claiming its content is
+                        // the generated text would tell the composer there is nothing to lose and let a
+                        // sync overwrite the Host's paragraphs without asking. Left empty, the composer
+                        // treats the body as possibly edited and warns — the wrong guess in the safe
+                        // direction, costing one confirmation click instead of somebody's writing.
+                        BodyHtml = string.Empty,
                         Warnings = new List<string>
                         {
                             $"Đang mở bản nháp đã tạo lúc {existing.CreatedAt:HH:mm dd/MM/yyyy}. " +
@@ -118,16 +125,25 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
             .Where(u => u.UserId == userId).Select(u => u.FullName)
             .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
 
+        // ── The report FIRST: its data is also what the body's HTML tables are built from, so the
+        // message and its attachment describe one moment rather than two reads either side of a save.
+        var artifact = await _reports.RenderAsync(instance, language, cancellationToken);
+        var snapshot = await VisitSetupSnapshotBuilder.BuildAsync(_db, instance, artifact, cancellationToken);
+
         var rendered = await _renderer.RenderAsync(new EmailRenderRequest(
             VisitSetupProgressEmailGuard.TemplateCode,
             language,
-            VisitSetupProgressEmailGuard.BuildVariables(instance, delegationName, campusName, hostName)),
+            VisitSetupProgressEmailGuard.BuildVariables(instance, delegationName, campusName, hostName),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [EmailTrustedBlocks.SetupSummaryBlock] = VisitSetupEmailHtml.Render(snapshot, language),
+            }),
             cancellationToken);
 
         var envelope = await _recipients.ResolveAsync(instance, cancellationToken);
 
-        // ── The report: rendered and archived BEFORE the draft, so a draft never exists without one ──
-        var artifact = await _reports.RenderAsync(instance, language, cancellationToken);
+        // Archived only after the body rendered: a failure here must not leave a stored PDF behind
+        // for a draft that was never created.
         var reportFileId = await _reports.StoreAsync(artifact, instance, userId, cancellationToken);
 
         var now = VietnamTime.Now();
@@ -194,6 +210,7 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
             ReportFileId = reportFileId,
             ReportFileName = artifact.FileName,
             ReportGeneratedAt = artifact.GeneratedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
+            BodyHtml = rendered.Body,
             Warnings = envelope.Warnings.ToList(),
         };
     }

@@ -184,7 +184,7 @@ public static class ScheduleReportPdfRenderer
                 });
 
                 GridCell(table, bg).Text(a.Venue).FontSize(9);
-                GridCell(table, bg).Text("FPT University").FontSize(9);
+                GridCell(table, bg).Text(a.Responsible).FontSize(9);
             }
 
             if (rows.Count == 0)

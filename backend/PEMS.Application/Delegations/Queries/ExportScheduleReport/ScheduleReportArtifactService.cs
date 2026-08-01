@@ -84,7 +84,9 @@ public sealed class ScheduleReportArtifactService : IScheduleReportArtifactServi
         var fileName =
             $"PEMS_Schedule_Report_{instance.VisitRequest.RequestCode}_{generatedAt:yyyyMMdd_HHmm}{suffix}.pdf";
 
-        return new ScheduleReportArtifact(pdfBytes, fileName, language, generatedAt);
+        // Data rides along so a caller rendering the same facts a second way (the setup-progress
+        // email's HTML tables) uses this read rather than issuing its own.
+        return new ScheduleReportArtifact(pdfBytes, fileName, language, generatedAt) { Data = dto };
     }
 
     public async Task<ulong> StoreAsync(

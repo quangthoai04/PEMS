@@ -84,6 +84,7 @@ public static class ScheduleReportDataBuilder
                 Title = a.Title,
                 Description = a.Description,
                 Venue = string.IsNullOrWhiteSpace(a.Location) ? DefaultLocation : a.Location!,
+                Responsible = string.IsNullOrWhiteSpace(a.ResponsibleName) ? DefaultLocation : a.ResponsibleName!.Trim(),
             })
             .ToList();
 

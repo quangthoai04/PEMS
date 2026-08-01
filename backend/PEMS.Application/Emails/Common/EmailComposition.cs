@@ -204,6 +204,32 @@ public static class EmailComposition
         </div>";
     }
 
+    /// <summary>
+    /// Stand-in for the setup-progress tables in a preview.
+    ///
+    /// <para>
+    /// A preview has no visit, so there is no setup to tabulate — and inventing one would show an
+    /// operator a delegation, guests and a schedule that do not exist, which is worse than showing
+    /// nothing: it reads as real data and invites edits to content the template does not control.
+    /// This says where the tables go and where they come from, and stops there.
+    /// </para>
+    /// <para>
+    /// It must be supplied even though it is inert. Without it the placeholder stays unresolved and the
+    /// renderer fails the preview closed, so the template-management screen would refuse to preview the
+    /// one template that uses it.
+    /// </para>
+    /// </summary>
+    public static string DisabledSetupSummaryBlock(string language)
+    {
+        var text = EmailLanguages.Normalize(language) == EmailLanguages.En
+            ? "Setup tables — visit overview, delegation members, FPT participants, schedule and preparation status. The system builds them from the visit's data when the email is sent."
+            : "Bảng thông tin chuẩn bị — thông tin chung, danh sách khách, thành phần phía FPT, lịch trình và trạng thái chuẩn bị. Hệ thống dựng từ dữ liệu chuyến thăm khi gửi email thật.";
+
+        return $@"<div style=""margin:18px 0"">
+            <span style=""display:block;border:1px dashed #9aa6b2;color:#6b7280;font-size:13px;padding:14px 18px;border-radius:10px"">{HE(text)}</span>
+        </div>";
+    }
+
     public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
     {
         return $@"<div style=""text-align:center;margin:24px 0"">
