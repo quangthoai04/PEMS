@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Commands.SendEmailDraft;
 using PEMS.Application.Emails.Common;
@@ -40,15 +41,21 @@ public sealed class SendVisitSetupProgressEmailDraftCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IEmailDraftDispatcher _dispatcher;
+    private readonly IFileStorageService _storage;
+    private readonly IGoogleDriveStorageService _drive;
 
     public SendVisitSetupProgressEmailDraftCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
-        IEmailDraftDispatcher dispatcher)
+        IEmailDraftDispatcher dispatcher,
+        IFileStorageService storage,
+        IGoogleDriveStorageService drive)
     {
         _db = db;
         _currentUser = currentUser;
         _dispatcher = dispatcher;
+        _storage = storage;
+        _drive = drive;
     }
 
     public async Task<SendEmailDraftResponse> Handle(
@@ -77,6 +84,23 @@ public sealed class SendVisitSetupProgressEmailDraftCommandHandler
         if (report is null)
             throw new ValidationException(
                 "Email này bắt buộc phải đính kèm Báo cáo Lịch trình. Vui lòng tạo lại báo cáo trước khi gửi.");
+
+        // Having the ROW is not having the FILE. The dispatcher's attachment loader skips a file whose
+        // bytes it cannot read — reasonable for an optional attachment, silently wrong for this one:
+        // the body tells the guest a schedule report is attached, so a send that drops it delivers a
+        // message that contradicts itself, and the Host is told it went fine.
+        //
+        // Refused rather than regenerated. Regenerating here would attach a report built from setup data
+        // newer than the tables already written into this body, so the message would describe one state
+        // and carry another — the exact contradiction "Đồng bộ dữ liệu mới nhất" exists to prevent by
+        // rebuilding BOTH halves together. So: name the cause, and point at the button that fixes it.
+        var probe = await StoredFileProbe.ProbeAsync(
+            _db, _storage, _drive, report.Value.FileId, cancellationToken);
+        if (!probe.IsAvailable)
+            throw new ValidationException(
+                $"Không gửi được: {StoredFileProbe.Describe(probe.Availability)}. "
+                + "Bấm “Đồng bộ dữ liệu mới nhất” để tạo lại Báo cáo Lịch trình, rồi gửi lại. "
+                + $"(Mã lỗi: {probe.ErrorCode})");
 
         var result = await _dispatcher.DispatchAsync(draft, userId, cancellationToken);
 

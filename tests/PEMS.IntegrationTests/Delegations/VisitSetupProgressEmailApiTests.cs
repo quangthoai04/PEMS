@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Common.Storage;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Enums;
@@ -724,6 +726,76 @@ public sealed class VisitSetupProgressEmailApiTests : IAsyncLifetime
         // act on. Asserted here so the code the client actually branches on is pinned end to end.
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(Directory.GetFiles(_pickup, "*.eml"));
+    }
+
+    [Fact]
+    public async Task A_draft_whose_report_was_purged_from_drive_is_refused_rather_than_sent_bare()
+    {
+        var (requestId, instanceId) = await SeedAsync();
+        var prepared = await PrepareAsync(requestId, instanceId);
+        var draftId = prepared.GetProperty("draftId").GetUInt64();
+        var reportFileId = prepared.GetProperty("reportFileId").GetUInt64();
+
+        // Every row stays exactly where it was — the attachment, the documents row, the files row. Only
+        // the bytes go, which is what a deleted Drive file looks like from inside PEMS. The test above
+        // deletes the attachment ROW and is caught by a structural check; nothing structural can catch
+        // this one, so it is the case that says whether the file is genuinely being verified.
+        string externalFileId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            externalFileId = await db.Files.AsNoTracking()
+                .Where(f => f.FileId == reportFileId).Select(f => f.ExternalFileId!).SingleAsync();
+        }
+        Assert.True(_drive.Forget(externalFileId), "The report should have been on the fake Drive to begin with.");
+
+        var response = await HostClient().PostAsync(Send(requestId, instanceId, draftId), null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // Read the decoded message, not the raw payload: System.Text.Json escapes non-ASCII, so a
+        // substring search for Vietnamese over the wire bytes answers "not found" for text that is
+        // demonstrably there.
+        var message = (await JsonAsync(response)).GetProperty("message").GetString() ?? string.Empty;
+
+        // Names the cause and the way out. A generic "không gửi được" would leave the Host pressing send.
+        Assert.Contains(StorageErrorCodes.FileNotFound, message);
+        Assert.Contains("Đồng bộ dữ liệu mới nhất", message);
+        Assert.Empty(Directory.GetFiles(_pickup, "*.eml"));
+    }
+
+    [Fact]
+    public async Task Preparing_again_after_the_report_was_purged_builds_a_new_one_instead_of_reopening()
+    {
+        var (requestId, instanceId) = await SeedAsync();
+        var first = await PrepareAsync(requestId, instanceId);
+        var firstReportFileId = first.GetProperty("reportFileId").GetUInt64();
+
+        string externalFileId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            externalFileId = await db.Files.AsNoTracking()
+                .Where(f => f.FileId == firstReportFileId).Select(f => f.ExternalFileId!).SingleAsync();
+        }
+        _drive.Forget(externalFileId);
+
+        var second = await PrepareAsync(requestId, instanceId);
+
+        // Not reopened: a fresh draft carrying a report that exists.
+        Assert.False(second.GetProperty("reusedExistingDraft").GetBoolean());
+        var secondReportFileId = second.GetProperty("reportFileId").GetUInt64();
+        Assert.NotEqual(firstReportFileId, secondReportFileId);
+
+        // Read back exactly the way the application reads it — through IFileStorageService on the
+        // CONFIGURED factory, whose Drive client is the double holding these bytes. Resolving it from
+        // the plain factory would reach the real Drive client and fail for an unrelated reason.
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var pdf = await ReadPdfBytesAsync(db, secondReportFileId);
+            Assert.Equal("%PDF-", Encoding.ASCII.GetString(pdf, 0, 5));
+        }
     }
 
     [Fact]

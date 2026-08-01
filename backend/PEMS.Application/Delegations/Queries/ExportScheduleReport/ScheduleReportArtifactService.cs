@@ -9,6 +9,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Storage;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Delegations.VisitPhotos;
 using PEMS.Application.Translation;
@@ -107,11 +108,21 @@ public sealed class ScheduleReportArtifactService : IScheduleReportArtifactServi
         var target = await _folderService.EnsureDocumentUploadTargetAsync(
             instance, campusCode, VisitDocumentSubtypes.TheoDoanKhach, actorUserId, cancellationToken);
 
+        // Upload FIRST, record SECOND, and never the other way round. A documents row written before the
+        // bytes land would survive a failed upload as a permanent pointer to nothing: every later reader
+        // would find a Schedule Report listed for this delegation and fail when opening it, with no way
+        // to tell that from a file somebody deleted afterwards. UploadBusinessFileAsync throws on any
+        // upload failure (and deletes its own orphan if the files insert fails), so reaching the next
+        // line means the bytes are stored and addressable.
         await using var stream = new MemoryStream(artifact.Content);
         var uploaded = await _fileUpload.UploadBusinessFileAsync(
             stream, artifact.FileName, "application/pdf", artifact.Content.LongLength,
             FilePurpose.VisitRequestAttachment, (long)actorUserId, target.DocumentFolderExternalId,
             cancellationToken);
+
+        if (uploaded.FileId <= 0)
+            throw new ValidationException(
+                "Không lưu được Báo cáo Lịch trình vào kho tệp — vui lòng thử lại.");
 
         _db.Documents.Add(new Document
         {
@@ -194,21 +205,78 @@ public sealed class ScheduleReportArtifactService : IScheduleReportArtifactServi
         }
     }
 
+    /// <summary>
+    /// The partner logo, or null when it cannot be fetched.
+    ///
+    /// <para>
+    /// It really does try, which is the whole point of the name. This method used to let a storage
+    /// failure escape, and the consequence was out of all proportion to the cause: a partner whose
+    /// <c>logo_file_id</c> pointed at a Drive file that had been deleted — or, on any database seeded
+    /// with placeholder ids, at a file that never existed — made the entire Schedule Report unbuildable.
+    /// The Host saw "Không tìm thấy tệp đính kèm trên Google Drive" and had no way to connect that to a
+    /// decorative image, because the message named an attachment and the failing file was a logo.
+    /// </para>
+    /// <para>
+    /// A missing logo is not a reason to withhold the report:
+    /// <see cref="ScheduleReportPdfRenderer"/> already draws a centred FPT logo when there is no partner
+    /// one, which is exactly the layout used for a delegation with no partner at all. Cancellation still
+    /// propagates — a cancelled request is not a missing file.
+    /// </para>
+    /// </summary>
     private async Task<byte[]?> TryLoadFileBytesAsync(ulong fileId, CancellationToken cancellationToken)
     {
         var file = await _db.Files.FirstOrDefaultAsync(f => f.FileId == fileId, cancellationToken);
-        if (file is null) return null;
+        if (file is null)
+        {
+            _logger.LogWarning(
+                "Partner logo file {FileId} is referenced but has no files row; rendering without it.", fileId);
+            return null;
+        }
 
-        var isGoogleDrive = string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(file.ExternalFileId);
+        var isGoogleDrive = string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase);
+        if (isGoogleDrive && string.IsNullOrWhiteSpace(file.ExternalFileId))
+        {
+            _logger.LogWarning(
+                "Partner logo file {FileId} is stored as GOOGLE_DRIVE but carries no external id ({Code}); rendering without it.",
+                fileId, StorageErrorCodes.FileReferenceInvalid);
+            return null;
+        }
 
-        await using var stream = (isGoogleDrive
-            ? await _drive.DownloadAsync(file.ExternalFileId!, cancellationToken)
-            : await _storage.OpenReadAsync(file, cancellationToken));
-        if (stream is null) return null;
+        try
+        {
+            await using var stream = (isGoogleDrive
+                ? await _drive.DownloadAsync(file.ExternalFileId!, cancellationToken)
+                : await _storage.OpenReadAsync(file, cancellationToken));
+            if (stream is null)
+            {
+                _logger.LogWarning(
+                    "Partner logo file {FileId} could not be opened from {Provider}; rendering without it.",
+                    fileId, file.StorageProvider);
+                return null;
+            }
 
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, cancellationToken);
-        return ms.ToArray();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, cancellationToken);
+            return ms.ToArray();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (BusinessRuleException ex)
+        {
+            // The code is logged rather than swallowed silently: which of "gone" / "refused" / "network"
+            // it was decides who fixes the partner record, and nothing else in this flow will report it.
+            _logger.LogWarning(ex,
+                "Partner logo file {FileId} is unreadable ({Code}); rendering the report without it.",
+                fileId, ex.ErrorCode ?? StorageErrorCodes.Unavailable);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Partner logo file {FileId} could not be fetched; rendering the report without it.", fileId);
+            return null;
+        }
     }
 }

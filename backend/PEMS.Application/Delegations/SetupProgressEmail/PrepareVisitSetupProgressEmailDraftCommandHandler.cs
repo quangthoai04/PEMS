@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
 using PEMS.Application.Delegations.Services.VisitFormRead;
@@ -37,6 +38,8 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
     private readonly IVisitSetupProgressRecipientResolver _recipients;
     private readonly IScheduleReportArtifactService _reports;
     private readonly IVisitFormReadService _formRead;
+    private readonly IFileStorageService _storage;
+    private readonly IGoogleDriveStorageService _drive;
     private readonly ILogger<PrepareVisitSetupProgressEmailDraftCommandHandler> _logger;
 
     public PrepareVisitSetupProgressEmailDraftCommandHandler(
@@ -46,6 +49,8 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         IVisitSetupProgressRecipientResolver recipients,
         IScheduleReportArtifactService reports,
         IVisitFormReadService formRead,
+        IFileStorageService storage,
+        IGoogleDriveStorageService drive,
         ILogger<PrepareVisitSetupProgressEmailDraftCommandHandler> logger)
     {
         _db = db;
@@ -54,6 +59,8 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         _recipients = recipients;
         _reports = reports;
         _formRead = formRead;
+        _storage = storage;
+        _drive = drive;
         _logger = logger;
     }
 
@@ -79,7 +86,33 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
                 // A draft whose mandatory report has gone (a purged file, a half-finished earlier
                 // attempt) is not reusable: re-opening it would present a sendable-looking composer with
                 // no report on it. Fall through and build a fresh one instead.
+                //
+                // "Gone" has to mean the FILE, not the row. Checking only that the documents row exists
+                // was the same mistake made everywhere else in this flow: the row outlives its bytes, so
+                // a report deleted on Drive still produced a composer that looked complete and a message
+                // that would have arrived without the attachment it promises. The probe reads the bytes.
+                var reportIsUsable = false;
                 if (report is not null)
+                {
+                    var probe = await StoredFileProbe.ProbeAsync(
+                        _db, _storage, _drive, report.Value.FileId, cancellationToken);
+                    reportIsUsable = probe.IsAvailable;
+
+                    if (!reportIsUsable)
+                    {
+                        // Regenerate rather than refuse. The Host asked for a progress update; the report
+                        // is derived data this service can rebuild from the setup as it stands now, so the
+                        // useful answer is a working draft — not an error about a file they never chose.
+                        // Logged anyway: a vanished archived report is worth an operator's attention even
+                        // when the Host never notices it happened.
+                        _logger.LogWarning(
+                            "Setup-progress draft {DraftId} for visit instance {VisitInstanceId} references report file "
+                            + "{FileId}, which is unreadable ({Code}); building a fresh draft instead of reusing it.",
+                            existing.EmailDraftId, instance.VisitInstanceId, report.Value.FileId, probe.ErrorCode);
+                    }
+                }
+
+                if (reportIsUsable)
                 {
                     return new PrepareVisitSetupProgressEmailDraftResponse
                     {
@@ -88,7 +121,7 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
                         // Read back from the artifact rather than echoing the request: the draft was
                         // rendered in whatever language it was created with, and saying otherwise would
                         // misdescribe content this call did not produce.
-                        LanguageCode = SetupProgressDrafts.LanguageOf(report.Value.FileName),
+                        LanguageCode = SetupProgressDrafts.LanguageOf(report!.Value.FileName),
                         ReportFileId = report.Value.FileId,
                         ReportFileName = report.Value.FileName,
                         ReportGeneratedAt = report.Value.GeneratedAt.ToString("yyyy-MM-ddTHH:mm:ss"),

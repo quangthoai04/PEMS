@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Storage;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Delegations.SetupProgressEmail;
@@ -87,9 +88,27 @@ public class VisitSetupProgressEmailFlowTests
         {
             StoreCount++;
             var fileId = ++_nextFileId;
+
+            // The real service uploads the bytes and inserts a files row BEFORE recording the document,
+            // and both halves matter to the flow now: the documents row identifies the mandatory
+            // attachment, and the files row is what a reader dereferences to get the PDF. A stub that
+            // wrote only the document would model precisely the broken state these handlers exist to
+            // detect, and every reuse test would then exercise the regenerate path by accident.
+            Db!.Files.Add(new PEMS.Domain.Entities.Documents.UploadedFile
+            {
+                FileId = fileId,
+                StorageProvider = "LOCAL",
+                ObjectKey = $"reports/{artifact.FileName}",
+                OriginalFilename = artifact.FileName,
+                MimeType = "application/pdf",
+                FileSize = artifact.Content.LongLength,
+                UploadedBy = actorUserId,
+                UploadedAt = artifact.GeneratedAt,
+            });
+
             // The real service archives the report as a documents row, and that row is what identifies
             // the mandatory attachment — so the stub has to write it too or the lookup is untested.
-            Db!.Documents.Add(new Document
+            Db.Documents.Add(new Document
             {
                 FileId = fileId,
                 OwnerType = "VISIT",
@@ -138,6 +157,10 @@ public class VisitSetupProgressEmailFlowTests
         public required FakeScheduleReportCurrentUser User { get; init; }
         public required StubReports Reports { get; init; }
         public required StubRenderer Renderer { get; init; }
+
+        /// <summary>Storage the handlers probe through — a test makes the report unreadable here.</summary>
+        public required StubFileStorage Storage { get; init; }
+        public required StubGoogleDriveStorage Drive { get; init; }
         public required PrepareVisitSetupProgressEmailDraftCommandHandler Prepare { get; init; }
         public required RefreshVisitSetupProgressEmailReportCommandHandler Refresh { get; init; }
     }
@@ -169,6 +192,8 @@ public class VisitSetupProgressEmailFlowTests
         var renderer = new StubRenderer();
         var formRead = new VisitFormReadService(db, user, NullLogger<VisitFormReadService>.Instance);
         var recipients = new VisitSetupProgressRecipientResolver(db);
+        var storage = new StubFileStorage();
+        var drive = new StubGoogleDriveStorage();
 
         return new Sut
         {
@@ -176,8 +201,10 @@ public class VisitSetupProgressEmailFlowTests
             User = user,
             Reports = reports,
             Renderer = renderer,
+            Storage = storage,
+            Drive = drive,
             Prepare = new PrepareVisitSetupProgressEmailDraftCommandHandler(
-                db, user, renderer, recipients, reports, formRead,
+                db, user, renderer, recipients, reports, formRead, storage, drive,
                 NullLogger<PrepareVisitSetupProgressEmailDraftCommandHandler>.Instance),
             Refresh = new RefreshVisitSetupProgressEmailReportCommandHandler(
                 db, user, reports, renderer, formRead),
@@ -190,7 +217,7 @@ public class VisitSetupProgressEmailFlowTests
             new PrepareVisitSetupProgressEmailDraftCommand(Request, Instance, language, reuse), default);
 
     private static SendVisitSetupProgressEmailDraftCommandHandler Send(Sut sut, IEmailDraftDispatcher dispatcher)
-        => new(sut.Db, sut.User, dispatcher);
+        => new(sut.Db, sut.User, dispatcher, sut.Storage, sut.Drive);
 
     private sealed class RecordingDispatcher : IEmailDraftDispatcher
     {
@@ -276,6 +303,66 @@ public class VisitSetupProgressEmailFlowTests
         // The report is the expensive half: re-opening must not archive another copy of it.
         Assert.Equal(1, sut.Reports.StoreCount);
         Assert.NotEmpty(second.Warnings);
+    }
+
+    [Fact]
+    public async Task A_draft_whose_report_vanished_from_storage_is_rebuilt_rather_than_reopened()
+    {
+        var sut = CreateSut();
+        var first = await PrepareAsync(sut);
+
+        // The row survives; the bytes do not. Exactly what a purged Drive file — or one whose id was
+        // never real — looks like to this handler.
+        sut.Storage.Unreadable.Add(first.ReportFileId);
+
+        var second = await PrepareAsync(sut);
+
+        Assert.False(second.ReusedExistingDraft);
+        Assert.NotEqual(first.ReportFileId, second.ReportFileId);
+        // Rebuilt from the setup as it stands now: a second render AND a second archive.
+        Assert.Equal(2, sut.Reports.RenderCount);
+        Assert.Equal(2, sut.Reports.StoreCount);
+        // And the new draft carries a report that can actually be read.
+        var attachments = await sut.Db.EmailDraftAttachments
+            .Where(a => a.EmailDraftId == second.DraftId).ToListAsync();
+        Assert.Equal(second.ReportFileId, Assert.Single(attachments).FileId);
+    }
+
+    [Fact]
+    public async Task A_draft_whose_report_points_at_no_real_drive_file_is_also_rebuilt()
+    {
+        var sut = CreateSut();
+        var first = await PrepareAsync(sut);
+
+        // The shape seeded databases are full of: storage_provider GOOGLE_DRIVE, external_file_id that
+        // addresses nothing. Structurally the draft is intact, so only a probe can tell.
+        var file = await sut.Db.Files.SingleAsync(f => f.FileId == first.ReportFileId);
+        file.StorageProvider = "GOOGLE_DRIVE";
+        file.ExternalFileId = null;
+        await sut.Db.SaveChangesAsync();
+
+        var second = await PrepareAsync(sut);
+
+        Assert.False(second.ReusedExistingDraft);
+        Assert.Equal(2, sut.Reports.StoreCount);
+    }
+
+    [Fact]
+    public async Task A_draft_whose_report_drive_refuses_to_serve_is_also_rebuilt()
+    {
+        var sut = CreateSut();
+        var first = await PrepareAsync(sut);
+
+        var file = await sut.Db.Files.SingleAsync(f => f.FileId == first.ReportFileId);
+        file.StorageProvider = "GOOGLE_DRIVE";
+        file.ExternalFileId = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+        await sut.Db.SaveChangesAsync();
+        sut.Drive.DownloadFailure = StubGoogleDriveStorage.Deleted();
+
+        var second = await PrepareAsync(sut);
+
+        Assert.False(second.ReusedExistingDraft);
+        Assert.Equal(2, sut.Reports.StoreCount);
     }
 
     [Fact]
@@ -425,6 +512,72 @@ public class VisitSetupProgressEmailFlowTests
 
         Assert.True(result.Success);
         Assert.Equal(1, dispatcher.Calls);
+    }
+
+    [Fact]
+    public async Task Sending_is_refused_when_the_attached_report_can_no_longer_be_read()
+    {
+        var sut = CreateSut();
+        var prepared = await PrepareAsync(sut);
+        var dispatcher = new RecordingDispatcher();
+
+        // Between composing and sending, the archived report becomes unreadable. The draft still looks
+        // complete — the documents row and the attachment row are both there — so nothing before this
+        // change would have stopped the send, and the guest would have received a message announcing an
+        // attachment that was silently dropped on the way out.
+        sut.Storage.Unreadable.Add(prepared.ReportFileId);
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Send(sut, dispatcher).Handle(
+            new SendVisitSetupProgressEmailDraftCommand(Request, Instance, prepared.DraftId), default));
+
+        Assert.Equal(0, dispatcher.Calls);
+        // The message has to name the cause and the way out, or the Host has no move to make.
+        Assert.Contains("Đồng bộ dữ liệu mới nhất", ex.Message);
+        Assert.Contains(StorageErrorCodes.FileNotFound, ex.Message);
+    }
+
+    [Fact]
+    public async Task Sending_is_refused_when_the_report_row_points_at_no_real_drive_file()
+    {
+        var sut = CreateSut();
+        var prepared = await PrepareAsync(sut);
+        var dispatcher = new RecordingDispatcher();
+
+        // The broken-record shape: the files row says the bytes live on Drive but names no file there.
+        // Every row involved still exists, so the draft passes every structural check ahead of this one.
+        var file = await sut.Db.Files.SingleAsync(f => f.FileId == prepared.ReportFileId);
+        file.StorageProvider = "GOOGLE_DRIVE";
+        file.ExternalFileId = null;
+        await sut.Db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Send(sut, dispatcher).Handle(
+            new SendVisitSetupProgressEmailDraftCommand(Request, Instance, prepared.DraftId), default));
+
+        Assert.Equal(0, dispatcher.Calls);
+        Assert.Contains(StorageErrorCodes.FileReferenceInvalid, ex.Message);
+        Assert.Equal(0, sut.Drive.DownloadCalls);   // a broken record never reaches the network
+    }
+
+    [Fact]
+    public async Task Sending_is_refused_when_drive_refuses_the_report_for_lack_of_permission()
+    {
+        var sut = CreateSut();
+        var prepared = await PrepareAsync(sut);
+        var dispatcher = new RecordingDispatcher();
+
+        var file = await sut.Db.Files.SingleAsync(f => f.FileId == prepared.ReportFileId);
+        file.StorageProvider = "GOOGLE_DRIVE";
+        file.ExternalFileId = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+        await sut.Db.SaveChangesAsync();
+        sut.Drive.DownloadFailure = StubGoogleDriveStorage.PermissionDenied();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Send(sut, dispatcher).Handle(
+            new SendVisitSetupProgressEmailDraftCommand(Request, Instance, prepared.DraftId), default));
+
+        Assert.Equal(0, dispatcher.Calls);
+        // Told apart from a deleted file: this one is a share/scope problem an operator can fix.
+        Assert.Contains(StorageErrorCodes.FileForbidden, ex.Message);
+        Assert.Contains("không có quyền", ex.Message);
     }
 
     [Fact]

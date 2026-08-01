@@ -3,8 +3,10 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
+using PEMS.Application.Common.Storage;
 
 namespace PEMS.IntegrationTests.TestInfrastructure;
 
@@ -64,10 +66,23 @@ public sealed class FakeGoogleDriveStorage : IGoogleDriveStorageService
         });
     }
 
+    /// <summary>
+    /// Serves the stored bytes, or fails the way the real client fails — a
+    /// <see cref="BusinessRuleException"/> carrying <see cref="StorageErrorCodes.FileNotFound"/>. It used
+    /// to throw <see cref="FileNotFoundException"/>, which no production code path recognises, so a suite
+    /// exercising "the report was deleted" saw a generic unavailability instead of the code the handlers
+    /// actually branch on.
+    /// </summary>
     public Task<Stream> DownloadAsync(string externalFileId, CancellationToken cancellationToken = default)
         => _files.TryGetValue(externalFileId, out var bytes)
             ? Task.FromResult<Stream>(new MemoryStream(bytes, writable: false))
-            : throw new FileNotFoundException($"No fake Drive file with id {externalFileId}.");
+            : throw new BusinessRuleException(
+                "Không đọc được tệp trên Google Drive: tệp không tồn tại, đã bị xoá, hoặc tài khoản dịch vụ "
+                + "không được chia sẻ tệp này.",
+                StorageErrorCodes.FileNotFound);
+
+    /// <summary>Forgets a file's bytes while leaving every DB row intact — a purge, as seen from PEMS.</summary>
+    public bool Forget(string externalFileId) => _files.TryRemove(externalFileId, out _);
 
     public Task DeleteAsync(string externalFileId, CancellationToken cancellationToken = default)
     {

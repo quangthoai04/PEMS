@@ -120,7 +120,9 @@ public sealed class EmailDraftDispatcher : IEmailDraftDispatcher
             }).ToList(),
             cancellationToken);
 
-        var outbound = await EmailAttachmentLoader.LoadAsync(
+        // Aligned, not compacted: Pair below matches rows to bytes by position, and a compacted list
+        // shifts every attachment after a skipped one onto the wrong row's name.
+        var outbound = await EmailAttachmentLoader.LoadAlignedAsync(
             _db, _storage,
             attachmentRows.Select(a => (a.FileId, a.AttachmentType, a.ContentId, a.DisplayName)).ToList(),
             cancellationToken);
@@ -183,16 +185,23 @@ public sealed class EmailDraftDispatcher : IEmailDraftDispatcher
         return affected == 1;
     }
 
-    /// <summary>Matches each stored attachment row with the bytes loaded for it.</summary>
+    /// <summary>
+    /// Matches each stored attachment row with the bytes loaded for it. <paramref name="loaded"/> is
+    /// index-aligned with <paramref name="rows"/> and holds null for a file whose bytes could not be
+    /// read, so a skipped file drops out here instead of sliding the following rows onto the wrong
+    /// content. Sending a row with no bytes is not an option — the recipient would get an empty part
+    /// carrying a real document's filename.
+    /// </summary>
     private static IReadOnlyList<ManualEmailAttachment> Pair(
-        IReadOnlyList<EmailDraftAttachment> rows, IReadOnlyList<OutboundAttachment> loaded)
+        IReadOnlyList<EmailDraftAttachment> rows, IReadOnlyList<OutboundAttachment?> loaded)
     {
         var result = new List<ManualEmailAttachment>(rows.Count);
         for (var i = 0; i < rows.Count && i < loaded.Count; i++)
         {
+            if (loaded[i] is not { } bytes) continue;
             var r = rows[i];
             result.Add(new ManualEmailAttachment(
-                r.FileId, r.AttachmentType, r.ContentId, r.DisplayName, r.DisplayOrder, loaded[i]));
+                r.FileId, r.AttachmentType, r.ContentId, r.DisplayName, r.DisplayOrder, bytes));
         }
         return result;
     }
