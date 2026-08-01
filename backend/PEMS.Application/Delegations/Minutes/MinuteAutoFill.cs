@@ -13,7 +13,9 @@ namespace PEMS.Application.Delegations.Minutes;
 ///  1. Host chính — from <c>visit_request_campuses.current_host_user_id</c>.
 ///  2. Internal participants — from <c>visit_participants</c> that are confirmed-to-attend
 ///     (status ACCEPTED, excluding the host row); ASSIGNED/INVITED/DECLINED/REMOVED are skipped.
-///  3. Guests — every row of <c>visit_guest_members</c> for the request (no per-guest confirm status exists).
+///  3. Guests — every guest LINKED TO THIS CAMPUS INSTANCE via <c>visit_instance_guest_members</c>
+///     (per-campus v2; a sibling instance's guests of the same request are never included — each
+///     campus keeps its own independent, copy-on-write member rows).
 /// De-dup is purely by (user_id) / (guest_member_id) against what already exists, so it is idempotent
 /// and append-only: it never resurrects or overwrites rows the Host has edited/checked.
 /// </summary>
@@ -76,10 +78,15 @@ internal static class MinuteAutoFill
             seenUserIds.Add(p.UserId);
         }
 
-        // 3. Guests from the request (official delegation list).
-        var guests = await db.VisitGuestMembers
-            .Where(g => g.VisitRequestId == instance.VisitRequestId)
-            .OrderBy(g => g.DisplayOrder).ThenBy(g => g.GuestMemberId)
+        // 3. Guests linked to THIS campus instance (per-campus v2 — a sibling instance of the same
+        //    multi-campus request keeps its own copy-on-write member rows, so scoping by
+        //    visit_request_id alone would double-count a guest that exists on both campuses).
+        var guests = await db.VisitInstanceGuestMembers
+            .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
+            .Join(db.VisitGuestMembers, l => l.GuestMemberId, g => g.GuestMemberId,
+                (l, g) => new { l.DisplayOrder, Member = g })
+            .OrderBy(x => x.DisplayOrder).ThenBy(x => x.Member.GuestMemberId)
+            .Select(x => x.Member)
             .ToListAsync(ct);
 
         foreach (var g in guests)
