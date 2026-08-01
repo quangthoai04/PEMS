@@ -77,6 +77,15 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Delegations.Queries.ExportScheduleReport.IScheduleReportArtifactService,
             PEMS.Application.Delegations.Queries.ExportScheduleReport.ScheduleReportArtifactService>();
 
+        // Default TO/CC/BCC of the Host's setup-progress email, derived from the instance rather than
+        // from whatever the compose screen had loaded.
+        services.AddScoped<PEMS.Application.Delegations.SetupProgressEmail.IVisitSetupProgressRecipientResolver,
+            PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressRecipientResolver>();
+
+        // One draft-send pipeline behind both the generic compose screen and the setup-progress send.
+        services.AddScoped<PEMS.Application.Emails.Common.IEmailDraftDispatcher,
+            PEMS.Application.Emails.Common.EmailDraftDispatcher>();
+
         return services;
     }
 }

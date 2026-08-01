@@ -127,9 +127,18 @@ public sealed class ManualEmailPipelineTests : IDisposable
     private UpdateEmailDraftCommandHandler UpdateDraft(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, Sanitizer, Recipients);
 
+    /// <summary>
+    /// The validate/claim/send/link pipeline moved into EmailDraftDispatcher when the setup-progress
+    /// send needed the same one. The real dispatcher is built here rather than a stub, so these tests
+    /// keep measuring the actual send path — only the ownership guard is left in the handler.
+    /// </summary>
+    private PEMS.Application.Emails.Common.EmailDraftDispatcher Dispatcher(
+        ApplicationDbContext db, string? brokenHost = null)
+        => new(db, Sanitizer, Storage(), Sender(db, brokenHost), Normalizer(db), Recipients);
+
     private SendEmailDraftCommandHandler SendDraft(
         ApplicationDbContext db, ICurrentUserService user, string? brokenHost = null)
-        => new(db, user, Sanitizer, Storage(), Sender(db, brokenHost), Normalizer(db), Recipients);
+        => new(db, user, Dispatcher(db, brokenHost));
 
     private SendEmailCommandHandler Compose(
         ApplicationDbContext db, ICurrentUserService user, string? brokenHost = null)

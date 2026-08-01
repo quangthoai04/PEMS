@@ -18,6 +18,7 @@ using PEMS.Application.Delegations.Queries.GetVisitInstanceLogistics;
 using PEMS.Application.Delegations.Commands.SignVisitLogisticsHandover;
 using PEMS.Application.Delegations.Commands.SaveVisitLogisticsHandoverDocument;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceSentEmails;
+using PEMS.Application.Delegations.SetupProgressEmail;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Delegations.Queries.GetVisitProcessDetail;
 using PEMS.Application.Delegations.Queries.GetAgendaResponsibleCandidates;
@@ -191,6 +192,46 @@ namespace PEMS.Api.Controllers
                 cancellationToken);
             var suffix = isEnglish ? "-EN" : "";
             return File(fileBytes, "application/pdf", $"BaoCaoLichTrinh-{visitInstanceId}{suffix}.pdf");
+        }
+
+        // ── "Gửi cập nhật chuẩn bị": the Host's manual update to the guest, with the Schedule
+        // Report attached. All three routes re-derive host + prep-window from the database, so a
+        // handover or a stage change between opening the composer and sending refuses.
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/draft")]
+        public async Task<IActionResult> PrepareSetupProgressEmailDraft(
+            ulong visitRequestId, ulong visitInstanceId,
+            [FromBody] PrepareSetupProgressEmailDraftBody? body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PrepareVisitSetupProgressEmailDraftCommand(
+                    visitRequestId, visitInstanceId,
+                    body?.LanguageCode,
+                    body?.ReuseExistingDraft ?? true),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/drafts/{draftId}/refresh-report")]
+        public async Task<IActionResult> RefreshSetupProgressEmailReport(
+            ulong visitRequestId, ulong visitInstanceId, ulong draftId,
+            [FromBody] RefreshSetupProgressEmailReportBody? body, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new RefreshVisitSetupProgressEmailReportCommand(
+                    visitRequestId, visitInstanceId, draftId, body?.LanguageCode),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/drafts/{draftId}/send")]
+        public async Task<IActionResult> SendSetupProgressEmailDraft(
+            ulong visitRequestId, ulong visitInstanceId, ulong draftId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new SendVisitSetupProgressEmailDraftCommand(visitRequestId, visitInstanceId, draftId),
+                cancellationToken);
+            return Ok(result);
         }
 
         // Valid "Người phụ trách" candidates for the agenda editor: the active host + ACCEPTED
@@ -695,4 +736,16 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for upserting the reminder schedule (full set; enabled=false cancels a row).</summary>
     public sealed record SaveReminderSettingsBody(List<SaveVisitReminderSettingItem>? Items);
+
+    /// <summary>
+    /// Request body for preparing the setup-progress draft. Both fields are optional — an omitted body
+    /// means Vietnamese and re-open-if-one-exists, which is what the button does on a first click.
+    /// </summary>
+    public sealed record PrepareSetupProgressEmailDraftBody(string? LanguageCode, bool? ReuseExistingDraft);
+
+    /// <summary>
+    /// Request body for regenerating the attached report. A null language keeps the one the draft was
+    /// built with, so refreshing cannot swap an English attachment onto a Vietnamese message.
+    /// </summary>
+    public sealed record RefreshSetupProgressEmailReportBody(string? LanguageCode);
 }
