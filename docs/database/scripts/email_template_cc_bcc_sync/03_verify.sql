@@ -54,7 +54,8 @@ INSERT INTO _pems_canonical_codes (template_code) VALUES
   ('LOGISTICS_REQUEST_TO_DEPARTMENT'),('LOGISTICS_ASSIGNEE_ASSIGNMENT'),
   ('LOGISTICS_CHANGE_PROPOSAL_TO_HOST'),('LOGISTICS_EXPENSE_REPORT_REMINDER'),
   ('REPORT_CAMPUS_OPERATION'),('REPORT_DEPARTMENT_COLLABORATION'),
-  ('REPORT_DEPARTMENT_INVOICE'),('REPORT_PERSONNEL_PERFORMANCE');
+  ('REPORT_DEPARTMENT_INVOICE'),('REPORT_PERSONNEL_PERFORMANCE'),
+  ('VISIT_SETUP_PROGRESS_UPDATE');
 
 DROP TEMPORARY TABLE IF EXISTS _pems_legacy_codes;
 CREATE TEMPORARY TABLE _pems_legacy_codes (template_code VARCHAR(100) PRIMARY KEY) ENGINE=InnoDB;
@@ -67,7 +68,7 @@ INSERT INTO _pems_legacy_codes (template_code) VALUES
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'A1', 'every canonical code exists (no caller without a template)',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
-       IF(COUNT(*) = 0, '30 codes present', CONCAT('missing: ', GROUP_CONCAT(c.template_code)))
+       IF(COUNT(*) = 0, '31 codes present', CONCAT('missing: ', GROUP_CONCAT(c.template_code)))
 FROM _pems_canonical_codes c
 LEFT JOIN email_templates t ON t.template_code = c.template_code
 WHERE t.email_template_id IS NULL;
@@ -139,7 +140,7 @@ SELECT '── D. Canonical rows carry both languages ────────�
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'D1', 'no canonical template missing VI or EN',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
-       IF(COUNT(*) = 0, 'all 30 bilingual', CONCAT('incomplete: ', GROUP_CONCAT(t.template_code)))
+       IF(COUNT(*) = 0, 'all 31 bilingual', CONCAT('incomplete: ', GROUP_CONCAT(t.template_code)))
 FROM _pems_canonical_codes c
 JOIN email_templates t ON t.template_code = c.template_code
 WHERE t.subject_vi IS NULL OR t.subject_vi = '' OR t.body_vi IS NULL OR t.body_vi = ''

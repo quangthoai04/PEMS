@@ -15930,7 +15930,11 @@ VALUES
   (70030, 'REPORT_PERSONNEL_PERFORMANCE', 'Báo cáo hiệu suất nhân sự', 'REPORT', NULL, 'Gửi báo cáo hiệu suất theo nhân sự.', 'ACTIVE',
    'Báo cáo hiệu suất {{personnelName}}', '<p>Xin chào {{recipientName}},</p><p>Báo cáo {{reportTitle}} của {{personnelName}}, kỳ {{periodLabel}}, đã được tạo.</p>',
    'Personnel performance report: {{personnelName}}', '<p>Hello {{recipientName}},</p><p>{{reportTitle}} for {{personnelName}}, period {{periodLabel}}, is ready.</p>',
-   'HTML', 'recipientName,reportTitle,personnelName,periodLabel', CURRENT_TIMESTAMP, NULL, NULL, NULL);
+   'HTML', 'recipientName,reportTitle,personnelName,periodLabel', CURRENT_TIMESTAMP, NULL, NULL, NULL),
+  (70031, 'VISIT_SETUP_PROGRESS_UPDATE', 'Cập nhật công tác chuẩn bị tiếp khách', 'REPORT', NULL, 'Người phụ trách tiếp đón gửi bản cập nhật công tác chuẩn bị tới khách và thành phần tham gia, kèm Báo cáo Lịch trình. Không mang liên kết dùng một lần.', 'ACTIVE',
+   '[PEMS] Cập nhật công tác chuẩn bị — {{delegationName}} tại {{campusName}}', '<p>Kính gửi Quý khách,</p><p>Đây là cập nhật mới nhất về công tác chuẩn bị cho chuyến thăm của đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>, dự kiến từ <strong>{{plannedStart}}</strong> đến <strong>{{plannedEnd}}</strong>.</p><p>Báo cáo Lịch trình chi tiết được đính kèm trong email này.</p><p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này để <strong>{{hostName}}</strong> — người phụ trách tiếp đón — kịp thời cập nhật.</p><p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>',
+   '[PEMS] Preparation update — {{delegationName}} at {{campusName}}', '<p>Dear Guest,</p><p>This is the latest update on preparations for the visit of <strong>{{delegationName}}</strong> to <strong>{{campusName}}</strong>, scheduled from <strong>{{plannedStart}}</strong> to <strong>{{plannedEnd}}</strong>.</p><p>The detailed Schedule Report is attached to this email.</p><p>If anything needs adjusting, please reply to this email so that <strong>{{hostName}}</strong>, the host for this visit, can update it in time.</p><p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>',
+   'HTML', 'delegationName,campusName,plannedStart,plannedEnd,hostName', CURRENT_TIMESTAMP, NULL, NULL, NULL);
 
 SET @u_ho := (
   SELECT u.user_id

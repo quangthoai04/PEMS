@@ -3,13 +3,13 @@
 --
 -- Run AFTER 01_preflight.sql on the same connection/session, and BEFORE 03_verify.sql.
 --
--- GENERATED, DO NOT HAND-EDIT. The 30 VALUES rows below are lifted verbatim from
---   docs/database/scripts/PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql
+-- GENERATED, DO NOT HAND-EDIT. The 31 VALUES rows below are lifted verbatim from
+--   docs/database/scripts/PEMS_FULL_VS_31_07_NEW.sql
 -- so this script cannot drift from the seed it is supposed to converge on. To regenerate after a
 -- deliberate catalog change, re-run the generator recorded in 04_rollback_guidance.md.
 --
 -- What it does, and just as importantly what it does not:
---   * upserts the 30 canonical templates BY template_code — never by numeric
+--   * upserts the 31 canonical templates BY template_code — never by numeric
 --     email_template_id, so an existing row keeps its id and every sent_emails / email_drafts
 --     foreign key pointing at it stays valid;
 --   * updates an existing row only where a column actually differs, so re-running does not churn
@@ -858,14 +858,41 @@ VALUES
      '<strong>{{periodFrom}}</strong> to <strong>{{periodTo}}</strong>.</p>',
      '<p>It records the assignments you accepted, completion rate and response times for the period.</p>',
      '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'personName, scopeLabel, periodFrom, periodTo', CURRENT_TIMESTAMP);
+   'HTML', 'personName, scopeLabel, periodFrom, periodTo', CURRENT_TIMESTAMP),
+
+  ('VISIT_SETUP_PROGRESS_UPDATE',
+   'Cập nhật công tác chuẩn bị tiếp khách',
+   'REPORT', NULL,
+   'Người phụ trách tiếp đón gửi bản cập nhật công tác chuẩn bị tới khách và thành phần tham gia, kèm Báo cáo Lịch trình. Không mang liên kết dùng một lần.',
+   'ACTIVE',
+   '[PEMS] Cập nhật công tác chuẩn bị — {{delegationName}} tại {{campusName}}',
+   CONCAT(
+     '<p>Kính gửi Quý khách,</p>',
+     '<p>Đây là cập nhật mới nhất về công tác chuẩn bị cho chuyến thăm của đoàn ',
+     '<strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>, dự kiến từ ',
+     '<strong>{{plannedStart}}</strong> đến <strong>{{plannedEnd}}</strong>.</p>',
+     '<p>Báo cáo Lịch trình chi tiết được đính kèm trong email này.</p>',
+     '<p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này để ',
+     '<strong>{{hostName}}</strong> — người phụ trách tiếp đón — kịp thời cập nhật.</p>',
+     '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
+   '[PEMS] Preparation update — {{delegationName}} at {{campusName}}',
+   CONCAT(
+     '<p>Dear Guest,</p>',
+     '<p>This is the latest update on preparations for the visit of ',
+     '<strong>{{delegationName}}</strong> to <strong>{{campusName}}</strong>, scheduled from ',
+     '<strong>{{plannedStart}}</strong> to <strong>{{plannedEnd}}</strong>.</p>',
+     '<p>The detailed Schedule Report is attached to this email.</p>',
+     '<p>If anything needs adjusting, please reply to this email so that ',
+     '<strong>{{hostName}}</strong>, the host for this visit, can update it in time.</p>',
+     '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
+   'HTML', 'delegationName, campusName, plannedStart, plannedEnd, hostName', CURRENT_TIMESTAMP);
 
 -- The staged catalog must be exactly what we expect before a single production row is touched.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS pems_email_stage_check$$
 CREATE PROCEDURE pems_email_stage_check()
 BEGIN
-  IF (SELECT COUNT(*) FROM _pems_canonical_templates) <> 30 THEN
+  IF (SELECT COUNT(*) FROM _pems_canonical_templates) <> 31 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
       'Staged canonical catalog does not hold the expected number of templates. Aborting.';
   END IF;

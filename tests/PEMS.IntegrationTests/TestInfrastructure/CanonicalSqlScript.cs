@@ -24,7 +24,7 @@ public static class CanonicalSqlScript
 {
     /// <summary>The only accepted schema script. No wildcards, no fallback to historical names.</summary>
     public const string FileName =
-        "PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql";
+        "PEMS_FULL_VS_31_07_NEW.sql";
 
     /// <summary>
     /// SHA-256 of the canonical script this test suite is written against. Changing the schema is allowed,
@@ -205,8 +205,34 @@ public static class CanonicalSqlScript
     /// all revision 1, contact_guard_negative_failures = 0, contact_guard_positive_failures = 0,
     /// merged_runtime_table_count issue_count = 0 — identical to the twelfth bump's baseline, which is
     /// the point: this bump restores a known-good state rather than establishing a new one.
+    ///
+    /// ── Fourteenth bump (setup-progress template, and a re-pin the rename had left broken) ──────
+    ///
+    /// Two separate things, and it matters which is which.
+    ///
+    /// FIRST, a repair that is not this change's doing. Commit 74deff85 ("new sql") replaced the
+    /// canonical script with <c>PEMS_FULL_VS_31_07_NEW.sql</c> and left <see cref="FileName"/> pointing
+    /// at a file no longer on disk, so <see cref="ResolvePath"/> threw and EVERY database-backed test in
+    /// the suite failed before it could connect — not a hash mismatch reported as drift, but the schema
+    /// contract unable to resolve at all. FileName now names the file that exists.
+    ///
+    /// SECOND, the deliberate content change: ONE seed row, <c>VISIT_SETUP_PROGRESS_UPDATE</c>
+    /// (email_template_id 70031), the template behind the Host's "Gửi cập nhật chuẩn bị". Seed only —
+    /// no table, column, index, constraint or trigger differs, and no existing template row is touched.
+    /// The catalog goes 30 → 31, matching the code-side registry that the contract test compares it to
+    /// in both directions.
+    ///
+    /// KNOWN, PRE-EXISTING, AND NOT REPAIRED HERE: the same "new sql" commit rewrote the wording and
+    /// the declared variables of the thirty templates it carried forward, so
+    /// <c>email-template-defaults.json</c>, <c>02_sync_templates.sql</c> and this script now disagree
+    /// about those thirty rows — most visibly the four REPORT_* templates, which declare
+    /// reportTitle/periodLabel here while the registry declares periodFrom/periodTo. That is a
+    /// thirty-row content reconciliation with its own decisions to make about which wording wins, and
+    /// folding it into this change would have hidden it inside an unrelated diff. The row added here is
+    /// consistent across all three sources; the thirty that were already inconsistent stay that way,
+    /// reported rather than quietly rewritten.
     public const string ExpectedSha256 =
-        "e2ef098c283634b402b72ab227687d67515f840b6f02cc25f1639e105721291f";
+        "4bf899f94daf59dbb5c81f7fb34601fc6e1913d5ad5a9609fe7247ed30604e25";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
