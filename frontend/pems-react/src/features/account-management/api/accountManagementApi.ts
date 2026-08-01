@@ -17,6 +17,7 @@ import type {
   PaginatedResult,
   RelatedVisitorDetail,
   RelatedVisitorListItem,
+  RelatedVisitorNationalitiesResponse,
   RelatedVisitorQueryParams,
   ReplaceStaffLeaderRequest,
   ReplaceStaffLeaderResponse,
@@ -223,6 +224,18 @@ export const accountManagementApi = {
     const { data } = await httpClient.get<PaginatedResult<RelatedVisitorListItem>>(
       API_ENDPOINTS.accounts.relatedVisitors,
       { params: clean },
+    );
+    return data;
+  },
+
+  /**
+   * Staff Leader "Visitor liên quan" tab — the nationality dropdown options, covering EVERY
+   * Visitor related to the caller's campus. Takes no parameters: reading a page of the list above
+   * to derive the options would silently drop nationalities that fall outside that page.
+   */
+  async getRelatedVisitorNationalities(): Promise<RelatedVisitorNationalitiesResponse> {
+    const { data } = await httpClient.get<RelatedVisitorNationalitiesResponse>(
+      API_ENDPOINTS.accounts.relatedVisitorNationalities,
     );
     return data;
   },

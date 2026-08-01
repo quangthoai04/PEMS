@@ -206,6 +206,20 @@ export interface ReplaceStaffLeaderResponse {
 
 // ── Staff Leader "Visitor liên quan" tab (read-only) — UC_StaffLeader_Related_Visitor_Accounts_Tab ──
 
+/**
+ * The account-type modes a Staff Leader can switch between on /dashboard/accounts.
+ *
+ * There is deliberately no "all" member: internal and Visitor accounts come from different
+ * endpoints with different permissions and a different table, so a combined listing would have to
+ * merge two paginations into one — see the spec's non-goal §13.11.
+ */
+export type StaffLeaderAccountType = 'INTERNAL' | 'VISITOR';
+
+/** Response of GET /accounts/staff-leader/related-visitors/nationalities. */
+export interface RelatedVisitorNationalitiesResponse {
+  items: string[];
+}
+
 /** One Visitor row in the Staff Leader related-visitors tab. Mirrors RelatedVisitorAccountListItemDto. */
 export interface RelatedVisitorListItem {
   userId: string;

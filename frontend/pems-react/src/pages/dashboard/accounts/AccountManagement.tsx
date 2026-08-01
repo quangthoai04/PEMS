@@ -204,6 +204,17 @@ export function AccountManagement() {
     // otherwise "Tất cả tài khoản" would still silently show only Visitor rows.
     role: val !== 'VISITOR' && prev.role === 'VISITOR' ? '' : prev.role,
   }));
+
+  // A Staff Leader's Visitor mode is a different screen, not a filtered view of the internal one:
+  // different endpoint, different table, read-only. Everything internal (list request, stat cards,
+  // create button, role filter) is switched off while it is on.
+  const isVisitorMode = isStaffLeader && accountTypeFilter === 'VISITOR';
+
+  // Says WHOSE accounts the current mode lists, so the two very different lists are not mistaken
+  // for one another. Copy is the project owner's — do not reword without asking.
+  const accountManagementSubtitle = isVisitorMode
+    ? 'Danh sách tài khoản khách có yêu cầu tham quan liên quan đến cơ sở'
+    : 'Quản lý tài khoản của nhân sự phòng IC, trưởng phòng của các phòng ban khác và sinh viên trong cơ sở';
   const setRoleFilter = (val: string) => setCurrentFilters(prev => ({
     ...prev,
     role: val,
@@ -402,7 +413,10 @@ export function AccountManagement() {
     loading: accountsLoading,
     error: accountsError,
     refetch: refetchAccounts,
-  } = useAccountList(listParams, activeTab === 'all');
+    // Visitor mode is served entirely by RelatedVisitorsTab's own endpoint — the internal account
+    // list must not keep running underneath it (wasted request, and its totals could leak into the
+    // Visitor pagination).
+  } = useAccountList(listParams, activeTab === 'all' && !isVisitorMode);
 
   // UC-97 / UC-98 mutations + detail fetch (create/update-role call the API directly
   // so the modal can surface the backend's specific error message).
@@ -1529,11 +1543,20 @@ export function AccountManagement() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài khoản</h1>
+          {isStaffLeader && (
+            <p className="mt-1 max-w-3xl text-sm text-gray-500" aria-live="polite">
+              {accountManagementSubtitle}
+            </p>
+          )}
         </div>
       </div>
 
       {/* I. Top Widgets & Create Account Card. With no stat cards (HO) the button stands alone,
-          right-aligned, instead of being squeezed into one column of an otherwise empty grid. */}
+          right-aligned, instead of being squeezed into one column of an otherwise empty grid.
+          Hidden entirely in Visitor mode: the counters are internal-account totals (showing them
+          over a Visitor list would read as Visitor figures), and the tab is read-only, so there is
+          no account to create from it. */}
+      {!isVisitorMode && (
       <div className={stats.length === 0
         ? 'flex justify-end mb-8'
         : `grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${stats.length === 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4 mb-8 items-stretch`}>
@@ -1586,8 +1609,9 @@ export function AccountManagement() {
           </h3>
         </button>
       </div>
+      )}
 
-      {isServerTab && accountsError && (
+      {isServerTab && !isVisitorMode && accountsError && (
         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 flex items-center gap-3">
           <XCircle className="w-5 h-5 shrink-0" />
           <span>{accountsError}</span>
@@ -1598,9 +1622,9 @@ export function AccountManagement() {
           (UC_StaffLeader_Related_Visitor_Accounts_Tab) — it 403s for any other role. ADMIN (and
           anyone else who can reach the VISITOR account-type filter) must keep using the normal,
           unscoped account list below, which already supports roleCode=VISITOR system-wide. */}
-      {accountTypeFilter === 'VISITOR' && isStaffLeader ? (
+      {isVisitorMode ? (
         <RelatedVisitorsTab
-          accountTypeFilter={accountTypeFilter}
+          accountTypeFilter="VISITOR"
           onAccountTypeChange={(val) => setAccountTypeFilter(val)}
         />
       ) : (
@@ -1653,9 +1677,11 @@ export function AccountManagement() {
             </div>
           )}
 
-          {/* Lọc Loại Tài khoản (Tất cả / Tài khoản nội bộ / Tài khoản khách). Ẩn với HO: HO chỉ
-              làm việc với tài khoản nội bộ, nên bộ lọc luôn ở INTERNAL (giá trị mặc định) và
-              không hiển thị. */}
+          {/* Lọc Loại Tài khoản. Ẩn với HO: HO chỉ làm việc với tài khoản nội bộ, nên bộ lọc luôn
+              ở INTERNAL (giá trị mặc định) và không hiển thị.
+              Staff Leader chỉ có 2 lựa chọn — "Tất cả tài khoản" bị bỏ vì nội bộ và khách là hai
+              nguồn dữ liệu / quyền / bảng khác nhau, không gộp được vào một danh sách phân trang.
+              ADMIN giữ nguyên 3 lựa chọn (danh sách không phân phạm vi campus, dùng logic riêng). */}
           {!isHO && (
           <div className="relative">
             <select
@@ -1663,11 +1689,14 @@ export function AccountManagement() {
               onChange={(e) => {
                 const val = e.target.value;
                 setAccountTypeFilter(val);
-                if (val === 'VISITOR') setRoleFilter('VISITOR');
+                // Staff Leader: the Visitor tab has no role filter at all, so nothing is carried
+                // over. Only ADMIN's shared list needs roleCode=VISITOR to narrow itself.
+                if (val === 'VISITOR' && !isStaffLeader) setRoleFilter('VISITOR');
               }}
+              aria-label="Loại tài khoản"
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
-              <option className="text-gray-900" value="ALL">Tất cả tài khoản</option>
+              {!isStaffLeader && <option className="text-gray-900" value="ALL">Tất cả tài khoản</option>}
               <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
               <option className="text-gray-900" value="VISITOR">Tài khoản khách</option>
             </select>

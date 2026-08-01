@@ -61,6 +61,10 @@ export const API_ENDPOINTS = {
     // Staff Leader "Visitor liên quan" tab (read-only): list + detail of related Visitor accounts.
     relatedVisitors: '/accounts/related-visitors',
     relatedVisitorDetails: '/accounts/related-visitor-details',
+    // Nationality filter options, built server-side from EVERY related Visitor of the campus.
+    // Its own endpoint on purpose: deriving the options from the first page of the list above
+    // would drop any nationality that only appears further down.
+    relatedVisitorNationalities: '/accounts/staff-leader/related-visitors/nationalities',
   },
   // Department Leader personnel management (/dashboard/my-department). Every route is scoped to the
   // caller's OWN department server-side — deliberately no departmentId parameter anywhere, which is
