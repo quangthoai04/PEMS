@@ -54,8 +54,26 @@ public sealed class SaveVisitAgendaCommandHandler
         if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
             throw new ConflictException("Chỉ có thể chỉnh sửa lịch trình trong giai đoạn chuẩn bị (trước tiếp khách).");
 
+        // Mirrors the DB CHECK constraints on visit_request_campuses (planned_end_at > planned_start_at,
+        // duration >= 30 minutes) so a bad edit fails with a friendly message here instead of a raw
+        // constraint violation once SaveChangesAsync runs.
+        if (request.PlannedEndAt <= request.PlannedStartAt)
+            throw new ValidationException("Thời gian dự kiến kết thúc phải sau thời gian bắt đầu.");
+        if ((request.PlannedEndAt - request.PlannedStartAt).TotalMinutes < 30)
+            throw new ValidationException("Thời gian dự kiến phải kéo dài ít nhất 30 phút.");
+
         var now = _clock.VietnamNow;
         var incoming = request.Items ?? new List<SaveVisitAgendaItem>();
+
+        // The Host renegotiated the visit date/time while drafting the agenda — both changes take
+        // effect together with this same save.
+        if (instance.PlannedStartAt != request.PlannedStartAt || instance.PlannedEndAt != request.PlannedEndAt)
+        {
+            instance.PlannedStartAt = request.PlannedStartAt;
+            instance.PlannedEndAt = request.PlannedEndAt;
+            instance.UpdatedAt = now;
+            instance.UpdatedBy = actorId;
+        }
 
         var existing = await _db.VisitAgendas
             .Where(a => a.VisitInstanceId == instance.VisitInstanceId)

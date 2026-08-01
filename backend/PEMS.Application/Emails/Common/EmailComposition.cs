@@ -112,6 +112,41 @@ public static class EmailComposition
         </div>
         <p style=""color:#6b7280;font-size:12px"">Liên kết yêu cầu đăng nhập hệ thống PEMS.</p>");
 
+    /// <summary>
+    /// The agenda table injected into VISIT_AGENDA_PROPOSAL ({{agendaBlock}}). Unlike the blocks above this
+    /// is NOT wrapped in <see cref="WrapActionBlock"/> — there is no one-time token to strip from the email
+    /// history here (the template is registered with <c>HasSensitiveAction: false</c>, so the history keeps
+    /// the full body anyway). Every field is Host-typed free text, so each one is HTML-encoded via
+    /// <see cref="HE"/> before it reaches the markup — this is the one place in this email where
+    /// unescaped user input could otherwise land in a raw HTML message.
+    /// </summary>
+    public static string AgendaListBlock(
+        IReadOnlyList<(string Time, string Title, string? Location, string? Responsible)> items)
+    {
+        var rows = new StringBuilder();
+        foreach (var it in items)
+        {
+            rows.Append($@"<tr>
+                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;font-weight:bold;white-space:nowrap;vertical-align:top"">{HE(it.Time)}</td>
+                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top"">{HE(it.Title)}</td>
+                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top"">{HE(it.Location ?? "")}</td>
+                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top"">{HE(it.Responsible ?? "")}</td>
+            </tr>");
+        }
+
+        return $@"<table style=""width:100%;border-collapse:collapse;margin:16px 0;font-size:13px"">
+            <thead>
+                <tr style=""background:#f3f4f6;text-align:left"">
+                    <th style=""padding:8px 10px"">Thời gian</th>
+                    <th style=""padding:8px 10px"">Nội dung</th>
+                    <th style=""padding:8px 10px"">Địa điểm</th>
+                    <th style=""padding:8px 10px"">Người phụ trách</th>
+                </tr>
+            </thead>
+            <tbody>{rows}</tbody>
+        </table>";
+    }
+
     // ── Account action blocks ──
     // The URL is built by the backend from App:FrontendBaseUrl and, for confirmation, carries a
     // one-time token. Neither ever appears in the editable template body — a template author must not be

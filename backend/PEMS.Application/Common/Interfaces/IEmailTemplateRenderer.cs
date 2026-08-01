@@ -24,8 +24,12 @@ public static class EmailTrustedBlocks
     /// <summary>Accept/decline/detail buttons with real (or, in preview, disabled) action links.</summary>
     public const string ActionBlock = "actionBlock";
 
+    /// <summary>The agenda table injected into VISIT_AGENDA_PROPOSAL — Host-typed text, HTML-encoded by
+    /// the backend before it is assembled (see <see cref="PEMS.Application.Emails.Common.EmailComposition.AgendaListBlock"/>).</summary>
+    public const string AgendaBlock = "agendaBlock";
+
     /// <summary>Every trusted block name — used by the contract test to exclude them from variable checks.</summary>
-    public static readonly IReadOnlyList<string> All = new[] { ActionBlock };
+    public static readonly IReadOnlyList<string> All = new[] { ActionBlock, AgendaBlock };
 }
 
 /// <summary>

@@ -19,6 +19,12 @@ namespace PEMS.Application.Emails.Common;
 /// <param name="RelatedId">Id of that object.</param>
 /// <param name="SentBy">Acting user, when there is one. Null for system-initiated mail.</param>
 /// <param name="Attachments">Resolved attachment bytes (reports carry a PDF).</param>
+/// <param name="Cc">
+/// Carbon copies. Only honoured for a <see cref="EmailRecipientPolicy.CallerControlled"/> template —
+/// <see cref="EmailRecipientPolicyEnforcer"/> still rejects it for a single-recipient one, exactly as it
+/// would for a caller that tried to CC an OTP mail.
+/// </param>
+/// <param name="ReplyTo">Overrides the configured Reply-To for this message only. Null keeps the default.</param>
 public sealed record SystemEmailRequest(
     string TemplateCode,
     EmailRecipient To,
@@ -28,7 +34,9 @@ public sealed record SystemEmailRequest(
     string? RelatedType = null,
     ulong? RelatedId = null,
     ulong? SentBy = null,
-    IReadOnlyList<OutboundAttachment>? Attachments = null)
+    IReadOnlyList<OutboundAttachment>? Attachments = null,
+    IReadOnlyList<EmailRecipient>? Cc = null,
+    EmailRecipient? ReplyTo = null)
 {
     /// <summary>
     /// Where the words come from: the template (the default, and the only source when nobody has edited
@@ -135,6 +143,12 @@ public sealed record PreparedSystemEmail(
     /// <c>prepared with { Attachments = … }</c> instead of loading storage inside a transaction.
     /// </summary>
     public IReadOnlyList<OutboundAttachment> Attachments { get; init; } = System.Array.Empty<OutboundAttachment>();
+
+    /// <summary>Carbon copies already validated and recorded by <see cref="ISystemEmailDispatcher.PrepareAsync"/>.</summary>
+    public IReadOnlyList<EmailRecipient> Cc { get; init; } = System.Array.Empty<EmailRecipient>();
+
+    /// <summary>Reply-To override for this message, when the request supplied one.</summary>
+    public EmailRecipient? ReplyTo { get; init; }
 }
 
 /// <summary>How much of a rendered body may be kept in <c>sent_emails.body_snapshot</c>.</summary>

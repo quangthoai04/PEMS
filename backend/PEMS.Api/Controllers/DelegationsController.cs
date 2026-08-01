@@ -7,6 +7,7 @@ using PEMS.Application.Delegations.Commands.CancelVisitRequest;
 using PEMS.Application.Delegations.Commands.CompleteVisitStage;
 using PEMS.Application.Delegations.Commands.RejectCampusInstance;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
+using PEMS.Application.Delegations.Commands.SendVisitAgendaEmail;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 using PEMS.Application.Delegations.Commands.RemoveVisitParticipant;
@@ -268,11 +269,24 @@ namespace PEMS.Api.Controllers
         // (login required). Candidate list: GET visit-instances/{id}/department-staff-candidates above.
 
         // Upsert the instance's agenda (Host only, prep window). Saves setup ONLY — does not change stage.
+        // Also syncs the campus's planned visit window (plannedStartAt/plannedEndAt), which the Host may
+        // have renegotiated with the delegation while drafting the agenda.
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/agenda")]
         public async Task<IActionResult> SaveVisitAgenda(ulong visitRequestId, ulong visitInstanceId, [FromBody] SaveVisitAgendaBody body, CancellationToken cancellationToken)
         {
             var items = (body.Items ?? new List<SaveVisitAgendaItem>());
-            var result = await _mediator.Send(new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items), cancellationToken);
+            var result = await _mediator.Send(
+                new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items, body.PlannedStartAt, body.PlannedEndAt),
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // Emails the campus's operational contact the current agenda so both sides can discuss/confirm
+        // it (Host only, prep window). Reply-To/Cc go to the assigned Host, resolved server-side.
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/agenda/send-email")]
+        public async Task<IActionResult> SendVisitAgendaEmail(ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new SendVisitAgendaEmailCommand(visitRequestId, visitInstanceId), cancellationToken);
             return Ok(result);
         }
 
@@ -679,7 +693,7 @@ namespace PEMS.Api.Controllers
     public sealed record UpdateRegistrantInfoBody(string FullName, string Organization, string? JobTitle, string Phone, string Email);
 
     /// <summary>Request body for upserting a campus instance's agenda (full replace).</summary>
-    public sealed record SaveVisitAgendaBody(List<SaveVisitAgendaItem>? Items);
+    public sealed record SaveVisitAgendaBody(List<SaveVisitAgendaItem>? Items, System.DateTime PlannedStartAt, System.DateTime PlannedEndAt);
 
     /// <summary>Request body for the UC-27 respond-to-invitation endpoint (decline requires a reason).</summary>
     public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);

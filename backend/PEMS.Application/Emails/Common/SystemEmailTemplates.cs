@@ -84,6 +84,7 @@ public static class SystemEmailTemplates
     public const string VisitRequestOtp = "VISIT_REQUEST_OTP";
     public const string VisitContactClaim = "VISIT_CONTACT_CLAIM";
     public const string VisitContactTransfer = "VISIT_CONTACT_TRANSFER";
+    public const string VisitAgendaProposal = "VISIT_AGENDA_PROPOSAL";
 
     // ── VISIT_PARTICIPANT ────────────────────────────────────────────────────
     public const string VisitParticipantInvitation = "VISIT_PARTICIPANT_INVITATION";
@@ -156,6 +157,10 @@ public static class SystemEmailTemplates
                 "contactFullName", "requestCode", "delegationName"),
             Single(VisitContactTransfer, EmailTemplatePurposes.VisitRequest, sensitive: true,
                 "contactFullName", "requestCode", "delegationName", "currentContactName"),
+            // The Host wants a copy of what went out, so this is CallerControlled (Cc allowed) rather
+            // than Single — nothing here is a one-time token or a per-person secret.
+            CallerControlledTemplate(VisitAgendaProposal, EmailTemplatePurposes.VisitRequest,
+                "contactFullName", "delegationName", "campusName", "plannedTime", "hostName", "hostEmail"),
 
             // VISIT_PARTICIPANT — each invitee gets their own accept/decline token.
             Single(VisitParticipantInvitation, EmailTemplatePurposes.VisitParticipant, sensitive: true,

@@ -24,6 +24,16 @@ public sealed class VisitProcessDetailDto
     /// "Ghi chú chung" textarea. Null/empty when not set.</summary>
     public string? PreparationNote { get; set; }
 
+    /// <summary>Per-campus "Working contact" (visit_instance_form_details.operational_contact_*) — the
+    /// "Gửi lịch trình" email recipient. Email can be null on older data even though the current form
+    /// requires it for new submissions.</summary>
+    public string? OperationalContactFullName { get; set; }
+    public string? OperationalContactEmail { get; set; }
+
+    /// <summary>Most recent "Gửi lịch trình" send for this instance (VISIT_AGENDA_PROPOSAL), if any.</summary>
+    public DateTime? AgendaEmailLastSentAt { get; set; }
+    public string? AgendaEmailLastSentStatus { get; set; }
+
     public List<AgendaItemDto> Agenda { get; set; } = new();
 
     /// <summary>Read-only snapshot of the guest's original registration (registrant + delegation +
