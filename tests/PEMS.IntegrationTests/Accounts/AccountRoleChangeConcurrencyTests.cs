@@ -516,7 +516,9 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
             new NoopSessionService(),
             new SystemClock(),
             new NoopEmailDispatcher(),
-            new MySqlUserMutationLockService(db));
+            new MySqlUserMutationLockService(db),
+            new UnusedPendingEmailChangeService(),
+            new UnusedConfirmationService());
 
     /// <summary>
     /// Puts the campus instance into the state a real host assignment leaves behind: ASSIGNED, with the
@@ -644,5 +646,33 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
         public Task<EmailDeliveryResult> DeliverAsync(
             PEMS.Application.Emails.Common.PreparedSystemEmail prepared, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// The pending-email path is reached only when the command actually changes the address of a
+    /// PENDING_EMAIL_CONFIRMATION account, and no test here does. Throwing rather than returning a
+    /// plausible value keeps that assumption visible: if the handler ever starts issuing a token on a
+    /// pure role change, this suite fails loudly instead of quietly exercising a different flow.
+    /// </summary>
+    private sealed class UnusedPendingEmailChangeService : IPendingAccountEmailChangeService
+    {
+        public Task<PreparedPendingEmailChange> PrepareAsync(
+            User user, string newEmail, string? newFullName, CancellationToken cancellationToken)
+            => throw new NotSupportedException(
+                "A role-only change must not prepare a pending email change.");
+    }
+
+    private sealed class UnusedConfirmationService : IAccountEmailConfirmationService
+    {
+        public int ExpiryHours => throw new NotSupportedException();
+
+        public Task<string> IssuePendingAsync(
+            ulong userId, string normalizedTargetEmail, bool isResend, CancellationToken cancellationToken)
+            => throw new NotSupportedException(
+                "A role-only change must not issue an account email confirmation.");
+
+        public string BuildConfirmUrl(string rawToken) => throw new NotSupportedException();
+
+        public string BuildLoginUrl() => throw new NotSupportedException();
     }
 }
