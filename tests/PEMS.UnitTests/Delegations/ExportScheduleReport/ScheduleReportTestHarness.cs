@@ -77,14 +77,15 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitPhotoFolder>();
         modelBuilder.Ignore<VisitPhoto>();
         modelBuilder.Ignore<CalendarEvent>();
-        modelBuilder.Ignore<EmailTemplate>();
+        // Mapped, not ignored: the setup-progress handlers write a real draft (template row, recipients,
+        // the attachment and the documents row that identifies the mandatory report), and asserting on
+        // what they wrote is the whole point of those tests.
         modelBuilder.Ignore<SentEmail>();
         modelBuilder.Ignore<SentEmailRecipient>();
         modelBuilder.Ignore<EmailActionToken>();
         modelBuilder.Ignore<EmailSendIdempotency>();
         modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<AuditLog>();
-        modelBuilder.Ignore<Document>();
         modelBuilder.Ignore<Minute>();
         modelBuilder.Ignore<MinuteActionItem>();
         modelBuilder.Ignore<MinuteParticipant>();
@@ -103,9 +104,6 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitExpenseItem>();
         modelBuilder.Ignore<VisitExpenseReportEvent>();
         modelBuilder.Ignore<PhotoFaceTag>();
-        modelBuilder.Ignore<EmailDraft>();
-        modelBuilder.Ignore<EmailDraftRecipient>();
-        modelBuilder.Ignore<EmailDraftAttachment>();
         modelBuilder.Ignore<Notification>();
         modelBuilder.Ignore<ApiConfiguration>();
         modelBuilder.Ignore<ApiUsageQuota>();
@@ -161,7 +159,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<PartnerContact> IApplicationDbContext.PartnerContacts => Set<PartnerContact>();
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
-    DbSet<Document> IApplicationDbContext.Documents => Set<Document>();
+    public DbSet<Document> Documents => Set<Document>();
     DbSet<VisitInstanceFormDetail> IApplicationDbContext.VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
     DbSet<VisitRequestIdentityChange> IApplicationDbContext.VisitRequestIdentityChanges => Set<VisitRequestIdentityChange>();
     DbSet<VisitRequestIdentityChangeEvent> IApplicationDbContext.VisitRequestIdentityChangeEvents => Set<VisitRequestIdentityChangeEvent>();
@@ -196,13 +194,13 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
     DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
-    DbSet<EmailTemplate> IApplicationDbContext.EmailTemplates => Set<EmailTemplate>();
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();
     DbSet<SentEmailRecipient> IApplicationDbContext.SentEmailRecipients => Set<SentEmailRecipient>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
-    DbSet<EmailDraft> IApplicationDbContext.EmailDrafts => Set<EmailDraft>();
-    DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
-    DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
+    public DbSet<EmailDraft> EmailDrafts => Set<EmailDraft>();
+    public DbSet<EmailDraftRecipient> EmailDraftRecipients => Set<EmailDraftRecipient>();
+    public DbSet<EmailDraftAttachment> EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
     DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
