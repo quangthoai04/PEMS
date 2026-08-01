@@ -222,17 +222,25 @@ public static class CanonicalSqlScript
     /// The catalog goes 30 → 31, matching the code-side registry that the contract test compares it to
     /// in both directions.
     ///
-    /// KNOWN, PRE-EXISTING, AND NOT REPAIRED HERE: the same "new sql" commit rewrote the wording and
-    /// the declared variables of the thirty templates it carried forward, so
-    /// <c>email-template-defaults.json</c>, <c>02_sync_templates.sql</c> and this script now disagree
-    /// about those thirty rows — most visibly the four REPORT_* templates, which declare
-    /// reportTitle/periodLabel here while the registry declares periodFrom/periodTo. That is a
-    /// thirty-row content reconciliation with its own decisions to make about which wording wins, and
-    /// folding it into this change would have hidden it inside an unrelated diff. The row added here is
-    /// consistent across all three sources; the thirty that were already inconsistent stay that way,
-    /// reported rather than quietly rewritten.
+    /// THIRD, four seed rows repaired — a live defect, not tidying. That same "new sql" commit rewrote
+    /// the four REPORT_* templates to declare <c>reportTitle</c> and <c>periodLabel</c>, while their
+    /// callers have always supplied <c>periodFrom</c>/<c>periodTo</c> (and <c>personName</c>/
+    /// <c>scopeLabel</c> for the personnel report). The renderer compares the declared set against the
+    /// supplied set and fails closed, so every campus-operation, department-collaboration, invoice and
+    /// personnel-performance email threw
+    /// <c>BusinessRuleException: thiếu giá trị cho biến: periodLabel, reportTitle</c> instead of
+    /// sending — on a branch where those sends are Mandatory and not wrapped in try/catch. The four
+    /// rows are restored to the registry's contract using the wording already shipped in
+    /// <c>email-template-defaults.json</c>, which was authored for exactly those variables, so nothing
+    /// here is newly invented. Measured after the repair: 31 seeded codes, 31 registry codes, and every
+    /// one of the 31 declaring the same variable set on both sides.
+    ///
+    /// Still outstanding and NOT addressed here: the same commit also reworded the other twenty-six
+    /// templates, so the canonical seed and <c>email-template-defaults.json</c> still differ in prose
+    /// for those. That is a content decision per row rather than a contract break — they render, they
+    /// send, and only "restore to default" would show the difference.
     public const string ExpectedSha256 =
-        "4bf899f94daf59dbb5c81f7fb34601fc6e1913d5ad5a9609fe7247ed30604e25";
+        "e24aa867054bba596cce56d3236ab87b498d598af4df081d81fbdc88324a0e59";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
