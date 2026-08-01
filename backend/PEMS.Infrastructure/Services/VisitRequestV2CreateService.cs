@@ -134,7 +134,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             RegistrantNationality = form.Registrant.Nationality,
             RegistrantOrganization = registrantOrg,
             RegistrantJobTitle = form.Registrant.JobTitle,
-            RegistrantPhone = PhoneNumber.NormalizeOrOriginal(form.Registrant.Phone),
+            RegistrantPhone = PhoneNumber.NormalizeOrNull(form.Registrant.Phone),
             RegistrantEmail = form.Registrant.Email,
             VisitScope = scope,
             // Pure V2: form content is written per campus into visit_instance_form_details. The request row
@@ -142,7 +142,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             // contact), scope and lifecycle.
             ContactPersonFullName = form.PrimaryContact.FullName,
             ContactPersonOrganization = form.PrimaryContact.Organization,
-            ContactPersonPhone = PhoneNumber.NormalizeOrOriginal(form.PrimaryContact.Phone),
+            ContactPersonPhone = PhoneNumber.NormalizeOrNull(form.PrimaryContact.Phone),
             ContactPersonEmail = form.PrimaryContact.Email,
             Status = VisitRequestStatuses.PendingApproval,
             SubmittedAt = vietnamNow,
@@ -179,7 +179,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     // reject an empty string, so normalize blank → NULL (which the CHECKs and the now-nullable
                     // columns accept). Name + phone stay required upstream.
                     OperationalContactOrganization = Clean(cv.OperationalContact.Organization),
-                    OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(cv.OperationalContact.Phone),
+                    OperationalContactPhone = PhoneNumber.NormalizeOrNull(cv.OperationalContact.Phone),
                     OperationalContactEmail = Clean(cv.OperationalContact.Email),
                     WorkingLanguage = cv.WorkingLanguage,
                     TransportationNote = Clean(cv.TransportationNote),

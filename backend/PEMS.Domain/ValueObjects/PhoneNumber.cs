@@ -64,4 +64,14 @@ public static class PhoneNumber
     /// </summary>
     public static string NormalizeOrOriginal(string? input)
         => TryNormalize(input, out var e164) ? e164! : (input?.Trim() ?? string.Empty);
+
+    /// <summary>
+    /// E.164 for a valid number, null for blank/null input, or trimmed input for fallback.
+    /// Ensures database columns with CHECK (TRIM(col) <> '') receive NULL rather than empty string.
+    /// </summary>
+    public static string? NormalizeOrNull(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        return TryNormalize(input, out var e164) ? e164 : input.Trim();
+    }
 }
