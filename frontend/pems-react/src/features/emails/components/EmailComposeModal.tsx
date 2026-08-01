@@ -66,6 +66,42 @@ interface Props {
    * are put back into the group `recipient_type` says they came from.
    */
   initialDraftId?: number | null;
+
+  // ── Opt-in extensions. Every one is optional and off by default, so the email-management screens
+  // that opened this modal before them behave exactly as they did. ──────────────────────────────
+
+  /**
+   * Hide the template picker. Used when the caller opened the composer ON a specific template whose
+   * policy the backend has already validated the draft against — switching to another one mid-flow
+   * would leave a draft whose stored template and content disagree. Subject and body stay editable:
+   * the point is to fix WHICH email this is, not to stop the author writing it.
+   */
+  lockedTemplate?: boolean;
+
+  /** Contextual heading in place of "Soạn email", e.g. the delegation this message is about. */
+  contextTitle?: string;
+
+  /**
+   * Attachments the author may not remove, by file id. Shown with a "Bắt buộc" tag and no delete
+   * button. Enforced again server-side — this only stops the accident, not a crafted request.
+   */
+  lockedAttachmentFileIds?: number[];
+
+  /**
+   * Replaces `emailDraftsApi.sendDraft` for this composer. The setup-progress flow passes its own
+   * endpoint, which re-checks the visit's host and stage; callers that omit it keep the generic send.
+   */
+  sendDraftOverride?: (draftId: number) => Promise<{ success: boolean; message?: string }>;
+
+  /**
+   * Regenerates the locked attachment from current data and returns its new identity. When supplied,
+   * the composer offers a "tạo lại" control next to it. Only the file changes — recipients, subject
+   * and body are the author's and are never rewritten by this.
+   */
+  onRefreshRequiredAttachment?: () => Promise<{ fileId: number; name: string; generatedAt?: string }>;
+
+  /** Notices to show above the form (a missing guest address, a re-opened draft). Display only. */
+  notices?: string[];
 }
 
 const QUILL_MODULES_TOOLBAR = [
@@ -143,6 +179,8 @@ export function EmailComposeModal({
   open, onClose, onSent, pushToast,
   relatedType, relatedId, emailTemplateId,
   initialSubject = '', initialBodyHtml = '', initialRecipients = '', initialDraftId = null,
+  lockedTemplate = false, contextTitle, lockedAttachmentFileIds, sendDraftOverride,
+  onRefreshRequiredAttachment, notices,
 }: Props) {
   const [envelope, setEnvelope] = useState<RecipientEnvelope>(() => seedEnvelopeFromString(initialRecipients));
   // CC/BCC start hidden but their data outlives the toggle — collapsing is a view concern, and a
@@ -179,6 +217,15 @@ export function EmailComposeModal({
   const [templates, setTemplates] = useState<{ emailTemplateId: number; name: string; templateCode?: string }[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(emailTemplateId || null);
   const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
+  const [refreshingAttachment, setRefreshingAttachment] = useState(false);
+
+  /**
+   * File ids the author may not remove. Held in state rather than read from the prop directly because
+   * regenerating a locked attachment gives it a NEW file id — keeping the prop as the source would
+   * leave the fresh file unprotected and the replaced one protected.
+   */
+  const [lockedFileIds, setLockedFileIds] = useState<number[]>(lockedAttachmentFileIds ?? []);
+  const isLocked = useCallback((fileId: number) => lockedFileIds.includes(fileId), [lockedFileIds]);
 
   // The ceiling comes from the server (EmailRecipientOptions). It is never assumed: when the request
   // fails the counter says so instead of showing a made-up denominator.
@@ -217,6 +264,7 @@ export function EmailComposeModal({
     setSavedAt(null);
     setShowPreview(false);
     setSelectedTemplateId(emailTemplateId || null);
+    setLockedFileIds(lockedAttachmentFileIds ?? []);
     inlineMapRef.current = new Map();
     dirtyRef.current = false;
     
@@ -445,6 +493,9 @@ export function EmailComposeModal({
   }, [pushToast, scheduleSave]);
 
   const removeAttachment = (fileId: number) => {
+    // Belt and braces: the delete button is not rendered for a locked file, but the guard means a
+    // future call site cannot drop the mandatory attachment by going through this function.
+    if (isLocked(fileId)) return;
     setConfirmState({
       isOpen: true,
       title: 'Xóa tệp đính kèm',
@@ -514,7 +565,11 @@ export function EmailComposeModal({
       } else {
         await emailDraftsApi.updateDraft(id, payload);
       }
-      const res = await emailDraftsApi.sendDraft(id!);
+      // A caller that owns extra send-time rules supplies its own endpoint; everyone else keeps the
+      // generic one. The draft is finalised identically either way — only the dispatcher differs.
+      const res = sendDraftOverride
+        ? await sendDraftOverride(id!)
+        : await emailDraftsApi.sendDraft(id!);
       pushToast?.(res.success ? 'success' : 'warning',
         res.success
           ? `Đã gửi email tới ${recipientTotal} người nhận.`
@@ -531,7 +586,29 @@ export function EmailComposeModal({
     } finally {
       setSending(false);
     }
-  }, [sending, envelope, subject, buildPayload, validateRecipients, mapServerError, pushToast, onSent, onClose]);
+  }, [sending, envelope, subject, buildPayload, validateRecipients, mapServerError, pushToast, onSent, onClose, sendDraftOverride]);
+
+  /**
+   * Swaps the locked attachment for a freshly generated one. The new file id takes over the lock so
+   * the replacement is protected and the replaced one is not; nothing else about the draft is touched.
+   */
+  const handleRefreshRequiredAttachment = useCallback(async () => {
+    if (!onRefreshRequiredAttachment || refreshingAttachment) return;
+    setRefreshingAttachment(true);
+    try {
+      const fresh = await onRefreshRequiredAttachment();
+      setAttachments(prev => [
+        { fileId: fresh.fileId, name: fresh.name, size: null, mimeType: 'application/pdf' },
+        ...prev.filter(a => !isLocked(a.fileId)),
+      ]);
+      setLockedFileIds([fresh.fileId]);
+      pushToast?.('success', 'Đã tạo lại tệp đính kèm từ dữ liệu mới nhất.');
+    } catch (e: any) {
+      pushToast?.('error', e?.response?.data?.message || 'Không tạo lại được tệp đính kèm. Vui lòng thử lại.');
+    } finally {
+      setRefreshingAttachment(false);
+    }
+  }, [onRefreshRequiredAttachment, refreshingAttachment, isLocked, pushToast]);
 
   const handleDiscard = useCallback(async () => {
     setConfirmState({
@@ -574,7 +651,7 @@ export function EmailComposeModal({
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <h3 className="flex items-center gap-2 text-base font-bold text-[#004c91]">
-            <Send className="w-5 h-5" /> Soạn email
+            <Send className="w-5 h-5" /> {contextTitle || 'Soạn email'}
           </h3>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400">
@@ -625,9 +702,16 @@ export function EmailComposeModal({
                   <label className="text-xs font-bold text-gray-500 uppercase">Tệp đính kèm ({attachments.length}):</label>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {attachments.map(a => (
-                      <span key={a.fileId} className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs">
+                      <span key={a.fileId}
+                        data-testid={isLocked(a.fileId) ? 'preview-locked-attachment' : 'preview-attachment'}
+                        className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs">
                         {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
                         <span className="min-w-0 flex-1 block truncate font-medium text-gray-700">{a.name}</span>
+                        {isLocked(a.fileId) && (
+                          <span className="shrink-0 rounded bg-[#004c91]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#004c91]">
+                            Bắt buộc
+                          </span>
+                        )}
                         {a.size != null && <span className="text-[10px] text-gray-400 shrink-0">{formatBytes(a.size)}</span>}
                       </span>
                     ))}
@@ -675,8 +759,19 @@ export function EmailComposeModal({
         ) : (
           <>
             <div className="space-y-4 overflow-y-auto px-6 py-4">
-              {/* Template Select */}
-              <div>
+              {/* Caller-supplied notices (a missing guest address, a re-opened draft). Display only —
+                  what makes the draft sendable is its TO group, not the absence of these. */}
+              {notices && notices.length > 0 && (
+                <div data-testid="compose-notices" className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+                  {notices.map((notice, i) => (
+                    <p key={i} className="text-xs font-medium text-amber-800">{notice}</p>
+                  ))}
+                </div>
+              )}
+
+              {/* Template Select — hidden when the caller opened the composer ON a template whose
+                  policy the backend already validated this draft against. */}
+              <div className={lockedTemplate ? 'hidden' : undefined}>
                 <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Chọn mẫu email</label>
                 <select 
                   value={selectedTemplateId || ''}
@@ -847,25 +942,49 @@ export function EmailComposeModal({
               <div>
                 <div className="mb-1 flex items-center justify-between">
                   <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Tệp đính kèm</label>
-                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50">
-                    <Paperclip className="w-3.5 h-3.5" /> Thêm tệp
-                    <input type="file" multiple className="hidden" onChange={(e) => { void onPickFiles(e.target.files); e.target.value = ''; }} />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    {onRefreshRequiredAttachment && (
+                      <button
+                        type="button"
+                        data-testid="refresh-required-attachment"
+                        onClick={() => { void handleRefreshRequiredAttachment(); }}
+                        disabled={refreshingAttachment}
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50 disabled:opacity-60"
+                      >
+                        {refreshingAttachment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        Tạo lại báo cáo
+                      </button>
+                    )}
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-[#004c91] hover:bg-blue-50">
+                      <Paperclip className="w-3.5 h-3.5" /> Thêm tệp
+                      <input type="file" multiple className="hidden" onChange={(e) => { void onPickFiles(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  </div>
                 </div>
                 {attachments.length === 0 ? (
                   <p className="text-xs text-gray-400">Chưa có tệp đính kèm.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {attachments.map((a) => (
-                      <span key={a.fileId} className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs">
+                      <span key={a.fileId}
+                        data-testid={isLocked(a.fileId) ? 'locked-attachment' : 'attachment'}
+                        className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs">
                         {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-semibold text-gray-700">{a.name}</span>
                           {a.size != null && <span className="block text-[10px] text-gray-400">{formatBytes(a.size)}</span>}
                         </span>
-                        <button type="button" onClick={() => removeAttachment(a.fileId)} className="shrink-0 text-gray-400 hover:text-red-500" title="Xoá">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {/* A locked attachment shows WHY it has no delete button. Hiding the control
+                            without saying anything reads as a rendering bug. */}
+                        {isLocked(a.fileId) ? (
+                          <span className="shrink-0 rounded bg-[#004c91]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#004c91]">
+                            Bắt buộc
+                          </span>
+                        ) : (
+                          <button type="button" onClick={() => removeAttachment(a.fileId)} className="shrink-0 text-gray-400 hover:text-red-500" title="Xoá">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </span>
                     ))}
                   </div>

@@ -269,6 +269,38 @@ export interface VisitProcessPermission {
   canStartVisit: boolean;     // ASSIGNED/BEFORE_VISIT → DURING_VISIT
   canCompleteVisit: boolean;  // DURING_VISIT → AFTER_VISIT
   canCloseVisit: boolean;     // AFTER_VISIT → CLOSED
+
+  /**
+   * Whether to offer "Gửi cập nhật chuẩn bị". Current host only, and only while the preparation tab
+   * is open — never derived from roleCode here: a Staff Leader and HO read the same page and can pull
+   * the same report, and only the backend knows that writing to the guest is a different act.
+   */
+  canSendSetupProgressEmail: boolean;
+}
+
+/** Response of preparing (or re-opening) the Host's setup-progress email draft. */
+export interface SetupProgressEmailDraft {
+  draftId: number;
+  /** True when an unsent draft was re-opened instead of a second one being created. */
+  reusedExistingDraft: boolean;
+  /** vi | en — the language BOTH the message and the attached report were produced in. */
+  languageCode: string;
+  /** The mandatory Schedule Report; the composer marks this attachment undeletable. */
+  reportFileId: number;
+  reportFileName: string;
+  /** Vietnam wall-clock moment the attached report was rendered from live data. */
+  reportGeneratedAt: string;
+  /** Informational — a missing guest address, a fallback recipient. Not a send gate. */
+  warnings: string[];
+}
+
+/** Response of regenerating the report on an existing setup-progress draft. */
+export interface SetupProgressEmailReport {
+  draftId: number;
+  reportFileId: number;
+  reportFileName: string;
+  reportGeneratedAt: string;
+  languageCode: string;
 }
 
 /** One agenda (lịch trình) item of a campus instance. */

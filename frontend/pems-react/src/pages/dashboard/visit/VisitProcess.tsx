@@ -29,7 +29,8 @@ import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
+import type { VisitProcessPermission, VisitProcessDetail, SetupProgressEmailDraft } from '../../../features/delegations/types/delegations.types';
+import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
 import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
@@ -304,6 +305,38 @@ export function VisitProcess() {
     link.click();
     link.remove();
   };
+
+  // ── "Gửi cập nhật chuẩn bị" (Host only) ────────────────────────────────────
+  // The backend builds the whole draft: rendered message, default recipients and the mandatory
+  // Schedule Report. This screen only asks for a language, opens the composer on the draft it gets
+  // back, and lets the Host edit everything before previewing and sending. The button is rendered
+  // from the backend flag alone — never from roleCode, because Staff Leader and HO read this same
+  // page and can pull the same report without being allowed to write to the guest as its host.
+  const [setupEmail, setSetupEmail] = useState<{
+    picking: boolean;
+    preparing: boolean;
+    error: string | null;
+    draft: SetupProgressEmailDraft | null;
+  }>({ picking: false, preparing: false, error: null, draft: null });
+
+  const prepareSetupProgressEmail = async (language: 'vi' | 'en', reuseExistingDraft = true) => {
+    if (!perm || setupEmail.preparing) return;
+    setSetupEmail(prev => ({ ...prev, preparing: true, error: null }));
+    try {
+      const draft = await delegationsApi.prepareSetupProgressEmailDraft(
+        perm.visitRequestId, perm.visitInstanceId, language, reuseExistingDraft);
+      setSetupEmail({ picking: false, preparing: false, error: null, draft });
+    } catch (e: any) {
+      setSetupEmail(prev => ({
+        ...prev,
+        preparing: false,
+        error: apiErrorMessage(e, 'Không chuẩn bị được email cập nhật. Vui lòng thử lại sau.'),
+      }));
+    }
+  };
+
+  const closeSetupEmail = () =>
+    setSetupEmail({ picking: false, preparing: false, error: null, draft: null });
 
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
   // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
@@ -1584,8 +1617,10 @@ export function VisitProcess() {
         </div>
       )}
 
+      {/* Action row — deliberately OUTSIDE the collapsible panels above: a send button that
+          disappears when the Host folds a section is a button they cannot find. */}
       {perm && (
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
           <button
             type="button"
             disabled={scheduleReportModal.loading}
@@ -1595,6 +1630,19 @@ export function VisitProcess() {
             {scheduleReportModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {scheduleReportModal.loading ? 'Đang tạo báo cáo...' : 'Báo cáo Lịch trình'}
           </button>
+
+          {perm.canSendSetupProgressEmail && (
+            <button
+              type="button"
+              data-testid="send-setup-progress-email"
+              disabled={setupEmail.preparing}
+              onClick={() => setSetupEmail(prev => ({ ...prev, picking: true, error: null }))}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#013565] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {setupEmail.preparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              {setupEmail.preparing ? 'Đang chuẩn bị email...' : 'Gửi cập nhật chuẩn bị'}
+            </button>
+          )}
         </div>
       )}
 
@@ -1841,6 +1889,87 @@ export function VisitProcess() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* "Gửi cập nhật chuẩn bị" — step 1: the language, asked BEFORE the draft is built.
+          The template and the attached report must be produced in the same language, and both are
+          rendered server-side at prepare time, so this cannot be a toggle inside the composer
+          without re-rendering over whatever the Host has already written. */}
+      {setupEmail.picking && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4" data-testid="setup-email-language">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeSetupEmail} />
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h3 className="flex items-center gap-2 text-base font-bold text-[#004c91]">
+                <Mail className="w-5 h-5" /> Gửi cập nhật chuẩn bị
+              </h3>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-gray-600">
+                Chọn ngôn ngữ cho nội dung email và Báo cáo Lịch trình đính kèm. Sau bước này anh/chị
+                vẫn sửa được người nhận, tiêu đề và nội dung trước khi gửi.
+              </p>
+              {setupEmail.error && (
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {setupEmail.error}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={setupEmail.preparing}
+                  onClick={() => { void prepareSetupProgressEmail('vi'); }}
+                  className="flex-1 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#013565] disabled:opacity-60"
+                >
+                  Tiếng Việt
+                </button>
+                <button
+                  type="button"
+                  disabled={setupEmail.preparing}
+                  onClick={() => { void prepareSetupProgressEmail('en'); }}
+                  className="flex-1 rounded-xl border border-[#004c91] bg-white px-4 py-2.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-60"
+                >
+                  English
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end border-t border-gray-100 px-6 py-4">
+              <button type="button" onClick={closeSetupEmail}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100">
+                Huỷ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: the shared composer, opened on the draft the backend just built. Keyed by draft id
+          so a second draft never inherits the first one's form state. */}
+      {perm && setupEmail.draft && (
+        <EmailComposeModal
+          key={`setup-progress-${setupEmail.draft.draftId}`}
+          open
+          onClose={closeSetupEmail}
+          onSent={closeSetupEmail}
+          pushToast={pushToast}
+          contextTitle="Gửi cập nhật chuẩn bị"
+          initialDraftId={setupEmail.draft.draftId}
+          relatedType="VISIT_INSTANCE"
+          relatedId={Number(perm.visitInstanceId)}
+          lockedTemplate
+          lockedAttachmentFileIds={[setupEmail.draft.reportFileId]}
+          notices={setupEmail.draft.warnings}
+          onRefreshRequiredAttachment={async () => {
+            const fresh = await delegationsApi.refreshSetupProgressEmailReport(
+              perm.visitRequestId, perm.visitInstanceId, setupEmail.draft!.draftId);
+            setSetupEmail(prev => prev.draft
+              ? { ...prev, draft: { ...prev.draft, reportFileId: fresh.reportFileId, reportFileName: fresh.reportFileName, reportGeneratedAt: fresh.reportGeneratedAt } }
+              : prev);
+            return { fileId: fresh.reportFileId, name: fresh.reportFileName, generatedAt: fresh.reportGeneratedAt };
+          }}
+          sendDraftOverride={(draftId) =>
+            delegationsApi.sendSetupProgressEmailDraft(perm.visitRequestId, perm.visitInstanceId, draftId)}
+        />
+      )}
 
       {/* Toasts (top-right) */}
       {toasts.length > 0 && (
