@@ -32,7 +32,10 @@
     "ordinal": "STT",
     "count": "{{count}} người",
     "noVisitors": "Chưa có danh sách khách.",
-    "noSupport": "Không có nhân sự hỗ trợ đi kèm."
+    "noSupport": "Không có nhân sự hỗ trợ đi kèm.",
+    "noSupportTeam": "Chưa có nhân sự hỗ trợ.",
+    "removeGuest": "Xóa khách",
+    "removeSupport": "Xóa nhân sự hỗ trợ"
   },
   "card": {
     "cardN": "Cơ sở {{n}}",
@@ -42,7 +45,7 @@
     "removeRow": "Xóa dòng",
     "copyFromLabel": "Sao chép nội dung từ:",
     "copyFromPlaceholder": "Chọn cơ sở nguồn…",
-    "applyToAll": "Áp dụng nội dung này cho các cơ sở còn lại…",
+    "applyToAll": "Áp dụng cho cơ sở khác",
     "copySuccess": "Đã chép dữ liệu thành công",
     "applyAllSuccess": "Đã áp dụng cho các cơ sở còn lại",
     "addCampusSuccess": "Đã thêm thẻ cơ sở",
@@ -250,6 +253,7 @@
   },
   "amend": {
     "open": "Đề xuất thay đổi",
+    "openUpdate": "Cập nhật thông tin",
     "title": "Đề xuất thay đổi — {{campus}}",
     "activeStaysNote": "Nếu bạn là Staff, đề xuất sẽ tự động được duyệt và áp dụng ngay. Nếu bạn là Khách, nội dung chỉ thay đổi sau khi Host duyệt.",
     "reason": "Lý do đề xuất",
@@ -375,6 +379,8 @@
   },
   "status": {
     "unknown": "Không xác định",
+    "complete": "Đã đủ thông tin",
+    "incomplete": "Chưa hoàn tất",
     "instance": {
       "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
       "ASSIGNED": "Đã duyệt và phân công người phụ trách",

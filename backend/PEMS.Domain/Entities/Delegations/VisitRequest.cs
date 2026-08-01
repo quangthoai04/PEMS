@@ -66,7 +66,7 @@ public class VisitRequest
     public string RegistrantJobTitle { get; set; } = null!;
 
     [Column("registrant_phone")]
-    public string RegistrantPhone { get; set; } = null!;
+    public string? RegistrantPhone { get; set; }
 
     [Column("registrant_email")]
     public string RegistrantEmail { get; set; } = null!;
@@ -89,7 +89,7 @@ public class VisitRequest
     public string ContactPersonOrganization { get; set; } = null!;
 
     [Column("contact_person_phone")]
-    public string ContactPersonPhone { get; set; } = null!;
+    public string? ContactPersonPhone { get; set; }
 
     [Column("contact_person_email")]
     public string ContactPersonEmail { get; set; } = null!;

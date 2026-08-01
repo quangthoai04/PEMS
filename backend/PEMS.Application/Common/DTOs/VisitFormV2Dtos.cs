@@ -15,7 +15,7 @@ public record RegistrantInputV2(
     string Nationality,
     string Organization,
     string JobTitle,
-    string Phone,
+    string? Phone,
     string Email);
 
 /// <summary>

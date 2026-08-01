@@ -28,7 +28,7 @@ public record SupportTeamMemberDto(
 public record ContactPointDto(
     string FullName,
     string Organization,
-    string Phone,
+    string? Phone,
     string Email);
 
 /// <summary>
@@ -41,7 +41,7 @@ public record VisitRequestFormData(
     string RegistrantNationality,
     string RegistrantOrganization,
     string RegistrantPosition,
-    string RegistrantPhone,
+    string? RegistrantPhone,
     string RegistrantEmail,
 
     // ── Visit info ───────────────────────────────────────

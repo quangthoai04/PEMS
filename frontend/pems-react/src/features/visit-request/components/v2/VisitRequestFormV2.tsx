@@ -271,7 +271,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   }, [isSelfRegistrant]);
 
   return (
-    <form ref={formRef} id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-2">
+    <form ref={formRef} id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-6">
       {/* ── Restore Draft Modal ── */}
       <AnimatePresence>
         {vm.draftAvailableAt !== null && (
@@ -407,7 +407,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             data-testid="v2-registrant-use-me"
             disabled={autofillState === 'loading'}
             onClick={() => void fillRegistrantFromProfile()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {autofillState === 'loading'
               ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -438,13 +438,13 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             </span>
           </div>
         )}
-        <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
-          <FormField label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
+        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
             <input data-testid="v2-registrant-fullName" {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
           </FormField>
           {/* Free-solo partner/organization search: picking a known partner links partnerId,
               typing anything else keeps the text as a manually entered organization. */}
-          <FormField label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-8" label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
             <Controller
               name="registerInfo.organization"
               control={form.control}
@@ -463,10 +463,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
             <input data-testid="v2-registrant-jobTitle" {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
           </FormField>
-          <FormField label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
             <Controller
               name="registerInfo.nationality"
               control={form.control}
@@ -481,7 +481,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:card.phone')} error={regErr?.phone?.message} showValidIcon={false}>
             <PhoneField
               field={register('registerInfo.phone')}
               hasError={!!regErr?.phone}
@@ -489,7 +489,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               testId="v2-registrant-phone"
             />
           </FormField>
-          <FormField label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
             <input type="email" data-testid="v2-registrant-email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
           </FormField>
         </div>
@@ -504,7 +504,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           <button
             type="button"
             data-testid="v2-contact-same-as-registrant"
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             // An internal member of staff can never be the delegation's contact — the backend rejects it
             // with INTERNAL_REGISTRANT_CANNOT_BE_CONTACT. Copying their own details in is therefore a dead
             // end, so the affordance is removed instead of letting them fill the block and fail on submit.
@@ -520,14 +520,14 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             {t('visitRequestV2:sections.contactInternalNotAllowed')}
           </p>
         )}
-        <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
-          <FormField label={t('visitRequestV2:person.fullName')} required error={cpErr?.fullName?.message} showValidIcon={false}>
+        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.fullName')} required error={cpErr?.fullName?.message} showValidIcon={false}>
             <input {...register('contactPoint.fullName')} className={inputCls(!!cpErr?.fullName, false, false)} />
           </FormField>
-          <FormField label={t('visitRequestV2:person.organization')} required error={cpErr?.organization?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.organization')} required error={cpErr?.organization?.message} showValidIcon={false}>
             <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
           </FormField>
-          <FormField label={t('visitRequestV2:card.phone')} required error={cpErr?.phone?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:card.phone')} error={cpErr?.phone?.message} showValidIcon={false}>
             <PhoneField
               field={register('contactPoint.phone')}
               hasError={!!cpErr?.phone}
@@ -535,7 +535,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               testId="v2-contact-phone"
             />
           </FormField>
-          <FormField label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false}>
             <input type="email" {...register('contactPoint.email')} className={inputCls(!!cpErr?.email, false, false)} />
           </FormField>
         </div>
@@ -613,18 +613,21 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       {submitBar(
         <>
           {vm.submitError && (
-            <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+            <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{vm.submitError}</span>
             </div>
           )}
-          <div className="flex justify-end pt-4">
+          <div className="flex flex-col-reverse items-center justify-between gap-4 pt-2 sm:flex-row sm:pt-4">
+            <p className="text-xs font-medium text-slate-500">
+              <span className="font-bold text-red-500">*</span> {t('visitRequestV2:schedule.rulesHint', { hours: vm.minAdvanceHours, minutes: 30 })}
+            </p>
             <button
               type="submit"
               form="visit-request-v2-form"
               data-testid="v2-submit"
               disabled={vm.isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow hover:bg-[#e0631a] disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/20 transition-colors hover:bg-[#e0631a] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {vm.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {/* The label states the contract the form is actually on: a delegated submission ends in

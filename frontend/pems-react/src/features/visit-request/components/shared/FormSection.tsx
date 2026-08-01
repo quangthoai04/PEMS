@@ -30,7 +30,7 @@ export const FormSection: React.FC<FormSectionProps> = ({
   <section
     id={id}
     aria-labelledby={`${id}-title`}
-    className={`scroll-mt-24 border-b border-slate-200 py-7 first:pt-0 last:border-b-0 last:pb-0 ${className}`}
+    className={`scroll-mt-24 rounded-2xl bg-white p-5 shadow-sm border border-slate-100 sm:p-6 ${className}`}
   >
     <div className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
       <div className="min-w-0 flex items-center">

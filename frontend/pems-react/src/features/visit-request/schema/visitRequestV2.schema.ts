@@ -76,9 +76,15 @@ const buildPhoneSchema = (t: ValidationTranslator, fieldKey: string) => {
   const label = t(`fields.${fieldKey}`);
   return z
     .string()
-    .trim()
-    .min(1, t('requiredField', { field: label }))
-    .refine(isValidPhone, { message: t('phoneInvalidField', { field: label }) });
+    .nullish()
+    .transform((val) => {
+      const trimmed = val?.trim();
+      return trimmed ? trimmed : null;
+    })
+    .refine((val) => {
+      if (!val) return true;
+      return isValidPhone(val);
+    }, { message: t('phoneInvalidField', { field: label }) });
 };
 
 const buildEmailSchema = (t: ValidationTranslator, fieldKey: string) => {

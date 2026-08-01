@@ -12,19 +12,19 @@ interface OrgOption {
 const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<OrgOption> => ({
   control: (base, state) => ({
     ...base,
-    borderRadius: isCell ? '0' : '0.375rem',
-    borderColor: isCell ? (hasError ? '#fca5a5' : 'transparent') : (hasError ? '#f87171' : state.isFocused ? '#f37021' : 'transparent'),
-    boxShadow: isCell ? 'none' : (state.isFocused ? `0 0 0 1px ${hasError ? '#f87171' : '#f37021'}` : 'none'),
-    '&:hover': { borderColor: isCell ? (hasError ? '#f87171' : '#bfdbfe') : (hasError ? '#f87171' : '#f37021') },
-    minHeight: isCell ? '44px' : '36px',
+    borderRadius: isCell ? '0' : '0.75rem',
+    borderColor: isCell ? (hasError ? '#fca5a5' : 'transparent') : (hasError ? '#f87171' : state.isFocused ? '#004c91' : '#cbd5e1'),
+    boxShadow: isCell ? 'none' : (state.isFocused ? `0 0 0 1px ${hasError ? '#f87171' : '#004c91'}` : 'none'),
+    '&:hover': { borderColor: isCell ? (hasError ? '#f87171' : '#bfdbfe') : (hasError ? '#f87171' : state.isFocused ? '#004c91' : '#94a3b8') },
+    minHeight: isCell ? '44px' : '44px',
     // No fixed height: a long organization name must WRAP and grow the row rather than be
     // clipped to an ellipsis the user cannot read back (plan §21.3).
     height: 'auto',
     fontSize: '0.875rem',
     fontWeight: isCell ? '500' : '400',
-    backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : 'transparent',
+    backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : (state.isDisabled ? '#f1f5f9' : 'white'),
     padding: isCell ? '0 4px' : '0',
-    cursor: 'text',
+    cursor: state.isDisabled ? 'not-allowed' : 'text',
   }),
   valueContainer: (base) => ({
     ...base,

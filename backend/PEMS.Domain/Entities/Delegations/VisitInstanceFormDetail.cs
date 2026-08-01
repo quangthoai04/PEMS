@@ -44,7 +44,7 @@ public class VisitInstanceFormDetail
     public string? OperationalContactOrganization { get; set; }
 
     [Column("operational_contact_phone")]
-    public string OperationalContactPhone { get; set; } = null!;
+    public string? OperationalContactPhone { get; set; }
 
     [Column("operational_contact_email")]
     public string? OperationalContactEmail { get; set; }
