@@ -93,3 +93,7 @@ docs/ChangeSauHopChiQUyen/sauhop_13-07/PEMS_PER_CAMPUS_V2_REMAINING_PHASES_D4_TO
 docs/ChangeSauHopChiQUyen/sauhop_13-07/PEMS_PHASE_I_CAREFUL_IMPLEMENTATION_PROMPT.md
 docs/ChangeSauHopChiQUyen/sauhop_13-07/PEMS_PHASE_I_DRILL_AND_FINAL_AUDIT_PROMPT.md
 docs/ChangeSauHopChiQUyen/sauhop_13-07/gemin/PEMS_PHASE_I_CORRECTIVE_IMPLEMENTATION_PROMPT.md
+
+# Test build output. The normal bin/ is held open by a running dev server, so the suites are
+# built to an in-repo .testout/ instead (FindRepositoryRoot must still resolve from the binary).
+.testout/
