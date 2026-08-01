@@ -266,7 +266,9 @@ public sealed class EmailTemplateContractTests
 
             foreach (var name in contract.AllowedVariables)
             {
-                if (name == EmailTrustedBlocks.ActionBlock) continue;
+                // No trusted block has a sample: the preview handler supplies them as inert markup,
+                // and passing one as a variable is refused outright.
+                if (EmailTrustedBlocks.All.Contains(name)) continue;
                 Assert.True(sample.ContainsKey(name),
                     $"{code}: preview has no sample for {{{{{name}}}}}, so a preview would leave it unresolved.");
             }

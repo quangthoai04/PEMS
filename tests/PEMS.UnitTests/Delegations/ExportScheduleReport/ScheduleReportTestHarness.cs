@@ -70,7 +70,8 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceAmendmentChange>();
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
-        modelBuilder.Ignore<VisitLogisticsItem>();
+        // Mapped, not ignored: the setup-progress email lists preparation items, so the snapshot
+        // builder reads this table and the "no internal field leaks" tests need real rows to check.
         modelBuilder.Ignore<VisitLogisticsItemHandover>();
         modelBuilder.Ignore<VisitLogisticsAssignmentAttempt>();
         modelBuilder.Ignore<VisitInstanceReminderSetting>();
@@ -160,7 +161,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
     public DbSet<Document> Documents => Set<Document>();
-    DbSet<VisitInstanceFormDetail> IApplicationDbContext.VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
+    public DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
     DbSet<VisitRequestIdentityChange> IApplicationDbContext.VisitRequestIdentityChanges => Set<VisitRequestIdentityChange>();
     DbSet<VisitRequestIdentityChangeEvent> IApplicationDbContext.VisitRequestIdentityChangeEvents => Set<VisitRequestIdentityChangeEvent>();
     DbSet<VisitInstanceAmendment> IApplicationDbContext.VisitInstanceAmendments => Set<VisitInstanceAmendment>();
@@ -169,7 +170,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
     DbSet<VisitRequestPendingForm> IApplicationDbContext.VisitRequestPendingForms => Set<VisitRequestPendingForm>();
     DbSet<VisitRequestFingerprintGuard> IApplicationDbContext.VisitRequestFingerprintGuards => Set<VisitRequestFingerprintGuard>();
-    DbSet<VisitLogisticsItem> IApplicationDbContext.VisitLogisticsItems => Set<VisitLogisticsItem>();
+    public DbSet<VisitLogisticsItem> VisitLogisticsItems => Set<VisitLogisticsItem>();
     DbSet<VisitLogisticsItemHandover> IApplicationDbContext.VisitLogisticsItemHandovers => Set<VisitLogisticsItemHandover>();
     DbSet<VisitLogisticsAssignmentAttempt> IApplicationDbContext.VisitLogisticsAssignmentAttempts => Set<VisitLogisticsAssignmentAttempt>();
     DbSet<VisitInstanceReminderSetting> IApplicationDbContext.VisitInstanceReminderSettings => Set<VisitInstanceReminderSetting>();

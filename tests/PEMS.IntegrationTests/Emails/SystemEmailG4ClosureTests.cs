@@ -175,11 +175,16 @@ public sealed class SystemEmailG4ClosureTests
         {
             var variables = template.DeclaredVariables.ToDictionary(
                 v => v, v => $"[{v}]", StringComparer.Ordinal);
-            var trusted = new Dictionary<string, string>
-            {
-                [EmailTrustedBlocks.ActionBlock] =
-                    EmailComposition.ActionBlockStart + "<div>block</div>" + EmailComposition.ActionBlockEnd,
-            };
+            // Every trusted block, for every template. Which blocks a template writes is content the
+            // catalog owns and this test does not track; supplying them all keeps "no placeholder left
+            // behind" a statement about the CATALOG rather than about this dictionary being up to date.
+            // A block a template does not use is simply never substituted.
+            var trusted = EmailTrustedBlocks.All.ToDictionary(
+                name => name,
+                name => name == EmailTrustedBlocks.ActionBlock
+                    ? EmailComposition.ActionBlockStart + "<div>block</div>" + EmailComposition.ActionBlockEnd
+                    : "<div>block</div>",
+                StringComparer.Ordinal);
 
             var rendered = await renderer.RenderAsync(
                 new EmailRenderRequest(template.TemplateCode, language, variables, trusted));

@@ -239,8 +239,16 @@ public static class CanonicalSqlScript
     /// templates, so the canonical seed and <c>email-template-defaults.json</c> still differ in prose
     /// for those. That is a content decision per row rather than a contract break — they render, they
     /// send, and only "restore to default" would show the difference.
+    ///
+    /// (2026-08-02, ninth bump) SEED TEXT ONLY, one template. The VI and EN bodies of
+    /// VISIT_SETUP_PROGRESS_UPDATE gained <c>{{setupSummaryBlock}}</c> — the placeholder for the setup
+    /// tables (overview, guests, participants, schedule with the party in charge, preparation status)
+    /// that the backend builds and injects at render time. It is a TRUSTED BLOCK, not a variable: it is
+    /// absent from <c>variables_text</c> on purpose, so the 31-code / identical-variable-set contract
+    /// this file records above still holds in both directions and needed no change. No DDL, no trigger,
+    /// no row added or removed; ExpectedBaseTableCount (82) and ExpectedTriggerCount (32) are unchanged.
     public const string ExpectedSha256 =
-        "e24aa867054bba596cce56d3236ab87b498d598af4df081d81fbdc88324a0e59";
+        "e11763034737867053db1e939ceb3b3b48200444d7fa21c74e901de39ce67725";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

@@ -1,4 +1,5 @@
 using System.Linq;
+using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using Xunit;
@@ -100,7 +101,76 @@ public class VisitSetupProgressTemplateTests
 
         Assert.Equal(
             Template.DeclaredVariables.OrderBy(v => v).ToArray(),
-            used.OrderBy(v => v).ToArray());
+            used.Where(v => !EmailTrustedBlocks.All.Contains(v)).OrderBy(v => v).ToArray());
+    }
+
+    /// <summary>
+    /// The tables are the message. Everything the template itself writes is a covering sentence, so a
+    /// body without this placeholder is an email announcing an update that contains no update — and
+    /// because a trusted block is not a variable, nothing at send time would notice.
+    /// </summary>
+    [Fact]
+    public void The_shipped_default_carries_the_setup_summary_block_in_both_languages()
+    {
+        var shipped = EmailTemplateDefaults.For(SystemEmailTemplates.VisitSetupProgressUpdate)!;
+
+        Assert.Contains("{{setupSummaryBlock}}", shipped.BodyVi);
+        Assert.Contains("{{setupSummaryBlock}}", shipped.BodyEn);
+        // A trusted block in a subject would be a table in a subject line.
+        Assert.DoesNotContain("{{setupSummaryBlock}}", shipped.SubjectVi);
+        Assert.DoesNotContain("{{setupSummaryBlock}}", shipped.SubjectEn);
+    }
+
+    [Fact]
+    public void The_contract_requires_the_setup_summary_block_so_an_operator_cannot_delete_the_tables()
+    {
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitSetupProgressUpdate)!;
+
+        Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, contract.AllowedVariables);
+        Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, contract.RequiredVariables);
+
+        // It is the backend's block, so the editor must not offer it as a variable to fill in, and the
+        // preview must not pass it as one — SystemEmailContent rejects a caller-supplied trusted block.
+        Assert.DoesNotContain(contract.Variables, v => v.Name == EmailTrustedBlocks.SetupSummaryBlock);
+        Assert.DoesNotContain(
+            EmailTrustedBlocks.SetupSummaryBlock,
+            EmailTemplateContracts.PreviewSample(SystemEmailTemplates.VisitSetupProgressUpdate, "vi").Keys);
+    }
+
+    /// <summary>
+    /// A trusted block is allowed in the body but must never appear in <c>variables_text</c>, which is
+    /// the operator-facing list of fields they may fill in. Both template writers derive that column
+    /// from the contract's allowed set, so admitting a new block to that set silently added it to the
+    /// column — advertising a field nobody may supply, and tripping the E4 check in 03_verify.sql the
+    /// next time the catalog was verified.
+    /// </summary>
+    [Fact]
+    public void The_block_is_never_written_into_the_operator_facing_variable_list()
+    {
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitSetupProgressUpdate)!;
+
+        // This is the exact expression both the update and restore handlers use to build the column.
+        var variablesText = string.Join(",", contract.AllowedVariables
+            .Where(v => !EmailTrustedBlocks.All.Contains(v)));
+
+        Assert.DoesNotContain("setupSummaryBlock", variablesText);
+        Assert.DoesNotContain("actionBlock", variablesText);
+        Assert.Equal("campusName,delegationName,hostName,plannedEnd,plannedStart",
+            string.Join(",", variablesText.Split(',').OrderBy(v => v, StringComparer.Ordinal)));
+    }
+
+    [Fact]
+    public void Removing_the_block_from_the_body_is_reported_as_an_error()
+    {
+        var shipped = EmailTemplateDefaults.For(SystemEmailTemplates.VisitSetupProgressUpdate)!;
+        var stripped = shipped.BodyVi.Replace("{{setupSummaryBlock}}", string.Empty);
+
+        var issues = EmailTemplateContentValidator.Validate(
+            EmailTemplateContracts.For(SystemEmailTemplates.VisitSetupProgressUpdate)!,
+            shipped.SubjectVi, stripped, shipped.SubjectEn, shipped.BodyEn);
+
+        Assert.Contains(issues, i =>
+            i.VariableName == EmailTrustedBlocks.SetupSummaryBlock && i.IsError);
     }
 
     [Fact]

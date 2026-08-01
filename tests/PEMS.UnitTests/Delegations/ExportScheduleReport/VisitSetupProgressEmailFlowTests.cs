@@ -60,12 +60,25 @@ public class VisitSetupProgressEmailFlowTests
             RenderCount++;
             LastLanguage = string.Equals(languageCode, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "vi";
             var suffix = LastLanguage == "en" ? "_EN" : "";
+            // Data must be carried: it is what the body's HTML tables are rendered from, and the
+            // snapshot builder refuses an artifact without it rather than issuing a second read.
             return Task.FromResult(new ScheduleReportArtifact(
                 new byte[] { 1, 2, 3 },
                 $"PEMS_Schedule_Report_VR-{instance.VisitRequestId}_20260801_1430{suffix}.pdf",
                 LastLanguage,
-                new DateTime(2026, 8, 1, 14, 30, 0)));
+                new DateTime(2026, 8, 1, 14, 30, 0))
+            {
+                Data = Report ?? new ScheduleReportDto
+                {
+                    DelegationName = "Đoàn khách kiểm thử",
+                    PlannedStartAt = instance.PlannedStartAt,
+                    PlannedEndAt = instance.PlannedEndAt,
+                },
+            });
         }
+
+        /// <summary>Lets a test drive the exact report content the HTML tables are built from.</summary>
+        public ScheduleReportDto? Report { get; set; }
 
         public ScheduleReportTestDbContext? Db { get; set; }
 
@@ -98,15 +111,24 @@ public class VisitSetupProgressEmailFlowTests
     {
         public IReadOnlyDictionary<string, string>? LastVariables { get; private set; }
         public string? LastLanguage { get; private set; }
+        public string? LastSetupBlock { get; private set; }
+        public int Calls { get; private set; }
 
         public Task<EmailRenderResult> RenderAsync(EmailRenderRequest request, CancellationToken ct = default)
         {
+            Calls++;
             LastVariables = request.Variables;
             LastLanguage = request.Language;
+            request.TrustedHtmlBlocks?.TryGetValue(EmailTrustedBlocks.SetupSummaryBlock, out var block);
+            LastSetupBlock = request.TrustedHtmlBlocks is { } b
+                && b.TryGetValue(EmailTrustedBlocks.SetupSummaryBlock, out var html) ? html : null;
+
+            // Substitutes the block the way the real renderer does, so a test can assert on the body
+            // the draft actually ends up holding.
             return Task.FromResult(new EmailRenderResult(
                 TemplateId, request.TemplateCode,
                 $"[PEMS] Cập nhật công tác chuẩn bị — {request.Variables["delegationName"]}",
-                "<p>noi dung mac dinh</p>", EmailBodyFormat.HTML, request.Language));
+                $"<p>noi dung mac dinh</p>{LastSetupBlock}", EmailBodyFormat.HTML, request.Language));
         }
     }
 
@@ -157,7 +179,8 @@ public class VisitSetupProgressEmailFlowTests
             Prepare = new PrepareVisitSetupProgressEmailDraftCommandHandler(
                 db, user, renderer, recipients, reports, formRead,
                 NullLogger<PrepareVisitSetupProgressEmailDraftCommandHandler>.Instance),
-            Refresh = new RefreshVisitSetupProgressEmailReportCommandHandler(db, user, reports),
+            Refresh = new RefreshVisitSetupProgressEmailReportCommandHandler(
+                db, user, reports, renderer, formRead),
         };
     }
 
@@ -324,7 +347,7 @@ public class VisitSetupProgressEmailFlowTests
     // ── Refresh ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Refreshing_the_report_replaces_the_attachment_and_leaves_the_message_alone()
+    public async Task Refreshing_rebuilds_the_body_and_the_attachment_but_keeps_subject_and_recipients()
     {
         var sut = CreateSut();
         var prepared = await PrepareAsync(sut);
@@ -349,8 +372,15 @@ public class VisitSetupProgressEmailFlowTests
         Assert.Equal(refreshed.ReportFileId, attachment.FileId);
 
         var after = await sut.Db.EmailDrafts.SingleAsync();
+
+        // The BODY is rebuilt — that is the point of "đồng bộ": the tables in it describe the setup,
+        // and leaving them stale beside a fresh PDF would make the message contradict its attachment.
+        Assert.NotEqual("<p>Host tu viet</p>", after.BodyContent);
+        Assert.Equal(refreshed.BodyHtml, after.BodyContent);
+        Assert.True(refreshed.BodyRewritten);
+
+        // Subject and recipients are addressing decisions, not a picture of the setup: untouched.
         Assert.Equal("Tiêu đề Host tự viết", after.Subject);
-        Assert.Equal("<p>Host tu viet</p>", after.BodyContent);
         Assert.Equal(recipientsBefore, await sut.Db.EmailDraftRecipients.CountAsync());
     }
 
