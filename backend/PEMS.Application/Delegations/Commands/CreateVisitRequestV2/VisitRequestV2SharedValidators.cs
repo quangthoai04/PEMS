@@ -37,8 +37,6 @@ public sealed class RegistrantInputV2Validator : AbstractValidator<RegistrantInp
             .NotEmpty().WithMessage("Quốc tịch người đăng ký không được để trống.")
             .MaximumLength(100).WithMessage(TooLong("Quốc tịch người đăng ký", 100));
         RuleFor(x => x.Phone)
-            // registrant_phone is VARCHAR(50): without this the row is rejected by MySQL rather
-            // than by a message naming the field.
             .MaximumLength(50).WithMessage(TooLong("Số điện thoại người đăng ký", 50))
             .MustBeAPhoneNumber("Số điện thoại người đăng ký không hợp lệ.");
         RuleFor(x => x.Email)

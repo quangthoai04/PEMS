@@ -176,7 +176,8 @@ public sealed class VisitAgendaScopeV2Tests
         ulong requestId = 0;
         try
         {
-            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), "Đoàn nghị trình"));
+            var hnStart = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", hnStart, "Đoàn nghị trình"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
             var hn = instances[CampusHn];
@@ -184,7 +185,8 @@ public sealed class VisitAgendaScopeV2Tests
             using (var db = NewContext())
             {
                 var res = await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
-                    new List<SaveVisitAgendaItem> { Item("Đón khách", 0), Item("Tham quan", 1), Item("Ăn trưa", 2) }),
+                    new List<SaveVisitAgendaItem> { Item("Đón khách", 0), Item("Tham quan", 1), Item("Ăn trưa", 2) },
+                    hnStart, hnStart.AddMinutes(120)),
                     CancellationToken.None);
                 Assert.Equal(3, res.Count);
             }
@@ -226,16 +228,19 @@ public sealed class VisitAgendaScopeV2Tests
             // Both hosts save their own campus's agenda.
             using (var db = NewContext())
                 await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
-                    new List<SaveVisitAgendaItem> { Item("HN mục 1", 0) }), CancellationToken.None);
+                    new List<SaveVisitAgendaItem> { Item("HN mục 1", 0) },
+                    start, start.AddMinutes(120)), CancellationToken.None);
             using (var db = NewContext())
                 await Handler(db, HostHcm).Handle(new SaveVisitAgendaCommand(requestId, hcm,
-                    new List<SaveVisitAgendaItem> { Item("HCM mục 1", 0), Item("HCM mục 2", 1) }), CancellationToken.None);
+                    new List<SaveVisitAgendaItem> { Item("HCM mục 1", 0), Item("HCM mục 2", 1) },
+                    start.AddDays(1), start.AddDays(1).AddMinutes(120)), CancellationToken.None);
 
             // The HN host reaching for HCM's agenda is refused...
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hcm,
-                        new List<SaveVisitAgendaItem> { Item("Xâm phạm", 0) }), CancellationToken.None));
+                        new List<SaveVisitAgendaItem> { Item("Xâm phạm", 0) },
+                        start.AddDays(1), start.AddDays(1).AddMinutes(120)), CancellationToken.None));
 
             // ...and HCM's agenda is exactly what its own host left — two items, untouched.
             using (var db = NewContext())
@@ -272,7 +277,7 @@ public sealed class VisitAgendaScopeV2Tests
                     {
                         new(null, "Mục có người phụ trách", Now.AddDays(5).Date.AddHours(9),
                             Now.AddDays(5).Date.AddHours(10), null, "Phòng họp", "Nguyễn Văn A (khách mời ngoài hệ thống)"),
-                    }), CancellationToken.None);
+                    }, start, start.AddMinutes(120)), CancellationToken.None);
                 Assert.Equal(1, res.Count);
             }
             using (var db = NewContext())

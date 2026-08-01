@@ -341,6 +341,13 @@ export interface VisitProcessDetail {
   canEditBefore: boolean;
   /** Host's internal "Ghi chú chung" (visit_request_campuses.preparation_note). Null/empty when unset. */
   preparationNote?: string | null;
+  /** Per-campus "Working contact" (visit_instance_form_details.operational_contact_*) — the "Gửi lịch
+   * trình" email recipient. Email can be null on older data even though the current form requires it. */
+  operationalContactFullName?: string | null;
+  operationalContactEmail?: string | null;
+  /** Most recent "Gửi lịch trình" send for this instance, if any (for the "Đã gửi lúc ..." hint). */
+  agendaEmailLastSentAt?: string | null;
+  agendaEmailLastSentStatus?: string | null;
   agenda: VisitAgendaItem[];
   /** Read-only mirror of the guest's original registration (registrant + delegation + campuses +
    * guests). Null only for callers not allowed to see it. */
