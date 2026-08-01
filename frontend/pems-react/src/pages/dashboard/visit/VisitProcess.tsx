@@ -94,10 +94,12 @@ export function VisitProcess() {
 
   const [activeTab, setActiveTab] = useState(isReceptionDetail ? 'before' : (location.state?.defaultTab || 'before'));
   const isPrep = (currentStatus === 'Đang chuẩn bị' || currentStatus === 'Trước tiếp khách') && !isClosed;
-  // Vào tab "Trước tiếp khách" ưu tiên mở "1. Thông tin chung" (bản đăng ký gốc của khách,
-  // chỉ đọc); "2. Chuẩn bị chi tiết" không mở mặc định. Effect bên dưới đồng bộ lại khi đổi tab.
+  // Vào tab "Trước tiếp khách" mở sẵn cả "1. Thông tin chung" (kèm ba mục con) lẫn
+  // "2. Chuẩn bị chi tiết": Host cần nhìn thấy toàn bộ phần chuẩn bị ngay khi vào trang thay vì
+  // phải bung từng khối. Thu gọn thủ công vẫn giữ nguyên — đây chỉ là trạng thái mặc định.
+  // Effect bên dưới đặt lại đúng năm trạng thái này mỗi lần quay lại tab.
   const [isInfoExpanded, setIsInfoExpanded] = useState(true);
-  const [isSetupExpanded, setIsSetupExpanded] = useState(false);
+  const [isSetupExpanded, setIsSetupExpanded] = useState(true);
   const [isAlbumExpanded, setIsAlbumExpanded] = useState(false);
   const [isNewsExpanded, setIsNewsExpanded] = useState(false);
   
@@ -106,21 +108,22 @@ export function VisitProcess() {
   const [isSection3Expanded, setIsSection3Expanded] = useState(true);
   const [isSection4Expanded, setIsSection4Expanded] = useState(true);
 
-  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(false);
-  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(false);
+  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(true);
+  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(true);
   const [isInfoSection3Expanded, setIsInfoSection3Expanded] = useState(true);
 
   const [isInfoEditableState, setIsInfoEditable] = useState(false);
 
-  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mặc định đóng mục 1 (Thông tin người tạo)
-  // và mục 2 (Thông tin đoàn khách), đồng thời mở mặc định mục 3 (Thiết lập & Điều phối sự kiện)
-  // để người dùng dễ dàng thao tác chuẩn bị sự kiện.
+  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mở lại cả năm khối — "1. Thông tin chung"
+  // với ba mục con (Thông tin người tạo / Thông tin đoàn khách / Thiết lập & Điều phối sự kiện) và
+  // "2. Chuẩn bị chi tiết". Rời tab rồi quay lại là một lần vào mới, nên trạng thái thu gọn thủ
+  // công của lần trước không được giữ lại.
   useEffect(() => {
     if (activeTab === 'before') {
       setIsInfoExpanded(true);
-      setIsSetupExpanded(false);
-      setIsInfoSection1Expanded(false);
-      setIsInfoSection2Expanded(false);
+      setIsSetupExpanded(true);
+      setIsInfoSection1Expanded(true);
+      setIsInfoSection2Expanded(true);
       setIsInfoSection3Expanded(true);
     }
   }, [activeTab]);
@@ -890,6 +893,7 @@ export function VisitProcess() {
             <AnimatePresence>
               {isInfoExpanded && (
                 <motion.div
+                  data-testid="before-info-body"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -918,6 +922,7 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection1Expanded && (
                           <motion.div
+                            data-testid="before-registrant-body"
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
@@ -952,6 +957,7 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection2Expanded && (
                           <motion.div
+                            data-testid="before-delegation-body"
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
@@ -979,6 +985,7 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection3Expanded && (
                           <motion.div
+                            data-testid="before-setup-body"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -1467,6 +1474,7 @@ export function VisitProcess() {
             <AnimatePresence>
               {isSetupExpanded && (
                 <motion.div
+                  data-testid="before-prep-body"
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
