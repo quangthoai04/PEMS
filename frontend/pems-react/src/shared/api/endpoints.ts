@@ -236,6 +236,9 @@ export const API_ENDPOINTS = {
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/schedule-report/pdf`,
     saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
+    // Emails the campus's operational contact the current agenda (Host only, prep window).
+    sendAgendaEmail: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda/send-email`,
     // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).
     agendaResponsibleCandidates: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/agenda-responsible-candidates`,

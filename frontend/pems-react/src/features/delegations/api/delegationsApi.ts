@@ -349,14 +349,29 @@ export const delegationsApi = {
     return data;
   },
 
-  /** Upsert the instance's agenda (Host only, prep window). Saves setup only — never changes stage. */
+  /** Upsert the instance's agenda (Host only, prep window). Saves setup only — never changes stage.
+   * plannedStartAt/plannedEndAt sync visit_request_campuses.planned_start_at/end_at in the same call —
+   * the Host renegotiates the actual visit date/time while drafting the agenda. */
   async saveVisitAgenda(
     visitRequestId: number | string,
     visitInstanceId: number | string,
     items: Array<{ agendaId?: number | null; title: string; startTime: string; endTime?: string | null; description?: string | null; location?: string | null; responsibleName?: string | null }>,
+    plannedStartAt: string,
+    plannedEndAt: string,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
-      API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items });
+      API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items, plannedStartAt, plannedEndAt });
+    return data;
+  },
+
+  /** Emails the campus's operational contact (Host only, prep window) the current agenda so both
+   * sides can discuss/confirm it. Reply-To + Cc go to the assigned Host. */
+  async sendVisitAgendaEmail(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+  ): Promise<{ status: string; sentAt: string | null; message: string }> {
+    const { data } = await httpClient.post<{ status: string; sentAt: string | null; message: string }>(
+      API_ENDPOINTS.delegations.sendAgendaEmail(visitRequestId, visitInstanceId), {});
     return data;
   },
 
