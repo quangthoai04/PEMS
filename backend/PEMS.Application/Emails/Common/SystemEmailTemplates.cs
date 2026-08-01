@@ -102,6 +102,12 @@ public static class SystemEmailTemplates
     public const string LogisticsExpenseReportReminder = "LOGISTICS_EXPENSE_REPORT_REMINDER";
 
     // ── REPORT ───────────────────────────────────────────────────────────────
+    /// <summary>
+    /// The Host's manual "cập nhật chuẩn bị" to the guest side, carrying the Schedule Report as an
+    /// attachment. Deliberately NOT an invitation: it bears no token and no per-person action link,
+    /// which is exactly why it may address a list the Host controls instead of one person at a time.
+    /// </summary>
+    public const string VisitSetupProgressUpdate = "VISIT_SETUP_PROGRESS_UPDATE";
     public const string ReportCampusOperation = "REPORT_CAMPUS_OPERATION";
     public const string ReportDepartmentCollaboration = "REPORT_DEPARTMENT_COLLABORATION";
     public const string ReportDepartmentInvoice = "REPORT_DEPARTMENT_INVOICE";
@@ -191,6 +197,15 @@ public static class SystemEmailTemplates
                 "recipientName", "itemTitle", "dueAt", "delegationName"),
 
             // REPORT — operational documents; the caller owns the distribution list.
+            //
+            // The setup-progress update sits here rather than under VISIT_PARTICIPANT because it is a
+            // document distribution, not an invitation: the Host decides who is on it, the guest side
+            // goes in TO and the accepted internal participants in CC, and nothing in the body grants
+            // anybody anything. Reusing VISIT_PARTICIPANT_INVITATION would have inherited that
+            // template's single-recipient/no-copies policy — one message per person, no CC at all —
+            // which is the opposite of what this flow is for.
+            CallerControlledTemplate(VisitSetupProgressUpdate, EmailTemplatePurposes.Report,
+                "delegationName", "campusName", "plannedStart", "plannedEnd", "hostName"),
             CallerControlledTemplate(ReportCampusOperation, EmailTemplatePurposes.Report,
                 "recipientName", "campusName", "periodFrom", "periodTo"),
             CallerControlledTemplate(ReportDepartmentCollaboration, EmailTemplatePurposes.Report,
