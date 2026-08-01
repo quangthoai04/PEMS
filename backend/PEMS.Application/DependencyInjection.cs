@@ -72,6 +72,11 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Reports.Common.IReportArchiveService,
             PEMS.Application.Reports.Common.ReportArchiveService>();
 
+        // "Báo cáo Lịch trình" for one campus instance — shared by the VisitProcess download and the
+        // setup-progress email, so the two can never render a different document from the same data.
+        services.AddScoped<PEMS.Application.Delegations.Queries.ExportScheduleReport.IScheduleReportArtifactService,
+            PEMS.Application.Delegations.Queries.ExportScheduleReport.ScheduleReportArtifactService>();
+
         return services;
     }
 }

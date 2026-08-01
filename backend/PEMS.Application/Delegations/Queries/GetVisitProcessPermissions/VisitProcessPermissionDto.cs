@@ -47,4 +47,22 @@ public sealed class VisitProcessPermissionDto
     public bool CanStartVisit { get; set; }
     public bool CanCompleteVisit { get; set; }
     public bool CanCloseVisit { get; set; }
+
+    /// <summary>
+    /// Whether the signed-in user may send the "Gửi cập nhật chuẩn bị" email for this instance.
+    ///
+    /// <para>
+    /// Only the instance's CURRENT host, and only while the preparation tab is still open — the same
+    /// window in which they may change what the mail would describe. A Staff Leader or HO who can read
+    /// this page (and download the very same report) deliberately does NOT get it: writing to the guest
+    /// as the delegation's host is not the same act as reading its preparation, and delegating it needs
+    /// a rule of its own rather than falling out of view access.
+    /// </para>
+    /// <para>
+    /// It is a separate flag rather than a reuse of <see cref="CanEditBeforeVisit"/> even though the two
+    /// currently coincide: the frontend renders the send button from this one, so tightening or relaxing
+    /// either must be a deliberate edit here, not a side effect on the other.
+    /// </para>
+    /// </summary>
+    public bool CanSendSetupProgressEmail { get; set; }
 }

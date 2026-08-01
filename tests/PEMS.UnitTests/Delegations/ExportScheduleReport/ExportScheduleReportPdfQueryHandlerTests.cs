@@ -26,17 +26,33 @@ public class ExportScheduleReportPdfQueryHandlerTests
         ScheduleReportTestData.SeedBase(db, instanceStatus, partnerId, visitorUserId);
 
         var currentUser = new FakeScheduleReportCurrentUser();
-        var formRead = new VisitFormReadService(db, currentUser, NullLogger<VisitFormReadService>.Instance);
-        var storage = new Mock<IFileStorageService>(MockBehavior.Loose);
-        var drive = new Mock<IGoogleDriveStorageService>(MockBehavior.Loose);
-        var translator = new Mock<IContentTranslationService>(MockBehavior.Loose);
-        var fileUpload = new Mock<IFileUploadService>(MockBehavior.Loose);
-        var folderService = new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose);
-        var handler = new ExportScheduleReportPdfQueryHandler(
-            db, currentUser, formRead, storage.Object, drive.Object, translator.Object,
-            fileUpload.Object, folderService.Object,
-            NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
+        var handler = CreateHandler(db, currentUser);
         return (db, handler, currentUser);
+    }
+
+    /// <summary>
+    /// The handler now owns only the scope rule; the render/archive chain lives in
+    /// <see cref="ScheduleReportArtifactService"/>. Building the REAL service (over mocked storage)
+    /// rather than a stub keeps these tests asserting on genuinely rendered PDF bytes, which is what
+    /// makes "the host may download" mean something.
+    /// </summary>
+    private static ExportScheduleReportPdfQueryHandler CreateHandler(
+        ScheduleReportTestDbContext db,
+        FakeScheduleReportCurrentUser currentUser,
+        IFileStorageService? storage = null)
+    {
+        var formRead = new VisitFormReadService(db, currentUser, NullLogger<VisitFormReadService>.Instance);
+        var reports = new ScheduleReportArtifactService(
+            db, formRead,
+            storage ?? new Mock<IFileStorageService>(MockBehavior.Loose).Object,
+            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
+            new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
+            new Mock<IFileUploadService>(MockBehavior.Loose).Object,
+            new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose).Object,
+            NullLogger<ScheduleReportArtifactService>.Instance);
+
+        return new ExportScheduleReportPdfQueryHandler(
+            db, currentUser, reports, NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
     }
 
     private static void AssertLooksLikePdf(byte[] bytes)
@@ -174,15 +190,7 @@ public class ExportScheduleReportPdfQueryHandlerTests
         db.SaveChanges();
 
         var currentUser = new FakeScheduleReportCurrentUser { UserId = 300, RoleCode = RoleCodes.Ho, SubRole = null, PrimaryCampusId = null };
-        var formRead = new VisitFormReadService(db, currentUser, NullLogger<VisitFormReadService>.Instance);
-        var handler = new ExportScheduleReportPdfQueryHandler(
-            db, currentUser, formRead,
-            new Mock<IFileStorageService>(MockBehavior.Loose).Object,
-            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
-            new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
-            new Mock<IFileUploadService>(MockBehavior.Loose).Object,
-            new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose).Object,
-            NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
+        var handler = CreateHandler(db, currentUser);
 
         await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
             new ExportScheduleReportPdfQuery(ScheduleReportTestData.VisitRequestId, ScheduleReportTestData.VisitInstanceId), default));
@@ -202,14 +210,7 @@ public class ExportScheduleReportPdfQueryHandlerTests
         var storage = new Mock<IFileStorageService>(MockBehavior.Loose);
         storage.Setup(s => s.OpenReadAsync(It.Is<PEMS.Domain.Entities.Documents.UploadedFile>(f => f.FileId == 900), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new MemoryStream(ScheduleReportAssets.FptLogoBytes));
-        var formRead = new VisitFormReadService(db, currentUser, NullLogger<VisitFormReadService>.Instance);
-        var handlerWithLogo = new ExportScheduleReportPdfQueryHandler(
-            db, currentUser, formRead, storage.Object,
-            new Mock<IGoogleDriveStorageService>(MockBehavior.Loose).Object,
-            new Mock<IContentTranslationService>(MockBehavior.Loose).Object,
-            new Mock<IFileUploadService>(MockBehavior.Loose).Object,
-            new Mock<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService>(MockBehavior.Loose).Object,
-            NullLogger<ExportScheduleReportPdfQueryHandler>.Instance);
+        var handlerWithLogo = CreateHandler(db, currentUser, storage.Object);
 
         var bytes = await handlerWithLogo.Handle(
             new ExportScheduleReportPdfQuery(ScheduleReportTestData.VisitRequestId, ScheduleReportTestData.VisitInstanceId), default);
