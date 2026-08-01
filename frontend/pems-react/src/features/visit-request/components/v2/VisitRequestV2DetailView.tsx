@@ -312,7 +312,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       icon={<PencilLine className="h-4 w-4" aria-hidden />}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5"
                     >
-                      {isStaff ? t('visitRequestV2:amend.openUpdate', { defaultValue: 'Cập nhật thông tin' }) : t('visitRequestV2:amend.open')}
+                      {isStaff ? t('visitRequestV2:amend.openUpdate') : t('visitRequestV2:amend.open')}
                     </VisitActionButton>
                     <VisitActionButton
                       capability={transferCap}

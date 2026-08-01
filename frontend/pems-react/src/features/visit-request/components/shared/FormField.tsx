@@ -2,7 +2,7 @@ import React from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
 interface FormFieldProps {
-  label: string;
+  label: React.ReactNode;
   required?: boolean;
   error?: string;
   isValid?: boolean;

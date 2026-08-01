@@ -342,41 +342,76 @@ export const CampusVisitCard: React.FC<Props> = ({
     rows: { id: string }[],
     onRemoveRow: (i: number) => void,
     canRemoveRow: (i: number) => boolean,
-  ) => (
+    onAddRow?: () => void,
+  ) => {
+    if (rows.length === 0 && kind === 'supportTeam') {
+      return (
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-center">
+          <p className="text-sm font-semibold text-slate-500">
+            {t('visitRequestV2:person.noSupportTeam')}
+          </p>
+          {onAddRow && (
+            <button
+              type="button"
+              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              onClick={onAddRow}
+            >
+              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    return (
     <>
-      <div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block">
-        <table data-testid={`v2-${kind}-table`} className="w-full min-w-[760px] border-collapse text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50">
+      <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white lg:block">
+        <table data-testid={`v2-${kind}-table`} className="w-full min-w-[760px] table-fixed border-collapse text-sm">
+          <colgroup>
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '27%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '5%' }} />
+          </colgroup>
+          <thead className="border-b border-slate-200 bg-[#F8FAFC]">
             <tr>
-              <th scope="col" className="w-12 p-3 text-center font-bold text-slate-700">
+              <th scope="col" className="border-r border-slate-200 p-3 text-center align-middle font-bold text-slate-600">
                 {t('visitRequestV2:person.stt')}
               </th>
               {PERSON_COLUMNS.map(c => (
-                <th key={c} scope="col" className="border-l border-slate-200 p-3 text-left font-bold text-slate-700">
+                <th key={c} scope="col" className="border-r border-slate-200 p-3 text-left align-middle font-bold text-slate-600">
                   {t(`visitRequestV2:person.${c}`)}
                 </th>
               ))}
-              <th scope="col" className="w-14 border-l border-slate-200 p-3 text-center font-bold text-slate-700">
-                {t('visitRequestV2:person.actions')}
+              <th scope="col" className="p-3 text-center align-middle font-bold text-slate-600">
+                {/* 
+                  Rút gọn tiêu đề thành icon hoặc text ngắn. "Thao tác" khá ngắn (8 ký tự).
+                  Với 5% width, icon phù hợp hơn nếu không đủ chỗ, nhưng tạm giữ text theo i18n
+                  và tránh xuống dòng với whitespace-nowrap.
+                */}
+                <span className="whitespace-nowrap">{t('visitRequestV2:person.actions')}</span>
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-200">
             {rows.map((f, i) => (
-              <tr key={f.id} className="border-b border-slate-100 last:border-b-0 hover:bg-orange-50/30">
-                <td className="p-3 text-center font-bold text-slate-400">{i + 1}</td>
+              <tr key={f.id} className="transition-colors hover:bg-slate-50">
+                <td className="border-r border-slate-200 p-3 text-center align-middle font-bold text-slate-400">{i + 1}</td>
                 {PERSON_COLUMNS.map(c => (
-                  <td key={c} className="border-l border-slate-100 p-0 align-top">
+                  <td key={c} className="group border-r border-slate-200 p-0 align-top focus-within:bg-white focus-within:shadow-[inset_0_0_0_2px_rgba(15,93,166,0.16)] hover:bg-slate-50/50">
                     {personFieldCell(kind, i, c, true)}
                     {cellError(fieldError(`${kind}.${i}.${c}`))}
                   </td>
                 ))}
-                <td className="border-l border-slate-100 p-2 text-center align-top">
+                <td className="p-2 text-center align-middle">
                   <button
                     type="button"
-                    aria-label={t('visitRequestV2:card.removeRow')}
+                    aria-label={kind === 'visitors' ? t('visitRequestV2:person.removeGuest') : t('visitRequestV2:person.removeSupport')}
+                    title={kind === 'visitors' ? t('visitRequestV2:person.removeGuest') : t('visitRequestV2:person.removeSupport')}
                     disabled={!canRemoveRow(i)}
-                    className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                    className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                     onClick={() => onRemoveRow(i)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -417,12 +452,17 @@ export const CampusVisitCard: React.FC<Props> = ({
         ))}
       </div>
     </>
-  );
+    );
+  };
+
+  const isToneA = index % 2 === 0;
+  const toneBg = isToneA ? 'bg-white' : 'bg-[#f6f9fc]';
+  const toneHeaderOpenBg = isToneA ? 'bg-slate-50' : 'bg-[#f0f5fa]';
 
   return (
-    <div data-testid={`campus-edit-card-${campusCode || 'new'}`} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div data-testid={`campus-edit-card-${campusCode || 'new'}`} className={`rounded-2xl border shadow-sm transition-all duration-200 ${toneBg} ${open ? 'border-[#004c91]/30 ring-1 ring-[#004c91]/10' : 'border-slate-200 hover:border-slate-300'}`}>
       {/* Header — always visible; collapsing hides ONLY the body below */}
-      <div className="flex items-center gap-2 p-4">
+      <div className={`flex items-center gap-2 p-3 sm:p-4 transition-colors ${open ? `border-b border-slate-100 ${toneHeaderOpenBg} rounded-t-2xl` : 'rounded-2xl'}`}>
         <button
           type="button"
           aria-expanded={open}
@@ -430,18 +470,27 @@ export const CampusVisitCard: React.FC<Props> = ({
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={onToggle}
         >
-          <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#004c91]/10 text-sm font-bold text-[#004c91]">
-            {index + 1}
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${open ? 'bg-[#004c91]/10 text-[#004c91]' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+            <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${open ? 'rotate-180' : '-rotate-90'}`} />
+          </div>
+          <span className="truncate text-base font-bold text-slate-900">
+            {t('visitRequestV2:card.cardN', { n: index + 1 })} {campusCode ? `- ${headerLabel}` : ''}
           </span>
-          <span className="truncate text-base font-bold text-slate-900">{headerLabel}</span>
-          {errorCount > 0 && (
+          {errorCount > 0 ? (
             <span
               role="status"
-              className="ml-1 inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700"
+              className="ml-2 hidden sm:inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700"
             >
               <AlertCircle className="h-3.5 w-3.5" />
               {t('visitRequestV2:card.errorBadge', { count: errorCount })}
+            </span>
+          ) : (campusCode && visitType && watch(`${base}.delegationName`)) ? (
+            <span className="ml-2 hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
+              {t('visitRequestV2:status.complete')}
+            </span>
+          ) : (
+            <span className="ml-2 hidden sm:inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+              {t('visitRequestV2:status.incomplete')}
             </span>
           )}
         </button>
@@ -449,7 +498,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           <button
             type="button"
             aria-label={t('visitRequestV2:card.removeCampus')}
-            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
             onClick={onRemove}
           >
             <Trash2 className="h-4 w-4" />
@@ -458,16 +507,15 @@ export const CampusVisitCard: React.FC<Props> = ({
       </div>
 
       <div id={bodyId} className={open ? 'space-y-6 border-t border-slate-100 p-4 sm:p-6' : 'hidden'}>
-        {/* One-time copy tools — copying is a deep clone; later edits never touch the source */}
         {copySources.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3">
-            <Copy className="h-4 w-4 text-slate-400" />
-            <label htmlFor={`copy-src-${clientKey}`} className="text-sm font-semibold text-slate-600">
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg bg-indigo-50/50 px-4 py-2 ring-1 ring-indigo-50">
+            <Copy className="h-4 w-4 text-indigo-400" />
+            <span className="text-sm font-medium text-indigo-900">
               {t('visitRequestV2:card.copyFromLabel')}
-            </label>
+            </span>
             <select
               id={`copy-src-${clientKey}`}
-              className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              className="h-8 rounded-md border-0 bg-white px-2 py-0 pl-3 pr-8 text-sm text-indigo-900 ring-1 ring-inset ring-indigo-200 focus:ring-2 focus:ring-indigo-600"
               defaultValue=""
               onChange={e => {
                 const src = Number(e.target.value);
@@ -482,7 +530,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             </select>
             <button
               type="button"
-              className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-white"
+              className="ml-auto rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200 transition-colors hover:bg-indigo-50"
               onClick={onApplyToAll}
             >
               {t('visitRequestV2:card.applyToAll')}
@@ -490,53 +538,53 @@ export const CampusVisitCard: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Campus */}
-        <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-3">
-          <FormField label={t('visitRequestV2:card.campus')} required error={fieldError('campus')} showValidIcon={false}>
-            <select
-              {...register(`${base}.campus`)}
-              className={inputCls(!!fieldError('campus'), !!campusCode, false)}
-              disabled={campusesLoading}
-            >
-              <option value="">{t('visitRequestV2:card.campusPlaceholder')}</option>
-              {campuses
-                // Hide campuses already taken by another card; this card keeps its own selection.
-                .filter(c => c.campusCode === campusCode
-                  || !takenCampusCodes.includes(c.campusCode.toUpperCase()))
-                .map(c => (
-                  <option key={c.campusCode} value={c.campusCode}>{c.campusName}</option>
-                ))}
-            </select>
-          </FormField>
+        {/* Campus and Schedule */}
+        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+          <div className="col-span-12 lg:col-span-4">
+            <FormField label={t('visitRequestV2:card.campus')} required error={fieldError('campus')} showValidIcon={false}>
+              <select
+                {...register(`${base}.campus`)}
+                className={inputCls(!!fieldError('campus'), !!campusCode, false)}
+                disabled={campusesLoading}
+              >
+                <option value="">{t('visitRequestV2:card.campusPlaceholder')}</option>
+                {campuses
+                  // Hide campuses already taken by another card; this card keeps its own selection.
+                  .filter(c => c.campusCode === campusCode
+                    || !takenCampusCodes.includes(c.campusCode.toUpperCase()))
+                  .map(c => (
+                    <option key={c.campusCode} value={c.campusCode}>{c.campusName}</option>
+                  ))}
+              </select>
+            </FormField>
+          </div>
+
+          <Controller
+            name={`${base}.startDatetime`}
+            control={control}
+            render={({ field: startField }) => (
+              <Controller
+                name={`${base}.endDatetime`}
+                control={control}
+                render={({ field: endField }) => (
+                  <VisitDateTimeRangePicker
+                    idPrefix={`campus-${index}`}
+                    minAdvanceHours={minAdvanceHours}
+                    startValue={startField.value ?? ''}
+                    endValue={endField.value ?? ''}
+                    onChange={({ start, end }) => { startField.onChange(start); endField.onChange(end); }}
+                    startError={fieldError('startDatetime')}
+                    endError={fieldError('endDatetime')}
+                  />
+                )}
+              />
+            )}
+          />
         </div>
 
-        {/* Schedule — one date + a start and end time, with the end offered by duration. Both
-            halves still write the SAME two wall-clock fields the API has always taken. */}
-        <Controller
-          name={`${base}.startDatetime`}
-          control={control}
-          render={({ field: startField }) => (
-            <Controller
-              name={`${base}.endDatetime`}
-              control={control}
-              render={({ field: endField }) => (
-                <VisitDateTimeRangePicker
-                  idPrefix={`campus-${index}`}
-                  minAdvanceHours={minAdvanceHours}
-                  startValue={startField.value ?? ''}
-                  endValue={endField.value ?? ''}
-                  onChange={({ start, end }) => { startField.onChange(start); endField.onChange(end); }}
-                  startError={fieldError('startDatetime')}
-                  endError={fieldError('endDatetime')}
-                />
-              )}
-            />
-          )}
-        />
-
         {/* Content */}
-        <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
-          <FormField label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
+        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+          <FormField className="col-span-12 lg:col-span-7" label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
             <Controller
               name={`${base}.delegationName`}
               control={control}
@@ -553,7 +601,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-5" label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
             <select {...register(`${base}.visitType`)} className={inputCls(!!fieldError('visitType'), false, false)}>
               {VISIT_TYPES.map(vt => (
                 <option key={vt} value={vt}>
@@ -563,7 +611,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             </select>
           </FormField>
           {visitType === 'OTHER' && (
-            <FormField label={t('visitRequestV2:card.visitTypeOther')} required error={fieldError('visitTypeOther')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-12" label={t('visitRequestV2:card.visitTypeOther')} required error={fieldError('visitTypeOther')} showValidIcon={false}>
               <Controller
                 name={`${base}.visitTypeOther`}
                 control={control}
@@ -584,8 +632,8 @@ export const CampusVisitCard: React.FC<Props> = ({
 
         {/* Purpose and working content sit side by side on desktop and stack when narrow — they are
             read together, and both grow with their content rather than scrolling internally. */}
-        <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
-          <FormField label={t('visitRequestV2:card.purpose')} required error={fieldError('purpose')} showValidIcon={false}>
+        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:card.purpose')} required error={fieldError('purpose')} showValidIcon={false}>
             <Controller
               name={`${base}.purpose`}
               control={control}
@@ -601,7 +649,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField label={t('visitRequestV2:card.workingContent')} required error={fieldError('workingContent')} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:card.workingContent')} required error={fieldError('workingContent')} showValidIcon={false}>
             <Controller
               name={`${base}.workingContent`}
               control={control}
@@ -629,7 +677,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             <span className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
                 onClick={() => downloadVisitorTemplate(excelT)}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.template')}
@@ -638,7 +686,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 type="button"
                 data-testid="v2-visitors-import"
                 disabled={!!excelState.visitors.loadingFileName}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => visitorFileRef.current?.click()}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importForCampus')}
@@ -671,7 +719,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             <button
               type="button"
               data-testid="v2-visitors-replace"
-              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
               onClick={() => requestReplace('visitors')}
             >
               <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAll')}
@@ -682,10 +730,11 @@ export const CampusVisitCard: React.FC<Props> = ({
             visitorFields.fields,
             i => visitorFields.remove(i),
             () => true,
+            () => visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
           )}
           <button
             type="button"
-            className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50 disabled:opacity-40"
+            className="mt-4 inline-flex items-center justify-center gap-2 w-full sm:w-auto rounded-xl border-2 border-dashed border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:opacity-40"
             disabled={visitorFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
             onClick={() => visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
           >
@@ -703,7 +752,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             <span className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
                 onClick={() => downloadSupportTeamTemplate(excelT)}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.template')}
@@ -712,7 +761,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 type="button"
                 data-testid="v2-support-import"
                 disabled={!!excelState.supportTeam.loadingFileName}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => supportFileRef.current?.click()}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importForCampus')}
@@ -742,7 +791,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             <button
               type="button"
               data-testid="v2-support-replace"
-              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
               onClick={() => requestReplace('supportTeam')}
             >
               <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAll')}
@@ -753,15 +802,18 @@ export const CampusVisitCard: React.FC<Props> = ({
             supportFields.fields,
             i => supportFields.remove(i),
             () => true,
+            () => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
           )}
-          <button
-            type="button"
-            className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50 disabled:opacity-40"
-            disabled={supportFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
-            onClick={() => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
-          >
-            <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
-          </button>
+          {supportFields.fields.length > 0 && (
+            <button
+              type="button"
+              className="mt-4 inline-flex items-center justify-center gap-2 w-full sm:w-auto rounded-xl border-2 border-dashed border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:opacity-40"
+              disabled={supportFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
+              onClick={() => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
+            >
+              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
+            </button>
+          )}
         </fieldset>
 
         {/* Replacing a list is destructive and is never what "import" alone does — it asks first. */}
@@ -813,18 +865,18 @@ export const CampusVisitCard: React.FC<Props> = ({
                 data-testid={`campus-opcontact-use-registrant-${index}`}
                 disabled={!canQuickFillFrom('registrant')}
                 onClick={() => requestQuickFill('registrant')}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 sm:px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Copy className="h-3.5 w-3.5" /> {t('visitRequestV2:card.quickFillRegistrant')}
+                <Copy className="h-4 w-4" /> {t('visitRequestV2:card.quickFillRegistrant')}
               </button>
               <button
                 type="button"
                 data-testid={`campus-opcontact-use-contact-${index}`}
                 disabled={!canQuickFillFrom('contact')}
                 onClick={() => requestQuickFill('contact')}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 sm:px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Copy className="h-3.5 w-3.5" /> {t('visitRequestV2:card.quickFillPrimaryContact')}
+                <Copy className="h-4 w-4" /> {t('visitRequestV2:card.quickFillPrimaryContact')}
               </button>
             </span>
           </legend>
@@ -868,8 +920,8 @@ export const CampusVisitCard: React.FC<Props> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
-            <FormField label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
+          <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.fullName`}
                 control={control}
@@ -890,7 +942,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 still plain text — this contact is a snapshot and the schema has no relation to a
                 partner record, so picking a known organization links nothing and the request's own
                 partner selection is untouched. */}
-            <FormField label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.organization`}
                 control={control}
@@ -907,7 +959,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            <FormField label={t('visitRequestV2:card.phone')} required error={fieldError('operationalContact.phone')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <PhoneField
                 field={register(`${base}.operationalContact.phone`)}
                 hasError={!!fieldError('operationalContact.phone')}
@@ -915,78 +967,78 @@ export const CampusVisitCard: React.FC<Props> = ({
                 testId={`campus-opcontact-phone-${index}`}
               />
             </FormField>
-            <FormField label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
               <input type="email" {...register(`${base}.operationalContact.email`)} className={inputCls(!!fieldError('operationalContact.email'), false, false)} />
             </FormField>
           </div>
         </fieldset>
 
         {/* Additional requirements */}
-        <fieldset>
-          <legend className="mb-2 text-sm font-extrabold text-slate-900">{t('visitRequestV2:card.additional')}</legend>
-          <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
-            <FormField label={t('visitRequestV2:card.workingLanguage')} required error={fieldError('workingLanguage')} showValidIcon={false}>
+        <fieldset className="mb-1">
+          <legend className="mb-3 text-sm font-extrabold text-slate-900">{t('visitRequestV2:card.additional')}</legend>
+          <div className="grid grid-cols-12 gap-x-4 xl:gap-x-6 gap-y-4">
+            <FormField className="col-span-12 lg:col-span-6 xl:col-span-2" label={t('visitRequestV2:card.workingLanguage')} required error={fieldError('workingLanguage')} showValidIcon={false}>
               <select {...register(`${base}.workingLanguage`)} className={inputCls(false, false, false)}>
                 <option value="VI">{t('visitRequestV2:card.languageVi')}</option>
                 <option value="EN">{t('visitRequestV2:card.languageEn')}</option>
               </select>
             </FormField>
-            <FormField label={t('visitRequestV2:card.mediaConsent')} required error={fieldError('mediaConsentStatus')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-6 xl:col-span-2" label={t('visitRequestV2:card.mediaConsent')} required error={fieldError('mediaConsentStatus')} showValidIcon={false}>
               <select {...register(`${base}.mediaConsentStatus`)} className={inputCls(false, false, false)}>
                 <option value="DECLINED">{t('visitRequestV2:card.mediaDeclined')}</option>
                 <option value="AGREED">{t('visitRequestV2:card.mediaAgreed')}</option>
               </select>
             </FormField>
-            {mediaConsent === 'AGREED' && (
-              <FormField label={t('visitRequestV2:card.mediaNote')} error={fieldError('mediaConsentNote')} className="lg:col-span-2" showValidIcon={false}>
-                <Controller
-                  name={`${base}.mediaConsentNote`}
-                  control={control}
-                  render={({ field }) => (
-                    <AutoGrowTextarea
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      hasError={!!fieldError('mediaConsentNote')}
-                      maxLength={MAX.mediaConsentNote}
-                      minRows={2}
-                    />
-                  )}
-                />
-              </FormField>
-            )}
-            <FormField label={t('visitRequestV2:card.transportationNote')} error={fieldError('transportationNote')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-6 xl:col-span-4" label={t('visitRequestV2:card.transportationNote')} error={fieldError('transportationNote')} showValidIcon={false}>
               <Controller
                 name={`${base}.transportationNote`}
                 control={control}
                 render={({ field }) => (
-                  <AutoGrowTextarea
+                  <AutoGrowTextField
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('transportationNote')}
                     maxLength={MAX.transportationNote}
-                    minRows={2}
+                    ariaLabel={t('visitRequestV2:card.transportationNote')}
                   />
                 )}
               />
             </FormField>
-            <FormField label={t('visitRequestV2:card.notes')} error={fieldError('notes')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-6 xl:col-span-4" label={t('visitRequestV2:card.notes')} error={fieldError('notes')} showValidIcon={false}>
               <Controller
                 name={`${base}.notes`}
                 control={control}
                 render={({ field }) => (
-                  <AutoGrowTextarea
+                  <AutoGrowTextField
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('notes')}
                     maxLength={MAX.notes}
-                    minRows={2}
+                    ariaLabel={t('visitRequestV2:card.notes')}
                   />
                 )}
               />
             </FormField>
+            {mediaConsent === 'AGREED' && (
+              <FormField className="col-span-12" label={t('visitRequestV2:card.mediaNote')} error={fieldError('mediaConsentNote')} showValidIcon={false}>
+                <Controller
+                  name={`${base}.mediaConsentNote`}
+                  control={control}
+                  render={({ field }) => (
+                    <AutoGrowTextField
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      hasError={!!fieldError('mediaConsentNote')}
+                      maxLength={MAX.mediaConsentNote}
+                      ariaLabel={t('visitRequestV2:card.mediaNote')}
+                    />
+                  )}
+                />
+              </FormField>
+            )}
           </div>
 
           {/* Who processes THIS campus — authenticated create only; absent for public submit. */}

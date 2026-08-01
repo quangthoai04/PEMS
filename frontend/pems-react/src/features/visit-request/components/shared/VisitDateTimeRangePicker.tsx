@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarDays } from 'lucide-react';
 import { TimeSelect, type TimeOption } from './TimeSelect';
 import {
   addMinutes,
@@ -12,6 +11,8 @@ import {
   timeSlots,
   wallClockToMinutes,
 } from './visitDateTime';
+import { FormField } from './FormField';
+import { HelpTooltip } from './HelpTooltip';
 
 /** Suggested granularity of the time lists. The user may still type any minute. */
 const STEP_MINUTES = 15;
@@ -34,7 +35,6 @@ export interface VisitDateTimeRangeProps {
   idPrefix: string;
 }
 
-const fieldLabel = 'text-sm font-bold text-slate-900';
 
 /**
  * The visit window, entered the way a calendar app asks for it (plan §9–§13): one date, a start
@@ -210,17 +210,6 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
   const showStartError = startError ?? liveStartError;
   const showEndError = endError ?? liveEndError;
 
-  /** "Thứ Sáu, 31/07/2026" — the Vietnamese reading of whatever the date input holds. */
-  const readableDate = (value: string | undefined): string => {
-    if (!value) return '';
-    const parts = splitWallClock(`${value}T00:00`);
-    if (!parts) return '';
-    const [y, m, d] = value.split('-').map(Number);
-    return new Intl.DateTimeFormat(i18n.language === 'en' ? 'en-GB' : 'vi-VN', {
-      weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
-    }).format(new Date(Date.UTC(y, m - 1, d)));
-  };
-
   const dateCls = (hasError?: boolean) =>
     `h-11 w-full min-w-0 rounded-xl border bg-white px-4 text-sm font-semibold text-slate-800 outline-none transition-colors disabled:bg-slate-100 ${
       hasError
@@ -228,137 +217,29 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
         : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10'
     }`;
 
+  const scheduleLabel = (
+    <span className="flex items-center gap-1.5">
+      {t('visitRequestV2:schedule.date')}
+      <HelpTooltip content={t('visitRequestV2:schedule.rulesHint', { hours: minAdvanceHours, minutes: MIN_DURATION_MINUTES })} />
+    </span>
+  );
+
   return (
-    <fieldset data-testid={`${idPrefix}-schedule`} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
-      <legend className="flex items-center gap-1.5 px-1 text-sm font-extrabold text-slate-900">
-        <CalendarDays className="h-4 w-4 text-[#004c91]" />
-        {t('visitRequestV2:schedule.legend')} <span className="text-red-500">*</span>
-      </legend>
-
-      {multiDay ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-[1fr_9rem]">
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel} htmlFor={`${prefix}-start-date`}>
-                {t('visitRequestV2:schedule.startDate')}
-              </label>
-              <input
-                id={`${prefix}-start-date`}
-                type="date"
-                lang="vi-VN"
-                disabled={disabled}
-                min={minStartDate || undefined}
-                value={start?.date ?? ''}
-                onChange={e => setStartDate(e.target.value)}
-                className={dateCls(!!showStartError)}
-                data-testid={`${idPrefix}-start-date`}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel} htmlFor={`${prefix}-start-time`}>
-                {t('visitRequestV2:schedule.startTime')}
-              </label>
-              <TimeSelect
-                id={`${prefix}-start-time`}
-                testId={`${idPrefix}-start-time`}
-                ariaLabel={t('visitRequestV2:schedule.startTime')}
-                value={start?.time ?? ''}
-                onChange={setStartTime}
-                options={startOptions}
-                hasError={!!showStartError}
-                disabled={disabled}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-[1fr_9rem]">
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel} htmlFor={`${prefix}-end-date`}>
-                {t('visitRequestV2:schedule.endDate')}
-              </label>
-              <input
-                id={`${prefix}-end-date`}
-                type="date"
-                lang="vi-VN"
-                disabled={disabled}
-                min={start?.date || minStartDate || undefined}
-                value={end?.date ?? ''}
-                onChange={e => setEndDate(e.target.value)}
-                className={dateCls(!!showEndError)}
-                data-testid={`${idPrefix}-end-date`}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel} htmlFor={`${prefix}-end-time`}>
-                {t('visitRequestV2:schedule.endTime')}
-              </label>
-              <TimeSelect
-                id={`${prefix}-end-time`}
-                testId={`${idPrefix}-end-time`}
-                ariaLabel={t('visitRequestV2:schedule.endTime')}
-                value={end?.time ?? ''}
-                onChange={setEndTime}
-                options={endOptions}
-                emptyHint={t('visitRequestV2:schedule.noEndSlots')}
-                hasError={!!showEndError}
-                disabled={disabled}
-              />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-[1fr_9rem_9rem]">
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel} htmlFor={`${prefix}-start-date`}>
-              {t('visitRequestV2:schedule.date')}
-            </label>
-            <input
-              id={`${prefix}-start-date`}
-              type="date"
-              lang="vi-VN"
-              disabled={disabled}
-              min={minStartDate || undefined}
-              value={start?.date ?? ''}
-              onChange={e => setStartDate(e.target.value)}
-              className={dateCls(!!showStartError)}
-              data-testid={`${idPrefix}-start-date`}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel} htmlFor={`${prefix}-start-time`}>
-              {t('visitRequestV2:schedule.startTime')}
-            </label>
-            <TimeSelect
-              id={`${prefix}-start-time`}
-              testId={`${idPrefix}-start-time`}
-              ariaLabel={t('visitRequestV2:schedule.startTime')}
-              value={start?.time ?? ''}
-              onChange={setStartTime}
-              options={startOptions}
-              hasError={!!showStartError}
-              disabled={disabled}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel} htmlFor={`${prefix}-end-time`}>
-              {t('visitRequestV2:schedule.endTime')}
-            </label>
-            <TimeSelect
-              id={`${prefix}-end-time`}
-              testId={`${idPrefix}-end-time`}
-              ariaLabel={t('visitRequestV2:schedule.endTime')}
-              value={end?.time ?? ''}
-              onChange={setEndTime}
-              options={endOptions}
-              emptyHint={t('visitRequestV2:schedule.noEndSlots')}
-              hasError={!!showEndError}
-              disabled={disabled}
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+    <>
+      <div className="col-span-12 lg:col-span-4 flex flex-col gap-2">
+        <FormField label={scheduleLabel} required showValidIcon={false}>
+          <input
+            id={`${prefix}-start-date`}
+            type="date"
+            lang="vi-VN"
+            disabled={disabled}
+            min={minStartDate || undefined}
+            value={start?.date ?? ''}
+            onChange={e => setStartDate(e.target.value)}
+            className={dateCls(!!showStartError)}
+            data-testid={`${idPrefix}-start-date`}
+          />
+        </FormField>
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
           <input
             type="checkbox"
@@ -370,41 +251,96 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
           />
           {t('visitRequestV2:schedule.endsOnAnotherDay')}
         </label>
+        {showStartError && (
+          <p className="text-xs font-semibold text-red-600">
+            {showStartError}
+          </p>
+        )}
+      </div>
 
-        {total !== null && total > 0 && (
+      <div className="col-span-12 lg:col-span-2">
+        <FormField label={t('visitRequestV2:schedule.startTime')} required showValidIcon={false}>
+          <TimeSelect
+            id={`${prefix}-start-time`}
+            testId={`${idPrefix}-start-time`}
+            ariaLabel={t('visitRequestV2:schedule.startTime')}
+            value={start?.time ?? ''}
+            onChange={setStartTime}
+            options={startOptions}
+            hasError={!!showStartError}
+            disabled={disabled}
+          />
+        </FormField>
+      </div>
+
+      {multiDay ? (
+        <>
+          {/* Offset to align End Date under Start Date when wrapped */}
+          <div className="hidden lg:block lg:col-span-4" />
+          <div className="col-span-12 lg:col-span-4 flex flex-col gap-2">
+            <FormField label={t('visitRequestV2:schedule.endDate')} required showValidIcon={false}>
+              <input
+                id={`${prefix}-end-date`}
+                type="date"
+                lang="vi-VN"
+                disabled={disabled}
+                min={start?.date || minStartDate || undefined}
+                value={end?.date ?? ''}
+                onChange={e => setEndDate(e.target.value)}
+                className={dateCls(!!showEndError)}
+                data-testid={`${idPrefix}-end-date`}
+              />
+            </FormField>
+            {showEndError && (
+              <p className="text-xs font-semibold text-red-600">
+                {showEndError}
+              </p>
+            )}
+          </div>
+          <div className="col-span-12 lg:col-span-2">
+            <FormField label={t('visitRequestV2:schedule.endTime')} required showValidIcon={false}>
+              <TimeSelect
+                id={`${prefix}-end-time`}
+                testId={`${idPrefix}-end-time`}
+                ariaLabel={t('visitRequestV2:schedule.endTime')}
+                value={end?.time ?? ''}
+                onChange={setEndTime}
+                options={endOptions}
+                emptyHint={t('visitRequestV2:schedule.noEndSlots')}
+                hasError={!!showEndError}
+                disabled={disabled}
+              />
+            </FormField>
+          </div>
+        </>
+      ) : (
+        <div className="col-span-12 lg:col-span-2">
+          <FormField label={t('visitRequestV2:schedule.endTime')} required error={showEndError} showValidIcon={false}>
+            <TimeSelect
+              id={`${prefix}-end-time`}
+              testId={`${idPrefix}-end-time`}
+              ariaLabel={t('visitRequestV2:schedule.endTime')}
+              value={end?.time ?? ''}
+              onChange={setEndTime}
+              options={endOptions}
+              emptyHint={t('visitRequestV2:schedule.noEndSlots')}
+              hasError={!!showEndError}
+              disabled={disabled}
+            />
+          </FormField>
+        </div>
+      )}
+
+      {total !== null && total > 0 && (
+        <div className="col-span-12 lg:col-span-12 flex items-center gap-2">
           <span
             data-testid={`${idPrefix}-duration`}
             className="rounded-full bg-[#004c91]/10 px-3 py-1 text-xs font-bold text-[#004c91]"
           >
             {t('visitRequestV2:schedule.duration', { value: formatDuration(total) })}
           </span>
-        )}
-      </div>
-
-      {start?.date && (
-        <p className="mt-2 text-xs font-medium text-slate-500">
-          {multiDay
-            ? t('visitRequestV2:schedule.readableRange', {
-                from: readableDate(start.date), to: readableDate(end?.date),
-              })
-            : readableDate(start.date)}
-        </p>
+        </div>
       )}
-
-      <p className="mt-1 text-xs font-medium text-slate-500">
-        {t('visitRequestV2:schedule.rulesHint', { hours: minAdvanceHours, minutes: MIN_DURATION_MINUTES })}
-      </p>
-
-      {showStartError && (
-        <p data-testid={`${idPrefix}-start-error`} className="mt-2 text-xs font-semibold text-red-600">
-          {showStartError}
-        </p>
-      )}
-      {showEndError && (
-        <p data-testid={`${idPrefix}-end-error`} className="mt-1 text-xs font-semibold text-red-600">
-          {showEndError}
-        </p>
-      )}
-    </fieldset>
+    </>
   );
 };

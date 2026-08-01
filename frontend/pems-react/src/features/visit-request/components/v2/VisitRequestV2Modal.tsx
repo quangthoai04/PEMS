@@ -115,9 +115,11 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
       >
         {/* Sticky header (grid row, so it cannot be overlapped by the site header) */}
         <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
-          <h2 id="v2-modal-title" className="truncate text-lg font-extrabold text-[#004c91] sm:text-xl">
-            {t('visitRequestV2:modal.title')}
-          </h2>
+          <div>
+            <h2 id="v2-modal-title" className="truncate text-xl font-extrabold text-[#004c91] sm:text-2xl">
+              {t('visitRequestV2:modal.title')}
+            </h2>
+          </div>
           <button
             type="button"
             aria-label={t('visitRequestV2:modal.close')}

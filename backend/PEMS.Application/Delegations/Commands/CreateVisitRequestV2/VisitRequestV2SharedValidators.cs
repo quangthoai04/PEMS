@@ -37,7 +37,6 @@ public sealed class RegistrantInputV2Validator : AbstractValidator<RegistrantInp
             .NotEmpty().WithMessage("Quốc tịch người đăng ký không được để trống.")
             .MaximumLength(100).WithMessage(TooLong("Quốc tịch người đăng ký", 100));
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Số điện thoại người đăng ký không được để trống.")
             // registrant_phone is VARCHAR(50): without this the row is rejected by MySQL rather
             // than by a message naming the field.
             .MaximumLength(50).WithMessage(TooLong("Số điện thoại người đăng ký", 50))
@@ -66,7 +65,6 @@ public sealed class PrimaryContactV2Validator : AbstractValidator<ContactPointDt
             .NotEmpty().WithMessage("Đơn vị công tác đầu mối liên hệ không được để trống.")
             .MaximumLength(200).WithMessage(TooLong("Đơn vị công tác đầu mối liên hệ", 200));
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Số điện thoại đầu mối liên hệ không được để trống.")
             .MaximumLength(50).WithMessage(TooLong("Số điện thoại đầu mối liên hệ", 50))
             .MustBeAPhoneNumber("Số điện thoại đầu mối liên hệ không hợp lệ.");
         RuleFor(x => x.Email)
@@ -92,7 +90,6 @@ public sealed class OperationalContactV2Validator : AbstractValidator<ContactPoi
             .NotEmpty().WithMessage("Đơn vị công tác đầu mối phối hợp không được để trống.")
             .MaximumLength(200).WithMessage(TooLong("Đơn vị công tác đầu mối phối hợp", 200));
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Số điện thoại đầu mối phối hợp không được để trống.")
             .MaximumLength(50).WithMessage(TooLong("Số điện thoại đầu mối phối hợp", 50))
             .MustBeAPhoneNumber("Số điện thoại đầu mối phối hợp không hợp lệ.");
         RuleFor(x => x.Email)

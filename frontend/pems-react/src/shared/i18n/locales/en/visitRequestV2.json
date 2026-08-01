@@ -32,7 +32,10 @@
     "ordinal": "No.",
     "count": "{{count}} people",
     "noVisitors": "No guests listed yet.",
-    "noSupport": "No accompanying support staff."
+    "noSupport": "No accompanying support staff.",
+    "noSupportTeam": "No support staff yet.",
+    "removeGuest": "Remove guest",
+    "removeSupport": "Remove support member"
   },
   "card": {
     "cardN": "Campus {{n}}",
@@ -42,7 +45,7 @@
     "removeRow": "Remove row",
     "copyFromLabel": "Copy content from:",
     "copyFromPlaceholder": "Choose source campus…",
-    "applyToAll": "Apply this content to the remaining campuses…",
+    "applyToAll": "Apply to other campuses",
     "copySuccess": "Content copied successfully",
     "applyAllSuccess": "Applied to the remaining campuses",
     "addCampusSuccess": "Campus card added",
@@ -250,6 +253,7 @@
   },
   "amend": {
     "open": "Propose change",
+    "openUpdate": "Update information",
     "title": "Propose a change — {{campus}}",
     "activeStaysNote": "If you are Staff, your proposal is automatically approved and applied. If you are a Visitor, the content stays unchanged until the Host or Staff Leader approves it.",
     "reason": "Reason for the change",
@@ -375,6 +379,8 @@
   },
   "status": {
     "unknown": "Unknown",
+    "complete": "Information completed",
+    "incomplete": "Incomplete",
     "instance": {
       "WAITING_REQUEST_APPROVAL": "Awaiting Staff Leader",
       "ASSIGNED": "Approved — reception owner assigned",
