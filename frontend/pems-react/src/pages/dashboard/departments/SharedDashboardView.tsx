@@ -609,7 +609,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               location: item.campusName || 'Hòa Lạc',
               host: item.senderName || 'Hệ thống',
               guests: item.delegationName || item.title,
-              purpose: itemStatus === 'CANCELLED' ? `Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${item.cancelReason ? ` Lý do: ${item.cancelReason}` : ''}` : item.title || '',
+              purpose: itemStatus === 'CANCELLED' ? `Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${item.cancelReason ? ` Lý do: ${item.cancelReason}` : ''}` : (item.description && item.description.trim() ? item.description : (item.title || '')),
               vipLevel: 'Standard',
               contactPerson: item.relatedUserName || 'N/A',
               relatedUserId: item.relatedUserId,
@@ -3375,11 +3375,19 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
                           </div>
                           <div className="p-6 bg-[#f8fafc] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 transition-all relative">
-                            {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line, idx) => (
-                              <p key={idx} className={idx > 0 && line.startsWith('*') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
-                                {line}
-                              </p>
-                            ))}
+                            {(() => {
+                              const textContent = (activeEventDetail?.description && activeEventDetail.description.trim())
+                                ? activeEventDetail.description
+                                : (activePopoverEvent?.purpose || activeEventDetail?.purpose || '');
+                              if (typeof textContent === 'string' && textContent) {
+                                return textContent.split('\n').map((line: string, idx: number) => (
+                                  <p key={idx} className={idx > 0 && line.startsWith('*') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
+                                    {line}
+                                  </p>
+                                ));
+                              }
+                              return null;
+                            })()}
                           </div>
                         </div>
 
@@ -3446,19 +3454,27 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               ? `${formatDateTimeDisplay(activeEventDetail?.usageStartAt)} - ${formatDateTimeDisplay(activeEventDetail?.usageEndAt)}`
                               : `${activePopoverEvent.time || ''}${activePopoverEvent.date ? ` · ${activePopoverEvent.date.split('-').reverse().join('-')}` : ''}`}
                           />
-                          {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.trim() && (
-                            <div className="flex items-start gap-2 py-1 pt-2 mt-1 border-t border-gray-200">
-                              <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-1">Nội dung chi tiết công việc</span>
-                                {activePopoverEvent.purpose.split('\n').map((line: string, idx: number) => (
-                                  <p key={idx} className={`text-sm text-gray-700 leading-relaxed ${idx > 0 && line.startsWith('*') ? 'mt-2 font-bold text-gray-900' : ''}`}>
-                                    {line}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                          {(() => {
+                            const textContent = (activeEventDetail?.description && activeEventDetail.description.trim())
+                              ? activeEventDetail.description
+                              : (typeof activePopoverEvent.purpose === 'string' ? activePopoverEvent.purpose : '');
+                            if (textContent && textContent.trim()) {
+                              return (
+                                <div className="flex items-start gap-2 py-1 pt-2 mt-1 border-t border-gray-200">
+                                  <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                                  <div className="min-w-0 flex-1">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-1">Nội dung chi tiết công việc</span>
+                                    {textContent.split('\n').map((line: string, idx: number) => (
+                                      <p key={idx} className={`text-sm text-gray-700 leading-relaxed ${idx > 0 && line.startsWith('*') ? 'mt-2 font-bold text-gray-900' : ''}`}>
+                                        {line}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
 
                         <div className="rounded-xl border border-orange-200 bg-orange-50/40 p-4">

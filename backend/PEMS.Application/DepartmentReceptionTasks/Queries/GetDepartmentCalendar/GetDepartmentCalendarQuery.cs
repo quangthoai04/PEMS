@@ -36,6 +36,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
         public ulong? RelatedUserId { get; set; }
         public string SenderName { get; set; }
         public string? CancelReason { get; set; }
+        public string? Description { get; set; }
     }
 
     public class GetDepartmentCalendarQueryHandler : IRequestHandler<GetDepartmentCalendarQuery, List<DepartmentCalendarItemDto>>
@@ -220,7 +221,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     DelegationName = item.EffectiveDelegationName ?? "N/A",
                     RelatedUserId = l.AssignedToUserId ?? l.ReceivedBy ?? l.UpdatedBy,
                     SenderName = senderName,
-                    CancelReason = item.c.CancellationReason ?? item.vr.CancellationReason
+                    CancelReason = item.c.CancellationReason ?? item.vr.CancellationReason,
+                    Description = l.Description
                 });
             }
 
