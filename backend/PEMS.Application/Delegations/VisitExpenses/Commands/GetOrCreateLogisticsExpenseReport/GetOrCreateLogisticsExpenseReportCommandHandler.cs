@@ -76,21 +76,13 @@ public class GetOrCreateLogisticsExpenseReportCommandHandler : IRequestHandler<G
         if (!isDepartmentMember)
             throw new NotFoundException(nameof(VisitExpenseReport), request.LogisticsItemId);
 
-        // Must be AFTER_VISIT to create
-        if (!isAfterVisit && !isClosed)
-            throw new ForbiddenException("Can only initialize expense report in AFTER_VISIT state.");
-
-        // Check return handover if needed (simplified check based on Handovers)
+        // Check borrow handover if needed: allows initializing as soon as BORROW handover is signed for the first time
         bool needsReturn = logisticsItem.Handovers.Any(h => h.HandoverType == "BORROW");
-        if (needsReturn)
+        bool hasSignedBorrow = logisticsItem.Handovers.Any(h => h.HandoverType == "BORROW" && h.ProviderSignedBy != null);
+
+        if (needsReturn && !hasSignedBorrow)
         {
-            bool hasReturned = logisticsItem.Handovers.Any(h => h.HandoverType == "RETURN" && h.ProviderSignedBy != null);
-            if (!hasReturned)
-                throw new ValidationException("Must complete RETURN handover before initializing expense report for borrowed items.");
-        }
-        else if (!isDone)
-        {
-            throw new ValidationException("Logistics item must be DONE before initializing expense report.");
+            throw new ValidationException("Chưa ký bàn giao lần đầu tiên cho hạng mục này.");
         }
 
         // 5. Idempotent creation

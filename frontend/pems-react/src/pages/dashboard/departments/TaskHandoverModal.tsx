@@ -517,9 +517,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                 )}
               </div>
 
-              {/* Ghi chú chi phí — hiện khi biên bản đã ký nghiệm thu đủ 2 bên; nằm trong vùng in
+              {/* Ghi chú chi phí — hiện khi biên bản đã ký bàn giao lần đầu (Bên Giao / Provider đã ký); nằm trong vùng in
                   nên Tải PDF biên bản sẽ kèm bảng chi phí. Người xem không thuộc phòng ban → panel tự ẩn. */}
-              {isBorrowDone && nt1 && nt2 && detailData.LogisticsItemId && (
+              {(bg1 || isBorrowDone) && detailData.LogisticsItemId && (
                 <LogisticsExpensePanel logisticsItemId={detailData.LogisticsItemId} readOnly={readOnly} />
               )}
             </div>
