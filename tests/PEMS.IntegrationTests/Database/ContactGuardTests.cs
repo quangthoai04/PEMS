@@ -560,16 +560,23 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
     // ── The import's own self-test must agree ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Re-runs the guard self-test the way the import does — through a handler that reads
-    /// GET DIAGNOSTICS first — and asserts both counters are zero. This is the assertion that the
-    /// pre-G12 script could not make honestly.
+    /// Every guard self-test handler in the canonical import reads GET DIAGNOSTICS BEFORE it sets its
+    /// raised flag. Setting the flag first loses the SQLSTATE and message of the condition being
+    /// handled, which is what the pre-G12 script did — so its self-test could report "guard fired"
+    /// without being able to say what it fired with.
+    ///
+    /// <para>
+    /// Resolved through <see cref="CanonicalSqlScript.ResolvePath"/> rather than a filename typed in
+    /// here. This test used to name PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql, which
+    /// commit 74deff85 replaced and deleted — so it had stopped checking anything and was failing on
+    /// FileNotFoundException instead. CanonicalSqlScript already tracks the live filename (see its
+    /// FileName remarks); going through it means the next rename cannot strand this again.
+    /// </para>
     /// </summary>
     [Fact]
     public void Canonical_self_test_handlers_read_diagnostics_before_setting_any_flag()
     {
-        var script = File.ReadAllText(Path.Combine(
-            CanonicalSqlScript.FindRepositoryRoot(), "docs", "database", "scripts",
-            "PEMS_FULL_V2_NO_SEED_DATA_GALLERY_DOCUMENT_AI_FIXED.sql"));
+        var script = File.ReadAllText(CanonicalSqlScript.ResolvePath()).Replace("\r\n", "\n");
 
         const string wrongOrder =
             "SET v_raised = TRUE;\n      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE";

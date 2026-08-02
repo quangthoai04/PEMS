@@ -61,11 +61,25 @@ public static class EmailComposition
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
-    public static string DetailLinkBlock(string detailUrl, string label = "Mở yêu cầu để xử lý")
-        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+    /// <summary>
+    /// A single login-required link. <paramref name="note"/> is the sentence printed under the button and
+    /// MUST describe what this particular recipient can do there — the default names the Department
+    /// Leader's options because that is the flow this block was written for, and it is wrong for every
+    /// other caller. The expense reminder passes its own; a caller that has nothing to add passes "".
+    /// </summary>
+    public static string DetailLinkBlock(
+        string detailUrl,
+        string label = "Mở yêu cầu để xử lý",
+        string note = "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.")
+    {
+        var noteHtml = string.IsNullOrWhiteSpace(note)
+            ? string.Empty
+            : $@"<p style=""color:#6b7280;font-size:12px;margin-top:8px"">{HE(note)}</p>";
+
+        return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>");
+        </div>{noteHtml}");
+    }
 
     public static string LogisticsActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Hành động khác")
     {

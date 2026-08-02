@@ -273,8 +273,47 @@ public static class CanonicalSqlScript
     /// ENUM widening and a trigger body only: no table, column, index, trigger or row added or removed,
     /// so ExpectedBaseTableCount (83) and ExpectedTriggerCount (32) are unchanged — verified by a fresh
     /// import (83 tables / 32 triggers / 255 FKs / 31 templates) before this constant was touched.
+    ///
+    /// (2026-08-02, twelfth bump) SEED TEXT ONLY, four templates. VISIT_DEPARTMENT_STAFF_ASSIGNMENT,
+    /// VISIT_REMINDER_HOST, VISIT_REMINDER_PARTICIPANTS and LOGISTICS_EXPENSE_REPORT_REMINDER each gained
+    /// a trailing <c>{{actionBlock}}</c> in body_vi and body_en.
+    ///
+    /// All four senders were ALREADY building a trusted block and passing it — the department assignment
+    /// mints real accept/decline tokens, the other three build a login-required link from
+    /// App:FrontendBaseUrl — but no body had the placeholder, so the block was assembled and then
+    /// silently dropped at render time. The assignment mail in particular reached its recipient with the
+    /// two buttons it asks them to press missing entirely.
+    ///
+    /// The block is trusted markup, not a variable, so <c>variables_text</c> is deliberately unchanged
+    /// (the nine templates that already carried the placeholder list it nowhere either, and 03_verify's
+    /// E1/E2 checks pass on that basis). Catalog size is still 31. No DDL, no trigger, no row added or
+    /// removed; ExpectedBaseTableCount (83)/ExpectedTriggerCount (32) unchanged.
+    ///
+    /// (2026-08-02, thirteenth bump) SEED CONTENT + REMOVAL OF TWO DEAD BLOCKS. Two changes, both
+    /// seed-only.
+    ///
+    /// 1. CONTENT OWNERSHIP RESOLVED. The seed and email-template-defaults.json had disagreed on all
+    ///    six text columns for 26 of the 31 templates since before this branch — the seed carrying
+    ///    terse one-line placeholders, the JSON the full wording. The product owner's decision
+    ///    (2026-08-02) is that the JSON holds the authoritative content, so those 26 rows were brought
+    ///    up to it and 02_sync_templates.sql was regenerated from the resulting seed. One-directional:
+    ///    JSON → seed → sync script. The four {{actionBlock}} placeholders added in the twelfth bump
+    ///    survive because the JSON carries them too; ACCOUNT_ACTIVATED gains one for the same reason
+    ///    those four did — its sender has always passed EmailComposition.LoginBlock, and without the
+    ///    placeholder the sign-in button was built and then dropped at render time.
+    ///
+    /// 2. TWO DEAD SEED BLOCKS DELETED. Section C seeded sent_emails 99101-99108 plus their
+    ///    recipients, and section E seeded the 15 email_action_tokens that point at them. Both sit
+    ///    BEFORE the R0 catalog rebuild, which runs unconditional DELETEs against sent_emails,
+    ///    sent_email_recipients and email_action_tokens and then re-seeds 31 messages and 39 tokens.
+    ///    Neither block had ever reached an imported database; they existed only to be deleted. They
+    ///    are removed as a unit because every section E row is an FK child of a section C row.
+    ///
+    /// Verified by a fresh import before this constant was touched: 83 tables / 32 triggers / 255 FKs
+    /// / 31 templates, 31 sent_emails, 31 recipients, 39 action tokens — the sent_emails id set is
+    /// byte-identical to the pre-change import (64001..64031), proving only never-surviving rows went.
     public const string ExpectedSha256 =
-        "f5c660c3dad8f0326a9b41d49b5ace82c621ee2df563526f598c5467e6cd7bb3";
+        "839ecce592994550a43e98ed1d0937d080daf1c9133ec70be0a1bce995a61533";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

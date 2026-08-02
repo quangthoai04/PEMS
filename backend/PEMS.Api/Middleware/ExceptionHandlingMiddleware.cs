@@ -54,6 +54,37 @@ public sealed class ExceptionHandlingMiddleware
         }
     }
 
+    /// <summary>
+    /// The sentence a validation failure should actually say.
+    ///
+    /// <para>
+    /// A <see cref="ValidationException"/> built from a FluentValidation result carries the specific
+    /// per-field wording in <see cref="ValidationException.Errors"/> and leaves <c>Message</c> at the
+    /// framework's placeholder, "One or more validation failures have occurred." That placeholder was
+    /// being sent as the response's <c>message</c>, and the frontend's error reader prefers
+    /// <c>message</c> over <c>errors</c> — so a Vietnamese operator who typed a disallowed address was
+    /// shown an English sentence about "validation failures" while the server already knew, and had
+    /// written into the same payload, that only @gmail.com and @fpt.edu.vn are accepted.
+    /// </para>
+    /// <para>
+    /// When every field error reduces to ONE distinct sentence, that sentence is the message. When
+    /// several different things are wrong, no single sentence is honest about it, so the placeholder
+    /// stays and the form renders <c>errors</c> field by field — which is the right shape for that case
+    /// anyway. <c>errors</c> is always sent unchanged either way.
+    /// </para>
+    /// </summary>
+    private static string ValidationMessageFor(ValidationException validation)
+    {
+        var distinct = validation.Errors.Values
+            .SelectMany(messages => messages)
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Distinct(StringComparer.Ordinal)
+            .Take(2)
+            .ToList();
+
+        return distinct.Count == 1 ? distinct[0] : validation.Message;
+    }
+
     private async Task HandleAsync(HttpContext context, Exception ex)
     {
         var traceId = Activity.Current?.Id ?? context.TraceIdentifier;
@@ -69,7 +100,7 @@ public sealed class ExceptionHandlingMiddleware
                 {
                     success = false,
                     errorCode = validation.ErrorCode,
-                    message = validation.Message,
+                    message = ValidationMessageFor(validation),
                     errors = validation.Errors,
                     traceId,
                 };

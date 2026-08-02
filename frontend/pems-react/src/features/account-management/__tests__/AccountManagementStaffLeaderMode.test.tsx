@@ -26,7 +26,12 @@ const api = accountManagementApi as unknown as Record<string, ReturnType<typeof 
 
 const INTERNAL_SUBTITLE =
   'Quản lý tài khoản của nhân sự phòng IC, trưởng phòng của các phòng ban khác và sinh viên trong cơ sở';
-const VISITOR_SUBTITLE = 'Tất cả tài khoản của khách đã từng đến thăm cơ sở';
+
+// Visitor mode no longer shows a subtitle of its own: commit bc1e7340 replaced that whole surface
+// with <RelatedVisitorsTab>, which brings its own filter bar. The nationality filter is the marker
+// used below — it exists only in the Visitor tab, so it proves the swap the same way the removed
+// subtitle did, and it will not drift with copy edits the way a sentence does.
+const VISITOR_ONLY_FILTER = 'Quốc tịch';
 
 function signInAsStaffLeader() {
   localStorage.setItem('currentUser', JSON.stringify({
@@ -63,19 +68,21 @@ describe('AccountManagement — Staff Leader account type filter', () => {
     expect(screen.queryByRole('option', { name: 'Tất cả tài khoản' })).toBeNull();
   });
 
-  it('shows the internal subtitle by default and swaps it when the mode changes', async () => {
+  it('opens on the internal view and swaps the whole surface when the mode changes', async () => {
     renderPage();
 
     expect(await screen.findByText(INTERNAL_SUBTITLE)).toBeInTheDocument();
-    expect(screen.queryByText(VISITOR_SUBTITLE)).toBeNull();
+    expect(screen.queryByLabelText(VISITOR_ONLY_FILTER)).toBeNull();
 
     await userEvent.selectOptions(accountTypeSelect(), 'VISITOR');
 
-    expect(await screen.findByText(VISITOR_SUBTITLE)).toBeInTheDocument();
+    // The internal surface is gone, not merely re-captioned, and the Visitor tab is mounted.
+    expect(await screen.findByLabelText(VISITOR_ONLY_FILTER)).toBeInTheDocument();
     expect(screen.queryByText(INTERNAL_SUBTITLE)).toBeNull();
 
     await userEvent.selectOptions(accountTypeSelect(), 'INTERNAL');
     expect(await screen.findByText(INTERNAL_SUBTITLE)).toBeInTheDocument();
+    expect(screen.queryByLabelText(VISITOR_ONLY_FILTER)).toBeNull();
   });
 });
 
