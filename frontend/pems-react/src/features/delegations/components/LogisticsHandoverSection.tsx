@@ -18,6 +18,7 @@ import {
   Loader2, PackageCheck, Undo2, CheckCircle2, AlertCircle,
   PenLine, Clock, X, Building2, FileText, Download
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { delegationsApi } from '../api/delegationsApi';
 import {
   LOGISTICS_STATUS_META,
@@ -138,9 +139,15 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
     setSavingDocType(type);
     try {
       await delegationsApi.saveLogisticsHandoverDocument(visitInstanceId, logisticsItemId, type);
-      pushToast?.('success', 'Đã lưu biên bản vào hệ thống.');
+      const msg = type === 'BORROW'
+        ? 'Đã lưu biên bản bàn giao vào hệ thống thành công.'
+        : 'Đã lưu biên bản nghiệm thu vào hệ thống thành công.';
+      toast.success(msg);
+      pushToast?.('success', msg);
     } catch (e: any) {
-      pushToast?.('error', apiError(e, 'Không thể lưu biên bản vào hệ thống.'));
+      const msg = apiError(e, 'Không thể lưu biên bản vào hệ thống.');
+      toast.error(msg);
+      pushToast?.('error', msg);
     } finally {
       setSavingDocType(null);
     }
@@ -219,7 +226,10 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
         visitInstanceId, signTarget.item.logisticsItemId,
         { handoverType: signTarget.type, note: note.trim() || null, checklistJson },
       );
-      pushToast?.('success', res.message || 'Đã ký biên bản.');
+      const defaultMsg = signTarget.type === 'BORROW' ? 'Đã ký nhận bàn giao tài sản thành công.' : 'Đã ký nghiệm thu tài sản thành công.';
+      const msg = res.message || defaultMsg;
+      toast.success(msg);
+      pushToast?.('success', msg);
       setSignTarget(null);
       setNote('');
       await load();

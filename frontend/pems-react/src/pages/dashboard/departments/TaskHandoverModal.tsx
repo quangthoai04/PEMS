@@ -104,7 +104,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
     setSavingDocType(type);
     try {
       await delegationsApi.saveLogisticsHandoverDocument(detailData.VisitInstanceId, detailData.LogisticsItemId, type);
-      toast.success('Đã lưu biên bản vào hệ thống.');
+      toast.success(type === 'BORROW' ? 'Đã lưu biên bản bàn giao vào hệ thống thành công.' : 'Đã lưu biên bản nghiệm thu vào hệ thống thành công.');
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Không thể lưu biên bản vào hệ thống.');
     } finally {
@@ -120,7 +120,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
       // của Host, ký ở LogisticsHandoverSection, không gửi lại từ đây để tránh đè dữ liệu Host vừa điền.
       const checklistJson = type === 'BORROW' ? JSON.stringify(checklistRows) : undefined;
       await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note || undefined, checklistJson);
-      toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nhận lại'}`);
+      toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nghiệm thu'} thành công.`);
       onSuccess?.();
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Không thể ký biên bản. Vui lòng thử lại.');
