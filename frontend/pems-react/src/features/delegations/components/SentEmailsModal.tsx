@@ -279,7 +279,7 @@ function SentEmailCard({
                   <div className="mb-2 rounded bg-blue-50 px-2 py-1 text-[11px] font-medium text-[#004c91] border border-blue-100 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Đây là bản xem lại email đã gửi. Các nút thao tác đã bị vô hiệu hóa trong chế độ xem trước.
                   </div>
-                  <div className="select-text pointer-events-none" dangerouslySetInnerHTML={{ __html: renderedBody }} />
+                  <div className="pems-email-body select-text pointer-events-none" dangerouslySetInnerHTML={{ __html: renderedBody }} />
                 </div>
               )}
             </div>

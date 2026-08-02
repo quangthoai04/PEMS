@@ -112,6 +112,7 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
             RelatedId = email.RelatedId,
             Subject = email.Subject,
             BodySnapshot = email.BodySnapshot ?? "",
+            BodyFormat = email.BodyFormat.ToString(),
             Status = email.Status,
             ErrorMessage = email.ErrorMessage,
             RetryCount = email.RetryCount,

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
+using System.Xml.Linq;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
 using PEMS.Application.Delegations.SetupProgressEmail;
 using Xunit;
@@ -101,9 +103,18 @@ public class VisitSetupEmailHtmlTests
         var html = VisitSetupEmailHtml.Render(Snapshot(), "vi");
 
         Assert.Contains("Tanaka Hiro", Seen(html));
+
         // A nameless row is a half-finished form entry; echoing it back reads as a lost delegate.
-        // Structural, so it reads the raw markup rather than the decoded text.
-        Assert.DoesNotContain("<td style=\"border:1px solid #d1d5db;vertical-align:top\"></td>", html);
+        // Asserted against the parsed tree rather than an exact cell string: the cell's style is a
+        // presentation detail that changes whenever the table layout is tuned, and pinning it here
+        // made this test pass for the wrong reason the moment it did.
+        var emptyLeadCells = XElement
+            .Parse("<root>" + html + "</root>")
+            .Descendants("tbody")
+            .Elements("tr")
+            .Count(tr => string.IsNullOrWhiteSpace(tr.Elements("td").FirstOrDefault()?.Value));
+
+        Assert.Equal(0, emptyLeadCells);
     }
 
     [Fact]

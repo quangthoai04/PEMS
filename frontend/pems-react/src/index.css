@@ -77,6 +77,30 @@ body {
   }
 }
 
+/* Isolation wrapper for a rendered email body (preview, draft, sent-history).
+
+   An email body is markup the backend built for a mail client, not for this application. Whatever the
+   dashboard's own typography happens to be must therefore stop at this boundary, or the operator is
+   previewing the dashboard's rendering of the mail rather than the mail. Two rules earn their place:
+
+   `white-space: normal` undoes an inherited `pre-wrap`. A body rendered under `pre-wrap` keeps every
+   newline in the source as a visible break, which inside a table pushes cells apart and reads as the
+   layout having collapsed — the same symptom as a genuinely broken table, from the opposite cause.
+
+   `overflow-x: auto` lets a wide table scroll rather than be squeezed. The mail itself must still be
+   readable in a client that offers no such scrolling, which is why the backend sizes its columns; this
+   only stops a narrow dashboard panel from misrepresenting a table that is fine. */
+.pems-email-body {
+  white-space: normal;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tables carry their own widths inline; this only stops one from forcing the PAGE to scroll. */
+.pems-email-body table {
+  max-width: 100%;
+}
+
 /* Override flag-icons' default `contain` sizing (and em-based width) so a flag can fill an
    arbitrary-sized container edge-to-edge, e.g. a fixed-aspect-ratio card. */
 .fi-cover {

@@ -175,8 +175,14 @@ export function SentEmailDetail() {
             <div className="mb-2 rounded bg-blue-50 px-3 py-2 text-sm font-medium text-[#004c91] border border-blue-100 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" /> Đây là bản xem lại email đã gửi. Các nút thao tác đã bị vô hiệu hóa trong chế độ xem trước.
             </div>
-            <div 
-              className="text-gray-800 text-[15px] p-6 rounded-xl border border-gray-100 bg-[#fbfcfd] whitespace-pre-wrap select-text pointer-events-none"
+            {/* `whitespace-pre-wrap` used to sit here. On an HTML body it turned every newline in the
+                markup into a rendered break, which inside the setup tables spread the cells apart and
+                looked exactly like a broken table. Plain-text bodies still need it, so it is applied
+                only to those. */}
+            <div
+              className={`text-gray-800 text-[15px] p-6 rounded-xl border border-gray-100 bg-[#fbfcfd] select-text pointer-events-none ${
+                (emailData.bodyFormat ?? 'HTML') === 'HTML' ? 'pems-email-body' : 'whitespace-pre-wrap'
+              }`}
               dangerouslySetInnerHTML={{ __html: sanitizeSentEmailPreviewHtml(sanitizeHtml(emailData.bodySnapshot || '')) }}
             >
             </div>

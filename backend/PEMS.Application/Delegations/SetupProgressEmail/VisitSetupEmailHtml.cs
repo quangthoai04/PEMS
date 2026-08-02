@@ -20,12 +20,52 @@ namespace PEMS.Application.Delegations.SetupProgressEmail;
 /// them do not lay out flex or grid, so anything cleverer renders as an unformatted pile of text in
 /// exactly the clients guests are most likely to use.
 /// </para>
+/// <para>
+/// <b>Every table declares its column widths.</b> Without them the browser and the mail client fall back
+/// to automatic layout, which sizes each column from its content: one long agenda description takes the
+/// surplus and the remaining columns collapse toward their <i>minimum</i> content width — the longest
+/// single word. In Vietnamese that turns a heading into a column one syllable wide, so "Thời gian" comes
+/// out stacked as "Thời"/"gian" and the table reads as broken. The widths are declared three times over
+/// on purpose: <c>&lt;colgroup&gt;</c> for browsers, a <c>width</c> attribute on every cell for Outlook's
+/// Word engine (which honours neither <c>colgroup</c> nor <c>table-layout</c>), and
+/// <c>table-layout:fixed</c> so a single long value can no longer widen its column at the others' expense.
+/// Wrapping is set on the cells to match: with a fixed layout an unbreakable token would otherwise spill
+/// out of the cell instead of shrinking it.
+/// </para>
 /// </summary>
 public static class VisitSetupEmailHtml
 {
     private const string Border = "#d1d5db";
     private const string HeadBg = "#f3f4f6";
     private const string Muted = "#6b7280";
+
+    /// <summary>
+    /// Padding lives here rather than on the table's <c>cellpadding</c> attribute: CSS padding is the one
+    /// both Gmail and Outlook apply consistently, and setting <c>cellpadding</c> as well would double it
+    /// in the clients that honour both.
+    /// </summary>
+    private const string CellPad = "padding:6px 8px";
+
+    /// <summary>
+    /// Wrapping that is safe in a fixed layout. Two properties for one behaviour because the older
+    /// <c>word-break</c> is what Outlook and legacy webmail understand, while <c>overflow-wrap</c> is the
+    /// standard one; a long unbroken value (an address, a pasted URL) has to break rather than push the
+    /// column wider, since under a fixed layout it cannot push and would simply overflow the border.
+    /// </summary>
+    private const string Wrap = "word-break:break-word;overflow-wrap:break-word";
+
+    private static string DataCell(string width) =>
+        $"border:1px solid {Border};{CellPad};vertical-align:top;{Wrap};width:{width}";
+
+    private static string HeadCell(string width) =>
+        $"border:1px solid {Border};background:{HeadBg};{CellPad};font-size:12px;font-weight:bold;"
+        + $"vertical-align:top;{Wrap};width:{width}";
+
+    // Column allocations. They sum to 100% in every table so a fixed layout has nothing left to guess at.
+    private static readonly string[] PeopleWidths = { "32%", "43%", "25%" };
+    private static readonly string[] AgendaWidths = { "20%", "44%", "18%", "18%" };
+    private static readonly string[] LogisticsWidths = { "34%", "12%", "30%", "24%" };
+    private static readonly string[] KeyValueWidths = { "34%", "66%" };
 
     public static string Render(VisitSetupSnapshot s, string language)
     {
@@ -34,7 +74,8 @@ public static class VisitSetupEmailHtml
 
         // ── 1. Overview ──────────────────────────────────────────────────────
         Section(sb, en ? "1. Visit overview" : "1. Thông tin chung");
-        OpenTable(sb);
+        OpenTable(sb, KeyValueWidths);
+        sb.Append("<tbody>");
         KeyValue(sb, en ? "Delegation" : "Tên đoàn", s.Report.DelegationName);
         KeyValue(sb, en ? "Campus" : "Cơ sở tiếp đón", s.CampusName);
         KeyValue(sb, en ? "Time" : "Thời gian", Window(s.Report.PlannedStartAt, s.Report.PlannedEndAt));
@@ -43,6 +84,7 @@ public static class VisitSetupEmailHtml
             KeyValue(sb, en ? "Purpose" : "Mục đích tham quan", s.Report.Purpose!);
         if (!string.IsNullOrWhiteSpace(s.WorkingContent))
             KeyValue(sb, en ? "Working content" : "Nội dung làm việc", s.WorkingContent!);
+        sb.Append("</tbody>");
         CloseTable(sb);
 
         // ── 2. Guest side ────────────────────────────────────────────────────
@@ -67,18 +109,21 @@ public static class VisitSetupEmailHtml
         }
         else
         {
-            OpenTable(sb);
+            OpenTable(sb, AgendaWidths);
             Head(sb, en
                 ? new[] { "Time", "Activity", "Venue", "Party in charge" }
-                : new[] { "Thời gian", "Nội dung", "Địa điểm", "Phụ trách" });
+                : new[] { "Thời gian", "Nội dung", "Địa điểm", "Phụ trách" },
+                AgendaWidths);
+            sb.Append("<tbody>");
             foreach (var a in s.Report.Agenda)
             {
                 var activity = Esc(a.Title);
                 if (!string.IsNullOrWhiteSpace(a.Description))
                     activity += $"<br/><span style=\"color:{Muted};font-size:12px\">{Esc(a.Description!)}</span>";
                 Row(sb, new[] { Esc(Window(a.StartTime, a.EndTime)), activity, Esc(a.Venue), Esc(a.Responsible) },
-                    preEscaped: true);
+                    AgendaWidths, preEscaped: true);
             }
+            sb.Append("</tbody>");
             CloseTable(sb);
         }
 
@@ -90,10 +135,12 @@ public static class VisitSetupEmailHtml
         }
         else
         {
-            OpenTable(sb);
+            OpenTable(sb, LogisticsWidths);
             Head(sb, en
                 ? new[] { "Item", "Quantity", "Needed", "Status" }
-                : new[] { "Hạng mục", "Số lượng", "Thời gian cần", "Trạng thái" });
+                : new[] { "Hạng mục", "Số lượng", "Thời gian cần", "Trạng thái" },
+                LogisticsWidths);
+            sb.Append("<tbody>");
             foreach (var l in s.Logistics)
             {
                 Row(sb, new[]
@@ -102,8 +149,9 @@ public static class VisitSetupEmailHtml
                     l.Quantity?.ToString() ?? "—",
                     Window(l.UsageStartAt, l.UsageEndAt),
                     StatusLabel(l.Status, en),
-                });
+                }, LogisticsWidths);
             }
+            sb.Append("</tbody>");
             CloseTable(sb);
         }
 
@@ -111,8 +159,10 @@ public static class VisitSetupEmailHtml
         if (!string.IsNullOrWhiteSpace(s.TransportationNote))
         {
             Section(sb, en ? "6. Additional requests" : "6. Yêu cầu bổ sung");
-            OpenTable(sb);
+            OpenTable(sb, KeyValueWidths);
+            sb.Append("<tbody>");
             KeyValue(sb, en ? "Transport" : "Di chuyển", s.TransportationNote!);
+            sb.Append("</tbody>");
             CloseTable(sb);
         }
 
@@ -135,43 +185,60 @@ public static class VisitSetupEmailHtml
     private static void Empty(StringBuilder sb, string text) =>
         sb.Append($"<p style=\"color:{Muted};font-size:13px;margin:0 0 8px\"><em>").Append(Esc(text)).Append("</em></p>");
 
-    private static void OpenTable(StringBuilder sb) =>
-        sb.Append("<table role=\"presentation\" cellpadding=\"6\" cellspacing=\"0\" ")
-          .Append($"style=\"border-collapse:collapse;width:100%;font-size:13px;border:1px solid {Border}\">");
+    /// <summary>
+    /// Opens a table and declares its columns. <paramref name="widths"/> drives the
+    /// <c>&lt;colgroup&gt;</c>; the same values are repeated on the cells by <see cref="Head"/> and
+    /// <see cref="Row"/> for the clients that ignore it.
+    /// </summary>
+    private static void OpenTable(StringBuilder sb, IReadOnlyList<string> widths)
+    {
+        sb.Append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" ")
+          .Append("style=\"border-collapse:collapse;width:100%;table-layout:fixed;")
+          .Append($"font-size:13px;border:1px solid {Border}\">");
+
+        sb.Append("<colgroup>");
+        foreach (var w in widths) sb.Append($"<col style=\"width:{w}\" width=\"{w}\"/>");
+        sb.Append("</colgroup>");
+    }
 
     private static void CloseTable(StringBuilder sb) => sb.Append("</table>");
 
-    private static void Head(StringBuilder sb, IReadOnlyList<string> cells)
+    private static void Head(StringBuilder sb, IReadOnlyList<string> cells, IReadOnlyList<string> widths)
     {
-        sb.Append("<tr>");
-        foreach (var c in cells)
-            sb.Append($"<th align=\"left\" style=\"border:1px solid {Border};background:{HeadBg};font-size:12px\">")
-              .Append(Esc(c)).Append("</th>");
-        sb.Append("</tr>");
+        sb.Append("<thead><tr>");
+        for (var i = 0; i < cells.Count; i++)
+            sb.Append($"<th align=\"left\" width=\"{widths[i]}\" style=\"{HeadCell(widths[i])}\">")
+              .Append(Esc(cells[i])).Append("</th>");
+        sb.Append("</tr></thead>");
     }
 
-    private static void Row(StringBuilder sb, IReadOnlyList<string> cells, bool preEscaped = false)
+    private static void Row(
+        StringBuilder sb, IReadOnlyList<string> cells, IReadOnlyList<string> widths, bool preEscaped = false)
     {
         sb.Append("<tr>");
-        foreach (var c in cells)
-            sb.Append($"<td style=\"border:1px solid {Border};vertical-align:top\">")
-              .Append(preEscaped ? c : Esc(c)).Append("</td>");
+        for (var i = 0; i < cells.Count; i++)
+            sb.Append($"<td width=\"{widths[i]}\" style=\"{DataCell(widths[i])}\">")
+              .Append(preEscaped ? cells[i] : Esc(cells[i])).Append("</td>");
         sb.Append("</tr>");
     }
 
     private static void KeyValue(StringBuilder sb, string key, string value) =>
         sb.Append("<tr>")
-          .Append($"<td style=\"border:1px solid {Border};background:{HeadBg};width:34%;font-weight:bold\">")
+          .Append($"<td width=\"{KeyValueWidths[0]}\" style=\"{HeadCell(KeyValueWidths[0])};font-size:13px\">")
           .Append(Esc(key)).Append("</td>")
-          .Append($"<td style=\"border:1px solid {Border}\">").Append(Esc(value)).Append("</td>")
+          .Append($"<td width=\"{KeyValueWidths[1]}\" style=\"{DataCell(KeyValueWidths[1])}\">")
+          .Append(Esc(value)).Append("</td>")
           .Append("</tr>");
 
     private static void People(StringBuilder sb, IReadOnlyList<Queries.ExportScheduleReport.ScheduleReportPersonDto> people, bool en)
     {
-        OpenTable(sb);
-        Head(sb, en ? new[] { "Name", "Organisation", "Role" } : new[] { "Họ tên", "Đơn vị", "Vai trò" });
+        OpenTable(sb, PeopleWidths);
+        Head(sb, en ? new[] { "Name", "Organisation", "Role" } : new[] { "Họ tên", "Đơn vị", "Vai trò" },
+            PeopleWidths);
+        sb.Append("<tbody>");
         foreach (var p in people)
-            Row(sb, new[] { p.FullName, p.Organization ?? "—", p.RoleLabel ?? "—" });
+            Row(sb, new[] { p.FullName, p.Organization ?? "—", p.RoleLabel ?? "—" }, PeopleWidths);
+        sb.Append("</tbody>");
         CloseTable(sb);
     }
 

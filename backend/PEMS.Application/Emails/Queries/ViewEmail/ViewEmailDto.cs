@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PEMS.Domain.Enums;
 
 namespace PEMS.Application.Emails.Queries.ViewEmail;
 
@@ -13,6 +14,18 @@ public class ViewEmailDto
     public ulong? RelatedId { get; set; }
     public string Subject { get; set; } = null!;
     public string BodySnapshot { get; set; } = null!;
+
+    /// <summary>
+    /// PLAIN_TEXT or HTML — how <see cref="BodySnapshot"/> is meant to be displayed.
+    ///
+    /// <para>
+    /// The history screen needs it to decide whether to preserve the source's line breaks. A plain-text
+    /// body depends on them; an HTML body does not, and rendering one under <c>white-space: pre-wrap</c>
+    /// turns every newline between tags into a visible gap, which inside a table reads as a broken
+    /// layout. Without this field the screen had to guess, and it guessed the same way for both.
+    /// </para>
+    /// </summary>
+    public string BodyFormat { get; set; } = nameof(EmailBodyFormat.HTML);
     public string Status { get; set; } = null!;
     public string? ErrorMessage { get; set; }
     public uint RetryCount { get; set; }
