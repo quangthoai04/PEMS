@@ -238,8 +238,8 @@ export function HoReportManagement() {
               <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-3 space-y-2">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide px-1">Chọn phần xuất</p>
                 {[
-                  { key: 'OVERVIEW', label: 'Phần 2 · Tổng quan hệ thống' },
-                  { key: 'PARTNERS', label: 'Phần 3 · Đối tác' },
+                  { key: 'OVERVIEW', label: 'Phần 1 · Tổng quan hệ thống' },
+                  { key: 'PARTNERS', label: 'Phần 2 · Đối tác' },
                 ].map((s) => (
                   <label key={s.key} className="flex items-center gap-2 px-1 py-0.5 text-sm text-slate-700 cursor-pointer">
                     <input
@@ -339,9 +339,9 @@ export function HoReportManagement() {
         </div>
       ) : data && (
         <>
-          {/* ═══ 2 · Tổng quan hệ thống ═══ */}
+          {/* ═══ 1 · Tổng quan hệ thống ═══ */}
           <Section
-            index={2}
+            index={1}
             title="Tổng quan hệ thống"
             subtitle="Số liệu tiếp khách của toàn bộ các campus trong kỳ."
             open={openSections.overview}
@@ -456,9 +456,9 @@ export function HoReportManagement() {
             </div>
           </Section>
 
-          {/* ═══ 3 · Đối tác ═══ */}
+          {/* ═══ 2 · Đối tác ═══ */}
           <Section
-            index={3}
+            index={2}
             title="Đối tác"
             subtitle="Xu hướng hợp tác đối tác toàn hệ thống và bảng đối tác xếp theo số lượt tham quan."
             open={openSections.partners}

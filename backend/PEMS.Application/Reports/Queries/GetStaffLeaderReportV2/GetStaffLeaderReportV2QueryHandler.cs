@@ -62,26 +62,61 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             .ToListAsync(cancellationToken);
 
         // Đối tác của campus + tiến độ hợp tác theo tháng (đường lũy kế + chuyến gắn đối tác).
-        var campusPartners = _db.Partners.AsNoTracking()
-            .Where(p => p.OwnerCampusId == campusId && p.ProfileStatus == "APPROVED");
-        var partnerCreatedDates = await campusPartners
-            .Select(p => p.CreatedAt)
+        var campusPartnerList = await _db.Partners.AsNoTracking()
+            .Where(p => p.OwnerCampusId == campusId && p.ProfileStatus == "APPROVED")
+            .Select(p => new
+            {
+                p.PartnerId,
+                p.PartnerCode,
+                p.Name,
+                p.PartnerType,
+                p.CooperationStatus,
+                p.CreatedAt
+            })
             .ToListAsync(cancellationToken);
 
-        var directPartnerVisits = await instances
+        var partnerCreatedDates = campusPartnerList.Select(p => p.CreatedAt).ToList();
+
+        var directPartnerVisitDetails = await instances
             .Where(ci => ci.VisitRequest.PartnerId != null)
-            .Select(ci => new { ci.VisitInstanceId, ci.PlannedStartAt })
+            .Select(ci => new
+            {
+                ci.VisitInstanceId,
+                ci.PlannedStartAt,
+                PartnerId = ci.VisitRequest.PartnerId!.Value,
+                GuestCount = ci.VisitRequest.GuestMembers.Count
+            })
             .ToListAsync(cancellationToken);
-        var linkedPartnerVisits = await (
+
+        var linkedPartnerVisitDetails = await (
                 from l in _db.VisitGuestPartnerLinks.AsNoTracking()
                 where l.VisitInstanceId != null && l.MatchStatus == "CONFIRMED"
                 join ci in instances on l.VisitInstanceId equals (ulong?)ci.VisitInstanceId
-                select new { ci.VisitInstanceId, ci.PlannedStartAt })
+                select new
+                {
+                    ci.VisitInstanceId,
+                    ci.PlannedStartAt,
+                    PartnerId = l.PartnerId,
+                    GuestCount = ci.VisitRequest.GuestMembers.Count
+                })
             .ToListAsync(cancellationToken);
-        var partnerVisitMonths = directPartnerVisits.Concat(linkedPartnerVisits)
+
+        var allPartnerVisits = directPartnerVisitDetails.Concat(linkedPartnerVisitDetails).ToList();
+        var partnerVisitInstanceIds = allPartnerVisits.Select(x => x.VisitInstanceId).Distinct().ToList();
+        var partnerVisitMonths = allPartnerVisits
             .GroupBy(x => x.VisitInstanceId)
             .Select(g => g.First().PlannedStartAt)
             .ToList();
+
+        var instanceList = await instances
+            .Select(ci => new
+            {
+                ci.VisitInstanceId,
+                ci.PlannedStartAt,
+                ci.Status,
+                GuestCount = ci.VisitRequest.GuestMembers.Count
+            })
+            .ToListAsync(cancellationToken);
 
         // Độ chi tiết trục thời gian theo độ dài kỳ lọc: ≥3 năm → năm; >3 tháng → tháng;
         // ≤3 tháng → tuần; ≤2 tuần → ngày; trong 1 ngày → giờ (mốc nhỏ nhất là 1 giờ).
@@ -92,6 +127,7 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             : periodDays > 1 ? "DAY"
             : "HOUR";
 
+        var visitTrend = new List<StaffLeaderV2VisitTrendPoint>();
         var partnerTrend = new List<StaffLeaderV2PartnerTrendPoint>();
         var cursor = granularity switch
         {
@@ -117,6 +153,15 @@ public sealed class GetStaffLeaderReportV2QueryHandler
                 "DAY" => cursor.ToString("dd/MM", CultureInfo.InvariantCulture),
                 _ => cursor.ToString("HH:00", CultureInfo.InvariantCulture),
             };
+            var bucketVisits = instanceList.Where(d => d.PlannedStartAt >= cursor && d.PlannedStartAt < next).ToList();
+            visitTrend.Add(new StaffLeaderV2VisitTrendPoint
+            {
+                Month = cursor.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+                MonthLabel = label,
+                TotalVisits = bucketVisits.Count,
+                CompletedVisits = bucketVisits.Count(x => x.Status == VisitInstanceStatus.Closed),
+                TotalGuests = bucketVisits.Sum(x => x.GuestCount)
+            });
             partnerTrend.Add(new StaffLeaderV2PartnerTrendPoint
             {
                 Month = cursor.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
@@ -127,6 +172,85 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             });
             cursor = next;
         }
+
+        // Thống kê chi tiết phần Đối tác
+        static string PartnerTypeLabel(string t) => t switch
+        {
+            "UNIVERSITY" => "Đại học / Viện trường",
+            "ENTERPRISE" => "Doanh nghiệp",
+            "HIGH_SCHOOL" => "Trường THPT",
+            "GOVERNMENT" => "Chính phủ / Cơ quan",
+            "NGO" => "Tổ chức NGO",
+            "INTERNAL" => "Nội bộ tập đoàn",
+            _ => "Khác"
+        };
+
+        static string PartnerStatusLabel(string s) => s switch
+        {
+            "ACTIVE" => "Đang hợp tác",
+            "POTENTIAL" => "Tiềm năng",
+            "INACTIVE" => "Tạm dừng",
+            "SUSPENDED" => "Đình chỉ",
+            _ => s
+        };
+
+        var partnersByType = campusPartnerList
+            .GroupBy(p => p.PartnerType ?? "OTHER")
+            .Select(g => new StaffLeaderV2PartnerTypeStat
+            {
+                PartnerType = g.Key,
+                Label = PartnerTypeLabel(g.Key),
+                Count = g.Count(),
+                VisitCount = allPartnerVisits.Count(v => g.Any(p => p.PartnerId == v.PartnerId))
+            })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        var partnersByStatus = campusPartnerList
+            .GroupBy(p => p.CooperationStatus ?? "ACTIVE")
+            .Select(g => new StaffLeaderV2PartnerStatusStat
+            {
+                Status = g.Key,
+                Label = PartnerStatusLabel(g.Key),
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        var partnerVisitGroups = allPartnerVisits.GroupBy(v => v.PartnerId).ToList();
+        var topPartnerRows = new List<StaffLeaderV2TopPartnerRow>();
+        foreach (var group in partnerVisitGroups)
+        {
+            var pInfo = campusPartnerList.FirstOrDefault(p => p.PartnerId == group.Key);
+            if (pInfo == null) continue;
+            var instIds = group.Select(g => g.VisitInstanceId).Distinct().ToList();
+            topPartnerRows.Add(new StaffLeaderV2TopPartnerRow
+            {
+                PartnerId = pInfo.PartnerId,
+                PartnerCode = pInfo.PartnerCode,
+                Name = pInfo.Name,
+                PartnerType = PartnerTypeLabel(pInfo.PartnerType ?? "OTHER"),
+                CooperationStatus = PartnerStatusLabel(pInfo.CooperationStatus ?? "ACTIVE"),
+                VisitCount = instIds.Count,
+                GuestCount = group.Sum(g => g.GuestCount),
+                FeedbackAverage = null
+            });
+        }
+        topPartnerRows = topPartnerRows.OrderByDescending(r => r.VisitCount).ThenBy(r => r.Name).Take(10).ToList();
+
+        var partnersSection = new StaffLeaderV2Partners
+        {
+            TotalPartners = campusPartnerList.Count,
+            NewPartnersInPeriod = campusPartnerList.Count(p => p.CreatedAt >= fromVn && p.CreatedAt < toVnExclusive),
+            ActivePartners = campusPartnerList.Count(p => p.CooperationStatus == "ACTIVE"),
+            VisitsWithPartnerCount = partnerVisitInstanceIds.Count,
+            PartnerVisitRatio = totalVisits > 0 ? Math.Round((double)partnerVisitInstanceIds.Count / totalVisits * 100, 1) : 0,
+            TrendGranularity = granularity,
+            Trend = partnerTrend,
+            PartnersByType = partnersByType,
+            PartnersByStatus = partnersByStatus,
+            TopPartners = topPartnerRows
+        };
 
         var visits = new StaffLeaderV2Visits
         {
@@ -141,6 +265,7 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             FeedbackAverage = visitFeedback.Count > 0 ? Math.Round(visitFeedback.Average(), 1) : null,
             TotalPartners = partnerCreatedDates.Count,
             TrendGranularity = granularity,
+            VisitTrend = visitTrend,
             PartnerTrend = partnerTrend,
         };
 
@@ -425,6 +550,7 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             FromDate = fromVn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ToDate = toVnExclusive.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Visits = visits,
+            Partners = partnersSection,
             Personnel = personnel,
             Departments = deptSection,
             Expenses = expensesSection
