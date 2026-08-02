@@ -14,6 +14,7 @@ using PEMS.IntegrationTests.Api;
 using PEMS.Infrastructure.Email;
 using PEMS.Infrastructure.Persistence;
 using Xunit;
+using Xunit.Sdk;
 
 namespace PEMS.IntegrationTests.TestInfrastructure;
 
@@ -98,6 +99,136 @@ public sealed class EmailEvidenceHarness : IDisposable
 
     public string[] Messages()
         => Directory.Exists(PickupDirectory) ? Directory.GetFiles(PickupDirectory, "*.eml") : Array.Empty<string>();
+
+    /// <summary>How long to keep watching for messages that have not appeared yet.</summary>
+    private static readonly TimeSpan MessageTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long to keep watching AFTER the expected count is reached, so a duplicate that lands a moment
+    /// late is still caught.
+    /// </summary>
+    private static readonly TimeSpan MessageSettleWindow = TimeSpan.FromMilliseconds(400);
+
+    private static readonly TimeSpan MessagePollInterval = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>
+    /// Waits until exactly <paramref name="expected"/> delivered messages match
+    /// <paramref name="matches"/>, then keeps watching briefly to be sure no more arrive.
+    ///
+    /// <para>
+    /// Reading the pickup directory once is a race the test loses silently. Writing an <c>.eml</c> is not
+    /// instantaneous, so a dispatch that has already committed its database rows can still have nothing on
+    /// disk when the assertion runs — which is exactly how the twenty-attempt idempotency test failed:
+    /// <c>reminder.Status == SENT</c> and one <c>sent_email_recipients</c> row both held, and the mailbox
+    /// reported <b>0</b> files. A broken exactly-once guard produces two messages, never zero, so that
+    /// failure was never about the product.
+    /// </para>
+    /// <para>
+    /// The settle window matters as much as the timeout, and is why this cannot be replaced by simply
+    /// waiting longer: returning the instant the count is right would make "exactly one" unfalsifiable,
+    /// since the duplicate a duplicate-suppression test is looking for is precisely the message that
+    /// arrives second. Too many messages fails at once — more will not turn into fewer.
+    /// </para>
+    /// </summary>
+    public async Task<IReadOnlyList<EmlMessage>> AwaitMessagesAsync(
+        Func<EmlMessage, bool> matches,
+        int expected,
+        string recipient,
+        CancellationToken ct = default)
+    {
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        string? lastReadFailure = null;
+
+        List<(string Path, EmlMessage Message)> Read()
+        {
+            var found = new List<(string, EmlMessage)>();
+            foreach (var path in Messages())
+            {
+                try
+                {
+                    var message = new EmlMessage(File.ReadAllText(path));
+                    if (matches(message))
+                        found.Add((path, message));
+                }
+                catch (IOException ex)
+                {
+                    // Half-written file: not an answer yet, and not something to report unless we run out
+                    // of time still seeing it.
+                    lastReadFailure = $"{Path.GetFileName(path)}: {ex.Message}";
+                }
+            }
+
+            return found;
+        }
+
+        while (true)
+        {
+            var observed = Read();
+
+            if (observed.Count > expected)
+                throw new XunitException(Explain("more messages than expected", observed, expected, recipient, started, lastReadFailure));
+
+            if (observed.Count == expected)
+            {
+                var settleUntil = started.Elapsed + MessageSettleWindow;
+                while (started.Elapsed < settleUntil)
+                {
+                    await Task.Delay(MessagePollInterval, ct);
+                    var recheck = Read();
+                    if (recheck.Count > expected)
+                        throw new XunitException(Explain("a further message arrived after the expected ones", recheck, expected, recipient, started, lastReadFailure));
+                    observed = recheck;
+                }
+
+                if (observed.Count != expected)
+                    throw new XunitException(Explain("the count changed while settling", observed, expected, recipient, started, lastReadFailure));
+
+                return observed.Select(o => o.Message).ToList();
+            }
+
+            if (started.Elapsed >= MessageTimeout)
+                throw new XunitException(Explain("timed out waiting for messages", observed, expected, recipient, started, lastReadFailure));
+
+            await Task.Delay(MessagePollInterval, ct);
+        }
+    }
+
+    private string Explain(
+        string what,
+        IReadOnlyList<(string Path, EmlMessage Message)> observed,
+        int expected,
+        string recipient,
+        System.Diagnostics.Stopwatch started,
+        string? lastReadFailure)
+    {
+        var all = Messages();
+        var lines = new List<string>
+        {
+            $"File-sink evidence: {what}.",
+            $"  recipient : {recipient}",
+            $"  expected  : {expected}",
+            $"  actual    : {observed.Count} matching",
+            $"  elapsed   : {started.ElapsedMilliseconds} ms (timeout {MessageTimeout.TotalMilliseconds:0} ms, "
+                + $"settle {MessageSettleWindow.TotalMilliseconds:0} ms)",
+            $"  pickup    : {PickupDirectory}",
+            $"  files     : {(all.Length == 0 ? "(none)" : "")}",
+        };
+
+        foreach (var path in all)
+        {
+            var name = Path.GetFileName(path);
+            var isMatch = observed.Any(o => string.Equals(o.Path, path, StringComparison.Ordinal));
+            string to;
+            try { to = new EmlMessage(File.ReadAllText(path)).Header("To"); }
+            catch (IOException ex) { to = $"<unreadable: {ex.Message}>"; }
+            lines.Add($"    {(isMatch ? "*" : " ")} {name}  To: {to}");
+        }
+
+        if (lastReadFailure is not null)
+            lines.Add($"  last read error: {lastReadFailure}");
+
+        return string.Join(Environment.NewLine, lines);
+    }
 
     /// <summary>The single message produced, parsed. Fails when there is not exactly one.</summary>
     public EmlMessage OnlyMessage()

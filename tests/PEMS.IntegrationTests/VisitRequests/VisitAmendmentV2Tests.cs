@@ -277,14 +277,18 @@ public sealed class VisitAmendmentV2Tests
                         new SubmitVisitAmendmentCommand(requestId, instanceB, staleOnB), CancellationToken.None));
                 Assert.Equal(VisitFormV2ErrorCodes.AmendmentBaseRevisionConflict, ex.ErrorCode);
             }
-            // Empty diff (identical proposal) on the sibling → rejected.
+            // Empty diff (identical proposal) on the sibling → rejected, and rejected AS an empty diff.
+            // NOT_EDITABLE is the lifecycle/window refusal ("you may not propose here, now"); this
+            // proposal is perfectly well-timed and simply says nothing, which is what the dedicated
+            // NO_CHANGES code is for. The distinction is what lets the UI answer "nothing changed"
+            // instead of telling the requester the campus is closed to changes.
             var identical = await BaselineProposalAsync(instanceB);
             using (var db = NewContext())
             {
                 var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                     Submit(db, Registrant).Handle(
                         new SubmitVisitAmendmentCommand(requestId, instanceB, identical), CancellationToken.None));
-                Assert.Equal(VisitFormV2ErrorCodes.AmendmentNotEditable, ex.ErrorCode);
+                Assert.Equal(VisitFormV2ErrorCodes.AmendmentNoChanges, ex.ErrorCode);
             }
         }
         finally { await CleanupAsync(requestId); }

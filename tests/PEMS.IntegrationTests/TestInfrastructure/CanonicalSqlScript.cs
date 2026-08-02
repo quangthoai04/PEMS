@@ -247,8 +247,73 @@ public static class CanonicalSqlScript
     /// absent from <c>variables_text</c> on purpose, so the 31-code / identical-variable-set contract
     /// this file records above still holds in both directions and needed no change. No DDL, no trigger,
     /// no row added or removed; ExpectedBaseTableCount (82) and ExpectedTriggerCount (32) are unchanged.
+    ///
+    /// (2026-08-02, tenth bump) SEED TEXT ONLY, the same one template. VISIT_SETUP_PROGRESS_UPDATE
+    /// gained <c>{{hostEmail}}</c> in both bodies and in <c>variables_text</c>. Unlike the ninth bump
+    /// this IS a variable, deliberately: the body asks the guest to reply so the Host can act, but the
+    /// draft/manual send path carries the system's configured Reply-To and accepts no per-message one,
+    /// so naming the Host without printing an address pointed the instruction nowhere. The registry,
+    /// the JSON defaults and 02_sync_templates.sql declare the same six variables, so the
+    /// identical-variable-set contract holds in both directions. Catalog size is still 31. No DDL, no
+    /// trigger, no row added or removed; ExpectedBaseTableCount (82)/ExpectedTriggerCount (32) unchanged.
+    ///
+    /// (2026-08-02, eleventh bump) RECOVERY of two migrations this file lost. When the canonical script
+    /// was replaced wholesale (commit 74deff85 "new sql"), the replacement was generated from a base
+    /// that predated 2026-07-26, so two already-shipped migrations silently vanished from the schema
+    /// while the code that depends on them stayed. Both were re-applied here from the migration files
+    /// still in docs/database/scripts/migrations/, not retyped:
+    ///   • 2026_07_26_visit_pending_edit_source_type — 'PENDING_EDIT' restored to the source_type ENUM
+    ///     of visit_instance_form_revision_history and visit_request_revision_history. Without it every
+    ///     full edit of a pending request died on "Data truncated for column 'source_type'" (HTTP 500),
+    ///     because FormRevisionSourceTypes.PendingEdit is what the edit service writes.
+    ///   • 2026_07_26_visit_host_transfer — trg_visit_campuses_assignment_validate_bu regains the
+    ///     v_is_host_transfer exemption, so a deliberate handover on a decided, not-yet-started campus
+    ///     is allowed while an incidental host change still raises the original SIGNAL. Without it every
+    ///     host transfer died on "Official host cannot be changed after first assignment" (HTTP 500).
+    /// ENUM widening and a trigger body only: no table, column, index, trigger or row added or removed,
+    /// so ExpectedBaseTableCount (83) and ExpectedTriggerCount (32) are unchanged — verified by a fresh
+    /// import (83 tables / 32 triggers / 255 FKs / 31 templates) before this constant was touched.
+    ///
+    /// (2026-08-02, twelfth bump) SEED TEXT ONLY, four templates. VISIT_DEPARTMENT_STAFF_ASSIGNMENT,
+    /// VISIT_REMINDER_HOST, VISIT_REMINDER_PARTICIPANTS and LOGISTICS_EXPENSE_REPORT_REMINDER each gained
+    /// a trailing <c>{{actionBlock}}</c> in body_vi and body_en.
+    ///
+    /// All four senders were ALREADY building a trusted block and passing it — the department assignment
+    /// mints real accept/decline tokens, the other three build a login-required link from
+    /// App:FrontendBaseUrl — but no body had the placeholder, so the block was assembled and then
+    /// silently dropped at render time. The assignment mail in particular reached its recipient with the
+    /// two buttons it asks them to press missing entirely.
+    ///
+    /// The block is trusted markup, not a variable, so <c>variables_text</c> is deliberately unchanged
+    /// (the nine templates that already carried the placeholder list it nowhere either, and 03_verify's
+    /// E1/E2 checks pass on that basis). Catalog size is still 31. No DDL, no trigger, no row added or
+    /// removed; ExpectedBaseTableCount (83)/ExpectedTriggerCount (32) unchanged.
+    ///
+    /// (2026-08-02, thirteenth bump) SEED CONTENT + REMOVAL OF TWO DEAD BLOCKS. Two changes, both
+    /// seed-only.
+    ///
+    /// 1. CONTENT OWNERSHIP RESOLVED. The seed and email-template-defaults.json had disagreed on all
+    ///    six text columns for 26 of the 31 templates since before this branch — the seed carrying
+    ///    terse one-line placeholders, the JSON the full wording. The product owner's decision
+    ///    (2026-08-02) is that the JSON holds the authoritative content, so those 26 rows were brought
+    ///    up to it and 02_sync_templates.sql was regenerated from the resulting seed. One-directional:
+    ///    JSON → seed → sync script. The four {{actionBlock}} placeholders added in the twelfth bump
+    ///    survive because the JSON carries them too; ACCOUNT_ACTIVATED gains one for the same reason
+    ///    those four did — its sender has always passed EmailComposition.LoginBlock, and without the
+    ///    placeholder the sign-in button was built and then dropped at render time.
+    ///
+    /// 2. TWO DEAD SEED BLOCKS DELETED. Section C seeded sent_emails 99101-99108 plus their
+    ///    recipients, and section E seeded the 15 email_action_tokens that point at them. Both sit
+    ///    BEFORE the R0 catalog rebuild, which runs unconditional DELETEs against sent_emails,
+    ///    sent_email_recipients and email_action_tokens and then re-seeds 31 messages and 39 tokens.
+    ///    Neither block had ever reached an imported database; they existed only to be deleted. They
+    ///    are removed as a unit because every section E row is an FK child of a section C row.
+    ///
+    /// Verified by a fresh import before this constant was touched: 83 tables / 32 triggers / 255 FKs
+    /// / 31 templates, 31 sent_emails, 31 recipients, 39 action tokens — the sent_emails id set is
+    /// byte-identical to the pre-change import (64001..64031), proving only never-surviving rows went.
     public const string ExpectedSha256 =
-        "e11763034737867053db1e939ceb3b3b48200444d7fa21c74e901de39ce67725";
+        "839ecce592994550a43e98ed1d0937d080daf1c9133ec70be0a1bce995a61533";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

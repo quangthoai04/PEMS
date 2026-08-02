@@ -110,15 +110,17 @@ public sealed class RefreshVisitSetupProgressEmailReportCommandHandler
         var delegationName = content.TryGetValue(instance.VisitInstanceId, out var detail)
             ? detail.DelegationName
             : string.Empty;
-        var hostName = await _db.Users
-            .Where(u => u.UserId == userId).Select(u => u.FullName)
-            .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+        var host = await _db.Users
+            .Where(u => u.UserId == userId).Select(u => new { u.FullName, u.Email })
+            .FirstOrDefaultAsync(cancellationToken);
+        var hostName = host?.FullName ?? string.Empty;
+        var hostEmail = host?.Email ?? string.Empty;
 
         var rendered = await _renderer.RenderAsync(new EmailRenderRequest(
             VisitSetupProgressEmailGuard.TemplateCode,
             language,
             VisitSetupProgressEmailGuard.BuildVariables(
-                instance, delegationName, snapshot.CampusName, hostName),
+                instance, delegationName, snapshot.CampusName, hostName, hostEmail),
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [EmailTrustedBlocks.SetupSummaryBlock] = VisitSetupEmailHtml.Render(snapshot, language),

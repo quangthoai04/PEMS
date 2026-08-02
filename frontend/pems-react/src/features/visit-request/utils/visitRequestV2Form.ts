@@ -117,31 +117,31 @@ const toApiCampusVisit = (
   cv: CampusVisitSchema,
   processing: CampusProcessingChoice | undefined,
 ): V2CampusVisitForm => ({
-  campusId: cv.campus.trim().toUpperCase(),
+  campusId: (cv.campus ?? '').trim().toUpperCase(),
   plannedStartAt: cv.startDatetime,
   plannedEndAt: cv.endDatetime,
-  delegationName: cv.delegationName.trim(),
+  delegationName: (cv.delegationName ?? '').trim(),
   visitType: cv.visitType,
   visitTypeOther: cv.visitType === 'OTHER' ? trimOrNull(cv.visitTypeOther) : null,
-  purpose: cv.purpose.trim(),
+  purpose: (cv.purpose ?? '').trim(),
   workingContent: trimOrNull(cv.workingContent),
-  visitors: cv.visitors.map(v => ({
-    fullName: v.fullName.trim(),
-    jobTitle: v.jobTitle.trim(),
-    organization: v.organization.trim(),
-    nationality: v.nationality.trim(),
+  visitors: (cv.visitors ?? []).map(v => ({
+    fullName: (v.fullName ?? '').trim(),
+    jobTitle: (v.jobTitle ?? '').trim(),
+    organization: (v.organization ?? '').trim(),
+    nationality: (v.nationality ?? '').trim(),
   })),
-  externalSupportMembers: cv.supportTeam.map(s => ({
-    fullName: s.fullName.trim(),
+  externalSupportMembers: (cv.supportTeam ?? []).map(s => ({
+    fullName: (s.fullName ?? '').trim(),
     jobTitle: (s.jobTitle ?? '').trim(),
     organization: (s.organization ?? '').trim(),
     nationality: (s.nationality ?? '').trim(),
   })),
   operationalContact: {
-    fullName: cv.operationalContact.fullName.trim(),
-    organization: (cv.operationalContact.organization ?? '').trim(),
-    phone: normalizePhone(cv.operationalContact.phone) ?? cv.operationalContact.phone.trim(),
-    email: (cv.operationalContact.email ?? '').trim(),
+    fullName: (cv.operationalContact?.fullName ?? '').trim(),
+    organization: (cv.operationalContact?.organization ?? '').trim(),
+    phone: normalizePhone(cv.operationalContact?.phone) ?? (cv.operationalContact?.phone ?? '').trim(),
+    email: (cv.operationalContact?.email ?? '').trim(),
   },
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
@@ -165,27 +165,27 @@ export const buildV2CreatePayload = (
   campusProcessing: CampusProcessingChoice[] = [],
 ): V2CreatePayload => {
   const processingByCampus = new Map(
-    campusProcessing.map(p => [p.campusId.trim().toUpperCase(), p]),
+    (campusProcessing ?? []).map(p => [(p.campusId ?? '').trim().toUpperCase(), p]),
   );
   return {
     submissionId,
     registrant: {
-      fullName: values.registerInfo.fullName.trim(),
-      nationality: values.registerInfo.nationality.trim(),
-      organization: values.registerInfo.organization.trim(),
-      jobTitle: values.registerInfo.jobTitle.trim(),
-      phone: normalizePhone(values.registerInfo.phone) ?? values.registerInfo.phone.trim(),
-      email: values.registerInfo.email.trim(),
+      fullName: (values.registerInfo?.fullName ?? '').trim(),
+      nationality: (values.registerInfo?.nationality ?? '').trim(),
+      organization: (values.registerInfo?.organization ?? '').trim(),
+      jobTitle: (values.registerInfo?.jobTitle ?? '').trim(),
+      phone: normalizePhone(values.registerInfo?.phone) ?? (values.registerInfo?.phone ?? '').trim(),
+      email: (values.registerInfo?.email ?? '').trim(),
     },
     primaryContact: {
-      fullName: values.contactPoint.fullName.trim(),
-      organization: (values.contactPoint.organization ?? '').trim(),
-      phone: normalizePhone(values.contactPoint.phone) ?? values.contactPoint.phone.trim(),
-      email: values.contactPoint.email.trim(),
+      fullName: (values.contactPoint?.fullName ?? '').trim(),
+      organization: (values.contactPoint?.organization ?? '').trim(),
+      phone: normalizePhone(values.contactPoint?.phone) ?? (values.contactPoint?.phone ?? '').trim(),
+      email: (values.contactPoint?.email ?? '').trim(),
     },
     partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
-    campusVisits: values.campusVisits.map(cv =>
-      toApiCampusVisit(cv, processingByCampus.get(cv.campus.trim().toUpperCase()))),
+    campusVisits: (values.campusVisits ?? []).map(cv =>
+      toApiCampusVisit(cv, processingByCampus.get((cv.campus ?? '').trim().toUpperCase()))),
   };
 };
 
@@ -200,21 +200,21 @@ export const buildV2EditPayload = (
 ): V2EditPayload => ({
   expectedRequestRowVersion,
   registrant: {
-    fullName: values.registerInfo.fullName.trim(),
-    nationality: values.registerInfo.nationality.trim(),
-    organization: values.registerInfo.organization.trim(),
-    jobTitle: values.registerInfo.jobTitle.trim(),
-    phone: normalizePhone(values.registerInfo.phone) ?? values.registerInfo.phone.trim(),
-    email: values.registerInfo.email.trim(),
+    fullName: (values.registerInfo?.fullName ?? '').trim(),
+    nationality: (values.registerInfo?.nationality ?? '').trim(),
+    organization: (values.registerInfo?.organization ?? '').trim(),
+    jobTitle: (values.registerInfo?.jobTitle ?? '').trim(),
+    phone: normalizePhone(values.registerInfo?.phone) ?? (values.registerInfo?.phone ?? '').trim(),
+    email: (values.registerInfo?.email ?? '').trim(),
   },
   primaryContact: {
-    fullName: values.contactPoint.fullName.trim(),
-    organization: (values.contactPoint.organization ?? '').trim(),
-    phone: normalizePhone(values.contactPoint.phone) ?? values.contactPoint.phone.trim(),
-    email: values.contactPoint.email.trim(),
+    fullName: (values.contactPoint?.fullName ?? '').trim(),
+    organization: (values.contactPoint?.organization ?? '').trim(),
+    phone: normalizePhone(values.contactPoint?.phone) ?? (values.contactPoint?.phone ?? '').trim(),
+    email: (values.contactPoint?.email ?? '').trim(),
   },
   partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
-  campusVisits: values.campusVisits.map((cv): V2CampusVisitEdit => ({
+  campusVisits: (values.campusVisits ?? []).map((cv): V2CampusVisitEdit => ({
     ...toApiCampusVisit(cv, undefined),
     visitInstanceId: cv.visitInstanceId ?? null,
     expectedRowVersion: cv.visitInstanceId != null ? cv.expectedRowVersion ?? null : null,

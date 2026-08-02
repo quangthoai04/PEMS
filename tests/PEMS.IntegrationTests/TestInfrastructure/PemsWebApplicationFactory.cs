@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using PEMS.Infrastructure.BackgroundJobs;
 using PEMS.Api.Controllers;
 using PEMS.Api.Extensions;
 using PEMS.Api.Middleware;
@@ -76,6 +77,28 @@ public sealed class PemsWebApplicationFactory : WebApplicationFactory<FaqsContro
                     // Same building blocks Program.cs uses — nothing in PEMS.Api is modified.
                     services.AddApplication();
                     services.AddInfrastructure(configuration);
+
+                    // One background job is removed from the TEST host; production registration in
+                    // Infrastructure is untouched, and every other hosted service still runs here.
+                    //
+                    // VisitReminderDispatchHostedService wakes every 60s and calls the same global
+                    // DispatchDueAsync the reminder suite is testing. It claims by whole database, not by
+                    // caller, so whenever any factory-based class was alive it could take that suite's row
+                    // first. The claim moves the reminder to SENT before sending, and this host has
+                    // Smtp:Enabled=false, so the symptom was a reminder marked SENT with no message in the
+                    // test's own pickup directory and no error recorded anywhere — intermittent, only ever
+                    // in a full run, always green in isolation.
+                    //
+                    // Removed by descriptor rather than with RemoveAll<IHostedService>(): the blanket call
+                    // would silently take out every other background job too, including ones a future
+                    // integration test may depend on. A test that wants a reminder tick calls the scoped
+                    // service directly, which is also the only way to know WHICH tick it is observing.
+                    var reminderJob = services.FirstOrDefault(d =>
+                        d.ServiceType == typeof(IHostedService)
+                        && d.ImplementationType == typeof(VisitReminderDispatchHostedService));
+
+                    if (reminderJob is not null)
+                        services.Remove(reminderJob);
 
                     var authOptions = configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>()
                         ?? new AuthOptions();

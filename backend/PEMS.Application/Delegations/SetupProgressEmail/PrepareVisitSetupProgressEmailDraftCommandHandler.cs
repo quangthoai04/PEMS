@@ -154,9 +154,13 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         var campusName = await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
-        var hostName = await _db.Users
-            .Where(u => u.UserId == userId).Select(u => u.FullName)
-            .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+        // Name AND address: the body asks the guest to reply so the Host can act, and the manual send
+        // path carries the configured system Reply-To, so the address has to be visible in the text.
+        var host = await _db.Users
+            .Where(u => u.UserId == userId).Select(u => new { u.FullName, u.Email })
+            .FirstOrDefaultAsync(cancellationToken);
+        var hostName = host?.FullName ?? string.Empty;
+        var hostEmail = host?.Email ?? string.Empty;
 
         // ── The report FIRST: its data is also what the body's HTML tables are built from, so the
         // message and its attachment describe one moment rather than two reads either side of a save.
@@ -166,7 +170,7 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         var rendered = await _renderer.RenderAsync(new EmailRenderRequest(
             VisitSetupProgressEmailGuard.TemplateCode,
             language,
-            VisitSetupProgressEmailGuard.BuildVariables(instance, delegationName, campusName, hostName),
+            VisitSetupProgressEmailGuard.BuildVariables(instance, delegationName, campusName, hostName, hostEmail),
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [EmailTrustedBlocks.SetupSummaryBlock] = VisitSetupEmailHtml.Render(snapshot, language),

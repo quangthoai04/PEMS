@@ -652,13 +652,12 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                           <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><Link2 className="w-3.5 h-3.5" /> Link website</label>
                           <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#004c91] outline-none" value={scannedInfo.website || ''} onChange={e => setScannedInfo({...scannedInfo, website: e.target.value})} />
                         </div>
-                        
+
                         {/* New Address field */}
-                        <div className="sm:col-span-2 space-y-1.5 font-sans">
+                        <div className="space-y-1.5 font-sans">
                           <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><MapPin className="w-3.5 h-3.5" /> Địa chỉ</label>
                           <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#004c91] outline-none" value={scannedInfo.address || ''} onChange={e => setScannedInfo({...scannedInfo, address: e.target.value})} />
                         </div>
-                        
 
 
                         {/* Partner Association Selector */}

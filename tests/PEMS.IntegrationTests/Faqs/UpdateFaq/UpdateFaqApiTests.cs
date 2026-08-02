@@ -13,9 +13,13 @@ namespace PEMS.IntegrationTests.Faqs.UpdateFaq;
 
 /// <summary>
 /// Integration tests for Update FAQ — <c>PUT /api/faqs/{faqId}</c>. Endpoint, request DTO
-/// (<c>UpdateFAQBody</c>: FaqType/Question/Answer — no Status, no FaqId in the body) and HO-only
-/// authorization confirmed against <c>FaqsController.UpdateFAQ</c> and
+/// (<c>UpdateFAQBody</c>: Question/Answer plus the optional EN pair — no FaqType, no Status, no FaqId
+/// in the body) and HO-only authorization confirmed against <c>FaqsController.UpdateFAQ</c> and
 /// <c>UpdateFAQCommandHandler.cs</c>.
+///
+/// The local <c>UpdateFaqBody</c> record these tests post still carries a category slot so the existing
+/// call sites keep compiling; it travels as an unknown property and is discarded by model binding. The
+/// category is chosen at creation and is read-only afterwards — see InvalidFaqType_DoesNotModify.
 ///
 /// UC ID note: source comments UC-64 for both "View FAQ Detail" and "Update FAQ" in the same
 /// controller (internally inconsistent), while docs/use-cases/USE_CASE_LIST.md lists Update FAQ as
@@ -215,7 +219,12 @@ public sealed class UpdateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
 
         Assert.Equal(newQuestion, saved.Question);
         Assert.Equal("Câu trả lời mới.", saved.Answer);
-        Assert.Equal(FaqConstants.Type.AccountAccess, saved.FaqType);
+
+        // The category is fixed at creation and is NOT editable (commit 0990951a removed FaqType from
+        // UpdateFAQCommand/Body/Validator and replaced the category <select> on FAQDetail with a static
+        // label). The payload above still carries ACCOUNT_ACCESS on purpose: an ignored field must be
+        // ignored, not quietly applied.
+        Assert.Equal(FaqConstants.Type.Other, saved.FaqType);
     }
 
     [Fact]
@@ -323,6 +332,18 @@ public sealed class UpdateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         await AssertFaqUnchangedAsync(faqId, snapshot);
     }
 
+    /// <summary>
+    /// A junk category in the payload cannot reach the row.
+    ///
+    /// <para>
+    /// This used to assert 400. It no longer can: the update contract has no category field at all
+    /// (commit 0990951a), so "PROGRAM" is an unknown property that model binding discards before any
+    /// validator runs, and the request is a perfectly ordinary question/answer edit. The guarantee the
+    /// test was written to protect — that a bad category never corrupts the stored row — is stronger
+    /// under the new contract than under the old one, and is what is asserted here. Asserting 400 again
+    /// would mean re-adding a field the product deliberately made read-only.
+    /// </para>
+    /// </summary>
     [Fact]
     public async Task InvalidFaqType_DoesNotModify()
     {
@@ -332,11 +353,22 @@ public sealed class UpdateFaqApiTests : IClassFixture<PemsWebApplicationFactory>
         var snapshot = await SnapshotFaqAsync(faqId);
         var client = await CreateClientAsAsync(EffectiveRole.Ho);
 
+        var newQuestion = UniqueQuestion("invalid-type-attempt");
         var response = await client.PutAsJsonAsync($"/api/faqs/{faqId}", new UpdateFaqBody(
-            "PROGRAM", UniqueQuestion("invalid-type-attempt"), "Câu trả lời mới."));
+            "PROGRAM", newQuestion, "Câu trả lời mới."));
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        await AssertFaqUnchangedAsync(faqId, snapshot);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var saved = await db.Faqs.AsNoTracking().SingleAsync(f => f.FaqId == faqId);
+
+        // The edit landed; the category did not move, and certainly did not become "PROGRAM" —
+        // which is not even a member of the faq_type ENUM and would have failed the insert.
+        Assert.Equal(newQuestion, saved.Question);
+        Assert.Equal(snapshot.FaqType, saved.FaqType);
+        Assert.Equal(FaqConstants.Type.Other, saved.FaqType);
+        Assert.Equal(snapshot.Status, saved.Status);
     }
 
     [Fact]

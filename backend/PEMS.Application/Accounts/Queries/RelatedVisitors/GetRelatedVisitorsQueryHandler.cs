@@ -13,9 +13,12 @@ using PEMS.Domain.Constants;
 namespace PEMS.Application.Accounts.Queries.RelatedVisitors;
 
 /// <summary>
-/// Lists the Visitor accounts related to the caller's campus (Staff Leader only). Scope and the
-/// single-/multi-campus visibility rule live in <see cref="RelatedVisitorScope"/> so list, count
-/// and detail share one definition. Read-only — every row is non-actionable.
+/// Lists the Visitor accounts related to the caller's campus (Staff Leader only). The campus
+/// relation lives in <see cref="RelatedVisitorScope"/> so list, nationalities and detail share one
+/// definition. Read-only — every row is non-actionable.
+///
+/// A Visitor appears exactly once no matter how many requests or campus instances tie them to the
+/// campus; <c>RelatedRequestCount</c> counts DISTINCT requests, not instances.
 ///
 /// Implementation note: the related-request aggregates are computed by loading the (small,
 /// campus-scoped) set of visible instances and grouping in memory, then enriching the matching
@@ -99,8 +102,12 @@ public sealed class GetRelatedVisitorsQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Nationality))
         {
-            var nat = request.Nationality.Trim();
-            userQuery = userQuery.Where(u => u.Nationality == nat);
+            // Normalized on BOTH sides: the dropdown value and the stored value are compared
+            // trimmed and lower-cased, so " Nhật Bản " / "nhật bản" / "NHẬT BẢN" all select the
+            // same option. Deliberately not left to the column collation — that would make the
+            // filter's behaviour depend on a DB setting no test here pins down.
+            var nat = request.Nationality.Trim().ToLower();
+            userQuery = userQuery.Where(u => u.Nationality != null && u.Nationality.Trim().ToLower() == nat);
         }
 
         if (keyword is { Length: > 0 })

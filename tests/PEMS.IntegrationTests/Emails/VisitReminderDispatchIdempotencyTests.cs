@@ -34,6 +34,9 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
     private ulong _visitInstanceId;
     private ulong _reminderId;
 
+    /// <summary>The host this fixture created — the address every "one message" assertion is about.</summary>
+    private ulong _hostUserId;
+
     public void Dispose() => _h.Dispose();
 
     // ── The whole point ─────────────────────────────────────────────────────
@@ -45,17 +48,18 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         try
         {
             await SeedAsync(VisitReminderTargetGroup.HOST);
+            await AssertReadyToDispatchAsync(_hostUserId);
 
             using (var db = EmailEvidenceHarness.NewContext())
                 await Service(db).DispatchDueAsync();
 
-            Assert.Single(MessagesTo(_h.Marker));
+            await AwaitMessagesToAsync(_h.Marker, 1);
 
             // Second tick, same clock, same data.
             using (var db = EmailEvidenceHarness.NewContext())
                 await Service(db).DispatchDueAsync();
 
-            Assert.Single(MessagesTo(_h.Marker));
+            await AwaitMessagesToAsync(_h.Marker, 1);
 
             using var verify = EmailEvidenceHarness.NewContext();
             Assert.Equal(1, await verify.SentEmailRecipients.AsNoTracking()
@@ -78,6 +82,8 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         {
             await SeedAsync(VisitReminderTargetGroup.HOST);
 
+            await AssertReadyToDispatchAsync(_hostUserId);
+
             using var dbA = EmailEvidenceHarness.NewContext();
             using var dbB = EmailEvidenceHarness.NewContext();
 
@@ -99,7 +105,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
                 Assert.Equal(VisitReminderStatus.SENT, after.Status);
             }
 
-            Assert.Single(MessagesTo(_h.Marker));
+            await AwaitMessagesToAsync(_h.Marker, 1);
 
             using var verify = EmailEvidenceHarness.NewContext();
             Assert.Equal(1, await verify.SentEmailRecipients.AsNoTracking()
@@ -134,6 +140,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             try
             {
                 await SeedAsync(VisitReminderTargetGroup.HOST);
+                await AssertReadyToDispatchAsync(_hostUserId);
 
                 using var dbA = EmailEvidenceHarness.NewContext();
                 using var dbB = EmailEvidenceHarness.NewContext();
@@ -154,9 +161,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
 
                 // One message, on this attempt, from this iteration's own mailbox — the pickup directory
                 // is cleaned between attempts so the count cannot accumulate into a false pass.
-                var messages = MessagesTo(_h.Marker);
-                Assert.True(messages.Count == 1,
-                    $"Attempt {attempt} of {Attempts} produced {messages.Count} messages, expected exactly 1.");
+                await AwaitMessagesToAsync(_h.Marker, 1, $"attempt {attempt} of {Attempts}");
             }
             finally
             {
@@ -215,7 +220,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             using (var db = EmailEvidenceHarness.NewContext())
                 await Service(db).DispatchDueAsync();
 
-            Assert.Empty(MessagesTo(_h.Marker));
+            await AwaitMessagesToAsync(_h.Marker, 0);
 
             using var verify = EmailEvidenceHarness.NewContext();
             var reminder = await verify.VisitInstanceReminderSettings.AsNoTracking()
@@ -240,7 +245,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             using (var db = EmailEvidenceHarness.NewContext())
                 await Service(db).DispatchDueAsync();
 
-            Assert.Empty(MessagesTo(_h.Marker));
+            await AwaitMessagesToAsync(_h.Marker, 0);
 
             using var verify = EmailEvidenceHarness.NewContext();
             // A FAILED reminder is NOT retried: some of its messages may already have gone out, and the
@@ -282,7 +287,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             using (var db = EmailEvidenceHarness.NewContext())
                 await Service(db).DispatchDueAsync();
 
-            Assert.Empty(MessagesTo(_h.Marker));
+            await AwaitMessagesToAsync(_h.Marker, 0);
         }
         finally { await CleanupAsync(); }
     }
@@ -294,12 +299,14 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         try
         {
             await SeedAsync(VisitReminderTargetGroup.HOST_AND_PARTICIPANTS, withParticipant: true);
+            await AssertReadyToDispatchAsync(_hostUserId);
 
             using (var db = EmailEvidenceHarness.NewContext())
                 await Service(db).DispatchDueAsync();
 
             // Two people, two separate MIME messages — never one message addressed to both.
-            var mine = MessagesTo(_h.Marker).Concat(MessagesTo(ParticipantAddress)).ToList();
+            var mine = (await AwaitMessagesToAsync(_h.Marker, 1))
+                .Concat(await AwaitMessagesToAsync(ParticipantAddress, 1)).ToList();
             Assert.Equal(2, mine.Count);
             foreach (var eml in mine)
             {
@@ -329,15 +336,26 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         => new(db, _h.Dispatcher(db, brokenHost), new NowClock(), new StubUrls(), new NoNotifications());
 
     /// <summary>
-    /// The produced messages addressed to one mailbox. Scoped on purpose: the dispatch loop is global by
-    /// design, so a count of "every file in the pickup directory" would be an assertion about whatever
-    /// else the shared test database happens to hold, not about this test.
+    /// The produced messages addressed to one mailbox, once the mailbox has settled.
+    ///
+    /// <para>
+    /// Scoped to one address on purpose: the dispatch loop is global by design, so a count of "every file
+    /// in the pickup directory" would be an assertion about whatever else the shared test database
+    /// happens to hold, not about this test.
+    /// </para>
+    /// <para>
+    /// It waits rather than reading once, because writing an <c>.eml</c> lands after the database rows it
+    /// accompanies — see <see cref="EmailEvidenceHarness.AwaitMessagesAsync"/>. Both directions matter
+    /// here: a reminder suite has to see the message that is late, and still fail on the duplicate that
+    /// is later still.
+    /// </para>
     /// </summary>
-    private List<EmlMessage> MessagesTo(string address)
-        => _h.Messages()
-            .Select(path => new EmlMessage(System.IO.File.ReadAllText(path)))
-            .Where(m => m.Header("To").Contains(address, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+    private async Task<IReadOnlyList<EmlMessage>> AwaitMessagesToAsync(
+        string address, int expected, string? attempt = null)
+        => await _h.AwaitMessagesAsync(
+            m => m.Header("To").Contains(address, StringComparison.OrdinalIgnoreCase),
+            expected,
+            attempt is null ? address : $"{address} ({attempt})");
 
     private async Task SeedAsync(
         VisitReminderTargetGroup target,
@@ -392,6 +410,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         await db.SaveChangesAsync();
 
         var hostUserId = hostUser.UserId;
+        _hostUserId = hostUserId;
         _createdUserIds.Add(hostUserId);
 
         var request = new VisitRequest
@@ -544,6 +563,63 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
 
         _visitInstanceId = 0;
         _visitRequestId = 0;
+    }
+
+    /// <summary>
+    /// Proves the fixture is intact immediately before a dispatch, so a broken precondition is reported
+    /// as itself rather than as a missing email ten seconds later.
+    ///
+    /// <para>
+    /// This exists because the suite once failed with "0 messages, expected 1" while every recorded fact
+    /// said the send had happened — the reminder was <c>SENT</c> and no error was stored. The message
+    /// count was the last link in the chain and the least informative one: it cannot distinguish "nobody
+    /// was resolved as a recipient" from "somebody else dispatched this row" from "the write is late".
+    /// Asserting the inputs first makes those three different failures.
+    /// </para>
+    /// </summary>
+    private async Task AssertReadyToDispatchAsync(
+        ulong expectedHostUserId, VisitReminderStatus expectedStatus = VisitReminderStatus.PENDING)
+    {
+        using var db = EmailEvidenceHarness.NewContext();
+
+        var instance = await db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => c.VisitInstanceId == _visitInstanceId)
+            .Select(c => new { c.VisitInstanceId, c.CurrentHostUserId })
+            .FirstOrDefaultAsync();
+
+        var reminder = await db.VisitInstanceReminderSettings.AsNoTracking()
+            .Where(r => r.ReminderSettingId == _reminderId)
+            .Select(r => new { r.ReminderSettingId, r.VisitInstanceId, r.Status })
+            .FirstOrDefaultAsync();
+
+        var host = await db.Users.AsNoTracking()
+            .Where(u => u.UserId == expectedHostUserId)
+            .Select(u => new { u.UserId, u.Email })
+            .FirstOrDefaultAsync();
+
+        string Report(string problem) => string.Join(Environment.NewLine, new[]
+        {
+            $"Reminder fixture is not ready to dispatch: {problem}.",
+            $"  visit instance id   : {_visitInstanceId}",
+            $"  reminder id         : {_reminderId}",
+            $"  expected host user  : {expectedHostUserId}",
+            $"  current_host_user_id: {instance?.CurrentHostUserId?.ToString() ?? "NULL"}",
+            $"  host user exists    : {(host is null ? "no" : "yes")}",
+            $"  resolved email      : {host?.Email ?? "(none)"}",
+            $"  expected email      : {_h.Marker}",
+            $"  reminder instance   : {reminder?.VisitInstanceId.ToString() ?? "(reminder missing)"}",
+            $"  reminder status     : {reminder?.Status.ToString() ?? "(reminder missing)"} "
+                + $"(expected {expectedStatus})",
+        });
+
+        Assert.True(instance is not null, Report("the campus instance is gone"));
+        Assert.True(reminder is not null, Report("the reminder row is gone"));
+        Assert.True(reminder!.VisitInstanceId == _visitInstanceId, Report("the reminder points at another instance"));
+        Assert.True(reminder.Status == expectedStatus, Report("the reminder is not in its expected input state"));
+        Assert.True(instance!.CurrentHostUserId is not null, Report("the campus instance has no host"));
+        Assert.True(instance.CurrentHostUserId == expectedHostUserId, Report("the host is not the one this fixture created"));
+        Assert.True(host is not null, Report("the host user no longer exists"));
+        Assert.True(host!.Email == _h.Marker, Report("the host's address is not this suite's marker"));
     }
 
     private sealed class NowClock : IDateTimeService

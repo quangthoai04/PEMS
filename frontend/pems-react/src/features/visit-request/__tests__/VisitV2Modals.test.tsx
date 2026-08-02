@@ -6,6 +6,12 @@ vi.mock('../api/visitRequestV2Api', () => ({
   patchSafeDetails: vi.fn(),
 }));
 
+// The modal reads the signed-in user to decide whether the viewer is Staff (commit 6be02a28), so it
+// needs the context even here, where every case is a requester editing their own request. Mocked
+// rather than wrapped in <AuthProvider> to match every other test in this folder — the provider does
+// real session work these cases have no use for. user: null is the requester path.
+vi.mock('../../../shared/auth/AuthContext', () => ({ useAuthContext: () => ({ user: null }) }));
+
 import { submitAmendment, patchSafeDetails } from '../api/visitRequestV2Api';
 import VisitAmendmentSubmitModal from '../components/VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../components/VisitSafeEditModal';

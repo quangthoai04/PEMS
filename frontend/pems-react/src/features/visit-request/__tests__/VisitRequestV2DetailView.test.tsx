@@ -27,6 +27,12 @@ vi.mock('../api/visitRequestV2Api', () => ({
   withdrawAmendment: vi.fn(),
 }));
 
+// The view reads the signed-in user (commit 6be02a28) purely to pick between two labels on the
+// "open amendment" button. Every case below is driven by viewer.relation and per-instance
+// allowedActions from the API, which is the point the STAFF_LEADER case makes, so the null user is
+// accurate rather than merely convenient. Mocked, not <AuthProvider>-wrapped, as elsewhere here.
+vi.mock('../../../shared/auth/AuthContext', () => ({ useAuthContext: () => ({ user: null }) }));
+
 import {
   getVisitRequestFormV2,
   getActiveAmendment,
