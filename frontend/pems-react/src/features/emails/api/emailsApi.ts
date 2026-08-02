@@ -129,8 +129,64 @@ export const emailsApi = {
    */
   restoreEmailTemplateDefault: (id: number | string, expectedRevision: number) => {
     return httpClient.post(`/email-templates/${id}/restore-default`, { expectedRevision });
-  }
+  },
+  /**
+   * The reply-contact settings for one template: whether the block appears, where the contact comes
+   * from, and which of its fields are shown.
+   *
+   * Readable by every composing role — the compose and preview screens need to know whether a block
+   * will appear at all. Saving is HO only; the backend enforces that.
+   */
+  getEmailContactSettings: (templateCode: string) => {
+    return httpClient.get<EmailContactSettings>(
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
+    );
+  },
+  updateEmailContactSettings: (templateCode: string, data: EmailContactSettingsPayload) => {
+    return httpClient.put<EmailContactSettings>(
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
+      data,
+    );
+  },
 };
+
+/**
+ * How a template's reply-contact block behaves.
+ *
+ * Note what is NOT here: no name, no address, no telephone number, no user id. An operator chooses
+ * WHICH fields the block shows; the values are read from users/campuses/departments when the mail is
+ * sent, so a template can never present a hand-typed mailbox as somebody's.
+ */
+export interface EmailContactSettings {
+  templateCode: string;
+  requirement: 'NONE' | 'OPTIONAL' | 'REQUIRED';
+  contactSource:
+    | 'HOST' | 'SENDER' | 'HOST_THEN_SENDER'
+    | 'CAMPUS_DEFAULT' | 'DEPARTMENT_DEFAULT' | 'SUPPORT_CONTACT';
+  showEmail: boolean;
+  showPhone: boolean;
+  showDepartment: boolean;
+  showCampus: boolean;
+  showSender: boolean;
+  headingVi: string;
+  headingEn: string;
+  replyToSource: 'NONE' | 'CONTACT' | 'SENDER';
+  /** The placeholder a REQUIRED policy needs in the body — supplied so no screen hard-codes it. */
+  blockPlaceholder: string;
+  bodyCarriesBlockVi: boolean;
+  bodyCarriesBlockEn: boolean;
+  /** False once somebody has saved an override for this template. */
+  isDefault: boolean;
+  availableRequirements: string[];
+  availableSources: string[];
+  availableReplyToSources: string[];
+}
+
+export type EmailContactSettingsPayload = Pick<
+  EmailContactSettings,
+  'requirement' | 'contactSource' | 'showEmail' | 'showPhone'
+  | 'showDepartment' | 'showCampus' | 'showSender' | 'headingVi' | 'headingEn' | 'replyToSource'
+>;
 
 /** Content fields an operator may change, plus the concurrency token they loaded with. */
 export interface UpdateEmailTemplatePayload {

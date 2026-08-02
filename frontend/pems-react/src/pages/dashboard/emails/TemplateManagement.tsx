@@ -4,6 +4,7 @@ import { emailsApi } from '../../../features/emails/api/emailsApi';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
+import { ContactSettingsPanel } from '../../../features/emails/components/ContactSettingsPanel';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import {
   TEMPLATE_ERROR_CODES,
@@ -547,7 +548,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   </div>
                   {/* Sanitised after variable substitution: the samples are inserted into the markup,
                       so the substituted result is what this browser must be protected from. */}
-                  <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{
+                  {/* `prose prose-sm` used to be here. It is a no-op today — the Tailwind typography
+                      plugin is not installed — but it is markup that says "restyle this", and the one
+                      thing a preview of an email must not do is restyle it. Replaced by the isolation
+                      class, which only undoes inherited layout and lets a wide table scroll. */}
+                  <div className="pems-email-body max-w-none" dangerouslySetInnerHTML={{
                     __html: sanitizeHtml(previewBody || '<span class="text-gray-400 italic">Chưa có nội dung...</span>')
                   }} />
                 </div>
@@ -634,6 +639,28 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   </>
                 )}
               </div>
+
+              {/*
+                4. Contact settings. A separate card because it saves on its own button rather than with
+                the content form: the two are different kinds of change — one edits sentences, the other
+                decides who the recipient is told to contact — and folding the settings into the content
+                save would make every wording fix also rewrite the policy.
+
+                This screen is HO-only (EmailManagement renders it only for HO) and the API enforces that
+                independently, so passing canEdit is presentation, not protection.
+              */}
+              {formData.templateCode && (
+                <div className="bg-white p-5 rounded-lg border border-gray-200">
+                  <h3 className="font-bold text-[#004c91] mb-1 text-base border-b border-gray-200 pb-2">
+                    4. Cấu hình thông tin liên hệ
+                  </h3>
+                  <p className="text-[11px] text-gray-500 mb-3">
+                    Quyết định người nhận <span className="font-mono">{formData.templateCode}</span> nên
+                    liên hệ với ai, và email được hiển thị những gì về họ.
+                  </p>
+                  <ContactSettingsPanel templateCode={formData.templateCode} canEdit />
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between gap-3 pt-4">

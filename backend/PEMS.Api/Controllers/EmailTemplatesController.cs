@@ -67,6 +67,51 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// The reply-contact settings for one template.
+        ///
+        /// <para>
+        /// Readable by every composing role for the same reason the contract is: the compose and preview
+        /// screens need to know whether a contact block will appear. Writing them is HO only, like every
+        /// other template write on this controller.
+        /// </para>
+        /// </summary>
+        [HttpGet("{templateCode}/contact-settings")]
+        public async Task<IActionResult> GetContactSettings(
+            string templateCode, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Emails.Contact.GetEmailContactSettingsQuery
+                {
+                    TemplateCode = templateCode,
+                },
+                cancellationToken);
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Saves the reply-contact settings. HO only.
+        ///
+        /// <para>
+        /// The payload carries enums and booleans plus two headings — never an address, a telephone
+        /// number or a user id. Choosing WHICH fields the block shows is configuration; choosing what it
+        /// SAYS would be a way to attribute a hand-typed mailbox to somebody else, so the command has no
+        /// field for it.
+        /// </para>
+        /// </summary>
+        [HttpPut("{templateCode}/contact-settings")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> UpdateContactSettings(
+            string templateCode,
+            [FromBody] PEMS.Application.Emails.Contact.UpdateEmailContactSettingsCommand command,
+            CancellationToken cancellationToken)
+        {
+            command.TemplateCode = templateCode;
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetList([FromQuery] PEMS.Application.Emails.Queries.ViewEmailTemplateList.ViewEmailTemplateListQuery query, CancellationToken cancellationToken)
         {

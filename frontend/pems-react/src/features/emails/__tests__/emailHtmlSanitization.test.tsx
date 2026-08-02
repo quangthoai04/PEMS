@@ -263,8 +263,12 @@ describe('TemplateManagement editor preview', () => {
 
     // Scoped to the preview pane: the editor itself legitimately shows the raw source as *text*
     // (React escapes it into the textarea), so asserting over the whole page would be a false alarm.
+    // `.pems-email-body`, not `.prose`. The preview pane used to carry Tailwind's typography classes,
+    // which did nothing (the plugin is not installed) but told anyone reading the markup that this pane
+    // restyles the mail — the one thing a preview of an email must not do. It now carries the isolation
+    // class instead, which only undoes inherited layout and lets a wide table scroll.
     const preview = await waitFor(() => {
-      const el = container.querySelector('.prose') as HTMLElement | null;
+      const el = container.querySelector('.pems-email-body') as HTMLElement | null;
       expect(el?.innerHTML ?? '').toContain('Nguyễn Văn A');
       return el as HTMLElement;
     });
