@@ -9,12 +9,15 @@ namespace PEMS.Application.Common.Utils
 {
     public static class ScheduleConflictChecker
     {
-        public static async Task<bool> HasConflictAsync(
+        /// <summary>
+        /// Invitation conflict check: only checks personal calendar events and OTHER accepted invitations.
+        /// Does NOT check logistics request tasks (spec: a person can accept a request task and an invitation at the same time).
+        /// </summary>
+        public static async Task<bool> HasInvitationConflictAsync(
             IApplicationDbContext context,
             ulong targetUserId,
             DateTime startAt,
             DateTime endAt,
-            ulong? currentLogisticsItemId,
             ulong? currentParticipantId,
             CancellationToken cancellationToken)
         {
@@ -42,26 +45,19 @@ namespace PEMS.Application.Common.Utils
                 select p.ParticipantId
             ).AnyAsync(cancellationToken);
 
-            if (invitationConflict) return true;
+            return invitationConflict;
+        }
 
-            // 3. Assigned / Accepted logistics requests in database
-            bool requestConflict = await (
-                from l in context.VisitLogisticsItems.AsNoTracking()
-                join c in context.VisitRequestCampuses.AsNoTracking() on l.VisitInstanceId equals c.VisitInstanceId
-                join vr in context.VisitRequests.AsNoTracking() on c.VisitRequestId equals vr.VisitRequestId
-                where l.AssignedToUserId == targetUserId
-                      && (l.Status == "ACCEPTED" || l.Status == "ASSIGNED" || l.Status == "IN_PROGRESS" || l.Status == "CHANGE_PROPOSED")
-                      && vr.Status != "CANCELLED"
-                      && c.Status != "CANCELLED"
-                      && (currentLogisticsItemId == null || l.LogisticsItemId != currentLogisticsItemId.Value)
-                      && startAt < (l.UsageEndAt ?? c.PlannedEndAt)
-                      && endAt > (l.UsageStartAt ?? c.PlannedStartAt)
-                select l.LogisticsItemId
-            ).AnyAsync(cancellationToken);
-
-            if (requestConflict) return true;
-
-            return false;
+        public static async Task<bool> HasConflictAsync(
+            IApplicationDbContext context,
+            ulong targetUserId,
+            DateTime startAt,
+            DateTime endAt,
+            ulong? currentLogisticsItemId,
+            ulong? currentParticipantId,
+            CancellationToken cancellationToken)
+        {
+            return await HasInvitationConflictAsync(context, targetUserId, startAt, endAt, currentParticipantId, cancellationToken);
         }
     }
 }

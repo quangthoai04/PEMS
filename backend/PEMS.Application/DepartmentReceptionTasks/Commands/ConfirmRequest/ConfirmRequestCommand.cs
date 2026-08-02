@@ -51,21 +51,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
             if (user == null || l.RequestedToDepartmentId != user.DepartmentId)
                 throw new ForbiddenException("Không có quyền xác nhận đơn yêu cầu của phòng ban khác");
 
-            // Database time conflict check
-            var campus = await _context.VisitRequestCampuses.AsNoTracking()
-                .FirstOrDefaultAsync(c => c.VisitInstanceId == l.VisitInstanceId, cancellationToken);
-            DateTime startAt = l.UsageStartAt ?? (campus != null ? campus.PlannedStartAt : DateTime.MinValue);
-            DateTime endAt = l.UsageEndAt ?? (campus != null ? campus.PlannedEndAt : DateTime.MaxValue);
-
-            if (startAt != DateTime.MinValue && endAt != DateTime.MaxValue)
-            {
-                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
-                    _context, userId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
-                if (hasConflict)
-                {
-                    throw new ValidationException("Đơn này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
-                }
-            }
+            // Đơn yêu cầu không bị chặn bởi các đơn yêu cầu hoặc thư mời khác trùng thời gian
 
             var now = VietnamTime.Now();
 
