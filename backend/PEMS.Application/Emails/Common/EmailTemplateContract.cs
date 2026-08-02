@@ -83,6 +83,24 @@ public static class EmailTemplateContracts
             [SystemEmailTemplates.VisitSetupProgressUpdate] = EmailTrustedBlocks.SetupSummaryBlock,
         };
 
+    /// <summary>
+    /// The trusted block this template cannot render without, or null when it has none.
+    ///
+    /// <para>
+    /// Deliberately NOT derived from <see cref="EmailTemplateContract.RequiredVariables"/>, which also
+    /// carries <see cref="EmailTrustedBlocks.ActionBlock"/> for every template with an action spec. The
+    /// action block has its own structural check on the rendered body and a long tail of templates that
+    /// write it without being registered; widening a send-time refusal to cover it would fail messages
+    /// that have always gone out. This answers the narrower question the renderer needs: which block is
+    /// this template's actual content, such that a body without it is not worth sending.
+    /// </para>
+    /// </summary>
+    public static string? RequiredTrustedBlockFor(string? templateCode)
+        => templateCode is not null
+           && RequiredTrustedBlockByTemplate.TryGetValue(templateCode, out var block)
+            ? block
+            : null;
+
     /// <summary>The contract for a system template, or null when the code is not a system template.</summary>
     public static EmailTemplateContract? For(string? templateCode)
     {

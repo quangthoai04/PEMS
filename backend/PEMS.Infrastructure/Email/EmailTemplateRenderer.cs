@@ -125,6 +125,18 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
         {
             subjectSource = subjectTemplate;
             bodySource = bodyTemplate;
+
+            // 6c) A template whose CONTENT is a trusted block must still be asking for it.
+            //
+            // Checked here, on the stored body before substitution, because this is the one failure the
+            // guards below cannot see: a body that lost {{setupSummaryBlock}} leaves nothing to
+            // substitute, so there are no leftover braces for the unresolved-placeholder check and no
+            // missing variable for the contract check. The caller built the tables, the row had nowhere
+            // to put them, and the mail went out saying "here is the update" with no update in it.
+            //
+            // Authored mode is exempt by construction: there the block is APPENDED to the author's text
+            // rather than substituted into it, so it cannot be dropped by what the row happens to say.
+            AssertRequiredTrustedBlockIsInBody(code, bodySource);
         }
 
         // 7) + 8) Substitute. Values are untrusted text everywhere; only TrustedHtmlBlocks may be markup.
@@ -301,6 +313,41 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
                     $"Tiêu đề email '{code}' chứa mã dùng một lần.",
                     EmailErrorCodes.SubjectSecretLeak);
         }
+    }
+
+    /// <summary>
+    /// Refuses to render a template whose stored body has lost the trusted block that IS its content.
+    ///
+    /// <para>
+    /// Only fires when the caller actually supplied the block: a template rendered without it (the
+    /// generic preview hands every template a setup-summary block it may not use) is not the situation
+    /// this is about. The pairing that matters is "the backend built this content AND the row will not
+    /// take it" — which means the row is behind the canonical template and needs re-syncing, not that
+    /// the send is wrong.
+    /// </para>
+    /// <para>
+    /// The message names the repair rather than the symptom, because the person who reads it is an
+    /// operator looking at a template screen, not the host who pressed send.
+    /// </para>
+    /// </summary>
+    private static void AssertRequiredTrustedBlockIsInBody(string code, string bodyTemplate)
+    {
+        var block = EmailTemplateContracts.RequiredTrustedBlockFor(code);
+        if (block is null) return;
+        if (bodyTemplate.Contains("{{" + block + "}}", StringComparison.Ordinal)) return;
+
+        // Deliberately NOT conditional on the caller having supplied the block. The contract says this
+        // template's content IS the block, so a stored body without it is unsendable no matter who is
+        // asking — and the caller that forgot to build it is the one case where making the check
+        // caller-dependent would let both halves of the same fault cancel out into a silent success:
+        // nothing to substitute, nothing left unresolved, a mail that reads "here is the update" and
+        // shows none. The two faults are reported separately (this one names the row to re-sync; a body
+        // that still has the placeholder falls through to the unresolved-placeholder guard, which names
+        // the missing block), because they have different repairs.
+        throw new BusinessRuleException(
+            $"Nội dung template email '{code}' trong cơ sở dữ liệu không còn chỗ đặt khối {{{{{block}}}}}, "
+            + "nên phần nội dung do hệ thống dựng sẽ bị mất. Hãy đồng bộ lại template này từ bản chuẩn.",
+            EmailErrorCodes.TemplateRequiredBlockNotInBody);
     }
 
     private static void AssertNoUnresolvedPlaceholder(string code, string rendered, string part)
