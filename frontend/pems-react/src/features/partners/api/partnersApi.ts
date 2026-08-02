@@ -11,6 +11,7 @@ import type {
   PartnerListParams,
   PartnerListResponse,
   PartnerMatchResult,
+  PartnerVisitHistoryItem,
   TranslatePartnerDraftRequest,
   TranslatePartnerDraftResponse,
   UpdatePartnerRequest,
@@ -42,6 +43,11 @@ export const partnersApi = {
 
   async getPartnerDetail(partnerId: number | string): Promise<PartnerDetail> {
     const { data } = await httpClient.get<PartnerDetail>(API_ENDPOINTS.partners.detail(partnerId));
+    return data;
+  },
+
+  async getVisitHistory(partnerId: number | string): Promise<PartnerVisitHistoryItem[]> {
+    const { data } = await httpClient.get<PartnerVisitHistoryItem[]>(`/partners/${partnerId}/visit-history`);
     return data;
   },
 

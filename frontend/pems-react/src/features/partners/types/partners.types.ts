@@ -272,6 +272,20 @@ export interface VisitGuestPartnerLink {
   createdAt: string;
 }
 
+export interface PartnerVisitHistoryItem {
+  visitInstanceId: number;
+  visitRequestId: number;
+  delegationName: string;
+  campusId: number;
+  campusName: string;
+  plannedStartAt: string;
+  plannedEndAt?: string | null;
+  status: string;
+  guestCount: number;
+  hostName?: string | null;
+  linkType: 'DIRECT' | 'GUEST_LINK';
+}
+
 /** UI labels (runtime values stay DB enums). */
 export const PROFILE_STATUS_LABELS: Record<PartnerProfileStatus, string> = {
   DRAFT: 'Bản nháp',
