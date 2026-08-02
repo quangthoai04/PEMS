@@ -281,11 +281,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     overrideReason: hasPendingAmendment
                         ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
                         : null));
-
-                instanceCapabilities.Add(Decide(
-                    VisitMutationAction.ApproveAmendment, VisitFormActions.ApproveAmendment,
-                    c, VisitViewerRelations.Host, name, instanceScope: true,
-                    overrideReason: hasPendingAmendment ? null : "Cơ sở này không có đề xuất nào chờ duyệt."));
             }
             if (isLeaderHere)
             {
@@ -304,6 +299,14 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     overrideReason: hasPendingAmendment
                         ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
                         : null));
+
+                // Deciding a proposal belongs to the leader who owns this campus, not to the Host who
+                // runs the visit: the Host is usually the one whose visit the change alters, so letting
+                // them approve it would remove the review the proposal exists for.
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.ApproveAmendment, VisitFormActions.ApproveAmendment,
+                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
+                    overrideReason: hasPendingAmendment ? null : "Cơ sở này không có đề xuất nào chờ duyệt."));
             }
 
             // The flat list stays the ENABLED subset, so it can never contradict the verdicts above.
@@ -311,7 +314,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             // Reject travels with approve (one decision, two outcomes); withdraw is the requester's own
             // way out of a proposal and stays open regardless of the cutoff — cancelling a request for a
             // change is never something to keep alive against the requester's wishes.
-            if (hasPendingAmendment && isHostHere
+            if (hasPendingAmendment && isLeaderHere
                 && instanceActions.Contains(VisitFormActions.ApproveAmendment))
                 instanceActions.Add(VisitFormActions.RejectAmendment);
             if (hasPendingAmendment && requesterSide)

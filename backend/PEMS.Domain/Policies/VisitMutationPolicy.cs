@@ -125,8 +125,12 @@ public static class VisitMutationPolicy
         // ── 1. Relation. Checked first so a Host never sees a reason that implies "come back earlier". ──
         var relationOk = context.Action switch
         {
+            // Deciding a proposal is campus governance, not day-to-day reception: the Staff Leader who
+            // owns this campus approves or rejects it, the same person who decided the campus in the
+            // first place. It is deliberately NOT the Host — the Host runs the visit the leader
+            // approved, and letting them wave through changes to their own visit removes the review.
             VisitMutationAction.ApproveAmendment
-                => context.ViewerRelation == VisitViewerRelations.Host,
+                => context.ViewerRelation == VisitViewerRelations.CampusLeader,
             VisitMutationAction.TransferHost
                 => context.ViewerRelation == VisitViewerRelations.CampusLeader,
             _ => context.ViewerRelation == VisitViewerRelations.Requester,

@@ -256,8 +256,25 @@ public static class CanonicalSqlScript
     /// the JSON defaults and 02_sync_templates.sql declare the same six variables, so the
     /// identical-variable-set contract holds in both directions. Catalog size is still 31. No DDL, no
     /// trigger, no row added or removed; ExpectedBaseTableCount (82)/ExpectedTriggerCount (32) unchanged.
+    ///
+    /// (2026-08-02, eleventh bump) RECOVERY of two migrations this file lost. When the canonical script
+    /// was replaced wholesale (commit 74deff85 "new sql"), the replacement was generated from a base
+    /// that predated 2026-07-26, so two already-shipped migrations silently vanished from the schema
+    /// while the code that depends on them stayed. Both were re-applied here from the migration files
+    /// still in docs/database/scripts/migrations/, not retyped:
+    ///   • 2026_07_26_visit_pending_edit_source_type — 'PENDING_EDIT' restored to the source_type ENUM
+    ///     of visit_instance_form_revision_history and visit_request_revision_history. Without it every
+    ///     full edit of a pending request died on "Data truncated for column 'source_type'" (HTTP 500),
+    ///     because FormRevisionSourceTypes.PendingEdit is what the edit service writes.
+    ///   • 2026_07_26_visit_host_transfer — trg_visit_campuses_assignment_validate_bu regains the
+    ///     v_is_host_transfer exemption, so a deliberate handover on a decided, not-yet-started campus
+    ///     is allowed while an incidental host change still raises the original SIGNAL. Without it every
+    ///     host transfer died on "Official host cannot be changed after first assignment" (HTTP 500).
+    /// ENUM widening and a trigger body only: no table, column, index, trigger or row added or removed,
+    /// so ExpectedBaseTableCount (83) and ExpectedTriggerCount (32) are unchanged — verified by a fresh
+    /// import (83 tables / 32 triggers / 255 FKs / 31 templates) before this constant was touched.
     public const string ExpectedSha256 =
-        "8da65ffe46cfdc1564efc17950077a5daef5d72b5fd18a91dddd519f85bd52be";
+        "f5c660c3dad8f0326a9b41d49b5ace82c621ee2df563526f598c5467e6cd7bb3";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
