@@ -44,9 +44,14 @@ public sealed class EmailTemplateContentValidatorTests
     {
         var contract = Contract(SystemEmailTemplates.AccountEmailChangedOldNotice);
 
+        // "No variables" still includes the contact block: that is a trusted block the backend fills in,
+        // not something an operator supplies. This notice's policy is REQUIRED — its text tells the
+        // reader to contact support — so a body without it is a real defect, and the fixture carries it.
         var issues = EmailTemplateContentValidator.Validate(
-            contract, "Email đã được thay đổi", "<p>Địa chỉ này không còn liên kết với tài khoản.</p>",
-            "Email changed", "<p>This address is no longer linked to an account.</p>");
+            contract, "Email đã được thay đổi",
+            "<p>Địa chỉ này không còn liên kết với tài khoản.</p>{{contactInformationBlock}}",
+            "Email changed",
+            "<p>This address is no longer linked to an account.</p>{{contactInformationBlock}}");
 
         Assert.Empty(issues);
     }
@@ -165,8 +170,12 @@ public sealed class EmailTemplateContentValidatorTests
     {
         var contract = Contract(SystemEmailTemplates.VisitParticipantInvitation);
 
+        // The contact block stays in the fixture so this test still isolates ONE fault. Dropping both
+        // would raise two issues and stop saying anything about the action block in particular.
         var issues = EmailTemplateContentValidator.Validate(
-            contract, "Thư mời", "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>", null, null);
+            contract, "Thư mời",
+            "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>{{contactInformationBlock}}",
+            null, null);
 
         var issue = Assert.Single(issues);
         Assert.Equal(EmailErrorCodes.TemplateActionBlockRequired, issue.Code);
@@ -196,7 +205,8 @@ public sealed class EmailTemplateContentValidatorTests
         var issues = EmailTemplateContentValidator.Validate(
             contract,
             "Thư mời tham dự",
-            "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>{{actionBlock}}",
+            "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>"
+            + "{{contactInformationBlock}}{{actionBlock}}",
             null, null);
 
         Assert.Empty(issues);

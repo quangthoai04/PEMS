@@ -172,14 +172,32 @@ public static class EmailTemplateContentValidator
                     "Mẫu này cần {{setupSummaryBlock}} — đây là các bảng thông tin chuẩn bị do hệ thống dựng khi gửi. Bỏ nó đi thì email chỉ còn câu dẫn, không có nội dung cập nhật nào.",
                     "This template needs {{setupSummaryBlock}} — the setup tables the system builds when sending. Without it the mail is a covering sentence with no update in it."),
 
+                EmailTrustedBlocks.ContactInformationBlock => (
+                    "Mẫu này cần {{contactInformationBlock}} — đây là khối đầu mối liên hệ do hệ thống điền khi gửi. Nội dung email có câu bảo người nhận liên hệ, nên bỏ khối này đi thì họ được yêu cầu liên hệ mà không có địa chỉ nào. Nếu không muốn hiển thị, hãy đổi mức bắt buộc trong phần Cấu hình thông tin liên hệ.",
+                    "This template needs {{contactInformationBlock}} — the reply-contact card the system fills in when sending. The text tells the recipient to get in touch, so without it they are asked to make contact and given no way to do so. To leave it out, change the requirement level in Contact information settings."),
+
                 _ => (
                     $"Mẫu này bắt buộc phải chứa biến {{{{{required}}}}}; bỏ nó đi thì email gửi ra sẽ thiếu thông tin người nhận cần.",
                     $"This template must contain {{{{{required}}}}}; without it the email would go out missing what the recipient needs."),
             };
 
+            // Each block reports under the code that names ITS repair. Lumping every trusted block under
+            // "action block required" was survivable while the action block was the only one an operator
+            // could delete; it stops being true the moment a second one exists, and the screen would tell
+            // somebody who removed the contact card to go and restore a button.
+            var code = required switch
+            {
+                _ when isActionBlock => EmailErrorCodes.TemplateActionBlockRequired,
+                EmailTrustedBlocks.ContactInformationBlock =>
+                    EmailErrorCodes.TemplateRequiredContactBlockNotInBody,
+                EmailTrustedBlocks.SetupSummaryBlock => EmailErrorCodes.TemplateRequiredBlockNotInBody,
+                _ when isTrustedBlock => EmailErrorCodes.TemplateRequiredBlockNotInBody,
+                _ => EmailErrorCodes.TemplateRequiredVariableMissing,
+            };
+
             issues.Add(new EmailTemplateIssue(
                 field,
-                isTrustedBlock ? EmailErrorCodes.TemplateActionBlockRequired : EmailErrorCodes.TemplateRequiredVariableMissing,
+                code,
                 required,
                 vi,
                 en,

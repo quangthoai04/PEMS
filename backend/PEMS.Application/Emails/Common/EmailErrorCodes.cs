@@ -231,4 +231,44 @@ public static class EmailErrorCodes
 
     /// <summary>The template code has no shipped default recorded, so there is nothing to restore to.</summary>
     public const string TemplateDefaultUnavailable = "EMAIL_TEMPLATE_DEFAULT_UNAVAILABLE";
+
+    // ── Reply-contact block ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// A template whose text instructs the recipient to contact somebody could not resolve anybody to
+    /// contact, and had no fallback left.
+    ///
+    /// <para>
+    /// Fail-closed rather than send-without: the alternative is a message that says "please contact the
+    /// host" and shows no address, which is the defect the block exists to remove. Only REQUIRED
+    /// templates reach this — an OPTIONAL one simply renders nothing.
+    /// </para>
+    /// </summary>
+    public const string ContactRequiredButNotFound = "EMAIL_CONTACT_REQUIRED_BUT_NOT_FOUND";
+
+    /// <summary>
+    /// The stored body of a template whose policy is REQUIRED no longer contains
+    /// <c>{{contactInformationBlock}}</c>, so the resolved contact would have nowhere to go.
+    ///
+    /// <para>
+    /// The same shape of fault as <see cref="TemplateRequiredBlockNotInBody"/> and separated from it for
+    /// the same reason: this one names a policy an operator can change, not a row to re-sync.
+    /// </para>
+    /// </summary>
+    public const string TemplateRequiredContactBlockNotInBody =
+        "EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY";
+
+    /// <summary>
+    /// The resolved policy contradicts itself — e.g. REQUIRED with both email and phone hidden, which
+    /// would render a heading and a name with no way to reach it. Refused when the policy is resolved,
+    /// not when a recipient notices.
+    /// </summary>
+    public const string ContactConfigurationInvalid = "EMAIL_CONTACT_CONFIGURATION_INVALID";
+
+    /// <summary>
+    /// The address a Reply-To policy produced is not a usable mailbox. Refused rather than dropped:
+    /// silently sending replies to the system mailbox when the policy promised the Host is the same quiet
+    /// lie as a contact line with no address.
+    /// </summary>
+    public const string ReplyToInvalid = "EMAIL_REPLY_TO_INVALID";
 }

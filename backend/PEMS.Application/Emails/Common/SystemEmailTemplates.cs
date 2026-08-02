@@ -204,11 +204,14 @@ public static class SystemEmailTemplates
             // anybody anything. Reusing VISIT_PARTICIPANT_INVITATION would have inherited that
             // template's single-recipient/no-copies policy — one message per person, no CC at all —
             // which is the opposite of what this flow is for.
-            // hostEmail is here because the body tells the guest to reply "so the Host can update it".
-            // The draft/manual pipeline sends with the configured system Reply-To — it has no per-message
-            // Reply-To — so without the address printed in the body that instruction points nowhere.
+            // hostEmail used to be declared here, because the body told the guest to reply "so the Host
+            // can update it" and the address had to be printed somewhere for that to mean anything. It is
+            // gone now: {{contactInformationBlock}} carries the Host's address — along with their role and
+            // telephone number, which a bare variable never could — and it resolves from the visit
+            // instance rather than from whatever the caller happened to pass. Keeping both would print the
+            // same mailbox twice, once without the context.
             CallerControlledTemplate(VisitSetupProgressUpdate, EmailTemplatePurposes.Report,
-                "delegationName", "campusName", "plannedStart", "plannedEnd", "hostName", "hostEmail"),
+                "delegationName", "campusName", "plannedStart", "plannedEnd", "hostName"),
             CallerControlledTemplate(ReportCampusOperation, EmailTemplatePurposes.Report,
                 "recipientName", "campusName", "periodFrom", "periodTo"),
             CallerControlledTemplate(ReportDepartmentCollaboration, EmailTemplatePurposes.Report,

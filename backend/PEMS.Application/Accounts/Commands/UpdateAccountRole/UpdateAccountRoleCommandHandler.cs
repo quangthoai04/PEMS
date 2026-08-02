@@ -551,7 +551,11 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             },
             RelatedType: "User",
             RelatedId: user.UserId,
-            SentBy: actorId), cancellationToken);
+            SentBy: actorId)
+        {
+            // "hãy liên hệ ngay bộ phận phụ trách tài khoản" — the owner's own campus answers that.
+            ContactScope = new EmailContactScope(CampusId: user.PrimaryCampusId),
+        }, cancellationToken);
 
         return oldStatus == newStatus ? oldStatus : "PARTIAL";
     }

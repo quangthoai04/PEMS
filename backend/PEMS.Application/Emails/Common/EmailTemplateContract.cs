@@ -101,6 +101,34 @@ public static class EmailTemplateContracts
             ? block
             : null;
 
+    /// <summary>
+    /// Every trusted block whose absence from the stored body makes this template unsendable, paired with
+    /// the error code that names the right repair.
+    ///
+    /// <para>
+    /// Two blocks can be required at once — the setup-progress update needs its tables AND, because its
+    /// text tells the guest to contact the Host, the contact card. They are reported under different codes
+    /// on purpose: a missing setup block means the row has drifted from canonical and must be re-synced,
+    /// while a missing contact block means the body and the contact policy disagree and one of the two has
+    /// to give. Same symptom, different person fixes it.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<(string Block, string ErrorCode)> RequiredBlocksFor(string? templateCode)
+    {
+        if (templateCode is null) return Array.Empty<(string, string)>();
+
+        var required = new List<(string, string)>();
+
+        if (RequiredTrustedBlockByTemplate.TryGetValue(templateCode, out var contentBlock))
+            required.Add((contentBlock, EmailErrorCodes.TemplateRequiredBlockNotInBody));
+
+        if (Contact.EmailContactPolicyDefaults.RequiresContactBlock(templateCode))
+            required.Add((EmailTrustedBlocks.ContactInformationBlock,
+                EmailErrorCodes.TemplateRequiredContactBlockNotInBody));
+
+        return required;
+    }
+
     /// <summary>The contract for a system template, or null when the code is not a system template.</summary>
     public static EmailTemplateContract? For(string? templateCode)
     {
@@ -137,6 +165,17 @@ public static class EmailTemplateContracts
         {
             allowed.Add(mustHaveBlock);
             required.Add(mustHaveBlock);
+        }
+
+        // The contact block is allowed wherever the policy renders one and required where the policy is
+        // REQUIRED, so the editor refuses a body that drops it at SAVE time — where the operator made the
+        // change and can still see what they deleted — rather than at send time in front of a recipient.
+        var contactPolicy = Contact.EmailContactPolicyDefaults.For(template.TemplateCode);
+        if (contactPolicy.RendersBlock)
+        {
+            allowed.Add(EmailTrustedBlocks.ContactInformationBlock);
+            if (contactPolicy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED)
+                required.Add(EmailTrustedBlocks.ContactInformationBlock);
         }
 
         var optional = allowed.Where(v => !required.Contains(v, StringComparer.Ordinal)).ToList();

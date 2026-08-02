@@ -46,7 +46,9 @@ public static class EmailVariableCatalog
             V("contactFullName", "Họ tên đầu mối", "Primary contact full name", "Trần Thị Bình", "Tran Thi Binh"),
             V("currentContactName", "Đầu mối hiện tại", "Current contact", "Lê Văn Cường", "Le Van Cuong"),
             V("hostName", "Người chủ trì", "Host name", "Phạm Thị Dung", "Pham Thi Dung"),
-            V("hostEmail", "Email người chủ trì", "Host email", "dungpt@fpt.edu.vn", "dungpt@fpt.edu.vn"),
+            // hostEmail was here. The Host's address is not an operator-supplied variable any more — it
+            // comes from {{contactInformationBlock}}, which the backend fills in from the visit instance.
+            // Leaving a catalog entry for it would offer operators a variable no template declares.
             V("assigneeName", "Người được phân công", "Assignee name", "Đỗ Văn Em", "Do Van Em"),
             V("requesterName", "Người gửi yêu cầu", "Requester name", "Vũ Thị Giang", "Vu Thi Giang"),
             V("departmentLeaderName", "Trưởng phòng ban", "Department leader", "Hoàng Văn Hải", "Hoang Van Hai"),

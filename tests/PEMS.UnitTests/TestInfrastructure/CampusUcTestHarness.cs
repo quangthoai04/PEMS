@@ -195,6 +195,7 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
     DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
+    DbSet<EmailContactPolicy> IApplicationDbContext.EmailContactPolicies => Set<EmailContactPolicy>();
     DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
     DbSet<Notification> IApplicationDbContext.Notifications => Set<Notification>();
     DbSet<CalendarEvent> IApplicationDbContext.CalendarEvents => Set<CalendarEvent>();

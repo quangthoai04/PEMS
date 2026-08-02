@@ -41,10 +41,12 @@ public static class SensitiveEmailVariables
         {
             "assigneeName", "campusName", "contactFullName", "coordinationNote", "currentContactName",
             "delegationName", "departmentLeaderName", "departmentName", "dueAt", "effectiveDate",
-            // hostEmail is a work address the guest is being told to write to — the point of printing it
-            // is that the recipient can use it. It authorises nothing and unlocks nothing, so unlike an
-            // OTP or a token it may stay in the stored body and in the email history.
-            "expireMinutes", "expiresInHours", "fullName", "hostEmail", "hostMessage", "hostName", "itemTitle",
+            // hostEmail is gone: the Host's address is no longer a template variable at all. It now
+            // arrives inside {{contactInformationBlock}}, resolved from the visit instance. The
+            // classification it used to carry still holds for the block's contents — a work address the
+            // guest is being told to write to authorises nothing, so it may stay in the stored body and
+            // in the email history — but there is no variable left here to classify.
+            "expireMinutes", "expiresInHours", "fullName", "hostMessage", "hostName", "itemTitle",
             "logisticsItemType", "logisticsTitle", "newRoleName", "oldEmailMasked", "oldRoleName",
             "originalQuantity", "periodFrom", "periodTo", "personName", "plannedEnd", "plannedStart",
             "plannedTime",

@@ -246,6 +246,11 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
                 SentBy: userId)
             {
                 Content = content,
+                // "Vui lòng xác nhận để người phụ trách tiếp đón nắm được" — the assignee has to be able
+                // to reach that person, so the visit instance travels with the send.
+                ContactScope = new EmailContactScope(
+                    VisitInstanceId: leaderParticipant.VisitInstanceId,
+                    CampusId: instanceInfo?.CampusId),
             },
             cancellationToken);
 

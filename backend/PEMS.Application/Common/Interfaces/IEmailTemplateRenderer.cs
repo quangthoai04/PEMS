@@ -32,8 +32,23 @@ public static class EmailTrustedBlocks
     /// </summary>
     public const string SetupSummaryBlock = "setupSummaryBlock";
 
+    /// <summary>
+    /// The reply-contact card: who to get in touch with, their business role, and their work email and
+    /// telephone number.
+    ///
+    /// <para>
+    /// A block rather than a set of variables for two reasons. It has to be a table to read properly in a
+    /// mail client, and a table cannot survive HTML-encoding. More importantly, it must not be possible
+    /// for an operator to type a name and an address into a template and present them as the Host's: the
+    /// policy lets them choose which FIELDS appear, while the values are read at send time from
+    /// <c>users</c>, <c>campuses</c> and <c>departments</c>. Configuring a block, never authoring one.
+    /// </para>
+    /// </summary>
+    public const string ContactInformationBlock = "contactInformationBlock";
+
     /// <summary>Every trusted block name — used by the contract test to exclude them from variable checks.</summary>
-    public static readonly IReadOnlyList<string> All = new[] { ActionBlock, SetupSummaryBlock };
+    public static readonly IReadOnlyList<string> All =
+        new[] { ActionBlock, SetupSummaryBlock, ContactInformationBlock };
 }
 
 /// <summary>

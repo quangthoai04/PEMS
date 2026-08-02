@@ -224,6 +224,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                         // The department never edits this message — it is a system notice, and there is no
                         // screen offering to rewrite it.
                         Content = SystemEmailContent.FromTemplate.Instance,
+                        // A counter-offer the Host has to answer, so the block names the department that
+                        // proposed it rather than the Host being written to.
+                        ContactScope = new EmailContactScope(
+                            VisitInstanceId: l.VisitInstanceId,
+                            DepartmentId: l.RequestedToDepartmentId),
                     },
                     cancellationToken);
 

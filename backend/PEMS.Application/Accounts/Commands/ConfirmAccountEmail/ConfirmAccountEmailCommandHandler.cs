@@ -149,7 +149,12 @@ public sealed class ConfirmAccountEmailCommandHandler
                     _db, user, roleCode, user.SubRole, cancellationToken),
                 TrustedBlocks: AccountEmailVariables.LoginBlocks(_confirmations.BuildLoginUrl()),
                 RelatedType: "User",
-                RelatedId: user.UserId), cancellationToken);
+                RelatedId: user.UserId)
+            {
+                // "nếu gặp khó khăn khi truy cập, vui lòng liên hệ…" — the owner's own campus is the
+                // right place to send them, and it is the only scope this message has.
+                ContactScope = new EmailContactScope(CampusId: user.PrimaryCampusId),
+            }, cancellationToken);
         }
         catch { /* welcome is best-effort */ }
 

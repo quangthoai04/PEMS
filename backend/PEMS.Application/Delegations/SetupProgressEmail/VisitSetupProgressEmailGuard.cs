@@ -80,9 +80,14 @@ public static class VisitSetupProgressEmailGuard
     /// The template variables for one instance. Times are rendered as Vietnam wall-clock text because
     /// that is what the database stores and what the guest reads; nothing here converts to UTC.
     /// </summary>
+    /// <remarks>
+    /// The Host's ADDRESS is deliberately not here. It arrives through
+    /// <c>{{contactInformationBlock}}</c>, which resolves it from the visit instance together with the
+    /// role and telephone number — so it stays correct when the Host changes, and a guest is never shown
+    /// a campus's Host other than their own.
+    /// </remarks>
     public static System.Collections.Generic.Dictionary<string, string> BuildVariables(
-        VisitRequestCampus instance, string delegationName, string campusName,
-        string hostName, string hostEmail)
+        VisitRequestCampus instance, string delegationName, string campusName, string hostName)
         => new(StringComparer.Ordinal)
         {
             ["delegationName"] = delegationName,
@@ -90,7 +95,6 @@ public static class VisitSetupProgressEmailGuard
             ["plannedStart"] = FormatMoment(instance.PlannedStartAt),
             ["plannedEnd"] = FormatMoment(instance.PlannedEndAt),
             ["hostName"] = hostName,
-            ["hostEmail"] = hostEmail,
         };
 
     private static string FormatMoment(DateTime? value)

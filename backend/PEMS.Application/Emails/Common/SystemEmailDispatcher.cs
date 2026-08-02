@@ -32,17 +32,20 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
     private readonly IEmailTemplateRenderer _renderer;
     private readonly IEmailService _email;
     private readonly EmailRecipientOptions _recipientOptions;
+    private readonly Contact.IEmailContactResolver? _contacts;
 
     public SystemEmailDispatcher(
         IApplicationDbContext db,
         IEmailTemplateRenderer renderer,
         IEmailService email,
-        IOptions<EmailRecipientOptions>? recipientOptions = null)
+        IOptions<EmailRecipientOptions>? recipientOptions = null,
+        Contact.IEmailContactResolver? contacts = null)
     {
         _db = db;
         _renderer = renderer;
         _email = email;
         _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
+        _contacts = contacts;
     }
 
     /// <summary>Prepare and deliver, back to back. The ordinary path.</summary>
@@ -64,11 +67,21 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             new[] { request.To }, cc: request.Cc, bcc: null, _recipientOptions.MaxRecipients);
         EmailRecipientPolicyEnforcer.Assert(request.TemplateCode, envelope);
 
+        // 1b) Who the recipient should contact. Resolved HERE rather than in each of the ~30 callers, for
+        //     the same reason the render is: it is the only way "preview, draft and send show the same
+        //     contact" can be true without every caller remembering to do it. A REQUIRED template that
+        //     cannot resolve one throws, before any row is written.
+        var contactBlock = await ResolveContactBlockAsync(request, cancellationToken);
+
+        var trustedBlocks = contactBlock is null
+            ? request.TrustedBlocks
+            : Merge(request.TrustedBlocks, EmailTrustedBlocks.ContactInformationBlock, contactBlock.BlockHtml);
+
         // 2) Content. A missing/inactive/mis-declared template throws a stable error here and no history
         //    row is written — there is nothing truthful to record about a message that cannot exist. The
         //    same call handles authored content: one renderer, one set of guards, both modes.
         var rendered = await _renderer.RenderAsync(
-            new EmailRenderRequest(request.TemplateCode, request.Language, request.Variables, request.TrustedBlocks)
+            new EmailRenderRequest(request.TemplateCode, request.Language, request.Variables, trustedBlocks)
             {
                 Content = request.Content,
             },
@@ -138,8 +151,58 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
         {
             Attachments = request.Attachments ?? Array.Empty<OutboundAttachment>(),
             Cc = envelope.Cc,
-            ReplyTo = request.ReplyTo,
+            // An explicit Reply-To from the caller wins: it is a decision somebody made about this one
+            // message, and a policy default must not silently overrule it.
+            ReplyTo = request.ReplyTo ?? ReplyToFrom(contactBlock),
         };
+    }
+
+    /// <summary>
+    /// Resolves the reply contact for this send, or null when the feature has nothing to say about it.
+    ///
+    /// <para>
+    /// The resolver is optional in the constructor so the many unit tests that build a dispatcher by hand
+    /// keep working. That is a test-ergonomics allowance, not a bypass: in the running application it is
+    /// always registered, and the fail-closed refusal for a REQUIRED template lives inside the resolver
+    /// where both this path and any future one must go through it.
+    /// </para>
+    /// </summary>
+    private async Task<Contact.EmailContactResolution?> ResolveContactBlockAsync(
+        SystemEmailRequest request, CancellationToken cancellationToken)
+    {
+        if (_contacts is null) return null;
+
+        var scope = request.ContactScope;
+
+        return await _contacts.ResolveAsync(
+            new Contact.EmailContactRequest(
+                request.TemplateCode,
+                request.Language,
+                scope.VisitInstanceId,
+                scope.CampusId,
+                scope.DepartmentId,
+                request.SentBy),
+            cancellationToken);
+    }
+
+    private static EmailRecipient? ReplyToFrom(Contact.EmailContactResolution? resolution)
+        => resolution?.ReplyTo is { } address
+            ? new EmailRecipient(address.Email, address.DisplayName)
+            : null;
+
+    /// <summary>
+    /// Adds one trusted block to the caller's map without mutating it — callers pass dictionaries they
+    /// still own, and several reuse one across a loop of recipients.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> Merge(
+        IReadOnlyDictionary<string, string>? existing, string name, string html)
+    {
+        var merged = existing is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(existing, StringComparer.Ordinal);
+
+        merged[name] = html;
+        return merged;
     }
 
     public async Task<EmailDeliveryResult> DeliverAsync(

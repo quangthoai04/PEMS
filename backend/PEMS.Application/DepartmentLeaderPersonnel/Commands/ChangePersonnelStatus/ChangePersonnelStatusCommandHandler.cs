@@ -164,7 +164,7 @@ public sealed class ChangePersonnelStatusCommandHandler
 
         var emailStatus = await SendStatusMailAsync(
             request.UserId, targetStatus, fullName, email, scope.DepartmentName, reason,
-            scope.ActorUserId, cancellationToken);
+            scope.ActorUserId, scope.DepartmentId, cancellationToken);
 
         return new ChangePersonnelStatusResponse
         {
@@ -215,6 +215,7 @@ public sealed class ChangePersonnelStatusCommandHandler
         string departmentName,
         string? reason,
         ulong? actorId,
+        ulong departmentId,
         CancellationToken cancellationToken)
     {
         var disabling = targetStatus == UserStatuses.Inactive;
@@ -244,7 +245,12 @@ public sealed class ChangePersonnelStatusCommandHandler
                 variables,
                 RelatedType: "User",
                 RelatedId: targetUserId,
-                SentBy: actorId), cancellationToken);
+                SentBy: actorId)
+            {
+                // "vui lòng liên hệ Trưởng phòng phụ trách" — the department this person belongs to is
+                // what turns that sentence into an address.
+                ContactScope = new EmailContactScope(DepartmentId: departmentId),
+            }, cancellationToken);
 
             return result.Delivery.Status switch
             {

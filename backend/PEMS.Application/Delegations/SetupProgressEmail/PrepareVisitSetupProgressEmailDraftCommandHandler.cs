@@ -13,6 +13,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Contact;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
 
@@ -40,6 +41,7 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
     private readonly IVisitFormReadService _formRead;
     private readonly IFileStorageService _storage;
     private readonly IGoogleDriveStorageService _drive;
+    private readonly IEmailContactResolver _contacts;
     private readonly ILogger<PrepareVisitSetupProgressEmailDraftCommandHandler> _logger;
 
     public PrepareVisitSetupProgressEmailDraftCommandHandler(
@@ -51,6 +53,7 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         IVisitFormReadService formRead,
         IFileStorageService storage,
         IGoogleDriveStorageService drive,
+        IEmailContactResolver contacts,
         ILogger<PrepareVisitSetupProgressEmailDraftCommandHandler> logger)
     {
         _db = db;
@@ -61,6 +64,7 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         _formRead = formRead;
         _storage = storage;
         _drive = drive;
+        _contacts = contacts;
         _logger = logger;
     }
 
@@ -167,13 +171,28 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
         var artifact = await _reports.RenderAsync(instance, language, cancellationToken);
         var snapshot = await VisitSetupSnapshotBuilder.BuildAsync(_db, instance, artifact, cancellationToken);
 
+        // The reply contact is resolved ONCE, here, and travels into the draft body. This is the snapshot
+        // point: the Host reviews what the guest will read, and the send re-uses the stored body rather
+        // than resolving again — so nobody's contact details can change between the preview and the mail
+        // without the Host seeing it. Scoped to this instance, so a multi-campus request cannot borrow
+        // another campus's Host.
+        var contact = await _contacts.ResolveAsync(
+            new EmailContactRequest(
+                VisitSetupProgressEmailGuard.TemplateCode,
+                language,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                SenderUserId: userId),
+            cancellationToken);
+
         var rendered = await _renderer.RenderAsync(new EmailRenderRequest(
             VisitSetupProgressEmailGuard.TemplateCode,
             language,
-            VisitSetupProgressEmailGuard.BuildVariables(instance, delegationName, campusName, hostName, hostEmail),
+            VisitSetupProgressEmailGuard.BuildVariables(instance, delegationName, campusName, hostName),
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [EmailTrustedBlocks.SetupSummaryBlock] = VisitSetupEmailHtml.Render(snapshot, language),
+                [EmailTrustedBlocks.ContactInformationBlock] = contact.BlockHtml,
             }),
             cancellationToken);
 

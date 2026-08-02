@@ -253,6 +253,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         SentBy: actorId)
                     {
                         Content = content,
+                        // The department has to coordinate with whoever asked: the Host of this instance,
+                        // or the requester when no Host is assigned yet (HOST_THEN_SENDER).
+                        ContactScope = new EmailContactScope(
+                            VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
                     },
                     cancellationToken);
 

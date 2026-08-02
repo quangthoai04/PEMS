@@ -246,7 +246,13 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
                         },
                     TrustedBlocks: detailBlock,
                     RelatedType: ReminderRelatedType,
-                    RelatedId: instance.VisitInstanceId),
+                    RelatedId: instance.VisitInstanceId)
+                {
+                    // Participants get the Host's details; the Host's own reminder resolves no block at
+                    // all (its policy is NONE — naming somebody to themselves helps nobody).
+                    ContactScope = new EmailContactScope(
+                        VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
+                },
                 ct);
 
             // Skipped is SMTP being off outside production. It is neither success nor failure, and it

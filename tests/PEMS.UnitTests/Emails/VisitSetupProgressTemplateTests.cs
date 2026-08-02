@@ -44,11 +44,22 @@ public class VisitSetupProgressTemplateTests
         Assert.Empty(SensitiveEmailVariables.DeclaredBy(Template));
     }
 
+    /// <summary>
+    /// Five visit facts, and nothing token-shaped.
+    ///
+    /// <para>
+    /// It was six until the Host's address moved out. <c>hostEmail</c> was a variable printed mid-sentence
+    /// so the guest had somewhere to write; that job now belongs to
+    /// <c>{{contactInformationBlock}}</c>, which resolves the Host from the visit INSTANCE — so a
+    /// multi-campus request cannot show a guest the wrong campus's Host — and carries the role and phone
+    /// number alongside the address.
+    /// </para>
+    /// </summary>
     [Fact]
-    public void It_declares_exactly_the_six_visit_facts_and_nothing_token_shaped()
+    public void It_declares_exactly_the_five_visit_facts_and_nothing_token_shaped()
     {
         Assert.Equal(
-            new[] { "campusName", "delegationName", "hostEmail", "hostName", "plannedEnd", "plannedStart" },
+            new[] { "campusName", "delegationName", "hostName", "plannedEnd", "plannedStart" },
             Template.DeclaredVariables.OrderBy(v => v).ToArray());
     }
 
@@ -155,7 +166,10 @@ public class VisitSetupProgressTemplateTests
 
         Assert.DoesNotContain("setupSummaryBlock", variablesText);
         Assert.DoesNotContain("actionBlock", variablesText);
-        Assert.Equal("campusName,delegationName,hostEmail,hostName,plannedEnd,plannedStart",
+        // Nor the contact block, for the same reason: it is markup the backend injects, and an operator
+        // offered it as a "variable" would reasonably assume they could supply one.
+        Assert.DoesNotContain("contactInformationBlock", variablesText);
+        Assert.Equal("campusName,delegationName,hostName,plannedEnd,plannedStart",
             string.Join(",", variablesText.Split(',').OrderBy(v => v, StringComparer.Ordinal)));
     }
 

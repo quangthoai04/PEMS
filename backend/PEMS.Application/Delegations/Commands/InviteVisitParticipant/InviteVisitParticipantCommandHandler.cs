@@ -235,6 +235,11 @@ public sealed class InviteVisitParticipantCommandHandler
                     SentBy: actorId)
                 {
                     Content = content,
+                    // The invitation already names the Host; the scope is what lets the dispatcher print a
+                    // way to reach them. Scoped to THIS instance, so a multi-campus request never hands an
+                    // invitee another campus's Host.
+                    ContactScope = new EmailContactScope(
+                        VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
                 },
                 cancellationToken);
 

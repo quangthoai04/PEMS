@@ -82,6 +82,13 @@ public sealed class PreviewEmailTemplateQueryHandler
             // otherwise fail the preview closed on an unresolved variable.
             [EmailTrustedBlocks.SetupSummaryBlock] =
                 EmailComposition.DisabledSetupSummaryBlock(language),
+
+            // A preview has no visit, so there is no Host to resolve and no campus to fall back to.
+            // A stand-in says where the block goes and what fills it; inventing a plausible name and
+            // address would show an operator a person who does not exist and invite them to "correct"
+            // contact details the template has no control over.
+            [EmailTrustedBlocks.ContactInformationBlock] =
+                Contact.EmailContactHtmlRenderer.DisabledBlock(language),
         };
 
         // Sample values come from the backend contract — never from a dictionary compiled into a

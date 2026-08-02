@@ -57,6 +57,15 @@ public static class DependencyInjection
             PEMS.Application.Emails.Common.SystemEmailDispatcher>();
         services.Configure<PEMS.Application.Emails.Common.EmailRecipientOptions>(
             configuration.GetSection(PEMS.Application.Emails.Common.EmailRecipientOptions.SectionName));
+        // Reply-contact block: the policy cascade (Template → Campus → Department → System) and the
+        // resolver that turns it into a real person. Scoped for the same reason as the renderer — both
+        // read per-request database state and neither may cache a policy an operator just changed.
+        services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactPolicyStore,
+            PEMS.Application.Emails.Contact.EmailContactPolicyStore>();
+        services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactResolver,
+            PEMS.Application.Emails.Contact.EmailContactResolver>();
+        services.Configure<PEMS.Application.Emails.Contact.EmailSupportContactOptions>(
+            configuration.GetSection(PEMS.Application.Emails.Contact.EmailSupportContactOptions.SectionName));
         // Report/invoice mail: store the PDF, record the message AND its attachment linkage, deliver, and
         // fail the command when delivery did not happen. Shared by all six report senders so none of them
         // can send a "see attached" message with nothing attached.

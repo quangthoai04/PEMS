@@ -423,7 +423,14 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
                 },
                 RelatedType: "User",
                 RelatedId: targetUserId,
-                SentBy: scope.ActorUserId), cancellationToken);
+                SentBy: scope.ActorUserId)
+            {
+                // "hãy liên hệ ngay bộ phận phụ trách tài khoản" — this person's own department answers
+                // that. The notice to the OLD address gets no scope on purpose: it may be reaching a
+                // stranger, and naming the department would disclose where the account belongs.
+                ContactScope = new EmailContactScope(
+                    CampusId: scope.CampusId, DepartmentId: scope.DepartmentId),
+            }, cancellationToken);
         }
 
         return (oldOk, newOk) switch

@@ -8,6 +8,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
+using PEMS.Application.Emails.Contact;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
 
@@ -62,18 +63,22 @@ public sealed class RefreshVisitSetupProgressEmailReportCommandHandler
     private readonly IEmailTemplateRenderer _renderer;
     private readonly PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService _formRead;
 
+    private readonly PEMS.Application.Emails.Contact.IEmailContactResolver _contacts;
+
     public RefreshVisitSetupProgressEmailReportCommandHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IScheduleReportArtifactService reports,
         IEmailTemplateRenderer renderer,
-        PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formRead)
+        PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formRead,
+        PEMS.Application.Emails.Contact.IEmailContactResolver contacts)
     {
         _db = db;
         _currentUser = currentUser;
         _reports = reports;
         _renderer = renderer;
         _formRead = formRead;
+        _contacts = contacts;
     }
 
     public async Task<RefreshVisitSetupProgressEmailReportResponse> Handle(
@@ -114,16 +119,28 @@ public sealed class RefreshVisitSetupProgressEmailReportCommandHandler
             .Where(u => u.UserId == userId).Select(u => new { u.FullName, u.Email })
             .FirstOrDefaultAsync(cancellationToken);
         var hostName = host?.FullName ?? string.Empty;
-        var hostEmail = host?.Email ?? string.Empty;
+
+        // Re-resolved rather than carried over from the draft: a refresh exists to rebuild the body from
+        // the setup as it stands NOW, and the Host is part of that. Resolving it here is what keeps the
+        // refreshed body and its regenerated report describing one moment.
+        var contact = await _contacts.ResolveAsync(
+            new EmailContactRequest(
+                VisitSetupProgressEmailGuard.TemplateCode,
+                language,
+                VisitInstanceId: instance.VisitInstanceId,
+                CampusId: instance.CampusId,
+                SenderUserId: userId),
+            cancellationToken);
 
         var rendered = await _renderer.RenderAsync(new EmailRenderRequest(
             VisitSetupProgressEmailGuard.TemplateCode,
             language,
             VisitSetupProgressEmailGuard.BuildVariables(
-                instance, delegationName, snapshot.CampusName, hostName, hostEmail),
+                instance, delegationName, snapshot.CampusName, hostName),
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [EmailTrustedBlocks.SetupSummaryBlock] = VisitSetupEmailHtml.Render(snapshot, language),
+                [EmailTrustedBlocks.ContactInformationBlock] = contact.BlockHtml,
             }),
             cancellationToken);
 

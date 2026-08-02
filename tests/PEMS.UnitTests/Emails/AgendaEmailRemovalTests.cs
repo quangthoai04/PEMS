@@ -52,8 +52,17 @@ public sealed class AgendaEmailRemovalTests
     public void The_agenda_trusted_block_is_gone_and_the_setup_summary_block_is_the_remaining_one()
     {
         Assert.DoesNotContain(RemovedBlock, EmailTrustedBlocks.All);
+
+        // The registry is pinned so a new block has to be added here deliberately. Trusted blocks are the
+        // ONLY route by which un-encoded markup enters a rendered body, so the list of them is worth
+        // being unable to grow by accident.
         Assert.Equal(
-            new[] { EmailTrustedBlocks.ActionBlock, EmailTrustedBlocks.SetupSummaryBlock }.OrderBy(b => b, StringComparer.Ordinal),
+            new[]
+            {
+                EmailTrustedBlocks.ActionBlock,
+                EmailTrustedBlocks.ContactInformationBlock,
+                EmailTrustedBlocks.SetupSummaryBlock,
+            }.OrderBy(b => b, StringComparer.Ordinal),
             EmailTrustedBlocks.All.OrderBy(b => b, StringComparer.Ordinal));
     }
 
@@ -71,9 +80,17 @@ public sealed class AgendaEmailRemovalTests
     // ── The Host has to be reachable from the mail that tells the guest to reply ──
 
     /// <summary>
-    /// The body says "phản hồi email này" / "reply to this email" so the Host can act on it. The
-    /// draft/manual send path carries the SYSTEM's configured Reply-To and takes no per-message
-    /// override, so that sentence only leads somewhere if the Host's address is printed in the text.
+    /// The body says "phản hồi email này" / "reply to this email" so the Host can act on it, and that
+    /// sentence only leads somewhere if the guest is given an address.
+    ///
+    /// <para>
+    /// The address used to be a <c>{{hostEmail}}</c> variable printed mid-sentence. It now arrives in
+    /// <c>{{contactInformationBlock}}</c>, which is a better answer to the same requirement: the block
+    /// resolves the Host from the visit INSTANCE rather than from whatever the caller passed — so a
+    /// multi-campus request cannot show a guest another campus's Host — and it carries the role and
+    /// telephone number, which a bare address never did. The variable is gone rather than kept alongside
+    /// it, because printing the same mailbox twice, once without its context, is not an improvement.
+    /// </para>
     /// </summary>
     [Fact]
     public void The_setup_progress_body_names_the_host_and_prints_an_address_to_reach_them()
@@ -83,24 +100,44 @@ public sealed class AgendaEmailRemovalTests
         foreach (var body in new[] { shipped.BodyVi, shipped.BodyEn })
         {
             Assert.Contains("{{hostName}}", body);
-            Assert.Contains("{{hostEmail}}", body);
+            Assert.Contains("{{contactInformationBlock}}", body);
+            Assert.DoesNotContain("{{hostEmail}}", body);
         }
 
-        // Declared, so the renderer refuses to send with it unresolved rather than shipping the braces.
-        Assert.Contains("hostEmail",
-            SystemEmailTemplates.Find(SystemEmailTemplates.VisitSetupProgressUpdate)!.DeclaredVariables);
+        var declared = SystemEmailTemplates.Find(SystemEmailTemplates.VisitSetupProgressUpdate)!.DeclaredVariables;
+        Assert.DoesNotContain("hostEmail", declared);
+
+        // REQUIRED, so a body edited to drop the block is refused rather than sending the instruction
+        // with nothing behind it.
+        Assert.True(PEMS.Application.Emails.Contact.EmailContactPolicyDefaults
+            .RequiresContactBlock(SystemEmailTemplates.VisitSetupProgressUpdate));
     }
 
     /// <summary>
     /// An address is not a secret. Classifying it as one would strip the stored body from the history,
     /// which is the record the Host relies on to prove what the guest was told.
+    ///
+    /// <para>
+    /// This used to assert the classification of a <c>hostEmail</c> VARIABLE. There is no such variable
+    /// any more — the address travels inside <c>{{contactInformationBlock}}</c> — so the assertion moved
+    /// to the property that actually protects the record: the template carries no secret, so its history
+    /// policy is to keep the body in full.
+    /// </para>
     /// </summary>
     [Fact]
     public void The_host_address_is_classified_as_ordinary_content()
     {
-        Assert.Contains("hostEmail", SensitiveEmailVariables.KnownNonSensitive);
-        Assert.DoesNotContain("hostEmail", SensitiveEmailVariables.Names);
-        Assert.False(SensitiveEmailVariables.ForbiddenInSubject("hostEmail"));
+        var template = SystemEmailTemplates.Find(SystemEmailTemplates.VisitSetupProgressUpdate)!;
+
+        Assert.False(SensitiveEmailVariables.CarriesSecret(template));
+        Assert.Empty(SensitiveEmailVariables.DeclaredBy(template));
+        Assert.Equal(
+            HistoryBodyPolicy.Full,
+            SensitiveEmailHistory.PolicyFor(SystemEmailTemplates.VisitSetupProgressUpdate));
+
+        // And the block itself may never be put in a subject, which IS stored and shown in list screens.
+        Assert.True(SensitiveEmailVariables.ForbiddenInSubject(
+            EmailTrustedBlocks.ContactInformationBlock));
     }
 
     // ── Nothing in the shipped source still reaches for the removed flow ──────

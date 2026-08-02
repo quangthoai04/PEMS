@@ -332,22 +332,27 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
     /// </summary>
     private static void AssertRequiredTrustedBlockIsInBody(string code, string bodyTemplate)
     {
-        var block = EmailTemplateContracts.RequiredTrustedBlockFor(code);
-        if (block is null) return;
-        if (bodyTemplate.Contains("{{" + block + "}}", StringComparison.Ordinal)) return;
-
-        // Deliberately NOT conditional on the caller having supplied the block. The contract says this
-        // template's content IS the block, so a stored body without it is unsendable no matter who is
+        // Deliberately NOT conditional on the caller having supplied the block. The contract says these
+        // blocks ARE this template's content, so a stored body without one is unsendable no matter who is
         // asking — and the caller that forgot to build it is the one case where making the check
         // caller-dependent would let both halves of the same fault cancel out into a silent success:
         // nothing to substitute, nothing left unresolved, a mail that reads "here is the update" and
-        // shows none. The two faults are reported separately (this one names the row to re-sync; a body
+        // shows none. The two faults are reported separately (this one names the row to repair; a body
         // that still has the placeholder falls through to the unresolved-placeholder guard, which names
         // the missing block), because they have different repairs.
-        throw new BusinessRuleException(
-            $"Nội dung template email '{code}' trong cơ sở dữ liệu không còn chỗ đặt khối {{{{{block}}}}}, "
-            + "nên phần nội dung do hệ thống dựng sẽ bị mất. Hãy đồng bộ lại template này từ bản chuẩn.",
-            EmailErrorCodes.TemplateRequiredBlockNotInBody);
+        foreach (var (block, errorCode) in EmailTemplateContracts.RequiredBlocksFor(code))
+        {
+            if (bodyTemplate.Contains("{{" + block + "}}", StringComparison.Ordinal)) continue;
+
+            var repair = errorCode == EmailErrorCodes.TemplateRequiredContactBlockNotInBody
+                ? "Hãy thêm lại khối này vào nội dung, hoặc đổi mức bắt buộc trong cấu hình thông tin liên hệ."
+                : "Hãy đồng bộ lại template này từ bản chuẩn.";
+
+            throw new BusinessRuleException(
+                $"Nội dung template email '{code}' trong cơ sở dữ liệu không còn chỗ đặt khối "
+                + $"{{{{{block}}}}}, nên phần nội dung do hệ thống dựng sẽ bị mất. {repair}",
+                errorCode);
+        }
     }
 
     private static void AssertNoUnresolvedPlaceholder(string code, string rendered, string part)

@@ -205,9 +205,11 @@ public class VisitSetupProgressEmailFlowTests
             Drive = drive,
             Prepare = new PrepareVisitSetupProgressEmailDraftCommandHandler(
                 db, user, renderer, recipients, reports, formRead, storage, drive,
+                new PEMS.UnitTests.TestInfrastructure.StubEmailContactResolver(),
                 NullLogger<PrepareVisitSetupProgressEmailDraftCommandHandler>.Instance),
             Refresh = new RefreshVisitSetupProgressEmailReportCommandHandler(
-                db, user, reports, renderer, formRead),
+                db, user, reports, renderer, formRead,
+                new PEMS.UnitTests.TestInfrastructure.StubEmailContactResolver()),
         };
     }
 
