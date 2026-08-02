@@ -226,15 +226,29 @@ public sealed class FilePreviewDownloadTests : IDisposable
 
     private sealed record RoleRow(ulong RoleId, string RoleCode);
 
-    private static async Task CleanupRowsAsync(ApplicationDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM files WHERE uploaded_by BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM users WHERE user_id BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM departments WHERE department_id = {IcDeptId}");
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM campuses WHERE campus_id = {CampusId}");
-    }
+    /// <summary>
+    /// Puts the fixture's id band back to empty, children first.
+    ///
+    /// <para>
+    /// This used to delete the four rows below directly, which only worked while nothing referenced them.
+    /// It is the first statement of <see cref="SeedWorldAsync"/>, so on the run where something DID
+    /// reference them the whole class died in setup without reaching a line of product code — nine tests
+    /// reporting a foreign-key error instead of the thing they were written to check. Which referrer it
+    /// tripped over varied by run; enumerating them by hand only moved the failure along.
+    /// </para>
+    /// <para>
+    /// Order still matters between the roots. <c>files.uploaded_by</c> references <c>users</c> ON DELETE
+    /// SET NULL, so removing the users first would blank the column the files root identifies its rows by
+    /// and leave them behind unowned.
+    /// </para>
+    /// </summary>
+    private static Task CleanupRowsAsync(ApplicationDbContext db)
+        => FixtureCleanup.For(db)
+            .Root("files", $"uploaded_by BETWEEN {Base} AND {Base + 100}")
+            .Root("users", $"user_id BETWEEN {Base} AND {Base + 100}")
+            .Root("departments", $"department_id = {IcDeptId}")
+            .Root("campuses", $"campus_id = {CampusId}")
+            .RunAsync();
 
     // ── A. The happy path, and the refusal that is about the USER ────────────
 

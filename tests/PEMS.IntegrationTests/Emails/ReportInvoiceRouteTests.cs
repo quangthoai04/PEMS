@@ -253,36 +253,37 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
 
     private sealed record RoleRow(ulong RoleId, string RoleCode);
 
-    private static async Task CleanupAsync(ApplicationDbContext db)
-    {
-        // Send reservations go first. They reference both users (ON DELETE RESTRICT — the record of what
-        // a person sent must not vanish with the person) and sent_emails, so deleting either while a
-        // reservation still points at it is refused by the database, exactly as intended in production.
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM email_send_idempotency WHERE actor_user_id BETWEEN {0} AND {1}", Base, Base + 100);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE r, e FROM sent_emails e JOIN sent_email_recipients r ON r.sent_email_id = e.sent_email_id "
-            + "WHERE r.recipient_email LIKE {0}", MailPrefix + "%" + MailDomain);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM files WHERE file_purpose = 'REPORT_ATTACHMENT' AND uploaded_by BETWEEN {0} AND {1}",
-            Base, Base + 100);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM visit_logistics_items WHERE logistics_item_id = {0}", LogisticsItemId);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM visit_request_campuses WHERE visit_instance_id = {0}", VisitInstanceId);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM visit_requests WHERE visit_request_id = {0}", VisitRequestId);
-        await db.Database.ExecuteSqlRawAsync(
-            "UPDATE departments SET head_user_id = NULL WHERE department_id BETWEEN {0} AND {1}", Base, Base + 100);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM user_sessions WHERE user_id BETWEEN {0} AND {1}", Base, Base + 100);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM users WHERE user_id BETWEEN {0} AND {1}", Base, Base + 100);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM departments WHERE department_id BETWEEN {0} AND {1}", Base, Base + 100);
-        await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM campuses WHERE campus_id BETWEEN {0} AND {1}", Base, Base + 100);
-    }
+    /// <summary>
+    /// Removes the fixture's rows by following the database's own foreign keys.
+    ///
+    /// <para>
+    /// The hand-written version of this listed eleven statements in the order the schema needed on the
+    /// day it was written, and one omission was enough to take the whole class down: nothing deleted
+    /// <c>visit_guest_members</c>, so once another suite left one behind, deleting the visit request was
+    /// refused and all twenty-six tests failed in setup. <see cref="FixtureCleanup"/> derives the order
+    /// instead, and a foreign key added later is covered without anyone remembering to come back here.
+    /// </para>
+    /// <para>
+    /// <c>email_send_idempotency</c>, <c>user_sessions</c>, <c>visit_request_campuses</c> and
+    /// <c>visit_logistics_items</c> are no longer named: each is reached from one of the roots below.
+    /// The old <c>UPDATE departments SET head_user_id = NULL</c> is gone too — that column carries no
+    /// foreign key, and these departments are deleted here anyway.
+    /// </para>
+    /// </summary>
+    private static Task CleanupAsync(ApplicationDbContext db)
+        => FixtureCleanup.For(db)
+            // Identified through their recipients, so the ids are resolved before those recipients go.
+            .Root("sent_emails",
+                "sent_email_id IN (SELECT sent_email_id FROM sent_email_recipients "
+                + $"WHERE recipient_email LIKE '{MailPrefix}%{MailDomain}')")
+            // Before users: files.uploaded_by is ON DELETE SET NULL, and a blanked column no longer
+            // identifies the row.
+            .Root("files", $"file_purpose = 'REPORT_ATTACHMENT' AND uploaded_by BETWEEN {Base} AND {Base + 100}")
+            .Root("visit_requests", $"visit_request_id = {VisitRequestId}")
+            .Root("users", $"user_id BETWEEN {Base} AND {Base + 100}")
+            .Root("departments", $"department_id BETWEEN {Base} AND {Base + 100}")
+            .Root("campuses", $"campus_id BETWEEN {Base} AND {Base + 100}")
+            .RunAsync();
 
     private string[] Messages()
         => Directory.Exists(_pickupDirectory) ? Directory.GetFiles(_pickupDirectory, "*.eml") : Array.Empty<string>();
