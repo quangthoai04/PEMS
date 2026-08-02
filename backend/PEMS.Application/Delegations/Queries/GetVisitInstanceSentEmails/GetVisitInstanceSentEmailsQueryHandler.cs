@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -5,6 +6,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Common;
 using PEMS.Application.Emails.Common;
@@ -256,9 +258,14 @@ public sealed class GetVisitInstanceSentEmailsQueryHandler
                         OriginalFilename = fm.Original,
                         MimeType = fm.Mime,
                         FileSize = fm.Size,
-                        WebViewUrl = fm.WebView,
-                        DownloadUrl = fm.Download,
-                        ThumbnailUrl = fm.Thumb,
+                        // Our own authenticated routes only. The stored URLs are Google Drive links for
+                        // every EMAIL_ATTACHMENT, and handing one to the browser sent the reader to a
+                        // Google "request access" page while leaking the provider's file id.
+                        WebViewUrl = InternalFileUrls.Content(a.FileId),
+                        DownloadUrl = InternalFileUrls.Download(a.FileId),
+                        ThumbnailUrl = fm.Mime is { } mime && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                            ? InternalFileUrls.Content(a.FileId)
+                            : null,
                     };
                 }).ToList(),
                 ActionTokens = tokens.Select(t =>

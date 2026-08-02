@@ -1,0 +1,31 @@
+{
+  "attachment": {
+    "view": "View file",
+    "viewName": "View file {{name}}",
+    "download": "Download",
+    "downloadName": "Download file {{name}}",
+    "remove": "Remove attachment",
+    "removeName": "Remove attachment {{name}}",
+    "required": "Required",
+    "requiredHint": "A required file on this email — it cannot be removed.",
+    "uploading": "Uploading…",
+    "uploadFailed": "Upload failed",
+    "notUploadedYet": "This file is still uploading, so it cannot be viewed or downloaded yet.",
+    "notPreviewable": "This format cannot be previewed — download it instead.",
+    "inlineImage": "Inline image",
+    "file": "Attachment"
+  },
+  "preview": {
+    "title": "View file",
+    "loading": "Loading file…",
+    "close": "Close",
+    "retry": "Try again",
+    "download": "Download",
+    "errorTitle": "The file could not be opened",
+    "unsupportedTitle": "This format cannot be previewed",
+    "unsupportedHint": "Only PDF, images (PNG, JPG, WEBP, GIF) and .txt text files are previewed in place. Download anything else to open it in the right application.",
+    "textTooLarge": "This text file is too large to preview. Please download it.",
+    "unknownType": "Unknown type",
+    "unknownSize": "Unknown size"
+  }
+}

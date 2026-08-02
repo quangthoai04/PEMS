@@ -13,6 +13,9 @@ import { ReplyComposer } from '../../../features/emails/components/ReplyComposer
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import { sanitizeHtml, sanitizeSentEmailPreviewHtml } from '../../../shared/security/sanitizeHtml';
+import { FileAttachmentItem } from '../../../shared/components/files/FileAttachmentItem';
+import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
+import type { PreviewableFile } from '../../../shared/components/files/filePreviewKind';
 
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 export function SentEmailDetail() {
@@ -25,6 +28,8 @@ export function SentEmailDetail() {
   const [emailData, setEmailData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** The attachment being looked at. One modal serves the whole list. */
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
 
   React.useEffect(() => {
     fetchEmailDetail();
@@ -211,17 +216,24 @@ export function SentEmailDetail() {
               <div className="text-xs font-bold text-gray-500 mb-4 flex items-center gap-2 uppercase tracking-wider">
                 <Paperclip className="w-4 h-4" /> Tệp đính kèm ({emailData.attachments.length})
               </div>
-              <div className="flex flex-wrap gap-4">
+              {/* Was an <a href={file.downloadUrl}>: for a Drive-backed attachment that is a
+                  webContentLink, so the reader landed on Google's "request access" page instead of
+                  their own file. Both view and download now go through the authenticated route. */}
+              <div className="flex flex-wrap gap-3">
                 {emailData.attachments.map((file: any, i: number) => (
-                  <a key={i} href={file.downloadUrl || `/api/files/${file.fileId}/download`} target="_blank" rel="noreferrer" className="flex items-center gap-3.5 p-3 border border-gray-200 rounded-xl bg-white hover:bg-blue-50 hover:border-blue-200 hover:shadow-sm transition-all group cursor-pointer w-[300px]">
-                    <div className="w-10 h-10 rounded-lg bg-[#e6eff7] flex items-center justify-center text-[#004c91] group-hover:bg-[#004c91] group-hover:text-white transition-colors">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="text-sm font-semibold text-gray-800 truncate group-hover:text-[#004c91] transition-colors" title={file.fileName}>{file.fileName}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{file.sizeBytes != null ? (file.sizeBytes / 1024).toFixed(1) + ' KB' : 'N/A'}</div>
-                    </div>
-                  </a>
+                  <FileAttachmentItem
+                    key={file.fileId ?? i}
+                    data-testid="sent-email-attachment"
+                    variant="card"
+                    file={{
+                      fileId: file.fileId,
+                      name: file.fileName,
+                      mimeType: file.mimeType,
+                      size: file.sizeBytes,
+                    }}
+                    onPreview={setPreviewFile}
+                    hint={file.isInline ? 'Ảnh trong nội dung' : 'Đính kèm'}
+                  />
                 ))}
               </div>
             </div>
@@ -312,6 +324,12 @@ export function SentEmailDetail() {
           </div>
         </div>
       )}
+
+      <FilePreviewModal
+        open={previewFile != null}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </motion.div>
   );
 }

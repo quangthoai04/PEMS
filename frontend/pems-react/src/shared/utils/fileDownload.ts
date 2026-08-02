@@ -1,4 +1,5 @@
 import httpClient from '../api/httpClient';
+import { getApiErrorMessage } from './toast';
 
 /**
  * Extracts a filename from a `Content-Disposition` header (`attachment; filename="x.pdf"` or the
@@ -39,4 +40,34 @@ export async function downloadAuthenticatedFile(path: string, fallbackFileName =
 export async function fetchAuthenticatedBlobUrl(path: string): Promise<string> {
   const response = await httpClient.get<Blob>(path, { responseType: 'blob' });
   return URL.createObjectURL(response.data);
+}
+
+/**
+ * The error message for a request made with `responseType: 'blob'`.
+ *
+ * Axios honours that response type for FAILURES too, so the backend's
+ * `{ errorCode: "STORAGE_FILE_NOT_FOUND", message: … }` arrives as a Blob rather than an object —
+ * and {@link getApiErrorMessage}, reading `data.errorCode` off a Blob, finds nothing and falls back
+ * to a generic sentence. Every storage code the backend went to the trouble of distinguishing was
+ * being flattened into "something went wrong" purely by the response type.
+ *
+ * Reads the blob back into JSON and hands a normalised copy on. The original error is not mutated —
+ * callers may still want it as-is (a cancel check, a status code).
+ */
+export async function getFileApiErrorMessage(error: unknown, fallback?: string): Promise<string> {
+  const err = error as { response?: { status?: number; data?: unknown } } | null | undefined;
+  const data = err?.response?.data;
+
+  if (!(data instanceof Blob)) return getApiErrorMessage(error, fallback);
+
+  let parsed: unknown;
+  try {
+    const text = await data.text();
+    parsed = text ? JSON.parse(text) : undefined;
+  } catch {
+    // A non-JSON error body tells us nothing; let getApiErrorMessage fall back on the status.
+    parsed = undefined;
+  }
+
+  return getApiErrorMessage({ ...err, response: { ...err!.response, data: parsed } }, fallback);
 }

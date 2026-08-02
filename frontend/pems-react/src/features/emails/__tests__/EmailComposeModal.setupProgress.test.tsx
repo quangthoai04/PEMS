@@ -64,6 +64,7 @@ vi.mock('react-quill-new', () => ({
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));
 
 import { EmailComposeModal } from '../components/EmailComposeModal';
+import i18n from '../../../shared/i18n/config';
 
 const REPORT_FILE_ID = 900;
 
@@ -99,6 +100,10 @@ const hydrated = async () =>
   await waitFor(() => expect(screen.getByDisplayValue('Cập nhật công tác chuẩn bị')).toBeTruthy());
 
 beforeEach(() => {
+  // These assertions are written against the Vietnamese UI. Pin the language, because i18n falls back
+  // to `navigator.language` — which is en-US under jsdom — and the attachment strip is translated now
+  // (it used to hard-code Vietnamese, which hid the difference).
+  void i18n.changeLanguage('vi');
   vi.clearAllMocks();
   getRecipientLimits.mockResolvedValue({ data: { maxRecipients: 50 } });
   getEmailTemplateList.mockResolvedValue({ data: { items: [{ emailTemplateId: 5, name: 'Mẫu bất kỳ' }] } });
@@ -136,12 +141,16 @@ describe('setup-progress composer', () => {
     const locked = screen.getByTestId('locked-attachment');
     expect(locked.textContent).toContain('PEMS_Schedule_Report_VR-10.pdf');
     expect(locked.textContent).toContain('Bắt buộc');
-    expect(locked.querySelector('button')).toBeNull();
+    // Names the DELETE control rather than "any button": view and download are legitimately present
+    // on every attachment now, so counting buttons would no longer say anything about removability.
+    expect(screen.queryByTestId('locked-attachment-remove')).toBeNull();
+    // Being mandatory must not cost the Host the ability to check what is being sent.
+    expect((screen.getByTestId('locked-attachment-view') as HTMLButtonElement).disabled).toBe(false);
 
     // The Host's own file keeps its delete button — the lock is one file, not the whole list.
     const ordinary = screen.getByTestId('attachment');
     expect(ordinary.textContent).toContain('ghi-chu.pdf');
-    expect(ordinary.querySelector('button')).not.toBeNull();
+    expect(screen.getByTestId('attachment-remove')).toBeTruthy();
   });
 
   it('shows the backend warnings above the form', async () => {
@@ -191,7 +200,7 @@ describe('setup-progress composer', () => {
     await waitFor(() => {
       const locked = screen.getByTestId('locked-attachment');
       expect(locked.textContent).toContain('PEMS_Schedule_Report_VR-10_new.pdf');
-      expect(locked.querySelector('button')).toBeNull();
+      expect(screen.queryByTestId('locked-attachment-remove')).toBeNull();
     });
 
     // The Host's own attachment survives a report refresh; only the mandatory one is replaced.

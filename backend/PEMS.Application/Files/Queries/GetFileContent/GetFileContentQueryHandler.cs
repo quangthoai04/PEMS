@@ -4,7 +4,9 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Storage;
 using PEMS.Application.Files.Common;
 
 namespace PEMS.Application.Files.Queries.GetFileContent;
@@ -62,24 +64,77 @@ public sealed class GetFileContentQueryHandler : IRequestHandler<GetFileContentQ
         if (!await _access.CanDownloadAsync(file, cancellationToken))
             throw new ForbiddenException("Bạn không có quyền tải tệp này.");
 
+        // ── Why the bytes could not be read is three different people's problem ──
+        //
+        // "Không tải được tệp" is the same sentence for a file somebody deleted, a credential that was
+        // never granted access, and a `files` row that never addressed anything real. Each failure below
+        // therefore carries the StorageErrorCodes value that names its cause, so the frontend can show
+        // the operator the sentence that matches (errors:api.STORAGE_*) instead of a bare 404.
+        //
+        // Note what this does NOT change: refusing a caller is still ForbiddenException above, decided
+        // before any of this runs. A permission problem between the USER and the file, and a permission
+        // problem between US and the provider, must never arrive as the same answer.
+        var isGoogleDriveRow = string.Equals(
+            file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase);
+
+        // A row that addresses nothing at all. No request is made of the provider — the record itself is
+        // the defect, so nobody should go looking on Drive (or on disk) for it.
+        if (isGoogleDriveRow && string.IsNullOrWhiteSpace(file.ExternalFileId))
+            throw new NotFoundException(
+                "Bản ghi tệp trong hệ thống không trỏ tới tệp hợp lệ.",
+                StorageErrorCodes.FileReferenceInvalid);
+
+        if (string.Equals(file.StorageProvider, "LOCAL", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(file.ObjectKey))
+            throw new NotFoundException(
+                "Bản ghi tệp trong hệ thống không trỏ tới tệp hợp lệ.",
+                StorageErrorCodes.FileReferenceInvalid);
+
         // Google Drive files need an authorized fetch (the generic OpenReadAsync only does an
         // unauthenticated GET, which fails for private Drive files such as avatars).
-        var isGoogleDrive = string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(file.ExternalFileId);
+        byte[] content;
+        try
+        {
+            await using var stream = (isGoogleDriveRow
+                ? await _drive.DownloadAsync(file.ExternalFileId!, cancellationToken)
+                : await _storage.OpenReadAsync(file, cancellationToken))
+                ?? throw new NotFoundException(
+                    "Không đọc được nội dung tệp.", StorageErrorCodes.FileNotFound);
 
-        await using var stream = (isGoogleDrive
-            ? await _drive.DownloadAsync(file.ExternalFileId!, cancellationToken)
-            : await _storage.OpenReadAsync(file, cancellationToken))
-            ?? throw new NotFoundException("FileContent", request.FileId);
-
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, cancellationToken);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, cancellationToken);
+            content = ms.ToArray();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (BusinessRuleException)
+        {
+            // Already classified by the provider (FORBIDDEN / AUTH_FAILED / NOT_FOUND / UNAVAILABLE).
+            throw;
+        }
+        catch (NotFoundException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // A stream that opened and then failed mid-read: a network drop, a 5xx, a truncated body.
+            // The storage services log the exception where it happens; the caller gets a stable code and
+            // a safe sentence, never the raw text.
+            throw new BusinessRuleException(
+                "Không kết nối được tới kho tệp. Vui lòng thử lại sau.",
+                StorageErrorCodes.Unavailable);
+        }
 
         return new FileContentDto
         {
-            Content = ms.ToArray(),
+            Content = content,
             ContentType = string.IsNullOrWhiteSpace(file.MimeType) ? "application/octet-stream" : file.MimeType!,
-            FileName = file.OriginalFilename,
+            // Sanitised at the edge of the application, so every transport that echoes it (the
+            // Content-Disposition header, a save-as dialog) gets a leaf name with no control characters.
+            FileName = FileResponseSafety.SafeFileName(file.OriginalFilename),
         };
     }
 }

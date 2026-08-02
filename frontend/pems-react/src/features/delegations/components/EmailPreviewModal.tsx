@@ -21,6 +21,9 @@ import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
 import type { EmailAttachmentRefInput } from '../types/delegations.types';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
+import { FileAttachmentItem } from '../../../shared/components/files/FileAttachmentItem';
+import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
+import type { PreviewableFile } from '../../../shared/components/files/filePreviewKind';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -99,6 +102,8 @@ export function EmailPreviewModal({
 }: EmailPreviewModalProps) {
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  /** One shared preview for the whole strip; opening it leaves the composed body untouched. */
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
   const quillRef = useRef<any>(null);
   // src (proxy URL) -> inline image identity, since quill strips data-* attributes off <img>.
   const inlineMapRef = useRef<Map<string, { fileId: number; contentId: string }>>(new Map());
@@ -108,6 +113,7 @@ export function EmailPreviewModal({
     if (!open) return;
     setAttachments([]);
     setUploading(false);
+    setPreviewFile(null);
     inlineMapRef.current = new Map();
   }, [open]);
 
@@ -294,16 +300,13 @@ export function EmailPreviewModal({
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {attachments.map((a) => (
-                      <span key={a.fileId} className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs">
-                        {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-semibold text-gray-700">{a.name}</span>
-                          {a.size != null && <span className="block text-[10px] text-gray-400">{formatBytes(a.size)}</span>}
-                        </span>
-                        <button type="button" onClick={() => removeAttachment(a.fileId)} className="shrink-0 text-gray-400 hover:text-red-500" title="Xoá">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </span>
+                      <FileAttachmentItem
+                        key={a.fileId}
+                        data-testid="attachment"
+                        file={a}
+                        onPreview={setPreviewFile}
+                        onRemove={() => removeAttachment(a.fileId)}
+                      />
                     ))}
                   </div>
                 )}
@@ -356,6 +359,11 @@ export function EmailPreviewModal({
           )}
         </div>
       </div>
+      <FilePreviewModal
+        open={previewFile != null}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   );
 }

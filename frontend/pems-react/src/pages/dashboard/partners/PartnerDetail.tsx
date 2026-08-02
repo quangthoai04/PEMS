@@ -28,7 +28,8 @@ import { BusinessCardScanModal } from '../../../features/business-card-ocr/compo
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
-import { downloadAuthenticatedFile, fetchAuthenticatedBlobUrl } from '../../../shared/utils/fileDownload';
+import { downloadAuthenticatedFile } from '../../../shared/utils/fileDownload';
+import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
 import {
   showLoadingToast,
   updateToastSuccess,
@@ -1128,111 +1129,19 @@ export function PartnerDetail() {
         onConfirmed={() => { void loadContacts(); }}
       />
 
-      {previewDoc && (
-        <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
-      )}
-    </div>
-  );
-}
-
-/** Preview a partner document behind the authenticated /api/files/{id}/content route — images
- *  render inline, PDFs render in an iframe from a blob URL, everything else falls back to a
- *  "download instead" card. Never opens a raw file URL (which would drop the auth header). */
-function DocumentPreviewModal({ doc, onClose }: { doc: PartnerDocument; onClose: () => void }) {
-  const isImage = doc.mimeType?.startsWith('image/') ?? false;
-  const isPdf = doc.mimeType === 'application/pdf';
-  const imageUrl = useAuthenticatedImage(isImage ? `/api/files/${doc.fileId}/content` : null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [pdfError, setPdfError] = useState(false);
-
-  useEffect(() => {
-    if (!isPdf) return;
-    let cancelled = false;
-    let created: string | null = null;
-    (async () => {
-      try {
-        const url = await fetchAuthenticatedBlobUrl(API_ENDPOINTS.files.content(doc.fileId));
-        if (cancelled) { URL.revokeObjectURL(url); return; }
-        created = url;
-        setPdfUrl(url);
-      } catch {
-        if (!cancelled) setPdfError(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (created) URL.revokeObjectURL(created);
-    };
-  }, [doc.fileId, isPdf]);
-
-  const [downloading, setDownloading] = useState(false);
-  const download = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      await downloadAuthenticatedFile(API_ENDPOINTS.files.download(doc.fileId), doc.originalFilename || doc.title);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-[#004c91]">
-          <h3 className="text-lg font-bold text-white truncate pr-4">{doc.title}</h3>
-          <button onClick={onClose} className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors outline-none cursor-pointer flex-shrink-0">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center p-4 min-h-[320px]">
-          {isImage ? (
-            imageUrl ? (
-              <img src={imageUrl} alt={doc.title} className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-sm" />
-            ) : (
-              <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
-            )
-          ) : isPdf ? (
-            pdfError ? (
-              <UnsupportedPreviewCard onDownload={download} downloading={downloading} />
-            ) : pdfUrl ? (
-              <iframe src={pdfUrl} title={doc.title} className="w-full h-[65vh] rounded-lg border border-gray-200 bg-white" />
-            ) : (
-              <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
-            )
-          ) : (
-            <UnsupportedPreviewCard onDownload={download} downloading={downloading} />
-          )}
-        </div>
-        <div className="p-4 border-t border-gray-100 bg-white flex justify-end gap-3">
-          <button
-            onClick={download}
-            disabled={downloading}
-            className="flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {downloading ? 'Đang tải...' : 'Tải xuống'}
-          </button>
-          <button onClick={onClose} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-colors cursor-pointer">
-            Đóng
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function UnsupportedPreviewCard({ onDownload, downloading }: { onDownload: () => void; downloading?: boolean }) {
-  return (
-    <div className="text-center py-8">
-      <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-      <p className="text-sm font-medium text-gray-500">Không hỗ trợ xem trước trực tiếp, vui lòng tải xuống.</p>
-      <button
-        onClick={onDownload}
-        disabled={downloading}
-        className="mt-4 inline-flex items-center gap-2 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {downloading ? 'Đang tải...' : 'Tải xuống'}
-      </button>
+      {/* The shared preview, in place of a second implementation that lived in this file. A partner
+          document is an attachment like any other, and it now gets the same retry, the same storage
+          error codes and the same keyboard behaviour as an email's. */}
+      <FilePreviewModal
+        open={previewDoc != null}
+        file={previewDoc && {
+          fileId: previewDoc.fileId,
+          name: previewDoc.originalFilename || previewDoc.title,
+          mimeType: previewDoc.mimeType,
+          size: previewDoc.fileSize,
+        }}
+        onClose={() => setPreviewDoc(null)}
+      />
     </div>
   );
 }

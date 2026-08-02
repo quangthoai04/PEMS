@@ -40,6 +40,9 @@ import { contentIdForFile } from '../utils/inlineImages';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
+import { FileAttachmentItem } from '../../../shared/components/files/FileAttachmentItem';
+import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
+import type { PreviewableFile } from '../../../shared/components/files/filePreviewKind';
 
 type Toast = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -231,6 +234,13 @@ export function EmailComposeModal({
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(emailTemplateId || null);
   const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
   const [refreshingAttachment, setRefreshingAttachment] = useState(false);
+
+  /**
+   * The attachment currently being looked at. Held here — NOT in the item — so the whole strip shares
+   * one modal, and so opening a preview cannot disturb the draft: nothing else in this component reads
+   * it, and closing it only sets it back to null.
+   */
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
 
   /**
    * File ids the author may not remove. Held in state rather than read from the prop directly because
@@ -769,19 +779,16 @@ export function EmailComposeModal({
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase">Tệp đính kèm ({attachments.length}):</label>
                   <div className="mt-2 flex flex-wrap gap-2">
+                    {/* Read-only at this step — the author is confirming what goes out, not editing it —
+                        but they can still open each file to check it before pressing send. */}
                     {attachments.map(a => (
-                      <span key={a.fileId}
+                      <FileAttachmentItem
+                        key={a.fileId}
                         data-testid={isLocked(a.fileId) ? 'preview-locked-attachment' : 'preview-attachment'}
-                        className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs">
-                        {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
-                        <span className="min-w-0 flex-1 block truncate font-medium text-gray-700">{a.name}</span>
-                        {isLocked(a.fileId) && (
-                          <span className="shrink-0 rounded bg-[#004c91]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#004c91]">
-                            Bắt buộc
-                          </span>
-                        )}
-                        {a.size != null && <span className="text-[10px] text-gray-400 shrink-0">{formatBytes(a.size)}</span>}
-                      </span>
+                        file={a}
+                        onPreview={setPreviewFile}
+                        required={isLocked(a.fileId)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -1035,26 +1042,16 @@ export function EmailComposeModal({
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {attachments.map((a) => (
-                      <span key={a.fileId}
+                      <FileAttachmentItem
+                        key={a.fileId}
                         data-testid={isLocked(a.fileId) ? 'locked-attachment' : 'attachment'}
-                        className="inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs">
-                        {a.mimeType?.startsWith('image/') ? <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" /> : <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-semibold text-gray-700">{a.name}</span>
-                          {a.size != null && <span className="block text-[10px] text-gray-400">{formatBytes(a.size)}</span>}
-                        </span>
-                        {/* A locked attachment shows WHY it has no delete button. Hiding the control
-                            without saying anything reads as a rendering bug. */}
-                        {isLocked(a.fileId) ? (
-                          <span className="shrink-0 rounded bg-[#004c91]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#004c91]">
-                            Bắt buộc
-                          </span>
-                        ) : (
-                          <button type="button" onClick={() => removeAttachment(a.fileId)} className="shrink-0 text-gray-400 hover:text-red-500" title="Xoá">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </span>
+                        file={a}
+                        onPreview={setPreviewFile}
+                        // A locked attachment shows WHY it has no delete button. Hiding the control
+                        // without saying anything reads as a rendering bug.
+                        required={isLocked(a.fileId)}
+                        onRemove={isLocked(a.fileId) ? undefined : () => removeAttachment(a.fileId)}
+                      />
                     ))}
                   </div>
                 )}
@@ -1087,6 +1084,11 @@ export function EmailComposeModal({
         title={confirmState.title}
         message={confirmState.message}
         variant={confirmState.variant}
+      />
+      <FilePreviewModal
+        open={previewFile != null}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
       />
     </div>
   );
