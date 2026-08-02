@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TimeSelect, type TimeOption } from './TimeSelect';
+import { ArrowRight } from 'lucide-react';
 import {
   addMinutes,
   durationMinutes,
@@ -218,129 +219,142 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
     }`;
 
   const scheduleLabel = (
-    <span className="flex items-center gap-1.5">
-      {t('visitRequestV2:schedule.date')}
+    <span className="flex items-center gap-1.5 whitespace-nowrap">
+      {t('visitRequestV2:schedule.legend')} <span className="text-red-500">*</span>
       <HelpTooltip content={t('visitRequestV2:schedule.rulesHint', { hours: minAdvanceHours, minutes: MIN_DURATION_MINUTES })} />
     </span>
   );
 
   return (
-    <>
-      <div className="col-span-12 lg:col-span-4 flex flex-col gap-2">
-        <FormField label={scheduleLabel} required showValidIcon={false}>
-          <input
-            id={`${prefix}-start-date`}
-            type="date"
-            lang="vi-VN"
-            disabled={disabled}
-            min={minStartDate || undefined}
-            value={start?.date ?? ''}
-            onChange={e => setStartDate(e.target.value)}
-            className={dateCls(!!showStartError)}
-            data-testid={`${idPrefix}-start-date`}
-          />
-        </FormField>
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
-          <input
-            type="checkbox"
-            disabled={disabled}
-            checked={multiDay}
-            onChange={e => toggleMultiDay(e.target.checked)}
-            data-testid={`${idPrefix}-multiday`}
-            className="h-4 w-4 rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]"
-          />
-          {t('visitRequestV2:schedule.endsOnAnotherDay')}
-        </label>
-        {showStartError && (
-          <p className="text-xs font-semibold text-red-600">
-            {showStartError}
-          </p>
-        )}
-      </div>
+    <div className="flex flex-col">
+      <div className="mb-4">
+        {/* Header of the Schedule block */}
+        <div className="flex flex-wrap items-center justify-between mb-3 gap-2">
+          <label className="text-sm font-bold text-slate-900">
+            {scheduleLabel}
+          </label>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={multiDay}
+              onChange={e => toggleMultiDay(e.target.checked)}
+              data-testid={`${idPrefix}-multiday`}
+              className="h-4 w-4 rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]"
+            />
+            {t('visitRequestV2:schedule.endsOnAnotherDay')}
+          </label>
+        </div>
 
-      <div className="col-span-12 lg:col-span-2">
-        <FormField label={t('visitRequestV2:schedule.startTime')} required showValidIcon={false}>
-          <TimeSelect
-            id={`${prefix}-start-time`}
-            testId={`${idPrefix}-start-time`}
-            ariaLabel={t('visitRequestV2:schedule.startTime')}
-            value={start?.time ?? ''}
-            onChange={setStartTime}
-            options={startOptions}
-            hasError={!!showStartError}
-            disabled={disabled}
-          />
-        </FormField>
-      </div>
+        {/* Unified Time Container */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 md:gap-6 items-start">
+            
+            {/* Start Section */}
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                {t('visitRequestV2:schedule.startTime', 'Bắt đầu')}
+              </span>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1">
+                  <input
+                    id={`${prefix}-start-date`}
+                    type="date"
+                    lang="vi-VN"
+                    disabled={disabled}
+                    min={minStartDate || undefined}
+                    value={start?.date ?? ''}
+                    onChange={e => setStartDate(e.target.value)}
+                    className={dateCls(!!showStartError)}
+                    data-testid={`${idPrefix}-start-date`}
+                  />
+                </div>
+                <div className="sm:w-32">
+                  <TimeSelect
+                    id={`${prefix}-start-time`}
+                    testId={`${idPrefix}-start-time`}
+                    ariaLabel={t('visitRequestV2:schedule.startTime')}
+                    value={start?.time ?? ''}
+                    onChange={setStartTime}
+                    options={startOptions}
+                    hasError={!!showStartError}
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+            </div>
 
-      {multiDay ? (
-        <>
-          {/* Offset to align End Date under Start Date when wrapped */}
-          <div className="hidden lg:block lg:col-span-4" />
-          <div className="col-span-12 lg:col-span-4 flex flex-col gap-2">
-            <FormField label={t('visitRequestV2:schedule.endDate')} required showValidIcon={false}>
-              <input
-                id={`${prefix}-end-date`}
-                type="date"
-                lang="vi-VN"
-                disabled={disabled}
-                min={start?.date || minStartDate || undefined}
-                value={end?.date ?? ''}
-                onChange={e => setEndDate(e.target.value)}
-                className={dateCls(!!showEndError)}
-                data-testid={`${idPrefix}-end-date`}
-              />
-            </FormField>
-            {showEndError && (
-              <p className="text-xs font-semibold text-red-600">
+            {/* Separator */}
+            <div className="hidden md:flex pt-7 items-center justify-center text-slate-300">
+              <ArrowRight className="h-5 w-5" />
+            </div>
+
+            {/* End Section */}
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                {t('visitRequestV2:schedule.endTime', 'Kết thúc')}
+              </span>
+              <div className="flex flex-col sm:flex-row gap-2">
+                {multiDay && (
+                  <div className="flex-1">
+                    <input
+                      id={`${prefix}-end-date`}
+                      type="date"
+                      lang="vi-VN"
+                      disabled={disabled}
+                      min={start?.date || minStartDate || undefined}
+                      value={end?.date ?? ''}
+                      onChange={e => setEndDate(e.target.value)}
+                      className={dateCls(!!showEndError)}
+                      data-testid={`${idPrefix}-end-date`}
+                    />
+                  </div>
+                )}
+                <div className={multiDay ? "sm:w-32" : "w-full"}>
+                  <TimeSelect
+                    id={`${prefix}-end-time`}
+                    testId={`${idPrefix}-end-time`}
+                    ariaLabel={t('visitRequestV2:schedule.endTime')}
+                    value={end?.time ?? ''}
+                    onChange={setEndTime}
+                    options={endOptions}
+                    emptyHint={t('visitRequestV2:schedule.noEndSlots')}
+                    hasError={!!showEndError}
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {(showStartError || showEndError) && (
+          <div className="mt-3 space-y-1">
+            {showStartError && (
+              <p data-testid={`${idPrefix}-start-error`} className="text-xs font-semibold text-red-600">
+                {showStartError}
+              </p>
+            )}
+            {showEndError && showEndError !== showStartError && (
+              <p data-testid={`${idPrefix}-end-error`} className="text-xs font-semibold text-red-600">
                 {showEndError}
               </p>
             )}
           </div>
-          <div className="col-span-12 lg:col-span-2">
-            <FormField label={t('visitRequestV2:schedule.endTime')} required showValidIcon={false}>
-              <TimeSelect
-                id={`${prefix}-end-time`}
-                testId={`${idPrefix}-end-time`}
-                ariaLabel={t('visitRequestV2:schedule.endTime')}
-                value={end?.time ?? ''}
-                onChange={setEndTime}
-                options={endOptions}
-                emptyHint={t('visitRequestV2:schedule.noEndSlots')}
-                hasError={!!showEndError}
-                disabled={disabled}
-              />
-            </FormField>
-          </div>
-        </>
-      ) : (
-        <div className="col-span-12 lg:col-span-2">
-          <FormField label={t('visitRequestV2:schedule.endTime')} required error={showEndError} showValidIcon={false}>
-            <TimeSelect
-              id={`${prefix}-end-time`}
-              testId={`${idPrefix}-end-time`}
-              ariaLabel={t('visitRequestV2:schedule.endTime')}
-              value={end?.time ?? ''}
-              onChange={setEndTime}
-              options={endOptions}
-              emptyHint={t('visitRequestV2:schedule.noEndSlots')}
-              hasError={!!showEndError}
-              disabled={disabled}
-            />
-          </FormField>
-        </div>
-      )}
+        )}
 
-      {total !== null && total > 0 && (
-        <div className="col-span-12 lg:col-span-12 flex items-center gap-2">
-          <span
-            data-testid={`${idPrefix}-duration`}
-            className="rounded-full bg-[#004c91]/10 px-3 py-1 text-xs font-bold text-[#004c91]"
-          >
-            {t('visitRequestV2:schedule.duration', { value: formatDuration(total) })}
-          </span>
-        </div>
-      )}
-    </>
+        {total !== null && total > 0 && (
+          <div className="mt-4 flex items-center gap-2">
+            <span
+              data-testid={`${idPrefix}-duration`}
+              className="rounded-full bg-[#004c91]/10 px-3 py-1 text-xs font-bold text-[#004c91]"
+            >
+              {t('visitRequestV2:schedule.duration', { value: formatDuration(total) })}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
