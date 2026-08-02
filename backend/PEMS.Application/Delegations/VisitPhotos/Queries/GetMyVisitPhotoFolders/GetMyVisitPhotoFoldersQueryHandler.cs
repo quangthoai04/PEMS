@@ -153,12 +153,37 @@ public sealed class GetMyVisitPhotoFoldersQueryHandler
             })
             .ToList();
 
-        // Search on the RESOLVED name — must run after the per-campus resolve, so in-memory.
+        // Search on DelegationName, FolderName, tagged person display name (PhotoFaceTags), or guest member names
         var search = request.Search?.Trim();
         if (!string.IsNullOrEmpty(search))
+        {
+            var searchNormalized = PEMS.Application.Partners.Common.PartnerNormalization.NormalizeKey(search);
+
+            var taggedInstanceIds = await (
+                from t in _db.PhotoFaceTags.AsNoTracking()
+                join p in _db.VisitPhotos.AsNoTracking() on t.FileId equals p.FileId
+                where targetInstanceIds.Contains(p.VisitInstanceId)
+                      && (EF.Functions.Like(t.DisplayName, $"%{search}%")
+                          || (t.PersonNameKey != null && t.PersonNameKey.Contains(searchNormalized)))
+                select p.VisitInstanceId
+            ).Distinct().ToListAsync(cancellationToken);
+
+            var guestInstanceIds = await (
+                from g in _db.VisitInstanceGuestMembers.AsNoTracking()
+                join m in _db.VisitGuestMembers.AsNoTracking() on g.GuestMemberId equals m.GuestMemberId
+                where targetInstanceIds.Contains(g.VisitInstanceId)
+                      && (EF.Functions.Like(m.FullName, $"%{search}%")
+                          || (m.Organization != null && EF.Functions.Like(m.Organization, $"%{search}%")))
+                select g.VisitInstanceId
+            ).Distinct().ToListAsync(cancellationToken);
+
             items = items
-                .Where(i => i.DelegationName.Contains(search, StringComparison.OrdinalIgnoreCase))
+                .Where(i => i.DelegationName.Contains(search, StringComparison.OrdinalIgnoreCase)
+                         || (i.FolderName != null && i.FolderName.Contains(search, StringComparison.OrdinalIgnoreCase))
+                         || taggedInstanceIds.Contains(i.VisitInstanceId)
+                         || guestInstanceIds.Contains(i.VisitInstanceId))
                 .ToList();
+        }
 
         if (request.FromDate.HasValue)
             items = items.Where(i => i.PlannedStartAt.Date >= request.FromDate.Value.Date).ToList();
