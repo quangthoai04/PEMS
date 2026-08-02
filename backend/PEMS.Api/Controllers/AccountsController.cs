@@ -191,6 +191,20 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Staff Leader "Related Visitor Accounts" tab — nationality filter options, built from EVERY
+        // related Visitor of the caller's campus (the paged list above cannot stand in for it: its
+        // first page would hide any nationality appearing further down). A literal, multi-segment
+        // route, so no id-shaped parameter can ever capture "nationalities". Non-Staff-Leaders get 403.
+        [HttpGet("staff-leader/related-visitors/nationalities")]
+        [EnableRateLimiting("accounts-read")]
+        public async Task<IActionResult> GetRelatedVisitorNationalities(CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.Accounts.Queries.RelatedVisitors.GetRelatedVisitorNationalitiesQuery(),
+                cancellationToken);
+            return Ok(result);
+        }
+
         // Staff Leader "Related Visitor Accounts" tab — detail of one related Visitor. The handler
         // re-checks campus scope and returns 404 for an out-of-scope Visitor (existence not leaked).
         [HttpGet("related-visitor-details")]

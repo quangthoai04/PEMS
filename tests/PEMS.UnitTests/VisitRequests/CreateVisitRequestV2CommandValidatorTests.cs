@@ -104,10 +104,23 @@ public class CreateVisitRequestV2CommandValidatorTests
     [Theory]
     [InlineData("123")]
     [InlineData("090abc123")]
-    [InlineData("")]
-    [InlineData("   ")]
     public void A_value_that_is_not_a_phone_number_is_rejected(string phone)
         => Assert.Contains(ErrorsFor(Command(Campus(
+            opContact: new ContactPointDto("ĐM CS", "ĐH X", phone, "op@example.com")))),
+            p => p.Contains("Phone"));
+
+    /// <summary>
+    /// Blank is NOT a malformed number — the phone is optional on every contact of a visit request, so
+    /// leaving it out has to submit. <c>MustBeAPhoneNumber</c> passes blank on purpose and none of the
+    /// three contact validators chains <c>.NotEmpty()</c> before it; a required field would say so
+    /// there, in the validator, rather than here. Kept as its own case because the previous version of
+    /// this test asserted the opposite and contradicted the shipped rule in both directions.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_blank_phone_is_accepted_because_the_field_is_optional(string phone)
+        => Assert.DoesNotContain(ErrorsFor(Command(Campus(
             opContact: new ContactPointDto("ĐM CS", "ĐH X", phone, "op@example.com")))),
             p => p.Contains("Phone"));
 

@@ -12,14 +12,17 @@ namespace PEMS.Application.Accounts.Common;
 /// never filtered by <c>primary_campus_id</c>; instead a Visitor is "related" to a campus
 /// through the visit-request → visit-request-campus relation.
 ///
-/// Visibility rule (identical for list, count and detail so the three can never drift):
+/// Visibility rule (identical for list, nationalities and detail so the three can never drift):
+/// a Visitor is related to the campus as soon as a <c>visit_request_campuses</c> row exists for
+/// that campus and its request carries a Visitor account. Nothing else is consulted:
 /// <list type="bullet">
-/// <item>SINGLE_CAMPUS: the Visitor is visible to the campus the request was sent to,
-///       in ANY request status (the Visitor ↔ campus relation already exists even when the
-///       request was rejected/cancelled).</item>
-/// <item>MULTI_CAMPUS: visible only AFTER HO has released the request — i.e.
-///       <c>status IN (APPROVED, CANCELLED)</c> and the campus instance is no longer
-///       <c>WAITING_REQUEST_APPROVAL</c>. PENDING_APPROVAL / REJECTED stay hidden.</item>
+/// <item>NOT <c>visit_requests.visit_scope</c> — under campus-independent processing each campus
+///       owns its own instance, so SINGLE_CAMPUS and MULTI_CAMPUS are handled identically.</item>
+/// <item>NOT <c>visit_requests.status</c> and no HO approval/release step — PENDING_APPROVAL,
+///       PARTIALLY_APPROVED, APPROVED, REJECTED and CANCELLED all keep the relation.</item>
+/// <item>NOT the campus instance status — WAITING_REQUEST_APPROVAL through CLOSED, plus
+///       REJECTED/CANCELLED, all count: the campus really did receive that request, and a refusal
+///       does not erase the history.</item>
 /// </list>
 /// The campus is always taken from the authenticated Staff Leader — never from the client.
 /// </summary>
@@ -47,21 +50,15 @@ internal static class RelatedVisitorScope
     }
 
     /// <summary>
-    /// The campus instances of <paramref name="campusId"/> that make their Visitor visible to
-    /// the Staff Leader, applying the single-/multi-campus release rule above. Each row also has a
-    /// non-null <c>VisitRequest.VisitorUserId</c> (AF-05: requests without an account are skipped).
+    /// The campus instances of <paramref name="campusId"/> that make their Visitor related to this
+    /// campus. Each row also has a non-null <c>VisitRequest.VisitorUserId</c> (AF-05: requests
+    /// without a Visitor account have nothing to show on Account Management).
+    ///
+    /// This is the ONE predicate list, nationalities and detail all share — a second definition
+    /// anywhere would let the three drift apart.
     /// </summary>
     public static IQueryable<VisitRequestCampus> VisibleInstances(IApplicationDbContext db, ulong campusId)
         => db.VisitRequestCampuses.Where(vrc =>
             vrc.CampusId == campusId
-            && vrc.VisitRequest.VisitorUserId != null
-            && (
-                vrc.VisitRequest.VisitScope == VisitScopes.SingleCampus
-                || (
-                    vrc.VisitRequest.VisitScope == VisitScopes.MultiCampus
-                    && (vrc.VisitRequest.Status == VisitRequestStatuses.Approved
-                        || vrc.VisitRequest.Status == VisitRequestStatuses.Cancelled)
-                    && vrc.Status != VisitInstanceStatuses.WaitingRequestApproval
-                )
-            ));
+            && vrc.VisitRequest.VisitorUserId != null);
 }

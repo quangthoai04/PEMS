@@ -45,6 +45,7 @@ public sealed class VisitSetupProgressRenderTests
         ["plannedStart"] = "09:00 12/08/2026",
         ["plannedEnd"] = "11:30 12/08/2026",
         ["hostName"] = "Nguyễn Văn A",
+        ["hostEmail"] = "host.a@fpt.edu.vn",
     };
 
     private static EmailTemplateRenderer Renderer(ApplicationDbContext db) => new(db);
@@ -60,16 +61,17 @@ public sealed class VisitSetupProgressRenderTests
         + "<strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>, dự kiến từ "
         + "<strong>{{plannedStart}}</strong> đến <strong>{{plannedEnd}}</strong>.</p>{{setupSummaryBlock}}"
         + "<p>Báo cáo Lịch trình chi tiết được đính kèm trong email này.</p>"
-        + "<p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này để "
-        + "<strong>{{hostName}}</strong> — người phụ trách tiếp đón — kịp thời cập nhật.</p>";
+        + "<p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này hoặc liên hệ trực tiếp "
+        + "<strong>{{hostName}}</strong> — người phụ trách tiếp đón — qua địa chỉ "
+        + "<strong>{{hostEmail}}</strong> để được cập nhật kịp thời.</p>";
 
     private const string CanonicalEn =
         "<p>Dear Guest,</p><p>This is the latest update on preparations for the visit of "
         + "<strong>{{delegationName}}</strong> to <strong>{{campusName}}</strong>, scheduled from "
         + "<strong>{{plannedStart}}</strong> to <strong>{{plannedEnd}}</strong>.</p>{{setupSummaryBlock}}"
         + "<p>The detailed Schedule Report is attached to this email.</p>"
-        + "<p>If anything needs adjusting, please reply to this email so that <strong>{{hostName}}</strong>, "
-        + "the host for this visit, can update it in time.</p>";
+        + "<p>If anything needs adjusting, please reply to this email or contact <strong>{{hostName}}</strong>, "
+        + "the host for this visit, directly at <strong>{{hostEmail}}</strong>.</p>";
 
     /// <summary>Exactly what pems_db held: canonical with the block segment removed, nothing else changed.</summary>
     private static string DriftedVi => CanonicalVi.Replace("{{setupSummaryBlock}}", "");

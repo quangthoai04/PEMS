@@ -605,7 +605,7 @@ VALUES
      '<p>Đây là cập nhật mới nhất về công tác chuẩn bị cho chuyến thăm của đoàn <strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>, dự kiến từ <strong>{{plannedStart}}</strong> đến <strong>{{plannedEnd}}</strong>.</p>',
      '{{setupSummaryBlock}}',
      '<p>Báo cáo Lịch trình chi tiết được đính kèm trong email này.</p>',
-     '<p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này để <strong>{{hostName}}</strong> — người phụ trách tiếp đón — kịp thời cập nhật.</p>',
+     '<p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này hoặc liên hệ trực tiếp <strong>{{hostName}}</strong> — người phụ trách tiếp đón — qua địa chỉ <strong>{{hostEmail}}</strong> để được cập nhật kịp thời.</p>',
      '<p style="color:#6b7280;font-size:12px">Trân trọng,<br/>PEMS - FPT University</p>'),
    '[PEMS] Preparation update — {{delegationName}} at {{campusName}}',
    CONCAT(
@@ -613,9 +613,9 @@ VALUES
      '<p>This is the latest update on preparations for the visit of <strong>{{delegationName}}</strong> to <strong>{{campusName}}</strong>, scheduled from <strong>{{plannedStart}}</strong> to <strong>{{plannedEnd}}</strong>.</p>',
      '{{setupSummaryBlock}}',
      '<p>The detailed Schedule Report is attached to this email.</p>',
-     '<p>If anything needs adjusting, please reply to this email so that <strong>{{hostName}}</strong>, the host for this visit, can update it in time.</p>',
+     '<p>If anything needs adjusting, please reply to this email or contact <strong>{{hostName}}</strong>, the host for this visit, directly at <strong>{{hostEmail}}</strong>.</p>',
      '<p style="color:#6b7280;font-size:12px">Best regards,<br/>PEMS - FPT University</p>'),
-   'HTML', 'delegationName,campusName,plannedStart,plannedEnd,hostName', CURRENT_TIMESTAMP);
+   'HTML', 'delegationName,campusName,plannedStart,plannedEnd,hostName,hostEmail', CURRENT_TIMESTAMP);
 
 -- The staged catalog must be exactly what we expect before a single production row is touched.
 DELIMITER $$

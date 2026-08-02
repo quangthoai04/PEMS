@@ -8,6 +8,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 

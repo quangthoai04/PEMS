@@ -247,8 +247,17 @@ public static class CanonicalSqlScript
     /// absent from <c>variables_text</c> on purpose, so the 31-code / identical-variable-set contract
     /// this file records above still holds in both directions and needed no change. No DDL, no trigger,
     /// no row added or removed; ExpectedBaseTableCount (82) and ExpectedTriggerCount (32) are unchanged.
+    ///
+    /// (2026-08-02, tenth bump) SEED TEXT ONLY, the same one template. VISIT_SETUP_PROGRESS_UPDATE
+    /// gained <c>{{hostEmail}}</c> in both bodies and in <c>variables_text</c>. Unlike the ninth bump
+    /// this IS a variable, deliberately: the body asks the guest to reply so the Host can act, but the
+    /// draft/manual send path carries the system's configured Reply-To and accepts no per-message one,
+    /// so naming the Host without printing an address pointed the instruction nowhere. The registry,
+    /// the JSON defaults and 02_sync_templates.sql declare the same six variables, so the
+    /// identical-variable-set contract holds in both directions. Catalog size is still 31. No DDL, no
+    /// trigger, no row added or removed; ExpectedBaseTableCount (82)/ExpectedTriggerCount (32) unchanged.
     public const string ExpectedSha256 =
-        "e11763034737867053db1e939ceb3b3b48200444d7fa21c74e901de39ce67725";
+        "8da65ffe46cfdc1564efc17950077a5daef5d72b5fd18a91dddd519f85bd52be";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

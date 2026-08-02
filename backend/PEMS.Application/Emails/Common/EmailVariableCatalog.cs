@@ -46,6 +46,7 @@ public static class EmailVariableCatalog
             V("contactFullName", "Họ tên đầu mối", "Primary contact full name", "Trần Thị Bình", "Tran Thi Binh"),
             V("currentContactName", "Đầu mối hiện tại", "Current contact", "Lê Văn Cường", "Le Van Cuong"),
             V("hostName", "Người chủ trì", "Host name", "Phạm Thị Dung", "Pham Thi Dung"),
+            V("hostEmail", "Email người chủ trì", "Host email", "dungpt@fpt.edu.vn", "dungpt@fpt.edu.vn"),
             V("assigneeName", "Người được phân công", "Assignee name", "Đỗ Văn Em", "Do Van Em"),
             V("requesterName", "Người gửi yêu cầu", "Requester name", "Vũ Thị Giang", "Vu Thi Giang"),
             V("departmentLeaderName", "Trưởng phòng ban", "Department leader", "Hoàng Văn Hải", "Hoang Van Hai"),

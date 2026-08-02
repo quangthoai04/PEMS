@@ -39,6 +39,15 @@ interface CitySelectProps {
   disabled?: boolean;
 }
 
+const VIETNAM_PROVINCES: CityOption[] = [
+  'An Giang', 'Bắc Ninh', 'Cao Bằng', 'Cà Mau', 'TP. Cần Thơ', 'TP. Đà Nẵng',
+  'Đắk Lắk', 'TP. Đồng Nai', 'Đồng Tháp', 'Điện Biên', 'Gia Lai', 'TP. Hà Nội',
+  'Hà Tĩnh', 'TP. Hải Phòng', 'TP. Hồ Chí Minh', 'TP. Huế', 'Hưng Yên', 'Khánh Hòa',
+  'Lai Châu', 'Lâm Đồng', 'Lạng Sơn', 'Lào Cai', 'Nghệ An', 'Ninh Bình',
+  'Phú Thọ', 'Quảng Bình', 'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị', 'Sơn La',
+  'Tây Ninh', 'Thái Nguyên', 'Thanh Hóa', 'Tuyên Quang', 'Vĩnh Long'
+].sort((a, b) => a.localeCompare(b, 'vi')).map(name => ({ value: name, label: name }));
+
 export const CitySelect: React.FC<CitySelectProps> = ({
   country,
   value,
@@ -60,6 +69,11 @@ export const CitySelect: React.FC<CitySelectProps> = ({
     const iso2 = countryNameToAlpha2(trimmed);
     if (!iso2) {
       setOptions([]);
+      return;
+    }
+    if (iso2 === 'VN') {
+      setOptions(VIETNAM_PROVINCES);
+      setLoading(false);
       return;
     }
     const cached = cityCache.get(iso2);

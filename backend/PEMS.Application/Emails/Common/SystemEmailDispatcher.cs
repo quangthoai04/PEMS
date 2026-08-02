@@ -61,7 +61,7 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
         // 1) The envelope, first. The sender checks this too, but by then a history row exists — and a
         //    row recording a message that was never a legal message is worse than no row.
         var envelope = EmailRecipientValidator.Validate(
-            new[] { request.To }, cc: null, bcc: null, _recipientOptions.MaxRecipients);
+            new[] { request.To }, cc: request.Cc, bcc: null, _recipientOptions.MaxRecipients);
         EmailRecipientPolicyEnforcer.Assert(request.TemplateCode, envelope);
 
         // 2) Content. A missing/inactive/mis-declared template throws a stable error here and no history
@@ -111,6 +111,17 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             DeliveryStatus = "QUEUED",
             CreatedAt = now,
         });
+        foreach (var cc in envelope.Cc)
+        {
+            sentEmail.Recipients.Add(new SentEmailRecipient
+            {
+                RecipientEmail = cc.Email,
+                RecipientName = cc.DisplayName,
+                RecipientType = EmailRecipientTypes.Cc,
+                DeliveryStatus = "QUEUED",
+                CreatedAt = now,
+            });
+        }
 
         _db.SentEmails.Add(sentEmail);
         await _db.SaveChangesAsync(cancellationToken);
@@ -126,6 +137,8 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             isHtml)
         {
             Attachments = request.Attachments ?? Array.Empty<OutboundAttachment>(),
+            Cc = envelope.Cc,
+            ReplyTo = request.ReplyTo,
         };
     }
 
@@ -137,6 +150,8 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
         var delivery = await _email.TrySendAsync(new OutboundEmail
         {
             To = new[] { prepared.To },
+            Cc = prepared.Cc,
+            ReplyTo = prepared.ReplyTo,
             Subject = prepared.Subject,
             Body = prepared.Body,
             IsHtml = prepared.IsHtml,

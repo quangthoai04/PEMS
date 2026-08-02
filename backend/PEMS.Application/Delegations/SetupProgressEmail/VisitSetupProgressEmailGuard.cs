@@ -81,7 +81,8 @@ public static class VisitSetupProgressEmailGuard
     /// that is what the database stores and what the guest reads; nothing here converts to UTC.
     /// </summary>
     public static System.Collections.Generic.Dictionary<string, string> BuildVariables(
-        VisitRequestCampus instance, string delegationName, string campusName, string hostName)
+        VisitRequestCampus instance, string delegationName, string campusName,
+        string hostName, string hostEmail)
         => new(StringComparer.Ordinal)
         {
             ["delegationName"] = delegationName,
@@ -89,6 +90,7 @@ public static class VisitSetupProgressEmailGuard
             ["plannedStart"] = FormatMoment(instance.PlannedStartAt),
             ["plannedEnd"] = FormatMoment(instance.PlannedEndAt),
             ["hostName"] = hostName,
+            ["hostEmail"] = hostEmail,
         };
 
     private static string FormatMoment(DateTime? value)

@@ -8,7 +8,7 @@
 --
 -- Two kinds of check live here, and the difference matters:
 --
---   INTRINSIC — true of the end state on its own ("all 30 canonical codes are ACTIVE", "no legacy
+--   INTRINSIC — true of the end state on its own ("all 31 canonical codes are ACTIVE", "no legacy
 --   code is ACTIVE", "variables_text matches the placeholders actually used"). Every one of these
 --   reports PASS or FAIL in the `verdict` column, and section Z fails the whole run if any did.
 --

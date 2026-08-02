@@ -8,6 +8,10 @@
  *
  * The table, action icon, pagination and detail modal intentionally mirror the internal Account
  * Management screen so the two tabs feel identical.
+ *
+ * Owns its own search / nationality / paging state — nothing is shared with the internal account
+ * list, so neither mode can inherit the other's filters, page or totals. The nationality options
+ * come from their own endpoint (never from a page of the Visitor list) and are never hardcoded.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -15,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useRelatedVisitors } from '../hooks/useRelatedVisitors';
+import { useRelatedVisitorNationalities } from '../hooks/useRelatedVisitorNationalities';
 import { accountManagementApi } from '../api/accountManagementApi';
 import { getAccountErrorMessage } from '../api/accountError';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
@@ -22,6 +27,7 @@ import type {
   RelatedVisitorDetail,
   RelatedVisitorListItem,
   RelatedVisitorQueryParams,
+  StaffLeaderAccountType,
 } from '../types/accountManagement.types';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -61,11 +67,14 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 interface RelatedVisitorsTabProps {
-  accountTypeFilter?: 'INTERNAL' | 'VISITOR';
-  onAccountTypeChange?: (val: 'INTERNAL' | 'VISITOR') => void;
+  accountTypeFilter?: StaffLeaderAccountType;
+  onAccountTypeChange?: (val: StaffLeaderAccountType) => void;
 }
 
 export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTypeChange }: RelatedVisitorsTabProps = {}) {
+  // Visitor-mode filter state lives HERE, never shared with the internal account list: the role
+  // filter must not follow the user into this tab, the nationality filter must not follow them out,
+  // and neither table may page off the other's totals.
   const [search, setSearch] = useState('');
   const [nationalityFilter, setNationalityFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -92,22 +101,15 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
   const totalItems = data?.totalItems ?? 0;
   const totalPages = data?.totalPages ?? 0;
 
-  // ── Nationality dropdown options: derived once from the full (unfiltered) campus set. ──
-  const [nationalityOptions, setNationalityOptions] = useState<string[]>([]);
-  useEffect(() => {
-    let active = true;
-    accountManagementApi
-      .getRelatedVisitors({ page: 1, pageSize: 100 })
-      .then((res) => {
-        if (!active) return;
-        const distinct = Array.from(
-          new Set(res.items.map((v) => (v.nationality ?? '').trim()).filter(Boolean)),
-        ).sort((a, b) => a.localeCompare(b, 'vi'));
-        setNationalityOptions(distinct);
-      })
-      .catch(() => { /* non-fatal: nationality filter simply stays empty */ });
-    return () => { active = false; };
-  }, []);
+  // ── Nationality dropdown options — from their own endpoint, covering EVERY related Visitor. ──
+  // (Previously derived from getRelatedVisitors({ pageSize: 100 }), which silently hid every
+  // nationality that only appeared past the first 100 rows.)
+  const {
+    options: nationalityOptions,
+    loading: nationalitiesLoading,
+    error: nationalitiesError,
+    retry: retryNationalities,
+  } = useRelatedVisitorNationalities();
 
   // ── Custom nationality dropdown (height-capped + scrollable so a long list never overflows) ──
   const [natOpen, setNatOpen] = useState(false);
@@ -165,9 +167,13 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
 
         {onAccountTypeChange && (
           <div className="relative">
+            {/* Two modes only — "Tất cả tài khoản" is gone: internal and Visitor accounts come from
+                separate endpoints with separate permissions, so there is nothing coherent to show
+                for a combined option. */}
             <select
               value={accountTypeFilter}
-              onChange={(e) => onAccountTypeChange(e.target.value as 'INTERNAL' | 'VISITOR')}
+              onChange={(e) => onAccountTypeChange(e.target.value as StaffLeaderAccountType)}
+              aria-label="Loại tài khoản"
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
               <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
@@ -181,6 +187,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
           <button
             type="button"
             onClick={() => setNatOpen((o) => !o)}
+            aria-label="Quốc tịch"
             className="flex items-center justify-between gap-2 bg-white/10 text-white px-4 py-3 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer min-w-[180px] w-full"
           >
             <span className="truncate">{nationalityFilter || 'Tất cả quốc tịch'}</span>
@@ -188,16 +195,48 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
           </button>
           {natOpen && (
             <div className="absolute right-0 mt-2 w-full min-w-[200px] max-h-60 overflow-y-auto bg-white rounded-2xl shadow-xl border border-gray-100 z-30 py-1">
-              {[''].concat(nationalityOptions).map((n) => {
+              {/* "Tất cả quốc tịch" is always offered — it is the cleared state (value ''), and the
+                  params memo turns that into NO nationality param rather than a label string. */}
+              <button
+                type="button"
+                onClick={() => { setNationalityFilter(''); setNatOpen(false); }}
+                className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left text-sm transition-colors ${nationalityFilter === '' ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 hover:bg-gray-50'}`}
+              >
+                <span className="truncate">Tất cả quốc tịch</span>
+                {nationalityFilter === '' && <Check className="w-4 h-4 shrink-0" />}
+              </button>
+
+              {nationalitiesLoading && (
+                <p className="px-4 py-2.5 text-sm text-gray-400 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" /> Đang tải quốc tịch...
+                </p>
+              )}
+
+              {/* A failed nationality request never blocks the Visitor table — it just offers a
+                  retry of its own. */}
+              {!nationalitiesLoading && nationalitiesError && (
+                <div className="px-4 py-2.5 text-sm text-red-600">
+                  <p className="mb-1 font-medium">{nationalitiesError}</p>
+                  <button type="button" onClick={retryNationalities} className="text-xs underline hover:no-underline">
+                    Thử lại
+                  </button>
+                </div>
+              )}
+
+              {!nationalitiesLoading && !nationalitiesError && nationalityOptions.length === 0 && (
+                <p className="px-4 py-2.5 text-sm text-gray-400">Chưa có dữ liệu quốc tịch.</p>
+              )}
+
+              {!nationalitiesLoading && !nationalitiesError && nationalityOptions.map((n) => {
                 const selected = nationalityFilter === n;
                 return (
                   <button
-                    key={n || '__all__'}
+                    key={n}
                     type="button"
                     onClick={() => { setNationalityFilter(n); setNatOpen(false); }}
                     className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 hover:bg-gray-50'}`}
                   >
-                    <span className="truncate">{n || 'Tất cả quốc tịch'}</span>
+                    <span className="truncate">{n}</span>
                     {selected && <Check className="w-4 h-4 shrink-0" />}
                   </button>
                 );

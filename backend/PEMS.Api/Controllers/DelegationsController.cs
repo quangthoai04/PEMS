@@ -309,11 +309,15 @@ namespace PEMS.Api.Controllers
         // (login required). Candidate list: GET visit-instances/{id}/department-staff-candidates above.
 
         // Upsert the instance's agenda (Host only, prep window). Saves setup ONLY — does not change stage.
+        // Also syncs the campus's planned visit window (plannedStartAt/plannedEndAt), which the Host may
+        // have renegotiated with the delegation while drafting the agenda.
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/agenda")]
         public async Task<IActionResult> SaveVisitAgenda(ulong visitRequestId, ulong visitInstanceId, [FromBody] SaveVisitAgendaBody body, CancellationToken cancellationToken)
         {
             var items = (body.Items ?? new List<SaveVisitAgendaItem>());
-            var result = await _mediator.Send(new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items), cancellationToken);
+            var result = await _mediator.Send(
+                new SaveVisitAgendaCommand(visitRequestId, visitInstanceId, items, body.PlannedStartAt, body.PlannedEndAt),
+                cancellationToken);
             return Ok(result);
         }
 
@@ -720,7 +724,7 @@ namespace PEMS.Api.Controllers
     public sealed record UpdateRegistrantInfoBody(string FullName, string Organization, string? JobTitle, string Phone, string Email);
 
     /// <summary>Request body for upserting a campus instance's agenda (full replace).</summary>
-    public sealed record SaveVisitAgendaBody(List<SaveVisitAgendaItem>? Items);
+    public sealed record SaveVisitAgendaBody(List<SaveVisitAgendaItem>? Items, System.DateTime PlannedStartAt, System.DateTime PlannedEndAt);
 
     /// <summary>Request body for the UC-27 respond-to-invitation endpoint (decline requires a reason).</summary>
     public sealed record RespondInvitationBody(bool Accept, string? DeclineReason);

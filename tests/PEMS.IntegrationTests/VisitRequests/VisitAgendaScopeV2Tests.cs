@@ -176,7 +176,8 @@ public sealed class VisitAgendaScopeV2Tests
         ulong requestId = 0;
         try
         {
-            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), "Đoàn nghị trình"));
+            var hnStart = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", hnStart, "Đoàn nghị trình"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
             var hn = instances[CampusHn];
@@ -184,7 +185,8 @@ public sealed class VisitAgendaScopeV2Tests
             using (var db = NewContext())
             {
                 var res = await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
-                    new List<SaveVisitAgendaItem> { Item("Đón khách", 0), Item("Tham quan", 1), Item("Ăn trưa", 2) }),
+                    new List<SaveVisitAgendaItem> { Item("Đón khách", 0), Item("Tham quan", 1), Item("Ăn trưa", 2) },
+                    hnStart, hnStart.AddMinutes(120)),
                     CancellationToken.None);
                 Assert.Equal(3, res.Count);
             }
@@ -202,6 +204,92 @@ public sealed class VisitAgendaScopeV2Tests
                 Assert.Equal(requestId, audit.VisitRequestId);
                 Assert.Equal(HostHn, audit.ActorUserId);
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// "Lưu lịch trình" also moves the campus's planned window, and whatever reads the instance next
+    /// sees the moved one.
+    ///
+    /// <para>
+    /// The Host renegotiates the actual date/time with the delegation while drafting the agenda, so the
+    /// two edits are one save. This matters beyond the column: the Schedule Report PDF and the
+    /// setup-progress email both render <c>plannedStart</c>/<c>plannedEnd</c> from this instance, so a
+    /// window that saved into the agenda but not into <c>visit_request_campuses</c> would send the guest
+    /// a report contradicting the schedule directly above it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Saving_the_agenda_moves_the_planned_window_and_later_reads_see_the_new_one()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var originalStart = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", originalStart, "Đoàn dời giờ"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            var hn = instances[CampusHn];
+
+            // The delegation asked to start a day later and stay an extra hour.
+            var movedStart = originalStart.AddDays(1).Date.AddHours(9);
+            var movedEnd = movedStart.AddMinutes(180);
+
+            using (var db = NewContext())
+                await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
+                    new List<SaveVisitAgendaItem> { Item("Đón khách", 0) }, movedStart, movedEnd),
+                    CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var instance = await db.VisitRequestCampuses.AsNoTracking()
+                    .FirstAsync(c => c.VisitInstanceId == hn);
+
+                // Compared to the second: MySQL DATETIME is local wall-clock here, never re-based to UTC.
+                Assert.Equal(movedStart.ToString("yyyy-MM-dd HH:mm:ss"),
+                    instance.PlannedStartAt.ToString("yyyy-MM-dd HH:mm:ss"));
+                Assert.Equal(movedEnd.ToString("yyyy-MM-dd HH:mm:ss"),
+                    instance.PlannedEndAt.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                // …and the values the report/email templates interpolate come from that same row, so the
+                // guest-facing "dự kiến từ … đến …" follows the save rather than the original booking.
+                var variables = PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressEmailGuard
+                    .BuildVariables(instance, "Đoàn dời giờ", "FPT Hà Nội", "Host HN", "host.hn@fpt.edu.vn");
+                Assert.Equal(movedStart.ToString("HH:mm dd/MM/yyyy"), variables["plannedStart"]);
+                Assert.Equal(movedEnd.ToString("HH:mm dd/MM/yyyy"), variables["plannedEnd"]);
+                Assert.Equal("host.hn@fpt.edu.vn", variables["hostEmail"]);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// A window shorter than the DB CHECK allows is refused by name rather than by constraint violation.
+    /// </summary>
+    [Fact]
+    public async Task A_planned_window_that_breaks_the_minimum_duration_is_refused_before_the_database_sees_it()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn giờ xấu"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            var hn = instances[CampusHn];
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<PEMS.Application.Common.Exceptions.ValidationException>(() =>
+                    Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
+                        new List<SaveVisitAgendaItem> { Item("Đón khách", 0) },
+                        start, start.AddMinutes(10)), CancellationToken.None));
+
+            using (var db = NewContext())
+                Assert.Empty(await db.VisitAgendas.AsNoTracking()
+                    .Where(a => a.VisitInstanceId == hn).ToListAsync());
         }
         finally { await CleanupAsync(requestId); }
     }
@@ -226,16 +314,19 @@ public sealed class VisitAgendaScopeV2Tests
             // Both hosts save their own campus's agenda.
             using (var db = NewContext())
                 await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
-                    new List<SaveVisitAgendaItem> { Item("HN mục 1", 0) }), CancellationToken.None);
+                    new List<SaveVisitAgendaItem> { Item("HN mục 1", 0) },
+                    start, start.AddMinutes(120)), CancellationToken.None);
             using (var db = NewContext())
                 await Handler(db, HostHcm).Handle(new SaveVisitAgendaCommand(requestId, hcm,
-                    new List<SaveVisitAgendaItem> { Item("HCM mục 1", 0), Item("HCM mục 2", 1) }), CancellationToken.None);
+                    new List<SaveVisitAgendaItem> { Item("HCM mục 1", 0), Item("HCM mục 2", 1) },
+                    start.AddDays(1), start.AddDays(1).AddMinutes(120)), CancellationToken.None);
 
             // The HN host reaching for HCM's agenda is refused...
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hcm,
-                        new List<SaveVisitAgendaItem> { Item("Xâm phạm", 0) }), CancellationToken.None));
+                        new List<SaveVisitAgendaItem> { Item("Xâm phạm", 0) },
+                        start.AddDays(1), start.AddDays(1).AddMinutes(120)), CancellationToken.None));
 
             // ...and HCM's agenda is exactly what its own host left — two items, untouched.
             using (var db = NewContext())
@@ -272,7 +363,7 @@ public sealed class VisitAgendaScopeV2Tests
                     {
                         new(null, "Mục có người phụ trách", Now.AddDays(5).Date.AddHours(9),
                             Now.AddDays(5).Date.AddHours(10), null, "Phòng họp", "Nguyễn Văn A (khách mời ngoài hệ thống)"),
-                    }), CancellationToken.None);
+                    }, start, start.AddMinutes(120)), CancellationToken.None);
                 Assert.Equal(1, res.Count);
             }
             using (var db = NewContext())

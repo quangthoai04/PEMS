@@ -12,8 +12,10 @@ namespace PEMS.Application.Accounts.Queries.RelatedVisitors;
 
 /// <summary>
 /// Returns the read-only detail of a Visitor account for the Staff Leader tab, re-enforcing the
-/// campus visibility scope (BR-03). A Visitor not related to the caller's campus is surfaced as
-/// Not Found (chosen policy over a 403, to avoid leaking the account's existence — AF-02).
+/// campus scope (BR-03) through the SAME <see cref="RelatedVisitorScope.VisibleInstances"/>
+/// predicate the list uses — the caller having obtained an id from the list is never taken as
+/// proof of access. A Visitor not related to the caller's campus is surfaced as Not Found (chosen
+/// policy over a 403, to avoid leaking the account's existence — AF-02).
 /// </summary>
 public sealed class GetRelatedVisitorDetailsQueryHandler
     : IRequestHandler<GetRelatedVisitorDetailsQuery, RelatedVisitorAccountDetailDto>

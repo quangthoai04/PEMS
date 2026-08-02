@@ -360,6 +360,11 @@ export function VisitProcess() {
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
   const [isSavingAgenda, setIsSavingAgenda] = useState(false);
   const [remindersLoadFailed, setRemindersLoadFailed] = useState(false);
+  // ── Planned visit window (visit_request_campuses.planned_start_at/end_at), editable from this tab.
+  // Draft only takes effect once "Lưu lịch trình" is pressed — same as every agenda row edit. ──
+  const [plannedStartDraft, setPlannedStartDraft] = useState('');
+  const [plannedEndDraft, setPlannedEndDraft] = useState('');
+  const [isEditingPlannedTime, setIsEditingPlannedTime] = useState(false);
 
   // ── Datetime serialization (PEMS rule: MySQL DATETIME is LOCAL wall-clock, never UTC). ──
   // The API returns "YYYY-MM-DDTHH:mm:ss" (or "YYYY-MM-DD HH:mm:ss") with no timezone. We slice it
@@ -386,6 +391,19 @@ export function VisitProcess() {
   const getTimePart = (localStr?: string | null): string => {
     if (!localStr || localStr.length < 16) return '';
     return localStr.slice(11, 16);
+  };
+
+  // Display-only "HH:mm dd/MM/yyyy → HH:mm dd/MM/yyyy" for the planned-window pill. Built from the
+  // date/time parts above (no Date()/toISOString()) — same no-timezone-shift rule as the rest of the tab.
+  const formatPlannedWindow = (startLocal: string, endLocal: string): string => {
+    const fmt = (v: string) => {
+      const d = getDatePart(v);
+      const t = getTimePart(v);
+      if (!d || !t) return '—';
+      const [y, m, day] = d.split('-');
+      return `${t} ${day}/${m}/${y}`;
+    };
+    return `${fmt(startLocal)} → ${fmt(endLocal)}`;
   };
 
   const isSingleDayVisit = React.useMemo(() => {
@@ -417,6 +435,9 @@ export function VisitProcess() {
       setDetailLoadError(false);
       setPreparationNote(d.preparationNote ?? '');
       setPreparationNoteSaved(d.preparationNote ?? '');
+      setPlannedStartDraft(toDatetimeLocalInputValue(d.plannedStartAt));
+      setPlannedEndDraft(toDatetimeLocalInputValue(d.plannedEndAt));
+      setIsEditingPlannedTime(false);
       setAgendaItems((d.agenda || []).map((a) => ({
         agendaId: a.agendaId,
         title: a.title,
@@ -572,6 +593,23 @@ export function VisitProcess() {
       }
     }
 
+    // Planned visit window (mirrors the DB CHECK constraints on visit_request_campuses: end > start
+    // and duration >= 30 minutes) so a bad edit never reaches the backend as a raw failure.
+    if (!plannedStartDraft || !plannedEndDraft) {
+      pushToast('error', 'Vui lòng nhập thời gian dự kiến của chuyến.');
+      return;
+    }
+    if (plannedEndDraft <= plannedStartDraft) {
+      pushToast('error', 'Thời gian dự kiến kết thúc phải sau thời gian bắt đầu.');
+      return;
+    }
+    const plannedDurationMinutes =
+      (new Date(plannedEndDraft).getTime() - new Date(plannedStartDraft).getTime()) / 60000;
+    if (plannedDurationMinutes < 30) {
+      pushToast('error', 'Thời gian dự kiến phải kéo dài ít nhất 30 phút.');
+      return;
+    }
+
     setIsSavingAgenda(true);
     try {
       // Send local wall-clock verbatim — NO plannedStartAt re-basing, NO toISOString(). Each item
@@ -584,7 +622,13 @@ export function VisitProcess() {
         location: it.location?.trim() || null,
         responsibleName: it.responsibleName.trim() || null,
       }));
-      await delegationsApi.saveVisitAgenda(perm.visitRequestId, perm.visitInstanceId, items);
+      await delegationsApi.saveVisitAgenda(
+        perm.visitRequestId,
+        perm.visitInstanceId,
+        items,
+        fromDatetimeLocalInputValueToApi(plannedStartDraft)!,
+        fromDatetimeLocalInputValueToApi(plannedEndDraft)!
+      );
       pushToast('success', 'Lưu lịch trình thành công. Lịch trình và người phụ trách đã được cập nhật.');
       await loadDetail();
     } catch (e: any) {
@@ -1030,10 +1074,49 @@ export function VisitProcess() {
                           {/* Compact header: title + a single toggle for the (heavy) apply-template panel,
                               so "Lịch trình hiện tại" is the focus once an agenda exists. */}
                           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                            <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2">
-                              <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                              1. Agenda
-                            </h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2">
+                                <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
+                                1. Agenda
+                              </h3>
+                              {/* Planned visit window (visit_request_campuses.planned_start_at/end_at).
+                                  Editable here; takes effect together with the agenda on "Lưu lịch trình". */}
+                              {canEditAgenda && (
+                                isEditingPlannedTime ? (
+                                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                                    <input
+                                      type="datetime-local"
+                                      value={plannedStartDraft}
+                                      onChange={(e) => setPlannedStartDraft(e.target.value)}
+                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-semibold text-slate-700 outline-none focus:border-[#004c91]"
+                                    />
+                                    <span className="text-xs font-bold text-slate-400">→</span>
+                                    <input
+                                      type="datetime-local"
+                                      value={plannedEndDraft}
+                                      onChange={(e) => setPlannedEndDraft(e.target.value)}
+                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-semibold text-slate-700 outline-none focus:border-[#004c91]"
+                                    />
+                                    <button type="button" onClick={() => setIsEditingPlannedTime(false)}
+                                      className="px-1 text-xs font-bold text-emerald-600 hover:underline">Xong</button>
+                                    <button type="button"
+                                      onClick={() => {
+                                        setPlannedStartDraft(toDatetimeLocalInputValue(detail?.plannedStartAt));
+                                        setPlannedEndDraft(toDatetimeLocalInputValue(detail?.plannedEndAt));
+                                        setIsEditingPlannedTime(false);
+                                      }}
+                                      className="px-1 text-xs font-bold text-slate-400 hover:underline">Hủy</button>
+                                  </div>
+                                ) : (
+                                  <button type="button" onClick={() => setIsEditingPlannedTime(true)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 outline-none transition hover:border-[#004c91] hover:text-[#004c91]">
+                                    <Calendar className="h-3.5 w-3.5" />
+                                    Dự kiến: {formatPlannedWindow(plannedStartDraft, plannedEndDraft)}
+                                    <Edit3 className="h-3 w-3 text-slate-400" />
+                                  </button>
+                                )
+                              )}
+                            </div>
                             {perm && (
                               <button
                                 type="button"
@@ -1086,6 +1169,9 @@ export function VisitProcess() {
                                   {agendaItems.map((it, idx) => {
                                     const ghostInputClass = "h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
                                     const ghostTimeClass = "h-8 w-[130px] shrink-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
+                                    // Auto-grows vertically with content (min one line, same visual style as ghostInputClass)
+                                    // so long agenda text wraps instead of being clipped inside a fixed-height box.
+                                    const ghostTextareaClass = "min-h-9 w-full min-w-0 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium text-slate-800 outline-none transition hover:border-slate-200 hover:bg-white focus:border-[#004c91] focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent";
                                     return (
                                       <div key={idx} className="grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[44px_235px_minmax(200px,1fr)_150px_220px_36px] md:items-start md:gap-3">
                                         {/* Order number — leads the row so the eye scans it first. */}
@@ -1262,9 +1348,10 @@ export function VisitProcess() {
                                         {/* Content */}
                                         <div className="pl-9 md:pl-0">
                                           <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Nội dung</label>
-                                          <input type="text" value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
+                                          <textarea rows={1} value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
+                                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }}
                                             onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
-                                            className={ghostInputClass} />
+                                            className={ghostTextareaClass} />
                                         </div>
 
                                         {/* Location */}

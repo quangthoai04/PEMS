@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   KeyRound, Search, ChevronDown, ChevronLeft, ChevronRight,
-  Loader2, RefreshCw, ShieldOff, UserX, X,
+  Loader2, RefreshCw, ShieldOff, UserX, X, Info,
 } from 'lucide-react';
 import { adminApi } from '../../../features/admin/api/adminApi';
 import type { AdminSessionItem, PaginatedResult } from '../../../features/admin/types/admin.types';
@@ -32,6 +32,28 @@ const STATUS_LABEL: Record<string, string> = {
   REVOKED: 'Đã thu hồi',
 };
 
+// Nhãn tiếng Việt cho các giá trị kỹ thuật hiển thị trong bảng — tránh lộ thuật ngữ hệ thống
+// (INTERNAL/VISITOR, LOCAL_PASSWORD/GOOGLE_SSO/FEID, role code) ra người dùng cuối.
+const PORTAL_LABEL: Record<string, string> = {
+  INTERNAL: 'Nội bộ',
+  VISITOR: 'Khách',
+};
+
+const PROVIDER_LABEL: Record<string, string> = {
+  LOCAL_PASSWORD: 'Mật khẩu',
+  GOOGLE_SSO: 'Google SSO',
+  FEID: 'FE ID',
+};
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Quản trị viên',
+  HO: 'Head Office',
+  STAFF: 'Nhân viên',
+  DEPARTMENT: 'Phòng ban',
+  STUDENT: 'Sinh viên',
+  VISITOR: 'Khách',
+};
+
 export function SessionManagement() {
   const navigate = useNavigate();
 
@@ -44,6 +66,15 @@ export function SessionManagement() {
   const [data, setData] = useState<PaginatedResult<AdminSessionItem> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Chuỗi thiết bị (User-Agent) mặc định rút gọn 1 dòng; bấm icon "i" để xem đầy đủ cho riêng
+  // dòng đó (di chuột vào cũng thấy đầy đủ qua tooltip title).
+  const [expandedDevices, setExpandedDevices] = useState<Set<number>>(new Set());
+  const toggleDevice = (sessionId: number) => setExpandedDevices((prev) => {
+    const next = new Set(prev);
+    if (next.has(sessionId)) next.delete(sessionId); else next.add(sessionId);
+    return next;
+  });
 
   // Modal thu hồi: 1 phiên hoặc toàn bộ phiên của user.
   const [revokeTarget, setRevokeTarget] = useState<{ kind: 'session' | 'user'; session: AdminSessionItem } | null>(null);
@@ -108,9 +139,6 @@ export function SessionManagement() {
           <h1 className="text-3xl font-bold text-[#004c91] flex items-center gap-3">
             <KeyRound className="w-8 h-8" /> Phiên đăng nhập
           </h1>
-          <p className="text-gray-500 mt-1 font-medium">
-            Toàn bộ phiên trong user_sessions — thu hồi phiên bất thường hoặc toàn bộ phiên của một tài khoản
-          </p>
         </div>
         <button
           onClick={load}
@@ -144,9 +172,9 @@ export function SessionManagement() {
           </div>
           <div className="relative">
             <select value={portal} onChange={(e) => setPortal(e.target.value)} className={selectCls}>
-              <option className="text-gray-900" value="">Tất cả portal</option>
-              <option className="text-gray-900" value="INTERNAL">INTERNAL</option>
-              <option className="text-gray-900" value="VISITOR">VISITOR</option>
+              <option className="text-gray-900" value="">Tất cả cổng đăng nhập</option>
+              <option className="text-gray-900" value="INTERNAL">Nội bộ</option>
+              <option className="text-gray-900" value="VISITOR">Khách</option>
             </select>
             <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
           </div>
@@ -154,79 +182,104 @@ export function SessionManagement() {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse table-fixed">
             <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
               <tr>
-                <th className="p-4 pl-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Người dùng</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Portal / Provider</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">IP / Thiết bị</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Tạo lúc</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Hết hạn</th>
-                <th className="p-4 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Trạng thái</th>
-                <th className="p-4 pr-6 text-[11px] font-black uppercase tracking-widest whitespace-nowrap text-center">Hành động</th>
+                <th className="p-3 pl-4 w-12 text-[11px] font-black uppercase tracking-widest text-center">STT</th>
+                <th className="p-3 w-[18%] text-[11px] font-black uppercase tracking-widest">Người dùng</th>
+                <th className="p-3 w-[14%] text-[11px] font-black uppercase tracking-widest">Cổng / Phương thức</th>
+                <th className="p-3 w-[15%] text-[11px] font-black uppercase tracking-widest">IP / Thiết bị</th>
+                <th className="p-3 w-[12%] text-[11px] font-black uppercase tracking-widest">Tạo lúc</th>
+                <th className="p-3 w-[12%] text-[11px] font-black uppercase tracking-widest">Hết hạn</th>
+                <th className="p-3 w-[11%] text-[11px] font-black uppercase tracking-widest text-center">Trạng thái</th>
+                <th className="p-3 pr-4 w-[12%] text-[11px] font-black uppercase tracking-widest text-center">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Đang tải danh sách phiên...
                 </td></tr>
               ) : error ? (
-                <tr><td colSpan={7} className="py-16 text-center">
+                <tr><td colSpan={8} className="py-16 text-center">
                   <p className="text-sm font-bold text-red-500 mb-2">{error}</p>
                   <button onClick={load} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
                 </td></tr>
               ) : (data?.items.length ?? 0) === 0 ? (
-                <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
                   Không có phiên nào phù hợp bộ lọc
                 </td></tr>
-              ) : data!.items.map((sess) => (
+              ) : data!.items.map((sess, idx) => (
                 <tr key={sess.sessionId} className="hover:bg-blue-50/30 transition-colors">
-                  <td className="p-4 pl-6">
-                    <p className="text-[13px] font-bold text-[#004c91] whitespace-nowrap">
+                  <td className="p-3 pl-4 text-center text-xs font-bold text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
+                  <td className="p-3 break-words">
+                    <p className="text-[13px] font-bold text-[#004c91]">
                       {sess.fullName}
                       {sess.isCurrentSession && (
-                        <span className="ml-2 text-[10px] font-black text-[#f37021] bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-md uppercase">Phiên của bạn</span>
+                        <span className="block mt-1 w-fit text-[10px] font-black text-[#f37021] bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-md uppercase">Phiên của bạn</span>
                       )}
                     </p>
-                    <p className="text-xs text-gray-500">{sess.email}</p>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase">{sess.roleCode || ''} · #{sess.sessionId}</p>
+                    <p className="text-xs text-gray-500 break-all">{sess.email}</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">
+                      {ROLE_LABEL[sess.roleCode ?? ''] ?? sess.roleCode ?? ''} · Phiên #{sess.sessionId}
+                    </p>
                   </td>
-                  <td className="p-4 text-[13px] text-gray-600 whitespace-nowrap">
-                    {sess.loginPortal}{sess.providerType ? ` · ${sess.providerType}` : ''}
+                  <td className="p-3 text-[13px] text-gray-600 break-words">
+                    <p className="font-bold text-gray-700">{PORTAL_LABEL[sess.loginPortal] ?? sess.loginPortal}</p>
+                    {sess.providerType && (
+                      <p className="text-xs text-gray-400">{PROVIDER_LABEL[sess.providerType] ?? sess.providerType}</p>
+                    )}
                   </td>
-                  <td className="p-4 text-xs text-gray-500 max-w-[220px]">
-                    <p className="font-bold text-gray-600">{sess.ipAddress || '—'}</p>
-                    <p className="truncate" title={sess.userAgent || undefined}>{sess.userAgent || '—'}</p>
+                  <td className="p-3 text-xs text-gray-500 break-words">
+                    <p className="font-bold text-gray-600 break-all">{sess.ipAddress || '—'}</p>
+                    {sess.userAgent && (
+                      <div className="mt-1 flex items-center gap-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleDevice(sess.sessionId)}
+                          title={sess.userAgent}
+                          className="shrink-0 text-gray-400 hover:text-[#004c91] cursor-pointer"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                        <p
+                          onClick={() => toggleDevice(sess.sessionId)}
+                          title={sess.userAgent}
+                          className={`min-w-0 flex-1 cursor-pointer hover:text-[#004c91] ${expandedDevices.has(sess.sessionId) ? 'break-all' : 'truncate'}`}
+                        >
+                          {sess.userAgent}
+                        </p>
+                      </div>
+                    )}
                   </td>
-                  <td className="p-4 text-xs text-gray-500 whitespace-nowrap">{formatVietnamDateTime(sess.createdAt)}</td>
-                  <td className="p-4 text-xs text-gray-500 whitespace-nowrap">
+                  <td className="p-3 text-xs text-gray-500 break-words">{formatVietnamDateTime(sess.createdAt)}</td>
+                  <td className="p-3 text-xs text-gray-500 break-words">
                     {formatVietnamDateTime(sess.expiresAt)}
                     {sess.revokedAt && (
                       <p className="text-red-500 font-semibold">Thu hồi: {formatVietnamDateTime(sess.revokedAt)}</p>
                     )}
                   </td>
-                  <td className="p-4 text-center">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${STATUS_BADGE[sess.status]}`}>
+                  <td className="p-3 text-center">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border whitespace-nowrap ${STATUS_BADGE[sess.status]}`}>
                       {STATUS_LABEL[sess.status] ?? sess.status}
                     </span>
                   </td>
-                  <td className="p-4 pr-6 text-center whitespace-nowrap">
+                  <td className="p-3 pr-4 text-center">
                     {sess.status === 'ACTIVE' ? (
-                      <div className="inline-flex items-center gap-1.5">
+                      <div className="flex flex-col items-stretch gap-1.5">
                         <button
                           onClick={() => setRevokeTarget({ kind: 'session', session: sess })}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-red-500 border border-red-200 hover:bg-red-50 transition-colors flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-1.5 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 hover:bg-red-50 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                           title="Thu hồi phiên này"
                         >
-                          <ShieldOff className="w-3.5 h-3.5" /> Thu hồi
+                          <ShieldOff className="w-3.5 h-3.5 shrink-0" /> Thu hồi
                         </button>
                         <button
                           onClick={() => setRevokeTarget({ kind: 'user', session: sess })}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-1.5 rounded-lg text-[11px] font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                           title="Thu hồi toàn bộ phiên của người dùng này"
                         >
-                          <UserX className="w-3.5 h-3.5" /> Cả user
+                          <UserX className="w-3.5 h-3.5 shrink-0" /> Cả user
                         </button>
                       </div>
                     ) : (

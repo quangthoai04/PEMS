@@ -45,10 +45,10 @@ public class VisitSetupProgressTemplateTests
     }
 
     [Fact]
-    public void It_declares_exactly_the_five_visit_facts_and_nothing_token_shaped()
+    public void It_declares_exactly_the_six_visit_facts_and_nothing_token_shaped()
     {
         Assert.Equal(
-            new[] { "campusName", "delegationName", "hostName", "plannedEnd", "plannedStart" },
+            new[] { "campusName", "delegationName", "hostEmail", "hostName", "plannedEnd", "plannedStart" },
             Template.DeclaredVariables.OrderBy(v => v).ToArray());
     }
 
@@ -155,7 +155,7 @@ public class VisitSetupProgressTemplateTests
 
         Assert.DoesNotContain("setupSummaryBlock", variablesText);
         Assert.DoesNotContain("actionBlock", variablesText);
-        Assert.Equal("campusName,delegationName,hostName,plannedEnd,plannedStart",
+        Assert.Equal("campusName,delegationName,hostEmail,hostName,plannedEnd,plannedStart",
             string.Join(",", variablesText.Split(',').OrderBy(v => v, StringComparer.Ordinal)));
     }
 
