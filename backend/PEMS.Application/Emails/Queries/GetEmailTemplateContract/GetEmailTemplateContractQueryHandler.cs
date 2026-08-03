@@ -13,10 +13,17 @@ public sealed class GetEmailTemplateContractQueryHandler
     : IRequestHandler<GetEmailTemplateContractQuery, EmailTemplateContractDto>
 {
     private readonly ICurrentUserService _currentUser;
+    private readonly PEMS.Application.Emails.Contact.IEmailContactPolicyStore _contactPolicies;
 
-    public GetEmailTemplateContractQueryHandler(ICurrentUserService currentUser) => _currentUser = currentUser;
+    public GetEmailTemplateContractQueryHandler(
+        ICurrentUserService currentUser,
+        PEMS.Application.Emails.Contact.IEmailContactPolicyStore contactPolicies)
+    {
+        _currentUser = currentUser;
+        _contactPolicies = contactPolicies;
+    }
 
-    public Task<EmailTemplateContractDto> Handle(
+    public async Task<EmailTemplateContractDto> Handle(
         GetEmailTemplateContractQuery request, CancellationToken cancellationToken)
     {
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
@@ -26,24 +33,37 @@ public sealed class GetEmailTemplateContractQueryHandler
             throw new ValidationException("Thiếu mã template email.");
 
         var code = request.TemplateCode.Trim();
-        var contract = EmailTemplateContracts.Describe(code, request.Language);
+
+        // The CONFIGURED requirement, not the shipped one. The editor uses this contract to decide
+        // whether a body may drop {{contactInformationBlock}}, and answering from the shipped default
+        // told an operator who had already lowered the policy to OPTIONAL that the block was still
+        // mandatory — a refusal with no setting on screen that could resolve it.
+        var contactRequirement = await PEMS.Application.Emails.Contact.EffectiveContactRequirement
+            .ResolveAsync(_contactPolicies, code, cancellationToken);
+
+        var contract = EmailTemplateContracts.Describe(code, request.Language, contactRequirement);
 
         if (contract is null)
         {
             // A historical row — some sent email or draft still references it — rather than a registered
             // system template. It is answered rather than 404'd so the editor can say "this template is
             // not part of the system catalog and cannot be edited" instead of showing a failed request.
-            return Task.FromResult(new EmailTemplateContractDto
+            return new EmailTemplateContractDto
             {
                 TemplateCode = code,
                 Module = "",
                 IsSystemTemplate = false,
                 SecurityClassification = EmailTemplateContracts.ClassificationStandard,
                 EditableFields = new List<string>(),
-            });
+                // No sender in any release, so no policy can resolve for it. Reported as unsupported
+                // rather than left at the field's default, which would offer a contact card on a row
+                // nothing can send.
+                ContactSupported = false,
+                ContactSettingsEditable = false,
+            };
         }
 
-        return Task.FromResult(new EmailTemplateContractDto
+        return new EmailTemplateContractDto
         {
             TemplateCode = contract.TemplateCode,
             Module = contract.Module,
@@ -70,12 +90,18 @@ public sealed class GetEmailTemplateContractQueryHandler
             ActionSupported = contract.ActionSupported,
             ActionRequired = contract.ActionRequired,
             SystemActionDescription = contract.SystemActionDescription,
+            ContactSupported = contract.ContactSupported,
+            ContactRequired = contract.ContactRequired,
+            ContactSettingsEditable = contract.ContactSettingsEditable,
+            ContactReasonCode = contract.ContactReasonCode,
+            ContactReasonVi = contract.ContactReasonVi,
+            ContactReasonEn = contract.ContactReasonEn,
             CarriesSecret = contract.CarriesSecret,
             AllowCc = contract.AllowCc,
             AllowBcc = contract.AllowBcc,
             SecurityClassification = contract.SecurityClassification,
             EditableFields = contract.EditableFields,
-        });
+        };
     }
 
     /// <summary>

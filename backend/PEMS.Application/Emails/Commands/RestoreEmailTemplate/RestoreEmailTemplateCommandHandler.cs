@@ -26,11 +26,16 @@ public sealed class RestoreEmailTemplateCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly PEMS.Application.Emails.Contact.IEmailContactPolicyStore _contactPolicies;
 
-    public RestoreEmailTemplateCommandHandler(IApplicationDbContext context, ICurrentUserService currentUser)
+    public RestoreEmailTemplateCommandHandler(
+        IApplicationDbContext context,
+        ICurrentUserService currentUser,
+        PEMS.Application.Emails.Contact.IEmailContactPolicyStore contactPolicies)
     {
         _context = context;
         _currentUser = currentUser;
+        _contactPolicies = contactPolicies;
     }
 
     public async Task<RestoreEmailTemplateResponse> Handle(
@@ -44,7 +49,13 @@ public sealed class RestoreEmailTemplateCommandHandler
             throw new NotFoundException(nameof(PEMS.Domain.Entities.Emails.EmailTemplate), request.EmailTemplateId);
 
         // ── 1. Only a registered system template can be restored ─────────────
-        var contract = EmailTemplateContracts.For(template.TemplateCode);
+        // Against the CONFIGURED contact requirement: restoring the shipped CONTENT must not be refused
+        // because the shipped POLICY says something the operator has since changed. The two are restored
+        // by two different buttons on purpose (§10), and this one does not touch the policy.
+        var contactRequirement = await PEMS.Application.Emails.Contact.EffectiveContactRequirement
+            .ResolveAsync(_contactPolicies, template.TemplateCode, cancellationToken);
+
+        var contract = EmailTemplateContracts.For(template.TemplateCode, contactRequirement);
         if (contract is null)
         {
             throw new ConflictException(

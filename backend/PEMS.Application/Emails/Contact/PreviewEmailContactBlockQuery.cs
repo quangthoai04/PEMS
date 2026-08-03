@@ -65,6 +65,13 @@ public sealed class PreviewEmailContactBlockQueryHandler
                 $"Mã template email '{code}' không nằm trong danh mục hệ thống.",
                 EmailErrorCodes.TemplateNotFound);
 
+        // A template that cannot carry the block previews as nothing at all — the same answer NONE gives,
+        // because that is what a recipient would get. Rendering the sample card here would show an
+        // operator a block this template can never send, which is the mismatch between screen and send
+        // that the capability split exists to close.
+        if (!EmailContactCapabilities.Supports(code))
+            return Task.FromResult(new EmailContactBlockPreviewDto(string.Empty, false));
+
         var language = EmailLanguages.Normalize(request.Language);
 
         var policy = new EmailContactPolicyResolution(

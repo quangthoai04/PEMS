@@ -91,6 +91,31 @@ public sealed class EmailTemplateContractDto
     /// <summary>The backend-provided description of the system action.</summary>
     public string? SystemActionDescription { get; set; }
 
+    /// <summary>
+    /// Whether this template may carry <c>{{contactInformationBlock}}</c> AT ALL.
+    ///
+    /// <para>
+    /// Not the same question as "does it show one today", which is the contact POLICY and moves between
+    /// NONE, OPTIONAL and REQUIRED under the operator's hand. This one is fixed by what the message is:
+    /// false on mail whose content is a one-time credential, and on mail addressed to the very person the
+    /// block would name. The screen shows the reason instead of the settings form when it is false.
+    /// </para>
+    /// </summary>
+    public bool ContactSupported { get; set; }
+
+    /// <summary>True when the EFFECTIVE policy is REQUIRED, so the body may not drop the block.</summary>
+    public bool ContactRequired { get; set; }
+
+    /// <summary>False when there is nothing on the contact card an operator could change.</summary>
+    public bool ContactSettingsEditable { get; set; }
+
+    /// <summary>
+    /// Stable reason for the capability above — matched by clients; the sentences are for people.
+    /// </summary>
+    public string? ContactReasonCode { get; set; }
+    public string? ContactReasonVi { get; set; }
+    public string? ContactReasonEn { get; set; }
+
     /// <summary>True when the message carries a one-time code or a personal action link.</summary>
     public bool CarriesSecret { get; set; }
 

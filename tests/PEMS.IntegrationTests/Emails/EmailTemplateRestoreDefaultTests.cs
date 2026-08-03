@@ -104,10 +104,10 @@ public sealed class EmailTemplateRestoreDefaultTests : IDisposable
     }
 
     private static RestoreEmailTemplateCommandHandler Restore(ApplicationDbContext db)
-        => new(db, new HoOperator());
+        => new(db, new HoOperator(), new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db));
 
     private static UpdateEmailTemplateCommandHandler Update(ApplicationDbContext db)
-        => new(db, new HoOperator());
+        => new(db, new HoOperator(), new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db));
 
     private static async Task<EmailTemplate> LoadAsync(ApplicationDbContext db, string code)
         => await db.EmailTemplates.AsNoTracking().FirstAsync(t => t.TemplateCode == code);

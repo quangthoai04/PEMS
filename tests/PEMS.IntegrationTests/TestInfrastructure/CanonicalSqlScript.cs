@@ -368,8 +368,26 @@ public static class CanonicalSqlScript
     /// Verified against MySQL 8.0.46: imported twice into the same database, exit 0 both times, 84
     /// tables, 31 email_templates, and row 70023's body_vi/body_en byte-identical to
     /// email-template-defaults.json after each run.
+    /// SEVENTEENTH BUMP — the Resend delivery provider's configuration row.
+    ///
+    /// Data-only, one statement, 29 added lines and nothing removed: an
+    /// <c>INSERT … ON DUPLICATE KEY UPDATE</c> seeding <c>api_configurations</c> with
+    /// <c>RESEND_EMAIL_DELIVERY</c> (status INACTIVE, no credential in the row — the token is
+    /// configuration, not seed data). It arrived with the Resend provider work merged from Dev
+    /// (25dfb00c, over 37f97b04) and that merge did not touch this constant, so every integration test
+    /// in the repository failed before reaching a database, all 636 of them reporting "Disposable MySQL
+    /// database is not reachable" — a sentence about the server, on a run where nothing was wrong with
+    /// the server.
+    ///
+    /// No schema change: no table, column, index, trigger or constraint is touched, and no email row is
+    /// altered. Bumped here rather than left red because the pin guards against an UNINTENDED change to
+    /// the script, and this one is the point of the commits that made it.
+    ///
+    /// Verified by the import the suite performs: the disposable-database manager runs this exact script
+    /// into a fresh database before any test executes, so a script MySQL would not accept cannot produce
+    /// a green run.
     public const string ExpectedSha256 =
-        "e836439b6479f38d4d0f0594847d63931956cdd2ecf75820ab8fe29e8f169ee3";
+        "6c6541660fc633527287bbc3e32639334cd8a22e97097291c79951c60d6bada8";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

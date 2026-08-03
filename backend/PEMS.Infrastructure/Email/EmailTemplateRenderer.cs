@@ -136,7 +136,9 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
             //
             // Authored mode is exempt by construction: there the block is APPENDED to the author's text
             // rather than substituted into it, so it cannot be dropped by what the row happens to say.
-            AssertRequiredTrustedBlockIsInBody(code, bodySource);
+            AssertRequiredTrustedBlockIsInBody(
+                code, bodySource,
+                contactBlockRequired: request.ContactBlockRequired);
         }
 
         // 7) + 8) Substitute. Values are untrusted text everywhere; only TrustedHtmlBlocks may be markup.
@@ -359,17 +361,33 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
     /// operator looking at a template screen, not the host who pressed send.
     /// </para>
     /// </summary>
-    private static void AssertRequiredTrustedBlockIsInBody(string code, string bodyTemplate)
+    /// <param name="contactBlockRequired">
+    /// Whether THIS send resolved a contact under a REQUIRED policy — see
+    /// <see cref="EmailRenderRequest.ContactBlockRequired"/> for why the answer comes from the caller and
+    /// not from the shipped defaults.
+    /// </param>
+    private static void AssertRequiredTrustedBlockIsInBody(
+        string code, string bodyTemplate, bool contactBlockRequired)
     {
-        // Deliberately NOT conditional on the caller having supplied the block. The contract says these
-        // blocks ARE this template's content, so a stored body without one is unsendable no matter who is
-        // asking — and the caller that forgot to build it is the one case where making the check
-        // caller-dependent would let both halves of the same fault cancel out into a silent success:
-        // nothing to substitute, nothing left unresolved, a mail that reads "here is the update" and
-        // shows none. The two faults are reported separately (this one names the row to repair; a body
-        // that still has the placeholder falls through to the unresolved-placeholder guard, which names
-        // the missing block), because they have different repairs.
-        foreach (var (block, errorCode) in EmailTemplateContracts.RequiredBlocksFor(code))
+        // The CONTENT blocks are checked unconditionally. The contract says they ARE this template's
+        // content, so a stored body without one is unsendable no matter who is asking — and the caller
+        // that forgot to build it is the one case where making the check caller-dependent would let both
+        // halves of the same fault cancel out into a silent success: nothing to substitute, nothing left
+        // unresolved, a mail that reads "here is the update" and shows none. The two faults are reported
+        // separately (this one names the row to repair; a body that still has the placeholder falls
+        // through to the unresolved-placeholder guard), because they have different repairs.
+        //
+        // NONE is passed so the contact block is NOT taken from the shipped policy here; it is added
+        // immediately below, on the narrower and truer condition the caller states.
+        var required = EmailTemplateContracts
+            .RequiredBlocksFor(code, EmailContactRequirement.NONE)
+            .ToList();
+
+        if (contactBlockRequired)
+            required.Add((EmailTrustedBlocks.ContactInformationBlock,
+                EmailErrorCodes.TemplateRequiredContactBlockNotInBody));
+
+        foreach (var (block, errorCode) in required)
         {
             if (bodyTemplate.Contains("{{" + block + "}}", StringComparison.Ordinal)) continue;
 

@@ -49,6 +49,19 @@ public sealed class RestoreEmailContactSettingsCommandHandler
                 EmailErrorCodes.TemplateNotFound);
         }
 
+        // Nothing to restore where nothing is configurable. Refused rather than treated as a harmless
+        // no-op: the button does not exist on that card, so a request reaching here is either a stale
+        // screen or a caller working from an assumption the catalog does not support, and both are worth
+        // being told about.
+        var capability = EmailContactCapabilities.For(code);
+        if (!capability.Supported)
+        {
+            throw new BusinessRuleException(
+                $"Mẫu '{code}' không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để phục hồi. "
+                + capability.ReasonVi,
+                EmailErrorCodes.ContactNotSupportedForTemplate);
+        }
+
         var shipped = EmailContactPolicyDefaults.For(code);
 
         if (shipped.Requirement == EmailContactRequirement.REQUIRED)

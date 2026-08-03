@@ -57,8 +57,16 @@ public sealed class PreviewEmailTemplateQueryHandler
             // A stand-in says where the block goes and what fills it; inventing a plausible name and
             // address would show an operator a person who does not exist and invite them to "correct"
             // contact details the template has no control over.
+            //
+            // Empty on a template that cannot carry the block: its body should not contain the
+            // placeholder at all (the validator refuses one), and if a legacy row still does, the honest
+            // preview is the nothing a recipient would get — not a card promising a contact this send
+            // path never resolves. Still SUPPLIED, so such a row previews rather than failing closed on
+            // an unresolved placeholder, which would say nothing about the real fault.
             [EmailTrustedBlocks.ContactInformationBlock] =
-                Contact.EmailContactHtmlRenderer.DisabledBlock(language),
+                Contact.EmailContactCapabilities.Supports(code)
+                    ? Contact.EmailContactHtmlRenderer.DisabledBlock(language)
+                    : string.Empty,
 
             // Supplied unconditionally because a template that does not use the placeholder never
             // substitutes it, while a template that does would otherwise fail the preview closed on an

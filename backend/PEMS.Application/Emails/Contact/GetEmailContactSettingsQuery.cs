@@ -36,7 +36,19 @@ namespace PEMS.Application.Emails.Contact;
 /// Which cascade level supplied this field: TEMPLATE / CAMPUS / DEPARTMENT / SYSTEM / SHIPPED_DEFAULT.
 /// One label per field because the cascade is applied per field.
 /// </param>
-/// <param name="AvailableRequirements">Legal values, from the backend rather than a list in the screen.</param>
+/// <param name="AvailableRequirements">
+/// Legal values, from the backend rather than a list in the screen — and NARROWED by capability, so the
+/// screen can render the radios it is given instead of deciding which ones to hide. Empty on a template
+/// that cannot carry the block at all; without NONE on one whose text tells the reader to make contact.
+/// </param>
+/// <param name="Capability">
+/// UNSUPPORTED / SUPPORTED / REQUIRED — whether the block may appear AT ALL, which is a different
+/// question from <paramref name="Requirement"/>. See <see cref="EmailContactCapabilities"/>.
+/// </param>
+/// <param name="Editable">
+/// False when there is nothing here an operator could change. The screen shows
+/// <paramref name="CapabilityReasonVi"/> in place of the form rather than a form that saves nothing.
+/// </param>
 public sealed record EmailContactSettingsDto(
     string TemplateCode,
     string Requirement,
@@ -64,7 +76,12 @@ public sealed record EmailContactSettingsDto(
     string HeadingSource,
     IReadOnlyList<string> AvailableRequirements,
     IReadOnlyList<string> AvailableSources,
-    IReadOnlyList<string> AvailableReplyToSources)
+    IReadOnlyList<string> AvailableReplyToSources,
+    string Capability,
+    bool Editable,
+    string CapabilityReasonCode,
+    string CapabilityReasonVi,
+    string CapabilityReasonEn)
 {
     /// <summary>True when at least one field is not this template's own — the only honest trigger for an
     /// "inheriting" notice on the screen.</summary>
@@ -103,11 +120,20 @@ public sealed class GetEmailContactSettingsQueryHandler
                 $"Mã template email '{code}' không nằm trong danh mục hệ thống.",
                 EmailErrorCodes.TemplateNotFound);
 
+        var capability = EmailContactCapabilities.For(code);
+
         // Resolved WITHOUT a campus or department: the template screen edits the template level, and
         // showing a value that only applies inside one campus would misdescribe what the operator is
         // about to change.
         var (policy, provenance) =
             await _policies.ResolveWithProvenanceAsync(code, null, null, cancellationToken);
+
+        // An UNSUPPORTED template reports NONE whatever a stored row says. A row that turned the block on
+        // for a credential-bearing mail is a fault to be told about, not a state to be presented as
+        // current: the send path will not render the block, the validator will not admit it into the
+        // body, and a screen that showed OPTIONAL here would be describing something that cannot happen.
+        if (!capability.Supported)
+            policy = policy with { Requirement = EmailContactRequirement.NONE };
 
         var hasOwnRow = await _db.EmailContactPolicies
             .AsNoTracking()
@@ -146,8 +172,13 @@ public sealed class GetEmailContactSettingsQueryHandler
             provenance.ShowSender,
             provenance.ReplyToSource,
             provenance.Heading,
-            Enum.GetNames<EmailContactRequirement>(),
+            capability.AvailableRequirements,
             Enum.GetNames<EmailContactSource>(),
-            Enum.GetNames<EmailReplyToSource>());
+            Enum.GetNames<EmailReplyToSource>(),
+            capability.Capability.ToString(),
+            capability.Supported,
+            capability.ReasonCode,
+            capability.ReasonVi,
+            capability.ReasonEn);
     }
 }

@@ -51,6 +51,15 @@ public sealed class EmailContactResolver : IEmailContactResolver
         var policy = await _policies.ResolveAsync(
             request.TemplateCode, request.CampusId, request.DepartmentId, cancellationToken);
 
+        // Capability outranks configuration, at the send as well as on the screen. A stored row that
+        // switched the block on for a credential-bearing mail — written before the settings endpoint
+        // refused such a write, or by hand — must not be able to put a contact card on a message whose
+        // whole content is a one-time link. Reported as NONE rather than refused: a send is the wrong
+        // place to discover a policy row is wrong, and the mail without the block is exactly the mail
+        // this template is supposed to be.
+        if (!EmailContactCapabilities.Supports(request.TemplateCode))
+            policy = policy with { Requirement = EmailContactRequirement.NONE };
+
         if (!policy.RendersBlock)
             return new EmailContactResolution(policy, null, string.Empty, null);
 

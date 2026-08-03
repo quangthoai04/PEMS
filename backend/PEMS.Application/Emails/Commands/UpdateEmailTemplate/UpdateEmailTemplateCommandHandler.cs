@@ -28,11 +28,16 @@ public sealed class UpdateEmailTemplateCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly PEMS.Application.Emails.Contact.IEmailContactPolicyStore _contactPolicies;
 
-    public UpdateEmailTemplateCommandHandler(IApplicationDbContext context, ICurrentUserService currentUser)
+    public UpdateEmailTemplateCommandHandler(
+        IApplicationDbContext context,
+        ICurrentUserService currentUser,
+        PEMS.Application.Emails.Contact.IEmailContactPolicyStore contactPolicies)
     {
         _context = context;
         _currentUser = currentUser;
+        _contactPolicies = contactPolicies;
     }
 
     public async Task<UpdateEmailTemplateResponse> Handle(
@@ -52,7 +57,13 @@ public sealed class UpdateEmailTemplateCommandHandler
         // A row whose code is not in the registry is historical: it survives because a sent email or a
         // draft still points at it, and nothing in any release sends it. Editing it would change a
         // message that can never go out again, so it is refused rather than quietly accepted.
-        var contract = EmailTemplateContracts.For(template.TemplateCode);
+        // Judged against the CONFIGURED contact requirement, not the shipped one, so the save agrees with
+        // what the editor was told and with what the send will do. Reading the shipped default here made
+        // the two disagree in both directions on any template whose policy had been changed.
+        var contactRequirement = await PEMS.Application.Emails.Contact.EffectiveContactRequirement
+            .ResolveAsync(_contactPolicies, template.TemplateCode, cancellationToken);
+
+        var contract = EmailTemplateContracts.For(template.TemplateCode, contactRequirement);
         if (contract is null)
         {
             throw new ConflictException(

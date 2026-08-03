@@ -84,6 +84,11 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             new EmailRenderRequest(request.TemplateCode, request.Language, request.Variables, trustedBlocks)
             {
                 Content = request.Content,
+                // The RESOLVED policy, not the shipped one: whether a body may go out without the card is
+                // decided by what this send actually produced, so the renderer's refusal can never
+                // contradict a save the editor accepted under a policy an operator had changed.
+                ContactBlockRequired =
+                    contactBlock?.Policy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED,
             },
             cancellationToken);
 

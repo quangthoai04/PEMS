@@ -300,8 +300,10 @@ public sealed class EmailTemplateContractTests
     [Fact]
     public void No_secret_bearing_template_permits_copies()
     {
+        // Lambda rather than a method group: `For` takes an optional contact-requirement argument, so a
+        // method group would bind to Select's (item, index) overload and pass the index as a policy.
         var offenders = SystemEmailTemplates.AllCodes
-            .Select(EmailTemplateContracts.For)
+            .Select(code => EmailTemplateContracts.For(code))
             .Where(c => c!.CarriesSecret && (c.AllowCc || c.AllowBcc))
             .Select(c => c!.TemplateCode)
             .ToList();

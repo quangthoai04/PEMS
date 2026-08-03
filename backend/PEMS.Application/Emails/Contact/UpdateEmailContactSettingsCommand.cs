@@ -76,6 +76,25 @@ public sealed class UpdateEmailContactSettingsCommandHandler
         var source = ParseEnum<EmailContactSource>(request.ContactSource, "nguồn đầu mối");
         var replyTo = ParseEnum<EmailReplyToSource>(request.ReplyToSource, "nguồn Reply-To");
 
+        // ── Capability, before any value is looked at ────────────────────────
+        // Fail-closed and FIRST: a template that cannot carry the block has no combination of the fields
+        // below that would make this request meaningful. Accepting it — which is what happened before —
+        // wrote a policy the renderer ignores and the content validator contradicts, and the operator
+        // discovered the contradiction only when the block they had just been invited to add was refused.
+        var capability = EmailContactCapabilities.For(code);
+
+        if (!capability.Supported)
+            throw new BusinessRuleException(
+                $"Mẫu '{code}' không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để lưu. "
+                + capability.ReasonVi,
+                EmailErrorCodes.ContactNotSupportedForTemplate);
+
+        if (capability.BlockMandated && requirement == EmailContactRequirement.NONE)
+            throw new BusinessRuleException(
+                $"Không đặt được mức Không hiển thị cho '{code}': {capability.ReasonVi} "
+                + "Hãy chọn Tùy chọn hoặc Bắt buộc.",
+                EmailErrorCodes.ContactConfigurationInvalid);
+
         // The same two rules the resolver enforces, applied at SAVE time so the operator is told which
         // combination is wrong while they are looking at it — rather than discovering it when a send is
         // refused days later.

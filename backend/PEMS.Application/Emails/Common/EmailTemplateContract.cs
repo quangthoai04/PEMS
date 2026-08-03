@@ -60,7 +60,13 @@ public sealed record EmailTemplateContract(
     bool AllowCc,
     bool AllowBcc,
     string SecurityClassification,
-    IReadOnlyList<string> EditableFields)
+    IReadOnlyList<string> EditableFields,
+    bool ContactSupported = true,
+    bool ContactRequired = false,
+    bool ContactSettingsEditable = true,
+    string? ContactReasonCode = null,
+    string? ContactReasonVi = null,
+    string? ContactReasonEn = null)
 {
     /// <summary>Every system block this template may carry, required or not.</summary>
     public IReadOnlyList<string> AllowedSystemBlocks =>
@@ -70,10 +76,21 @@ public sealed record EmailTemplateContract(
     public static bool IsSystemBlock(string placeholderName)
         => EmailTrustedBlocks.All.Contains(placeholderName);
 
-    /// <summary>True when this template may carry the given block.</summary>
+    /// <summary>
+    /// True when this template may carry the given block.
+    ///
+    /// <para>
+    /// The two named blocks answer from their CAPABILITY flag rather than from the lists, and that is not
+    /// a shortcut: the lists say where a block sits today — required, optional or absent because the
+    /// current policy renders none — while this question is whether it may be written at all. Reading the
+    /// lists conflated the two, so a supported template whose policy was momentarily NONE refused a block
+    /// an operator was entitled to add, which is the refusal this whole change exists to remove.
+    /// </para>
+    /// </summary>
     public bool AllowsSystemBlock(string placeholderName)
     {
         if (placeholderName == EmailTrustedBlocks.ActionBlock) return ActionSupported;
+        if (placeholderName == EmailTrustedBlocks.ContactInformationBlock) return ContactSupported;
         return RequiredSystemBlocks.Contains(placeholderName, StringComparer.Ordinal)
                || OptionalSystemBlocks.Contains(placeholderName, StringComparer.Ordinal);
     }
@@ -158,7 +175,15 @@ public static class EmailTemplateContracts
     /// to give. Same symptom, different person fixes it.
     /// </para>
     /// </summary>
-    public static IReadOnlyList<(string Block, string ErrorCode)> RequiredBlocksFor(string? templateCode)
+    /// <param name="effectiveContactRequirement">
+    /// The contact requirement in force for this template after the stored cascade has been applied, or
+    /// null to fall back to the shipped default. Passed in by callers that have already resolved the
+    /// policy — a body must be judged against the requirement the send will actually use, not against the
+    /// one this application happened to ship with.
+    /// </param>
+    public static IReadOnlyList<(string Block, string ErrorCode)> RequiredBlocksFor(
+        string? templateCode,
+        Domain.Enums.EmailContactRequirement? effectiveContactRequirement = null)
     {
         if (templateCode is null) return Array.Empty<(string, string)>();
 
@@ -167,7 +192,11 @@ public static class EmailTemplateContracts
         if (RequiredTrustedBlockByTemplate.TryGetValue(templateCode, out var contentBlock))
             required.Add((contentBlock, EmailErrorCodes.TemplateRequiredBlockNotInBody));
 
-        if (Contact.EmailContactPolicyDefaults.RequiresContactBlock(templateCode))
+        var requirement = Contact.EmailContactCapabilities.Supports(templateCode)
+            ? effectiveContactRequirement ?? Contact.EmailContactPolicyDefaults.For(templateCode).Requirement
+            : Domain.Enums.EmailContactRequirement.NONE;
+
+        if (requirement == Domain.Enums.EmailContactRequirement.REQUIRED)
             required.Add((EmailTrustedBlocks.ContactInformationBlock,
                 EmailErrorCodes.TemplateRequiredContactBlockNotInBody));
 
@@ -175,7 +204,15 @@ public static class EmailTemplateContracts
     }
 
     /// <summary>The contract for a system template, or null when the code is not a system template.</summary>
-    public static EmailTemplateContract? For(string? templateCode)
+    /// <param name="effectiveContactRequirement">
+    /// The stored contact requirement for this template, when the caller has resolved it. Null means
+    /// "use the shipped default" — correct for the pure, database-free callers (tests, parity checks)
+    /// and wrong for anything judging a body an operator is about to save, which is why every handler
+    /// that can resolve the policy passes it.
+    /// </param>
+    public static EmailTemplateContract? For(
+        string? templateCode,
+        Domain.Enums.EmailContactRequirement? effectiveContactRequirement = null)
     {
         var template = SystemEmailTemplates.Find(templateCode);
         if (template is null) return null;
@@ -228,15 +265,25 @@ public static class EmailTemplateContracts
         if (RequiredTrustedBlockByTemplate.TryGetValue(template.TemplateCode, out var mustHaveBlock))
             requiredBlocks.Add(mustHaveBlock);
 
-        // The contact block is allowed wherever the policy renders one and required where the policy is
-        // REQUIRED, so the editor refuses a body that drops it at SAVE time — where the operator made the
-        // change and can still see what they deleted — rather than at send time in front of a recipient.
-        var contactPolicy = Contact.EmailContactPolicyDefaults.For(template.TemplateCode);
-        if (contactPolicy.RendersBlock)
-        {
-            var isRequired = contactPolicy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED;
-            (isRequired ? requiredBlocks : optionalBlocks).Add(EmailTrustedBlocks.ContactInformationBlock);
-        }
+        // The contact block is allowed wherever the template's CAPABILITY permits one — not merely where
+        // the current policy renders one — and required where the EFFECTIVE requirement is REQUIRED, so
+        // the editor refuses a body that drops it at SAVE time, where the operator made the change and
+        // can still see what they deleted, rather than at send time in front of a recipient.
+        //
+        // Reading capability for "may it be here" and the effective requirement for "must it be here" is
+        // what closes the two-sided drift: an operator who switches a supported template to OPTIONAL may
+        // now add the block (previously refused, because the shipped default said NONE), and one who
+        // switches a REQUIRED-by-default template down to OPTIONAL may remove it (previously refused,
+        // because the shipped default said REQUIRED while the stored policy no longer did).
+        var capability = Contact.EmailContactCapabilities.For(template.TemplateCode);
+        var contactRequirement = capability.Supported
+            ? effectiveContactRequirement
+              ?? Contact.EmailContactPolicyDefaults.For(template.TemplateCode).Requirement
+            : Domain.Enums.EmailContactRequirement.NONE;
+        var contactRequired = contactRequirement == Domain.Enums.EmailContactRequirement.REQUIRED;
+
+        if (capability.Supported)
+            (contactRequired ? requiredBlocks : optionalBlocks).Add(EmailTrustedBlocks.ContactInformationBlock);
 
         // Computed over variables AND blocks: a trusted block is the only route by which markup — and
         // therefore a live one-time URL — enters a rendered message, so a subject that interpolates one
@@ -278,15 +325,26 @@ public static class EmailTemplateContracts
             AllowCc: template.AllowsCopies && !carriesSecret,
             AllowBcc: template.AllowsCopies && !carriesSecret,
             carriesSecret ? ClassificationSensitive : ClassificationStandard,
-            EditableFieldNames);
+            EditableFieldNames,
+            ContactSupported: capability.Supported,
+            ContactRequired: contactRequired,
+            // Nothing on the settings card is editable when the block can never render: the screen shows
+            // the reason instead of a form whose every value would be inert.
+            ContactSettingsEditable: capability.Supported,
+            ContactReasonCode: capability.ReasonCode,
+            ContactReasonVi: capability.ReasonVi,
+            ContactReasonEn: capability.ReasonEn);
     }
 
     /// <summary>
     /// The contract with its variables described in one language — labels and preview samples included.
     /// </summary>
-    public static EmailTemplateContract? Describe(string? templateCode, string? language)
+    public static EmailTemplateContract? Describe(
+        string? templateCode,
+        string? language,
+        Domain.Enums.EmailContactRequirement? effectiveContactRequirement = null)
     {
-        var contract = For(templateCode);
+        var contract = For(templateCode, effectiveContactRequirement);
         if (contract is null) return null;
 
         var lang = EmailLanguages.Normalize(language);

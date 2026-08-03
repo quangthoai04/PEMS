@@ -301,4 +301,17 @@ public static class EmailErrorCodes
     /// </para>
     /// </summary>
     public const string ContactPolicyStoreUnavailable = "EMAIL_CONTACT_POLICY_STORE_UNAVAILABLE";
+
+    /// <summary>
+    /// A contact-settings write was attempted on a template that cannot carry the block at all — a
+    /// credential-bearing mail, or one addressed to the contact themselves.
+    ///
+    /// <para>
+    /// Its own code rather than <see cref="ContactConfigurationInvalid"/>, because the two ask for
+    /// different repairs: an invalid configuration is one an operator fixes by changing a value, and this
+    /// one has no value that would make it valid. The screen answers it by explaining why the template has
+    /// no contact settings, not by highlighting a field.
+    /// </para>
+    /// </summary>
+    public const string ContactNotSupportedForTemplate = "EMAIL_TEMPLATE_CONTACT_NOT_SUPPORTED";
 }

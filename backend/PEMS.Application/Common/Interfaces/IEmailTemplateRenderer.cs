@@ -79,6 +79,21 @@ public sealed record EmailRenderRequest(
     /// </summary>
     public PEMS.Application.Emails.Common.SystemEmailContent Content { get; init; }
         = PEMS.Application.Emails.Common.SystemEmailContent.FromTemplate.Instance;
+
+    /// <summary>
+    /// True when THIS send resolved a contact under a REQUIRED policy, so a body with nowhere to put the
+    /// card is unsendable rather than merely plainer.
+    ///
+    /// <para>
+    /// Stated by the caller rather than derived by the renderer, and that is the fix rather than an
+    /// implementation detail. The renderer used to answer the question from the SHIPPED policy, which
+    /// stopped being true the moment an operator lowered the level: the editor accepted a body without
+    /// the block — correctly, the stored policy said OPTIONAL — and every send was then refused citing a
+    /// requirement no screen still showed. It cannot be derived from "was a block passed in" either,
+    /// because the template PREVIEW hands one to every template it renders.
+    /// </para>
+    /// </summary>
+    public bool ContactBlockRequired { get; init; }
 }
 
 /// <summary>
