@@ -216,10 +216,34 @@ export interface EmailContactSettings {
   replyToSourceSource: EmailContactPolicyLevel;
   /** The two headings share one label: they are stored on one row and edited as a pair. */
   headingSource: EmailContactPolicyLevel;
+  /**
+   * The requirement levels this template may be set to, already narrowed by capability: empty when the
+   * block can never appear, and without `NONE` when the wording tells the recipient to make contact.
+   * The card renders what it is given rather than deciding which options to hide.
+   */
   availableRequirements: string[];
   availableSources: string[];
   availableReplyToSources: string[];
+  /**
+   * Whether the block may appear AT ALL, which is not the same question as `requirement`.
+   *
+   * `UNSUPPORTED` — the message is a one-time credential, or is addressed to the very person the block
+   * would name; there is no configuration, and the card says why instead of showing a form.
+   * `REQUIRED` — the text instructs the recipient to make contact, so `NONE` is not on offer.
+   * `SUPPORTED` — the administrator chooses.
+   *
+   * Optional on the type because an API built before the capability split answers without it; absent is
+   * read as `SUPPORTED`, which is how every template behaved before.
+   */
+  capability?: EmailContactCapability;
+  /** False when nothing on this card can be changed. */
+  editable?: boolean;
+  capabilityReasonCode?: string;
+  capabilityReasonVi?: string;
+  capabilityReasonEn?: string;
 }
+
+export type EmailContactCapability = 'UNSUPPORTED' | 'SUPPORTED' | 'REQUIRED';
 
 /**
  * Which cascade level supplied one field's effective value. Per field, because the cascade is applied

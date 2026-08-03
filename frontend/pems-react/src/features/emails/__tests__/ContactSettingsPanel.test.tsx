@@ -57,6 +57,31 @@ const CONFIGURED = {
   availableRequirements: ['NONE', 'OPTIONAL', 'REQUIRED'],
   availableSources: ['HOST', 'SENDER', 'HOST_THEN_SENDER', 'CAMPUS_DEFAULT', 'DEPARTMENT_DEFAULT', 'SUPPORT_CONTACT'],
   availableReplyToSources: ['NONE', 'CONTACT', 'SENDER'],
+  capability: 'SUPPORTED',
+  editable: true,
+  capabilityReasonCode: 'OPERATOR_CHOICE',
+  capabilityReasonVi: 'Mẫu này có thể kèm khối thông tin liên hệ; mức hiển thị do người quản trị chọn.',
+};
+
+/**
+ * A template that can never carry the block: the message IS a one-time credential.
+ *
+ * The backend answers with an empty `availableRequirements` and `editable: false`, so the card has
+ * nothing to render a form out of — which is deliberate. Sending the full set of levels for a template
+ * whose policy the API refuses to write is how an operator came to set "Tùy chọn" on
+ * ACCOUNT_EMAIL_CONFIRMATION and then be refused the block that setting invites.
+ */
+const UNSUPPORTED = {
+  ...CONFIGURED,
+  templateCode: 'ACCOUNT_EMAIL_CONFIRMATION',
+  requirement: 'NONE',
+  bodyCarriesBlockVi: false,
+  bodyCarriesBlockEn: false,
+  availableRequirements: [] as string[],
+  capability: 'UNSUPPORTED',
+  editable: false,
+  capabilityReasonCode: 'ONE_TIME_CREDENTIAL',
+  capabilityReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
 };
 
 /** An axios-shaped rejection. */
@@ -121,14 +146,109 @@ describe('card 4 renders the real form', () => {
   });
 });
 
+/**
+ * Capability — whether the block may appear AT ALL, which is not the same question as the requirement
+ * level (§2, §5).
+ *
+ * The reported defect ran through both halves of this distinction. The card offered the whole form on
+ * ACCOUNT_EMAIL_CONFIRMATION, whose message is a one-time confirmation link; an operator chose "Tùy
+ * chọn", saved it, added {{contactInformationBlock}} — and met EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED,
+ * with nothing on screen connecting the refusal to the setting that had invited it.
+ */
+describe('a template that cannot carry the block says so, and shows no form', () => {
+  const renderUnsupported = async (props: Record<string, unknown> = {}) => {
+    getEmailContactSettings.mockResolvedValue({ data: UNSUPPORTED });
+    render(<ContactSettingsPanel templateCode="ACCOUNT_EMAIL_CONFIRMATION" canEdit {...props} />);
+    return screen.findByTestId('contact-settings-unsupported');
+  };
+
+  it('states the reason rather than an error', async () => {
+    const card = await renderUnsupported();
+
+    expect(card).toHaveAttribute('data-capability', 'UNSUPPORTED');
+    expect(card).toHaveTextContent('không dùng khối thông tin liên hệ');
+    expect(card).toHaveTextContent('liên kết xác nhận dùng một lần');
+    expect(card).toHaveTextContent('Không có cấu hình cần chỉnh sửa');
+    expect(screen.queryByTestId('contact-settings-error')).not.toBeInTheDocument();
+  });
+
+  it('offers no control, no save and no restore', async () => {
+    await renderUnsupported();
+
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Lấy đầu mối từ')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Email công việc')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Tiêu đề khối (VI)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Reply-To')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lưu cấu hình liên hệ')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }))
+      .not.toBeInTheDocument();
+
+    expect(updateEmailContactSettings).not.toHaveBeenCalled();
+    expect(restoreEmailContactSettingsDefault).not.toHaveBeenCalled();
+  });
+
+  /** Nothing to preview, and nothing to ask for: the block cannot render on this template. */
+  it('hands up an empty block without asking the server to render one', async () => {
+    const onBlockPreviewChange = vi.fn();
+    await renderUnsupported({ onBlockPreviewChange });
+
+    await waitFor(() => expect(onBlockPreviewChange).toHaveBeenCalledWith(''));
+    await new Promise(r => setTimeout(r, 400));
+    expect(previewEmailContactBlock).not.toHaveBeenCalled();
+  });
+
+  it('never reports unsaved changes, because there is nothing to change', async () => {
+    const onDirtyChange = vi.fn();
+    await renderUnsupported({ onDirtyChange });
+
+    expect(onDirtyChange).toHaveBeenCalledWith(false);
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+  });
+});
+
+/**
+ * A template whose wording tells the recipient to make contact may be OPTIONAL or REQUIRED, but not
+ * NONE: choosing it would leave the instruction with no address, and the API refuses the write. The
+ * levels come from the backend already narrowed, so the card cannot disagree with what will be accepted.
+ */
+describe('a template whose text instructs the reader to make contact', () => {
+  it('does not offer "Không hiển thị", and says why', async () => {
+    getEmailContactSettings.mockResolvedValue({
+      data: {
+        ...CONFIGURED,
+        capability: 'REQUIRED',
+        availableRequirements: ['OPTIONAL', 'REQUIRED'],
+        capabilityReasonVi:
+          'Nội dung mẫu này có câu yêu cầu người nhận liên hệ, nên email phải kèm khối thông tin liên hệ.',
+      },
+    });
+
+    renderPanel();
+    await screen.findByTestId('contact-settings-panel');
+
+    const radios = screen.getAllByRole('radio') as HTMLInputElement[];
+    expect(radios).toHaveLength(2);
+    // Asserted on the CONTROL, not on the words: the sentence explaining the omission names the level
+    // it is explaining, and matching text alone would fail on the explanation itself.
+    expect(screen.queryByRole('radio', { name: /Không hiển thị/ })).not.toBeInTheDocument();
+
+    expect(screen.getByTestId('contact-settings-level-locked'))
+      .toHaveTextContent('phải kèm khối thông tin liên hệ');
+  });
+});
+
 describe('a NO_CONTACT template is a state, not a failure', () => {
   it('says so in words instead of showing an error', async () => {
     getEmailContactSettings.mockResolvedValue({
-      data: { ...CONFIGURED, templateCode: 'AUTH_PASSWORD_RESET_OTP', requirement: 'NONE',
+      // SUPPORTED with the level at NONE — the operator's choice, not a capability. A template that
+      // cannot carry the block at all is the case above, and it looks nothing like this one.
+      data: { ...CONFIGURED, templateCode: 'ACCOUNT_ROLE_CHANGED', requirement: 'NONE',
+              capability: 'SUPPORTED',
               bodyCarriesBlockVi: false, bodyCarriesBlockEn: false },
     });
 
-    renderPanel('AUTH_PASSWORD_RESET_OTP');
+    renderPanel('ACCOUNT_ROLE_CHANGED');
 
     const notice = await screen.findByTestId('contact-settings-no-contact');
     expect(notice).toHaveTextContent('Không hiển thị thông tin liên hệ');

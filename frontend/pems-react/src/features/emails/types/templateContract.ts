@@ -74,6 +74,78 @@ export const SYSTEM_BLOCK_LABELS: Record<string, { title: string; hint: string }
 /** The four editable content fields, matching the API's property names. */
 export type TemplateContentField = 'subjectVi' | 'subjectEn' | 'bodyVi' | 'bodyEn';
 
+/** One system block as the editor lists it: named once, with ONE description. */
+export interface SystemBlockNotice {
+  name: string;
+  required: boolean;
+  /** The backend's description of this template's own action, or the generic wording for the block. */
+  description: string;
+  /** True when the sentence came from the backend for THIS template rather than from the table above. */
+  fromBackend: boolean;
+}
+
+/**
+ * Every system block this template may carry, each appearing EXACTLY ONCE.
+ *
+ * This is the fix for the duplicated action hint. The screen used to render the action block from
+ * `actionSupported` — with the backend's specific description — and then render the required/optional
+ * lists as well, which contain the same block, with the generic sentence from `SYSTEM_BLOCK_LABELS`. An
+ * operator opening ACCOUNT_EMAIL_CONFIRMATION was told both that the system attaches a "Xác nhận email"
+ * button and that it attaches "đồng ý / từ chối / xem chi tiết" buttons, one under the other. The second
+ * sentence was not merely redundant, it was false for that template.
+ *
+ * The rule is stated once, here: a block is listed once, and a description the backend supplied for this
+ * template beats the generic one. Nothing is concatenated.
+ */
+export function describeSystemBlocks(contract: TemplateContract): SystemBlockNotice[] {
+  const seen = new Set<string>();
+  const notices: SystemBlockNotice[] = [];
+
+  const add = (name: string, required: boolean) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+
+    // Only the action block has per-template metadata today. It is read from the contract rather than
+    // from a list in this file, so a template with no action spec shows no action block at all — which
+    // is the second half of the same defect: the generic list would otherwise announce buttons on a
+    // template whose send path attaches none.
+    const specific = name === 'actionBlock' ? contract.systemActionDescription : null;
+
+    notices.push({
+      name,
+      required,
+      description: specific
+        ?? SYSTEM_BLOCK_LABELS[name]?.hint
+        ?? 'Hệ thống điền nội dung khi gửi.',
+      fromBackend: Boolean(specific),
+    });
+  };
+
+  for (const name of contract.requiredSystemBlocks ?? []) add(name, true);
+  for (const name of contract.optionalSystemBlocks ?? []) add(name, false);
+
+  return notices;
+}
+
+/** True unless the backend says this template can never carry the contact block. */
+export function contactSupportedOf(contract: Pick<TemplateContract, 'contactSupported'>): boolean {
+  return contract.contactSupported !== false;
+}
+
+/**
+ * Removes every occurrence of one system block from a piece of content.
+ *
+ * Used by the "xóa khối không hợp lệ" action, which is offered — never applied automatically. A block an
+ * operator did not expect to be illegal is still text they wrote around; deleting it under them would be
+ * an edit they never made and cannot see.
+ */
+export function removeSystemBlock(content: string, name: string): string {
+  return content.replace(
+    new RegExp(`(?:\\{\\{|%7B%7B)\\s*${name}\\s*(?:\\}\\}|%7D%7D)`, 'g'),
+    '',
+  );
+}
+
 export interface TemplateContractVariable {
   name: string;
   /** Human label in the requested language. */
@@ -130,6 +202,23 @@ export interface TemplateContract {
   actionRequired: boolean;
   /** The backend-provided description of the system action. */
   systemActionDescription: string | null;
+  /**
+   * Whether this template may carry `{{contactInformationBlock}}` AT ALL — a different question from
+   * whether it shows one today, which is the contact policy in card 4.
+   *
+   * Optional on the type because an API built before the capability split answers without it; absent is
+   * read as "supported", which is what every template was treated as before. `contactCapabilityOf`
+   * is the only place that decision is made.
+   */
+  contactSupported?: boolean;
+  /** True when the effective policy is REQUIRED, so the body may not drop the block. */
+  contactRequired?: boolean;
+  /** False when there is nothing on the contact card an operator could change. */
+  contactSettingsEditable?: boolean;
+  /** Stable reason for the capability — matched on; the sentences below are for people. */
+  contactReasonCode?: string | null;
+  contactReasonVi?: string | null;
+  contactReasonEn?: string | null;
   /** The message carries a one-time code or a personal action link. */
   carriesSecret: boolean;
   allowCc: boolean;
@@ -214,13 +303,25 @@ export function validateContent(
       // "does not belong to this template": true of the variable list, and irrelevant, because the
       // block was never in it and was never supposed to be.
       if (isSystemBlock(name)) {
-        if (!contract.requiredSystemBlocks.includes(name)
-            && !contract.optionalSystemBlocks.includes(name)) {
+        // The contact block answers from CAPABILITY, mirroring `EmailTemplateContract.AllowsSystemBlock`.
+        // Reading the two lists alone said "not allowed" whenever the current policy happened to render
+        // nothing — so an operator who had just switched the level to Tùy chọn was refused the block that
+        // setting exists to place, and the message named neither the setting nor the reason.
+        const allowed = name === 'contactInformationBlock'
+          ? contactSupportedOf(contract)
+          : contract.requiredSystemBlocks.includes(name)
+            || contract.optionalSystemBlocks.includes(name);
+
+        if (!allowed) {
+          const why = name === 'contactInformationBlock' && contract.contactReasonVi
+            ? ` ${contract.contactReasonVi}`
+            : '';
+
           issues.push({
             field,
             code: TEMPLATE_ERROR_CODES.systemBlockNotAllowed,
             variableName: name,
-            messageVi: `Khối hệ thống {{${name}}} không dùng được ở mẫu ${contract.templateCode}; khi gửi sẽ không có gì thay thế vào chỗ này.`,
+            messageVi: `Khối hệ thống {{${name}}} không dùng được ở mẫu ${contract.templateCode}; khi gửi sẽ không có gì thay thế vào chỗ này. Hãy xóa khối khỏi nội dung.${why}`,
             messageEn: `System block {{${name}}} is not available on ${contract.templateCode}.`,
             severity: 'ERROR',
           });

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Ban, Info, Loader2, Save, ShieldAlert, RotateCcw } from 'lucide-react';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import {
   emailsApi,
-  type EmailContactPolicyLevel,
+  type EmailContactCapability,
   type EmailContactSettings,
   type EmailContactSettingsPayload,
 } from '../api/emailsApi';
@@ -139,6 +139,15 @@ interface Props {
    * toggles change rather than only after a save. '' means this policy renders no block.
    */
   onBlockPreviewChange?: (html: string) => void;
+  /**
+   * Reports whether this card holds unsaved changes.
+   *
+   * The contact settings and the template content are two separate saves against two separate endpoints,
+   * so "there are unsaved changes" is two answers, not one. The editor asks for this one so it can name
+   * which group is dirty when the screen is closed, instead of the single vague sentence that left an
+   * operator guessing which of the two buttons they had forgotten to press.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Toast notification callback */
   pushToast?: (type: 'success' | 'error', msg: string) => void;
 }
@@ -148,6 +157,7 @@ export function ContactSettingsPanel({
   canEdit,
   language = 'VI',
   onBlockPreviewChange,
+  onDirtyChange,
   pushToast,
 }: Props) {
   const [settings, setSettings] = useState<EmailContactSettings | null>(null);
@@ -183,6 +193,25 @@ export function ContactSettingsPanel({
   useEffect(() => { void load(); }, [load]);
 
   /**
+   * Whether this card holds unsaved changes — computed here, above the early returns, because the editor
+   * has to be told even while the card is loading or has failed (in both of those states the honest
+   * answer is "nothing unsaved", and a stale `true` from a previous template would warn about work that
+   * does not exist).
+   */
+  const dirty = Boolean(draft && settings)
+    && JSON.stringify(draft) !== JSON.stringify(toPayload(settings!));
+
+  const reportDirty = useRef(onDirtyChange);
+  reportDirty.current = onDirtyChange;
+
+  useEffect(() => { reportDirty.current?.(dirty); }, [dirty]);
+
+  // A card that unmounts, or moves to another template, is no longer holding anything. Without this the
+  // editor would keep warning about unsaved contact settings after the operator closed the very card
+  // that had them.
+  useEffect(() => () => reportDirty.current?.(false), [templateCode]);
+
+  /**
    * Re-render the block whenever the draft changes.
    *
    * Debounced because typing a heading would otherwise fire a request per keystroke. Rendering happens
@@ -197,6 +226,14 @@ export function ContactSettingsPanel({
     if (!onBlockPreviewChange) return;
     if (!draft) return;
 
+    // A template that cannot carry the block renders nothing, and the backend says so too — asking it
+    // is a round trip whose answer is already known, and whose failure would be reported as an empty
+    // pane for a reason that has nothing to do with this template.
+    if (settings?.capability === 'UNSUPPORTED') {
+      onBlockPreviewChange('');
+      return;
+    }
+
     let cancelled = false;
     const timer = setTimeout(() => {
       void (async () => {
@@ -210,7 +247,7 @@ export function ContactSettingsPanel({
     }, 250);
 
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [draft, templateCode, language, onBlockPreviewChange]);
+  }, [draft, templateCode, language, onBlockPreviewChange, settings?.capability]);
 
   const save = async () => {
     if (!draft) return;
@@ -274,6 +311,35 @@ export function ContactSettingsPanel({
     );
   }
 
+  /**
+   * A template that cannot carry the block gets a sentence, not a form.
+   *
+   * Every control below would be inert on one: the requirement has no legal value other than NONE, the
+   * source resolves nothing, the toggles decide the visibility of a block that never renders, and both
+   * buttons are refused by the API. Showing them anyway is what produced the reported defect — an
+   * operator set "Tùy chọn" on ACCOUNT_EMAIL_CONFIRMATION, saved it, added the block the setting had
+   * just invited, and met EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED with nothing on screen explaining it.
+   */
+  const capability: EmailContactCapability = settings?.capability ?? 'SUPPORTED';
+
+  if (status === 'ready' && settings && capability === 'UNSUPPORTED') {
+    return (
+      <div className="flex items-start gap-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded p-3"
+           data-testid="contact-settings-unsupported"
+           data-capability={capability}>
+        <Ban className="w-4 h-4 shrink-0 mt-0.5 text-gray-500" />
+        <span className="space-y-1">
+          <span className="block font-semibold">Mẫu này không dùng khối thông tin liên hệ.</span>
+          <span className="block">
+            {settings.capabilityReasonVi
+              ?? 'Nội dung email không kèm đầu mối liên hệ nào.'}
+          </span>
+          <span className="block text-gray-500">Không có cấu hình cần chỉnh sửa.</span>
+        </span>
+      </div>
+    );
+  }
+
   if (status === 'error' || !settings || !draft) {
     const f = failure ?? {
       kind: 'unknown',
@@ -309,7 +375,6 @@ export function ContactSettingsPanel({
     setDraft(prev => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(toPayload(settings));
   const showsBlock = draft.requirement !== 'NONE';
 
   const missingPlaceholder =
@@ -344,6 +409,13 @@ export function ContactSettingsPanel({
         <legend className="block text-sm font-bold text-gray-700 mb-1">
           Mức hiển thị
         </legend>
+        {/*
+          The levels come from the backend, already narrowed by capability: a template whose text tells
+          the recipient to make contact is not offered "Không hiển thị", because choosing it would leave
+          the instruction with no address — and the API refuses that write anyway, so offering it here
+          would only be a button that fails. The reason is stated below rather than left to be inferred
+          from a missing option.
+        */}
         {settings.availableRequirements.map(value => (
           <label key={value}
                  className="flex items-start gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50">
@@ -360,6 +432,13 @@ export function ContactSettingsPanel({
             </span>
           </label>
         ))}
+        {capability === 'REQUIRED' && (
+          <p className="text-[11px] text-gray-600" data-testid="contact-settings-level-locked">
+            {settings.capabilityReasonVi
+              ?? 'Nội dung mẫu này có câu yêu cầu người nhận liên hệ, nên email phải kèm khối thông tin liên hệ.'}
+            {' '}Vì vậy không chọn được mức <em>Không hiển thị</em>.
+          </p>
+        )}
       </fieldset>
 
       {missingPlaceholder && (
@@ -480,6 +559,12 @@ export function ContactSettingsPanel({
              data-testid="contact-settings-save-error">
           {saveError}
         </div>
+      )}
+
+      {dirty && (
+        <p className="text-xs font-semibold text-amber-700" data-testid="contact-settings-dirty">
+          ● Cấu hình liên hệ có thay đổi chưa lưu
+        </p>
       )}
 
       {canEdit && (

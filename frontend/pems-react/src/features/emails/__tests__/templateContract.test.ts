@@ -11,10 +11,13 @@ import {
   TEMPLATE_ERROR_CODES,
   applySamples,
   applySystemBlocks,
+  contactSupportedOf,
+  describeSystemBlocks,
   errorCodeOf,
   extractPlaceholders,
   isSystemBlock,
   issuesFromError,
+  removeSystemBlock,
   validateContent,
   type TemplateContract,
 } from '../types/templateContract';
@@ -454,5 +457,155 @@ describe('reading API failures', () => {
     expect(errorCodeOf({ response: { data: { errorCode: 'EMAIL_TEMPLATE_CONCURRENCY_CONFLICT' } } }))
       .toBe(TEMPLATE_ERROR_CODES.concurrencyConflict);
     expect(errorCodeOf({})).toBeUndefined();
+  });
+});
+
+/**
+ * One block, one description (§4.2).
+ *
+ * The screen used to render the action block twice — from `actionSupported` with the backend's
+ * description, and again from the block lists with the generic one — so ACCOUNT_EMAIL_CONFIRMATION
+ * announced both a "Xác nhận email" button and "đồng ý / từ chối / xem chi tiết" buttons it does not
+ * have. The rule lives here now: listed once, specific beats generic, nothing concatenated.
+ */
+describe('describeSystemBlocks', () => {
+  it('lists a block once even when both lists name it', () => {
+    const notices = describeSystemBlocks({
+      ...invitationContract,
+      requiredSystemBlocks: ['actionBlock'],
+      optionalSystemBlocks: ['actionBlock'],
+    });
+
+    expect(notices.map(n => n.name)).toEqual(['actionBlock']);
+    expect(notices[0].required).toBe(true);   // required wins: it is the stronger claim
+  });
+
+  it('prefers the backend’s description for this template over the generic one', () => {
+    const notices = describeSystemBlocks({
+      ...invitationContract,
+      systemActionDescription: 'Nút "Xác nhận email" sẽ được hệ thống tự gắn khi gửi.',
+    });
+
+    expect(notices[0].description).toBe('Nút "Xác nhận email" sẽ được hệ thống tự gắn khi gửi.');
+    expect(notices[0].fromBackend).toBe(true);
+    // The generic sentence is not appended to it.
+    expect(notices[0].description).not.toMatch(/đồng ý \/ từ chối/);
+  });
+
+  it('falls back to the generic wording only when the backend supplied none', () => {
+    const notices = describeSystemBlocks({
+      ...invitationContract,
+      systemActionDescription: null,
+    });
+
+    expect(notices[0].fromBackend).toBe(false);
+    expect(notices[0].description).toMatch(/đồng ý \/ từ chối/);
+  });
+
+  it('says nothing about a block this template does not carry', () => {
+    const notices = describeSystemBlocks({
+      ...accountContract,
+      requiredSystemBlocks: [],
+      optionalSystemBlocks: [],
+      actionSupported: false,
+      actionRequired: false,
+    });
+
+    expect(notices).toEqual([]);
+  });
+
+  it('describes every block a template carries, each once', () => {
+    const notices = describeSystemBlocks(setupProgressContract);
+
+    expect(notices.map(n => n.name).sort()).toEqual(
+      ['actionBlock', 'contactInformationBlock', 'setupSummaryBlock'],
+    );
+    expect(new Set(notices.map(n => n.name)).size).toBe(notices.length);
+    expect(notices.find(n => n.name === 'setupSummaryBlock')!.required).toBe(true);
+    expect(notices.find(n => n.name === 'actionBlock')!.required).toBe(false);
+  });
+});
+
+/**
+ * Contact capability (§5).
+ *
+ * Whether the block MAY be written is a different question from whether the current policy renders one,
+ * and answering the first with the second is what produced the reported refusal: an operator who had
+ * just set the level to "Tùy chọn" added the block and was told it "không dùng được ở mẫu này".
+ */
+describe('the contact block is judged by capability, not by the current level', () => {
+  const supported: TemplateContract = {
+    ...accountContract,
+    templateCode: 'ACCOUNT_ROLE_CHANGED',
+    contactSupported: true,
+    // The policy renders nothing today, so the block is in NEITHER list — and is still legal to write.
+    requiredSystemBlocks: [],
+    optionalSystemBlocks: [],
+  };
+
+  const unsupported: TemplateContract = {
+    ...accountContract,
+    contactSupported: false,
+    contactReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
+    requiredSystemBlocks: [],
+    optionalSystemBlocks: [],
+  };
+
+  it('accepts the block on a supported template whose level is currently NONE', () => {
+    const issues = validateContent(supported, content({
+      subjectVi: 'Vai trò của bạn đã thay đổi',
+      bodyVi: '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}',
+    }));
+
+    expect(issues).toEqual([]);
+  });
+
+  it('refuses it on a template that can never carry it, and names the repair', () => {
+    const issues = validateContent(unsupported, content({
+      subjectVi: 'Xác nhận email',
+      bodyVi: '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}',
+    }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
+    expect(issues[0].messageVi).toContain('Hãy xóa khối khỏi nội dung');
+    // The reason travels with the refusal, so the operator is not left to work out why.
+    expect(issues[0].messageVi).toContain('liên kết xác nhận dùng một lần');
+  });
+
+  it('treats an API that predates the capability field as supporting the block', () => {
+    const { contactSupported: _omitted, ...legacy } = supported;
+
+    expect(contactSupportedOf(legacy as TemplateContract)).toBe(true);
+    expect(validateContent(legacy as TemplateContract, content({
+      subjectVi: 'x', bodyVi: '{{contactInformationBlock}}',
+    }))).toEqual([]);
+  });
+
+  it('still refuses the block in a SUBJECT on a supported template', () => {
+    const issues = validateContent(supported, content({
+      subjectVi: 'Xin chào {{contactInformationBlock}}',
+      bodyVi: '<p>Chào {{fullName}}.</p>',
+    }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.subjectForbiddenSensitive);
+  });
+});
+
+describe('removeSystemBlock', () => {
+  it('removes every occurrence, in both placeholder forms', () => {
+    const out = removeSystemBlock(
+      '<p>a</p>{{contactInformationBlock}}<p>b</p>%7B%7BcontactInformationBlock%7D%7D',
+      'contactInformationBlock',
+    );
+
+    expect(out).toBe('<p>a</p><p>b</p>');
+  });
+
+  it('leaves other blocks and the surrounding text alone', () => {
+    const out = removeSystemBlock('{{actionBlock}} giữ nguyên {{contactInformationBlock}}', 'contactInformationBlock');
+
+    expect(out).toBe('{{actionBlock}} giữ nguyên ');
   });
 });
