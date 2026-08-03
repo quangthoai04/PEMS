@@ -154,12 +154,20 @@ SELECT '── E. variables_text matches the placeholders actually used ──�
 -- template that uses one must NOT list it.
 --
 -- The set must stay in step with EmailTrustedBlocks in the backend (PEMS.Application.Common.Interfaces):
---   actionBlock       — accept/decline/detail buttons carrying real one-time tokens
---   setupSummaryBlock — the setup-progress tables (overview, guests, participants, schedule,
---                       preparation status) built from VisitSetupSnapshot
+--   actionBlock            — accept/decline/detail buttons carrying real one-time tokens
+--   setupSummaryBlock      — the setup-progress tables (overview, guests, participants, schedule,
+--                            preparation status) built from VisitSetupSnapshot
+--   contactInformationBlock — the reply-contact block the EmailContactPolicy renders
 -- A block missing from this list makes E1 report the template as having an "unlisted" variable, and
 -- adding it to variables_text to silence that would be the wrong fix: it would offer an operator a
 -- field they must never be able to supply.
+--
+-- contactInformationBlock was added 2026-08-03, and its absence had already cost something: fourteen
+-- templates gained the block in patches/2026-08-03_email_template_catalog_alignment.sql, and this
+-- script then reported all fourteen at once under E1. The detail string that produced overflowed
+-- VARCHAR(500), so the run died with "Data too long for column 'detail'" — a verify script that
+-- crashes instead of reporting. Both halves are fixed: the block is excluded here, and the detail
+-- columns below are truncated rather than allowed to overflow.
 DROP TEMPORARY TABLE IF EXISTS _pems_used_vars;
 CREATE TEMPORARY TABLE _pems_used_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
 
@@ -183,7 +191,7 @@ WITH RECURSIVE scan AS (
 SELECT DISTINCT template_code, var_name
 FROM scan
 WHERE var_name IS NOT NULL AND var_name <> ''
-  AND var_name NOT IN ('actionBlock', 'setupSummaryBlock');
+  AND var_name NOT IN ('actionBlock', 'setupSummaryBlock', 'contactInformationBlock');
 
 DROP TEMPORARY TABLE IF EXISTS _pems_listed_vars;
 CREATE TEMPORARY TABLE _pems_listed_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
@@ -210,7 +218,7 @@ INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'E1', 'every placeholder used is listed in variables_text',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'no unlisted placeholder',
-          CONCAT('unlisted: ', GROUP_CONCAT(CONCAT(u.template_code, '.', u.var_name))))
+          LEFT(CONCAT('unlisted: ', GROUP_CONCAT(CONCAT(u.template_code, '.', u.var_name))), 480))
 FROM _pems_used_vars u
 LEFT JOIN _pems_listed_vars l
        ON l.template_code = u.template_code AND l.var_name = u.var_name
@@ -220,7 +228,7 @@ INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'E2', 'every variable listed in variables_text is actually used',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'no orphan variable',
-          CONCAT('unused: ', GROUP_CONCAT(CONCAT(l.template_code, '.', l.var_name))))
+          LEFT(CONCAT('unused: ', GROUP_CONCAT(CONCAT(l.template_code, '.', l.var_name))), 480))
 FROM _pems_listed_vars l
 LEFT JOIN _pems_used_vars u
        ON u.template_code = l.template_code AND u.var_name = l.var_name
@@ -231,7 +239,7 @@ INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'E3', 'no PascalCase placeholder',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'all camelCase',
-          CONCAT('offenders: ', GROUP_CONCAT(CONCAT(template_code, '.', var_name))))
+          LEFT(CONCAT('offenders: ', GROUP_CONCAT(CONCAT(template_code, '.', var_name))), 480))
 FROM _pems_used_vars
 -- 'c' forces a case-sensitive match. The column collation is case-insensitive, so a plain REGEXP
 -- would match every name, and BINARY casts to the binary charset, which REGEXP_LIKE rejects.
@@ -245,7 +253,7 @@ INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'E4', 'no token/URL variable is editable content',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'none',
-          CONCAT('offenders: ', GROUP_CONCAT(CONCAT(template_code, '.', var_name))))
+          LEFT(CONCAT('offenders: ', GROUP_CONCAT(CONCAT(template_code, '.', var_name))), 480))
 FROM _pems_listed_vars
 WHERE LOWER(var_name) IN ('actionblock','setupsummaryblock','actionurl','token','rawtoken',
                           'confirmurl','reseturl','link','url');

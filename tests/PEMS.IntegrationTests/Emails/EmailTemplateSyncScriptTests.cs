@@ -530,6 +530,151 @@ WHERE template_code IN ('ACCOUNT_CREATED_INTERNAL','VISIT_REQUEST_APPROVED','VIS
             "AND template_code='CUSTOM_CAMPUS_NEWSLETTER';"));
     }
 
+    // ── 5b. The generated catalog IS the canonical catalog ──────────────────────────────────────
+
+    /// <summary>
+    /// On a database imported straight from the canonical script and never touched, the sync must have
+    /// nothing to do.
+    ///
+    /// <para>
+    /// This is the assertion the suite was missing, and its absence is what let a real defect ship: the
+    /// staged rows drifted from the seed by 29 fields across 14 templates — every one of them missing
+    /// <c>{{contactInformationBlock}}</c>, plus one stale <c>variables_text</c> — and running the bundle
+    /// would have STRIPPED the block from fourteen templates, five of which the reply-contact policy
+    /// marks REQUIRED and which the renderer then refuses to send at all. Every other fact in this class
+    /// passed throughout, because they all measure the sync against ITSELF: build a deployment that
+    /// disagrees with the staged rows, sync, and assert the database now matches the staged rows. The
+    /// one thing never compared was the staged rows against the seed they claim to be copied from.
+    /// </para>
+    /// <para>
+    /// Its own pristine database, not the class fixture: the fixture is deliberately a messy deployment,
+    /// and "the sync changes nothing" is only meaningful against a clean canonical import.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Sync_changes_nothing_on_a_database_freshly_imported_from_the_canonical_script()
+    {
+        using var pristine = DisposableDatabaseManager.CreatePristineDatabase(
+            "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True");
+
+        var name = System.Text.RegularExpressions.Regex
+            .Match(pristine.ConnectionString, @"database=([^;]+)").Groups[1].Value;
+
+        string Digest()
+        {
+            using var conn = new MySqlConnection(pristine.ConnectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+SELECT GROUP_CONCAT(line ORDER BY line SEPARATOR '\n') FROM (
+  SELECT CONCAT_WS('|', template_code, status,
+    SHA2(CONCAT_WS('', name, purpose, IFNULL(campus_id,'~'), IFNULL(description,'~'),
+         IFNULL(subject_vi,'~'), IFNULL(body_vi,'~'), IFNULL(subject_en,'~'), IFNULL(body_en,'~'),
+         body_format, IFNULL(variables_text,'~')), 256)) AS line
+  FROM email_templates) x;";
+            return cmd.ExecuteScalar()?.ToString() ?? "";
+        }
+
+        void RunSync()
+        {
+            using var conn = new MySqlConnection(pristine.ConnectionString);
+            conn.Open();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = $"SET @pems_sync_confirm_database = '{name}';";
+                cmd.ExecuteNonQuery();
+            }
+            new MySqlScript(conn, File.ReadAllText(
+                Path.Combine(_db.ScriptsDirectory, "02_sync_templates.sql"))).Execute();
+        }
+
+        var imported = Digest();
+        Assert.False(string.IsNullOrWhiteSpace(imported));
+
+        RunSync();
+        var afterFirst = Digest();
+        Assert.Equal(imported, afterFirst);
+
+        RunSync();
+        Assert.Equal(afterFirst, Digest());
+    }
+
+    /// <summary>
+    /// Every template the reply-contact policy marks REQUIRED carries the block in BOTH languages after
+    /// the sync, and no template the policy says renders nothing gains one.
+    ///
+    /// <para>
+    /// Checked on the database rather than on the file, because the body that matters is the one a send
+    /// reads. <c>EmailTemplateRenderer</c> refuses a REQUIRED template whose body has nowhere to put the
+    /// block, so a catalog that fails this is a catalog that cannot send those templates at all.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Every_required_contact_policy_has_its_block_in_both_languages_after_the_sync()
+    {
+        Sync();
+
+        const string marker = "{{contactInformationBlock}}";
+        var missing = new List<string>();
+        var unexpected = new List<string>();
+
+        foreach (var code in SystemEmailTemplates.AllCodes)
+        {
+            var row = _db.Query(
+                $"SELECT body_vi, body_en FROM email_templates WHERE template_code='{code}';").Single();
+            var vi = row["body_vi"]?.ToString() ?? "";
+            var en = row["body_en"]?.ToString() ?? "";
+
+            var policy = PEMS.Application.Emails.Contact.EmailContactPolicyDefaults.For(code);
+
+            if (policy.Requirement == PEMS.Domain.Enums.EmailContactRequirement.REQUIRED)
+            {
+                if (!vi.Contains(marker, StringComparison.Ordinal)) missing.Add(code + ".body_vi");
+                if (!en.Contains(marker, StringComparison.Ordinal)) missing.Add(code + ".body_en");
+            }
+            else if (!policy.RendersBlock &&
+                     (vi.Contains(marker, StringComparison.Ordinal) || en.Contains(marker, StringComparison.Ordinal)))
+            {
+                unexpected.Add(code);
+            }
+        }
+
+        Assert.True(missing.Count == 0,
+            "REQUIRED reply-contact policy with no place to put the block: " + string.Join(", ", missing));
+        Assert.True(unexpected.Count == 0,
+            "the block was added to a template whose policy renders none: " + string.Join(", ", unexpected));
+    }
+
+    /// <summary>
+    /// After the sync, a body writes <c>{{actionBlock}}</c> exactly where the registry declares an
+    /// action — the database-side half of the guard
+    /// <c>EmailTemplateContractTests.A_shipped_body_writes_the_action_block_exactly_when_the_registry_declares_one</c>
+    /// makes over the shipped defaults.
+    /// </summary>
+    [Fact]
+    public void The_synced_bodies_write_the_action_block_exactly_where_the_registry_declares_one()
+    {
+        Sync();
+
+        const string marker = "{{actionBlock}}";
+        var offenders = new List<string>();
+
+        foreach (var code in SystemEmailTemplates.AllCodes)
+        {
+            var row = _db.Query(
+                $"SELECT body_vi, body_en FROM email_templates WHERE template_code='{code}';").Single();
+            var vi = (row["body_vi"]?.ToString() ?? "").Contains(marker, StringComparison.Ordinal);
+            var en = (row["body_en"]?.ToString() ?? "").Contains(marker, StringComparison.Ordinal);
+            var registered = EmailActionTemplates.For(code) is not null;
+
+            if (vi != registered || en != registered)
+                offenders.Add($"{code} (vi={vi}, en={en}, registry={registered})");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "body and action registry disagree: " + string.Join("; ", offenders));
+    }
+
     // ── 6. The verify script is a real gate ─────────────────────────────────────────────────────
 
     [Fact]

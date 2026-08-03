@@ -170,6 +170,49 @@ public sealed class EmailTemplateContractTests
     }
 
     /// <summary>
+    /// A shipped body carries <c>{{contactInformationBlock}}</c> in BOTH languages exactly where the
+    /// reply-contact policy is REQUIRED, and nowhere the policy renders no block at all.
+    ///
+    /// <para>
+    /// The failure this pins is asymmetric and both halves are real. Missing where REQUIRED: the
+    /// renderer refuses the send outright, so the template cannot be used. Present where the policy
+    /// renders nothing: the placeholder resolves to empty at best, and at worst an operator "fixes" a
+    /// block the template was never meant to show.
+    /// </para>
+    /// <para>
+    /// It is stated over the shipped defaults because those are what a restore, and the generated sync
+    /// script, write into a database. The database-side half lives in EmailTemplateSyncScriptTests.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_shipped_body_carries_the_contact_block_exactly_where_the_policy_requires_one()
+    {
+        var marker = "{{" + EmailTrustedBlocks.ContactInformationBlock + "}}";
+        var offenders = new List<string>();
+
+        foreach (var code in EmailTemplateDefaults.AllCodes)
+        {
+            var shipped = EmailTemplateDefaults.For(code)!;
+            var policy = PEMS.Application.Emails.Contact.EmailContactPolicyDefaults.For(code);
+
+            var inVi = (shipped.BodyVi ?? "").Contains(marker, StringComparison.Ordinal);
+            var inEn = (shipped.BodyEn ?? "").Contains(marker, StringComparison.Ordinal);
+
+            if (policy.Requirement == PEMS.Domain.Enums.EmailContactRequirement.REQUIRED)
+            {
+                if (!inVi) offenders.Add($"{code}.body_vi: policy REQUIRED but no {marker}");
+                if (!inEn) offenders.Add($"{code}.body_en: policy REQUIRED but no {marker}");
+            }
+            else if (!policy.RendersBlock && (inVi || inEn))
+            {
+                offenders.Add($"{code}: policy renders no contact block, body carries {marker}");
+            }
+        }
+
+        Assert.Empty(offenders);
+    }
+
+    /// <summary>
     /// The registry and the shipped wording agree, in both directions: a body writes
     /// <c>{{actionBlock}}</c> exactly when its template has an action spec.
     ///
