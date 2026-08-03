@@ -23,6 +23,10 @@ export interface ApiIntegration {
   location?: string | null;
   processorId?: string | null;
   endpoint?: string | null;
+  fromEmail?: string | null;
+  fromName?: string | null;
+  replyToEmail?: string | null;
+  replyToName?: string | null;
   maxFileSizeMb?: number | null;
   allowedMimeTypes: string[];
   createdAt: string;
@@ -67,6 +71,18 @@ export interface UpsertGoogleVisionFaceDetectionConfigRequest {
   endpoint: string;
   serviceAccountJson?: string | null;
   secretRef?: string | null;
+  rateLimitPerMinute: number;
+  monthlyQuota: number;
+  timeoutSeconds: number;
+}
+
+export interface UpsertResendConfigRequest {
+  name: string;
+  apiKey?: string | null;
+  fromEmail: string;
+  fromName: string;
+  replyToEmail?: string | null;
+  replyToName?: string | null;
   rateLimitPerMinute: number;
   monthlyQuota: number;
   timeoutSeconds: number;

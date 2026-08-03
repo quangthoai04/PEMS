@@ -47,7 +47,15 @@ public static class DependencyInjection
 
         // Cross-cutting
         services.AddSingleton<IDateTimeService, DateTimeService>();
-        services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<EmailService>();
+        if (string.Equals(configuration["Email:Provider"], "Resend", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IEmailService, ResendEmailService>();
+        }
+        else
+        {
+            services.AddScoped<IEmailService, EmailService>();
+        }
         // The one renderer for system email — preview and real send share it, so what an operator
         // previews is what the recipient receives. Scoped because it reads the DbContext per request.
         services.AddScoped<IEmailTemplateRenderer, EmailTemplateRenderer>();

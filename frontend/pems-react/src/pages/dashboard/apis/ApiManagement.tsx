@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ScanLine, Loader2, RefreshCw, Power, PowerOff,
-  Settings2, Activity, KeyRound, X, Languages, ScanFace,
+  Settings2, Activity, KeyRound, X, Languages, ScanFace, Mail,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiManagementApi } from '../../../features/api-management/api/apiManagementApi';
@@ -17,6 +17,7 @@ import type {
   UpsertGoogleDocumentAiOcrConfigRequest,
   UpsertGoogleTranslationConfigRequest,
   UpsertGoogleVisionFaceDetectionConfigRequest,
+  UpsertResendConfigRequest,
 } from '../../../features/api-management/types/apiManagement.types';
 import {
   getApiErrorMessage,
@@ -60,8 +61,8 @@ export function ApiManagement() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [editTarget, setEditTarget] = useState<ApiIntegration | null>(null);
-  // Loại form đang mở — cấu hình OCR, dịch tin tức, hoặc quét khuôn mặt (Cloud Vision).
-  const [formKind, setFormKind] = useState<'OCR' | 'TRANSLATION' | 'FACE_DETECTION' | null>(null);
+  // Loại form đang mở — cấu hình OCR, dịch tin tức, quét khuôn mặt, hoặc gửi email Resend.
+  const [formKind, setFormKind] = useState<'OCR' | 'TRANSLATION' | 'FACE_DETECTION' | 'RESEND' | null>(null);
   const [testBusy, setTestBusy] = useState<number | null>(null);
   const [statusBusy, setStatusBusy] = useState<number | null>(null);
 
@@ -220,6 +221,18 @@ export function ApiManagement() {
               </button>
             </div>
           )}
+          {!integrations.some((c) => c.purpose === 'EMAIL_DELIVERY') && (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center">
+              <Mail className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm text-gray-500 mb-4">Chưa cấu hình API gửi email Resend.</p>
+              <button
+                onClick={() => { setEditTarget(null); setFormKind('RESEND'); }}
+                className="bg-[#f37021] hover:bg-[#d9621a] text-white px-4 py-2 rounded-lg text-sm font-bold cursor-pointer"
+              >
+                Cấu hình Resend Email
+              </button>
+            </div>
+          )}
           {integrations.map((config) => (
             <div key={config.apiConfigId} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
               <div className="flex items-start justify-between">
@@ -229,7 +242,9 @@ export function ApiManagement() {
                       ? <Languages className="w-5 h-5 text-[#004c91]" />
                       : config.purpose === 'FACE_DETECTION'
                         ? <ScanFace className="w-5 h-5 text-[#004c91]" />
-                        : <ScanLine className="w-5 h-5 text-[#004c91]" />}
+                        : config.purpose === 'EMAIL_DELIVERY'
+                          ? <Mail className="w-5 h-5 text-[#004c91]" />
+                          : <ScanLine className="w-5 h-5 text-[#004c91]" />}
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-800">{config.name}</h3>
@@ -258,14 +273,25 @@ export function ApiManagement() {
               <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div><dt className="text-xs text-gray-400 font-bold uppercase">Base URL</dt>
                   <dd className="text-gray-600 truncate">{config.baseUrl}</dd></div>
-                <div><dt className="text-xs text-gray-400 font-bold uppercase">Project ID</dt>
-                  <dd className="text-gray-600 truncate">{config.projectId || '—'}</dd></div>
-                <div><dt className="text-xs text-gray-400 font-bold uppercase">Location</dt>
-                  <dd className="text-gray-600">{config.location || '—'}</dd></div>
-                <div><dt className="text-xs text-gray-400 font-bold uppercase">Processor</dt>
-                  <dd className="text-gray-600 truncate">
-                    {config.processorId ? `${config.processorId.slice(0, 6)}••••` : '—'}
-                  </dd></div>
+                {config.purpose === 'EMAIL_DELIVERY' ? (
+                  <>
+                    <div><dt className="text-xs text-gray-400 font-bold uppercase">From Address</dt>
+                      <dd className="text-gray-600 truncate">{config.fromEmail ? `${config.fromName} <${config.fromEmail}>` : '—'}</dd></div>
+                    <div><dt className="text-xs text-gray-400 font-bold uppercase">Reply-To</dt>
+                      <dd className="text-gray-600 truncate">{config.replyToEmail ? `${config.replyToName || ''} <${config.replyToEmail}>` : '—'}</dd></div>
+                  </>
+                ) : (
+                  <>
+                    <div><dt className="text-xs text-gray-400 font-bold uppercase">Project ID</dt>
+                      <dd className="text-gray-600 truncate">{config.projectId || '—'}</dd></div>
+                    <div><dt className="text-xs text-gray-400 font-bold uppercase">Location</dt>
+                      <dd className="text-gray-600">{config.location || '—'}</dd></div>
+                    <div><dt className="text-xs text-gray-400 font-bold uppercase">Processor</dt>
+                      <dd className="text-gray-600 truncate">
+                        {config.processorId ? `${config.processorId.slice(0, 6)}••••` : '—'}
+                      </dd></div>
+                  </>
+                )}
                 <div><dt className="text-xs text-gray-400 font-bold uppercase">Credential</dt>
                   <dd className={`font-bold ${config.hasCredential || config.secretRef ? 'text-green-600' : 'text-red-500'}`}>
                     <span className="inline-flex items-center gap-1">
@@ -296,7 +322,9 @@ export function ApiManagement() {
                           ? 'TRANSLATION'
                           : config.purpose === 'FACE_DETECTION'
                             ? 'FACE_DETECTION'
-                            : 'OCR'
+                            : config.purpose === 'EMAIL_DELIVERY'
+                              ? 'RESEND'
+                              : 'OCR'
                       );
                     }}
                     className="px-3 py-1.5 rounded-lg text-sm font-bold text-[#004c91] border border-[#004c91] hover:bg-[#e6eff7] transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -367,6 +395,13 @@ export function ApiManagement() {
       )}
       {formKind === 'FACE_DETECTION' && (
         <GoogleVisionFaceDetectionConfigForm
+          config={editTarget}
+          onClose={() => setFormKind(null)}
+          onSaved={async () => { setFormKind(null); await load(); }}
+        />
+      )}
+      {formKind === 'RESEND' && (
+        <ResendConfigForm
           config={editTarget}
           onClose={() => setFormKind(null)}
           onSaved={async () => { setFormKind(null); await load(); }}
@@ -934,6 +969,146 @@ function GoogleVisionFaceDetectionConfigForm({
             <label className={labelCls}>Secret Ref (tuỳ chọn)</label>
             <input className={inputCls} value={secretRef} onChange={(e) => setSecretRef(e.target.value)}
               placeholder="GOOGLE_VISION_SERVICE_ACCOUNT" />
+          </div>
+
+          <div>
+            <label className={labelCls}>Rate limit / phút *</label>
+            <input className={inputCls} type="number" min={1} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} required />
+          </div>
+          <div>
+            <label className={labelCls}>Hạn mức tháng *</label>
+            <input className={inputCls} type="number" min={1} value={monthlyQuota} onChange={(e) => setMonthlyQuota(e.target.value)} required />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Timeout (giây, 5–120) *</label>
+            <input className={inputCls} type="number" min={5} max={120} value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)} required />
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer">
+            Huỷ
+          </button>
+          <button type="submit" disabled={busy}
+            className="bg-[#004c91] hover:bg-[#003a70] text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2">
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+            Lưu cấu hình
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** Form cấu hình Resend (gửi email hệ thống) — secret API key chỉ ghi, không đọc lại. */
+function ResendConfigForm({
+  config, onClose, onSaved,
+}: {
+  config: ApiIntegration | null;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [name, setName] = useState(config?.name ?? 'Resend - Gửi email hệ thống');
+  const [apiKey, setApiKey] = useState('');
+  const [fromEmail, setFromEmail] = useState(config?.fromEmail ?? 'no-reply@mail.pems-fpt.site');
+  const [fromName, setFromName] = useState(config?.fromName ?? 'PEMS System');
+  const [replyToEmail, setReplyToEmail] = useState(config?.replyToEmail ?? 'managementsystemvolunteer@gmail.com');
+  const [replyToName, setReplyToName] = useState(config?.replyToName ?? 'Ban quản trị PEMS');
+  const [rateLimit, setRateLimit] = useState(String(config?.rateLimitPerMinute ?? 60));
+  const [monthlyQuota, setMonthlyQuota] = useState(String(config?.monthlyQuota ?? 10000));
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(config?.timeoutSeconds ?? 30));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const toastId = showLoadingToast('Đang lưu cấu hình Resend...', 'api-resend-save');
+    try {
+      const payload: UpsertResendConfigRequest = {
+        name: name.trim(),
+        apiKey: apiKey.trim() || null,
+        fromEmail: fromEmail.trim(),
+        fromName: fromName.trim(),
+        replyToEmail: replyToEmail.trim() || null,
+        replyToName: replyToName.trim() || null,
+        rateLimitPerMinute: Number(rateLimit) || 60,
+        monthlyQuota: Number(monthlyQuota) || 10000,
+        timeoutSeconds: Number(timeoutSeconds) || 30,
+      };
+      await apiManagementApi.upsertResendConfig(payload);
+      updateToastSuccess(toastId, 'Đã lưu cấu hình Resend. Hãy test kết nối rồi kích hoạt.');
+      await onSaved();
+    } catch (err: any) {
+      const backendMsg = getApiErrorMessage(err, 'Không thể lưu cấu hình Resend. Vui lòng kiểm tra lại.');
+      setError(backendMsg);
+      updateToastMessageError(toastId, backendMsg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-bold text-gray-800">
+            {config ? 'Chỉnh sửa cấu hình Resend Email' : 'Cấu hình Resend Email'}
+          </h3>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <p className="mb-4 text-xs text-gray-400">
+          Dùng cho dịch vụ gửi email hệ thống PEMS qua Resend HTTPS API.
+          API Key sẽ được mã hoá bảo mật trong database.
+        </p>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg px-3 py-2.5">{error}</div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className={labelCls}>Tên cấu hình *</label>
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required maxLength={150} />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className={labelCls}>API Key (re_...) {config?.hasCredential ? '(Tuỳ chọn khi chỉnh sửa)' : '*'}</label>
+            <input
+              type="password"
+              className={`${inputCls} font-mono text-xs`}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              required={!config?.hasCredential}
+              placeholder={config?.hasCredential ? 'Đã cấu hình — để trống để giữ nguyên' : 'Nhập API key từ Resend dashboard (re_...)'}
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>From Email *</label>
+            <input className={inputCls} type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} required
+              placeholder="no-reply@domain.com" />
+          </div>
+          <div>
+            <label className={labelCls}>From Name *</label>
+            <input className={inputCls} value={fromName} onChange={(e) => setFromName(e.target.value)} required
+              placeholder="PEMS System" />
+          </div>
+
+          <div>
+            <label className={labelCls}>Reply-To Email (tuỳ chọn)</label>
+            <input className={inputCls} type="email" value={replyToEmail} onChange={(e) => setReplyToEmail(e.target.value)}
+              placeholder="support@domain.com" />
+          </div>
+          <div>
+            <label className={labelCls}>Reply-To Name (tuỳ chọn)</label>
+            <input className={inputCls} value={replyToName} onChange={(e) => setReplyToName(e.target.value)}
+              placeholder="Hỗ trợ PEMS" />
           </div>
 
           <div>

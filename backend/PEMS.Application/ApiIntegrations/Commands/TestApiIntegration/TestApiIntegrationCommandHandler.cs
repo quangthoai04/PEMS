@@ -22,12 +22,14 @@ public sealed class TestApiIntegrationCommandHandler
     private readonly IOcrCredentialResolver _credentialResolver;
     private readonly PEMS.Application.News.Services.INewsTranslationService _translationService;
     private readonly IFaceDetectionProvider _faceDetectionProvider;
+    private readonly ISecretProtector _secretProtector;
 
     public TestApiIntegrationCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IBusinessCardOcrProvider provider, IOcrCredentialResolver credentialResolver,
         PEMS.Application.News.Services.INewsTranslationService translationService,
-        IFaceDetectionProvider faceDetectionProvider)
+        IFaceDetectionProvider faceDetectionProvider,
+        ISecretProtector secretProtector)
     {
         _db = db;
         _currentUser = currentUser;
@@ -36,6 +38,7 @@ public sealed class TestApiIntegrationCommandHandler
         _credentialResolver = credentialResolver;
         _translationService = translationService;
         _faceDetectionProvider = faceDetectionProvider;
+        _secretProtector = secretProtector;
     }
 
     public async Task<ApiConnectionTestResultDto> Handle(
@@ -49,9 +52,10 @@ public sealed class TestApiIntegrationCommandHandler
 
         if (config.Purpose != BusinessCardOcrConstants.Purpose
             && config.Purpose != NewsTranslationConstants.Purpose
-            && config.Purpose != FaceDetectionConstants.Purpose)
+            && config.Purpose != FaceDetectionConstants.Purpose
+            && config.Purpose != ResendEmailConstants.Purpose)
             throw new BusinessRuleException(
-                "Chỉ hỗ trợ test kết nối cho cấu hình BUSINESS_CARD_OCR, NEWS_TRANSLATION hoặc FACE_DETECTION.",
+                "Chỉ hỗ trợ test kết nối cho cấu hình BUSINESS_CARD_OCR, NEWS_TRANSLATION, FACE_DETECTION hoặc EMAIL_DELIVERY.",
                 ApiIntegrationErrorCodes.InvalidPurpose);
 
         var now = _clock.VietnamNow;
@@ -60,49 +64,84 @@ public sealed class TestApiIntegrationCommandHandler
         string message;
         string? errorCode = null;
 
-        var credential = _credentialResolver.Resolve(config);
-        if (string.IsNullOrEmpty(credential))
+        if (config.Purpose == ResendEmailConstants.Purpose)
         {
-            success = false;
-            message = "Chưa cấu hình credential (serviceAccountJson/secretRef).";
-            errorCode = ApiIntegrationErrorCodes.CredentialRequired;
-        }
-        else if (config.Purpose == NewsTranslationConstants.Purpose)
-        {
-            var settings = OcrProviderSettings.Parse(config.SettingsJson);
-            var result = await _translationService.TestConnectionAsync(
-                settings.ProjectId, settings.Location, credential, config.TimeoutSeconds, cancellationToken);
-            success = result.Success;
-            message = result.Message;
-            errorCode = result.ErrorCode;
-        }
-        else if (config.Purpose == FaceDetectionConstants.Purpose)
-        {
-            var runtime = new FaceDetectionRuntimeConfig
+            if (string.IsNullOrEmpty(config.BearerTokenEncrypted))
             {
-                ApiConfigId = config.ApiConfigId,
-                Settings = FaceDetectionProviderSettings.Parse(config.SettingsJson),
-                CredentialJson = credential,
-                TimeoutSeconds = config.TimeoutSeconds,
-            };
-            var result = await _faceDetectionProvider.TestConnectionAsync(runtime, cancellationToken);
-            success = result.Success;
-            message = result.Message;
-            errorCode = result.ErrorCode;
+                success = false;
+                message = "Chưa cấu hình Resend API Key.";
+                errorCode = ApiIntegrationErrorCodes.CredentialRequired;
+            }
+            else
+            {
+                var adminEmail = _currentUser.Email;
+                if (string.IsNullOrWhiteSpace(adminEmail) && _currentUser.UserId.HasValue)
+                {
+                    var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == _currentUser.UserId, cancellationToken);
+                    adminEmail = user?.Email;
+                }
+
+                if (string.IsNullOrWhiteSpace(adminEmail))
+                {
+                    success = false;
+                    message = "Không tìm thấy địa chỉ email của tài khoản ADMIN đang thao tác.";
+                    errorCode = "ADMIN_EMAIL_REQUIRED";
+                }
+                else
+                {
+                    var testResult = await ExecuteResendTestAsync(config, adminEmail, cancellationToken);
+                    success = testResult.Success;
+                    message = testResult.Message;
+                    errorCode = testResult.ErrorCode;
+                }
+            }
         }
         else
         {
-            var runtime = new OcrProviderRuntimeConfig
+            var credential = _credentialResolver.Resolve(config);
+            if (string.IsNullOrEmpty(credential))
             {
-                ApiConfigId = config.ApiConfigId,
-                Settings = OcrProviderSettings.Parse(config.SettingsJson),
-                CredentialJson = credential,
-                TimeoutSeconds = config.TimeoutSeconds,
-            };
-            var result = await _provider.TestConnectionAsync(runtime, cancellationToken);
-            success = result.Success;
-            message = result.Message;
-            errorCode = result.ErrorCode;
+                success = false;
+                message = "Chưa cấu hình credential (serviceAccountJson/secretRef).";
+                errorCode = ApiIntegrationErrorCodes.CredentialRequired;
+            }
+            else if (config.Purpose == NewsTranslationConstants.Purpose)
+            {
+                var settings = OcrProviderSettings.Parse(config.SettingsJson);
+                var result = await _translationService.TestConnectionAsync(
+                    settings.ProjectId, settings.Location, credential, config.TimeoutSeconds, cancellationToken);
+                success = result.Success;
+                message = result.Message;
+                errorCode = result.ErrorCode;
+            }
+            else if (config.Purpose == FaceDetectionConstants.Purpose)
+            {
+                var runtime = new FaceDetectionRuntimeConfig
+                {
+                    ApiConfigId = config.ApiConfigId,
+                    Settings = FaceDetectionProviderSettings.Parse(config.SettingsJson),
+                    CredentialJson = credential,
+                    TimeoutSeconds = config.TimeoutSeconds,
+                };
+                var result = await _faceDetectionProvider.TestConnectionAsync(runtime, cancellationToken);
+                success = result.Success;
+                message = result.Message;
+                errorCode = result.ErrorCode;
+            }
+            else
+            {
+                var runtime = new OcrProviderRuntimeConfig
+                {
+                    ApiConfigId = config.ApiConfigId,
+                    Settings = OcrProviderSettings.Parse(config.SettingsJson),
+                    CredentialJson = credential,
+                    TimeoutSeconds = config.TimeoutSeconds,
+                };
+                var result = await _provider.TestConnectionAsync(runtime, cancellationToken);
+                success = result.Success;
+                message = result.Message;
+                errorCode = result.ErrorCode;
+            }
         }
         stopwatch.Stop();
 
@@ -120,12 +159,12 @@ public sealed class TestApiIntegrationCommandHandler
             RelatedType = "CONNECTION_TEST",
             Endpoint = config.Purpose switch
             {
+                _ when config.Purpose == ResendEmailConstants.Purpose => $"{config.BaseUrl}/emails (test)",
                 _ when config.Purpose == NewsTranslationConstants.Purpose => $"{config.BaseUrl}/v3/.../:translateText (test)",
                 _ when config.Purpose == FaceDetectionConstants.Purpose => $"{config.BaseUrl}/v1/images:annotate (test)",
                 _ => $"{config.BaseUrl}/v1/.../processors/(get)",
             },
-            Method = config.Purpose == NewsTranslationConstants.Purpose || config.Purpose == FaceDetectionConstants.Purpose
-                ? "POST" : "GET",
+            Method = "POST",
             HttpStatus = success ? 200 : null,
             ResponseTimeMs = (int)stopwatch.ElapsedMilliseconds,
             Success = success,
@@ -144,5 +183,56 @@ public sealed class TestApiIntegrationCommandHandler
             ResponseTimeMs = stopwatch.ElapsedMilliseconds,
             TestedAt = now,
         };
+    }
+
+    private async Task<(bool Success, string Message, string? ErrorCode)> ExecuteResendTestAsync(
+        ApiConfiguration config, string adminEmail, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var apiKey = _secretProtector.Unprotect(config.BearerTokenEncrypted!);
+            var settings = ResendProviderSettings.Parse(config.SettingsJson);
+            var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? ResendEmailConstants.BaseUrl : config.BaseUrl.TrimEnd('/');
+
+            var fromEmail = !string.IsNullOrWhiteSpace(settings.FromEmail) ? settings.FromEmail : "no-reply@mail.pems-fpt.site";
+            var fromName = !string.IsNullOrWhiteSpace(settings.FromName) ? settings.FromName : "PEMS";
+            var from = !string.IsNullOrWhiteSpace(fromName) ? $"{fromName} <{fromEmail}>" : fromEmail;
+
+            var payload = new
+            {
+                from = from,
+                to = new[] { adminEmail },
+                subject = "PEMS — Kiểm tra kết nối Resend",
+                html = "<p>Email kiểm tra kết nối từ hệ thống PEMS tới Resend API thành công.</p>"
+            };
+
+            using var client = new System.Net.Http.HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 30);
+
+            using var httpRequest = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"{baseUrl}/emails");
+            httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            httpRequest.Content = new System.Net.Http.StringContent(
+                System.Text.Json.JsonSerializer.Serialize(payload),
+                System.Text.Encoding.UTF8,
+                "application/json");
+
+            var response = await client.SendAsync(httpRequest, cancellationToken);
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(responseText);
+                if (doc.RootElement.TryGetProperty("id", out var idProp) && !string.IsNullOrEmpty(idProp.GetString()))
+                {
+                    return (true, $"Kết nối Resend thành công. Email test đã gửi tới {adminEmail} (ID: {idProp.GetString()}).", null);
+                }
+            }
+
+            return (false, "Resend API phản hồi không thành công.", "RESEND_TEST_FAILED");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Lỗi kiểm tra kết nối Resend: {ex.Message}", "RESEND_TEST_EXCEPTION");
+        }
     }
 }
