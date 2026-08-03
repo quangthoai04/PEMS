@@ -47,6 +47,7 @@ public static class DependencyInjection
 
         // Cross-cutting
         services.AddSingleton<IDateTimeService, DateTimeService>();
+        services.AddScoped<EmailService>();
         if (string.Equals(configuration["Email:Provider"], "Resend", StringComparison.OrdinalIgnoreCase))
         {
             services.AddScoped<IEmailService, ResendEmailService>();

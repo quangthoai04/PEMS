@@ -31,7 +31,9 @@ public class ResendEmailService : IEmailService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ResendEmailService> _logger;
     private readonly IHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
     private readonly EmailRecipientOptions _recipientOptions;
+    private readonly EmailService _smtpEmailService;
 
     public ResendEmailService(
         IApplicationDbContext db,
@@ -39,14 +41,18 @@ public class ResendEmailService : IEmailService
         IHttpClientFactory httpClientFactory,
         ILogger<ResendEmailService> logger,
         IHostEnvironment environment,
-        IOptions<EmailRecipientOptions> recipientOptions)
+        IConfiguration configuration,
+        IOptions<EmailRecipientOptions> recipientOptions,
+        EmailService smtpEmailService)
     {
         _db = db;
         _secretProtector = secretProtector;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _environment = environment;
+        _configuration = configuration;
         _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
+        _smtpEmailService = smtpEmailService;
     }
 
     public async Task<EmailDeliveryResult> TrySendAsync(
@@ -63,9 +69,17 @@ public class ResendEmailService : IEmailService
         if (config == null || config.Status != "ACTIVE" || string.IsNullOrWhiteSpace(config.BearerTokenEncrypted))
         {
             _logger.LogWarning(
-                "[ResendEmailService] Resend config disabled or missing. To:{To} Cc:{Cc} Bcc:{Bcc} Subject:{Subject} Env:{Env}",
+                "[ResendEmailService] Resend config disabled or missing in DB. To:{To} Cc:{Cc} Bcc:{Bcc} Subject:{Subject} Env:{Env}",
                 MaskAll(envelope.To), MaskAll(envelope.Cc), MaskAll(envelope.Bcc),
                 email.Subject, _environment.EnvironmentName);
+
+            // If SMTP is enabled in configuration, fallback to SMTP
+            var smtpEnabled = _configuration.GetValue<bool?>("Smtp:Enabled") ?? true;
+            if (smtpEnabled)
+            {
+                _logger.LogInformation("[ResendEmailService] Resend is inactive in DB. Falling back to SMTP service.");
+                return await _smtpEmailService.TrySendAsync(email, cancellationToken);
+            }
 
             return EmailDeliveryResult.Failed("RESEND_MISCONFIGURED", "Dịch vụ gửi email Resend chưa được cấu hình hoặc chưa bật.");
         }
