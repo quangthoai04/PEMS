@@ -7,12 +7,14 @@ import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import { ContactSettingsPanel } from '../../../features/emails/components/ContactSettingsPanel';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import {
-  SYSTEM_BLOCK_LABELS,
   TEMPLATE_ERROR_CODES,
   applySamples,
   applySystemBlocks,
+  contactSupportedOf,
+  describeSystemBlocks,
   errorCodeOf,
   issuesFromError,
+  removeSystemBlock,
   validateContent,
   type ContractState,
   type TemplateContentField,
@@ -54,6 +56,30 @@ const EMPTY_FORM: TemplateForm = {
   subjectVi: '', bodyVi: '', subjectEn: '', bodyEn: '',
   status: 'ACTIVE', revision: null, hasShippedDefault: false, updatedAt: null,
 };
+
+/** Matches the `description` column and `UpdateEmailTemplateCommandValidator.DescriptionMaxLength`. */
+const DESCRIPTION_MAX_LENGTH = 500;
+
+/**
+ * The six fields "Lưu thay đổi mẫu" writes — and nothing else.
+ *
+ * Named as a list because it answers two questions that must not drift apart: what the button saves, and
+ * what counts as an unsaved change to the CONTENT as opposed to the contact settings. The two are
+ * separate saves against separate endpoints, so one dirty flag for the screen would have to mean either
+ * more or less than each button actually does.
+ */
+const CONTENT_FIELDS = ['name', 'description', 'subjectVi', 'bodyVi', 'subjectEn', 'bodyEn'] as const;
+
+type ContentSnapshot = Record<(typeof CONTENT_FIELDS)[number], string>;
+
+const contentOf = (form: TemplateForm): ContentSnapshot => ({
+  name: form.name,
+  description: form.description,
+  subjectVi: form.subjectVi,
+  bodyVi: form.bodyVi,
+  subjectEn: form.subjectEn,
+  bodyEn: form.bodyEn,
+});
 
 /**
  * The system email template catalog (UC-42/43/44).
@@ -121,6 +147,14 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * there. Owned here rather than inside the panel because the pane that displays it is up here.
    */
   const [contactBlockPreview, setContactBlockPreview] = useState('');
+  /**
+   * The content as it is STORED, so "có thay đổi chưa lưu" is a fact rather than "the operator typed
+   * something". Re-baselined after every successful save and restore — leaving the old baseline would
+   * keep the warning on screen after the work had been saved, which teaches operators to ignore it.
+   */
+  const [savedContent, setSavedContent] = useState<ContentSnapshot>(contentOf(EMPTY_FORM));
+  /** Reported upward by card 4; the two groups save separately and are warned about separately. */
+  const [contactDirty, setContactDirty] = useState(false);
   const [contract, setContract] = useState<ContractState>({ status: 'idle' });
   const [serverIssues, setServerIssues] = useState<TemplateContentIssue[]>([]);
   const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
@@ -155,6 +189,12 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const issues = useMemo(
     () => [...localIssues, ...serverIssues],
     [localIssues, serverIssues],
+  );
+
+  /** Unsaved changes in the six fields "Lưu thay đổi mẫu" writes. */
+  const contentDirty = useMemo(
+    () => CONTENT_FIELDS.some(field => formData[field] !== savedContent[field]),
+    [formData, savedContent],
   );
 
   /**
@@ -237,7 +277,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     try {
       const res = await emailsApi.getEmailTemplateDetail(id);
       const t = res.data;
-      setFormData({
+      const loaded: TemplateForm = {
         templateCode: t.templateCode || '',
         name: t.name || '',
         description: t.description || '',
@@ -252,7 +292,10 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         revision: typeof t.revision === 'number' ? t.revision : null,
         hasShippedDefault: t.hasShippedDefault === true,
         updatedAt: t.updatedAt ?? t.createdAt ?? null,
-      });
+      };
+      setFormData(loaded);
+      setSavedContent(contentOf(loaded));
+      setContactDirty(false);
       setEditingId(t.emailTemplateId || id);
       setServerIssues([]);
       setLanguage('VI');
@@ -275,6 +318,13 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
     if (!formData.name.trim()) {
       pushToast('error', 'Vui lòng nhập tên mẫu');
+      return;
+    }
+
+    // Reachable with the button disabled, the same way `isHistorical` is: Enter in a text input submits.
+    // A no-op save would still bump the revision and write an audit row saying the content changed.
+    if (!contentDirty) {
+      pushToast('error', 'Chưa có thay đổi nào ở nội dung mẫu để lưu.');
       return;
     }
 
@@ -316,8 +366,12 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         revision: typeof res.data?.revision === 'number' ? res.data.revision : prev.revision,
         updatedAt: res.data?.updatedAt ?? prev.updatedAt,
       }));
-      pushToast('success', 'Đã cập nhật mẫu email');
-      setShowForm(false);
+      // What was just written is now what is stored: the content is no longer unsaved. The contact
+      // settings are untouched by this call and keep whatever state they were in — that separation is
+      // the point of two buttons.
+      setSavedContent(contentOf(formData));
+      pushToast('success', 'Đã lưu thay đổi nội dung mẫu email');
+      closeEditor();
       fetchData();
     } catch (err: any) {
       const code = errorCodeOf(err);
@@ -379,17 +433,22 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
       // Show what is now stored, with the new token, in one step. Leaving the operator's discarded text
       // on screen next to a bumped revision would invite them to "save" it straight back.
-      setFormData(prev => ({
-        ...prev,
-        name: t?.name ?? prev.name,
+      const restored: TemplateForm = {
+        ...formData,
+        name: t?.name ?? formData.name,
         description: t?.description ?? '',
         subjectVi: t?.subjectVi ?? '',
         bodyVi: t?.bodyVi ?? '',
         subjectEn: t?.subjectEn ?? '',
         bodyEn: t?.bodyEn ?? '',
-        revision: typeof t?.revision === 'number' ? t.revision : prev.revision,
-        updatedAt: t?.updatedAt ?? prev.updatedAt,
-      }));
+        revision: typeof t?.revision === 'number' ? t.revision : formData.revision,
+        updatedAt: t?.updatedAt ?? formData.updatedAt,
+      };
+
+      setFormData(restored);
+      // The restore WROTE this content, so nothing here is unsaved — and the contact settings were not
+      // touched, so their own state is left exactly as it was.
+      setSavedContent(contentOf(restored));
       pushToast('success', 'Đã phục hồi nội dung mặc định của mẫu email. Cấu hình thông tin liên hệ được giữ nguyên.');
       fetchData();
     } catch (err: any) {
@@ -413,15 +472,41 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     }
   };
 
+  const closeEditor = () => {
+    setShowForm(false);
+    setContactDirty(false);
+  };
+
+  /**
+   * Closing names WHICH group is unsaved, and only the groups that really are.
+   *
+   * There are two saves on this screen and they are independent, so "bỏ các thay đổi chưa lưu?" left an
+   * operator unable to tell whether they had forgotten the wording, the contact configuration, or
+   * neither — and it asked the question even when nothing was pending, which is how a confirmation stops
+   * being read. With nothing dirty the editor simply closes.
+   */
   const handleCancel = () => {
+    const pending = [
+      contentDirty ? 'Nội dung mẫu' : null,
+      contactDirty ? 'Cấu hình thông tin liên hệ' : null,
+    ].filter(Boolean) as string[];
+
+    if (pending.length === 0) {
+      closeEditor();
+      return;
+    }
+
     setConfirmState({
       isOpen: true,
       title: 'Đóng trình sửa',
-      message: 'Đóng và bỏ các thay đổi chưa lưu?',
+      message:
+        'Bạn có thay đổi chưa lưu ở:\n'
+        + pending.map(group => `• ${group}`).join('\n')
+        + '\n\nĐóng và bỏ những thay đổi này?',
       variant: 'danger',
       onConfirm: () => {
         setConfirmState(prev => ({...prev, isOpen: false}));
-        setShowForm(false);
+        closeEditor();
       }
     });
   };
@@ -462,6 +547,21 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     setCurrentPage(1);
   }, [searchQuery, groupFilter, pageSize]);
 
+  /**
+   * Deletes every occurrence of one system block from one field.
+   *
+   * Offered next to the refusal that names the block, and only there: an operator told "hãy xóa
+   * {{contactInformationBlock}}" is being asked to find a placeholder inside rich-text they may have
+   * pasted from elsewhere. The removal is not applied on their behalf — it marks the content dirty and
+   * waits for "Lưu thay đổi mẫu" like any other edit, so it stays a change they made.
+   */
+  const removeBlockFromField = (field: TemplateContentField, block: string) => {
+    setFormData(prev => ({ ...prev, [field]: removeSystemBlock(prev[field], block) }));
+    // The refusal came from the server for content that no longer exists; keeping it on screen would
+    // report a problem the operator has just fixed.
+    setServerIssues(prev => prev.filter(i => !(i.field === field && i.variableName === block)));
+  };
+
   const renderIssueList = (field: TemplateContentField) => {
     const fieldIssues = issuesForField(field);
     if (fieldIssues.length === 0) return null;
@@ -477,6 +577,16 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               )}{' '}
               {issue.messageVi}
               <span className="ml-1 text-[10px] font-mono text-red-400">{issue.code}</span>
+              {issue.code === TEMPLATE_ERROR_CODES.systemBlockNotAllowed && issue.variableName && !isHistorical && (
+                <button
+                  type="button"
+                  data-testid={`remove-block-${field}-${issue.variableName}`}
+                  onClick={() => removeBlockFromField(field, issue.variableName!)}
+                  className="ml-2 rounded border border-red-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-50"
+                >
+                  Xóa khối không hợp lệ
+                </button>
+              )}
             </span>
           </li>
         ))}
@@ -505,6 +615,14 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       v.label.toLowerCase().includes(varSearch.toLowerCase()) ||
       v.name.toLowerCase().includes(varSearch.toLowerCase()));
 
+    // One entry per block, one description each. See `describeSystemBlocks`.
+    const systemBlockNotices = ready ? describeSystemBlocks(ready) : [];
+
+    // Whether card 4 has anything to configure. Read from the contract rather than from the settings
+    // response so the card's own request is not what decides whether the card is shown — the two agree,
+    // and the contract is the one the editor already has when it renders.
+    const contactSupported = ready ? contactSupportedOf(ready) : true;
+
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
@@ -514,7 +632,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               Mã mẫu <span className="font-mono font-bold">{formData.templateCode}</span> do hệ thống quản lý và không thể thay đổi.
             </p>
           </div>
-          <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700" aria-label="Đóng">
+          {/* Same path as "Hủy": the X used to close outright, so the operator most likely to lose work
+              — the one who reaches for the corner — was the only one never asked. */}
+          <button type="button" onClick={handleCancel} className="text-gray-400 hover:text-gray-700" aria-label="Đóng">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -535,31 +655,56 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           */}
           <div className="grid grid-cols-1 gap-6 pb-24 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
             <div className="min-w-0 space-y-6">
-              {/* 1. Thông tin chung */}
+              {/* 1. Thông tin chung
+                  The two read-only facts share a row; the two fields an operator actually writes get the
+                  full width. The description used to sit in a half-width single-line input, where a
+                  sentence like "Gửi cho tài khoản vừa tạo ở trạng thái chờ xác nhận email…" was cut off
+                  at the field edge with no way to read the rest — in the EDITOR, which is the one place
+                  the whole text has to be visible and changeable. */}
               <div className="bg-gray-50/50 p-5 rounded-lg border border-gray-200">
                 <h3 className="font-bold text-gray-800 mb-4 text-base border-b border-gray-200 pb-2">1. Thông tin chung</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Mã mẫu</label>
-                    <div className="flex items-center gap-2 w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600">
-                      <Lock className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="font-mono">{formData.templateCode}</span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">Mã mẫu</label>
+                      <div className="flex items-center gap-2 w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600">
+                        <Lock className="w-3.5 h-3.5 text-gray-400" />
+                        <span className="font-mono">{formData.templateCode}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">Trạng thái</label>
+                      <div className="flex items-center gap-2 w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600">
+                        <Lock className="w-3.5 h-3.5 text-gray-400" />
+                        {formData.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
+                      </div>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor="tpl-name">Tên mẫu *</label>
-                    <input id="tpl-name" type="text" value={formData.name} disabled={isHistorical} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500" />
+                    <input id="tpl-name" type="text" maxLength={150} value={formData.name} disabled={isHistorical} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Trạng thái</label>
-                    <div className="flex items-center gap-2 w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600">
-                      <Lock className="w-3.5 h-3.5 text-gray-400" />
-                      {formData.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
+                    <div className="flex items-baseline justify-between mb-1">
+                      <label className="block text-sm font-bold text-gray-700" htmlFor="tpl-desc">Mô tả quản trị</label>
+                      {/* The same limit the API enforces (UpdateEmailTemplateCommandValidator), so a long
+                          description is stopped here rather than by a refused save. */}
+                      <span className="text-[11px] text-gray-500" data-testid="description-counter">
+                        {formData.description.length}/{DESCRIPTION_MAX_LENGTH}
+                      </span>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor="tpl-desc">Mô tả quản trị</label>
-                    <input id="tpl-desc" type="text" value={formData.description} disabled={isHistorical} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500" />
+                    <textarea
+                      id="tpl-desc"
+                      rows={3}
+                      maxLength={DESCRIPTION_MAX_LENGTH}
+                      value={formData.description}
+                      disabled={isHistorical}
+                      onChange={e => setFormData({...formData, description: e.target.value})}
+                      className="w-full min-h-[72px] max-h-[160px] resize-y whitespace-pre-wrap break-words rounded-lg border border-gray-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      Ghi chú nội bộ cho người quản trị: mẫu này gửi khi nào, cho ai. Không hiển thị cho người nhận email.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -690,13 +835,23 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                     )}
 
                     {/*
-                      System blocks, listed as blocks. They are NOT in the variable list below and must
-                      not be: the backend builds their markup and an operator can neither author it nor
-                      supply a value. Previously only {{actionBlock}} was named here, so the contact
-                      block — mandatory on fourteen templates — appeared nowhere on this screen at all,
-                      and an operator who deleted it learnt of its existence from a refusal.
+                      System blocks, listed as blocks — each one ONCE.
+
+                      They are NOT in the variable list below and must not be: the backend builds their
+                      markup and an operator can neither author it nor supply a value.
+
+                      The list comes from `describeSystemBlocks`, which is where the one-description rule
+                      lives. This markup used to render the action block twice: once from
+                      `actionSupported`, with the backend's description of THIS template's action, and
+                      again from the required/optional lists, with the generic sentence about
+                      "đồng ý / từ chối / xem chi tiết" — buttons ACCOUNT_EMAIL_CONFIRMATION does not
+                      have. Two descriptions of one block, the second one untrue.
+
+                      A template with no action spec shows no action block at all, which is the other half
+                      of the same rule: the backend leaves it out of both lists, so nothing here announces
+                      buttons the send path never attaches.
                     */}
-                    {(ready.requiredSystemBlocks.length > 0 || ready.optionalSystemBlocks.length > 0 || ready.actionSupported) && (
+                    {systemBlockNotices.length > 0 && (
                       <div className="mb-3 text-[11px] text-blue-900 bg-blue-50 border border-blue-200 rounded p-2"
                            data-testid="system-blocks-notice">
                         <div className="flex items-start gap-1.5 mb-1">
@@ -704,33 +859,14 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                           <span className="font-semibold">Khối hệ thống — nội dung do hệ thống dựng</span>
                         </div>
                         <ul className="pl-5 space-y-1">
-                          {ready.actionSupported && (
-                            <li data-testid={`system-block-${ready.actionRequired ? 'required' : 'optional'}-actionBlock`}>
-                              <span className="font-mono font-bold">{`{{actionBlock}}`}</span>{' '}
-                              <span className={`rounded px-1 py-0.5 ${ready.actionRequired ? 'bg-blue-100 font-semibold' : 'bg-gray-100 text-gray-700'}`}>
-                                {ready.actionRequired ? 'bắt buộc giữ' : 'tùy chọn'}
+                          {systemBlockNotices.map(block => (
+                            <li key={block.name}
+                                data-testid={`system-block-${block.required ? 'required' : 'optional'}-${block.name}`}>
+                              <span className="font-mono font-bold">{`{{${block.name}}}`}</span>{' '}
+                              <span className={`rounded px-1 py-0.5 ${block.required ? 'bg-blue-100 font-semibold' : 'bg-gray-100 text-gray-700'}`}>
+                                {block.required ? 'bắt buộc giữ' : 'tùy chọn'}
                               </span>
-                              <span className="block text-blue-800">
-                                {ready.systemActionDescription ?? SYSTEM_BLOCK_LABELS.actionBlock?.hint ?? 'Hệ thống điền nội dung khi gửi.'}
-                              </span>
-                            </li>
-                          )}
-                          {ready.requiredSystemBlocks.map(block => (
-                            <li key={block} data-testid={`system-block-required-${block}`}>
-                              <span className="font-mono font-bold">{`{{${block}}}`}</span>{' '}
-                              <span className="rounded bg-blue-100 px-1 py-0.5 font-semibold">bắt buộc giữ</span>
-                              <span className="block text-blue-800">
-                                {SYSTEM_BLOCK_LABELS[block]?.hint ?? 'Hệ thống điền nội dung khi gửi.'}
-                              </span>
-                            </li>
-                          ))}
-                          {ready.optionalSystemBlocks.map(block => (
-                            <li key={block} data-testid={`system-block-optional-${block}`}>
-                              <span className="font-mono font-bold">{`{{${block}}}`}</span>{' '}
-                              <span className="rounded bg-gray-100 px-1 py-0.5 text-gray-700">tùy chọn</span>
-                              <span className="block text-blue-800">
-                                {SYSTEM_BLOCK_LABELS[block]?.hint ?? 'Hệ thống điền nội dung khi gửi.'}
-                              </span>
+                              <span className="block text-blue-800">{block.description}</span>
                             </li>
                           ))}
                         </ul>
@@ -794,15 +930,21 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   <h3 className="font-bold text-[#004c91] mb-1 text-base border-b border-gray-200 pb-2">
                     4. Cấu hình thông tin liên hệ
                   </h3>
-                  <p className="text-[11px] text-gray-500 mb-3">
-                    Quyết định người nhận <span className="font-mono">{formData.templateCode}</span> nên
-                    liên hệ với ai, và email được hiển thị những gì về họ.
-                  </p>
+                  {/* The lead-in describes a configuration, so it is withheld where there is none to
+                      make: on a template that cannot carry the block the card says why, and promising
+                      "quyết định người nhận nên liên hệ với ai" above that sentence would contradict it. */}
+                  {contactSupported && (
+                    <p className="text-[11px] text-gray-500 mb-3">
+                      Quyết định người nhận <span className="font-mono">{formData.templateCode}</span> nên
+                      liên hệ với ai, và email được hiển thị những gì về họ.
+                    </p>
+                  )}
                   <ContactSettingsPanel
                     templateCode={formData.templateCode}
                     canEdit
                     language={language}
                     onBlockPreviewChange={setContactBlockPreview}
+                    onDirtyChange={setContactDirty}
                     pushToast={pushToast}
                   />
                 </div>
@@ -841,16 +983,34 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
             {/* `ml-auto` keeps the pair on the right even when the bar wraps on a narrow viewport,
                 where `justify-between` alone would leave them under the restore button on the left. */}
-            <div className="ml-auto flex justify-end gap-3">
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+              {/* Which group is unsaved, next to the button that saves it. The contact card carries its
+                  own indicator for the same reason: two saves, two answers. */}
+              {contentDirty && (
+                <span className="text-xs font-semibold text-amber-700" data-testid="content-dirty">
+                  ● Nội dung mẫu có thay đổi chưa lưu
+                </span>
+              )}
               <button type="button" onClick={handleCancel} className="px-4 py-2 font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">Hủy</button>
+              {/*
+                Named for what it saves. "Cập nhật" said nothing about scope on a screen with a second
+                save button in card 4, so an operator who had changed both and pressed this one was left
+                believing the contact configuration had gone with it. It writes the six content fields
+                and nothing else — see CONTENT_FIELDS — and it is enabled only when one of them differs
+                from what is stored.
+              */}
               <button
                 type="submit"
-                disabled={submitting || restoring || contract.status === 'loading' || blockingIssues.length > 0 || isHistorical}
-                title={isHistorical ? 'Mẫu lịch sử không nằm trong danh mục hệ thống nên không sửa được.' : undefined}
+                disabled={submitting || restoring || contract.status === 'loading' || blockingIssues.length > 0 || isHistorical || !contentDirty}
+                title={isHistorical
+                  ? 'Mẫu lịch sử không nằm trong danh mục hệ thống nên không sửa được.'
+                  : !contentDirty
+                    ? 'Chưa có thay đổi nào ở tên mẫu, mô tả, tiêu đề hoặc nội dung.'
+                    : 'Lưu tên mẫu, mô tả quản trị, tiêu đề và nội dung VI/EN'}
                 className="flex items-center gap-2 px-4 py-2 font-bold text-white bg-[#004c91] rounded-lg hover:bg-[#013565] disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                Cập nhật
+                Lưu thay đổi mẫu
               </button>
             </div>
           </div>
