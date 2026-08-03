@@ -418,6 +418,12 @@ DROP TABLE IF EXISTS `sent_email_attachments`;
 DROP TABLE IF EXISTS `sent_email_recipients`;
 DROP TABLE IF EXISTS `sent_emails`;
 DROP TABLE IF EXISTS `email_templates`;
+-- Child of `users` (created_by/updated_by), so it drops before it. Missing from this
+-- list until now: the table was added with the contact-block work but its CREATE sits
+-- further down with no DROP here, so the script built a fresh database once and then
+-- stopped with ERROR 1050 on every re-run — including on any database that had already
+-- received 2026-08-03_email_contact_information_block.sql, which creates the same table.
+DROP TABLE IF EXISTS `email_contact_policies`;
 DROP TABLE IF EXISTS `visit_photo_face_detections`;
 DROP TABLE IF EXISTS `visit_photo_face_scans`;
 DROP TABLE IF EXISTS `photo_face_tags`;

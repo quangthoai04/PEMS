@@ -331,8 +331,22 @@ public static class CanonicalSqlScript
     /// Verified by fresh import against MySQL 8.0.46 AFTER this constant was touched: exit 0,
     /// 31 email_templates, 32 email_contact_policies (31 TEMPLATE + 1 SYSTEM), and all 31 template
     /// bodies byte-identical to email-template-defaults.json.
+    ///
+    /// FIFTEENTH BUMP — <c>email_contact_policies</c> joins the reset list.
+    ///
+    /// The table was added with the contact-block work, but only its CREATE was: the DROP list at the
+    /// top of the script never learned about it. A fresh, empty database was therefore fine — which is
+    /// all the earlier verification ever exercised — while a SECOND run, or a run against a database
+    /// that had already received the contact-block patch (which creates the same table), stopped at
+    /// <c>ERROR 1050 Table 'email_contact_policies' already exists</c>. The script's own header calls
+    /// itself re-runnable and records a previous fix for exactly this class of bug on
+    /// <c>account_email_confirmations</c>.
+    ///
+    /// Verified against MySQL 8.0.46: the previous file reproduces 1050 on a database that already has
+    /// the table; this one imports twice into the same database, exit 0 both times, 31 templates and
+    /// 32 contact policies after each.
     public const string ExpectedSha256 =
-        "b7c431d4d3a76dab04aa8045653c2aae4a087780a2adca53d9ae747243d285ff";
+        "108a7a271b0f31a953e65d4dddd556cf2577b2ab1dde302de0b5a73cae9b4b1d";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
