@@ -439,18 +439,16 @@ export function PartnerDetail() {
             <button
               type="button"
               onClick={() => setDisplayLang('vi')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                displayLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${displayLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Tiếng Việt
             </button>
             <button
               type="button"
               onClick={() => setDisplayLang('en')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                displayLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${displayLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               English
             </button>
@@ -740,36 +738,36 @@ export function PartnerDetail() {
                     key={d.documentId}
                     className="bg-gradient-to-r from-blue-50/80 to-[#e6f0fa]/80 p-4 rounded-xl border border-blue-100/50 shadow-sm flex items-center gap-4 group hover:border-[#004c91]/50 transition-colors"
                   >
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-[#004c91] flex-shrink-0">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors">{d.title}</div>
-                    <div className="text-xs text-gray-500 font-medium mt-0.5 truncate">
-                      {d.originalFilename || '—'}
-                      {d.fileSize ? ` • ${(d.fileSize / 1024).toFixed(0)} KB` : ''}
-                      {d.creatorName ? ` • ${d.creatorName}` : ''}
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-[#004c91] flex-shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors">{d.title}</div>
+                      <div className="text-xs text-gray-500 font-medium mt-0.5 truncate">
+                        {d.originalFilename || '—'}
+                        {d.fileSize ? ` • ${(d.fileSize / 1024).toFixed(0)} KB` : ''}
+                        {d.creatorName ? ` • ${d.creatorName}` : ''}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setPreviewDoc(d)}
+                        className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
+                        title="Xem trước"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => void handleDownloadDoc(d.documentId, API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title)}
+                        disabled={downloadingKey !== null}
+                        className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Tải xuống"
+                      >
+                        {downloadingKey === d.documentId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => setPreviewDoc(d)}
-                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
-                      title="Xem trước"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => void handleDownloadDoc(d.documentId, API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title)}
-                      disabled={downloadingKey !== null}
-                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      title="Tải xuống"
-                    >
-                      {downloadingKey === d.documentId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))}
               </div>
             )}
           </div>
@@ -929,7 +927,7 @@ export function PartnerDetail() {
               </tbody>
             </table>
           </div>
-          
+
           {!contactsLoading && contacts.length > 0 && (() => {
             const filteredContactsCount = contacts.filter(c =>
               c.fullName.toLowerCase().includes(contactSearch.toLowerCase()) ||
