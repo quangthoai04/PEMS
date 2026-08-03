@@ -77,7 +77,7 @@ public class VisitSetupProgressTemplateTests
         Assert.True(contract.AllowCc);
         Assert.True(contract.AllowBcc);
         Assert.False(contract.CarriesSecret);
-        Assert.False(contract.RequiresActionBlock);
+        Assert.False(contract.ActionRequired);
         Assert.Equal(EmailTemplateContracts.ClassificationStandard, contract.SecurityClassification);
     }
 

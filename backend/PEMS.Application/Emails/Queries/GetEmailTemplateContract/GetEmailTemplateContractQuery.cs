@@ -84,8 +84,12 @@ public sealed class EmailTemplateContractDto
     public IReadOnlyList<string> SensitiveVariables { get; set; } = new List<string>();
     public IReadOnlyList<string> ForbiddenInSubject { get; set; } = new List<string>();
 
-    /// <summary>True when the body must keep <c>{{actionBlock}}</c>.</summary>
-    public bool RequiresActionBlock { get; set; }
+    /// <summary>True when the template has an action spec.</summary>
+    public bool ActionSupported { get; set; }
+    /// <summary>True when the action block is strictly required.</summary>
+    public bool ActionRequired { get; set; }
+    /// <summary>The backend-provided description of the system action.</summary>
+    public string? SystemActionDescription { get; set; }
 
     /// <summary>True when the message carries a one-time code or a personal action link.</summary>
     public bool CarriesSecret { get; set; }

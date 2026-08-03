@@ -42,7 +42,9 @@ const accountContract: TemplateContract = {
   },
   sensitiveVariables: [],
   forbiddenInSubject: ['actionBlock'],
-  requiresActionBlock: false,
+  actionSupported: false,
+  actionRequired: false,
+  systemActionDescription: null,
   carriesSecret: false,
   allowCc: false,
   allowBcc: false,
@@ -82,7 +84,9 @@ const invitationContract: TemplateContract = {
   optionalVariables: ['recipientName'],
   requiredSystemBlocks: ['actionBlock'],
   optionalSystemBlocks: [],
-  requiresActionBlock: true,
+  actionSupported: true,
+  actionRequired: true,
+  systemActionDescription: 'Fake action description',
 };
 
 /**

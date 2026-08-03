@@ -182,7 +182,8 @@ public class EmailSystemBlockPreviewTests
     {
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.AccountEmailConfirmation)!;
 
-        Assert.True(contract.RequiresActionBlock);
+        Assert.True(contract.ActionSupported);
+        Assert.True(contract.ActionRequired);
         Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.RequiredSystemBlocks);
 
         var issues = EmailTemplateContentValidator.Validate(
@@ -191,7 +192,8 @@ public class EmailSystemBlockPreviewTests
             bodyVi: "<p>Chào {{fullName}}.</p>",   // block removed
             subjectEn: null, bodyEn: null);
 
-        Assert.Contains(issues, i => i.Code == EmailErrorCodes.TemplateActionBlockRequired);
+        // Once, not once per list the block appears on.
+        Assert.Single(issues, i => i.Code == EmailErrorCodes.TemplateActionBlockRequired);
     }
 
     [Fact]

@@ -113,6 +113,21 @@ namespace PEMS.Api.Controllers
         }
 
         /// <summary>
+        /// Restores the reply-contact settings for one template to the shipped defaults. HO only.
+        /// </summary>
+        [HttpPost("{templateCode}/contact-settings/restore-default")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> RestoreContactSettingsDefault(
+            string templateCode,
+            [FromBody] PEMS.Application.Emails.Contact.RestoreEmailContactSettingsCommand command,
+            CancellationToken cancellationToken)
+        {
+            command.TemplateCode = templateCode;
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Renders the contact block as the supplied DRAFT policy would produce it, with sample data.
         ///
         /// <para>

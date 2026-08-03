@@ -4,9 +4,9 @@
     "name": "Thông báo tài khoản đã kích hoạt",
     "description": "Gửi sau khi người dùng xác nhận email thành công và tài khoản chuyển sang hoạt động.",
     "subjectVi": "[PEMS] Tài khoản của bạn đã được kích hoạt",
-    "bodyVi": "<p>Xin chào <strong>{{fullName}}</strong>,</p><p>Email của bạn đã được xác nhận. Tài khoản PEMS với vai trò <strong>{{roleName}}</strong> tại <strong>{{campusName}}</strong> đã sẵn sàng sử dụng.</p>{{actionBlock}}<p style=\"color:#6b7280;font-size:12px\">Nếu bạn gặp khó khăn khi truy cập hệ thống, vui lòng liên hệ bộ phận phụ trách tài khoản.</p>{{contactInformationBlock}}<p style=\"color:#6b7280;font-size:12px\">Trân trọng,<br/>PEMS - FPT University</p>",
+    "bodyVi": "<p>Xin chào <strong>{{fullName}}</strong>,</p><p>Email của bạn đã được xác nhận. Tài khoản PEMS với vai trò <strong>{{roleName}}</strong> tại <strong>{{campusName}}</strong> đã sẵn sàng sử dụng.</p><p style=\"color:#6b7280;font-size:12px\">Nếu bạn gặp khó khăn khi truy cập hệ thống, vui lòng liên hệ bộ phận phụ trách tài khoản.</p>{{contactInformationBlock}}<p style=\"color:#6b7280;font-size:12px\">Trân trọng,<br/>PEMS - FPT University</p>",
     "subjectEn": "[PEMS] Your account has been activated",
-    "bodyEn": "<p>Hello <strong>{{fullName}}</strong>,</p><p>Your email has been confirmed. Your PEMS account with the role <strong>{{roleName}}</strong> at <strong>{{campusName}}</strong> is ready to use.</p>{{actionBlock}}<p style=\"color:#6b7280;font-size:12px\">If you have trouble signing in, please contact the account administrator.</p>{{contactInformationBlock}}<p style=\"color:#6b7280;font-size:12px\">Best regards,<br/>PEMS - FPT University</p>",
+    "bodyEn": "<p>Hello <strong>{{fullName}}</strong>,</p><p>Your email has been confirmed. Your PEMS account with the role <strong>{{roleName}}</strong> at <strong>{{campusName}}</strong> is ready to use.</p><p style=\"color:#6b7280;font-size:12px\">If you have trouble signing in, please contact the account administrator.</p>{{contactInformationBlock}}<p style=\"color:#6b7280;font-size:12px\">Best regards,<br/>PEMS - FPT University</p>",
     "bodyFormat": "HTML"
   },
   {

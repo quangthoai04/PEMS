@@ -20,11 +20,15 @@ namespace PEMS.IntegrationTests.Emails;
 /// anywhere in the output.
 ///
 /// <para>
-/// The gap this closes: fourteen of the thirty templates put <c>{{actionBlock}}</c> in their body, and
-/// only five of those are registered in <see cref="EmailActionTemplates"/>. For the other nine the
-/// preview supplied no trusted block, the placeholder survived rendering, and the renderer refused the
-/// message — so an operator editing one of them got <c>EMAIL_TEMPLATE_UNRESOLVED_PLACEHOLDER</c> instead
-/// of a preview. It was unreachable in practice only because the modal was wired to the five.
+/// The gap this closes: templates put <c>{{actionBlock}}</c> in their body while the preview supplied no
+/// trusted block, so the placeholder survived rendering and the renderer refused the message — an
+/// operator editing one got <c>EMAIL_TEMPLATE_UNRESOLVED_PLACEHOLDER</c> instead of a preview.
+/// </para>
+/// <para>
+/// It was first closed by giving unregistered templates a neutral block. Since 2026-08-03 it is closed
+/// from the other end instead: every body that writes the placeholder has an entry in
+/// <see cref="EmailActionTemplates"/>, so the preview always has real buttons to show and the contract
+/// refuses a body that asks for a block nothing will fill.
 /// </para>
 /// <para>
 /// The tests are a theory over the catalog rather than a hand-written list, so a template added later is
@@ -102,28 +106,44 @@ public sealed class EmailPreviewCoverageTests : IDisposable
     }
 
     /// <summary>
-    /// The nine templates that use the placeholder without a registry entry are shown as action
-    /// templates with an inert block, not as plain templates whose body happens to contain markup.
+    /// Every body that writes <c>{{actionBlock}}</c> has a registry entry, and previews as an action
+    /// template with a real block.
+    ///
+    /// <para>
+    /// This replaces the earlier "the nine unregistered ones preview as action templates anyway" test.
+    /// That neutral-fallback rule is gone (2026-08-03): a template with no entry has no send path that
+    /// fills the block, so the placeholder is now refused in the body rather than papered over in the
+    /// preview. The two halves are asserted together on purpose — the first is what the contract in
+    /// <see cref="EmailTemplateContracts"/> relies on, and asserting it without the second would pass on
+    /// a catalog where nobody uses the block at all.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task Templates_with_an_unregistered_action_block_preview_as_action_templates()
+    public async Task No_template_uses_the_action_block_without_a_registry_entry()
     {
         EmailEvidenceHarness.RequireDb();
         using var db = EmailEvidenceHarness.NewContext();
 
-        var usingActionBlock = await db.EmailTemplates.AsNoTracking()
-            .Where(t => t.BodyVi!.Contains("{{actionBlock}}") || t.BodyEn!.Contains("{{actionBlock}}"))
-            .Select(t => t.TemplateCode)
-            .ToListAsync();
-
-        var unregistered = usingActionBlock
-            .Where(code => EmailActionTemplates.For(code) is null)
+        var usingActionBlock = (await db.EmailTemplates.AsNoTracking()
+                .Where(t => t.BodyVi!.Contains("{{actionBlock}}") || t.BodyEn!.Contains("{{actionBlock}}"))
+                .Select(t => t.TemplateCode)
+                .ToListAsync())
+            .Where(c => SystemEmailTemplates.Find(c) is not null)
             .OrderBy(c => c, StringComparer.Ordinal)
             .ToList();
 
-        Assert.NotEmpty(unregistered);
+        // The catalog does use it — otherwise the loop below would assert nothing.
+        Assert.NotEmpty(usingActionBlock);
 
-        foreach (var code in unregistered)
+        var unregistered = usingActionBlock
+            .Where(code => EmailActionTemplates.For(code) is null)
+            .ToList();
+
+        Assert.True(unregistered.Count == 0,
+            "These bodies carry {{actionBlock}} with no entry in EmailActionTemplates, so no send path "
+            + "fills it and the contract refuses to save them: " + string.Join(", ", unregistered));
+
+        foreach (var code in usingActionBlock)
         {
             var result = await Preview(db).Handle(
                 new PreviewEmailTemplateQuery(code, await ContextForAsync(db, code), EmailLanguages.Vi), default);
@@ -132,8 +152,10 @@ public sealed class EmailPreviewCoverageTests : IDisposable
             Assert.False(string.IsNullOrWhiteSpace(result.LockedActionBlockHtml), $"{code}: no block to show");
             Assert.NotNull(result.SystemActionDescription);
 
-            // No contract exists for these, so none is claimed.
-            Assert.Empty(result.RequiredActionPlaceholders);
+            // The words on the preview's button are the registry's, not a generic stand-in.
+            Assert.Equal(
+                EmailActionTemplates.DisabledBlockFor(code, EmailLanguages.Vi),
+                result.LockedActionBlockHtml);
 
             // The editable half must not contain the action area: an operator saving it back would
             // otherwise write the preview's own markup into the template.
@@ -205,6 +227,14 @@ public sealed class EmailPreviewCoverageTests : IDisposable
     /// <summary>
     /// The same holds for a template the registry does NOT know about — the preview fallback is preview
     /// only, and does not leak into rendering for delivery.
+    ///
+    /// <para>
+    /// The unregistered-but-uses-the-block case no longer exists in the catalog (see
+    /// <see cref="No_template_uses_the_action_block_without_a_registry_entry"/>), so the row is CREATED
+    /// here for the duration of the test rather than looked up. Picking whichever catalogued template
+    /// happened to be in that state — and skipping when none was — is how this test came to assert
+    /// nothing at all: it returned green on the very change that emptied the set.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task Send_still_refuses_an_unregistered_action_template_with_no_action_data()
@@ -212,19 +242,22 @@ public sealed class EmailPreviewCoverageTests : IDisposable
         EmailEvidenceHarness.RequireDb();
         using var db = EmailEvidenceHarness.NewContext();
 
-        var code = await db.EmailTemplates.AsNoTracking()
-            .Where(t => t.BodyVi!.Contains("{{actionBlock}}"))
-            .Select(t => t.TemplateCode)
-            .ToListAsync();
+        // A plain template with no action spec, and none is added for it.
+        const string code = SystemEmailTemplates.AccountRoleChanged;
+        Assert.Null(EmailActionTemplates.For(code));
 
-        var unregistered = code.First(c => EmailActionTemplates.For(c) is null);
         var renderer = new EmailTemplateRenderer(db);
-        var context = await ContextForAsync(db, unregistered);
+        var context = await ContextForAsync(db, code);
 
-        var error = await Assert.ThrowsAsync<BusinessRuleException>(() => renderer.RenderAsync(
-            new EmailRenderRequest(unregistered, EmailLanguages.Vi, context, TrustedHtmlBlocks: null)));
+        await EmailEvidenceHarness.WithTemplateAsync(db, code,
+            row => row.BodyVi += "{{actionBlock}}",
+            async () =>
+            {
+                var error = await Assert.ThrowsAsync<BusinessRuleException>(() => renderer.RenderAsync(
+                    new EmailRenderRequest(code, EmailLanguages.Vi, context, TrustedHtmlBlocks: null)));
 
-        Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, error.ErrorCode);
+                Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, error.ErrorCode);
+            });
     }
 
     /// <summary>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, Plus, Edit2, Check, X, ShieldAlert, Loader2, Lock, Info, RotateCcw } from 'lucide-react';
+import { Search, Plus, Edit2, Check, X, ShieldAlert, Loader2, Lock, Info, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { emailsApi } from '../../../features/emails/api/emailsApi';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -85,6 +85,16 @@ const EMPTY_FORM: TemplateForm = {
  */
 const CATALOG_PAGE_SIZE = 200;
 
+const getTemplateGroup = (code: string) => {
+  if (code.startsWith('ACCOUNT_')) return 'Tài khoản';
+  if (code.startsWith('AUTH_')) return 'Xác thực';
+  if (code.startsWith('DEPT_')) return 'Nhân sự';
+  if (code.startsWith('LOGISTICS_')) return 'Hậu cần';
+  if (code.startsWith('REPORT_')) return 'Báo cáo';
+  if (code.startsWith('VISIT_')) return 'Tiếp khách';
+  return 'Khác';
+};
+
 export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' | 'error', msg: string) => void }) {
   const quillRef = useRef<any>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
@@ -92,7 +102,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   /** Set when the server reports more templates than it returned — see `fetchData`. */
   const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
@@ -341,10 +353,14 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       title: 'Phục hồi nội dung mặc định',
       variant: 'danger',
       message:
+        // Naming the template is not decoration: this dialog is the last point at which an operator can
+        // tell they are about to discard an afternoon's wording, and it is reached from a screen where
+        // several templates look alike.
         `Phục hồi mẫu "${formData.templateCode}" về nội dung mặc định của hệ thống?\n\n` +
-        'Tên, mô tả, tiêu đề và nội dung của CẢ tiếng Việt và tiếng Anh sẽ bị thay bằng bản hệ thống. ' +
-        'Các thay đổi bạn đã lưu trước đó sẽ không còn trên mẫu (vẫn được ghi lại trong lịch sử thao tác).\n\n' +
-        'Mã mẫu, phân loại và trạng thái không thay đổi.',
+        'Tên mẫu, mô tả quản trị, tiêu đề và nội dung của CẢ tiếng Việt và tiếng Anh sẽ bị thay bằng bản ' +
+        'hệ thống. Các thay đổi bạn đã lưu trước đó sẽ không còn trên mẫu (vẫn được ghi lại trong lịch ' +
+        'sử thao tác).\n\n' +
+        'Mã mẫu, phân loại, trạng thái và cấu hình thông tin liên hệ không thay đổi.',
       onConfirm: () => {
         setConfirmState(prev => ({ ...prev, isOpen: false }));
         void executeRestoreDefault();
@@ -374,7 +390,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         revision: typeof t?.revision === 'number' ? t.revision : prev.revision,
         updatedAt: t?.updatedAt ?? prev.updatedAt,
       }));
-      pushToast('success', 'Đã phục hồi nội dung mặc định của mẫu email');
+      pushToast('success', 'Đã phục hồi nội dung mặc định của mẫu email. Cấu hình thông tin liên hệ được giữ nguyên.');
       fetchData();
     } catch (err: any) {
       const code = errorCodeOf(err);
@@ -435,9 +451,16 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const filteredData = data.filter(item => {
     const term = searchQuery.toLowerCase();
     const matchSearch = (item.name || '').toLowerCase().includes(term) || (item.templateCode || '').toLowerCase().includes(term);
-    const matchStatus = statusFilter ? item.status === statusFilter : true;
-    return matchSearch && matchStatus;
+    const matchGroup = groupFilter ? getTemplateGroup(item.templateCode) === groupFilter : true;
+    return matchSearch && matchGroup;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, groupFilter, pageSize]);
 
   const renderIssueList = (field: TemplateContentField) => {
     const fieldIssues = issuesForField(field);
@@ -673,7 +696,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       block — mandatory on fourteen templates — appeared nowhere on this screen at all,
                       and an operator who deleted it learnt of its existence from a refusal.
                     */}
-                    {(ready.requiredSystemBlocks.length > 0 || ready.optionalSystemBlocks.length > 0) && (
+                    {(ready.requiredSystemBlocks.length > 0 || ready.optionalSystemBlocks.length > 0 || ready.actionSupported) && (
                       <div className="mb-3 text-[11px] text-blue-900 bg-blue-50 border border-blue-200 rounded p-2"
                            data-testid="system-blocks-notice">
                         <div className="flex items-start gap-1.5 mb-1">
@@ -681,6 +704,17 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                           <span className="font-semibold">Khối hệ thống — nội dung do hệ thống dựng</span>
                         </div>
                         <ul className="pl-5 space-y-1">
+                          {ready.actionSupported && (
+                            <li data-testid={`system-block-${ready.actionRequired ? 'required' : 'optional'}-actionBlock`}>
+                              <span className="font-mono font-bold">{`{{actionBlock}}`}</span>{' '}
+                              <span className={`rounded px-1 py-0.5 ${ready.actionRequired ? 'bg-blue-100 font-semibold' : 'bg-gray-100 text-gray-700'}`}>
+                                {ready.actionRequired ? 'bắt buộc giữ' : 'tùy chọn'}
+                              </span>
+                              <span className="block text-blue-800">
+                                {ready.systemActionDescription ?? SYSTEM_BLOCK_LABELS.actionBlock?.hint ?? 'Hệ thống điền nội dung khi gửi.'}
+                              </span>
+                            </li>
+                          )}
                           {ready.requiredSystemBlocks.map(block => (
                             <li key={block} data-testid={`system-block-required-${block}`}>
                               <span className="font-mono font-bold">{`{{${block}}}`}</span>{' '}
@@ -769,6 +803,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                     canEdit
                     language={language}
                     onBlockPreviewChange={setContactBlockPreview}
+                    pushToast={pushToast}
                   />
                 </div>
               )}
@@ -800,7 +835,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                 className="flex items-center gap-2 px-4 py-2 font-bold text-[#b45309] bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
               >
                 {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                Phục hồi mặc định
+                Phục hồi nội dung mẫu
               </button>
             ) : <span />}
 
@@ -840,10 +875,14 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Tìm kiếm mẫu..." aria-label="Tìm kiếm mẫu" className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:border-[#004c91] outline-none" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} aria-label="Lọc theo trạng thái" className="border border-gray-300 rounded-md px-3 py-1.5 text-sm outline-none">
-            <option value="">Tất cả trạng thái</option>
-            <option value="ACTIVE">Đang hoạt động</option>
-            <option value="INACTIVE">Tạm khóa</option>
+          <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)} aria-label="Lọc theo nhóm" className="border border-gray-300 rounded-md px-3 py-1.5 text-sm outline-none">
+            <option value="">Tất cả nhóm</option>
+            <option value="Tài khoản">Tài khoản</option>
+            <option value="Xác thực">Xác thực</option>
+            <option value="Nhân sự">Nhân sự</option>
+            <option value="Hậu cần">Hậu cần</option>
+            <option value="Báo cáo">Báo cáo</option>
+            <option value="Tiếp khách">Tiếp khách</option>
           </select>
         </div>
         {/* No "Thêm mẫu mới": the catalog is fixed in code (G11-I). */}
@@ -872,27 +911,25 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               <th className="px-4 py-3 font-bold text-center w-[60px]">STT</th>
               <th className="px-4 py-3 font-bold">Mã mẫu</th>
               <th className="px-4 py-3 font-bold">Tên mẫu</th>
-              <th className="px-4 py-3 font-bold text-center">Trạng thái</th>
+              <th className="px-4 py-3 font-bold">Mô tả quản trị</th>
               <th className="px-4 py-3 font-bold text-center w-[150px]">Hành động</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading ? (
               <tr><td colSpan={5} className="p-8 text-center text-gray-500">Đang tải...</td></tr>
-            ) : filteredData.length === 0 ? (
+            ) : paginatedData.length === 0 ? (
               <tr><td colSpan={5} className="p-8 text-center text-gray-500">Không tìm thấy mẫu email nào</td></tr>
             ) : (
-              filteredData.map((item, index) => (
+              paginatedData.map((item, index) => (
                 <tr key={item.emailTemplateId} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-center text-gray-500">{index + 1}</td>
+                  <td className="px-4 py-3 text-center text-gray-500">{(currentPage - 1) * pageSize + index + 1}</td>
                   <td className="px-4 py-3 font-bold text-[#004c91]">{item.templateCode}</td>
                   <td className="px-4 py-3 font-medium">{item.name}</td>
-                  <td className="px-4 py-3 text-center">
-                    {/* Read-only: a system template's status is decided by the release that ships its
-                        callers, and switching one off breaks the feature rather than disabling it. */}
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${item.status === 'ACTIVE' ? 'bg-[#eaffe4] text-[#0aa14f] border-[#ceefda]' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                      {item.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
-                    </span>
+                  <td className="px-4 py-3">
+                    <div className="line-clamp-2 text-xs text-gray-600" title={item.description || ''}>
+                      {item.description || <span className="text-gray-400 italic">Không có mô tả</span>}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => handleEdit(item.emailTemplateId)} className="p-1.5 text-gray-500 hover:text-[#004c91] hover:bg-blue-50 rounded" title="Chỉnh sửa nội dung" aria-label={`Chỉnh sửa ${item.templateCode}`}>
@@ -905,6 +942,64 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Footer */}
+      {filteredData.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">
+              Đang xem <span className="font-bold text-gray-900">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-bold text-gray-900">{Math.min(currentPage * pageSize, filteredData.length)}</span> trong <span className="font-bold text-gray-900">{filteredData.length}</span> mẫu
+            </span>
+            <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
+              <label htmlFor="pageSize" className="text-sm text-gray-500">Hiển thị:</label>
+              <select id="pageSize" value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="px-2 py-1 pr-6 border border-gray-300 rounded text-sm outline-none focus:border-[#004c91] bg-white">
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded text-gray-500 hover:text-[#004c91] hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed outline-none"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                  if (page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1) {
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-7 h-7 rounded text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  } else if (Math.abs(page - currentPage) === 2) {
+                    return <span key={page} className="px-1 text-gray-400">...</span>;
+                  }
+                  return null;
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded text-gray-500 hover:text-[#004c91] hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed outline-none"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

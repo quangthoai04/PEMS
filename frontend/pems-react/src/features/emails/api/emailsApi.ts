@@ -142,6 +142,12 @@ export const emailsApi = {
       `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
     );
   },
+  restoreEmailContactSettingsDefault: (templateCode: string) => {
+    return httpClient.post<EmailContactSettings>(
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings/restore-default`,
+      {}
+    );
+  },
   updateEmailContactSettings: (templateCode: string, data: EmailContactSettingsPayload) => {
     return httpClient.put<EmailContactSettings>(
       `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,

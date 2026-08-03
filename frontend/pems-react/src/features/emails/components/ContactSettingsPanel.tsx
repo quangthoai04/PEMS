@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Ban, Info, Loader2, Save, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Ban, Info, Loader2, Save, ShieldAlert, RotateCcw } from 'lucide-react';
+import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import {
   emailsApi,
   type EmailContactPolicyLevel,
@@ -50,13 +51,6 @@ const REPLY_TO_LABELS: Record<string, string> = {
   SENDER: 'Thư trả lời gửi về người bấm gửi',
 };
 
-const LEVEL_LABELS: Record<EmailContactPolicyLevel, string> = {
-  TEMPLATE: 'riêng của mẫu này',
-  CAMPUS: 'cấu hình cơ sở',
-  DEPARTMENT: 'cấu hình phòng ban',
-  SYSTEM: 'cấu hình hệ thống',
-  SHIPPED_DEFAULT: 'mặc định cài sẵn',
-};
 
 /**
  * Why the settings could not be loaded, in terms of what the operator has to DO about it.
@@ -132,21 +126,7 @@ function classifyLoadFailure(err: unknown): LoadFailure {
   };
 }
 
-/** Marks one field as coming from somewhere other than this template's own row. */
-function InheritedFrom({ level }: { level: EmailContactPolicyLevel }) {
-  if (level === 'TEMPLATE') return null;
 
-  return (
-    <span
-      className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold
-                 text-amber-800 align-middle"
-      data-testid="contact-settings-inherited"
-      title={`Giá trị này chưa được đặt riêng cho mẫu — đang lấy từ ${LEVEL_LABELS[level]}.`}
-    >
-      Đang kế thừa · {LEVEL_LABELS[level]}
-    </span>
-  );
-}
 
 interface Props {
   templateCode: string;
@@ -159,6 +139,8 @@ interface Props {
    * toggles change rather than only after a save. '' means this policy renders no block.
    */
   onBlockPreviewChange?: (html: string) => void;
+  /** Toast notification callback */
+  pushToast?: (type: 'success' | 'error', msg: string) => void;
 }
 
 export function ContactSettingsPanel({
@@ -166,6 +148,7 @@ export function ContactSettingsPanel({
   canEdit,
   language = 'VI',
   onBlockPreviewChange,
+  pushToast,
 }: Props) {
   const [settings, setSettings] = useState<EmailContactSettings | null>(null);
   const [draft, setDraft] = useState<EmailContactSettingsPayload | null>(null);
@@ -173,6 +156,14 @@ export function ContactSettingsPanel({
   const [failure, setFailure] = useState<LoadFailure | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'danger' as 'danger' | 'warning',
+    onConfirm: () => {},
+  });
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -229,6 +220,7 @@ export function ContactSettingsPanel({
       const res = await emailsApi.updateEmailContactSettings(templateCode, draft);
       setSettings(res.data);
       setDraft(toPayload(res.data));
+      if (pushToast) pushToast('success', 'Đã cập nhật cấu hình thông tin liên hệ.');
     } catch (err) {
       // The backend refuses contradictory combinations by name (both channels hidden, Reply-To
       // pointing at a hidden address, REQUIRED without the placeholder in the body). Relayed verbatim
@@ -236,6 +228,41 @@ export function ContactSettingsPanel({
       setSaveError(getApiErrorMessage(err, 'Không lưu được cấu hình thông tin liên hệ.'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Named for what it DOES, not for what it might look like it does. The backend writes the shipped
+  // default values onto this template's own row; it does not delete the row to let campus/system
+  // configuration flow through again. Those are two different operations and only one of them is
+  // implemented, so the wording must not promise the other.
+  const handleRestoreDefault = () => {
+    setConfirmState({
+      isOpen: true,
+      title: 'Phục hồi về cấu hình mặc định của mẫu',
+      variant: 'danger',
+      message:
+        'Mức hiển thị, nguồn đầu mối, các trường hiển thị, tiêu đề khối và Reply-To sẽ được đặt lại '
+        + 'thành giá trị mặc định của mẫu này. Nội dung email không thay đổi.',
+      onConfirm: () => {
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+        void executeRestoreDefault();
+      },
+    });
+  };
+
+  const executeRestoreDefault = async () => {
+    setRestoring(true);
+    setSaveError('');
+    try {
+      const res = await emailsApi.restoreEmailContactSettingsDefault(templateCode);
+      setSettings(res.data);
+      setDraft(toPayload(res.data));
+      if (pushToast) pushToast('success', 'Đã phục hồi về cấu hình mặc định của mẫu.');
+      // The debounce timer in useEffect will automatically re-render the preview using the new draft.
+    } catch (err) {
+      setSaveError(getApiErrorMessage(err, 'Không phục hồi được cấu hình thông tin liên hệ.'));
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -278,25 +305,13 @@ export function ContactSettingsPanel({
     );
   }
 
-  const set = <K extends keyof EmailContactSettingsPayload>(key: K, value: EmailContactSettingsPayload[K]) =>
+  const set = <K extends keyof EmailContactSettingsPayload>(key: K, value: EmailContactSettingsPayload[K]) => {
     setDraft(prev => (prev ? { ...prev, [key]: value } : prev));
+  };
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(toPayload(settings));
   const showsBlock = draft.requirement !== 'NONE';
 
-  // Only levels that ACTUALLY supplied something. Derived from the per-field labels rather than from
-  // "does this template have a row", which the seed makes true for all 31 catalogued templates and
-  // which therefore never distinguished an inherited value from an explicitly configured one.
-  const inheritedLevels = [...new Set(
-    ([
-      settings.requirementSource, settings.contactSourceSource, settings.showEmailSource,
-      settings.showPhoneSource, settings.showDepartmentSource, settings.showCampusSource,
-      settings.showSenderSource, settings.replyToSourceSource, settings.headingSource,
-    ] as EmailContactPolicyLevel[]).filter(level => level !== 'TEMPLATE'),
-  )];
-
-  // Warn BEFORE a save is attempted. The backend refuses this combination too, but a warning that
-  // appears while the operator is choosing is worth more than a refusal after they press save.
   const missingPlaceholder =
     draft.requirement === 'REQUIRED' && !(settings.bodyCarriesBlockVi && settings.bodyCarriesBlockEn);
 
@@ -307,16 +322,7 @@ export function ContactSettingsPanel({
       <div className="flex items-start gap-2 text-[11px] text-gray-600 bg-[#f8fbff] border border-[#cce0ff] rounded p-3">
         <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#004c91]" />
         <span>
-          Hệ thống tự điền họ tên, email và số điện thoại của đầu mối khi gửi. Ở đây chỉ chọn{' '}
-          <strong>lấy đầu mối từ đâu</strong> và <strong>hiển thị những trường nào</strong> — không nhập
-          tay được địa chỉ liên hệ.
-          {inheritedLevels.length > 0 && (
-            <span className="block mt-1 text-amber-800" data-testid="contact-settings-inherit-summary">
-              {inheritedLevels.length} trường chưa đặt riêng cho mẫu này, đang kế thừa từ{' '}
-              {inheritedLevels.map(l => LEVEL_LABELS[l]).join(', ')}. Lưu lại sẽ ghi thành cấu hình
-              riêng của mẫu.
-            </span>
-          )}
+          Hệ thống tự động lấy thông tin của đầu mối khi gửi email. Bạn chỉ cần chọn nguồn đầu mối và các thông tin cần hiển thị; không nhập thủ công địa chỉ liên hệ.
         </span>
       </div>
 
@@ -336,7 +342,7 @@ export function ContactSettingsPanel({
       {/* Mức bắt buộc */}
       <fieldset disabled={!canEdit} className="space-y-1.5">
         <legend className="block text-sm font-bold text-gray-700 mb-1">
-          Mức hiển thị<InheritedFrom level={settings.requirementSource} />
+          Mức hiển thị
         </legend>
         {settings.availableRequirements.map(value => (
           <label key={value}
@@ -374,7 +380,7 @@ export function ContactSettingsPanel({
         <>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`source-${templateCode}`}>
-              Lấy đầu mối từ<InheritedFrom level={settings.contactSourceSource} />
+              Lấy đầu mối từ
             </label>
             <select
               id={`source-${templateCode}`}
@@ -393,15 +399,15 @@ export function ContactSettingsPanel({
             <legend className="block text-sm font-bold text-gray-700 mb-1">Hiển thị trường</legend>
             <div className="grid grid-cols-2 gap-1.5">
               {([
-                ['showEmail', 'Email công việc', settings.showEmailSource],
-                ['showPhone', 'Số điện thoại', settings.showPhoneSource],
-                ['showDepartment', 'Phòng ban', settings.showDepartmentSource],
-                ['showCampus', 'Cơ sở', settings.showCampusSource],
-                ['showSender', 'Dòng “Được gửi bởi”', settings.showSenderSource],
-              ] as const).map(([key, label, level]) => (
+                ['showEmail', 'Email công việc'],
+                ['showPhone', 'Số điện thoại'],
+                ['showDepartment', 'Phòng ban'],
+                ['showCampus', 'Cơ sở'],
+                ['showSender', 'Dòng “Được gửi bởi”'],
+              ] as const).map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 text-xs text-gray-700">
-                  <input type="checkbox" checked={draft[key]} onChange={e => set(key, e.target.checked)} />
-                  {label}<InheritedFrom level={level} />
+                  <input type="checkbox" checked={draft[key as keyof EmailContactSettingsPayload] as boolean} onChange={e => set(key as keyof EmailContactSettingsPayload, e.target.checked as never)} />
+                  {label}
                 </label>
               ))}
             </div>
@@ -416,7 +422,7 @@ export function ContactSettingsPanel({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`heading-vi-${templateCode}`}>
-                Tiêu đề khối (VI)<InheritedFrom level={settings.headingSource} />
+                Tiêu đề khối (VI)
               </label>
               <input
                 id={`heading-vi-${templateCode}`}
@@ -446,7 +452,7 @@ export function ContactSettingsPanel({
 
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`replyto-${templateCode}`}>
-              Reply-To<InheritedFrom level={settings.replyToSourceSource} />
+              Reply-To
             </label>
             <select
               id={`replyto-${templateCode}`}
@@ -477,16 +483,36 @@ export function ContactSettingsPanel({
       )}
 
       {canEdit && (
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!dirty || saving || noChannel}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Lưu cấu hình liên hệ
-        </button>
+        <div className="flex items-center gap-3 mt-4">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={!dirty || saving || restoring || noChannel}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Lưu cấu hình liên hệ
+          </button>
+          <button
+            type="button"
+            onClick={handleRestoreDefault}
+            disabled={saving || restoring}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            Phục hồi về cấu hình mặc định của mẫu
+          </button>
+        </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant={confirmState.variant}
+        onConfirm={confirmState.onConfirm}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

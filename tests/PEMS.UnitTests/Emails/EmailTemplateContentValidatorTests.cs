@@ -32,7 +32,11 @@ public sealed class EmailTemplateContentValidatorTests
     /// </para>
     /// </summary>
     private static string Body(EmailTemplateContract contract, string html)
-        => html + string.Concat(contract.RequiredSystemBlocks.Select(b => "{{" + b + "}}"));
+    {
+        var body = html + string.Concat(contract.RequiredSystemBlocks.Select(b => "{{" + b + "}}"));
+        if (contract.ActionRequired) body += "{{actionBlock}}";
+        return body;
+    }
 
     // ── The clean case ───────────────────────────────────────────────────────
 

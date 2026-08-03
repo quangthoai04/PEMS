@@ -33,6 +33,9 @@ public static class EmailActionTemplates
     public const string LogisticsExpenseReportReminder = "LOGISTICS_EXPENSE_REPORT_REMINDER";
     public const string VisitReminderHost = "VISIT_REMINDER_HOST";
     public const string VisitReminderParticipants = "VISIT_REMINDER_PARTICIPANTS";
+    public const string VisitContactClaim = SystemEmailTemplates.VisitContactClaim;
+    public const string VisitContactTransfer = SystemEmailTemplates.VisitContactTransfer;
+    public const string LogisticsChangeProposalToHost = SystemEmailTemplates.LogisticsChangeProposalToHost;
 
     private const string AcceptDeclineDesc =
         "Nút Chấp nhận / Từ chối sẽ được hệ thống tự gắn (kèm liên kết một lần) khi gửi email.";
@@ -43,6 +46,19 @@ public static class EmailActionTemplates
         "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi.";
     private const string LogisticsActionDesc =
         "Nút Đồng ý / Từ chối / Hành động khác sẽ được hệ thống tự gắn (kèm liên kết một lần) khi gửi email.";
+
+    // Registered 2026-08-03. All three were sending a block into a body that declared the placeholder,
+    // while the registry said the template had no action — so the editor showed no action area, the
+    // preview fell back to a neutral stand-in, and the contract allowed an operator to delete the one
+    // element the message exists for. What each block draws is read off the send path, not invented:
+    // VisitContactClaimService builds ContactRoleInvitationBlock and ProposeRequestChangeCommand builds
+    // LogisticsProposalActionBlock.
+    private const string ContactRoleInvitationDesc =
+        "Nút \"Mở trang xác nhận\" (kèm liên kết một lần) sẽ được hệ thống tự gắn khi gửi email. " +
+        "Liên kết có hạn và yêu cầu người nhận đăng nhập bằng đúng tài khoản Google của email này.";
+    private const string LogisticsProposalDesc =
+        "Nút Chấp nhận đề xuất / Từ chối đề xuất (kèm liên kết một lần, không cần đăng nhập) và " +
+        "\"Xem chi tiết trong hệ thống\" sẽ được hệ thống tự gắn khi gửi email.";
 
     // The three below carry NO one-time token. Their block is a plain login-required link to a page the
     // recipient already has access to, so there is nothing for a token to grant — which is also why
@@ -100,6 +116,22 @@ public static class EmailActionTemplates
             System.Array.Empty<string>()),
         LogisticsExpenseReportReminder => new(true, false, false, true, false, ExpenseReminderDesc,
             System.Array.Empty<string>()),
+
+        // One button around a one-time claim URL. No RequiredActionPlaceholders: the URL never appears
+        // in the stored body — the backend builds the whole block — which is the same reason the
+        // reminders above declare none either. Only the templates whose body historically interpolated
+        // {{acceptUrl}}-style placeholders declare them.
+        VisitContactClaim or VisitContactTransfer => new(true, false, false, false, false,
+            ContactRoleInvitationDesc, System.Array.Empty<string>()),
+
+        // Accept / reject / detail, like LogisticsRequestToDepartment — but its own wording, because the
+        // Host is answering a change PROPOSAL, not a new request.
+        LogisticsChangeProposalToHost => new(true, false, false, true, true,
+            LogisticsProposalDesc, System.Array.Empty<string>()),
+
+        // VISIT_REQUEST_OTP is deliberately NOT here. Its message is the code itself; no send path
+        // supplies an action block for it, so registering it would make the contract demand a
+        // placeholder that nothing can ever fill — and the renderer refuses an unresolved one.
         _ => null,
     };
 
@@ -112,6 +144,7 @@ public static class EmailActionTemplates
         VisitReminderHost or VisitReminderParticipants => "Xem chi tiết chuyến tiếp khách",
         LogisticsExpenseReportReminder => "Mở biên bản để kê khai chi phí",
         LogisticsRequestToDepartment => "Mở yêu cầu để xử lý",
+        LogisticsChangeProposalToHost => "Xem chi tiết trong hệ thống",
         _ => null,
     };
 
@@ -132,6 +165,21 @@ public static class EmailActionTemplates
         if (spec is null) return EmailComposition.DisabledUnspecifiedActionBlock(language);
         if (spec.HasConfirmAction)
             return EmailComposition.DisabledConfirmEmailBlock(ConfirmEmailLabel(language));
+
+        // Two blocks the boolean flags cannot tell apart from their neighbours, so they are matched by
+        // code: an operator must read the words their real recipient will read, and "Chấp nhận / Từ chối"
+        // is not what either of these sends. Matched before the flags below, which are deliberately
+        // coarse.
+        switch (templateCode)
+        {
+            case VisitContactClaim:
+            case VisitContactTransfer:
+                return EmailComposition.DisabledContactRoleInvitationBlock();
+            case LogisticsChangeProposalToHost:
+                return EmailComposition.DisabledLogisticsProposalActionBlock(
+                    DetailLinkLabelFor(templateCode) ?? "Xem chi tiết trong hệ thống");
+        }
+
         if (spec.HasLogisticsAction) return EmailComposition.DisabledLogisticsActionBlock();
         if (spec.HasDetailLink)
             return EmailComposition.DisabledDetailLinkBlock(

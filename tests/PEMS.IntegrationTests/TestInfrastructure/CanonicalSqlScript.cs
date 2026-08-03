@@ -369,7 +369,7 @@ public static class CanonicalSqlScript
     /// tables, 31 email_templates, and row 70023's body_vi/body_en byte-identical to
     /// email-template-defaults.json after each run.
     public const string ExpectedSha256 =
-        "733da80c771bbff31e4a1625e1d8153a9bd49dce7d7d38fe57f852778ae53500";
+        "e836439b6479f38d4d0f0594847d63931956cdd2ecf75820ab8fe29e8f169ee3";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

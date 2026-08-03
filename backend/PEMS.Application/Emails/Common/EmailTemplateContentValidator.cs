@@ -195,7 +195,16 @@ public static class EmailTemplateContentValidator
         // Variables and blocks are required for different reasons and repaired by different people, but
         // "it must be in the body and it is not" is one check. Iterating both lists here is what keeps a
         // required block enforced now that it is no longer smuggled inside RequiredVariables.
-        foreach (var required in contract.RequiredVariables.Concat(contract.RequiredSystemBlocks))
+        //
+        // Distinct(): a required action block is already IN RequiredSystemBlocks — adding it again for
+        // ActionRequired reported the identical error twice, so the operator saw the same sentence
+        // stacked in the issue list and had no way to tell whether two different things were wrong.
+        var requiredItems = contract.RequiredVariables
+            .Concat(contract.RequiredSystemBlocks)
+            .Concat(contract.ActionRequired ? new[] { EmailTrustedBlocks.ActionBlock } : Array.Empty<string>())
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var required in requiredItems)
         {
             if (present.Contains(required)) continue;
 

@@ -65,7 +65,9 @@ const ACCOUNT_CONTRACT = {
   },
   sensitiveVariables: [],
   forbiddenInSubject: ['actionBlock'],
-  requiresActionBlock: false,
+  actionSupported: false,
+  actionRequired: false,
+  systemActionDescription: null,
   carriesSecret: true,
   allowCc: false,
   allowBcc: false,
@@ -105,7 +107,9 @@ const HISTORICAL_CONTRACT = {
   optionalVariables: [],
   sensitiveVariables: [],
   forbiddenInSubject: [],
-  requiresActionBlock: false,
+  actionSupported: false,
+  actionRequired: false,
+  systemActionDescription: null,
   carriesSecret: false,
   allowCc: false,
   allowBcc: false,
@@ -177,13 +181,30 @@ describe('TemplateManagement — the catalog is fixed (G11-I)', () => {
     expect(screen.queryByRole('button', { name: /thêm mẫu/i })).not.toBeInTheDocument();
   });
 
-  it('shows status as read-only text, not a toggle', async () => {
+  /**
+   * The status column was replaced by the admin description (2026-08-03). The guarantee it carried is
+   * unchanged and asserted here directly: deactivating a system template breaks the feature that sends
+   * it, so the list offers no control that could. Asserting the column is gone is not enough — a toggle
+   * added anywhere else in the row would slip past that.
+   */
+  it('offers no control for switching a template off', async () => {
     render(<TemplateManagement pushToast={pushToast} />);
-    const status = await screen.findByText('Đang hoạt động');
+    await screen.findByText('ACCOUNT_EMAIL_CONFIRMATION');
 
-    // A <span>, not a <button>: deactivating a system template breaks the feature that sends it.
-    expect(status.tagName).not.toBe('BUTTON');
-    expect(status.closest('button')).toBeNull();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /tạm khóa|kích hoạt|vô hiệu/i })).not.toBeInTheDocument();
+
+    // The only per-row action is opening the editor.
+    const rowButtons = screen.getAllByRole('button').filter(b => b.closest('tbody'));
+    expect(rowButtons.every(b => /^Chỉnh sửa /.test(b.getAttribute('aria-label') ?? ''))).toBe(true);
+  });
+
+  it('shows the admin description for each template', async () => {
+    render(<TemplateManagement pushToast={pushToast} />);
+    await screen.findByText('ACCOUNT_EMAIL_CONFIRMATION');
+
+    expect(screen.getByText('Mô tả quản trị')).toBeInTheDocument();
   });
 
   it('shows the template code as locked, with no input to change it', async () => {
@@ -628,16 +649,39 @@ describe('TemplateManagement — the whole catalog is loaded', () => {
     expect(params.pageSize).toBeGreaterThanOrEqual(30);
   });
 
-  it('renders every template in the catalog, including the last one', async () => {
+  /**
+   * The whole catalog is still LOADED in one request; it is now PAGED in the browser, ten rows at a
+   * time. That is a display choice and it must not become the server-side truncation this suite exists
+   * to catch — so the guarantee is asserted the only way it still can be: by walking to the last page
+   * and finding the last template there.
+   */
+  it('holds every template in the catalog, and the last one is reachable by paging', async () => {
     getEmailTemplateList.mockImplementation(servingCatalog(30));
 
     render(<TemplateManagement pushToast={pushToast} />);
     await screen.findByText('TEMPLATE_01');
 
-    // The 30th is the one a PageSize=10 request loses; asserting only "some rows rendered" would pass
-    // against the defect.
+    // The footer counts the whole catalog, not the current page.
+    expect(screen.getByText(/trong/).textContent).toMatch(/30\s*mẫu/);
+
+    // The 30th is the one a PageSize=10 REQUEST loses for good. Paging to it proves it was loaded.
+    expect(screen.queryByText('TEMPLATE_30')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
+
     expect(screen.getByText('TEMPLATE_30')).toBeInTheDocument();
+    expect(getEmailTemplateList).toHaveBeenCalledTimes(1);   // paging is local; no second fetch
+  });
+
+  it('shows the whole catalog on one page when the page size is raised', async () => {
+    getEmailTemplateList.mockImplementation(servingCatalog(30));
+
+    render(<TemplateManagement pushToast={pushToast} />);
+    await screen.findByText('TEMPLATE_01');
+
+    fireEvent.change(screen.getByLabelText('Hiển thị:'), { target: { value: '50' } });
+
     expect(screen.getAllByLabelText(/^Chỉnh sửa TEMPLATE_/)).toHaveLength(30);
+    expect(screen.getByText('TEMPLATE_30')).toBeInTheDocument();
   });
 
   it('finds a template that a ten-row page would never have loaded', async () => {

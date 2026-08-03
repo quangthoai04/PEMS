@@ -15,12 +15,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 const getEmailContactSettings = vi.fn();
 const updateEmailContactSettings = vi.fn();
 const previewEmailContactBlock = vi.fn();
+const restoreEmailContactSettingsDefault = vi.fn();
 
 vi.mock('../api/emailsApi', () => ({
   emailsApi: {
     getEmailContactSettings: (...a: unknown[]) => getEmailContactSettings(...a),
     updateEmailContactSettings: (...a: unknown[]) => updateEmailContactSettings(...a),
     previewEmailContactBlock: (...a: unknown[]) => previewEmailContactBlock(...a),
+    restoreEmailContactSettingsDefault: (...a: unknown[]) => restoreEmailContactSettingsDefault(...a),
   },
 }));
 
@@ -141,7 +143,18 @@ describe('a NO_CONTACT template is a state, not a failure', () => {
   });
 });
 
-describe('inheritance is shown only where a field is really inherited', () => {
+/**
+ * The per-field "Đang kế thừa · <level>" badges and their summary line were REMOVED from this card.
+ *
+ * They described a distinction the card can no longer act on: there is no control here for clearing a
+ * field back to inheritance, so naming the level a value arrived from told an operator something true
+ * and gave them nothing to do about it. What replaced them is one honest action — put this template's
+ * own values back to the shipped defaults — asserted below.
+ *
+ * These tests therefore assert the ABSENCE deliberately, including on the payload that used to produce
+ * two badges, so a re-introduction has to be a decision rather than an accident.
+ */
+describe('per-field inheritance badges are not part of this card', () => {
   it('says nothing when every field is the template’s own', async () => {
     renderPanel();
     await screen.findByTestId('contact-settings-panel');
@@ -150,11 +163,7 @@ describe('inheritance is shown only where a field is really inherited', () => {
     expect(screen.queryByTestId('contact-settings-inherit-summary')).not.toBeInTheDocument();
   });
 
-  /**
-   * The case the old `isDefault = !hasOverride` flag could never reach: a row EXISTS, so the flag said
-   * "overridden", while two of its columns are NULL and are really coming from further down.
-   */
-  it('marks the individual fields that come from another level', async () => {
+  it('says nothing either when fields really do come from another level', async () => {
     getEmailContactSettings.mockResolvedValue({
       data: {
         ...CONFIGURED,
@@ -167,11 +176,80 @@ describe('inheritance is shown only where a field is really inherited', () => {
     renderPanel();
     await screen.findByTestId('contact-settings-panel');
 
-    const badges = await screen.findAllByTestId('contact-settings-inherited');
-    expect(badges).toHaveLength(2);
+    expect(screen.queryByTestId('contact-settings-inherited')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-settings-inherit-summary')).not.toBeInTheDocument();
+  });
+});
 
-    expect(screen.getByTestId('contact-settings-inherit-summary'))
-      .toHaveTextContent('2 trường chưa đặt riêng cho mẫu này');
+describe('restoring the template’s default contact configuration', () => {
+  /**
+   * The wording is load-bearing. The endpoint WRITES the shipped defaults onto this template's own
+   * policy row; it does not delete the row so that campus/system configuration flows through again.
+   * Calling it "quay lại kế thừa" would describe an operation nothing implements.
+   */
+  it('names what it does and asks before doing it', async () => {
+    renderPanel();
+    await screen.findByTestId('contact-settings-panel');
+
+    fireEvent.click(screen.getByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Phục hồi về cấu hình mặc định của mẫu' }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/giá trị mặc định của mẫu này/)).toBeInTheDocument();
+    expect(screen.getByText(/Nội dung email không thay đổi/)).toBeInTheDocument();
+    expect(screen.queryByText(/kế thừa/)).not.toBeInTheDocument();
+
+    // Nothing is sent until the operator confirms.
+    expect(restoreEmailContactSettingsDefault).not.toHaveBeenCalled();
+  });
+
+  it('calls the endpoint on confirm and adopts the response', async () => {
+    const restored = { ...CONFIGURED, showPhone: false, replyToSource: 'NONE' };
+    restoreEmailContactSettingsDefault.mockResolvedValue({ data: restored });
+    const pushToast = vi.fn();
+
+    render(<ContactSettingsPanel templateCode="VISIT_PARTICIPANT_INVITATION" canEdit pushToast={pushToast} />);
+    await screen.findByTestId('contact-settings-panel');
+
+    fireEvent.click(screen.getByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận' }));
+
+    await waitFor(() =>
+      expect(restoreEmailContactSettingsDefault).toHaveBeenCalledWith('VISIT_PARTICIPANT_INVITATION'));
+
+    await waitFor(() => expect(pushToast).toHaveBeenCalledWith(
+      'success', 'Đã phục hồi về cấu hình mặc định của mẫu.'));
+
+    // The form shows the restored values, not the ones it was holding.
+    const phone = screen.getByLabelText('Số điện thoại') as HTMLInputElement;
+    expect(phone.checked).toBe(false);
+  });
+
+  /**
+   * The backend refuses this when the body no longer carries {{contactInformationBlock}} and the shipped
+   * default is REQUIRED. The refusal has to reach the card: restoring is the operator's answer to a
+   * broken configuration, so a silent failure leaves them pressing a button that appears to do nothing.
+   *
+   * Asserted on the error REGION, not on the sentence: the API answers in Vietnamese and the toast
+   * helper deliberately swaps an untranslated Vietnamese message for a status-based one when the UI is
+   * in English, so pinning the wording here would pin the locale the suite happens to run in.
+   */
+  it('reports a refusal in the card rather than swallowing it', async () => {
+    restoreEmailContactSettingsDefault.mockRejectedValue(
+      httpError(422, { message: 'Không thể phục hồi cấu hình liên hệ về mức Bắt buộc…' }));
+    const pushToast = vi.fn();
+
+    render(<ContactSettingsPanel templateCode="VISIT_PARTICIPANT_INVITATION" canEdit pushToast={pushToast} />);
+    await screen.findByTestId('contact-settings-panel');
+
+    fireEvent.click(screen.getByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận' }));
+
+    const shown = await screen.findByTestId('contact-settings-save-error');
+    expect(shown.textContent?.trim()).not.toBe('');
+
+    // And it is not reported as a success.
+    expect(pushToast).not.toHaveBeenCalledWith('success', expect.anything());
   });
 });
 

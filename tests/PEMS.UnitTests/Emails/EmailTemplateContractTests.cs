@@ -99,7 +99,7 @@ public sealed class EmailTemplateContractTests
 
         // Registered on 2026-08-03: this mail's whole purpose is the confirm button, so the block is
         // required and the preview shows the real button rather than a neutral placeholder.
-        Assert.True(contract.RequiresActionBlock);
+        Assert.True(contract.ActionRequired);
         Assert.DoesNotContain(EmailTrustedBlocks.ActionBlock, contract.AllowedVariables);
         Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.RequiredSystemBlocks);
         Assert.DoesNotContain(EmailTrustedBlocks.ActionBlock, contract.OptionalSystemBlocks);
@@ -141,19 +141,75 @@ public sealed class EmailTemplateContractTests
     }
 
     /// <summary>
-    /// Fourteen canonical templates write <c>{{actionBlock}}</c> and only five are registered. If the
-    /// contract allowed it solely for the registered five, the other nine could not be saved at all —
-    /// the same false refusal this contract exists to remove, aimed at a different set of templates.
+    /// <c>{{actionBlock}}</c> is legal in a body only where the registry declares an action spec, and
+    /// illegal in a SUBJECT everywhere — including on the templates whose body may not carry it either.
+    ///
+    /// <para>
+    /// The two rules are asserted together because they were briefly conflated: deriving the
+    /// forbidden-in-subject list from the blocks a body may carry silently dropped the subject rule from
+    /// every template without a spec. "May not be stored in a subject" is about where a one-time link
+    /// ends up, and has nothing to do with whether this template has buttons.
+    /// </para>
     /// </summary>
     [Fact]
-    public void The_action_block_is_a_legal_placeholder_on_every_template()
+    public void The_action_block_is_a_legal_placeholder_ONLY_on_action_templates()
     {
+        var withSpec = 0;
         foreach (var code in SystemEmailTemplates.AllCodes)
         {
             var contract = EmailTemplateContracts.For(code)!;
-            Assert.True(contract.AllowsSystemBlock(EmailTrustedBlocks.ActionBlock));
+            if (contract.ActionSupported) withSpec++;
+
+            Assert.Equal(contract.ActionSupported, contract.AllowsSystemBlock(EmailTrustedBlocks.ActionBlock));
+            Assert.Equal(contract.ActionSupported, contract.ActionRequired);
             Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.ForbiddenInSubject);
         }
+
+        // Both sides of the rule are exercised: some templates have a spec and some do not.
+        Assert.InRange(withSpec, 1, SystemEmailTemplates.AllCodes.Count - 1);
+    }
+
+    /// <summary>
+    /// The registry and the shipped wording agree, in both directions: a body writes
+    /// <c>{{actionBlock}}</c> exactly when its template has an action spec.
+    ///
+    /// <para>
+    /// Both halves are failures with a face. A body WITHOUT a spec asks for a block no send path fills,
+    /// so the render is refused and the template cannot be saved. A spec WITHOUT the placeholder is
+    /// worse and quieter: the send path builds a real block with a one-time link, the body has nowhere
+    /// to put it, and the substitution is simply skipped — the recipient gets a mail asking them to
+    /// confirm with no button, and nothing anywhere reports an error.
+    /// </para>
+    /// <para>
+    /// Unit-level on purpose. The equivalent database check lives in EmailPreviewCoverageTests, but the
+    /// shipped defaults are what a restore writes INTO the database, so catching it here is catching it
+    /// before it can be installed.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_shipped_body_writes_the_action_block_exactly_when_the_registry_declares_one()
+    {
+        var offenders = EmailTemplateDefaults.AllCodes
+            .Select(code =>
+            {
+                var shipped = EmailTemplateDefaults.For(code)!;
+                var marker = "{{" + EmailTrustedBlocks.ActionBlock + "}}";
+                var inVi = (shipped.BodyVi ?? "").Contains(marker, StringComparison.Ordinal);
+                var inEn = (shipped.BodyEn ?? "").Contains(marker, StringComparison.Ordinal);
+                var registered = EmailActionTemplates.For(code) is not null;
+
+                if (inVi != inEn)
+                    return $"{code}: the block is in {(inVi ? "body_vi" : "body_en")} only";
+
+                return inVi == registered
+                    ? null
+                    : $"{code}: body {(inVi ? "writes" : "does not write")} the block, registry "
+                      + $"{(registered ? "declares" : "declares no")} action";
+            })
+            .Where(x => x is not null)
+            .ToList();
+
+        Assert.Empty(offenders);
     }
 
     [Fact]
@@ -274,7 +330,7 @@ public sealed class EmailTemplateContractTests
         var contract = EmailTemplateContracts.For(code);
 
         Assert.NotNull(contract);
-        Assert.True(contract!.RequiresActionBlock);
+        Assert.True(contract!.ActionRequired);
         Assert.True(contract.AllowsSystemBlock(EmailTrustedBlocks.ActionBlock));
         Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.RequiredSystemBlocks);
     }

@@ -53,7 +53,9 @@ public sealed record EmailTemplateContract(
     IReadOnlyList<string> OptionalSystemBlocks,
     IReadOnlyList<string> SensitiveVariables,
     IReadOnlyList<string> ForbiddenInSubject,
-    bool RequiresActionBlock,
+    bool ActionSupported,
+    bool ActionRequired,
+    string? SystemActionDescription,
     bool CarriesSecret,
     bool AllowCc,
     bool AllowBcc,
@@ -70,8 +72,11 @@ public sealed record EmailTemplateContract(
 
     /// <summary>True when this template may carry the given block.</summary>
     public bool AllowsSystemBlock(string placeholderName)
-        => RequiredSystemBlocks.Contains(placeholderName, StringComparer.Ordinal)
-           || OptionalSystemBlocks.Contains(placeholderName, StringComparer.Ordinal);
+    {
+        if (placeholderName == EmailTrustedBlocks.ActionBlock) return ActionSupported;
+        return RequiredSystemBlocks.Contains(placeholderName, StringComparer.Ordinal)
+               || OptionalSystemBlocks.Contains(placeholderName, StringComparer.Ordinal);
+    }
 }
 
 /// <summary>
@@ -192,18 +197,28 @@ public static class EmailTemplateContracts
         var optional = allowed.Where(v => !required.Contains(v, StringComparer.Ordinal)).ToList();
 
         // ── System blocks ────────────────────────────────────────────────────
-        // The action block is ALLOWED on every template, REQUIRED only where the registry declares an
-        // action spec. Fourteen of the canonical templates write {{actionBlock}} in their body and only
-        // five are registered; allowing it solely for those five would have made the other nine
-        // impossible to save at all — the same false refusal this contract exists to remove, pointed at
-        // a different set of templates. Whether a given send can actually resolve the block is a
-        // send-time question, and it stays fail-closed there (R-106).
-        var requiresActionBlock = spec is not null;
+        // The action block is legal ONLY where the registry declares an action spec, and required there.
+        // The two flags are separate on the contract so the editor can say "bắt buộc giữ" or "tùy chọn"
+        // without re-deriving the rule, and so a future template that MAY carry a block without having to
+        // is expressible; today no such template exists and the two are equal by construction.
+        //
+        // This replaces the earlier "allowed everywhere, required for the registered few" rule (R-106).
+        // That rule existed because fourteen bodies wrote {{actionBlock}} while five were registered, and
+        // refusing the other nine would have made them unsavable. The registry has since caught up — every
+        // body that writes the placeholder now has a spec, asserted by
+        // EmailPreviewCoverageTests.No_template_uses_the_action_block_without_a_registry_entry — so the
+        // allowance has nothing left to protect and only lets an operator paste a block into a template
+        // whose send path will never fill it.
+        var actionSupported = spec is not null;
+        var actionRequired = spec is not null;
 
         var requiredBlocks = new List<string>();
         var optionalBlocks = new List<string>();
 
-        (requiresActionBlock ? requiredBlocks : optionalBlocks).Add(EmailTrustedBlocks.ActionBlock);
+        if (actionSupported)
+        {
+            (actionRequired ? requiredBlocks : optionalBlocks).Add(EmailTrustedBlocks.ActionBlock);
+        }
 
         // Any other trusted block is allowed ONLY on the template that needs it. The blanket allowance
         // above is specific to the action block and rests on a fact that holds for nothing else: many
@@ -226,9 +241,17 @@ public static class EmailTemplateContracts
         // Computed over variables AND blocks: a trusted block is the only route by which markup — and
         // therefore a live one-time URL — enters a rendered message, so a subject that interpolates one
         // is storing a link by construction. Splitting the lists must not lose that rule.
+        //
+        // The action block is listed unconditionally, NOT only where it is allowed in the body. "May not
+        // appear in a subject" is a different question from "may appear in this body", and answering the
+        // second one first is how the rule went missing from the seventeen templates without a spec: the
+        // one place the editor reads to know a placeholder is banned from the subject stopped naming it
+        // there. The renderer still refuses it at send (AssertNoSecretInSubject), but an operator should
+        // be told before they save, not after a recipient would have got it.
         var forbiddenInSubject = allowed
             .Concat(requiredBlocks)
             .Concat(optionalBlocks)
+            .Append(EmailTrustedBlocks.ActionBlock)
             .Where(SensitiveEmailVariables.ForbiddenInSubject)
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -244,7 +267,9 @@ public static class EmailTemplateContracts
             optionalBlocks,
             sensitive,
             forbiddenInSubject,
-            requiresActionBlock,
+            actionSupported,
+            actionRequired,
+            spec?.SystemActionDescription,
             carriesSecret,
             // A message carrying a one-time code or a personal action link may never be copied: CC and
             // BCC would hand one person's credential to another. This is the same rule the recipient

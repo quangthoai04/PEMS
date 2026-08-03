@@ -255,6 +255,30 @@ public static class EmailComposition
         </div>";
     }
 
+    /// <summary>
+    /// Preview stand-in for <see cref="ContactRoleInvitationBlock"/> — same single button, same words, no
+    /// anchor and no minted claim URL.
+    /// </summary>
+    public static string DisabledContactRoleInvitationBlock()
+        => @"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Mở trang xác nhận</span>
+        </div>";
+
+    /// <summary>
+    /// Preview stand-in for <see cref="LogisticsProposalActionBlock"/>. Kept separate from
+    /// <see cref="DisabledLogisticsActionBlock"/> because the Host is answering a change PROPOSAL: the
+    /// real mail says "Chấp nhận đề xuất / Từ chối đề xuất", and showing "Đồng ý / Từ chối / Hành động
+    /// khác" would promise an operator a set of buttons this template does not send.
+    /// </summary>
+    public static string DisabledLogisticsProposalActionBlock(string detailLabel = "Xem chi tiết trong hệ thống")
+    {
+        return $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận đề xuất</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối đề xuất</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</span>
+        </div>";
+    }
+
     public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
     {
         return $@"<div style=""text-align:center;margin:24px 0"">

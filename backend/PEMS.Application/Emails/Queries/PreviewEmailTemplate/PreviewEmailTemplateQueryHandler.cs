@@ -51,38 +51,33 @@ public sealed class PreviewEmailTemplateQueryHandler
         var language = EmailLanguages.Normalize(request.Language);
         var spec = EmailActionTemplates.For(code);
 
-        // The buttons a preview shows are dead on purpose: real tokens are minted only by a real send.
-        // They are still passed as a trusted block so the body is assembled exactly as it will be, and
-        // so the strip below has a well-formed block to remove.
-        //
-        // A template with NO registry entry still gets a block — a neutral one (G11 / R-106). Nine of the
-        // fourteen templates that use {{actionBlock}} are unregistered, and supplying nothing left the
-        // placeholder unresolved, which the renderer refuses: the operator saw an error where a preview
-        // should have been. The block is inert either way; a template that does not use the placeholder
-        // simply never substitutes it, so passing one costs nothing.
-        // A detail-link template shows the label its real send uses. Before this the stand-in always read
-        // "Mở yêu cầu để xử lý", which is the Department flow's wording — an operator editing the visit
-        // reminder saw a button promising an action that template does not offer.
-        var disabled = EmailActionTemplates.DisabledBlockFor(code, language);
-
         var trustedBlocks = new Dictionary<string, string>
         {
-            [EmailTrustedBlocks.ActionBlock] =
-                EmailComposition.ActionBlockStart + disabled + EmailComposition.ActionBlockEnd,
-
-            // Same reasoning as the action block above: supplied unconditionally because a template
-            // that does not use the placeholder never substitutes it, while a template that does would
-            // otherwise fail the preview closed on an unresolved variable.
-            [EmailTrustedBlocks.SetupSummaryBlock] =
-                EmailComposition.DisabledSetupSummaryBlock(language),
-
             // A preview has no visit, so there is no Host to resolve and no campus to fall back to.
             // A stand-in says where the block goes and what fills it; inventing a plausible name and
             // address would show an operator a person who does not exist and invite them to "correct"
             // contact details the template has no control over.
             [EmailTrustedBlocks.ContactInformationBlock] =
                 Contact.EmailContactHtmlRenderer.DisabledBlock(language),
+
+            // Supplied unconditionally because a template that does not use the placeholder never
+            // substitutes it, while a template that does would otherwise fail the preview closed on an
+            // unresolved variable.
+            [EmailTrustedBlocks.SetupSummaryBlock] =
+                EmailComposition.DisabledSetupSummaryBlock(language),
         };
+
+        string? disabledActionBlock = null;
+
+        if (spec is not null)
+        {
+            // The buttons a preview shows are dead on purpose: real tokens are minted only by a real send.
+            // They are still passed as a trusted block so the body is assembled exactly as it will be, and
+            // so the strip below has a well-formed block to remove.
+            disabledActionBlock = EmailActionTemplates.DisabledBlockFor(code, language);
+            trustedBlocks[EmailTrustedBlocks.ActionBlock] =
+                EmailComposition.ActionBlockStart + disabledActionBlock + EmailComposition.ActionBlockEnd;
+        }
 
         // Sample values come from the backend contract — never from a dictionary compiled into a
         // screen, which is how preview and send ended up substituting from two different tables (G11-J).
@@ -110,35 +105,20 @@ public sealed class PreviewEmailTemplateQueryHandler
             new EmailRenderRequest(code, language, context, trustedBlocks),
             cancellationToken);
 
-        if (spec is null)
+        // Whether this template actually HAS an action area is read off the rendered body rather than
+        // guessed: the block was substituted only if the body asked for it. A registered template whose
+        // stored body has lost the placeholder therefore previews as a plain one — the drift is reported
+        // by the content validator, which is where it can be repaired, rather than faked here.
+        var usesActionBlock = spec is not null
+            && rendered.Body.Contains(EmailComposition.ActionBlockStart, StringComparison.Ordinal);
+
+        if (!usesActionBlock)
         {
-            // Whether this template actually HAS an action area is read off the rendered body rather than
-            // guessed: the block was substituted only if the body asked for it.
-            var usesActionBlock = rendered.Body.Contains(EmailComposition.ActionBlockStart, StringComparison.Ordinal);
-
-            if (!usesActionBlock)
-            {
-                // Plain template: the whole body is editable, no system action block.
-                return new PreviewEmailTemplateResponse(
-                    rendered.TemplateCode, rendered.Subject, rendered.Body,
-                    EmailComposition.HtmlToPlainText(rendered.Body),
-                    false, null, null, Array.Empty<string>(), true, rendered.BodyFormat.ToString());
-            }
-
-            // Unregistered action template: shown the same way a registered one is — editable words on
-            // one side, an inert block on the other — so the operator cannot accidentally edit the action
-            // area into the template. No required placeholders are claimed, because there is no contract
-            // to claim them from.
-            var contentWithoutBlock = EmailComposition.StripActionArtifacts(rendered.Body);
-            var neutralDescription = language == EmailLanguages.En
-                ? "This template has an action area the system fills in when the email is sent. Its buttons are not configured yet, so the preview shows the position only."
-                : "Template này có khu vực nút thao tác do hệ thống gắn khi gửi. Các nút cụ thể chưa được cấu hình, nên bản xem trước chỉ hiển thị vị trí.";
-
+            // Plain template: the whole body is editable, no system action block.
             return new PreviewEmailTemplateResponse(
-                rendered.TemplateCode, rendered.Subject, contentWithoutBlock,
-                EmailComposition.HtmlToPlainText(contentWithoutBlock),
-                true, neutralDescription, disabled,
-                Array.Empty<string>(), true, rendered.BodyFormat.ToString());
+                rendered.TemplateCode, rendered.Subject, rendered.Body,
+                EmailComposition.HtmlToPlainText(rendered.Body),
+                false, null, null, Array.Empty<string>(), true, rendered.BodyFormat.ToString());
         }
 
         // Action template: editable content is the body WITHOUT the action artifacts; the block itself
@@ -148,7 +128,7 @@ public sealed class PreviewEmailTemplateQueryHandler
         return new PreviewEmailTemplateResponse(
             rendered.TemplateCode, rendered.Subject, editableContent,
             EmailComposition.HtmlToPlainText(editableContent),
-            true, spec.SystemActionDescription, disabled,
+            true, spec!.SystemActionDescription, disabledActionBlock,
             spec.RequiredActionPlaceholders, true, rendered.BodyFormat.ToString());
     }
 }

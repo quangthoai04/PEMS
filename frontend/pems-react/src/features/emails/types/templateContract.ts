@@ -124,8 +124,12 @@ export interface TemplateContract {
   systemBlockPreviews: Record<string, string>;
   sensitiveVariables: string[];
   forbiddenInSubject: string[];
-  /** The body must keep `{{actionBlock}}`. */
-  requiresActionBlock: boolean;
+  /** True when the template has an action spec. */
+  actionSupported: boolean;
+  /** True when the action block is strictly required. */
+  actionRequired: boolean;
+  /** The backend-provided description of the system action. */
+  systemActionDescription: string | null;
   /** The message carries a one-time code or a personal action link. */
   carriesSecret: boolean;
   allowCc: boolean;
