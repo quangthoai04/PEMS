@@ -162,8 +162,14 @@ public class EmailContactPolicyTests
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitParticipantInvitation);
 
         Assert.NotNull(contract);
-        Assert.Contains(EmailTrustedBlocks.ContactInformationBlock, contract!.AllowedVariables);
-        Assert.Contains(EmailTrustedBlocks.ContactInformationBlock, contract.RequiredVariables);
+        Assert.Contains(EmailTrustedBlocks.ContactInformationBlock, contract!.RequiredSystemBlocks);
+        Assert.True(contract.AllowsSystemBlock(EmailTrustedBlocks.ContactInformationBlock));
+
+        // And NOT as a variable. It is required, and it was previously reachable through the variable
+        // lists — which is how a mandatory block came to be reported as a variable that "does not exist
+        // in the system" whenever the two lists were compared.
+        Assert.DoesNotContain(EmailTrustedBlocks.ContactInformationBlock, contract.AllowedVariables);
+        Assert.DoesNotContain(EmailTrustedBlocks.ContactInformationBlock, contract.RequiredVariables);
     }
 
     /// <summary>
@@ -176,7 +182,8 @@ public class EmailContactPolicyTests
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.AuthPasswordResetOtp);
 
         Assert.NotNull(contract);
-        Assert.DoesNotContain(EmailTrustedBlocks.ContactInformationBlock, contract!.AllowedVariables);
+        Assert.False(contract!.AllowsSystemBlock(EmailTrustedBlocks.ContactInformationBlock));
+        Assert.DoesNotContain(EmailTrustedBlocks.ContactInformationBlock, contract.AllowedVariables);
     }
 
     /// <summary>

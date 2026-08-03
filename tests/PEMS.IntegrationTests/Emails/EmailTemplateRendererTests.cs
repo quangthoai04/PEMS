@@ -391,6 +391,94 @@ public sealed class EmailTemplateRendererTests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// A multi-line value keeps its lines. HTML treats a newline as whitespace, so before this a
+    /// logistics description written as three instructions arrived as one run-on sentence.
+    ///
+    /// <para>
+    /// These three tests deliberately drive <c>roleName</c>, which <see cref="Row"/> writes into the BODY
+    /// only. A newline in <c>fullName</c> would never reach the break logic at all: that variable is in
+    /// the subject too, and a subject carrying a line break is refused outright as a header injection —
+    /// see <c>A_variable_carrying_a_newline_cannot_break_the_subject_header</c>. Using it here would have
+    /// tested that older rule a fourth time instead of this one.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_multi_line_variable_keeps_its_line_breaks_in_an_html_body()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var result = await new EmailTemplateRenderer(db).RenderAsync(
+            await RequestWithBlocksAsync(db, Vars(roleName: "Dòng một\nDòng hai\n\nDòng bốn")));
+
+        // Encode the expected text: a VALUE goes through HtmlEncode, which renders every non-ASCII
+        // character as a numeric entity ("Dòng" → "D&#242;ng"). Only the breaks are literal markup.
+        var e = (string s) => System.Net.WebUtility.HtmlEncode(s);
+        Assert.Contains($"{e("Dòng một")}<br />{e("Dòng hai")}<br /><br />{e("Dòng bốn")}", result.Body);
+        // The raw newline is gone: had it survived, the mail would render as a single line.
+        Assert.DoesNotContain("\n" + e("Dòng hai"), result.Body);
+
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// CRLF and CR produce ONE break each, not two and not none — a description typed on Windows or
+    /// pasted from a document must not double-space itself.
+    /// </summary>
+    [Theory]
+    [InlineData("Một\r\nHai")]
+    [InlineData("Một\rHai")]
+    [InlineData("Một\nHai")]
+    public async Task Every_newline_convention_becomes_exactly_one_break(string value)
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var result = await new EmailTemplateRenderer(db)
+            .RenderAsync(await RequestWithBlocksAsync(db, Vars(roleName: value)));
+
+        var e = (string s) => System.Net.WebUtility.HtmlEncode(s);
+        Assert.Contains($"{e("Một")}<br />Hai", result.Body);
+        Assert.DoesNotContain($"{e("Một")}<br /><br />Hai", result.Body);
+
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The order of encode-then-break is the security property, not a detail. A value carrying BOTH
+    /// markup and newlines must come out with its script inert and its lines intact — the only tag in
+    /// the result is the one the renderer wrote.
+    /// </summary>
+    [Fact]
+    public async Task A_multi_line_variable_is_still_encoded_before_its_breaks_are_added()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        await ReplaceSeededAsync(db, Row());
+
+        var result = await new EmailTemplateRenderer(db).RenderAsync(await RequestWithBlocksAsync(
+            db, Vars(roleName: "<script>alert('x')</script>\n<img src=x onerror=alert(1)>")));
+
+        Assert.DoesNotContain("<script>", result.Body);
+        Assert.DoesNotContain("onerror=alert(1)>", result.Body);
+        Assert.Contains("&lt;script&gt;", result.Body);
+        Assert.Contains("&lt;img src=x onerror=alert(1)&gt;", result.Body);
+        // Encoded first, so the break is a real tag rather than the text "&lt;br /&gt;".
+        Assert.Contains("&lt;/script&gt;<br />&lt;img", result.Body);
+        Assert.DoesNotContain("&lt;br /&gt;", result.Body);
+
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task A_subject_variable_is_not_html_encoded()
     {

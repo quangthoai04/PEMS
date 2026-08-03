@@ -116,22 +116,47 @@ public class PrepareVisitLogisticsCommandHandlerTests
         Assert.Equal(SystemEmailContent.FromTemplate.Instance, sent.Content);
         Assert.Equal($"user{LeaderId}@test.local", sent.To.Email);
 
-        // Exactly the nine the template declares — no more, no fewer. A missing one is a fail-closed
+        // Exactly the eight the template declares — no more, no fewer. A missing one is a fail-closed
         // render error now, not a silent "Chưa có thông tin" in front of the department leader.
         Assert.Equal(
             new[]
             {
-                "coordinationNote", "departmentLeaderName", "dueAt", "logisticsItemType", "logisticsTitle",
+                "departmentLeaderName", "logisticsDescription", "logisticsItemType", "logisticsTitle",
                 "quantity", "requesterName", "usageEndAt", "usageStartAt",
             },
             sent.Variables.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
 
         Assert.Equal($"User {LeaderId}", sent.Variables["departmentLeaderName"]);
         Assert.Equal("Welcome LED", sent.Variables["logisticsTitle"]);
-        Assert.Equal("LED", sent.Variables["logisticsItemType"]);
+        Assert.Equal("Màn hình LED", sent.Variables["logisticsItemType"]);
         Assert.Equal("1", sent.Variables["quantity"]);
         Assert.Equal("08:00 01/08/2026", sent.Variables["usageStartAt"]);
         Assert.Equal("12:00 01/08/2026", sent.Variables["usageEndAt"]);
+    }
+
+    /// <summary>
+    /// The two variables this message must NOT carry, named individually so a reinstatement fails with
+    /// the reason rather than as an off-by-one on the key count.
+    /// </summary>
+    [Fact]
+    public async Task The_request_carries_no_response_deadline_and_no_coordination_note()
+    {
+        var (db, handler, _, _, dispatcher) = CreateSut();
+
+        var response = await handler.Handle(SystemRequest(), default);
+
+        var vars = dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables;
+        // The Host sets no deadline, so the department is told of none. "dueAt" reappearing here means
+        // somebody put "Hạn phản hồi" back into a message whose form has no such field.
+        Assert.DoesNotContain("dueAt", vars.Keys);
+        // A different column (offline_coordination_note) that this flow can never populate: an
+        // OFFLINE_COORDINATED item is recorded DONE and sends no email at all.
+        Assert.DoesNotContain("coordinationNote", vars.Keys);
+
+        // The COLUMN is untouched — the server still derives it for its own scheduling (usage start
+        // minus 24h). Not showing a value and not having one are different things.
+        var item = db.VisitLogisticsItems.Single(l => l.LogisticsItemId == response.LogisticsItemId);
+        Assert.Equal(new DateTime(2026, 7, 31, 8, 0, 0), item.DueAt);
     }
 
     [Fact]
@@ -139,7 +164,7 @@ public class PrepareVisitLogisticsCommandHandlerTests
     {
         var (_, handler, _, _, dispatcher) = CreateSut();
 
-        // No description, no quantity, no usage window, no due date.
+        // No description, no quantity, no usage window.
         await handler.Handle(
             new PrepareVisitLogisticsCommand(
                 DelegationsTestData.VisitInstanceId, DeptId, "OTHER", "Việc khác",
@@ -147,30 +172,149 @@ public class PrepareVisitLogisticsCommandHandlerTests
             default);
 
         var vars = dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables;
-        Assert.Equal("Không có ghi chú phối hợp.", vars["coordinationNote"]);
+        Assert.Equal("Chưa có mô tả chi tiết.", vars["logisticsDescription"]);
         Assert.Equal("Chưa nhập", vars["quantity"]);
         Assert.Equal("Chưa chọn thời gian", vars["usageStartAt"]);
-        Assert.Equal("Chưa đặt hạn", vars["dueAt"]);
+    }
+
+    /// <summary>
+    /// A description of only whitespace is the same thing as none — it must reach the empty wording,
+    /// not print a heading over a blank line.
+    /// </summary>
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("\n\n")]
+    [InlineData("\t \r\n ")]
+    public async Task A_whitespace_only_description_is_treated_as_absent(string blank)
+    {
+        var (db, handler, _, _, dispatcher) = CreateSut();
+
+        var response = await handler.Handle(
+            new PrepareVisitLogisticsCommand(
+                DelegationsTestData.VisitInstanceId, DeptId, "OTHER", "Việc khác",
+                Description: blank, Quantity: null, UsageStartAt: null, UsageEndAt: null),
+            default);
+
+        Assert.Null(db.VisitLogisticsItems.Single(l => l.LogisticsItemId == response.LogisticsItemId).Description);
+        Assert.Equal(
+            "Chưa có mô tả chi tiết.",
+            dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables["logisticsDescription"]);
     }
 
     [Fact]
-    public async Task The_hosts_description_is_what_the_department_reads_as_the_coordination_note()
+    public async Task The_hosts_detailed_description_reaches_the_department_under_its_own_name()
+    {
+        var (db, handler, _, _, dispatcher) = CreateSut();
+
+        const string description = "Cần bật từ 7h30, nội dung do IC gửi sau.";
+        var response = await handler.Handle(
+            new PrepareVisitLogisticsCommand(
+                DelegationsTestData.VisitInstanceId, DeptId, "LED", "Màn LED sảnh",
+                Description: description, Quantity: 2,
+                UsageStartAt: "2026-08-01T08:00", UsageEndAt: "2026-08-01T12:00"),
+            default);
+
+        // Stored verbatim, Vietnamese diacritics intact...
+        Assert.Equal(
+            description,
+            db.VisitLogisticsItems.Single(l => l.LogisticsItemId == response.LogisticsItemId).Description);
+        // ...and mailed under logisticsDescription, not smuggled through coordinationNote.
+        var vars = dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables;
+        Assert.Equal(description, vars["logisticsDescription"]);
+    }
+
+    /// <summary>
+    /// A description written as several instructions stays several instructions: the handler trims the
+    /// ends and touches nothing in between. (Turning the interior newlines into line breaks is the HTML
+    /// renderer's job and is covered by its own tests.)
+    /// </summary>
+    [Fact]
+    public async Task A_multi_line_description_keeps_its_line_breaks_and_is_trimmed_only_at_the_ends()
+    {
+        var (db, handler, _, _, dispatcher) = CreateSut();
+
+        const string body = "Chuẩn bị teabreak cho 20 khách, gồm trà, cà phê,\nnước suối và bánh ngọt.\n\nBố trí trước giờ họp 15 phút.";
+        var response = await handler.Handle(
+            new PrepareVisitLogisticsCommand(
+                DelegationsTestData.VisitInstanceId, DeptId, "MEAL", "Teabreak",
+                Description: "  \n" + body + "  \n ", Quantity: 20,
+                UsageStartAt: "2026-08-01T08:00", UsageEndAt: "2026-08-01T12:00"),
+            default);
+
+        Assert.Equal(
+            body,
+            db.VisitLogisticsItems.Single(l => l.LogisticsItemId == response.LogisticsItemId).Description);
+        Assert.Equal(
+            body,
+            dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables["logisticsDescription"]);
+    }
+
+    /// <summary>
+    /// Two items on one visit are two separate requests. This is the failure mode the "one active item
+    /// per category" guard makes easy to miss: the second send must describe the SECOND item, not
+    /// re-send the first one's content under a new title.
+    /// </summary>
+    [Fact]
+    public async Task Two_items_on_the_same_visit_never_borrow_each_others_description()
+    {
+        var (db, handler, _, _, dispatcher) = CreateSut();
+
+        await handler.Handle(
+            new PrepareVisitLogisticsCommand(
+                DelegationsTestData.VisitInstanceId, DeptId, "MEAL", "Teabreak",
+                Description: "Teabreak cho 20 khách, có suất chay.", Quantity: 20,
+                UsageStartAt: "2026-08-01T08:00", UsageEndAt: "2026-08-01T09:00"),
+            default);
+        await handler.Handle(
+            new PrepareVisitLogisticsCommand(
+                DelegationsTestData.VisitInstanceId, DeptId, "ROOM", "Phòng họp",
+                Description: "Phòng 30 chỗ, hai micro, máy chiếu.", Quantity: 1,
+                UsageStartAt: "2026-08-01T09:00", UsageEndAt: "2026-08-01T12:00"),
+            default);
+
+        var sends = dispatcher.All(SystemEmailTemplates.LogisticsRequestToDepartment).ToList();
+        Assert.Equal(2, sends.Count);
+
+        var byTitle = sends.ToDictionary(s => s.Variables["logisticsTitle"], s => s.Variables);
+        Assert.Equal("Teabreak cho 20 khách, có suất chay.", byTitle["Teabreak"]["logisticsDescription"]);
+        Assert.Equal("Suất ăn / Teabreak", byTitle["Teabreak"]["logisticsItemType"]);
+        Assert.Equal("Phòng 30 chỗ, hai micro, máy chiếu.", byTitle["Phòng họp"]["logisticsDescription"]);
+        Assert.Equal("Phòng / Hội trường", byTitle["Phòng họp"]["logisticsItemType"]);
+
+        // And the same separation in the rows themselves. Materialised first: the ordinal comparer has
+        // no provider translation, and sorting is this assertion's business, not the query's.
+        Assert.Equal(
+            new[] { "Phòng 30 chỗ, hai micro, máy chiếu.", "Teabreak cho 20 khách, có suất chay." },
+            db.VisitLogisticsItems.Select(l => l.Description).ToList()
+                .OrderBy(d => d, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// The department reads a category, not a column value. "Loại: MEAL" is what this replaced — the
+    /// screen the request was created on has always said "Suất ăn / Teabreak".
+    /// </summary>
+    [Theory]
+    [InlineData("ROOM", "Phòng / Hội trường")]
+    [InlineData("TRANSPORT", "Xe / Di chuyển")]
+    [InlineData("MEAL", "Suất ăn / Teabreak")]
+    [InlineData("EQUIPMENT", "Thiết bị")]
+    [InlineData("BANNER", "Banner / Standee")]
+    [InlineData("LED", "Màn hình LED")]
+    [InlineData("OTHER", "Yêu cầu khác")]
+    public async Task Every_item_type_is_mailed_as_a_label_never_as_its_code(string itemType, string expectedLabel)
     {
         var (_, handler, _, _, dispatcher) = CreateSut();
 
         await handler.Handle(
             new PrepareVisitLogisticsCommand(
-                DelegationsTestData.VisitInstanceId, DeptId, "LED", "Màn LED sảnh",
-                Description: "Cần bật từ 7h30, nội dung do IC gửi sau.", Quantity: 2,
+                DelegationsTestData.VisitInstanceId, DeptId, itemType, $"Hạng mục {itemType}",
+                Description: "Nội dung công việc.", Quantity: 1,
                 UsageStartAt: "2026-08-01T08:00", UsageEndAt: "2026-08-01T12:00"),
             default);
 
         var vars = dispatcher.Single(SystemEmailTemplates.LogisticsRequestToDepartment).Variables;
-        Assert.Equal("Cần bật từ 7h30, nội dung do IC gửi sau.", vars["coordinationNote"]);
-        // The deadline is the BACKEND's, not the client's: 24h before the usage window opens. The
-        // request no longer carries a due date at all, so there is nothing for a caller to talk the
-        // department into accepting.
-        Assert.Equal("08:00 31/07/2026", vars["dueAt"]);
+        Assert.Equal(expectedLabel, vars["logisticsItemType"]);
+        Assert.NotEqual(itemType, vars["logisticsItemType"]);
     }
 
     [Fact]

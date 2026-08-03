@@ -90,12 +90,54 @@ public sealed class EmailTemplateContractTests
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.AccountEmailConfirmation);
 
         Assert.NotNull(contract);
+
+        // Data variables only. The action block is legal on this template but belongs to the block
+        // lists, not here — mixing the two is what let a block be reported as an unknown VARIABLE.
         Assert.Equal(
-            new[] { "actionBlock", "campusName", "expiresInHours", "fullName", "roleName" },
+            new[] { "campusName", "expiresInHours", "fullName", "roleName" },
             contract!.AllowedVariables.OrderBy(v => v, StringComparer.Ordinal).ToArray());
 
-        Assert.False(contract.RequiresActionBlock);
-        Assert.DoesNotContain(EmailTrustedBlocks.ActionBlock, contract.RequiredVariables);
+        // Registered on 2026-08-03: this mail's whole purpose is the confirm button, so the block is
+        // required and the preview shows the real button rather than a neutral placeholder.
+        Assert.True(contract.RequiresActionBlock);
+        Assert.DoesNotContain(EmailTrustedBlocks.ActionBlock, contract.AllowedVariables);
+        Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.RequiredSystemBlocks);
+        Assert.DoesNotContain(EmailTrustedBlocks.ActionBlock, contract.OptionalSystemBlocks);
+    }
+
+    /// <summary>
+    /// No trusted block may appear in a variable list, on any template. This is the invariant the
+    /// content validator relies on to decide that a placeholder it is looking at is a variable at all.
+    /// </summary>
+    [Fact]
+    public void No_variable_list_ever_contains_a_trusted_block()
+    {
+        foreach (var code in SystemEmailTemplates.AllCodes)
+        {
+            var contract = EmailTemplateContracts.For(code)!;
+
+            foreach (var block in EmailTrustedBlocks.All)
+            {
+                Assert.DoesNotContain(block, contract.AllowedVariables);
+                Assert.DoesNotContain(block, contract.RequiredVariables);
+                Assert.DoesNotContain(block, contract.OptionalVariables);
+            }
+        }
+    }
+
+    /// <summary>Every block a template allows is reported in exactly one of the two block lists.</summary>
+    [Fact]
+    public void Required_and_optional_blocks_do_not_overlap()
+    {
+        foreach (var code in SystemEmailTemplates.AllCodes)
+        {
+            var contract = EmailTemplateContracts.For(code)!;
+
+            Assert.Empty(contract.RequiredSystemBlocks.Intersect(contract.OptionalSystemBlocks));
+
+            foreach (var block in contract.AllowedSystemBlocks)
+                Assert.True(contract.AllowsSystemBlock(block));
+        }
     }
 
     /// <summary>
@@ -109,7 +151,7 @@ public sealed class EmailTemplateContractTests
         foreach (var code in SystemEmailTemplates.AllCodes)
         {
             var contract = EmailTemplateContracts.For(code)!;
-            Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.AllowedVariables);
+            Assert.True(contract.AllowsSystemBlock(EmailTrustedBlocks.ActionBlock));
             Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.ForbiddenInSubject);
         }
     }
@@ -233,8 +275,8 @@ public sealed class EmailTemplateContractTests
 
         Assert.NotNull(contract);
         Assert.True(contract!.RequiresActionBlock);
-        Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.AllowedVariables);
-        Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.RequiredVariables);
+        Assert.True(contract.AllowsSystemBlock(EmailTrustedBlocks.ActionBlock));
+        Assert.Contains(EmailTrustedBlocks.ActionBlock, contract.RequiredSystemBlocks);
     }
 
     /// <summary>

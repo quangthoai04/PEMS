@@ -140,8 +140,19 @@ public sealed class EmailTemplateDefaultsParityTests
                      })
             {
                 foreach (var name in Placeholders(text))
-                    if (!contract.AllowedVariables.Contains(name, StringComparer.Ordinal))
+                {
+                    // Variables and system blocks are separate lists on the contract, and a placeholder
+                    // must be checked against the one it belongs to. Checking a block against the
+                    // variable list reports a shipped default as carrying a variable "its contract does
+                    // not allow" — about markup the backend itself injects, and which fourteen of these
+                    // defaults are required to contain.
+                    var allowed = EmailTemplateContract.IsSystemBlock(name)
+                        ? contract.AllowsSystemBlock(name)
+                        : contract.AllowedVariables.Contains(name, StringComparer.Ordinal);
+
+                    if (!allowed)
                         offenders.Add($"{code}.{field} uses {{{{{name}}}}}, which its contract does not allow");
+                }
             }
         }
 

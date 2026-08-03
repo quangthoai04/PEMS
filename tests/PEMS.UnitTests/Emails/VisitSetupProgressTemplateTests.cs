@@ -137,8 +137,8 @@ public class VisitSetupProgressTemplateTests
     {
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitSetupProgressUpdate)!;
 
-        Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, contract.AllowedVariables);
-        Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, contract.RequiredVariables);
+        Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, contract.RequiredSystemBlocks);
+        Assert.True(contract.AllowsSystemBlock(EmailTrustedBlocks.SetupSummaryBlock));
 
         // It is the backend's block, so the editor must not offer it as a variable to fill in, and the
         // preview must not pass it as one — SystemEmailContent rejects a caller-supplied trusted block.

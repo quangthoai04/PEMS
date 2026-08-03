@@ -34,6 +34,14 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
     private const string DeclineUrl = "https://pems.test/api/public/email-actions/RAW-LOG-DECLINE";
     private const string DetailUrl = "https://pems.test/dashboard/logistics/5501";
 
+    /// <summary>
+    /// A realistic "Mô tả chi tiết": Vietnamese, multi-line, and carrying an ampersand plus a bracketed
+    /// fragment — the three things that used to come out wrong (mojibake, collapsed to one line, and
+    /// double-encoded or executed).
+    /// </summary>
+    private const string LogisticsDescription =
+        "Chuẩn bị teabreak cho 20 khách, gồm trà, cà phê & nước suối.\nBố trí trước giờ họp 15 phút.";
+
     // ── C-19 ────────────────────────────────────────────────────────────────
 
     private SystemEmailRequest Request(SystemEmailContent? content = null) => new(
@@ -44,12 +52,13 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
             ["departmentLeaderName"] = "Phạm Thị Trưởng Phòng",
             ["requesterName"] = "Trần Thị Hà",
             ["logisticsTitle"] = "Màn LED sảnh A",
-            ["logisticsItemType"] = "LED",
+            // The label the request screen shows, which is what the send point now passes — not "LED".
+            ["logisticsItemType"] = "Màn hình LED",
             ["quantity"] = "2",
             ["usageStartAt"] = "08:00 12/08/2026",
             ["usageEndAt"] = "12:00 12/08/2026",
-            ["dueAt"] = "17:00 10/08/2026",
-            ["coordinationNote"] = "Cần bật từ 7h30, nội dung do IC gửi sau.",
+            // The Host's "Mô tả chi tiết", multi-line as real ones are.
+            ["logisticsDescription"] = LogisticsDescription,
         },
         TrustedBlocks: new Dictionary<string, string>
         {
@@ -149,13 +158,34 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
             Assert.Contains(EmlMessage.LiteralPrefix(row.SubjectVi), eml.DecodedHeader("Subject"));
 
             var body = eml.Body;
+            // Two different things live in this body and they are encoded differently. A VARIABLE VALUE
+            // goes through the renderer's HtmlEncode, which turns every non-ASCII character into a
+            // numeric entity ("công" → "c&#244;ng"); the template's own PROSE is copied verbatim and
+            // keeps its diacritics. Asserting the wrong one of the two passes on nothing.
             var encoded = (string s) => System.Net.WebUtility.HtmlEncode(s);
-            Assert.Contains(encoded("Màn LED sảnh A"), body);
-            Assert.Contains("LED", body);
-            Assert.Contains("08:00 12/08/2026", body);
-            Assert.Contains("17:00 10/08/2026", body);
-            // The coordination note is the Host's own words, not a renderer's stand-in.
-            Assert.Contains(encoded("Cần bật từ 7h30"), body);
+            Assert.Contains(encoded("Màn LED sảnh A"), body);          // value
+            Assert.Contains(encoded("Màn hình LED"), body);            // value
+            Assert.Contains("08:00 12/08/2026", body);                  // value, ASCII either way
+
+            // ── The detailed work content, under its own heading ──────────────
+            // Both lines are present, the ampersand is encoded exactly once, and the line break between
+            // them survived as markup rather than as whitespace HTML would swallow.
+            Assert.Contains(encoded("Chuẩn bị teabreak cho 20 khách, gồm trà, cà phê & nước suối."), body);
+            Assert.Contains(encoded("Bố trí trước giờ họp 15 phút."), body);
+            Assert.Contains(encoded("nước suối.") + "<br />" + encoded("Bố trí"), body);
+            Assert.Contains("Nội dung chi tiết công việc", body);        // template prose
+            Assert.DoesNotContain("&amp;amp;", body);                     // not double-encoded
+            Assert.DoesNotContain("&lt;br /&gt;", body);                  // the break is a tag, not text
+
+            // ── What must NOT be there any more ───────────────────────────────
+            // The description used to arrive under this heading, which names a different field.
+            Assert.DoesNotContain("Ghi chú phối hợp", body);
+            Assert.DoesNotContain(encoded("Không có ghi chú phối hợp."), body);
+            // No response deadline: the Host sets none, so the department is promised none.
+            Assert.DoesNotContain("Hạn phản hồi", body);
+            // The raw column code never reaches a reader.
+            Assert.DoesNotContain(">LED<", body);
+
             Assert.DoesNotContain("Chưa có thông tin", body);
             Assert.DoesNotContain("{{", body);
 
@@ -163,6 +193,10 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
             Assert.Contains(AcceptUrl, body);
             Assert.Contains(DeclineUrl, body);
             Assert.Contains(DetailUrl, body);
+            // The contact card the department needs to reach the Host is still rendered. Its heading is
+            // built by EmailContactHtmlRenderer, which HtmlEncodes what it injects — so this one IS
+            // entity-encoded even though it is not a template variable.
+            Assert.Contains(encoded("Thông tin liên hệ"), body);
         }
         finally { await _h.CleanupAsync(); }
     }
@@ -309,13 +343,13 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
         {
             using var db = EmailEvidenceHarness.NewContext();
             var incomplete = Request().Variables.ToDictionary(kv => kv.Key, kv => kv.Value);
-            incomplete.Remove("coordinationNote");
+            incomplete.Remove("logisticsDescription");
 
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _h.Dispatcher(db).SendAsync(Request() with { Variables = incomplete }));
 
             Assert.Equal(EmailErrorCodes.TemplateVariableMissing, ex.ErrorCode);
-            Assert.Contains("coordinationNote", ex.Message);
+            Assert.Contains("logisticsDescription", ex.Message);
             Assert.Empty(_h.Messages());
         }
         finally { await _h.CleanupAsync(); }

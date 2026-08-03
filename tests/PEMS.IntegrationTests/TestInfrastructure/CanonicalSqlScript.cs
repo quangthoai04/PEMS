@@ -345,8 +345,31 @@ public static class CanonicalSqlScript
     /// Verified against MySQL 8.0.46: the previous file reproduces 1050 on a database that already has
     /// the table; this one imports twice into the same database, exit 0 both times, 31 templates and
     /// 32 contact policies after each.
+    ///
+    /// SIXTEENTH BUMP — LOGISTICS_REQUEST_TO_DEPARTMENT carries the Host's description under its own
+    /// variable.
+    ///
+    /// Content-only, one template row (70023), three columns:
+    ///   * body_vi / body_en — "Ghi chú phối hợp: {{coordinationNote}}" becomes "Nội dung chi tiết công
+    ///     việc: {{logisticsDescription}}", and the "Hạn phản hồi: {{dueAt}}" list item is deleted.
+    ///   * variables_text — the same swap, dueAt dropped.
+    ///
+    /// The send point had always passed visit_logistics_items.description into this message, but under
+    /// the name of a DIFFERENT column (offline_coordination_note) — so the department read the work
+    /// content beneath a heading naming something else, and the compose-screen preview, which supplied
+    /// the real coordination note (always NULL here, because an OFFLINE_COORDINATED item is recorded
+    /// DONE and sends no email), printed "Không có ghi chú phối hợp." where the send printed the
+    /// description. The deadline goes because the Host has no such field: due_at is still derived
+    /// server-side and still stored, and the two other logistics templates still show it. Only this
+    /// message stops promising the department a date nobody set.
+    ///
+    /// No schema change: no table, column, index, trigger or constraint is touched.
+    ///
+    /// Verified against MySQL 8.0.46: imported twice into the same database, exit 0 both times, 84
+    /// tables, 31 email_templates, and row 70023's body_vi/body_en byte-identical to
+    /// email-template-defaults.json after each run.
     public const string ExpectedSha256 =
-        "108a7a271b0f31a953e65d4dddd556cf2577b2ab1dde302de0b5a73cae9b4b1d";
+        "733da80c771bbff31e4a1625e1d8153a9bd49dce7d7d38fe57f852778ae53500";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

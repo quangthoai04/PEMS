@@ -1,4 +1,5 @@
 using System.Linq;
+using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
 using Xunit;
 
@@ -19,6 +20,20 @@ public sealed class EmailTemplateContentValidatorTests
     private static EmailTemplateContract Contract(string code)
         => EmailTemplateContracts.For(code)!;
 
+    /// <summary>
+    /// Appends whatever system blocks the contract requires, so a test about VARIABLE rules states only
+    /// the variables it is about.
+    ///
+    /// <para>
+    /// It exists because <c>ACCOUNT_EMAIL_CONFIRMATION</c> — the fixture most of these use — became a
+    /// registered action template, making <c>{{actionBlock}}</c> mandatory in its body. Without this,
+    /// every one of them would carry an unrelated block placeholder, and the next template that gains a
+    /// required block would break them all again.
+    /// </para>
+    /// </summary>
+    private static string Body(EmailTemplateContract contract, string html)
+        => html + string.Concat(contract.RequiredSystemBlocks.Select(b => "{{" + b + "}}"));
+
     // ── The clean case ───────────────────────────────────────────────────────
 
     [Fact]
@@ -29,11 +44,11 @@ public sealed class EmailTemplateContentValidatorTests
         var issues = EmailTemplateContentValidator.Validate(
             contract,
             subjectVi: "Xác nhận tài khoản của bạn",
-            bodyVi: "<p>Chào {{fullName}}, vai trò {{roleName}} tại {{campusName}}. " +
-                    "Liên kết có hiệu lực {{expiresInHours}} giờ.</p>",
+            bodyVi: Body(contract, "<p>Chào {{fullName}}, vai trò {{roleName}} tại {{campusName}}. " +
+                    "Liên kết có hiệu lực {{expiresInHours}} giờ.</p>"),
             subjectEn: "Confirm your account",
-            bodyEn: "<p>Hello {{fullName}}, role {{roleName}} at {{campusName}}. " +
-                    "Valid for {{expiresInHours}} hours.</p>");
+            bodyEn: Body(contract, "<p>Hello {{fullName}}, role {{roleName}} at {{campusName}}. " +
+                    "Valid for {{expiresInHours}} hours.</p>"));
 
         Assert.Empty(issues);
     }
@@ -84,7 +99,7 @@ public sealed class EmailTemplateContentValidatorTests
 
         // One of the six the old hard-coded sidebar offered on every template.
         var issues = EmailTemplateContentValidator.Validate(
-            contract, "Xác nhận", "<p>{{fullName}} — {{logisticsTitle}}</p>", null, null);
+            contract, "Xác nhận", Body(contract, "<p>{{fullName}} — {{logisticsTitle}}</p>"), null, null);
 
         var issue = Assert.Single(issues);
         Assert.Equal(EmailErrorCodes.TemplateVariableUnknown, issue.Code);
@@ -99,7 +114,7 @@ public sealed class EmailTemplateContentValidatorTests
         var contract = Contract(SystemEmailTemplates.AccountEmailConfirmation);
 
         var issues = EmailTemplateContentValidator.Validate(
-            contract, "Xác nhận", "<p>{{totallyInvented}}</p>", null, null);
+            contract, "Xác nhận", Body(contract, "<p>{{totallyInvented}}</p>"), null, null);
 
         var issue = Assert.Single(issues);
         Assert.Equal(EmailErrorCodes.TemplateVariableUnknown, issue.Code);
@@ -117,7 +132,7 @@ public sealed class EmailTemplateContentValidatorTests
         var contract = Contract(SystemEmailTemplates.AccountEmailConfirmation);
 
         var issues = EmailTemplateContentValidator.Validate(
-            contract, "Xác nhận", "<p>Chào {{FullName}}</p>", null, null);
+            contract, "Xác nhận", Body(contract, "<p>Chào {{FullName}}</p>"), null, null);
 
         var issue = Assert.Single(issues);
         Assert.Equal(EmailErrorCodes.TemplateVariableMalformed, issue.Code);
@@ -142,7 +157,7 @@ public sealed class EmailTemplateContentValidatorTests
         var contract = Contract(SystemEmailTemplates.AccountEmailConfirmation);
 
         var clean = EmailTemplateContentValidator.Validate(
-            contract, "Xác nhận", "<a href=\"/x?u=%7B%7BfullName%7D%7D\">link</a>", null, null);
+            contract, "Xác nhận", Body(contract, "<a href=\"/x?u=%7B%7BfullName%7D%7D\">link</a>"), null, null);
         Assert.Empty(clean);
 
         var dirty = EmailTemplateContentValidator.Validate(
@@ -192,7 +207,8 @@ public sealed class EmailTemplateContentValidatorTests
         var contract = Contract(SystemEmailTemplates.AccountEmailConfirmation);
 
         var issues = EmailTemplateContentValidator.Validate(
-            contract, "Xác nhận tài khoản", "<p>Chào {{fullName}}, vui lòng xác nhận email.</p>", null, null);
+            contract, "Xác nhận tài khoản",
+            Body(contract, "<p>Chào {{fullName}}, vui lòng xác nhận email.</p>"), null, null);
 
         Assert.Empty(issues);
     }
@@ -350,14 +366,150 @@ public sealed class EmailTemplateContentValidatorTests
                 .Where(v => !contract.ForbiddenInSubject.Contains(v) || contract.RequiredVariables.Contains(v))
                 .Select(v => $"{{{{{v}}}}}");
 
+            // Every block the template allows goes in too — required ones because their absence is now
+            // its own refusal, optional ones because writing a permitted block must never be an issue.
+            var bodyBlocks = contract.AllowedSystemBlocks.Select(b => $"{{{{{b}}}}}");
+
             var issues = EmailTemplateContentValidator.Validate(
                 contract,
                 subjectVi: $"Thông báo {code}",
-                bodyVi: "<p>" + string.Join(" ", bodyVariables) + "</p>",
+                bodyVi: "<p>" + string.Join(" ", bodyVariables.Concat(bodyBlocks)) + "</p>",
                 subjectEn: null, bodyEn: null);
 
             Assert.True(issues.Count == 0,
                 $"{code}: " + string.Join(" | ", issues.Select(i => $"{i.Code}:{i.VariableName}")));
         }
+    }
+
+    // ── System blocks are not variables ──────────────────────────────────────
+    //
+    // The defect: a placeholder was checked against AllowedVariables regardless of what it was, so a
+    // trusted block — which by design is never in that list — could be answered with
+    // EMAIL_TEMPLATE_VARIABLE_UNKNOWN, "biến không tồn tại trong hệ thống". That is false about a block
+    // that exists, is registered, and is mandatory on fourteen templates, and it points the operator at
+    // a variable to define rather than at the block they moved or deleted.
+
+    /// <summary>
+    /// The headline case: no template, anywhere, may report a registered block under a VARIABLE code —
+    /// whether the block is legal there or not.
+    /// </summary>
+    [Fact]
+    public void No_template_ever_reports_a_system_block_as_an_unknown_variable()
+    {
+        foreach (var code in SystemEmailTemplates.AllCodes)
+        {
+            var contract = EmailTemplateContracts.For(code)!;
+
+            foreach (var block in EmailTrustedBlocks.All)
+            {
+                var issues = EmailTemplateContentValidator.Validate(
+                    contract,
+                    subjectVi: "Thông báo",
+                    bodyVi: $"<p>Nội dung {{{{{block}}}}}</p>",
+                    subjectEn: null, bodyEn: null);
+
+                Assert.DoesNotContain(issues, i =>
+                    i.Code == EmailErrorCodes.TemplateVariableUnknown && i.VariableName == block);
+            }
+        }
+    }
+
+    /// <summary>A block the template allows is simply accepted — no issue of any kind about it.</summary>
+    [Fact]
+    public void An_allowed_system_block_raises_no_issue()
+    {
+        foreach (var code in SystemEmailTemplates.AllCodes)
+        {
+            var contract = EmailTemplateContracts.For(code)!;
+
+            var body = "<p>Nội dung "
+                       + string.Join(" ", contract.AllowedSystemBlocks.Select(b => $"{{{{{b}}}}}"))
+                       + "</p>";
+
+            var issues = EmailTemplateContentValidator.Validate(
+                contract, subjectVi: "Thông báo", bodyVi: body, subjectEn: null, bodyEn: null);
+
+            Assert.DoesNotContain(issues, i => contract.AllowedSystemBlocks.Contains(i.VariableName ?? ""));
+        }
+    }
+
+    /// <summary>
+    /// The other half of the contract, and the reason this is not a relaxation: a block written into a
+    /// template that cannot resolve it is still refused — under the code that says to delete it.
+    /// </summary>
+    [Fact]
+    public void A_block_the_template_cannot_resolve_is_refused_under_its_own_code()
+    {
+        // AUTH_PASSWORD_RESET_OTP is NO_CONTACT and has no setup tables: neither block belongs.
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.AuthPasswordResetOtp)!;
+
+        var issues = EmailTemplateContentValidator.Validate(
+            contract,
+            subjectVi: "Mã đặt lại mật khẩu",
+            bodyVi: "<p>{{otpCode}} {{contactInformationBlock}}</p>",
+            subjectEn: null, bodyEn: null);
+
+        var issue = Assert.Single(issues);
+        Assert.Equal(EmailErrorCodes.TemplateSystemBlockNotAllowed, issue.Code);
+        Assert.Equal(EmailTrustedBlocks.ContactInformationBlock, issue.VariableName);
+    }
+
+    /// <summary>
+    /// An ordinary variable outside the contract must STILL be unknown. Splitting the lists changed
+    /// which rule judges a block, not whether a mistyped variable is caught.
+    /// </summary>
+    [Fact]
+    public void A_non_block_variable_outside_the_contract_is_still_unknown()
+    {
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.AccountEmailConfirmation)!;
+
+        var issues = EmailTemplateContentValidator.Validate(
+            contract,
+            subjectVi: "Xác nhận",
+            bodyVi: Body(contract, "<p>Chào {{fullName}}, xe {{vehicleInfo}}, mã {{otpCode}}.</p>"),
+            subjectEn: null, bodyEn: null);
+
+        Assert.Equal(2, issues.Count);
+        Assert.All(issues, i => Assert.Equal(EmailErrorCodes.TemplateVariableUnknown, i.Code));
+        Assert.Contains(issues, i => i.VariableName == "vehicleInfo");
+        Assert.Contains(issues, i => i.VariableName == "otpCode");
+    }
+
+    /// <summary>
+    /// A missing required block reports under the code that names ITS repair. Before the split every
+    /// block travelled inside RequiredVariables and an operator who deleted the contact card was told
+    /// to restore an action button.
+    /// </summary>
+    [Fact]
+    public void A_missing_contact_block_does_not_report_as_a_missing_action_block()
+    {
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitParticipantInvitation)!;
+
+        var issues = EmailTemplateContentValidator.Validate(
+            contract,
+            subjectVi: "Thư mời",
+            bodyVi: "<p>Kính mời {{recipientName}}.</p>{{actionBlock}}",
+            subjectEn: null, bodyEn: null);
+
+        var issue = Assert.Single(issues);
+        Assert.Equal(EmailErrorCodes.TemplateRequiredContactBlockNotInBody, issue.Code);
+        Assert.Equal(EmailTrustedBlocks.ContactInformationBlock, issue.VariableName);
+    }
+
+    /// <summary>A block still may not sit in a subject, which is stored and shown in history.</summary>
+    [Fact]
+    public void A_system_block_is_refused_in_a_subject()
+    {
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitParticipantInvitation)!;
+
+        var issues = EmailTemplateContentValidator.Validate(
+            contract,
+            subjectVi: "Thư mời {{contactInformationBlock}}",
+            bodyVi: "<p>{{recipientName}}</p>{{actionBlock}}{{contactInformationBlock}}",
+            subjectEn: null, bodyEn: null);
+
+        var issue = Assert.Single(issues);
+        Assert.Equal(EmailTemplateFields.SubjectVi, issue.Field);
+        Assert.Equal(EmailErrorCodes.TemplateSubjectForbiddenSensitiveVariable, issue.Code);
     }
 }
