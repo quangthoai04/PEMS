@@ -11,6 +11,7 @@ using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Enums;
 using PEMS.Infrastructure.Email;
 using PEMS.Infrastructure.Persistence;
+using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
 
 namespace PEMS.IntegrationTests.Emails;
@@ -86,6 +87,16 @@ public sealed class EmailTemplateRendererTests
         }
     }
 
+    /// <summary>
+    /// A row under this class's control.
+    ///
+    /// <para>
+    /// Bodies keep whatever trusted block <see cref="Code"/>'s contract requires — the renderer refuses a
+    /// body that has lost one, and these tests are about encoding, language selection and placeholder
+    /// reporting, not about that rule. Tests that mean to remove the block pass
+    /// <paramref name="keepRequiredBlocks"/> false and say so.
+    /// </para>
+    /// </summary>
     private static EmailTemplate Row(
         string? subjectVi = "Xin chào {{fullName}}",
         string? bodyVi = "<p>Xin chào {{fullName}}, vai trò {{roleName}} tại {{campusName}}.</p>",
@@ -93,7 +104,8 @@ public sealed class EmailTemplateRendererTests
         string? bodyEn = "<p>Hello {{fullName}}, role {{roleName}} at {{campusName}}.</p>",
         string? variables = "fullName, roleName, campusName",
         string status = "ACTIVE",
-        EmailBodyFormat format = EmailBodyFormat.HTML)
+        EmailBodyFormat format = EmailBodyFormat.HTML,
+        bool keepRequiredBlocks = true)
         => new()
         {
             TemplateCode = Code,
@@ -101,9 +113,11 @@ public sealed class EmailTemplateRendererTests
             Purpose = EmailTemplatePurposes.Account,
             Status = status,
             SubjectVi = subjectVi,
-            BodyVi = bodyVi,
+            BodyVi = keepRequiredBlocks && bodyVi is not null
+                ? EmailContractFixture.BodyWithRequiredBlocks(Code, bodyVi) : bodyVi,
             SubjectEn = subjectEn,
-            BodyEn = bodyEn,
+            BodyEn = keepRequiredBlocks && bodyEn is not null
+                ? EmailContractFixture.BodyWithRequiredBlocks(Code, bodyEn) : bodyEn,
             BodyFormat = format,
             VariablesText = variables,
             CreatedAt = DateTime.Now,
@@ -119,6 +133,19 @@ public sealed class EmailTemplateRendererTests
         IReadOnlyDictionary<string, string>? trusted = null)
         => new(Code, language, variables ?? Vars(), trusted);
 
+    /// <summary>
+    /// The same request with a value for every trusted block the contract requires, resolved by the real
+    /// resolver. Used by the tests whose subject is something else; the ones that deliberately withhold a
+    /// block keep calling <see cref="Request"/>.
+    /// </summary>
+    private static async Task<EmailRenderRequest> RequestWithBlocksAsync(
+        ApplicationDbContext db,
+        IReadOnlyDictionary<string, string>? variables = null,
+        string language = EmailLanguages.Vi,
+        IReadOnlyDictionary<string, string>? trusted = null)
+        => new(Code, language, variables ?? Vars(),
+               await EmailContractFixture.TrustedBlocksAsync(db, Code, language, trusted));
+
     // ── Happy path ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -130,7 +157,7 @@ public sealed class EmailTemplateRendererTests
 
         await ReplaceSeededAsync(db, Row());
 
-        var result = await new EmailTemplateRenderer(db).RenderAsync(Request());
+        var result = await new EmailTemplateRenderer(db).RenderAsync(await RequestWithBlocksAsync(db));
 
         Assert.Equal(Code, result.TemplateCode);
         Assert.Equal(EmailLanguages.Vi, result.LanguageUsed);
@@ -150,7 +177,7 @@ public sealed class EmailTemplateRendererTests
 
         await ReplaceSeededAsync(db, Row());
 
-        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(language: EmailLanguages.En));
+        var result = await new EmailTemplateRenderer(db).RenderAsync(await RequestWithBlocksAsync(db, language: EmailLanguages.En));
 
         Assert.Equal(EmailLanguages.En, result.LanguageUsed);
         Assert.Equal("Hello Nguyễn Văn A", result.Subject);
@@ -170,14 +197,14 @@ public sealed class EmailTemplateRendererTests
         await ReplaceSeededAsync(db, row);
 
         var renderer = new EmailTemplateRenderer(db);
-        var before = await renderer.RenderAsync(Request());
+        var before = await renderer.RenderAsync(await RequestWithBlocksAsync(db));
         Assert.Equal("Xin chào Nguyễn Văn A", before.Subject);
 
         // An operator edits the template. No deploy, no restart, no cache to invalidate.
         row.SubjectVi = "Kính gửi {{fullName}}";
         await db.SaveChangesAsync();
 
-        var after = await renderer.RenderAsync(Request());
+        var after = await renderer.RenderAsync(await RequestWithBlocksAsync(db));
         Assert.Equal("Kính gửi Nguyễn Văn A", after.Subject);
 
         await tx.RollbackAsync();
@@ -334,8 +361,9 @@ public sealed class EmailTemplateRendererTests
         await ReplaceSeededAsync(db, Row(
             bodyVi: "<p>Xin chào {{fullName}} — đơn {{RequestCode}} ({{roleName}}, {{campusName}}).</p>"));
 
+        var request = await RequestWithBlocksAsync(db);
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            new EmailTemplateRenderer(db).RenderAsync(Request()));
+            new EmailTemplateRenderer(db).RenderAsync(request));
 
         Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, ex.ErrorCode);
         Assert.Contains("RequestCode", ex.Message);
@@ -355,7 +383,7 @@ public sealed class EmailTemplateRendererTests
         await ReplaceSeededAsync(db, Row());
 
         var result = await new EmailTemplateRenderer(db)
-            .RenderAsync(Request(Vars(fullName: "<script>alert('x')</script>")));
+            .RenderAsync(await RequestWithBlocksAsync(db, Vars(fullName: "<script>alert('x')</script>")));
 
         Assert.DoesNotContain("<script>", result.Body);
         Assert.Contains("&lt;script&gt;", result.Body);
@@ -373,7 +401,7 @@ public sealed class EmailTemplateRendererTests
         await ReplaceSeededAsync(db, Row());
 
         // A subject is a header, not markup: encoding here would show the recipient "A &amp; B".
-        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(Vars(fullName: "A & B")));
+        var result = await new EmailTemplateRenderer(db).RenderAsync(await RequestWithBlocksAsync(db, Vars(fullName: "A & B")));
 
         Assert.Equal("Xin chào A & B", result.Subject);
 
@@ -389,9 +417,11 @@ public sealed class EmailTemplateRendererTests
 
         await ReplaceSeededAsync(db, Row());
 
+        // The blocks are supplied so the ONLY thing wrong with this render is the header injection —
+        // otherwise the refusal comes from the missing contact block and the test proves nothing.
+        var request = await RequestWithBlocksAsync(db, Vars(fullName: "A\r\nBcc: attacker@evil.test"));
         var ex = await Assert.ThrowsAsync<ValidationException>(() =>
-            new EmailTemplateRenderer(db).RenderAsync(
-                Request(Vars(fullName: "A\r\nBcc: attacker@evil.test"))));
+            new EmailTemplateRenderer(db).RenderAsync(request));
 
         Assert.Equal(EmailErrorCodes.HeaderInvalid, ex.ErrorCode);
 
@@ -409,7 +439,7 @@ public sealed class EmailTemplateRendererTests
             bodyVi: "Xin chào {{fullName}} — {{roleName}} tại {{campusName}}",
             format: EmailBodyFormat.PLAIN_TEXT));
 
-        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(Vars(fullName: "A & B")));
+        var result = await new EmailTemplateRenderer(db).RenderAsync(await RequestWithBlocksAsync(db, Vars(fullName: "A & B")));
 
         Assert.Equal(EmailBodyFormat.PLAIN_TEXT, result.BodyFormat);
         Assert.Contains("A & B", result.Body);
@@ -435,7 +465,7 @@ public sealed class EmailTemplateRendererTests
             [EmailTrustedBlocks.ActionBlock] = "<a href=\"https://pems.test/accept/abc\">Chấp nhận</a>",
         };
 
-        var result = await new EmailTemplateRenderer(db).RenderAsync(Request(trusted: trusted));
+        var result = await new EmailTemplateRenderer(db).RenderAsync(await RequestWithBlocksAsync(db, trusted: trusted));
 
         // The backend's own markup survives intact…
         Assert.Contains("<a href=\"https://pems.test/accept/abc\">", result.Body);
@@ -455,10 +485,14 @@ public sealed class EmailTemplateRendererTests
         await ReplaceSeededAsync(db, Row(
             bodyVi: "<p>Xin chào {{fullName}} ({{roleName}}, {{campusName}})</p>{{actionBlock}}"));
 
+        // Every OTHER required block is supplied, so the one withheld block is the only thing left to
+        // report. Passing nothing at all would leave two unresolved and prove only that one of them was.
+        var request = await RequestWithBlocksAsync(db);
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            new EmailTemplateRenderer(db).RenderAsync(Request()));
+            new EmailTemplateRenderer(db).RenderAsync(request));
 
         Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, ex.ErrorCode);
+        Assert.Contains(EmailTrustedBlocks.ActionBlock, ex.Message);
 
         await tx.RollbackAsync();
     }

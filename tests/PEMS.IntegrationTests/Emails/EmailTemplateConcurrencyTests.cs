@@ -98,13 +98,18 @@ public sealed class EmailTemplateConcurrencyTests : IDisposable
     private static async Task<EmailTemplate> LoadAsync(ApplicationDbContext db, string code)
         => await db.EmailTemplates.AsNoTracking().FirstAsync(t => t.TemplateCode == code);
 
+    /// <summary>
+    /// A content edit an operator could actually save: any trusted block the template's contract
+    /// requires is kept, because the handler refuses a body that drops one. These tests are about the
+    /// concurrency token, not about the contact block.
+    /// </summary>
     private static UpdateEmailTemplateCommand Edit(EmailTemplate t, string bodyVi, uint expected) => new()
     {
         EmailTemplateId = t.EmailTemplateId,
         Name = t.Name,
         Description = t.Description,
         SubjectVi = t.SubjectVi ?? "Tiêu đề",
-        BodyVi = bodyVi,
+        BodyVi = EmailContractFixture.BodyWithRequiredBlocks(t.TemplateCode, bodyVi),
         SubjectEn = t.SubjectEn,
         BodyEn = t.BodyEn,
         ExpectedRevision = expected,

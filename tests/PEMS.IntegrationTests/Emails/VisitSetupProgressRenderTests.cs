@@ -38,40 +38,65 @@ public sealed class VisitSetupProgressRenderTests
     private const string Tables =
         "<h3>1. Thông tin chung</h3><table><tr><td>Tên đoàn</td><td>Đoàn A</td></tr></table>";
 
-    private static readonly Dictionary<string, string> Variables = new(StringComparer.Ordinal)
+    /// <summary>
+    /// Exactly the variables the registry declares for this template — read from it, not restated.
+    ///
+    /// <para>
+    /// This list used to be typed out here and included <c>hostEmail</c>. That variable was withdrawn
+    /// when <c>{{contactInformationBlock}}</c> took over printing the Host's address, and a copy of a
+    /// contract is a copy that goes stale: the fixture kept supplying a variable the template no longer
+    /// declares, which the renderer refuses.
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, string> BuildVariables()
     {
-        ["delegationName"] = "Đoàn Đại học Kyoto",
-        ["campusName"] = "FPT Hà Nội",
-        ["plannedStart"] = "09:00 12/08/2026",
-        ["plannedEnd"] = "11:30 12/08/2026",
-        ["hostName"] = "Nguyễn Văn A",
-        ["hostEmail"] = "host.a@fpt.edu.vn",
-    };
+        var contract = EmailTemplateContracts.For(Code)!;
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["delegationName"] = "Đoàn Đại học Kyoto",
+            ["campusName"] = "FPT Hà Nội",
+            ["plannedStart"] = "09:00 12/08/2026",
+            ["plannedEnd"] = "11:30 12/08/2026",
+            ["hostName"] = "Nguyễn Văn A",
+        };
+
+        // Anything the contract adds later still gets a value, so a new variable fails on its own
+        // meaning rather than on this fixture being out of date.
+        foreach (var name in contract.AllowedVariables)
+            if (!EmailTrustedBlocks.All.Contains(name) && !values.ContainsKey(name))
+                values[name] = "giá trị kiểm thử";
+
+        return values;
+    }
+
+    private static readonly Dictionary<string, string> Variables = BuildVariables();
 
     private static EmailTemplateRenderer Renderer(ApplicationDbContext db) => new(db);
 
-    private static Dictionary<string, string> WithBlock() =>
-        new(StringComparer.Ordinal) { [EmailTrustedBlocks.SetupSummaryBlock] = Tables };
+    /// <summary>
+    /// Every trusted block this template requires — the summary tables AND the contact block.
+    ///
+    /// <para>
+    /// Both, because the template requires both, and a test that supplies one of two proves nothing
+    /// about the one it withheld: the refusal it asserts on would be about the other. The contact block
+    /// is resolved by the real resolver rather than written out here.
+    /// </para>
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<string, string>> WithBlockAsync(ApplicationDbContext db)
+        => await EmailContractFixture.TrustedBlocksAsync(
+            db, Code, "vi",
+            new Dictionary<string, string>(StringComparer.Ordinal) { [EmailTrustedBlocks.SetupSummaryBlock] = Tables });
 
-    private static Dictionary<string, string> NoBlock() => new(StringComparer.Ordinal);
+    /// <summary>
+    /// The summary block withheld, everything else supplied — so "the caller forgot the block" is about
+    /// the summary block and nothing else.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<string, string>> NoSummaryBlockAsync(ApplicationDbContext db)
+        => await EmailContractFixture.TrustedBlocksAsync(db, Code, "vi");
 
-    /// <summary>The canonical bodies — the same text the seed and the sync script carry.</summary>
-    private const string CanonicalVi =
-        "<p>Kính gửi Quý khách,</p><p>Đây là cập nhật mới nhất về công tác chuẩn bị cho chuyến thăm của đoàn "
-        + "<strong>{{delegationName}}</strong> tại <strong>{{campusName}}</strong>, dự kiến từ "
-        + "<strong>{{plannedStart}}</strong> đến <strong>{{plannedEnd}}</strong>.</p>{{setupSummaryBlock}}"
-        + "<p>Báo cáo Lịch trình chi tiết được đính kèm trong email này.</p>"
-        + "<p>Nếu Quý khách cần điều chỉnh nội dung nào, vui lòng phản hồi email này hoặc liên hệ trực tiếp "
-        + "<strong>{{hostName}}</strong> — người phụ trách tiếp đón — qua địa chỉ "
-        + "<strong>{{hostEmail}}</strong> để được cập nhật kịp thời.</p>";
-
-    private const string CanonicalEn =
-        "<p>Dear Guest,</p><p>This is the latest update on preparations for the visit of "
-        + "<strong>{{delegationName}}</strong> to <strong>{{campusName}}</strong>, scheduled from "
-        + "<strong>{{plannedStart}}</strong> to <strong>{{plannedEnd}}</strong>.</p>{{setupSummaryBlock}}"
-        + "<p>The detailed Schedule Report is attached to this email.</p>"
-        + "<p>If anything needs adjusting, please reply to this email or contact <strong>{{hostName}}</strong>, "
-        + "the host for this visit, directly at <strong>{{hostEmail}}</strong>.</p>";
+    /// <summary>The canonical bodies, read from the shipped defaults rather than restated here.</summary>
+    private static string CanonicalVi => EmailTemplateDefaults.For(Code)!.BodyVi!;
+    private static string CanonicalEn => EmailTemplateDefaults.For(Code)!.BodyEn!;
 
     /// <summary>Exactly what pems_db held: canonical with the block segment removed, nothing else changed.</summary>
     private static string DriftedVi => CanonicalVi.Replace("{{setupSummaryBlock}}", "");
@@ -104,7 +129,7 @@ public sealed class VisitSetupProgressRenderTests
         await WithBodiesAsync(db, CanonicalVi, CanonicalEn, async () =>
         {
             var rendered = await Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, language, Variables, WithBlock()), CancellationToken.None);
+                new EmailRenderRequest(Code, language, Variables, await WithBlockAsync(db)), CancellationToken.None);
 
             // The reported symptom, in both languages: nothing reaches a recipient still wearing braces.
             Assert.DoesNotContain("{{", rendered.Body);
@@ -139,9 +164,9 @@ public sealed class VisitSetupProgressRenderTests
             // caller does with the result. Rendering twice must therefore be indistinguishable — if a
             // second table of sample values ever creeps back in, this is what catches it.
             var first = await Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", Variables, WithBlock()), CancellationToken.None);
+                new EmailRenderRequest(Code, "vi", Variables, await WithBlockAsync(db)), CancellationToken.None);
             var second = await Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", Variables, WithBlock()), CancellationToken.None);
+                new EmailRenderRequest(Code, "vi", Variables, await WithBlockAsync(db)), CancellationToken.None);
 
             Assert.Equal(first.Subject, second.Subject);
             Assert.Equal(first.Body, second.Body);
@@ -161,8 +186,9 @@ public sealed class VisitSetupProgressRenderTests
 
         await WithBodiesAsync(db, DriftedVi, DriftedEn, async () =>
         {
+            var blocks = await WithBlockAsync(db);
             var error = await Assert.ThrowsAsync<BusinessRuleException>(() => Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, language, Variables, WithBlock()), CancellationToken.None));
+                new EmailRenderRequest(Code, language, Variables, blocks), CancellationToken.None));
 
             // Its own code: the repair is "re-sync this row", not "fix the caller" and not "retry".
             Assert.Equal(EmailErrorCodes.TemplateRequiredBlockNotInBody, error.ErrorCode);
@@ -178,8 +204,9 @@ public sealed class VisitSetupProgressRenderTests
 
         await WithBodiesAsync(db, DriftedVi, DriftedEn, async () =>
         {
+            var blocks = await WithBlockAsync(db);
             var error = await Assert.ThrowsAsync<BusinessRuleException>(() => Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", Variables, WithBlock()), CancellationToken.None));
+                new EmailRenderRequest(Code, "vi", Variables, blocks), CancellationToken.None));
 
             // An operator reads this on a template screen. It must not echo the guest's data back.
             Assert.DoesNotContain("Đoàn Đại học Kyoto", error.Message);
@@ -200,8 +227,9 @@ public sealed class VisitSetupProgressRenderTests
         {
             // The reported error reproduced exactly: canonical body, no block supplied. It stays a
             // fail-closed refusal — the new guard must not have replaced or weakened it.
+            var blocks = await NoSummaryBlockAsync(db);
             var error = await Assert.ThrowsAsync<BusinessRuleException>(() => Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", Variables, NoBlock()), CancellationToken.None));
+                new EmailRenderRequest(Code, "vi", Variables, blocks), CancellationToken.None));
 
             Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, error.ErrorCode);
             Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, error.Message);
@@ -231,7 +259,7 @@ public sealed class VisitSetupProgressRenderTests
 
         var vi = bodyCarriesPlaceholder ? CanonicalVi : DriftedVi;
         var en = bodyCarriesPlaceholder ? CanonicalEn : DriftedEn;
-        var blocks = callerSuppliesBlock ? WithBlock() : NoBlock();
+        var blocks = callerSuppliesBlock ? await WithBlockAsync(db) : await NoSummaryBlockAsync(db);
 
         await WithBodiesAsync(db, vi, en, async () =>
         {
@@ -263,8 +291,9 @@ public sealed class VisitSetupProgressRenderTests
 
         await WithBodiesAsync(db, CanonicalVi + "<p>{{khongKhaiBao}}</p>", CanonicalEn, async () =>
         {
+            var blocks = await WithBlockAsync(db);
             var error = await Assert.ThrowsAsync<BusinessRuleException>(() => Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", Variables, WithBlock()), CancellationToken.None));
+                new EmailRenderRequest(Code, "vi", Variables, blocks), CancellationToken.None));
 
             Assert.Equal(EmailErrorCodes.TemplateUnresolvedPlaceholder, error.ErrorCode);
             Assert.Contains("khongKhaiBao", error.Message);
@@ -287,7 +316,7 @@ public sealed class VisitSetupProgressRenderTests
             };
 
             var rendered = await Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", hostile, WithBlock()), CancellationToken.None);
+                new EmailRenderRequest(Code, "vi", hostile, await WithBlockAsync(db)), CancellationToken.None);
 
             // The variable is text and is encoded; the block is the ONLY route by which markup enters.
             Assert.DoesNotContain("<script>", rendered.Body);
@@ -308,8 +337,9 @@ public sealed class VisitSetupProgressRenderTests
         // to fix, not something to quietly clean up on the way out.
         await WithBodiesAsync(db, CanonicalVi, CanonicalEn, async () =>
         {
+            var blocks = await WithBlockAsync(db);
             var error = await Assert.ThrowsAsync<BusinessRuleException>(() => Renderer(db).RenderAsync(
-                new EmailRenderRequest(Code, "vi", Variables, WithBlock()), CancellationToken.None));
+                new EmailRenderRequest(Code, "vi", Variables, blocks), CancellationToken.None));
 
             Assert.Equal(EmailErrorCodes.TemplateSensitiveInSubject, error.ErrorCode);
             Assert.Contains(EmailTrustedBlocks.SetupSummaryBlock, error.Message);

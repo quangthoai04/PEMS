@@ -10,6 +10,7 @@ using PEMS.Application.Emails.Common;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Infrastructure.Email;
 using PEMS.Infrastructure.Persistence;
+using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
 
 namespace PEMS.IntegrationTests.Emails;
@@ -100,8 +101,19 @@ public sealed class SystemEmailDispatcherBoundaryTests
         RelatedType: "User",
         RelatedId: 3);
 
+    /// <summary>
+    /// Built with the contact resolver, exactly as the container builds one.
+    ///
+    /// <para>
+    /// The resolver is an optional constructor argument and leaving it out is silent — the dispatcher
+    /// contributes no contact block, and the renderer then refuses with "còn placeholder chưa thay thế",
+    /// which names the symptom rather than the missing dependency. These tests are about transaction
+    /// boundaries, not about contact policy, and they were failing on the latter.
+    /// </para>
+    /// </summary>
     private static SystemEmailDispatcher Dispatcher(ApplicationDbContext db, IEmailService sender)
-        => new(db, new EmailTemplateRenderer(db), sender);
+        => new(db, new EmailTemplateRenderer(db), sender,
+               recipientOptions: null, contacts: EmailEvidenceHarness.Contacts(db));
 
     /// <summary>Removes only the rows this class creates, identified by its marker address.</summary>
     private static async Task CleanupAsync()

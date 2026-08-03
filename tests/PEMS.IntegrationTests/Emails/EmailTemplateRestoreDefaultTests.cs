@@ -122,9 +122,12 @@ public sealed class EmailTemplateRestoreDefaultTests : IDisposable
             Name = "ĐÃ SỬA " + marker,
             Description = "mô tả bị sửa " + marker,
             SubjectVi = "Tiêu đề bị sửa " + marker,
-            BodyVi = "<p>Nội dung bị sửa " + marker + "</p>",
+            // Damaged, but still savable: the handler refuses a body that drops a trusted block its
+            // contract requires, and what this fixture needs is content an operator could really have
+            // left behind — not content the product would never have accepted.
+            BodyVi = EmailContractFixture.BodyWithRequiredBlocks(code, "<p>Nội dung bị sửa " + marker + "</p>"),
             SubjectEn = "Broken subject " + marker,
-            BodyEn = "<p>Broken body " + marker + "</p>",
+            BodyEn = EmailContractFixture.BodyWithRequiredBlocks(code, "<p>Broken body " + marker + "</p>"),
             ExpectedRevision = t.Revision,
         }, CancellationToken.None);
 
