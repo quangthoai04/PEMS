@@ -24,8 +24,12 @@ public static class DisposableDatabaseManager
     /// 82 since the P0 account-email-confirmation work added <c>account_email_confirmations</c>; the constant
     /// had been left at 81, which made every disposable import abort before a single test ran.
     /// 83 since G11 added <c>email_send_idempotency</c> (R-103).
+    /// 84 since <c>email_contact_policies</c> — added to the script with the contact-block work, but
+    /// only reached by an import now that the statement splitting the catalog INSERT is repaired. The
+    /// table had been in the script all along; every import simply stopped at ERROR 1064 before
+    /// creating it, which is why this constant still agreed with reality while it was wrong.
     /// </remarks>
-    public const int ExpectedBaseTableCount = 83;
+    public const int ExpectedBaseTableCount = 84;
 
     /// <summary>Number of triggers the canonical schema must produce.</summary>
     public const int ExpectedTriggerCount = 32;

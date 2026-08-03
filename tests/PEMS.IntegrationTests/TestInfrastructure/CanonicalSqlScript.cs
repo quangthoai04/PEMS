@@ -312,8 +312,27 @@ public static class CanonicalSqlScript
     /// Verified by a fresh import before this constant was touched: 83 tables / 32 triggers / 255 FKs
     /// / 31 templates, 31 sent_emails, 31 recipients, 39 action tokens — the sent_emails id set is
     /// byte-identical to the pre-change import (64001..64031), proving only never-surviving rows went.
+    ///
+    /// FOURTEENTH BUMP — the contact-policy block is moved OUT of the email_templates INSERT.
+    ///
+    /// The thirteenth bump pinned a script that could not be imported at all. The two
+    /// INSERT INTO email_contact_policies statements had been pasted INTO the middle of row 70030's
+    /// body_vi string literal, splitting the 31-row INSERT in half; MySQL stops at
+    /// `ERROR 1064 ... near 'TEMPLATE', 'ACCOUNT_EMAIL_CONFIRMATION'` and every statement after it —
+    /// the catalog rebuild, the policy seed, the closing ALTERs — never runs. A fresh import was
+    /// therefore left holding the 16-template demo catalog from section 7, which is exactly what the
+    /// developer database turned out to contain.
+    ///
+    /// This hash pinned that state, so the constant was not a guard here: it agreed with a file no
+    /// database could accept. Nothing was lost in the repair and nothing was rewritten — the block is
+    /// relocated to after the INSERT's terminator, and the repaired file is a character-for-character
+    /// permutation of the pinned one.
+    ///
+    /// Verified by fresh import against MySQL 8.0.46 AFTER this constant was touched: exit 0,
+    /// 31 email_templates, 32 email_contact_policies (31 TEMPLATE + 1 SYSTEM), and all 31 template
+    /// bodies byte-identical to email-template-defaults.json.
     public const string ExpectedSha256 =
-        "839ecce592994550a43e98ed1d0937d080daf1c9133ec70be0a1bce995a61533";
+        "b7c431d4d3a76dab04aa8045653c2aae4a087780a2adca53d9ae747243d285ff";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

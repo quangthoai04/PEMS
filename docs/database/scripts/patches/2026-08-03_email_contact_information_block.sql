@@ -132,15 +132,32 @@ VALUES
   ('TEMPLATE', 'REPORT_DEPARTMENT_INVOICE', 'OPTIONAL', 'SENDER', 1, 1, 0, 0, 1, NULL, NULL, 'NONE', CURRENT_TIMESTAMP, NULL, NULL, NULL),
   ('TEMPLATE', 'REPORT_PERSONNEL_PERFORMANCE', 'OPTIONAL', 'SENDER', 1, 1, 0, 0, 1, NULL, NULL, 'NONE', CURRENT_TIMESTAMP, NULL, NULL, NULL);
 
-INSERT IGNORE INTO email_contact_policies
+-- Dòng SYSTEM KHÔNG dùng được INSERT IGNORE như 31 dòng trên. Khoá
+-- uq_email_contact_policies_scope là (scope_type, scope_key), mà dòng này có
+-- scope_key = NULL — trong MySQL, UNIQUE coi mỗi NULL là một giá trị khác nhau,
+-- nên khoá KHÔNG chặn trùng và mỗi lần chạy lại sẽ thêm một dòng SYSTEM nữa.
+-- Đo trên máy thật: chạy 3 lần ra 3 dòng SYSTEM, và lúc đó chuỗi kế thừa không
+-- còn xác định được đáy nào là đáy.
+--
+-- Dọn trước, để một database đã lỡ chạy bản patch trước quay về đúng một dòng.
+DELETE p FROM email_contact_policies p
+JOIN (
+  SELECT MIN(email_contact_policy_id) AS keep_id
+  FROM email_contact_policies
+  WHERE scope_type = 'SYSTEM'
+) k
+WHERE p.scope_type = 'SYSTEM' AND p.email_contact_policy_id > k.keep_id;
+
+INSERT INTO email_contact_policies
   (scope_type, scope_key, requirement, contact_source,
    show_email, show_phone, show_department, show_campus, show_sender,
    heading_vi, heading_en, reply_to_source,
    created_at, created_by, updated_at, updated_by)
-VALUES
-  ('SYSTEM', NULL, NULL, NULL, 1, 1, 0, 0, 0,
-   'Thông tin liên hệ', 'Contact information', NULL,
-   CURRENT_TIMESTAMP, NULL, NULL, NULL);
+SELECT 'SYSTEM', NULL, NULL, NULL, 1, 1, 0, 0, 0,
+       'Thông tin liên hệ', 'Contact information', NULL,
+       CURRENT_TIMESTAMP, NULL, NULL, NULL
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM email_contact_policies WHERE scope_type = 'SYSTEM');
 
 
 -- ── 3. Chèn khối vào body của 14 template REQUIRED ─────────────────────────
@@ -152,9 +169,13 @@ VALUES
 -- Chèn NGAY TRƯỚC đoạn đóng thư: đó là vị trí trong bản canonical, nên một
 -- database chạy patch và một database import mới cho ra cùng một chuỗi.
 
-SET @sign_vi := '<p style="color:#6b7280;font-size:12px">Trân trọng,';
-SET @sign_en := '<p style="color:#6b7280;font-size:12px">Best regards,';
-SET @blk     := '{{contactInformationBlock}}';
+-- COLLATE bắt buộc, không phải cho đẹp: biến người dùng nhận collation mặc định
+-- của kết nối (MySQL 8 là utf8mb4_0900_ai_ci) còn cột body_vi/body_en là
+-- utf8mb4_unicode_ci. So sánh LIKE giữa hai bên dừng với
+-- ERROR 1267 Illegal mix of collations và patch không chạy được dòng nào.
+SET @sign_vi := _utf8mb4'<p style="color:#6b7280;font-size:12px">Trân trọng,' COLLATE utf8mb4_unicode_ci;
+SET @sign_en := _utf8mb4'<p style="color:#6b7280;font-size:12px">Best regards,' COLLATE utf8mb4_unicode_ci;
+SET @blk     := _utf8mb4'{{contactInformationBlock}}' COLLATE utf8mb4_unicode_ci;
 
 -- VISIT_SETUP_PROGRESS_UPDATE in địa chỉ Host ngay trong câu văn. Khối thay chỗ
 -- đó, nên câu văn phải bỏ phần địa chỉ trước — nếu không người nhận đọc cùng một
