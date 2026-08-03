@@ -51,13 +51,19 @@ public sealed class EmailEvidenceHarness : IDisposable
         catch (IOException) { /* a temp dir left behind must never fail a test run */ }
     }
 
-    private static string ConnString =>
-        DisposableDatabaseManager.GetDisposableConnectionString(
-            "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
+    /// <summary>The server this run talks to, before a disposable database has been chosen.</summary>
+    public const string BaseConnectionString =
+        "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None";
 
-    public static ApplicationDbContext NewContext()
+    private static string ConnString =>
+        DisposableDatabaseManager.GetDisposableConnectionString(BaseConnectionString);
+
+    public static ApplicationDbContext NewContext() => ContextFor(ConnString);
+
+    /// <summary>A context over any database — used by tests that import one of their own.</summary>
+    public static ApplicationDbContext ContextFor(string connectionString)
         => new(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseMySql(ConnString, ServerVersion.AutoDetect(ConnString)).Options);
+            .UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)).Options);
 
     public static void RequireDb()
     {

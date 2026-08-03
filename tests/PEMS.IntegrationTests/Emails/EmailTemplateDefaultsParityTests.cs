@@ -41,7 +41,16 @@ public sealed class EmailTemplateDefaultsParityTests
     public async Task Every_shipped_default_matches_the_freshly_imported_canonical_catalog()
     {
         EmailEvidenceHarness.RequireDb();
-        await using var db = EmailEvidenceHarness.NewContext();
+
+        // A database of this test's own, imported from the canonical script and dropped on the way out.
+        //
+        // The shared disposable database is NOT a pristine seed: other suites edit template content and
+        // put it back, and one that fails part way leaves the edit behind. Reading it made this test
+        // report "ACCOUNT_ACTIVATED.Name differs between the shipped default and the canonical seed" in a
+        // full run while passing on its own — a drift in the seed that did not exist, pointing the reader
+        // at the wrong file. "Freshly imported" is what the name promises, so it is what it now reads.
+        using var pristine = DisposableDatabaseManager.CreatePristineDatabase(EmailEvidenceHarness.BaseConnectionString);
+        await using var db = EmailEvidenceHarness.ContextFor(pristine.ConnectionString);
 
         // Read straight from the table, but ONLY the codes the registry owns: a historical row left by
         // another suite is not part of the shipped catalog and must not fail this.

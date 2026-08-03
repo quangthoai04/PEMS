@@ -99,6 +99,75 @@ public static class DisposableDatabaseManager
     public static string? CurrentDatabaseName => _disposableDbName;
 
     /// <summary>
+    /// A database of its own, imported from the canonical script and dropped when the returned handle is
+    /// disposed. Nothing else in the run can see it.
+    ///
+    /// <para>
+    /// The shared disposable database is not a pristine copy of the seed for long: suites edit template
+    /// content, borrow rows and put them back, and one that fails part way can leave an edit behind. A
+    /// test that means to compare the SHIPPED defaults against the CANONICAL seed must not read that —
+    /// it would be comparing against whatever ran before it, which is how the defaults-parity check came
+    /// to pass alone and fail in a full run, reporting a drift in the seed that did not exist.
+    /// </para>
+    /// </summary>
+    public static PristineCanonicalDatabase CreatePristineDatabase(string originalConnectionString)
+    {
+        var sql = CanonicalSqlScript.ReadVerified();
+        var dbName = CanonicalSqlScript.NewDisposableDatabaseName();
+        var masterConnStr = ToServerConnectionString(originalConnectionString);
+        var created = false;
+
+        try
+        {
+            using var conn = new MySqlConnection(masterConnStr);
+            conn.Open();
+
+            Execute(conn, $"CREATE DATABASE `{dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+            created = true;
+
+            new MySqlScript(conn, CanonicalSqlScript.Retarget(sql, dbName)).Execute();
+            AssertSchemaImported(conn, dbName);
+        }
+        catch
+        {
+            if (created)
+            {
+                try { DropDisposableDatabase(originalConnectionString, dbName); }
+                catch { /* the original failure is the one worth surfacing */ }
+            }
+
+            throw;
+        }
+
+        var connectionString = Regex.Replace(
+            originalConnectionString, @"database=[^;]+;", $"database={dbName};", RegexOptions.IgnoreCase);
+
+        return new PristineCanonicalDatabase(dbName, connectionString, originalConnectionString);
+    }
+
+    /// <summary>A private canonical database, dropped on dispose.</summary>
+    public sealed class PristineCanonicalDatabase : IDisposable
+    {
+        private readonly string _original;
+
+        internal PristineCanonicalDatabase(string name, string connectionString, string original)
+        {
+            Name = name;
+            ConnectionString = connectionString;
+            _original = original;
+        }
+
+        public string Name { get; }
+        public string ConnectionString { get; }
+
+        public void Dispose()
+        {
+            try { DropDisposableDatabase(_original, Name); }
+            catch { /* a leftover throw-away database must never fail a test run */ }
+        }
+    }
+
+    /// <summary>
     /// Verifies the imported schema really is the canonical Pure V2 one. Any mismatch throws, because a
     /// green test run against a wrong schema is worse than a red one.
     /// </summary>
