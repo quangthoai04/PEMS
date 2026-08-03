@@ -257,6 +257,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
       const result = await visitPhotosApi.confirmFaceTags(currentScan.faceScanId, currentScan.rowVersion, faces);
       setScans((prev) => prev.map((s) => (s.faceScanId === result.faceScanId ? result : s)));
       setPendingActions({});
+      void onRefreshPhotos?.();
       updateToastSuccess(toastId, t('confirm.successToast'));
     } catch (e) {
       updateToastMessageError(toastId, getApiErrorMessage(e, t('confirm.errorFallback')));

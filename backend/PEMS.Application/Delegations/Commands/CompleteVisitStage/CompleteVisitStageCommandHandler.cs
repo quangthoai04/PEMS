@@ -244,24 +244,29 @@ public sealed class CompleteVisitStageCommandHandler
         // không đợi tới lúc đóng đoàn. DedupeKey chống gửi trùng nếu transition bị gọi lại.
         if (newStatus == VisitInstanceStatus.AfterVisit)
         {
-            var feedbackUrl = $"/dashboard/visit/feedback/{instance.VisitInstanceId}";
-            if (instance.VisitRequest?.VisitorUserId != null)
+            var feedbackUrl = $"/dashboard/visit?visitRequestId={instance.VisitRequestId}&feedbackVisitInstanceId={instance.VisitInstanceId}";
+            var visitorRecipients = new HashSet<ulong>();
+            if (instance.VisitRequest?.VisitorUserId != null) visitorRecipients.Add(instance.VisitRequest.VisitorUserId.Value);
+            if (instance.VisitRequest?.RegistrantUserId != null) visitorRecipients.Add(instance.VisitRequest.RegistrantUserId.Value);
+
+            foreach (var recipientId in visitorRecipients)
             {
                 notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                    RecipientUserId: instance.VisitRequest.VisitorUserId.Value,
+                    RecipientUserId: recipientId,
                     Title: "Mời bạn đánh giá chuyến thăm",
-                    Message: $"Chuyến thăm {instance.VisitRequest.RequestCode} đã kết thúc tiếp khách. Hãy dành chút thời gian đánh giá trải nghiệm của bạn.",
+                    Message: $"Chuyến thăm {instance.VisitRequest?.RequestCode} đã kết thúc tiếp khách. Hãy dành chút thời gian đánh giá trải nghiệm của bạn.",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitStatusChanged,
                     RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
                     RelatedId: instance.VisitInstanceId,
                     ActorUserId: actorId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Feedback,
                     IsActionRequired: true,
+                    VisitRequestId: instance.VisitRequestId,
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: feedbackUrl,
-                    DedupeKey: $"FEEDBACK_INVITE_VISITOR_{instance.VisitInstanceId}"
+                    DedupeKey: $"FEEDBACK_INVITE_VISITOR_{instance.VisitInstanceId}_{recipientId}"
                 ));
             }
             if (instance.CurrentHostUserId.HasValue)

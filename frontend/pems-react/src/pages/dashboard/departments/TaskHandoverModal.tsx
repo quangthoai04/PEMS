@@ -104,7 +104,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
     setSavingDocType(type);
     try {
       await delegationsApi.saveLogisticsHandoverDocument(detailData.VisitInstanceId, detailData.LogisticsItemId, type);
-      toast.success('Đã lưu biên bản vào hệ thống.');
+      toast.success(type === 'BORROW' ? 'Đã lưu biên bản bàn giao vào hệ thống thành công.' : 'Đã lưu biên bản nghiệm thu vào hệ thống thành công.');
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Không thể lưu biên bản vào hệ thống.');
     } finally {
@@ -120,7 +120,7 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
       // của Host, ký ở LogisticsHandoverSection, không gửi lại từ đây để tránh đè dữ liệu Host vừa điền.
       const checklistJson = type === 'BORROW' ? JSON.stringify(checklistRows) : undefined;
       await departmentReceptionTasksApi.signHandover(detailData.LogisticsItemId, type, 'PROVIDER', note || undefined, checklistJson);
-      toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nhận lại'}`);
+      toast.success(`Đã ký ${type === 'BORROW' ? 'bàn giao' : 'nghiệm thu'} thành công.`);
       onSuccess?.();
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Không thể ký biên bản. Vui lòng thử lại.');
@@ -517,9 +517,9 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
                 )}
               </div>
 
-              {/* Ghi chú chi phí — hiện khi biên bản đã ký nghiệm thu đủ 2 bên; nằm trong vùng in
+              {/* Ghi chú chi phí — hiện khi biên bản đã ký bàn giao lần đầu (Bên Giao / Provider đã ký); nằm trong vùng in
                   nên Tải PDF biên bản sẽ kèm bảng chi phí. Người xem không thuộc phòng ban → panel tự ẩn. */}
-              {isBorrowDone && nt1 && nt2 && detailData.LogisticsItemId && (
+              {(bg1 || isBorrowDone) && detailData.LogisticsItemId && (
                 <LogisticsExpensePanel logisticsItemId={detailData.LogisticsItemId} readOnly={readOnly} />
               )}
             </div>

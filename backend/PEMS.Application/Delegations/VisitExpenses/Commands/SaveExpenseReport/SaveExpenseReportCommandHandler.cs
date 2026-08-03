@@ -44,8 +44,8 @@ public class SaveExpenseReportCommandHandler : IRequestHandler<SaveExpenseReport
         if (report.Status == "FINALIZED" || report.Status == "CANCELLED")
             throw new ForbiddenException("Cannot modify a finalized or cancelled report.");
             
-        if (report.VisitInstance.Status != PEMS.Shared.VisitInstanceStatus.AfterVisit)
-            throw new ForbiddenException("Can only modify expense report in AFTER_VISIT state.");
+        if (report.VisitInstance.Status == PEMS.Shared.VisitInstanceStatus.Closed || report.VisitInstance.Status == PEMS.Shared.VisitInstanceStatus.Cancelled)
+            throw new ForbiddenException("Cannot modify expense report when visit is closed or cancelled.");
 
         // Security check
         if (report.ReportScope == "GENERAL")

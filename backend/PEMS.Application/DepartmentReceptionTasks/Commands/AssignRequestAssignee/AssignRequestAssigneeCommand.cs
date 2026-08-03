@@ -115,23 +115,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                     "Người phụ trách không hợp lệ hoặc không thuộc phòng ban.",
                     LogisticsTaskErrorCodes.AssigneeNotEligible);
 
-            // Database time conflict check for target assignee
             var campus = await _context.VisitRequestCampuses.AsNoTracking()
                 .FirstOrDefaultAsync(c => c.VisitInstanceId == l.VisitInstanceId, cancellationToken);
-            DateTime startAt = l.UsageStartAt ?? (campus != null ? campus.PlannedStartAt : DateTime.MinValue);
-            DateTime endAt = l.UsageEndAt ?? (campus != null ? campus.PlannedEndAt : DateTime.MaxValue);
-
-            if (startAt != DateTime.MinValue && endAt != DateTime.MaxValue)
-            {
-                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
-                    _context, assignee.UserId, startAt, endAt, l.LogisticsItemId, null, cancellationToken);
-                if (hasConflict)
-                {
-                    throw new ConflictException(
-                        $"Nhân sự {assignee.FullName} đã bị trùng lịch làm việc vào khung giờ của đơn này. Vui lòng chọn nhân sự khác.",
-                        LogisticsTaskErrorCodes.AssigneeScheduleConflict);
-                }
-            }
+            // Đơn yêu cầu không bị chặn bởi các đơn yêu cầu hoặc thư mời khác trùng thời gian
 
             var content = await ResolveContentAsync(request.EmailOverride, cancellationToken);
             var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);

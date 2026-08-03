@@ -74,7 +74,10 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
     // /ho-detail từ trước khi route này được đổi — luôn rewrite về trang Quản lý tiếp khách
     // lọc đúng đơn, tính theo dữ liệu hiện tại của notification thay vì tin URL đã lưu sẵn.
     const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
-    if (isViewOnlyRole && isProcessDetailLink && item.visitRequestId) {
+    if (isViewOnlyRole && (isProcessDetailLink || link.includes('/feedback/')) && item.visitRequestId) {
+      if (item.visitInstanceId && (link.includes('/feedback/') || item.category === 'Feedback')) {
+        return `/dashboard/visit?visitRequestId=${item.visitRequestId}&feedbackVisitInstanceId=${item.visitInstanceId}`;
+      }
       return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
     }
 
@@ -149,7 +152,9 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
 
     if (item.actionType === 'OPEN_VISITOR_FEEDBACK_MODAL' && item.visitInstanceId) {
       setIsOpen(false);
-      setVisitorFeedbackVisitInstanceId(item.visitInstanceId);
+      const reqId = item.visitRequestId ? `visitRequestId=${item.visitRequestId}&` : '';
+      navigate(`/dashboard/visit?${reqId}feedbackVisitInstanceId=${item.visitInstanceId}`);
+      onNavigate?.();
       return;
     }
 

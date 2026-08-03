@@ -26,7 +26,7 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
 {
     private const string BrandBlue = "#004C91";
     private static readonly CultureInfo Vi = CultureInfo.GetCultureInfo("vi-VN");
-    private static readonly string[] AllSections = { "VISITS", "PERSONNEL", "DEPARTMENTS" };
+    private static readonly string[] AllSections = { "VISITS", "PARTNERS", "PERSONNEL", "DEPARTMENTS", "EXPENSES" };
 
     private readonly IMediator _mediator;
     private readonly ICurrentUserService _currentUser;
@@ -124,10 +124,22 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
             sb.AppendLine();
         }
 
+        if (sections.Contains("PARTNERS"))
+        {
+            var pt = d.Partners;
+            sb.AppendLine("2. BÁO CÁO ĐỐI TÁC");
+            sb.AppendLine($"Tổng đối tác;{pt.TotalPartners};Đối tác mới trong kỳ;{pt.NewPartnersInPeriod};Đang hợp tác;{pt.ActivePartners};Đoàn có đối tác;{pt.VisitsWithPartnerCount};Tỷ lệ đoàn có đối tác;{pt.PartnerVisitRatio}%");
+            sb.AppendLine("STT;Mã đối tác;Tên đối tác;Loại hình;Trạng thái hợp tác;Số chuyến thăm;Số khách");
+            var i = 0;
+            foreach (var r in pt.TopPartners)
+                sb.AppendLine($"{++i};{Esc(r.PartnerCode ?? "—")};{Esc(r.Name)};{Esc(r.PartnerType)};{Esc(r.CooperationStatus)};{r.VisitCount};{r.GuestCount}");
+            sb.AppendLine();
+        }
+
         if (sections.Contains("PERSONNEL"))
         {
             var p = d.Personnel;
-            sb.AppendLine("2. BÁO CÁO NHÂN SỰ");
+            sb.AppendLine("3. BÁO CÁO NHÂN SỰ");
             sb.AppendLine($"Tổng nhân sự;{p.TotalStaff};Tổng student;{p.TotalStudents};Feedback TB;{p.AverageFeedback?.ToString("0.0", Vi) ?? "—"}");
             sb.AppendLine("STT;Tên;Vai trò;Số đoàn phụ trách;Tổng giờ làm việc;Feedback;Từ chối");
             var i = 0;
@@ -139,12 +151,24 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
         if (sections.Contains("DEPARTMENTS"))
         {
             var dep = d.Departments;
-            sb.AppendLine("3. BÁO CÁO PHÒNG BAN KHÁC");
+            sb.AppendLine("4. BÁO CÁO PHÒNG BAN KHÁC");
             sb.AppendLine($"Tổng phòng ban;{dep.TotalDepartments};Hoàn thành;{dep.CompletedTotal};Từ chối;{dep.RejectedTotal};Feedback TB;{dep.AverageFeedback?.ToString("0.0", Vi) ?? "—"}");
             sb.AppendLine("STT;Tên phòng ban;Tổng đơn/thư;Hoàn thành;Từ chối;Feedback");
             var i = 0;
             foreach (var r in dep.Rows)
                 sb.AppendLine($"{++i};{Esc(r.Name)};{r.TotalRequests};{r.Completed};{r.Rejected};{Fb(r.FeedbackAverage, r.FeedbackCount)}");
+            sb.AppendLine();
+        }
+
+        if (sections.Contains("EXPENSES"))
+        {
+            var ex = d.Expenses;
+            sb.AppendLine("5. THỐNG KÊ CHI PHÍ");
+            sb.AppendLine($"Tổng chi phí;{ex.TotalAmount};Host;{ex.TotalGeneral};Hậu cần PB;{ex.TotalLogistics}");
+            sb.AppendLine("STT;Tên đoàn khách;Thời gian;Chi phí Host;Chi phí Hậu cần;Tổng chi phí;Trạng thái");
+            var i = 0;
+            foreach (var r in ex.Rows)
+                sb.AppendLine($"{++i};{Esc(r.DelegationName)};{r.VisitDate:dd/MM/yyyy};{r.GeneralExpense};{r.LogisticsExpense};{r.TotalExpense};{Esc(r.Status)}");
         }
 
         return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
@@ -188,9 +212,33 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
             ws.Columns().AdjustToContents();
         }
 
+        if (sections.Contains("PARTNERS"))
+        {
+            var ws = workbook.AddWorksheet("2. Đối tác");
+            var pt = d.Partners;
+            ws.Cell(1, 1).Value = $"Báo cáo đối tác — {d.CampusName} ({d.FromDate} → {d.ToDate})";
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            Head(ws, 3, "Tổng đối tác", "Đối tác mới trong kỳ", "Đang hợp tác", "Đoàn có đối tác", "Tỷ lệ đoàn có đối tác (%)");
+            ws.Cell(4, 1).Value = pt.TotalPartners; ws.Cell(4, 2).Value = pt.NewPartnersInPeriod;
+            ws.Cell(4, 3).Value = pt.ActivePartners; ws.Cell(4, 4).Value = pt.VisitsWithPartnerCount;
+            ws.Cell(4, 5).Value = pt.PartnerVisitRatio;
+
+            Head(ws, 6, "STT", "Mã đối tác", "Tên đối tác", "Loại hình", "Trạng thái hợp tác", "Số chuyến thăm", "Số khách");
+            var row = 7; var i = 0;
+            foreach (var r in pt.TopPartners)
+            {
+                ws.Cell(row, 1).Value = ++i; ws.Cell(row, 2).Value = r.PartnerCode ?? "—";
+                ws.Cell(row, 3).Value = r.Name; ws.Cell(row, 4).Value = r.PartnerType;
+                ws.Cell(row, 5).Value = r.CooperationStatus; ws.Cell(row, 6).Value = r.VisitCount;
+                ws.Cell(row, 7).Value = r.GuestCount;
+                row++;
+            }
+            ws.Columns().AdjustToContents();
+        }
+
         if (sections.Contains("PERSONNEL"))
         {
-            var ws = workbook.AddWorksheet("2. Nhân sự");
+            var ws = workbook.AddWorksheet("3. Nhân sự");
             var p = d.Personnel;
             ws.Cell(1, 1).Value = $"Báo cáo nhân sự — tổng nhân sự {p.TotalStaff}, student {p.TotalStudents}, feedback TB {p.AverageFeedback?.ToString("0.0", Vi) ?? "—"}";
             ws.Cell(1, 1).Style.Font.Bold = true;
@@ -210,7 +258,7 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
 
         if (sections.Contains("DEPARTMENTS"))
         {
-            var ws = workbook.AddWorksheet("3. Phòng ban khác");
+            var ws = workbook.AddWorksheet("4. Phòng ban khác");
             var dep = d.Departments;
             ws.Cell(1, 1).Value = $"Báo cáo phòng ban — tổng {dep.TotalDepartments}, hoàn thành {dep.CompletedTotal}, từ chối {dep.RejectedTotal}, feedback TB {dep.AverageFeedback?.ToString("0.0", Vi) ?? "—"}";
             ws.Cell(1, 1).Style.Font.Bold = true;
@@ -221,6 +269,28 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                 ws.Cell(row, 1).Value = ++i; ws.Cell(row, 2).Value = r.Name; ws.Cell(row, 3).Value = r.TotalRequests;
                 ws.Cell(row, 4).Value = r.Completed; ws.Cell(row, 5).Value = r.Rejected;
                 ws.Cell(row, 6).Value = Fb(r.FeedbackAverage, r.FeedbackCount);
+                row++;
+            }
+            ws.Columns().AdjustToContents();
+        }
+
+        if (sections.Contains("EXPENSES"))
+        {
+            var ws = workbook.AddWorksheet("5. Thống kê chi phí");
+            var ex = d.Expenses;
+            ws.Cell(1, 1).Value = $"Thống kê chi phí tiếp khách — {d.CampusName} ({d.FromDate} → {d.ToDate})";
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            Head(ws, 3, "Tổng chi phí", "Chi phí Host", "Chi phí Hậu cần PB");
+            ws.Cell(4, 1).Value = ex.TotalAmount; ws.Cell(4, 2).Value = ex.TotalGeneral; ws.Cell(4, 3).Value = ex.TotalLogistics;
+
+            Head(ws, 6, "STT", "Tên đoàn khách", "Thời gian", "Chi phí Host", "Chi phí Hậu cần", "Tổng chi phí", "Trạng thái");
+            var row = 7; var i = 0;
+            foreach (var r in ex.Rows)
+            {
+                ws.Cell(row, 1).Value = ++i; ws.Cell(row, 2).Value = r.DelegationName;
+                ws.Cell(row, 3).Value = r.VisitDate?.ToString("dd/MM/yyyy") ?? "—";
+                ws.Cell(row, 4).Value = r.GeneralExpense; ws.Cell(row, 5).Value = r.LogisticsExpense;
+                ws.Cell(row, 6).Value = r.TotalExpense; ws.Cell(row, 7).Value = r.Status;
                 row++;
             }
             ws.Columns().AdjustToContents();
@@ -264,8 +334,8 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                         var v = d.Visits;
                         col.Item().Text("1 · BÁO CÁO ĐOÀN TIẾP KHÁCH").Bold().FontSize(12).FontColor(BrandBlue);
                         col.Item().Text(
-                            $"Tổng đoàn: {v.TotalVisits} ({v.TotalGuests} khách) · Hoàn thành (đã đóng đoàn): {v.Completed} · Từ chối: {v.Rejected} (+{v.Cancelled} hủy) · "
-                            + $"Chưa hoàn thành: {v.NotCompleted} · Feedback: {Fb(v.FeedbackAverage, v.FeedbackCount)} ({v.FeedbackTotalStars} sao) · Đối tác: {v.TotalPartners}")
+                            $"Tổng đoàn: {v.TotalVisits} ({v.TotalGuests} khách) · Hoàn thành: {v.Completed} · Từ chối: {v.Rejected} (+{v.Cancelled} hủy) · "
+                            + $"Chưa hoàn thành: {v.NotCompleted} · Feedback: {Fb(v.FeedbackAverage, v.FeedbackCount)} ({v.FeedbackTotalStars} sao)")
                             .FontSize(9.5f);
                         col.Item().Table(table =>
                         {
@@ -273,16 +343,50 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                             table.Header(h =>
                             {
                                 TableHeader(h.Cell(), "Mốc thời gian");
-                                TableHeader(h.Cell(), "Chuyến gắn đối tác");
-                                TableHeader(h.Cell(), "Đối tác mới");
-                                TableHeader(h.Cell(), "Lũy kế đối tác");
+                                TableHeader(h.Cell(), "Tổng số đoàn");
+                                TableHeader(h.Cell(), "Đoàn hoàn thành");
+                                TableHeader(h.Cell(), "Tổng số khách");
                             });
-                            foreach (var t in v.PartnerTrend)
+                            foreach (var t in v.VisitTrend)
                             {
                                 Cell(table.Cell(), t.MonthLabel);
-                                Cell(table.Cell(), t.VisitsWithPartner.ToString(Vi));
-                                Cell(table.Cell(), t.NewPartners.ToString(Vi));
-                                Cell(table.Cell(), t.CumulativePartners.ToString(Vi));
+                                Cell(table.Cell(), t.TotalVisits.ToString(Vi));
+                                Cell(table.Cell(), t.CompletedVisits.ToString(Vi));
+                                Cell(table.Cell(), t.TotalGuests.ToString(Vi));
+                            }
+                        });
+                    }
+
+                    if (sections.Contains("PARTNERS"))
+                    {
+                        var pt = d.Partners;
+                        col.Item().Text("2 · BÁO CÁO ĐỐI TÁC").Bold().FontSize(12).FontColor(BrandBlue);
+                        col.Item().Text(
+                            $"Tổng đối tác: {pt.TotalPartners} · Đối tác mới trong kỳ: {pt.NewPartnersInPeriod} · Đang hợp tác: {pt.ActivePartners} · "
+                            + $"Đoàn có đối tác: {pt.VisitsWithPartnerCount} ({pt.PartnerVisitRatio}%)")
+                            .FontSize(9.5f);
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c =>
+                            {
+                                c.ConstantColumn(28); c.RelativeColumn(1.8f); c.RelativeColumn(3);
+                                c.RelativeColumn(2); c.RelativeColumn(1.8f); c.RelativeColumn(1.2f); c.RelativeColumn(1.2f);
+                            });
+                            table.Header(h =>
+                            {
+                                TableHeader(h.Cell(), "STT"); TableHeader(h.Cell(), "Mã ĐT"); TableHeader(h.Cell(), "Tên đối tác");
+                                TableHeader(h.Cell(), "Loại hình"); TableHeader(h.Cell(), "Trạng thái"); TableHeader(h.Cell(), "Số chuyến"); TableHeader(h.Cell(), "Số khách");
+                            });
+                            var i = 0;
+                            foreach (var r in pt.TopPartners)
+                            {
+                                Cell(table.Cell(), (++i).ToString(Vi));
+                                Cell(table.Cell(), r.PartnerCode ?? "—");
+                                Cell(table.Cell(), r.Name);
+                                Cell(table.Cell(), r.PartnerType);
+                                Cell(table.Cell(), r.CooperationStatus);
+                                Cell(table.Cell(), r.VisitCount.ToString(Vi));
+                                Cell(table.Cell(), r.GuestCount.ToString(Vi));
                             }
                         });
                     }
@@ -290,7 +394,7 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                     if (sections.Contains("PERSONNEL"))
                     {
                         var p = d.Personnel;
-                        col.Item().Text("2 · BÁO CÁO NHÂN SỰ").Bold().FontSize(12).FontColor(BrandBlue);
+                        col.Item().Text("3 · BÁO CÁO NHÂN SỰ").Bold().FontSize(12).FontColor(BrandBlue);
                         col.Item().Text($"Tổng nhân sự: {p.TotalStaff} · Tổng student: {p.TotalStudents} · Feedback TB: {p.AverageFeedback?.ToString("0.0", Vi) ?? "—"}")
                             .FontSize(9.5f);
                         col.Item().Table(table =>
@@ -322,7 +426,7 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                     if (sections.Contains("DEPARTMENTS"))
                     {
                         var dep = d.Departments;
-                        col.Item().Text("3 · BÁO CÁO PHÒNG BAN KHÁC").Bold().FontSize(12).FontColor(BrandBlue);
+                        col.Item().Text("4 · BÁO CÁO PHÒNG BAN KHÁC").Bold().FontSize(12).FontColor(BrandBlue);
                         col.Item().Text($"Tổng phòng ban: {dep.TotalDepartments} · Hoàn thành: {dep.CompletedTotal} · Từ chối: {dep.RejectedTotal} · Feedback TB: {dep.AverageFeedback?.ToString("0.0", Vi) ?? "—"}")
                             .FontSize(9.5f);
                         col.Item().Table(table =>
@@ -346,6 +450,38 @@ public sealed class ExportStaffLeaderReportV2CommandHandler
                                 Cell(table.Cell(), r.Completed.ToString(Vi));
                                 Cell(table.Cell(), r.Rejected.ToString(Vi));
                                 Cell(table.Cell(), Fb(r.FeedbackAverage, r.FeedbackCount));
+                            }
+                        });
+                    }
+
+                    if (sections.Contains("EXPENSES"))
+                    {
+                        var ex = d.Expenses;
+                        col.Item().Text("5 · THỐNG KÊ CHI PHÍ").Bold().FontSize(12).FontColor(BrandBlue);
+                        col.Item().Text($"Tổng chi phí: {ex.TotalAmount:N0} ₫ · Host: {ex.TotalGeneral:N0} ₫ · Hậu cần PB: {ex.TotalLogistics:N0} ₫")
+                            .FontSize(9.5f);
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c =>
+                            {
+                                c.ConstantColumn(28); c.RelativeColumn(3); c.RelativeColumn(1.5f);
+                                c.RelativeColumn(1.5f); c.RelativeColumn(1.5f); c.RelativeColumn(1.5f); c.RelativeColumn(1.2f);
+                            });
+                            table.Header(h =>
+                            {
+                                TableHeader(h.Cell(), "STT"); TableHeader(h.Cell(), "Tên đoàn khách"); TableHeader(h.Cell(), "Thời gian");
+                                TableHeader(h.Cell(), "Chi phí Host"); TableHeader(h.Cell(), "Chi phí Hậu cần"); TableHeader(h.Cell(), "Tổng chi phí"); TableHeader(h.Cell(), "Trạng thái");
+                            });
+                            var i = 0;
+                            foreach (var r in ex.Rows)
+                            {
+                                Cell(table.Cell(), (++i).ToString(Vi));
+                                Cell(table.Cell(), r.DelegationName);
+                                Cell(table.Cell(), r.VisitDate?.ToString("dd/MM/yyyy") ?? "—");
+                                Cell(table.Cell(), $"{r.GeneralExpense:N0} ₫");
+                                Cell(table.Cell(), $"{r.LogisticsExpense:N0} ₫");
+                                Cell(table.Cell(), $"{r.TotalExpense:N0} ₫");
+                                Cell(table.Cell(), r.Status);
                             }
                         });
                     }

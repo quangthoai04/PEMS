@@ -130,10 +130,14 @@ public sealed class RejectCampusInstanceCommandHandler
 
         var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
 
-        if (visit.VisitorUserId.HasValue)
+        var visitorRecipients = new System.Collections.Generic.HashSet<ulong>();
+        if (visit.VisitorUserId.HasValue) visitorRecipients.Add(visit.VisitorUserId.Value);
+        if (visit.RegistrantUserId.HasValue) visitorRecipients.Add(visit.RegistrantUserId.Value);
+
+        foreach (var recipientId in visitorRecipients)
         {
             notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                RecipientUserId: visit.VisitorUserId.Value,
+                RecipientUserId: recipientId,
                 Title: "Cơ sở từ chối tiếp nhận",
                 Message: $"Cơ sở {campusName} đã từ chối tiếp nhận yêu cầu tham quan {visit.RequestCode}. Lý do: {reason}",
                 NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestRejected,

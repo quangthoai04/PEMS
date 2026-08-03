@@ -17,6 +17,7 @@ using PEMS.Application.Partners.Contacts.Queries.GetPartnerContacts;
 using PEMS.Application.Partners.Documents.Commands.UploadPartnerDocument;
 using PEMS.Application.Partners.Documents.Queries.GetPartnerDocuments;
 using PEMS.Application.Partners.Queries.GetPartnerDetail;
+using PEMS.Application.Partners.Queries.GetPartnerVisitHistory;
 using PEMS.Application.Partners.Queries.GetPartners;
 using PEMS.Application.Partners.Queries.GetPendingPartnerApprovals;
 using PEMS.Application.Partners.Queries.MatchPartner;
@@ -55,6 +56,10 @@ namespace PEMS.Api.Controllers
         [HttpGet("{partnerId}")]
         public async Task<IActionResult> GetPartnerDetail(ulong partnerId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new GetPartnerDetailQuery(partnerId), cancellationToken));
+
+        [HttpGet("{partnerId}/visit-history")]
+        public async Task<IActionResult> GetPartnerVisitHistory(ulong partnerId, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new GetPartnerVisitHistoryQuery(partnerId), cancellationToken));
 
         [HttpPost]
         public async Task<IActionResult> CreatePartner([FromBody] CreatePartnerCommand command, CancellationToken cancellationToken)

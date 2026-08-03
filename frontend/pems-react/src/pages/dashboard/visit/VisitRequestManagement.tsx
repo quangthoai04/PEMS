@@ -426,6 +426,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // Modal đánh giá mở ngay trên danh sách (không chuyển route). Sau khi gửi thành công,
   // đổi row sang "Đã đánh giá" tại chỗ.
   const [feedbackModalInstanceId, setFeedbackModalInstanceId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fbParam = searchParams.get('feedbackVisitInstanceId');
+    if (fbParam) {
+      const instId = Number(fbParam);
+      if (!isNaN(instId) && instId > 0) {
+        setFeedbackModalInstanceId(instId);
+      }
+    }
+  }, [searchParams]);
+
   const handleFeedbackSubmitted = (instanceId: number) => {
     setFeedbackByInstance((prev) =>
       prev[instanceId] ? { ...prev, [instanceId]: { ...prev[instanceId], alreadySubmitted: true } } : prev,
@@ -1267,7 +1278,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const renderRowActions = (row: Row, variant: RowVariant) => {
     const actions = row.allowedActions || [];
     const can = (a: AllowedAction) => actions.includes(a);
-    const fb = row.visitInstanceId ? feedbackByInstance[row.visitInstanceId] : undefined;
+    const fb = (row.visitInstanceId && feedbackByInstance[row.visitInstanceId])
+      || ((row as any).campusProgress && ((row as any).campusProgress as any[]).map((c: any) => feedbackByInstance[c.visitInstanceId]).find((f: any) => f && !f.alreadySubmitted));
     const menuItems = buildRowMenuItems(row);
 
     type Primary = { title: string; short: string; tone: ActionTone; icon: React.ReactNode; onClick: () => void };
@@ -1350,6 +1362,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             tone={primary.tone}
             icon={primary.icon}
             onClick={(e) => { e.stopPropagation(); primary.onClick(); }}
+          />
+        ) : fb && !fb.alreadySubmitted ? (
+          <ActionIconButton
+            title="Đánh giá chuyến thăm"
+            label="Đánh giá"
+            tone="orange"
+            icon={<Star className="h-5 w-5 fill-amber-400 text-amber-500" />}
+            onClick={(e) => {
+              e.stopPropagation();
+              const instId = fb.visitInstanceId || row.visitInstanceId;
+              if (instId) setFeedbackModalInstanceId(instId);
+            }}
           />
         ) : fb?.alreadySubmitted ? (
           <span title="Đã đánh giá" className="flex h-9 w-9 items-center justify-center text-emerald-500">

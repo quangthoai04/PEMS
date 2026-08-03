@@ -46,16 +46,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
             var userId = _currentUserService.UserId;
             if (!userId.HasValue) throw new ValidationException("Không xác định được người dùng");
 
-            // Database time conflict check
+            // Database time conflict check (only checks personal events & other accepted invitations)
             var campus = await _context.VisitRequestCampuses.AsNoTracking()
                 .FirstOrDefaultAsync(c => c.VisitInstanceId == p.VisitInstanceId, cancellationToken);
             if (campus != null)
             {
-                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasConflictAsync(
-                    _context, userId.Value, campus.PlannedStartAt, campus.PlannedEndAt, null, p.ParticipantId, cancellationToken);
+                bool hasConflict = await PEMS.Application.Common.Utils.ScheduleConflictChecker.HasInvitationConflictAsync(
+                    _context, userId.Value, campus.PlannedStartAt, campus.PlannedEndAt, p.ParticipantId, cancellationToken);
                 if (hasConflict)
                 {
-                    throw new ValidationException("Thư mời này đã trùng thời gian với công việc khác của bạn. Hãy phân công cho nhân sự khác.");
+                    throw new ValidationException("Thư mời này đã trùng thời gian với thư mời khác của bạn.");
                 }
             }
 

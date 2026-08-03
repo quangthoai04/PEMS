@@ -18,6 +18,7 @@ import type {
   PartnerDetail as PartnerDetailType,
   PartnerDocument,
   PartnerProfileStatus,
+  PartnerVisitHistoryItem,
 } from '../../../features/partners/types/partners.types';
 import {
   PARTNER_TYPE_LABELS,
@@ -29,6 +30,7 @@ import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { downloadAuthenticatedFile } from '../../../shared/utils/fileDownload';
+import { formatVietnamDate, formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
 import {
   showLoadingToast,
@@ -39,10 +41,21 @@ import {
 // Cover placeholder restored from the original PartnerDetail UI — shown until the partner's own
 // coverFileId resolves (or when it has none, or the fetch/render fails).
 import coverImage from '../../../assets/images/banner_partner.png';
-import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
+
+const VISIT_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  DRAFT: { label: 'Bản nháp', bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' },
+  SUBMITTED: { label: 'Chờ duyệt', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  ASSIGNED: { label: 'Đã phân công', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  BEFORE_VISIT: { label: 'Chuẩn bị tiếp đón', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+  DURING_VISIT: { label: 'Đang tiếp đón', bg: 'bg-orange-50', text: 'text-[#f37021]', border: 'border-orange-200' },
+  AFTER_VISIT: { label: 'Hoàn tất tiếp đón', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  COMPLETED: { label: 'Hoàn thành', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  CLOSED: { label: 'Đã đóng', bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200' },
+  CANCELLED: { label: 'Đã hủy', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+};
 
 /** Logo fallback when a partner has no cover/logo file (or it failed to load): initials badge. */
 function getInitials(name: string): string {
@@ -195,6 +208,17 @@ export function PartnerDetail() {
     finally { setContactsLoading(false); }
   }, [id]);
 
+  const [visitHistory, setVisitHistory] = useState<PartnerVisitHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const loadVisitHistory = useCallback(async () => {
+    if (!id) return;
+    setLoadingHistory(true);
+    try { setVisitHistory(await partnersApi.getVisitHistory(id)); }
+    catch { setVisitHistory([]); }
+    finally { setLoadingHistory(false); }
+  }, [id]);
+
   const loadAliases = useCallback(async () => {
     if (!id) return;
     try { setAliases(await partnersApi.getAliases(id)); } catch { setAliases([]); }
@@ -212,7 +236,8 @@ export function PartnerDetail() {
     void loadContacts();
     void loadAliases();
     void loadDocuments();
-  }, [loadContacts, loadAliases, loadDocuments]);
+    void loadVisitHistory();
+  }, [loadContacts, loadAliases, loadDocuments, loadVisitHistory]);
 
   const approve = async () => {
     if (!id) return;
@@ -414,18 +439,16 @@ export function PartnerDetail() {
             <button
               type="button"
               onClick={() => setDisplayLang('vi')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                displayLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${displayLang === 'vi' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Tiếng Việt
             </button>
             <button
               type="button"
               onClick={() => setDisplayLang('en')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                displayLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${displayLang === 'en' ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               English
             </button>
@@ -592,12 +615,86 @@ export function PartnerDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Lịch sử hợp tác */}
         <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-gray-100 overflow-hidden flex flex-col">
-          <div className="bg-[#004c91] px-6 py-4 flex items-center gap-2.5">
-            <History className="w-6 h-6 text-white" />
-            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Lịch sử hợp tác</h2>
+          <div className="bg-[#004c91] px-6 py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <History className="w-6 h-6 text-white" />
+              <h2 className="text-lg font-bold text-white uppercase tracking-wider">Lịch sử hợp tác</h2>
+            </div>
+            {visitHistory.length > 0 && (
+              <span className="text-xs font-bold text-white/90 bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-sm">
+                {visitHistory.length} chuyến thăm
+              </span>
+            )}
           </div>
-          <div className="p-6 flex-1 bg-white flex items-center justify-center min-h-[160px]">
-            <p className="text-sm text-gray-400 font-medium text-center">Chưa có dữ liệu lịch sử hợp tác.</p>
+          <div className="p-6 flex-1 bg-white flex flex-col">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center py-12 text-slate-400 gap-2 font-medium text-sm">
+                <Loader2 className="w-5 h-5 animate-spin text-[#004c91]" />
+                Đang tải lịch sử tiếp đón...
+              </div>
+            ) : visitHistory.length === 0 ? (
+              <div className="py-10 text-center space-y-2 flex flex-col items-center justify-center flex-1">
+                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100 mb-1">
+                  <History className="w-6 h-6" />
+                </div>
+                <p className="text-sm font-bold text-slate-600">Chưa có dữ liệu lịch sử hợp tác</p>
+                <p className="text-xs text-slate-400 max-w-xs">
+                  Các chuyến thăm và đoàn tiếp đón thuộc đối tác này sẽ được tự động ghi nhận tại đây.
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-[360px] overflow-y-auto pr-1 flex flex-col gap-3 custom-scrollbar">
+                {visitHistory.map((item) => {
+                  const statusCfg = VISIT_STATUS_CONFIG[item.status] || {
+                    label: item.status,
+                    bg: 'bg-blue-50',
+                    text: 'text-blue-700',
+                    border: 'border-blue-200',
+                  };
+                  return (
+                    <div
+                      key={item.visitInstanceId}
+                      onClick={() => navigate(`/dashboard/visit?visitRequestId=${item.visitRequestId}`)}
+                      className="p-4 rounded-2xl border border-slate-100 hover:border-[#004c91]/40 bg-slate-50/50 hover:bg-white shadow-xs hover:shadow-md transition-all cursor-pointer group flex flex-col gap-2 relative overflow-hidden"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="font-extrabold text-slate-800 text-sm group-hover:text-[#004c91] transition-colors truncate">
+                            {item.delegationName}
+                          </h4>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-500">
+                            <span className="flex items-center gap-1 font-semibold text-slate-600">
+                              <MapPin className="w-3.5 h-3.5 text-[#f37021]" /> {item.campusName}
+                            </span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1 font-medium">
+                              <Users className="w-3.5 h-3.5 text-blue-500" /> {item.guestCount} thành viên
+                            </span>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border shrink-0 ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}
+                        >
+                          {statusCfg.label}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100/80 text-slate-500">
+                        <span className="font-medium text-slate-500">
+                          {formatVietnamDate(item.plannedStartAt)}
+                        </span>
+                        {item.hostName && (
+                          <span className="text-[11px] font-semibold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                            Host: {item.hostName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -641,36 +738,36 @@ export function PartnerDetail() {
                     key={d.documentId}
                     className="bg-gradient-to-r from-blue-50/80 to-[#e6f0fa]/80 p-4 rounded-xl border border-blue-100/50 shadow-sm flex items-center gap-4 group hover:border-[#004c91]/50 transition-colors"
                   >
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-[#004c91] flex-shrink-0">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors">{d.title}</div>
-                    <div className="text-xs text-gray-500 font-medium mt-0.5 truncate">
-                      {d.originalFilename || '—'}
-                      {d.fileSize ? ` • ${(d.fileSize / 1024).toFixed(0)} KB` : ''}
-                      {d.creatorName ? ` • ${d.creatorName}` : ''}
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-[#004c91] flex-shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors">{d.title}</div>
+                      <div className="text-xs text-gray-500 font-medium mt-0.5 truncate">
+                        {d.originalFilename || '—'}
+                        {d.fileSize ? ` • ${(d.fileSize / 1024).toFixed(0)} KB` : ''}
+                        {d.creatorName ? ` • ${d.creatorName}` : ''}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setPreviewDoc(d)}
+                        className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
+                        title="Xem trước"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => void handleDownloadDoc(d.documentId, API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title)}
+                        disabled={downloadingKey !== null}
+                        className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Tải xuống"
+                      >
+                        {downloadingKey === d.documentId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => setPreviewDoc(d)}
-                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer"
-                      title="Xem trước"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => void handleDownloadDoc(d.documentId, API_ENDPOINTS.files.download(d.fileId), d.originalFilename || d.title)}
-                      disabled={downloadingKey !== null}
-                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-[#004c91] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      title="Tải xuống"
-                    >
-                      {downloadingKey === d.documentId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))}
               </div>
             )}
           </div>
@@ -830,7 +927,7 @@ export function PartnerDetail() {
               </tbody>
             </table>
           </div>
-          
+
           {!contactsLoading && contacts.length > 0 && (() => {
             const filteredContactsCount = contacts.filter(c =>
               c.fullName.toLowerCase().includes(contactSearch.toLowerCase()) ||

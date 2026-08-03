@@ -56,7 +56,20 @@ export function LogisticsWorkContent({
 
   if (resolved.state === 'text') {
     return (
-      <p className={`whitespace-pre-wrap break-words leading-relaxed ${className}`}>{resolved.text}</p>
+      <div className={`break-words ${className}`}>
+        {resolved.text.split('\n').map((line, idx) => (
+          <p 
+            key={idx} 
+            className={
+              idx > 0 && line.startsWith('*') 
+                ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' 
+                : 'mb-2 leading-relaxed'
+            }
+          >
+            {line}
+          </p>
+        ))}
+      </div>
     );
   }
 

@@ -27,6 +27,7 @@ public sealed class StaffLeaderReportV2Dto
     public string FromDate { get; set; } = string.Empty;
     public string ToDate { get; set; } = string.Empty;
     public StaffLeaderV2Visits Visits { get; set; } = new();
+    public StaffLeaderV2Partners Partners { get; set; } = new();
     public StaffLeaderV2Personnel Personnel { get; set; } = new();
     public StaffLeaderV2Departments Departments { get; set; } = new();
     public StaffLeaderV2Expenses Expenses { get; set; } = new();
@@ -45,10 +46,20 @@ public sealed class StaffLeaderV2Visits
     public int FeedbackTotalStars { get; set; }
     public double? FeedbackAverage { get; set; }
     public int TotalPartners { get; set; }
-    /// <summary>Độ chi tiết trục thời gian của PartnerTrend, chọn theo độ dài kỳ lọc:
+    /// <summary>Độ chi tiết trục thời gian của Trend, chọn theo độ dài kỳ lọc:
     /// YEAR (kỳ ≥ 3 năm) | MONTH (&gt; 3 tháng) | WEEK (≤ 3 tháng) | DAY (≤ 2 tuần) | HOUR (trong 1 ngày).</summary>
     public string TrendGranularity { get; set; } = "MONTH";
+    public List<StaffLeaderV2VisitTrendPoint> VisitTrend { get; set; } = new();
     public List<StaffLeaderV2PartnerTrendPoint> PartnerTrend { get; set; } = new();
+}
+
+public sealed class StaffLeaderV2VisitTrendPoint
+{
+    public string Month { get; set; } = string.Empty;      // key mốc thời gian (đầu bucket)
+    public string MonthLabel { get; set; } = string.Empty; // nhãn hiển thị: 2026 | T7/2026 | 15/07 | 09:00
+    public int TotalVisits { get; set; }
+    public int CompletedVisits { get; set; }
+    public int TotalGuests { get; set; }
 }
 
 public sealed class StaffLeaderV2PartnerTrendPoint
@@ -58,6 +69,48 @@ public sealed class StaffLeaderV2PartnerTrendPoint
     public int VisitsWithPartner { get; set; }
     public int NewPartners { get; set; }
     public int CumulativePartners { get; set; }
+}
+
+// ── Phần đối tác ─────────────────────────────────────────────────────────────
+public sealed class StaffLeaderV2Partners
+{
+    public int TotalPartners { get; set; }
+    public int NewPartnersInPeriod { get; set; }
+    public int ActivePartners { get; set; }
+    public int VisitsWithPartnerCount { get; set; }
+    public double PartnerVisitRatio { get; set; }
+    public string TrendGranularity { get; set; } = "MONTH";
+    public List<StaffLeaderV2PartnerTrendPoint> Trend { get; set; } = new();
+    public List<StaffLeaderV2PartnerTypeStat> PartnersByType { get; set; } = new();
+    public List<StaffLeaderV2PartnerStatusStat> PartnersByStatus { get; set; } = new();
+    public List<StaffLeaderV2TopPartnerRow> TopPartners { get; set; } = new();
+}
+
+public sealed class StaffLeaderV2PartnerTypeStat
+{
+    public string PartnerType { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public int VisitCount { get; set; }
+}
+
+public sealed class StaffLeaderV2PartnerStatusStat
+{
+    public string Status { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public sealed class StaffLeaderV2TopPartnerRow
+{
+    public ulong PartnerId { get; set; }
+    public string? PartnerCode { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string PartnerType { get; set; } = string.Empty;
+    public string CooperationStatus { get; set; } = string.Empty;
+    public int VisitCount { get; set; }
+    public int GuestCount { get; set; }
+    public double? FeedbackAverage { get; set; }
 }
 
 // ── Phần 2: nhân sự IC + student ────────────────────────────────────────────

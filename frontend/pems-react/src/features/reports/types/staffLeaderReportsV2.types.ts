@@ -8,6 +8,14 @@ export interface StaffLeaderV2Filters {
   toDate: string;
 }
 
+export interface StaffLeaderV2VisitTrendPoint {
+  month: string;
+  monthLabel: string;
+  totalVisits: number;
+  completedVisits: number;
+  totalGuests: number;
+}
+
 export interface StaffLeaderV2PartnerTrendPoint {
   month: string;
   monthLabel: string;
@@ -29,6 +37,7 @@ export interface StaffLeaderV2Visits {
   totalPartners: number;
   /** Độ chi tiết trục thời gian: YEAR | MONTH | WEEK | DAY | HOUR (backend chọn theo độ dài kỳ lọc). */
   trendGranularity: 'YEAR' | 'MONTH' | 'WEEK' | 'DAY' | 'HOUR';
+  visitTrend: StaffLeaderV2VisitTrendPoint[];
   partnerTrend: StaffLeaderV2PartnerTrendPoint[];
 }
 
@@ -87,6 +96,43 @@ export interface StaffLeaderV2Expenses {
   rows: StaffLeaderV2ExpenseRow[];
 }
 
+export interface StaffLeaderV2PartnerTypeStat {
+  partnerType: string;
+  label: string;
+  count: number;
+  visitCount: number;
+}
+
+export interface StaffLeaderV2PartnerStatusStat {
+  status: string;
+  label: string;
+  count: number;
+}
+
+export interface StaffLeaderV2TopPartnerRow {
+  partnerId: number;
+  partnerCode: string | null;
+  name: string;
+  partnerType: string;
+  cooperationStatus: string;
+  visitCount: number;
+  guestCount: number;
+  feedbackAverage: number | null;
+}
+
+export interface StaffLeaderV2Partners {
+  totalPartners: number;
+  newPartnersInPeriod: number;
+  activePartners: number;
+  visitsWithPartnerCount: number;
+  partnerVisitRatio: number;
+  trendGranularity: 'YEAR' | 'MONTH' | 'WEEK' | 'DAY' | 'HOUR';
+  trend: StaffLeaderV2PartnerTrendPoint[];
+  partnersByType: StaffLeaderV2PartnerTypeStat[];
+  partnersByStatus: StaffLeaderV2PartnerStatusStat[];
+  topPartners: StaffLeaderV2TopPartnerRow[];
+}
+
 export interface StaffLeaderReportV2 {
   generatedAt: string;
   campusName: string;
@@ -94,6 +140,7 @@ export interface StaffLeaderReportV2 {
   fromDate: string;
   toDate: string;
   visits: StaffLeaderV2Visits;
+  partners: StaffLeaderV2Partners;
   personnel: StaffLeaderV2Personnel;
   departments: StaffLeaderV2Departments;
   expenses: StaffLeaderV2Expenses;

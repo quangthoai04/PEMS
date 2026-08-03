@@ -217,10 +217,14 @@ public sealed class ApproveCampusInstanceCommandHandler
         var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var visitProcessUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 
-        if (visit.VisitorUserId.HasValue)
+        var visitorRecipients = new HashSet<ulong>();
+        if (visit.VisitorUserId.HasValue) visitorRecipients.Add(visit.VisitorUserId.Value);
+        if (visit.RegistrantUserId.HasValue) visitorRecipients.Add(visit.RegistrantUserId.Value);
+
+        foreach (var recipientId in visitorRecipients)
         {
             notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                RecipientUserId: visit.VisitorUserId.Value,
+                RecipientUserId: recipientId,
                 Title: "Cơ sở đã tiếp nhận yêu cầu",
                 Message: $"Cơ sở {campusName} đã tiếp nhận yêu cầu tham quan {visit.RequestCode} của bạn. Host phụ trách: {host.FullName}.",
                 NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestApproved,

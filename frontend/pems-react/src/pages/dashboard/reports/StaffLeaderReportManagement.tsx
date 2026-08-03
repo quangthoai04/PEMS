@@ -10,10 +10,10 @@ import toast from 'react-hot-toast';
 import {
   AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   ChevronUp, Download, FileText, Loader2, RefreshCw, Send, Star, TrendingDown, TrendingUp,
-  Users, X, XCircle, DollarSign,
+  Users, X, XCircle, DollarSign, Handshake, PlusCircle, Percent, BarChart2,
 } from 'lucide-react';
 import {
-  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { reportsApi } from '../../../features/reports/api/reportsApi';
 import type {
@@ -181,14 +181,14 @@ export function StaffLeaderReportManagement() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Mỗi phần đóng/mở độc lập — mặc định mở cả 4.
-  const [openSections, setOpenSections] = useState({ visits: true, personnel: true, departments: true, expenses: true });
+  // Mỗi phần đóng/mở độc lập — mặc định mở cả 5.
+  const [openSections, setOpenSections] = useState({ visits: true, partners: true, personnel: true, departments: true, expenses: true });
   const toggleSection = (key: keyof typeof openSections) =>
     setOpenSections((s) => ({ ...s, [key]: !s[key] }));
 
-  // ── Xuất báo cáo (PDF/Excel/CSV) — chọn phần 1/2/3 hoặc tất cả ──
+  // ── Xuất báo cáo (PDF/Excel/CSV) — chọn các phần cần xuất ──
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const [exportSections, setExportSections] = useState<string[]>(['VISITS', 'PERSONNEL', 'DEPARTMENTS']);
+  const [exportSections, setExportSections] = useState<string[]>(['VISITS', 'PARTNERS', 'PERSONNEL', 'DEPARTMENTS', 'EXPENSES']);
   const [exporting, setExporting] = useState(false);
   const toggleExportSection = (s: string) =>
     setExportSections((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
@@ -437,6 +437,7 @@ export function StaffLeaderReportManagement() {
 
 
   const v = data?.visits;
+  const pt = data?.partners;
   const p = data?.personnel;
   const d = data?.departments;
 
@@ -470,8 +471,10 @@ export function StaffLeaderReportManagement() {
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide px-1">Chọn phần xuất</p>
                 {[
                   { key: 'VISITS', label: 'Phần 1 · Đoàn tiếp khách' },
-                  { key: 'PERSONNEL', label: 'Phần 2 · Nhân sự' },
-                  { key: 'DEPARTMENTS', label: 'Phần 3 · Phòng ban khác' },
+                  { key: 'PARTNERS', label: 'Phần 2 · Đối tác' },
+                  { key: 'PERSONNEL', label: 'Phần 3 · Nhân sự' },
+                  { key: 'DEPARTMENTS', label: 'Phần 4 · Phòng ban khác' },
+                  { key: 'EXPENSES', label: 'Phần 5 · Thống kê chi phí' },
                 ].map((s) => (
                   <label key={s.key} className="flex items-center gap-2 px-1 py-0.5 text-sm text-slate-700 cursor-pointer">
                     <input
@@ -486,8 +489,8 @@ export function StaffLeaderReportManagement() {
                 <label className="flex items-center gap-2 px-1 py-0.5 text-sm font-bold text-[#004c91] cursor-pointer border-t border-slate-100 pt-2">
                   <input
                     type="checkbox"
-                    checked={exportSections.length === 3}
-                    onChange={() => setExportSections(exportSections.length === 3 ? [] : ['VISITS', 'PERSONNEL', 'DEPARTMENTS'])}
+                    checked={exportSections.length === 5}
+                    onChange={() => setExportSections(exportSections.length === 5 ? [] : ['VISITS', 'PARTNERS', 'PERSONNEL', 'DEPARTMENTS', 'EXPENSES'])}
                     className="accent-[#004c91]"
                   />
                   Chọn tất cả
@@ -593,17 +596,16 @@ export function StaffLeaderReportManagement() {
               <StatTile label="Tổng đối tác" value={v!.totalPartners} tone="slate" icon={<Building2 className="w-4 h-4 opacity-60" />} />
             </div>
 
-            {/* Biểu đồ đường tiến độ hợp tác đối tác — mốc trục thời gian đổi theo khoảng lọc */}
+            {/* Biểu đồ xu hướng đoàn tiếp khách & lượt khách — mốc trục thời gian đổi theo khoảng lọc */}
             <div className="mt-6">
-              <h3 className="text-sm font-bold text-slate-700 mb-1">Tiến độ hợp tác với đối tác</h3>
+              <h3 className="text-sm font-bold text-slate-700 mb-1">Xu hướng đoàn tiếp khách & lượt khách</h3>
               <p className="text-xs text-slate-400 mb-3">
-                Lũy kế đối tác đã duyệt và số chuyến thăm gắn với đối tác theo{' '}
-                {{ YEAR: 'năm', MONTH: 'tháng', WEEK: 'tuần', DAY: 'ngày', HOUR: 'giờ' }[v!.trendGranularity] ?? 'tháng'}
-                {' '}— đường đi lên nghĩa là hợp tác đang tăng. Dữ liệu thuộc riêng {data.campusName}.
+                Thống kê số lượng đoàn tiếp khách và tổng số khách theo{' '}
+                {{ YEAR: 'năm', MONTH: 'tháng', WEEK: 'tuần', DAY: 'ngày', HOUR: 'giờ' }[v!.trendGranularity] ?? 'tháng'}. Dữ liệu thuộc riêng {data.campusName}.
               </p>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={v!.partnerTrend} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
+                  <LineChart data={v!.visitTrend ?? []} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} stroke="#94a3b8" />
                     <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
@@ -613,17 +615,164 @@ export function StaffLeaderReportManagement() {
                       contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="cumulativePartners" name="Lũy kế đối tác" stroke={CHART_BLUE} strokeWidth={2.5} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="visitsWithPartner" name="Chuyến thăm gắn đối tác" stroke={CHART_GREEN} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="totalVisits" name="Tổng số đoàn" stroke={CHART_BLUE} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="completedVisits" name="Đoàn hoàn thành" stroke={CHART_GREEN} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="totalGuests" name="Tổng số khách" stroke="#f37021" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
           </Section>
 
-          {/* ═══ 2 · Báo cáo nhân sự ═══ */}
+          {/* ═══ 2 · Báo cáo đối tác ═══ */}
           <Section
             index={2}
+            title="Báo cáo đối tác"
+            subtitle="Tổng quan đối tác, tiến độ hợp tác, phân loại đối tác và các đối tác nổi bật của campus trong kỳ."
+            open={openSections.partners}
+            onToggle={() => toggleSection('partners')}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+              <StatTile label="Tổng đối tác" value={pt?.totalPartners ?? 0} sub="Đã duyệt & quản lý" tone="blue" icon={<Handshake className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Đối tác mới" value={pt?.newPartnersInPeriod ?? 0} sub="Tạo/duyệt trong kỳ" tone="green" icon={<PlusCircle className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Đang hợp tác" value={pt?.activePartners ?? 0} sub="Trạng thái Active" tone="slate" icon={<Building2 className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Đoàn có đối tác" value={pt?.visitsWithPartnerCount ?? 0} sub="Chuyến thăm có đối tác" tone="amber" icon={<Users className="w-4 h-4 opacity-60" />} />
+              <StatTile label="Tỷ lệ đoàn có đối tác" value={`${pt?.partnerVisitRatio ?? 0}%`} tone="violet" icon={<Percent className="w-4 h-4 opacity-60" />} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+              <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-[#004c91]" /> Tiến độ hợp tác với đối tác
+                  </h3>
+                  <span className="text-[11px] font-medium text-slate-400">
+                    Theo {{ YEAR: 'năm', MONTH: 'tháng', WEEK: 'tuần', DAY: 'ngày', HOUR: 'giờ' }[pt?.trendGranularity ?? 'MONTH'] ?? 'tháng'}
+                  </span>
+                </div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={pt?.trend ?? []} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <Tooltip
+                        formatter={(value: number, name: string) => [value, name]}
+                        labelStyle={{ fontWeight: 700 }}
+                        contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line type="monotone" dataKey="cumulativePartners" name="Lũy kế đối tác" stroke={CHART_BLUE} strokeWidth={2.5} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="visitsWithPartner" name="Chuyến thăm gắn đối tác" stroke={CHART_GREEN} strokeWidth={2.5} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                    <BarChart2 className="w-4 h-4 text-[#f37021]" /> Phân loại đối tác theo loại hình
+                  </h3>
+                  <span className="text-[11px] font-medium text-slate-400">Số lượng & số chuyến</span>
+                </div>
+                <div className="h-64">
+                  {(!pt?.partnersByType || pt.partnersByType.length === 0) ? (
+                    <div className="h-full flex items-center justify-center text-slate-400 text-xs">Chưa có dữ liệu phân loại đối tác.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={pt.partnersByType} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="#94a3b8" interval={0} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                        <Tooltip
+                          formatter={(value: number, name: string) => [value, name]}
+                          labelStyle={{ fontWeight: 700 }}
+                          contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="count" name="Số đối tác" fill="#004c91" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="visitCount" name="Số chuyến thăm" fill="#f37021" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {pt?.partnersByStatus && pt.partnersByStatus.length > 0 && (
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 mt-4">
+                <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-3">Phân bổ trạng thái hợp tác đối tác</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {pt.partnersByStatus.map((st) => (
+                    <div key={st.status} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-slate-700">{st.label}</p>
+                        <p className="text-lg font-black text-[#004c91] mt-0.5">{st.count}</p>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                        st.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
+                        st.status === 'POTENTIAL' ? 'bg-blue-100 text-blue-800' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {st.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6">
+              <h3 className="text-sm font-bold text-slate-700 mb-2">Top đối tác hợp tác tích cực nhất trong kỳ</h3>
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className={thClass}>STT</th>
+                        <th className={thClass}>Mã đối tác</th>
+                        <th className={thClass}>Tên đối tác</th>
+                        <th className={thClass}>Loại hình</th>
+                        <th className={thClass}>Trạng thái</th>
+                        <th className={thClass}>Số chuyến thăm</th>
+                        <th className={thClass}>Số lượt khách</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(!pt?.topPartners || pt.topPartners.length === 0) ? (
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Không có chuyến thăm gắn với đối tác nào trong kỳ.</td></tr>
+                      ) : (
+                        pt.topPartners.map((row, idx) => (
+                          <tr key={row.partnerId} className={idx % 2 === 1 ? 'bg-slate-50/40' : ''}>
+                            <td className={`${tdClass} whitespace-nowrap`}>{idx + 1}</td>
+                            <td className={`${tdClass} whitespace-nowrap font-mono text-xs font-bold text-slate-500`}>{row.partnerCode || '—'}</td>
+                            <td className={`${tdClass} font-semibold text-slate-800`}>{row.name}</td>
+                            <td className={`${tdClass} whitespace-nowrap`}>
+                              <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium">{row.partnerType}</span>
+                            </td>
+                            <td className={`${tdClass} whitespace-nowrap`}>
+                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                row.cooperationStatus === 'Đang hợp tác' || row.cooperationStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {row.cooperationStatus}
+                              </span>
+                            </td>
+                            <td className={`${tdClass} whitespace-nowrap font-bold text-[#004c91]`}>{row.visitCount} chuyến</td>
+                            <td className={`${tdClass} whitespace-nowrap font-semibold text-slate-700`}>{row.guestCount} khách</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          {/* ═══ 3 · Báo cáo nhân sự ═══ */}
+          <Section
+            index={3}
             title="Báo cáo nhân sự"
             subtitle="Hiệu suất của Staff Leader, IC Staff và sinh viên hỗ trợ tiếp khách trong kỳ."
             open={openSections.personnel}
@@ -741,9 +890,9 @@ export function StaffLeaderReportManagement() {
             </div>
           </Section>
 
-          {/* ═══ 3 · Báo cáo phòng ban khác ═══ */}
+          {/* ═══ 4 · Báo cáo phòng ban khác ═══ */}
           <Section
-            index={3}
+            index={4}
             title="Báo cáo phòng ban khác"
             subtitle="Đơn yêu cầu hậu cần & thư mời hỗ trợ gửi tới các phòng ban trong kỳ."
             open={openSections.departments}
@@ -837,9 +986,9 @@ export function StaffLeaderReportManagement() {
             </div>
           </Section>
 
-          {/* ═══ 4 · Thống kê chi phí ═══ */}
+          {/* ═══ 5 · Thống kê chi phí ═══ */}
           <Section
-            index={4}
+            index={5}
             title="Thống kê chi phí"
             subtitle="Chi phí tiếp khách của từng đoàn (bảng kê của Host và các phòng ban) theo khoảng ngày."
             open={openSections.expenses}

@@ -189,3 +189,18 @@ public sealed class PublicPartnerDto
     public ulong? CoverFileId { get; set; }
     public string? PublicSlug { get; set; }
 }
+
+public sealed class PartnerVisitHistoryDto
+{
+    public ulong VisitInstanceId { get; set; }
+    public ulong VisitRequestId { get; set; }
+    public string DelegationName { get; set; } = string.Empty;
+    public ulong CampusId { get; set; }
+    public string CampusName { get; set; } = string.Empty;
+    public DateTime PlannedStartAt { get; set; }
+    public DateTime? PlannedEndAt { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int GuestCount { get; set; }
+    public string? HostName { get; set; }
+    public string LinkType { get; set; } = "DIRECT";
+}

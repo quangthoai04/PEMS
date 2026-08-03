@@ -108,7 +108,7 @@ public sealed class ExportHoReportV2CommandHandler
         if (sections.Contains("OVERVIEW"))
         {
             var o = d.Overview;
-            sb.AppendLine("2. TỔNG QUAN HỆ THỐNG");
+            sb.AppendLine("1. TỔNG QUAN HỆ THỐNG");
             sb.AppendLine("Số campus;Tổng đoàn;Tổng khách;Tổng đối tác;Đơn liên cơ sở;Đơn một cơ sở;Hoàn thành;Bị hủy;Từ chối;Feedback TB;Lượt FB");
             sb.AppendLine($"{o.CampusCount};{o.TotalVisits};{o.TotalGuests};{o.TotalPartners};{o.MultiCampusRequests};{o.SingleCampusRequests};{o.Completed};{o.Cancelled};{o.Rejected};{o.FeedbackAverage?.ToString("0.0", Vi) ?? "—"};{o.FeedbackCount}");
             sb.AppendLine("STT;Campus;Tổng đoàn khách;Tổng đối tác;Feedback");
@@ -126,7 +126,7 @@ public sealed class ExportHoReportV2CommandHandler
         if (sections.Contains("PARTNERS"))
         {
             var p = d.Partners;
-            sb.AppendLine("3. ĐỐI TÁC");
+            sb.AppendLine("2. ĐỐI TÁC");
             sb.AppendLine("Mốc thời gian;Chuyến gắn đối tác;Đối tác mới;Lũy kế đối tác");
             foreach (var t in p.Trend)
                 sb.AppendLine($"{Esc(t.MonthLabel)};{t.VisitsWithPartner};{t.NewPartners};{t.CumulativePartners}");
@@ -157,7 +157,7 @@ public sealed class ExportHoReportV2CommandHandler
 
         if (sections.Contains("OVERVIEW"))
         {
-            var ws = workbook.AddWorksheet("2. Tổng quan hệ thống");
+            var ws = workbook.AddWorksheet("1. Tổng quan hệ thống");
             var o = d.Overview;
             ws.Cell(1, 1).Value = $"Tổng quan hệ thống PEMS ({d.FromDate} → {d.ToDate})";
             ws.Cell(1, 1).Style.Font.Bold = true;
@@ -197,7 +197,7 @@ public sealed class ExportHoReportV2CommandHandler
 
         if (sections.Contains("PARTNERS"))
         {
-            var ws = workbook.AddWorksheet("3. Đối tác");
+            var ws = workbook.AddWorksheet("2. Đối tác");
             var p = d.Partners;
             ws.Cell(1, 1).Value = $"Đối tác toàn hệ thống ({d.FromDate} → {d.ToDate})";
             ws.Cell(1, 1).Style.Font.Bold = true;
@@ -257,7 +257,7 @@ public sealed class ExportHoReportV2CommandHandler
                     if (sections.Contains("OVERVIEW"))
                     {
                         var o = d.Overview;
-                        col.Item().Text("2 · TỔNG QUAN HỆ THỐNG").Bold().FontSize(12).FontColor(BrandBlue);
+                        col.Item().Text("1 · TỔNG QUAN HỆ THỐNG").Bold().FontSize(12).FontColor(BrandBlue);
                         col.Item().Text(
                             $"Số campus: {o.CampusCount} · Tổng đoàn: {o.TotalVisits} ({o.TotalGuests} khách) · Đối tác: {o.TotalPartners} · "
                             + $"Đơn liên cơ sở: {o.MultiCampusRequests} · Đơn một cơ sở: {o.SingleCampusRequests} · "
@@ -289,7 +289,7 @@ public sealed class ExportHoReportV2CommandHandler
                     if (sections.Contains("PARTNERS"))
                     {
                         var p = d.Partners;
-                        col.Item().Text("3 · ĐỐI TÁC (xếp theo số lượt tham quan)").Bold().FontSize(12).FontColor(BrandBlue);
+                        col.Item().Text("2 · ĐỐI TÁC (xếp theo số lượt tham quan)").Bold().FontSize(12).FontColor(BrandBlue);
                         col.Item().Table(table =>
                         {
                             table.ColumnsDefinition(c =>
