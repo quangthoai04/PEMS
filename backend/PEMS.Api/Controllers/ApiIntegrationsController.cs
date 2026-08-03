@@ -7,6 +7,7 @@ using PEMS.Application.ApiIntegrations.Commands.UpdateApiIntegrationQuota;
 using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleDocumentAiOcrConfig;
 using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleTranslationConfig;
 using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleVisionFaceDetectionConfig;
+using PEMS.Application.ApiIntegrations.Commands.UpsertResendConfig;
 using PEMS.Application.ApiIntegrations.Queries.GetApiIntegrationDetail;
 using PEMS.Application.ApiIntegrations.Queries.GetApiIntegrationLogs;
 using PEMS.Application.ApiIntegrations.Queries.GetApiIntegrationQuota;
@@ -89,6 +90,15 @@ namespace PEMS.Api.Controllers
         [HttpPost("face-detection/google-cloud-vision")]
         public async Task<IActionResult> UpsertGoogleVisionFaceDetectionConfig(
             [FromBody] UpsertGoogleVisionFaceDetectionConfigCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        /// <summary>
+        /// Create-or-update (by api_code) the Resend Email Delivery config.
+        /// Used for both create and edit — there is a single well-known row.
+        /// </summary>
+        [HttpPost("email-delivery/resend")]
+        public async Task<IActionResult> UpsertResendConfig(
+            [FromBody] UpsertResendConfigCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
 
         [HttpPost("{apiConfigId}/test")]

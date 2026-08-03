@@ -8,6 +8,7 @@ import type {
   UpsertGoogleDocumentAiOcrConfigRequest,
   UpsertGoogleTranslationConfigRequest,
   UpsertGoogleVisionFaceDetectionConfigRequest,
+  UpsertResendConfigRequest,
 } from '../types/apiManagement.types';
 
 /** ADMIN API Integration management — ApiIntegrationsController. Secrets never round-trip. */
@@ -53,6 +54,17 @@ export const apiManagementApi = {
   ): Promise<ApiIntegration> {
     const { data } = await httpClient.post<ApiIntegration>(
       API_ENDPOINTS.apiIntegrations.upsertGoogleVisionFaceDetection,
+      payload,
+    );
+    return data;
+  },
+
+  /** Create-or-update the single Resend config (Email Delivery). */
+  async upsertResendConfig(
+    payload: UpsertResendConfigRequest,
+  ): Promise<ApiIntegration> {
+    const { data } = await httpClient.post<ApiIntegration>(
+      API_ENDPOINTS.apiIntegrations.upsertResend,
       payload,
     );
     return data;

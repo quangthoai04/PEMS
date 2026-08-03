@@ -11,15 +11,19 @@ public static class ApiIntegrationMapper
         BusinessCardOcrConstants.Purpose,
         NewsTranslationConstants.Purpose,
         FaceDetectionConstants.Purpose,
+        ResendEmailConstants.Purpose,
     };
 
     public static ApiIntegrationDto ToDto(ApiConfiguration config, ICurrentUserService? currentUser = null)
     {
         var settings = OcrProviderSettings.Parse(config.SettingsJson);
+        var resendSettings = config.Purpose == ResendEmailConstants.Purpose
+            ? ResendProviderSettings.Parse(config.SettingsJson)
+            : null;
+
         var isDbManaged = config.Purpose != null && DatabaseManagedPurposes.Contains(config.Purpose);
-        // Capabilities mirror the command-side gates: only ADMIN, and only the two
-        // DB-managed purposes. Everything else (SMTP, Drive, env-configured providers)
-        // is surfaced read-only.
+        // Capabilities mirror the command-side gates: only ADMIN, and managed purposes.
+        // Everything else (SMTP, Drive, env-configured providers) is surfaced read-only.
         var manageable = isDbManaged && currentUser != null && ApiIntegrationAccess.CanManage(currentUser);
         return new ApiIntegrationDto
         {
@@ -39,12 +43,16 @@ public static class ApiIntegrationMapper
             LastTestStatus = config.LastTestStatus,
             LastTestedAt = config.LastTestedAt,
             LastTestMessage = config.LastTestMessage,
-            HasCredential = !string.IsNullOrEmpty(config.CredentialsJsonEncrypted),
+            HasCredential = !string.IsNullOrEmpty(config.CredentialsJsonEncrypted) || !string.IsNullOrEmpty(config.BearerTokenEncrypted),
             SecretRef = config.SecretRef,
             ProjectId = settings.ProjectId,
             Location = settings.Location,
             ProcessorId = settings.ProcessorId,
             Endpoint = settings.Endpoint,
+            FromEmail = resendSettings?.FromEmail,
+            FromName = resendSettings?.FromName,
+            ReplyToEmail = resendSettings?.ReplyToEmail,
+            ReplyToName = resendSettings?.ReplyToName,
             MaxFileSizeMb = settings.MaxFileSizeMb,
             AllowedMimeTypes = settings.AllowedMimeTypes,
             CreatedAt = config.CreatedAt,

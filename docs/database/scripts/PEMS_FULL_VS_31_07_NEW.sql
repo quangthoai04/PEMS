@@ -17242,3 +17242,32 @@ ALTER TABLE visit_requests
 
 ALTER TABLE visit_instance_form_details
     MODIFY COLUMN operational_contact_phone VARCHAR(50) NULL;
+
+-- ============================================================================
+-- SEED DEFAULT CONFIGURATION FOR RESEND EMAIL SERVICE
+-- ============================================================================
+INSERT INTO api_configurations (
+    api_code,
+    name,
+    provider_name,
+    purpose,
+    base_url,
+    default_method,
+    auth_type,
+    status,
+    data_sensitivity,
+    settings_json,
+    created_at
+) VALUES (
+    'RESEND_EMAIL_DELIVERY',
+    'Resend - Gửi email hệ thống',
+    'Resend',
+    'EMAIL_DELIVERY',
+    'https://api.resend.com',
+    'POST',
+    'BEARER_TOKEN',
+    'INACTIVE',
+    'CONFIDENTIAL',
+    '{"from_email":"no-reply@mail.pems-fpt.site","from_name":"PEMS System","reply_to_email":"managementsystemvolunteer@gmail.com","reply_to_name":"Ban quản trị PEMS"}',
+    NOW()
+) ON DUPLICATE KEY UPDATE updated_at = NOW();

@@ -32,6 +32,10 @@ public sealed class ApiIntegrationDto
     public string? Location { get; set; }
     public string? ProcessorId { get; set; }
     public string? Endpoint { get; set; }
+    public string? FromEmail { get; set; }
+    public string? FromName { get; set; }
+    public string? ReplyToEmail { get; set; }
+    public string? ReplyToName { get; set; }
     public int? MaxFileSizeMb { get; set; }
     public List<string> AllowedMimeTypes { get; set; } = new();
     public DateTime CreatedAt { get; set; }
