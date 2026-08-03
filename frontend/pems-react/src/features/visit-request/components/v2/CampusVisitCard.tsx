@@ -460,22 +460,43 @@ export const CampusVisitCard: React.FC<Props> = ({
   const toneHeaderOpenBg = isToneA ? 'bg-slate-50' : 'bg-[#f0f5fa]';
 
   return (
-    <div data-testid={`campus-edit-card-${campusCode || 'new'}`} className={`rounded-2xl border shadow-sm transition-all duration-200 ${toneBg} ${open ? 'border-[#004c91]/30 ring-1 ring-[#004c91]/10' : 'border-slate-200 hover:border-slate-300'}`}>
+    <div data-testid={`campus-edit-card-${campusCode || 'new'}`} className={`rounded-2xl border shadow-sm transition-all duration-200 border-slate-200 ${toneBg}`}>
       {/* Header — always visible; collapsing hides ONLY the body below */}
-      <div className={`flex items-center gap-2 p-3 sm:p-4 transition-colors ${open ? `border-b border-slate-100 ${toneHeaderOpenBg} rounded-t-2xl` : 'rounded-2xl'}`}>
+      <div className={`flex min-h-[56px] items-center gap-2 p-3 sm:p-4 transition-colors ${open ? `border-b border-slate-100 ${toneHeaderOpenBg} rounded-t-2xl` : 'rounded-2xl'}`}>
         <button
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
+          aria-label={open ? t('visitRequestV2:card.collapse', 'Thu gọn') : t('visitRequestV2:card.expand', 'Mở rộng')}
+          title={open ? t('visitRequestV2:card.collapse', 'Thu gọn') : t('visitRequestV2:card.expand', 'Mở rộng')}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={onToggle}
         >
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${open ? 'bg-[#004c91]/10 text-[#004c91]' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${open ? 'bg-slate-100 text-slate-500' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
             <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${open ? 'rotate-180' : '-rotate-90'}`} />
           </div>
-          <span className="truncate text-base font-bold text-slate-900">
-            {t('visitRequestV2:card.cardN', { n: index + 1 })} {campusCode ? `- ${headerLabel}` : ''}
-          </span>
+          <div className="flex flex-col min-w-0">
+            <span className="truncate text-base font-bold text-slate-900">
+              {t('visitRequestV2:card.cardN', { n: index + 1 })} {campusCode ? `- ${headerLabel}` : ''}
+            </span>
+            {!open && watch(`${base}.startDatetime`) && watch(`${base}.endDatetime`) && (
+              <span className="truncate text-xs font-medium text-slate-500">
+                {(() => {
+                  const start = watch(`${base}.startDatetime`);
+                  const end = watch(`${base}.endDatetime`);
+                  if (!start || !end) return null;
+                  const sParts = start.split('T');
+                  const eParts = end.split('T');
+                  if (sParts.length !== 2 || eParts.length !== 2) return null;
+                  const sDate = sParts[0].split('-').reverse().join('/');
+                  const eDate = eParts[0].split('-').reverse().join('/');
+                  return sDate === eDate 
+                    ? `${sDate} ${sParts[1]} - ${eParts[1]}`
+                    : `${sDate} ${sParts[1]} - ${eDate} ${eParts[1]}`;
+                })()}
+              </span>
+            )}
+          </div>
           {errorCount > 0 ? (
             <span
               role="status"
@@ -540,7 +561,7 @@ export const CampusVisitCard: React.FC<Props> = ({
 
         {/* Campus and Schedule */}
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-          <div className="col-span-12 lg:col-span-4">
+          <div className="col-span-12 xl:col-span-4">
             <FormField label={t('visitRequestV2:card.campus')} required error={fieldError('campus')} showValidIcon={false}>
               <select
                 {...register(`${base}.campus`)}
@@ -559,27 +580,29 @@ export const CampusVisitCard: React.FC<Props> = ({
             </FormField>
           </div>
 
-          <Controller
-            name={`${base}.startDatetime`}
-            control={control}
-            render={({ field: startField }) => (
-              <Controller
-                name={`${base}.endDatetime`}
-                control={control}
-                render={({ field: endField }) => (
-                  <VisitDateTimeRangePicker
-                    idPrefix={`campus-${index}`}
-                    minAdvanceHours={minAdvanceHours}
-                    startValue={startField.value ?? ''}
-                    endValue={endField.value ?? ''}
-                    onChange={({ start, end }) => { startField.onChange(start); endField.onChange(end); }}
-                    startError={fieldError('startDatetime')}
-                    endError={fieldError('endDatetime')}
-                  />
-                )}
-              />
-            )}
-          />
+          <div className="col-span-12 xl:col-span-8">
+            <Controller
+              name={`${base}.startDatetime`}
+              control={control}
+              render={({ field: startField }) => (
+                <Controller
+                  name={`${base}.endDatetime`}
+                  control={control}
+                  render={({ field: endField }) => (
+                    <VisitDateTimeRangePicker
+                      idPrefix={`campus-${index}`}
+                      minAdvanceHours={minAdvanceHours}
+                      startValue={startField.value ?? ''}
+                      endValue={endField.value ?? ''}
+                      onChange={({ start, end }) => { startField.onChange(start); endField.onChange(end); }}
+                      startError={fieldError('startDatetime')}
+                      endError={fieldError('endDatetime')}
+                    />
+                  )}
+                />
+              )}
+            />
+          </div>
         </div>
 
         {/* Content */}

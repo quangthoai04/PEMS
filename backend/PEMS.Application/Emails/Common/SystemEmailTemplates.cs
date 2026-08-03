@@ -84,7 +84,6 @@ public static class SystemEmailTemplates
     public const string VisitRequestOtp = "VISIT_REQUEST_OTP";
     public const string VisitContactClaim = "VISIT_CONTACT_CLAIM";
     public const string VisitContactTransfer = "VISIT_CONTACT_TRANSFER";
-    public const string VisitAgendaProposal = "VISIT_AGENDA_PROPOSAL";
 
     // ── VISIT_PARTICIPANT ────────────────────────────────────────────────────
     public const string VisitParticipantInvitation = "VISIT_PARTICIPANT_INVITATION";
@@ -103,6 +102,12 @@ public static class SystemEmailTemplates
     public const string LogisticsExpenseReportReminder = "LOGISTICS_EXPENSE_REPORT_REMINDER";
 
     // ── REPORT ───────────────────────────────────────────────────────────────
+    /// <summary>
+    /// The Host's manual "cập nhật chuẩn bị" to the guest side, carrying the Schedule Report as an
+    /// attachment. Deliberately NOT an invitation: it bears no token and no per-person action link,
+    /// which is exactly why it may address a list the Host controls instead of one person at a time.
+    /// </summary>
+    public const string VisitSetupProgressUpdate = "VISIT_SETUP_PROGRESS_UPDATE";
     public const string ReportCampusOperation = "REPORT_CAMPUS_OPERATION";
     public const string ReportDepartmentCollaboration = "REPORT_DEPARTMENT_COLLABORATION";
     public const string ReportDepartmentInvoice = "REPORT_DEPARTMENT_INVOICE";
@@ -157,10 +162,6 @@ public static class SystemEmailTemplates
                 "contactFullName", "requestCode", "delegationName"),
             Single(VisitContactTransfer, EmailTemplatePurposes.VisitRequest, sensitive: true,
                 "contactFullName", "requestCode", "delegationName", "currentContactName"),
-            // The Host wants a copy of what went out, so this is CallerControlled (Cc allowed) rather
-            // than Single — nothing here is a one-time token or a per-person secret.
-            CallerControlledTemplate(VisitAgendaProposal, EmailTemplatePurposes.VisitRequest,
-                "contactFullName", "delegationName", "campusName", "plannedTime", "hostName", "hostEmail"),
 
             // VISIT_PARTICIPANT — each invitee gets their own accept/decline token.
             Single(VisitParticipantInvitation, EmailTemplatePurposes.VisitParticipant, sensitive: true,
@@ -196,6 +197,18 @@ public static class SystemEmailTemplates
                 "recipientName", "itemTitle", "dueAt", "delegationName"),
 
             // REPORT — operational documents; the caller owns the distribution list.
+            //
+            // The setup-progress update sits here rather than under VISIT_PARTICIPANT because it is a
+            // document distribution, not an invitation: the Host decides who is on it, the guest side
+            // goes in TO and the accepted internal participants in CC, and nothing in the body grants
+            // anybody anything. Reusing VISIT_PARTICIPANT_INVITATION would have inherited that
+            // template's single-recipient/no-copies policy — one message per person, no CC at all —
+            // which is the opposite of what this flow is for.
+            // hostEmail is here because the body tells the guest to reply "so the Host can update it".
+            // The draft/manual pipeline sends with the configured system Reply-To — it has no per-message
+            // Reply-To — so without the address printed in the body that instruction points nowhere.
+            CallerControlledTemplate(VisitSetupProgressUpdate, EmailTemplatePurposes.Report,
+                "delegationName", "campusName", "plannedStart", "plannedEnd", "hostName", "hostEmail"),
             CallerControlledTemplate(ReportCampusOperation, EmailTemplatePurposes.Report,
                 "recipientName", "campusName", "periodFrom", "periodTo"),
             CallerControlledTemplate(ReportDepartmentCollaboration, EmailTemplatePurposes.Report,

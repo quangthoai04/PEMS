@@ -13,8 +13,8 @@ using Xunit;
 namespace PEMS.IntegrationTests.Emails;
 
 /// <summary>
-/// Batch 10 — the closure contract for Gate G4: the catalog is exactly 30 templates, the code registry
-/// and the database seed agree in both directions, and every one of the 30 renders in both languages
+/// Batch 10 — the closure contract for Gate G4: the catalog is exactly 31 templates, the code registry
+/// and the database seed agree in both directions, and every one of the 31 renders in both languages
 /// from the database alone.
 ///
 /// <para>
@@ -26,7 +26,9 @@ namespace PEMS.IntegrationTests.Emails;
 /// </summary>
 public sealed class SystemEmailG4ClosureTests
 {
-    private const int CatalogSize = 30;
+    // 31 since VISIT_SETUP_PROGRESS_UPDATE joined the REPORT group: the Host's manual preparation
+    // update to the guest side, which carries the Schedule Report as its attachment.
+    private const int CatalogSize = 31;
 
     /// <summary>The catalog as the plan fixed it. Written out so a rename cannot pass silently.</summary>
     private static readonly string[] Catalog =
@@ -47,6 +49,10 @@ public sealed class SystemEmailG4ClosureTests
         "VISIT_REMINDER_HOST", "VISIT_REMINDER_PARTICIPANTS",
         "REPORT_CAMPUS_OPERATION", "REPORT_DEPARTMENT_COLLABORATION",
         "REPORT_DEPARTMENT_INVOICE", "REPORT_PERSONNEL_PERFORMANCE",
+        // The Host's manual "cập nhật chuẩn bị" to the guest side. REPORT rather than
+        // VISIT_PARTICIPANT because it distributes a document to a list the Host controls; it bears no
+        // token, which is what makes CC legal on it at all.
+        "VISIT_SETUP_PROGRESS_UPDATE",
     };
 
     /// <summary>
@@ -158,7 +164,7 @@ public sealed class SystemEmailG4ClosureTests
     }
 
     /// <summary>
-    /// Renders all 30 in both languages from the database, with exactly their declared variables. This
+    /// Renders all 31 in both languages from the database, with exactly their declared variables. This
     /// is the test that would have caught the reminder templates shipping "{{plannedEnd}}" as literal
     /// text to recipients.
     /// </summary>
@@ -175,11 +181,16 @@ public sealed class SystemEmailG4ClosureTests
         {
             var variables = template.DeclaredVariables.ToDictionary(
                 v => v, v => $"[{v}]", StringComparer.Ordinal);
-            var trusted = new Dictionary<string, string>
-            {
-                [EmailTrustedBlocks.ActionBlock] =
-                    EmailComposition.ActionBlockStart + "<div>block</div>" + EmailComposition.ActionBlockEnd,
-            };
+            // Every trusted block, for every template. Which blocks a template writes is content the
+            // catalog owns and this test does not track; supplying them all keeps "no placeholder left
+            // behind" a statement about the CATALOG rather than about this dictionary being up to date.
+            // A block a template does not use is simply never substituted.
+            var trusted = EmailTrustedBlocks.All.ToDictionary(
+                name => name,
+                name => name == EmailTrustedBlocks.ActionBlock
+                    ? EmailComposition.ActionBlockStart + "<div>block</div>" + EmailComposition.ActionBlockEnd
+                    : "<div>block</div>",
+                StringComparer.Ordinal);
 
             var rendered = await renderer.RenderAsync(
                 new EmailRenderRequest(template.TemplateCode, language, variables, trusted));
@@ -273,11 +284,18 @@ public sealed class SystemEmailG4ClosureTests
     }
 
     /// <summary>
-    /// The two invoice senders share one template and the two performance senders share another. A fifth
-    /// or sixth REPORT code would mean the two directions could drift apart again.
+    /// The two invoice senders share one template and the two performance senders share another. A sixth
+    /// REPORT code would mean the two directions could drift apart again.
+    ///
+    /// <para>
+    /// VISIT_SETUP_PROGRESS_UPDATE is the fifth, and it belongs here rather than with the invitations:
+    /// it publishes the Schedule Report to a recipient list the Host owns, carries no one-time link, and
+    /// is therefore caller-controlled like the other four. Listed explicitly so that a sixth still has to
+    /// be a deliberate act.
+    /// </para>
     /// </summary>
     [Fact]
-    public void The_report_group_is_four_templates_and_no_more()
+    public void The_report_group_is_five_templates_and_no_more()
     {
         var report = SystemEmailTemplates.All
             .Where(t => t.Purpose == PEMS.Domain.Constants.EmailTemplatePurposes.Report)
@@ -292,6 +310,7 @@ public sealed class SystemEmailG4ClosureTests
                 SystemEmailTemplates.ReportDepartmentCollaboration,
                 SystemEmailTemplates.ReportDepartmentInvoice,
                 SystemEmailTemplates.ReportPersonnelPerformance,
+                SystemEmailTemplates.VisitSetupProgressUpdate,
             }.OrderBy(c => c, StringComparer.Ordinal),
             report);
     }

@@ -141,6 +141,12 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanCompleteVisit = isHost && isLive && instance.Status == VisitInstanceStatus.DuringVisit,
             // Đóng đoàn nằm ở tab "Sau tiếp khách": Host đóng khi đoàn đã kết thúc (AFTER_VISIT).
             CanCloseVisit = isHost && isLive && instance.Status == VisitInstanceStatus.AfterVisit,
+
+            // "Gửi cập nhật chuẩn bị" — current Host only, and only while the prep tab is still open.
+            // The send command re-checks this at send time: a host handover or a stage change between
+            // composing the draft and pressing send must refuse, and a flag read minutes earlier
+            // cannot know about either.
+            CanSendSetupProgressEmail = hostCanEdit && beforeTabOpen,
         };
     }
 }

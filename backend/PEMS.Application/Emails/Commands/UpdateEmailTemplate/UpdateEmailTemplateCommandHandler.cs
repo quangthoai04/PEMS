@@ -85,8 +85,11 @@ public sealed class UpdateEmailTemplateCommandHandler
         // variables_text is a PROJECTION of the registry, not an operator-editable field. Rewriting it
         // from the contract keeps the column from drifting away from what the renderer enforces — the
         // drift that used to reach recipients as the literal text "Chưa có thông tin".
+        // No trusted block is listed. variables_text is the operator-facing list of things they may
+        // supply, and a block is the backend's — writing one here would advertise a field nobody may
+        // fill in, and 03_verify.sql's E4 check refuses a catalog that does it.
         var variablesText = string.Join(",", contract.AllowedVariables
-            .Where(v => v != EmailTrustedBlocks.ActionBlock));
+            .Where(v => !EmailTrustedBlocks.All.Contains(v)));
 
         var written = await EmailTemplateContentWriter.WriteAsync(
             _context,

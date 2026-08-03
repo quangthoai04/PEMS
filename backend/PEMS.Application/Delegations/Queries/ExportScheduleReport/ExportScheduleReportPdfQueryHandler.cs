@@ -1,53 +1,39 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MediatR;
-using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
-using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
-using PEMS.Application.Delegations.Services.VisitFormRead;
-using PEMS.Application.Delegations.VisitPhotos;
-using PEMS.Application.Translation;
 using PEMS.Domain.Constants;
-using PEMS.Domain.Entities.Documents;
-using PEMS.Shared;
-using QuestPDF.Infrastructure;
 
 namespace PEMS.Application.Delegations.Queries.ExportScheduleReport;
 
+/// <summary>
+/// Downloads the "Báo cáo Lịch trình" for one campus instance.
+///
+/// <para>
+/// The build/translate/render/archive chain moved to <see cref="IScheduleReportArtifactService"/> when
+/// the setup-progress email started needing the same document. What stays here is what is specific to a
+/// download: who may ask for one, and the fact that archiving it is best-effort — a Drive or DB hiccup
+/// must never cost the user the file they asked for.
+/// </para>
+/// </summary>
 public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<ExportScheduleReportPdfQuery, byte[]>
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
-    private readonly IVisitFormReadService _formReadService;
-    private readonly IFileStorageService _storage;
-    private readonly IGoogleDriveStorageService _drive;
-    private readonly IContentTranslationService _translator;
-    private readonly IFileUploadService _fileUpload;
-    private readonly IVisitPhotoFolderService _folderService;
+    private readonly IScheduleReportArtifactService _reports;
     private readonly ILogger<ExportScheduleReportPdfQueryHandler> _logger;
 
     public ExportScheduleReportPdfQueryHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
-        IVisitFormReadService formReadService,
-        IFileStorageService storage,
-        IGoogleDriveStorageService drive,
-        IContentTranslationService translator,
-        IFileUploadService fileUpload,
-        IVisitPhotoFolderService folderService,
+        IScheduleReportArtifactService reports,
         ILogger<ExportScheduleReportPdfQueryHandler> logger)
     {
         _db = db;
         _currentUser = currentUser;
-        _formReadService = formReadService;
-        _storage = storage;
-        _drive = drive;
-        _translator = translator;
-        _fileUpload = fileUpload;
-        _folderService = folderService;
+        _reports = reports;
         _logger = logger;
-        QuestPDF.Settings.License = LicenseType.Community;
     }
 
     public async Task<byte[]> Handle(ExportScheduleReportPdfQuery request, CancellationToken cancellationToken)
@@ -91,22 +77,7 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
         if (!inScope)
             throw new ForbiddenException("Bạn không có quyền tải báo cáo lịch trình của chuyến thăm này.");
 
-        if (instance.CurrentHostUserId is null)
-            throw new ValidationException("Chưa có Host được phân công cho chuyến thăm này — không thể xuất báo cáo lịch trình.");
-
-        var dto = await ScheduleReportDataBuilder.BuildAsync(
-            _db, _formReadService, instance, cancellationToken, request.LanguageCode);
-
-        bool isEnglish = string.Equals(request.LanguageCode, "en", StringComparison.OrdinalIgnoreCase);
-        if (isEnglish)
-            await TranslateToEnglishAsync(dto, instance.VisitInstanceId, cancellationToken);
-
-        byte[]? partnerLogoBytes = dto.PartnerLogoFileId.HasValue
-            ? await TryLoadFileBytesAsync(dto.PartnerLogoFileId.Value, cancellationToken)
-            : null;
-
-        var pdfBytes = ScheduleReportPdfRenderer.Render(
-            dto, ScheduleReportAssets.FptLogoBytes, partnerLogoBytes, request.LanguageCode);
+        var artifact = await _reports.RenderAsync(instance, request.LanguageCode, cancellationToken);
 
         // This report is scoped to ONE delegation instance (unlike the Staff Leader/HO dashboard
         // exports, which aggregate across many) — archive it into that delegation's own
@@ -114,35 +85,7 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
         // Drive/DB hiccup must never block the download itself.
         try
         {
-            var campusCode = await _db.Campuses
-                .Where(c => c.CampusId == instance.CampusId)
-                .Select(c => c.CampusCode)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (!string.IsNullOrWhiteSpace(campusCode))
-            {
-                var target = await _folderService.EnsureDocumentUploadTargetAsync(
-                    instance, campusCode, VisitDocumentSubtypes.TheoDoanKhach, userId, cancellationToken);
-
-                await using var stream = new MemoryStream(pdfBytes);
-                var fileName = $"PEMS_Schedule_Report_{visit.RequestCode}_{VietnamTime.Now():yyyyMMdd_HHmm}.pdf";
-                var uploaded = await _fileUpload.UploadBusinessFileAsync(
-                    stream, fileName, "application/pdf", pdfBytes.LongLength,
-                    FilePurpose.VisitRequestAttachment, (long)userId, target.DocumentFolderExternalId, cancellationToken);
-
-                _db.Documents.Add(new Document
-                {
-                    FileId = (ulong)uploaded.FileId,
-                    OwnerType = "VISIT",
-                    OwnerId = instance.VisitRequestId,
-                    CampusId = instance.CampusId,
-                    Title = fileName,
-                    DocumentCategory = "SCHEDULE_REPORT",
-                    Status = "PUBLISHED",
-                    CreatedAt = VietnamTime.Now(),
-                    CreatedBy = userId,
-                });
-                await _db.SaveChangesAsync(cancellationToken);
-            }
+            await _reports.StoreAsync(artifact, instance, userId, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -150,87 +93,6 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
                 "Failed to archive schedule report for visit instance {VisitInstanceId}.", instance.VisitInstanceId);
         }
 
-        return pdfBytes;
-    }
-
-    /// <summary>
-    /// Best-effort VI → EN machine translation of the report's free-text content (delegation name,
-    /// purpose, organizations, agenda) — batched into one provider call. Role labels are already set
-    /// in English by <see cref="ScheduleReportDataBuilder"/> and people's names are never translated.
-    /// A provider hiccup (missing config, HTTP error, quota) must never block the export — the report
-    /// is simply rendered with its original Vietnamese content instead (same rule as News auto-translate).
-    /// </summary>
-    private async Task TranslateToEnglishAsync(ScheduleReportDto dto, ulong visitInstanceId, CancellationToken cancellationToken)
-    {
-        var texts = new List<string>();
-        var setters = new List<Action<string>>();
-
-        void Track(string? value, Action<string> setter)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return;
-            texts.Add(value);
-            setters.Add(setter);
-        }
-
-        Track(dto.DelegationName, v => dto.DelegationName = v);
-        Track(dto.Purpose, v => dto.Purpose = v);
-        foreach (var p in dto.GuestSide) Track(p.Organization, v => p.Organization = v);
-        foreach (var p in dto.FptSide) Track(p.Organization, v => p.Organization = v);
-        foreach (var a in dto.Agenda)
-        {
-            Track(a.Title, v => a.Title = v);
-            Track(a.Description, v => a.Description = v);
-            Track(a.Venue, v => a.Venue = v);
-        }
-
-        if (texts.Count == 0) return;
-
-        IReadOnlyList<string>? translated;
-        try
-        {
-            translated = await _translator.TranslateTextAsync(texts, "vi", "en", cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Schedule report translation failed for visit instance {VisitInstanceId}; falling back to Vietnamese content.",
-                visitInstanceId);
-            return;
-        }
-
-        if (translated.Count != texts.Count)
-        {
-            _logger.LogWarning(
-                "Schedule report translation returned {ResultCount} results for {SourceCount} sources; falling back to Vietnamese content.",
-                translated.Count, texts.Count);
-            return;
-        }
-
-        for (var i = 0; i < setters.Count; i++)
-        {
-            if (!string.IsNullOrWhiteSpace(translated[i])) setters[i](translated[i]);
-        }
-    }
-
-    private async Task<byte[]?> TryLoadFileBytesAsync(ulong fileId, CancellationToken cancellationToken)
-    {
-        var file = await _db.Files.FirstOrDefaultAsync(f => f.FileId == fileId, cancellationToken);
-        if (file is null) return null;
-
-        var isGoogleDrive = string.Equals(file.StorageProvider, "GOOGLE_DRIVE", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(file.ExternalFileId);
-
-        await using var stream = (isGoogleDrive
-            ? await _drive.DownloadAsync(file.ExternalFileId!, cancellationToken)
-            : await _storage.OpenReadAsync(file, cancellationToken));
-        if (stream is null) return null;
-
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, cancellationToken);
-        return ms.ToArray();
+        return artifact.Content;
     }
 }

@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Models;
 using PEMS.Application.Common.Security;
+using PEMS.Application.Common.Storage;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.AgendaTemplates;
 using PEMS.Domain.Entities.ApiIntegrations;
@@ -70,21 +73,23 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceAmendmentChange>();
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
-        modelBuilder.Ignore<VisitLogisticsItem>();
+        // Mapped, not ignored: the setup-progress email lists preparation items, so the snapshot
+        // builder reads this table and the "no internal field leaks" tests need real rows to check.
         modelBuilder.Ignore<VisitLogisticsItemHandover>();
         modelBuilder.Ignore<VisitLogisticsAssignmentAttempt>();
         modelBuilder.Ignore<VisitInstanceReminderSetting>();
         modelBuilder.Ignore<VisitPhotoFolder>();
         modelBuilder.Ignore<VisitPhoto>();
         modelBuilder.Ignore<CalendarEvent>();
-        modelBuilder.Ignore<EmailTemplate>();
+        // Mapped, not ignored: the setup-progress handlers write a real draft (template row, recipients,
+        // the attachment and the documents row that identifies the mandatory report), and asserting on
+        // what they wrote is the whole point of those tests.
         modelBuilder.Ignore<SentEmail>();
         modelBuilder.Ignore<SentEmailRecipient>();
         modelBuilder.Ignore<EmailActionToken>();
         modelBuilder.Ignore<EmailSendIdempotency>();
         modelBuilder.Ignore<AccountEmailConfirmation>();
         modelBuilder.Ignore<AuditLog>();
-        modelBuilder.Ignore<Document>();
         modelBuilder.Ignore<Minute>();
         modelBuilder.Ignore<MinuteActionItem>();
         modelBuilder.Ignore<MinuteParticipant>();
@@ -103,9 +108,6 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitExpenseItem>();
         modelBuilder.Ignore<VisitExpenseReportEvent>();
         modelBuilder.Ignore<PhotoFaceTag>();
-        modelBuilder.Ignore<EmailDraft>();
-        modelBuilder.Ignore<EmailDraftRecipient>();
-        modelBuilder.Ignore<EmailDraftAttachment>();
         modelBuilder.Ignore<Notification>();
         modelBuilder.Ignore<ApiConfiguration>();
         modelBuilder.Ignore<ApiUsageQuota>();
@@ -161,8 +163,8 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<PartnerContact> IApplicationDbContext.PartnerContacts => Set<PartnerContact>();
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
-    DbSet<Document> IApplicationDbContext.Documents => Set<Document>();
-    DbSet<VisitInstanceFormDetail> IApplicationDbContext.VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
+    public DbSet<Document> Documents => Set<Document>();
+    public DbSet<VisitInstanceFormDetail> VisitInstanceFormDetails => Set<VisitInstanceFormDetail>();
     DbSet<VisitRequestIdentityChange> IApplicationDbContext.VisitRequestIdentityChanges => Set<VisitRequestIdentityChange>();
     DbSet<VisitRequestIdentityChangeEvent> IApplicationDbContext.VisitRequestIdentityChangeEvents => Set<VisitRequestIdentityChangeEvent>();
     DbSet<VisitInstanceAmendment> IApplicationDbContext.VisitInstanceAmendments => Set<VisitInstanceAmendment>();
@@ -171,7 +173,7 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<VisitRequestRevisionHistory> IApplicationDbContext.VisitRequestRevisionHistories => Set<VisitRequestRevisionHistory>();
     DbSet<VisitRequestPendingForm> IApplicationDbContext.VisitRequestPendingForms => Set<VisitRequestPendingForm>();
     DbSet<VisitRequestFingerprintGuard> IApplicationDbContext.VisitRequestFingerprintGuards => Set<VisitRequestFingerprintGuard>();
-    DbSet<VisitLogisticsItem> IApplicationDbContext.VisitLogisticsItems => Set<VisitLogisticsItem>();
+    public DbSet<VisitLogisticsItem> VisitLogisticsItems => Set<VisitLogisticsItem>();
     DbSet<VisitLogisticsItemHandover> IApplicationDbContext.VisitLogisticsItemHandovers => Set<VisitLogisticsItemHandover>();
     DbSet<VisitLogisticsAssignmentAttempt> IApplicationDbContext.VisitLogisticsAssignmentAttempts => Set<VisitLogisticsAssignmentAttempt>();
     DbSet<VisitInstanceReminderSetting> IApplicationDbContext.VisitInstanceReminderSettings => Set<VisitInstanceReminderSetting>();
@@ -196,13 +198,13 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
     DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
-    DbSet<EmailTemplate> IApplicationDbContext.EmailTemplates => Set<EmailTemplate>();
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();
     DbSet<SentEmailRecipient> IApplicationDbContext.SentEmailRecipients => Set<SentEmailRecipient>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
-    DbSet<EmailDraft> IApplicationDbContext.EmailDrafts => Set<EmailDraft>();
-    DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
-    DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
+    public DbSet<EmailDraft> EmailDrafts => Set<EmailDraft>();
+    public DbSet<EmailDraftRecipient> EmailDraftRecipients => Set<EmailDraftRecipient>();
+    public DbSet<EmailDraftAttachment> EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
     DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<AccountEmailConfirmation> IApplicationDbContext.AccountEmailConfirmations => Set<AccountEmailConfirmation>();
@@ -497,6 +499,87 @@ public static class ScheduleReportTestData
         db.SaveChanges();
         return instances;
     }
+}
+
+/// <summary>
+/// Disk storage that always succeeds, unless a file id is listed in <see cref="Unreadable"/> — the
+/// shape of "the row is there, the bytes are not".
+/// </summary>
+public sealed class StubFileStorage : IFileStorageService
+{
+    /// <summary>File ids whose bytes cannot be read, as a purged or unreachable file would behave.</summary>
+    public HashSet<ulong> Unreadable { get; } = new();
+
+    public byte[] Payload { get; set; } = { 0x25, 0x50, 0x44, 0x46 }; // "%PDF"
+
+    public Task<StoredFileInfo> SaveAsync(
+        Stream content, string originalFilename, string? contentType, string? purpose,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("These tests never write through IFileStorageService.");
+
+    public Task<Stream?> OpenReadAsync(UploadedFile file, CancellationToken cancellationToken = default)
+        => Task.FromResult<Stream?>(
+            Unreadable.Contains(file.FileId) ? null : new MemoryStream(Payload, writable: false));
+}
+
+/// <summary>
+/// Google Drive for the unit suite: serves bytes for anything, or fails every read the way the real
+/// client does — with a <see cref="BusinessRuleException"/> carrying a <see cref="StorageErrorCodes"/>
+/// value. Failing with the production exception (rather than a bare throw) is what lets a test assert
+/// that a deleted file and a refused file are told apart downstream.
+/// </summary>
+public sealed class StubGoogleDriveStorage : IGoogleDriveStorageService
+{
+    /// <summary>When set, every download fails this way.</summary>
+    public BusinessRuleException? DownloadFailure { get; set; }
+
+    /// <summary>
+    /// A real 1×1 PNG, not just the magic bytes. The schedule report hands whatever comes back to
+    /// QuestPDF, which genuinely decodes it — a placeholder header throws
+    /// <c>DocumentComposeException</c> and would make the happy path look like a storage failure.
+    /// </summary>
+    public byte[] Payload { get; set; } = System.Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+
+    /// <summary>Proof of whether Drive was consulted at all — a broken row must not reach the network.</summary>
+    public int DownloadCalls { get; private set; }
+
+    /// <summary>Drive answered 404: deleted, trashed, or invisible to the credential.</summary>
+    public static BusinessRuleException Deleted() => new(
+        "Không đọc được tệp trên Google Drive: tệp không tồn tại, đã bị xoá, hoặc tài khoản dịch vụ "
+        + "không được chia sẻ tệp này.", StorageErrorCodes.FileNotFound);
+
+    /// <summary>Drive answered 403: the file is there and the read was refused.</summary>
+    public static BusinessRuleException PermissionDenied() => new(
+        "Google Drive từ chối quyền đọc tệp này.", StorageErrorCodes.FileForbidden);
+
+    public Task<Stream> DownloadAsync(string externalFileId, CancellationToken cancellationToken = default)
+    {
+        DownloadCalls++;
+        if (DownloadFailure is not null) throw DownloadFailure;
+        return Task.FromResult<Stream>(new MemoryStream(Payload, writable: false));
+    }
+
+    // ── Not reachable from the flows these tests exercise ───────────────────
+    public Task<GoogleDriveUploadResult> UploadAvatarAsync(
+        byte[] content, string driveFileName, string contentType, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Avatar upload is not part of any flow using this double.");
+
+    public Task<GoogleDriveUploadResult> UploadFileAsync(
+        byte[] content, string driveFileName, string contentType, string? folderId = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Upload is not part of any flow using this double.");
+
+    public Task<GoogleDriveDownloadResult> DownloadRangeAsync(
+        string externalFileId, long? from, long? to, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Ranged download is not part of any flow using this double.");
+
+    public Task DeleteAsync(string externalFileId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task<GoogleDriveFolderResult> EnsureChildFolderAsync(
+        string folderName, string parentFolderId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Folder creation is not part of any flow using this double.");
 }
 
 /// <summary>Mutable current-user stub defaulting to the instance host of the fixtures.</summary>

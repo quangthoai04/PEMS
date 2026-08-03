@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
 using System.Linq;
@@ -143,8 +144,11 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
                 SizeBytes = a.File?.FileSize,
                 IsInline = a.AttachmentType == PEMS.Domain.Enums.EmailAttachmentType.INLINE_IMAGE,
                 ContentId = a.ContentId,
-                PreviewUrl = a.File?.WebViewUrl,
-                DownloadUrl = a.File?.DownloadUrl
+                // Our own authenticated routes, never the provider's. A Drive webContentLink here would
+                // name the provider's file id in the payload AND invite the client to fetch the bytes
+                // down a path where FileAccessAuthorizationService was never consulted.
+                PreviewUrl = InternalFileUrls.Content(a.FileId),
+                DownloadUrl = InternalFileUrls.Download(a.FileId)
             }).ToList()
         };
     }

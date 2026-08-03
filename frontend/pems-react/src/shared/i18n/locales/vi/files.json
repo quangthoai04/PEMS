@@ -1,0 +1,31 @@
+{
+  "attachment": {
+    "view": "Xem tệp",
+    "viewName": "Xem tệp {{name}}",
+    "download": "Tải xuống",
+    "downloadName": "Tải xuống tệp {{name}}",
+    "remove": "Xoá tệp đính kèm",
+    "removeName": "Xoá tệp đính kèm {{name}}",
+    "required": "Bắt buộc",
+    "requiredHint": "Tệp bắt buộc của email này, không thể xoá.",
+    "uploading": "Đang tải lên…",
+    "uploadFailed": "Tải lên thất bại",
+    "notUploadedYet": "Tệp chưa tải lên xong nên chưa xem hoặc tải xuống được.",
+    "notPreviewable": "Định dạng này không xem trước được — hãy tải xuống.",
+    "inlineImage": "Ảnh trong nội dung",
+    "file": "Đính kèm"
+  },
+  "preview": {
+    "title": "Xem tệp",
+    "loading": "Đang tải tệp…",
+    "close": "Đóng",
+    "retry": "Thử lại",
+    "download": "Tải xuống",
+    "errorTitle": "Không mở được tệp",
+    "unsupportedTitle": "Không xem trước được định dạng này",
+    "unsupportedHint": "Hệ thống chỉ xem trước trực tiếp PDF, ảnh (PNG, JPG, WEBP, GIF) và tệp văn bản .txt. Các định dạng khác vui lòng tải xuống để mở bằng ứng dụng phù hợp.",
+    "textTooLarge": "Tệp văn bản quá lớn để xem trước. Vui lòng tải xuống.",
+    "unknownType": "Không rõ định dạng",
+    "unknownSize": "Không rõ dung lượng"
+  }
+}

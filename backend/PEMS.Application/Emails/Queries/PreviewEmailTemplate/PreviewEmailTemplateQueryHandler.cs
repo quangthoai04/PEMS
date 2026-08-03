@@ -60,18 +60,28 @@ public sealed class PreviewEmailTemplateQueryHandler
         // placeholder unresolved, which the renderer refuses: the operator saw an error where a preview
         // should have been. The block is inert either way; a template that does not use the placeholder
         // simply never substitutes it, so passing one costs nothing.
+        // A detail-link template shows the label its real send uses. Before this the stand-in always read
+        // "Mở yêu cầu để xử lý", which is the Department flow's wording — an operator editing the visit
+        // reminder saw a button promising an action that template does not offer.
         var disabled = spec is null
             ? EmailComposition.DisabledUnspecifiedActionBlock(language)
             : spec.HasLogisticsAction
                 ? EmailComposition.DisabledLogisticsActionBlock()
                 : spec.HasDetailLink
-                    ? EmailComposition.DisabledDetailLinkBlock()
+                    ? EmailComposition.DisabledDetailLinkBlock(
+                        EmailActionTemplates.DetailLinkLabelFor(code) ?? "Mở yêu cầu để xử lý")
                     : EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
 
         var trustedBlocks = new Dictionary<string, string>
         {
             [EmailTrustedBlocks.ActionBlock] =
                 EmailComposition.ActionBlockStart + disabled + EmailComposition.ActionBlockEnd,
+
+            // Same reasoning as the action block above: supplied unconditionally because a template
+            // that does not use the placeholder never substitutes it, while a template that does would
+            // otherwise fail the preview closed on an unresolved variable.
+            [EmailTrustedBlocks.SetupSummaryBlock] =
+                EmailComposition.DisabledSetupSummaryBlock(language),
         };
 
         // Sample values come from the backend contract — never from a dictionary compiled into a

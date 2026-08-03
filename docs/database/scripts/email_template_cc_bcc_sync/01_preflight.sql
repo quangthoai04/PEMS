@@ -99,7 +99,7 @@ SELECT DATABASE() AS current_database,
 
 SELECT '── 3. email_templates as it stands ─────────────────────────────' AS ``;
 
--- Classification. "canonical" = in the 30-code catalog this sync converges on; "legacy" = one of the
+-- Classification. "canonical" = in the 31-code catalog this sync converges on; "legacy" = one of the
 -- nine DL-03 codes the catalog dropped; "unknown" = anything else, which is either operator-authored
 -- or from a schema version nobody here has seen. Unknown rows are never modified by the sync.
 SELECT bucket, status, COUNT(*) AS templates
@@ -118,6 +118,7 @@ FROM (
              'VISIT_REMINDER_HOST','VISIT_REMINDER_PARTICIPANTS',
              'LOGISTICS_REQUEST_TO_DEPARTMENT','LOGISTICS_ASSIGNEE_ASSIGNMENT',
              'LOGISTICS_CHANGE_PROPOSAL_TO_HOST','LOGISTICS_EXPENSE_REPORT_REMINDER',
+             'VISIT_SETUP_PROGRESS_UPDATE',
              'REPORT_CAMPUS_OPERATION','REPORT_DEPARTMENT_COLLABORATION',
              'REPORT_DEPARTMENT_INVOICE','REPORT_PERSONNEL_PERFORMANCE')
              THEN 'canonical'
@@ -134,7 +135,7 @@ FROM (
 GROUP BY bucket, status
 ORDER BY bucket, status;
 
--- Which of the 30 canonical codes this database is missing entirely (the sync will INSERT these).
+-- Which of the 31 canonical codes this database is missing entirely (the sync will INSERT these).
 SELECT c.template_code AS canonical_code_absent_here
 FROM (
   SELECT 'ACCOUNT_EMAIL_CONFIRMATION' AS template_code UNION ALL SELECT 'ACCOUNT_PENDING_EMAIL_CHANGED_OLD_NOTICE' UNION ALL
@@ -150,8 +151,9 @@ FROM (
   SELECT 'VISIT_REMINDER_HOST'                         UNION ALL SELECT 'VISIT_REMINDER_PARTICIPANTS'              UNION ALL
   SELECT 'LOGISTICS_REQUEST_TO_DEPARTMENT'             UNION ALL SELECT 'LOGISTICS_ASSIGNEE_ASSIGNMENT'            UNION ALL
   SELECT 'LOGISTICS_CHANGE_PROPOSAL_TO_HOST'           UNION ALL SELECT 'LOGISTICS_EXPENSE_REPORT_REMINDER'        UNION ALL
-  SELECT 'REPORT_CAMPUS_OPERATION'                     UNION ALL SELECT 'REPORT_DEPARTMENT_COLLABORATION'          UNION ALL
-  SELECT 'REPORT_DEPARTMENT_INVOICE'                   UNION ALL SELECT 'REPORT_PERSONNEL_PERFORMANCE'
+  SELECT 'VISIT_SETUP_PROGRESS_UPDATE'                 UNION ALL SELECT 'REPORT_CAMPUS_OPERATION'                  UNION ALL
+  SELECT 'REPORT_DEPARTMENT_COLLABORATION'             UNION ALL SELECT 'REPORT_DEPARTMENT_INVOICE'                UNION ALL
+  SELECT 'REPORT_PERSONNEL_PERFORMANCE'
 ) c
 LEFT JOIN email_templates t ON t.template_code = c.template_code
 WHERE t.email_template_id IS NULL

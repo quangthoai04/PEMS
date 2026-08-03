@@ -103,7 +103,8 @@ public sealed class SystemEmailTemplateContractTests
         RequireDb();
         var all = await LoadAllAsync();
 
-        Assert.Equal(30, all.Count);
+        // 30 + VISIT_SETUP_PROGRESS_UPDATE, the Host's manual preparation update to the guest.
+        Assert.Equal(31, all.Count);
         Assert.All(all, t => Assert.Equal("ACTIVE", t.Status));
     }
 
@@ -345,38 +346,132 @@ public sealed class SystemEmailTemplateContractTests
     }
 
     /// <summary>
-    /// The action-token demonstration rows. The E2E harness drives accept/decline against these, so if
-    /// unlinking them from their template had also removed them, that coverage would vanish silently.
+    /// Deleting a template must UNLINK its delivery history, never destroy it.
+    ///
+    /// <para>
+    /// The stake is an audit one: <c>sent_emails</c> is the only record that a message went out, to
+    /// whom, and what it said. A catalog change — retiring a template, a reseed, an operator deleting
+    /// something they authored — must not be able to erase that. The FK is declared
+    /// <c>ON DELETE SET NULL</c> for exactly this reason, and the risk is a future migration quietly
+    /// re-declaring it as CASCADE.
+    /// </para>
+    /// <para>
+    /// The test builds its own template, message and recipient and then performs the real deletion,
+    /// rather than asserting the FK's metadata. Metadata says what the schema claims; this says what
+    /// the database actually does to a row that exists. It also replaces an earlier version that read
+    /// eight seeded ids (99101-99108) which no longer exist: the canonical script inserted them and
+    /// then, thousands of lines later, ran an unconditional <c>DELETE FROM sent_emails</c> during the
+    /// catalog rebuild, so that assertion could never pass. Those dead seed blocks are gone.
+    /// </para>
     /// </summary>
-    private static readonly ulong[] SeededActionEmailIds = { 99101, 99102, 99103, 99104, 99105, 99106, 99107, 99108 };
-
     [Fact]
-    public async Task Seeded_email_history_survives_the_template_unlink()
+    public async Task Deleting_a_template_unlinks_its_history_and_destroys_none_of_it()
     {
         RequireDb();
-        using var db = NewContext();
 
-        // Scoped to the seeded ids on purpose: other tests in this suite create their own sent_emails,
-        // so a total-row assertion would measure them rather than the seed.
-        var rows = await db.SentEmails.AsNoTracking()
-            .Where(e => SeededActionEmailIds.Contains(e.SentEmailId))
-            .Select(e => new { e.SentEmailId, e.Subject, e.BodySnapshot, e.RelatedType, e.EmailTemplateId })
-            .ToListAsync();
+        var stamp = DateTime.UtcNow.Ticks;
+        var code = $"IT_UNLINK_{stamp}";
+        const string subject = "[IT] Bản ghi lịch sử phải sống sót";
+        const string body = "<p>Nội dung đã gửi, giữ nguyên sau khi template bị xoá.</p>";
+        const string recipientEmail = "it-unlink@fpt.edu.vn";
 
-        Assert.Equal(SeededActionEmailIds.Length, rows.Count);
+        ulong templateId;
+        ulong sentEmailId;
+        ulong recipientId;
 
-        foreach (var r in rows)
+        using (var db = NewContext())
         {
-            Assert.False(string.IsNullOrWhiteSpace(r.Subject), $"sent_email {r.SentEmailId} lost its subject.");
-            Assert.False(string.IsNullOrWhiteSpace(r.BodySnapshot), $"sent_email {r.SentEmailId} lost its body snapshot.");
-            Assert.False(string.IsNullOrWhiteSpace(r.RelatedType), $"sent_email {r.SentEmailId} lost its related_type.");
+            var template = new EmailTemplate
+            {
+                TemplateCode = code,
+                Name = "IT unlink fixture",
+                Purpose = EmailTemplatePurposes.Account,
+                Description = "Created by an integration test; deleted within it.",
+                Status = "ACTIVE",
+                SubjectVi = "Chủ đề", BodyVi = "<p>Thân</p>",
+                SubjectEn = "Subject", BodyEn = "<p>Body</p>",
+                CreatedAt = DateTime.Now,
+            };
+            db.EmailTemplates.Add(template);
+            await db.SaveChangesAsync();
+            templateId = template.EmailTemplateId;
 
-            // Unlinked, not re-pointed: these were generated from templates that left the catalog.
-            Assert.Null(r.EmailTemplateId);
+            var sent = new SentEmail
+            {
+                EmailTemplateId = templateId,
+                RelatedType = "VISIT_PARTICIPANT",
+                RelatedId = 4242,
+                Subject = subject,
+                BodySnapshot = body,
+                Status = "SENT",
+                SentAt = DateTime.Now,
+                CreatedAt = DateTime.Now,
+                Recipients = new List<SentEmailRecipient>
+                {
+                    new()
+                    {
+                        RecipientEmail = recipientEmail,
+                        RecipientName = "Người nhận IT",
+                        RecipientType = EmailRecipientTypes.To,
+                        DeliveryStatus = "DELIVERED",
+                        CreatedAt = DateTime.Now,
+                    },
+                },
+            };
+            db.SentEmails.Add(sent);
+            await db.SaveChangesAsync();
+
+            sentEmailId = sent.SentEmailId;
+            recipientId = sent.Recipients.Single().SentEmailRecipientId;
         }
 
-        // The tokens that hang off those emails are still there.
-        Assert.True(await db.EmailActionTokens.AsNoTracking().CountAsync() >= 15,
-            "Seeded email_action_tokens were lost.");
+        try
+        {
+            using (var db = NewContext())
+            {
+                var template = await db.EmailTemplates.SingleAsync(t => t.EmailTemplateId == templateId);
+                db.EmailTemplates.Remove(template);
+                await db.SaveChangesAsync();
+            }
+
+            using (var verify = NewContext())
+            {
+                Assert.False(await verify.EmailTemplates.AsNoTracking()
+                    .AnyAsync(t => t.EmailTemplateId == templateId), "the template was not actually deleted.");
+
+                var stored = await verify.SentEmails.AsNoTracking()
+                    .SingleOrDefaultAsync(e => e.SentEmailId == sentEmailId);
+
+                Assert.NotNull(stored);
+                Assert.Null(stored!.EmailTemplateId);           // unlinked…
+                Assert.Equal(subject, stored.Subject);          // …and everything else untouched
+                Assert.Equal(body, stored.BodySnapshot);
+                Assert.Equal("VISIT_PARTICIPANT", stored.RelatedType);
+                Assert.Equal(4242ul, stored.RelatedId);
+                Assert.Equal("SENT", stored.Status);
+                Assert.NotNull(stored.SentAt);
+
+                // The recipient hangs off the message, not the template, and must be equally untouched:
+                // a history row with no addressee cannot answer "who received this".
+                var recipient = await verify.SentEmailRecipients.AsNoTracking()
+                    .SingleOrDefaultAsync(r => r.SentEmailRecipientId == recipientId);
+
+                Assert.NotNull(recipient);
+                Assert.Equal(sentEmailId, recipient!.SentEmailId);
+                Assert.Equal(recipientEmail, recipient.RecipientEmail);
+                Assert.Equal(EmailRecipientTypes.To, recipient.RecipientType);
+                Assert.Equal("DELIVERED", recipient.DeliveryStatus);
+            }
+        }
+        finally
+        {
+            using var cleanup = NewContext();
+            await cleanup.Database.ExecuteSqlRawAsync(
+                "DELETE FROM sent_email_recipients WHERE sent_email_id = {0}", sentEmailId);
+            await cleanup.Database.ExecuteSqlRawAsync(
+                "DELETE FROM sent_emails WHERE sent_email_id = {0}", sentEmailId);
+            await cleanup.Database.ExecuteSqlRawAsync(
+                "DELETE FROM email_templates WHERE template_code = {0}", code);
+        }
     }
 }

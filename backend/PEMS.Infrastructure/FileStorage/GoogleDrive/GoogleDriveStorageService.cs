@@ -212,13 +212,10 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("Google Drive download returned {Status}: {Body}", (int)response.StatusCode, body);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                throw new BusinessRuleException("Không tìm thấy tệp đính kèm trên Google Drive (Đã bị xóa hoặc không có quyền).", "EMAIL_ATTACHMENT_FILE_NOT_FOUND");
-            }
-            throw new BusinessRuleException(
-                "Không thể tải tệp từ Google Drive.", "EMAIL_ATTACHMENT_DOWNLOAD_FAILED");
+            _logger.LogError(
+                "Google Drive download returned {Status} for externalFileId={ExternalFileId}: {Body}",
+                (int)response.StatusCode, externalFileId, body);
+            throw DownloadFailure(response.StatusCode, externalFileId);
         }
 
         // Buffer to memory: avatars are small and the HttpResponseMessage would otherwise be disposed
@@ -266,14 +263,13 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("Google Drive range download returned {Status}: {Body}", (int)response.StatusCode, body);
+            _logger.LogError(
+                "Google Drive range download returned {Status} for externalFileId={ExternalFileId}: {Body}",
+                (int)response.StatusCode, externalFileId, body);
+            var status = response.StatusCode;
             response.Dispose();
             request.Dispose();
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                throw new BusinessRuleException(
-                    "Không tìm thấy tệp trên Google Drive.", "GOOGLE_DRIVE_FILE_NOT_FOUND");
-            throw new BusinessRuleException(
-                "Không thể tải tệp từ Google Drive.", "GOOGLE_DRIVE_DOWNLOAD_FAILED");
+            throw DownloadFailure(status, externalFileId);
         }
 
         var isPartial = response.StatusCode == System.Net.HttpStatusCode.PartialContent;
@@ -308,6 +304,40 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
             ContentType = contentType,
         };
     }
+
+    /// <summary>
+    /// Maps a failed Drive read onto one of the <see cref="StorageErrorCodes"/>, so an operator reading
+    /// the response can tell a vanished file from a permission problem from a broken connection. Both
+    /// download paths share it — they used to answer differently for the same HTTP status, and the
+    /// generic one answered <c>EMAIL_ATTACHMENT_FILE_NOT_FOUND</c> for reads that had nothing to do with
+    /// email (partner logos, avatars, news images), which sent every such investigation to the wrong place.
+    ///
+    /// <para>
+    /// The 404 wording deliberately keeps both possibilities open. Drive returns 404 for a file the
+    /// credential is not allowed to see as well as for one that is gone, so naming only deletion would
+    /// state as fact something this code cannot know.
+    /// </para>
+    /// </summary>
+    private static BusinessRuleException DownloadFailure(
+        System.Net.HttpStatusCode status, string externalFileId) => status switch
+        {
+            System.Net.HttpStatusCode.NotFound => new BusinessRuleException(
+                "Không đọc được tệp trên Google Drive: tệp không tồn tại, đã bị xoá, hoặc tài khoản " +
+                "dịch vụ không được chia sẻ tệp này.",
+                StorageErrorCodes.FileNotFound),
+
+            System.Net.HttpStatusCode.Forbidden => new BusinessRuleException(
+                "Google Drive từ chối quyền đọc tệp này. Kiểm tra quyền chia sẻ của tài khoản dịch vụ " +
+                "hoặc hạn mức truy cập.",
+                StorageErrorCodes.FileForbidden),
+
+            System.Net.HttpStatusCode.Unauthorized => new BusinessRuleException(
+                "Kết nối Google Drive không còn hợp lệ (token bị từ chối).",
+                StorageErrorCodes.AuthFailed),
+
+            _ => new BusinessRuleException(
+                "Không thể tải tệp từ Google Drive.", StorageErrorCodes.Unavailable),
+        };
 
     public async Task DeleteAsync(string externalFileId, CancellationToken cancellationToken = default)
     {

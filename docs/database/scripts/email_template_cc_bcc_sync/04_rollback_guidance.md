@@ -121,7 +121,7 @@ Restore `email_templates` from the dump in section 1:
 
 ```sql
 START TRANSACTION;
-DELETE FROM email_templates WHERE template_code IN (/* the 30 canonical codes */);
+DELETE FROM email_templates WHERE template_code IN (/* the 31 canonical codes */);
 -- then SOURCE the dump's INSERT statements for those codes
 COMMIT;
 ```
@@ -175,7 +175,7 @@ check them; run it after any manual restore.
 
 ## 5. Regenerating `02_sync_templates.sql`
 
-The 30 `VALUES` rows in `02_sync_templates.sql` are lifted verbatim from the canonical schema script,
+The 31 `VALUES` rows in `02_sync_templates.sql` are lifted verbatim from the canonical schema script,
 so the two cannot drift. If the canonical catalog changes deliberately, regenerate rather than
 hand-edit — a hand-edited sync script that disagrees with the seed produces a database that fails its
 own verification on the next fresh import.

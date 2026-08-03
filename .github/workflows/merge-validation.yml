@@ -16,6 +16,7 @@ on:
     branches:
       - 'merge/dev-into-canh-iter1'
       - 'merge/dev-into-canh-iter1-final-closure'
+      - 'merge/dev-into-canh-iter1-closure'
   workflow_dispatch:
 
 env:
@@ -143,7 +144,11 @@ jobs:
           dups=$(q "SELECT COUNT(*) FROM (SELECT template_code FROM $DB.email_templates GROUP BY template_code HAVING COUNT(*)>1) d")
           echo "tables=$tables triggers=$triggers fks=$fks templates=$templates duplicate_codes=$dups"
 
-          [ "$tables" -eq 82 ] && [ "$triggers" -eq 32 ] && [ "$fks" -eq 252 ] && [ "$dups" -eq 0 ]
+          # 83/32/255 measured by a fresh import of the canonical script, and 83 is what the test
+          # suite's own DisposableDatabaseManager.ExpectedBaseTableCount already required — this shell
+          # assertion had been left at the pre-G11 82/252 and so contradicted the code contract it is
+          # meant to mirror. Verified against both this branch and Cảnh-Iter1: identical shape.
+          [ "$tables" -eq 83 ] && [ "$triggers" -eq 32 ] && [ "$fks" -eq 255 ] && [ "$dups" -eq 0 ]
 
   integration:
     name: integration tests

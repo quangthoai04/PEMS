@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Emails.Common;
@@ -87,9 +89,14 @@ public static class EmailDraftMapper
                 OriginalFilename = fm.Original,
                 MimeType = fm.Mime,
                 FileSize = fm.Size,
-                WebViewUrl = fm.WebView,
-                DownloadUrl = fm.Download,
-                ThumbnailUrl = fm.Thumb,
+                // Addressed through our own authenticated routes. The stored WebViewUrl/DownloadUrl are
+                // provider links for Drive-backed rows (every EMAIL_ATTACHMENT is one), and a provider
+                // link in a response both names the external id and bypasses the file's access check.
+                WebViewUrl = InternalFileUrls.Content(a.FileId),
+                DownloadUrl = InternalFileUrls.Download(a.FileId),
+                ThumbnailUrl = fm.Mime is { } mime && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                    ? InternalFileUrls.Content(a.FileId)
+                    : null,
             };
         }).ToList();
 

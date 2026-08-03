@@ -269,6 +269,52 @@ export interface VisitProcessPermission {
   canStartVisit: boolean;     // ASSIGNED/BEFORE_VISIT → DURING_VISIT
   canCompleteVisit: boolean;  // DURING_VISIT → AFTER_VISIT
   canCloseVisit: boolean;     // AFTER_VISIT → CLOSED
+
+  /**
+   * Whether to offer "Gửi cập nhật chuẩn bị". Current host only, and only while the preparation tab
+   * is open — never derived from roleCode here: a Staff Leader and HO read the same page and can pull
+   * the same report, and only the backend knows that writing to the guest is a different act.
+   */
+  canSendSetupProgressEmail: boolean;
+}
+
+/** Response of preparing (or re-opening) the Host's setup-progress email draft. */
+export interface SetupProgressEmailDraft {
+  draftId: number;
+  /** True when an unsent draft was re-opened instead of a second one being created. */
+  reusedExistingDraft: boolean;
+  /** vi | en — the language BOTH the message and the attached report were produced in. */
+  languageCode: string;
+  /** The mandatory Schedule Report; the composer marks this attachment undeletable. */
+  reportFileId: number;
+  reportFileName: string;
+  /** Vietnam wall-clock moment the attached report was rendered from live data. */
+  reportGeneratedAt: string;
+  /**
+   * The body as generated. Empty when an existing draft was re-opened, because whether that draft was
+   * edited is not recorded — the composer then treats it as edited and warns before a sync overwrites it.
+   */
+  bodyHtml: string;
+  /** Informational — a missing guest address, a fallback recipient. Not a send gate. */
+  warnings: string[];
+}
+
+/**
+ * Response of re-syncing an existing setup-progress draft from current setup data.
+ *
+ * The report and the tables in the body are two renderings of ONE snapshot, so this rebuilds both;
+ * `reportGeneratedAt` is the moment that snapshot was taken and is stated in the body too.
+ */
+export interface SetupProgressEmailReport {
+  draftId: number;
+  reportFileId: number;
+  reportFileName: string;
+  reportGeneratedAt: string;
+  languageCode: string;
+  /** The rebuilt body. The composer puts this in the editor, replacing any manual edits. */
+  bodyHtml: string;
+  /** Always true; stated explicitly so a client cannot mistake the rebuild for an additive update. */
+  bodyRewritten: boolean;
 }
 
 /** One agenda (lịch trình) item of a campus instance. */
@@ -341,13 +387,6 @@ export interface VisitProcessDetail {
   canEditBefore: boolean;
   /** Host's internal "Ghi chú chung" (visit_request_campuses.preparation_note). Null/empty when unset. */
   preparationNote?: string | null;
-  /** Per-campus "Working contact" (visit_instance_form_details.operational_contact_*) — the "Gửi lịch
-   * trình" email recipient. Email can be null on older data even though the current form requires it. */
-  operationalContactFullName?: string | null;
-  operationalContactEmail?: string | null;
-  /** Most recent "Gửi lịch trình" send for this instance, if any (for the "Đã gửi lúc ..." hint). */
-  agendaEmailLastSentAt?: string | null;
-  agendaEmailLastSentStatus?: string | null;
   agenda: VisitAgendaItem[];
   /** Read-only mirror of the guest's original registration (registrant + delegation + campuses +
    * guests). Null only for callers not allowed to see it. */

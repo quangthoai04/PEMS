@@ -208,6 +208,92 @@ public sealed class VisitAgendaScopeV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
+    /// <summary>
+    /// "Lưu lịch trình" also moves the campus's planned window, and whatever reads the instance next
+    /// sees the moved one.
+    ///
+    /// <para>
+    /// The Host renegotiates the actual date/time with the delegation while drafting the agenda, so the
+    /// two edits are one save. This matters beyond the column: the Schedule Report PDF and the
+    /// setup-progress email both render <c>plannedStart</c>/<c>plannedEnd</c> from this instance, so a
+    /// window that saved into the agenda but not into <c>visit_request_campuses</c> would send the guest
+    /// a report contradicting the schedule directly above it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Saving_the_agenda_moves_the_planned_window_and_later_reads_see_the_new_one()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var originalStart = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", originalStart, "Đoàn dời giờ"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            var hn = instances[CampusHn];
+
+            // The delegation asked to start a day later and stay an extra hour.
+            var movedStart = originalStart.AddDays(1).Date.AddHours(9);
+            var movedEnd = movedStart.AddMinutes(180);
+
+            using (var db = NewContext())
+                await Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
+                    new List<SaveVisitAgendaItem> { Item("Đón khách", 0) }, movedStart, movedEnd),
+                    CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var instance = await db.VisitRequestCampuses.AsNoTracking()
+                    .FirstAsync(c => c.VisitInstanceId == hn);
+
+                // Compared to the second: MySQL DATETIME is local wall-clock here, never re-based to UTC.
+                Assert.Equal(movedStart.ToString("yyyy-MM-dd HH:mm:ss"),
+                    instance.PlannedStartAt.ToString("yyyy-MM-dd HH:mm:ss"));
+                Assert.Equal(movedEnd.ToString("yyyy-MM-dd HH:mm:ss"),
+                    instance.PlannedEndAt.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                // …and the values the report/email templates interpolate come from that same row, so the
+                // guest-facing "dự kiến từ … đến …" follows the save rather than the original booking.
+                var variables = PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressEmailGuard
+                    .BuildVariables(instance, "Đoàn dời giờ", "FPT Hà Nội", "Host HN", "host.hn@fpt.edu.vn");
+                Assert.Equal(movedStart.ToString("HH:mm dd/MM/yyyy"), variables["plannedStart"]);
+                Assert.Equal(movedEnd.ToString("HH:mm dd/MM/yyyy"), variables["plannedEnd"]);
+                Assert.Equal("host.hn@fpt.edu.vn", variables["hostEmail"]);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// A window shorter than the DB CHECK allows is refused by name rather than by constraint violation.
+    /// </summary>
+    [Fact]
+    public async Task A_planned_window_that_breaks_the_minimum_duration_is_refused_before_the_database_sees_it()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn giờ xấu"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            var hn = instances[CampusHn];
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<PEMS.Application.Common.Exceptions.ValidationException>(() =>
+                    Handler(db, HostHn).Handle(new SaveVisitAgendaCommand(requestId, hn,
+                        new List<SaveVisitAgendaItem> { Item("Đón khách", 0) },
+                        start, start.AddMinutes(10)), CancellationToken.None));
+
+            using (var db = NewContext())
+                Assert.Empty(await db.VisitAgendas.AsNoTracking()
+                    .Where(a => a.VisitInstanceId == hn).ToListAsync());
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
     [Fact]
     public async Task Only_the_instances_own_host_may_save_its_agenda_and_a_sibling_is_never_touched()
     {

@@ -9,6 +9,9 @@ import { Mail, X, Loader2, AlertCircle, Clock, User2, ChevronDown, ChevronUp, Pa
 import type { GetSentEmailsResult, SentEmailHistoryItem, SentEmailAttachmentItem, SentEmailActionTokenItem } from '../types/delegations.types';
 import { sanitizeHtml, sanitizeSentEmailPreviewHtml } from '../../../shared/security/sanitizeHtml';
 import { resolveCidImages } from '../../emails/utils/inlineImages';
+import { FileAttachmentItem } from '../../../shared/components/files/FileAttachmentItem';
+import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
+import type { PreviewableFile } from '../../../shared/components/files/filePreviewKind';
 
 interface Props {
   open: boolean;
@@ -87,6 +90,8 @@ export function SentEmailsModal({ open, title, subtitle, targetKey, load, onClos
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<SentEmailHistoryItem[]>([]);
+  /** Lifted out of the cards so the whole history shares ONE preview, not one per message. */
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
   const loadRef = useRef(load);
   loadRef.current = load;
 
@@ -143,15 +148,24 @@ export function SentEmailsModal({ open, title, subtitle, targetKey, load, onClos
               Chưa có email nào được gửi cho người nhận này.
             </div>
           ) : (
-            items.map((it) => <SentEmailCard key={it.sentEmailId} item={it} />)
+            items.map((it) => (
+              <SentEmailCard key={it.sentEmailId} item={it} onPreview={setPreviewFile} />
+            ))
           )}
         </div>
       </div>
+      <FilePreviewModal
+        open={previewFile != null}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   );
 }
 
-function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
+function SentEmailCard({
+  item, onPreview,
+}: { item: SentEmailHistoryItem; onPreview: (file: PreviewableFile) => void }) {
   const [showBody, setShowBody] = useState(false);
   const isHtml = (item.bodyFormat ?? 'HTML') === 'HTML';
   const sanitizedBody = isHtml ? sanitizeHtml(item.bodySnapshot) : (item.bodySnapshot ?? '');
@@ -224,7 +238,9 @@ function SentEmailCard({ item }: { item: SentEmailHistoryItem }) {
             <Paperclip className="w-3 h-3" /> Tệp đính kèm ({item.attachments!.length})
           </div>
           <div className="flex flex-wrap gap-2">
-            {item.attachments!.map((a) => <AttachmentChip key={a.sentEmailAttachmentId} att={a} />)}
+            {item.attachments!.map((a) => (
+              <AttachmentChip key={a.sentEmailAttachmentId} att={a} onPreview={onPreview} />
+            ))}
           </div>
         </div>
       )}
@@ -289,34 +305,34 @@ function ActionTokenRow({ token }: { token: SentEmailActionTokenItem }) {
   );
 }
 
-/** One attachment as a chip: inline images show a thumbnail, files show an icon + size. */
-function AttachmentChip({ att }: { att: SentEmailAttachmentItem }) {
+/**
+ * One attachment of a message that has already gone out — viewable and re-downloadable, never
+ * editable.
+ *
+ * <p>This used to be an <c>&lt;a href={att.downloadUrl}&gt;</c>. Every EMAIL_ATTACHMENT is stored on
+ * Google Drive, so that href was a Drive <c>webContentLink</c>: clicking it took the reader to
+ * Google's "request access" page (the browser cannot attach our bearer token to a plain link, and the
+ * reader has no Drive account of ours), while the payload handed the provider's file id to anyone
+ * reading it. Both ends are fixed — the backend now returns only our own routes, and the fetch goes
+ * through the authenticated client.</p>
+ */
+function AttachmentChip({
+  att, onPreview,
+}: { att: SentEmailAttachmentItem; onPreview: (file: PreviewableFile) => void }) {
   const name = att.displayName || att.originalFilename || `Tệp #${att.fileId}`;
-  const url = att.downloadUrl || att.webViewUrl || null;
   const isInlineImage = att.attachmentType === 'INLINE_IMAGE';
-  const thumb = att.thumbnailUrl || att.webViewUrl;
+
   return (
-    <a
-      href={url || undefined}
-      target={url ? '_blank' : undefined}
-      rel="noopener noreferrer"
-      className={`group inline-flex max-w-[220px] items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs ${url ? 'hover:border-[#004c91]/40 hover:bg-blue-50/50' : 'cursor-default'}`}
-      title={name}
-    >
-      {isInlineImage && thumb ? (
-        <img src={thumb} alt={att.displayName || ''} className="h-7 w-7 shrink-0 rounded object-cover" />
-      ) : isInlineImage ? (
-        <ImageIcon className="h-4 w-4 shrink-0 text-violet-500" />
-      ) : (
-        <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-semibold text-gray-700">{name}</span>
-        <span className="block text-[10px] text-gray-400">
-          {isInlineImage ? 'Ảnh trong nội dung' : 'Đính kèm'}{att.fileSize ? ` · ${formatBytes(att.fileSize)}` : ''}
-        </span>
-      </span>
-      {url && (att.downloadUrl ? <Download className="h-3.5 w-3.5 shrink-0 text-gray-400 group-hover:text-[#004c91]" /> : <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400 group-hover:text-[#004c91]" />)}
-    </a>
+    <FileAttachmentItem
+      data-testid="sent-email-attachment"
+      file={{
+        fileId: att.fileId,
+        name,
+        mimeType: att.mimeType,
+        size: att.fileSize,
+      }}
+      onPreview={onPreview}
+      hint={isInlineImage ? 'Ảnh trong nội dung' : 'Đính kèm'}
+    />
   );
 }

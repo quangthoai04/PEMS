@@ -36,16 +36,31 @@ internal static class AmendmentGuards
             throw new ForbiddenException("Bạn không có quyền thao tác đề xuất của đơn này.");
     }
 
-    /// <summary>Decision side: ONLY the current Host.</summary>
-    public static void EnsureCurrentHost(ICurrentUserService currentUser, ulong? currentHostUserId)
+    /// <summary>
+    /// Decision side: ONLY the current Staff Leader of the campus the amendment targets.
+    ///
+    /// <para>
+    /// Approving a proposal is campus governance — the same leader who decided this campus decides
+    /// changes to it. Deliberately NOT the Host: the Host runs the visit the leader approved, and the
+    /// proposals that matter most are the ones that alter the Host's own visit, so letting them wave
+    /// those through would remove the review the proposal exists for.
+    /// </para>
+    /// <para>
+    /// Campus scoping is part of the check, not a separate one: a leader of another campus fails on
+    /// <paramref name="campusId"/> and gets the same refusal as a stranger, which is what keeps a
+    /// leader from deciding a sibling campus of the same request.
+    /// </para>
+    /// </summary>
+    public static void EnsureCurrentCampusLeader(ICurrentUserService currentUser, ulong campusId)
     {
-        var isHost = currentUser.UserId.HasValue && currentUser.UserId.Value == currentHostUserId;
+        var isLeaderHere = currentUser.UserId.HasValue
+            && currentUser.RoleCode == RoleCodes.Staff
+            && currentUser.SubRole == UserSubRoles.Leader
+            && currentUser.PrimaryCampusId == campusId;
 
-        if (!isHost)
-            throw new ForbiddenException("Chỉ Host hiện tại của cơ sở này mới được quyết định đề xuất.")
-            {
-                // stable code surfaced to the client
-            };
+        if (!isLeaderHere)
+            throw new ForbiddenException(
+                "Chỉ Staff Leader phụ trách cơ sở này mới được quyết định đề xuất.");
     }
 
     public static VisitAmendmentDto ToDto(
@@ -248,14 +263,13 @@ public sealed class DecideVisitAmendmentCommandHandlers :
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
         var campusId = await CampusOfInstanceAsync(request.VisitInstanceId, cancellationToken);
-        var instance = await _db.VisitRequestCampuses.AsNoTracking().FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken);
         try
         {
-            AmendmentGuards.EnsureCurrentHost(_currentUser, instance?.CurrentHostUserId);
+            AmendmentGuards.EnsureCurrentCampusLeader(_currentUser, campusId);
         }
         catch (ForbiddenException)
         {
-            throw new ForbiddenException("Chỉ Host hiện tại của cơ sở này mới được duyệt đề xuất.");
+            throw new ForbiddenException("Chỉ Staff Leader phụ trách cơ sở này mới được duyệt đề xuất.");
         }
 
         VisitAmendmentDecisionResponse result;
@@ -274,8 +288,8 @@ public sealed class DecideVisitAmendmentCommandHandlers :
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
         var campusId = await CampusOfInstanceAsync(request.VisitInstanceId, cancellationToken);
-        var instance = await _db.VisitRequestCampuses.AsNoTracking().FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken);
-        AmendmentGuards.EnsureCurrentHost(_currentUser, instance?.CurrentHostUserId);
+        // Reject is the other outcome of the same decision, so it answers to the same authority.
+        AmendmentGuards.EnsureCurrentCampusLeader(_currentUser, campusId);
 
         VisitAmendmentDecisionResponse result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))

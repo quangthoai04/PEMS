@@ -139,7 +139,7 @@ Nội dung **không được** mời đăng nhập ngay. Tài khoản mới ở 
 
 ---
 
-## 7. Nhóm REPORT (4 template)
+## 7. Nhóm REPORT (5 template)
 
 | # | Code | Caller | Recipient policy | Nhạy cảm | Biến | Attachment |
 |---|---|---|---|---|---|---|
@@ -147,6 +147,7 @@ Nội dung **không được** mời đăng nhập ngay. Tài khoản mới ở 
 | 24 | `REPORT_DEPARTMENT_COLLABORATION` | C-25 | **caller** | ❌ | `recipientName, departmentName, periodFrom, periodTo` | ✅ PDF |
 | 25 | `REPORT_DEPARTMENT_INVOICE` | C-26, C-29 | **caller** | ❌ | `recipientName, departmentName, periodFrom, periodTo` | ✅ PDF |
 | 26 | `REPORT_PERSONNEL_PERFORMANCE` | C-27, C-28 | **caller** | ❌ | `personName, scopeLabel, periodFrom, periodTo` | ✅ PDF |
+| 31 | `VISIT_SETUP_PROGRESS_UPDATE` | C-31 | **caller** | ❌ | `delegationName, campusName, plannedStart, plannedEnd, hostName, hostEmail` | ✅ PDF (bắt buộc) |
 
 | # | Subject VI | Subject EN |
 |---|---|---|
@@ -154,6 +155,17 @@ Nội dung **không được** mời đăng nhập ngay. Tài khoản mới ở 
 | 24 | `[PEMS] Báo cáo phối hợp tiếp khách — {{departmentName}} ({{periodFrom}} – {{periodTo}})` | `[PEMS] Visit collaboration report — {{departmentName}} ({{periodFrom}} – {{periodTo}})` |
 | 25 | `[PEMS] Hóa đơn hậu cần tiếp khách — {{departmentName}} ({{periodFrom}} – {{periodTo}})` | `[PEMS] Visit logistics invoice — {{departmentName}} ({{periodFrom}} – {{periodTo}})` |
 | 26 | `[PEMS] Báo cáo hiệu suất {{scopeLabel}} — {{personName}} ({{periodFrom}} – {{periodTo}})` | `[PEMS] Performance report {{scopeLabel}} — {{personName}} ({{periodFrom}} – {{periodTo}})` |
+| 31 | `[PEMS] Cập nhật công tác chuẩn bị — {{delegationName}} tại {{campusName}}` | `[PEMS] Preparation update — {{delegationName}} at {{campusName}}` |
+
+**#31 nằm ở nhóm REPORT, không phải VISIT_PARTICIPANT.** Đây là việc **phát hành một tài liệu** (Báo cáo Lịch trình) tới danh sách người nhận do Host kiểm soát — khách ở `TO`, thành phần tham gia đã `ACCEPTED` ở `CC` — chứ không phải lời mời. Không có token, không có liên kết hành động dùng một lần, nên `CC` là an toàn. Nếu tái dùng `VISIT_PARTICIPANT_INVITATION` (#15) thì luồng này thừa hưởng chính sách 1-TO/cấm-copy của nó: mỗi người một email, không `CC` — trái hẳn mục đích.
+
+**#31 PDF là bắt buộc, không phải tùy chọn.** Tệp được sinh server-side bằng `IScheduleReportArtifactService` (dùng chung với nút tải "Báo cáo Lịch trình" trên VisitProcess), lưu qua pipeline file hiện có rồi liên kết vào `email_draft_attachments`. Composer không cho xóa tệp này; lệnh gửi từ chối nếu draft không còn nó. Nhận diện tệp bắt buộc bằng cách join sang `documents` (`document_category = 'SCHEDULE_REPORT'`, `owner_id` = request), **không** theo tên tệp — để Host tải lên một PDF trùng tên cũng không tạo ra tệp không xóa được.
+
+**#31 chỉ Host hiện tại gửi được.** Cờ `canSendSetupProgressEmail` trong process-permissions, và mọi route đều kiểm tra lại host + cửa sổ chuẩn bị **tại thời điểm gọi** — bàn giao Host hoặc chuyển giai đoạn giữa lúc soạn và lúc gửi đều bị từ chối.
+
+**Không chèn `preparation_note` vào #31.** Ghi chú chuẩn bị là nội dung vận hành nội bộ (briefing, phân công), không dành cho khách. Host tự viết phần phù hợp trong composer nếu muốn.
+
+**#31 in địa chỉ Host trong nội dung (`hostEmail`).** Thân mail mời khách "phản hồi email này" để Host cập nhật, nhưng luồng này gửi qua pipeline nháp/thủ công — pipeline đó dùng `Reply-To` cấu hình sẵn của hệ thống và **không** nhận `Reply-To` theo từng thư. Nếu chỉ nêu tên Host thì lời mời phản hồi không dẫn tới ai. Vì vậy `hostEmail` nằm trong hợp đồng biến và hiện rõ trong cả bản VI lẫn EN. Đây thuần là nội dung: người nhận, quyền và cơ chế chống gửi trùng không đổi.
 
 **Gộp #25 (C-26 + C-29):** subject hiện tại của hai caller **giống hệt từng ký tự**; khác nhau chỉ ở người nhận (người-nhận-cấu-hình vs Staff Leader) — thuộc phong bì, không thuộc nội dung.
 

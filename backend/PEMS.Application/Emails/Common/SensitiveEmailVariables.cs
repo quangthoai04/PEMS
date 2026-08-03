@@ -41,7 +41,10 @@ public static class SensitiveEmailVariables
         {
             "assigneeName", "campusName", "contactFullName", "coordinationNote", "currentContactName",
             "delegationName", "departmentLeaderName", "departmentName", "dueAt", "effectiveDate",
-            "expireMinutes", "expiresInHours", "fullName", "hostMessage", "hostName", "itemTitle",
+            // hostEmail is a work address the guest is being told to write to — the point of printing it
+            // is that the recipient can use it. It authorises nothing and unlocks nothing, so unlike an
+            // OTP or a token it may stay in the stored body and in the email history.
+            "expireMinutes", "expiresInHours", "fullName", "hostEmail", "hostMessage", "hostName", "itemTitle",
             "logisticsItemType", "logisticsTitle", "newRoleName", "oldEmailMasked", "oldRoleName",
             "originalQuantity", "periodFrom", "periodTo", "personName", "plannedEnd", "plannedStart",
             "plannedTime",

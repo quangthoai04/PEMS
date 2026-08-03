@@ -144,122 +144,57 @@ currentUser.primary_campus_id
 
 ## 5. Định nghĩa “Visitor liên quan đến campus của Staff Leader”
 
-Một Visitor được xem là liên quan nếu có ít nhất một `visit_request` thỏa điều kiện theo từng loại đơn.
+> **Cập nhật 2026-08-01** — Mục này đã được viết lại theo kiến trúc campus xử lý độc lập. Quy tắc cũ (“multi-campus chỉ hiện sau khi HO duyệt/release”) đã bị bỏ hoàn toàn: HO không còn là bước duyệt/release, mỗi campus nhận và xử lý instance của mình ngay khi đơn được gửi.
 
----
+Một Visitor được xem là liên quan nếu có **ít nhất một `visit_request_campuses` thuộc campus của Staff Leader**, và request đó có account Visitor thật.
 
-### 5.1 Đơn single-campus
-
-Với đơn `SINGLE_CAMPUS`, Staff Leader được thấy Visitor nếu đơn có campus instance thuộc campus của mình.
-
-Điều kiện:
+Điều kiện duy nhất:
 
 ```text
-visit_requests.visit_scope = SINGLE_CAMPUS
 visit_request_campuses.campus_id = currentStaffLeader.primary_campus_id
-visit_requests.visitor_user_id = visitor.user_id
+AND visit_request_campuses.visit_request.visitor_user_id IS NOT NULL
 ```
 
-Cho phép hiển thị Visitor dù request đang ở các trạng thái:
+### 5.1 Những gì KHÔNG được đưa vào điều kiện
 
 ```text
-PENDING_APPROVAL
-APPROVED
+visit_requests.visit_scope     → SINGLE_CAMPUS và MULTI_CAMPUS xử lý y hệt nhau
+visit_requests.status          → PENDING_APPROVAL / PARTIALLY_APPROVED / APPROVED / REJECTED / CANCELLED đều giữ quan hệ
+HO approval / HO release       → không còn tồn tại trong kiến trúc hiện tại
+users.primary_campus_id        → Visitor không thuộc campus cố định nào
+```
+
+### 5.2 Mọi trạng thái campus instance đều tạo quan hệ
+
+```text
+WAITING_REQUEST_APPROVAL
+ASSIGNED
+BEFORE_VISIT
+DURING_VISIT
+AFTER_VISIT
+CLOSED
 REJECTED
 CANCELLED
 ```
 
-Lý do: đây là đơn single-campus gửi trực tiếp tới campus của Staff Leader, nên quan hệ Visitor ↔ campus đã tồn tại thật, kể cả đơn bị từ chối/hủy.
+Lý do: khi campus instance được tạo, campus đã thực sự nhận một yêu cầu liên quan đến Visitor đó. Từ chối hoặc hủy không xóa lịch sử quan hệ.
 
-Ví dụ:
+### 5.3 Ví dụ
 
 ```text
 Visitor A gửi đơn SINGLE_CAMPUS tới HN.
-Staff Leader HN thấy Visitor A.
-Staff Leader HCM không thấy Visitor A.
+→ Staff Leader HN thấy Visitor A (kể cả khi HN đã reject). Staff Leader HCM không thấy.
+
+Visitor C gửi đơn MULTI_CAMPUS tới HN + HCM, cả hai campus còn WAITING_REQUEST_APPROVAL.
+→ Staff Leader HN thấy Visitor C ngay. Staff Leader HCM thấy Visitor C ngay. Staff Leader ĐN không thấy.
+
+Đơn của Visitor C sau đó PARTIALLY_APPROVED (HN duyệt, HCM từ chối).
+→ Cả HN lẫn HCM vẫn thấy Visitor C.
 ```
 
----
+### 5.4 Một Visitor chỉ một dòng
 
-### 5.2 Đơn multi-campus
-
-Với đơn `MULTI_CAMPUS`, Staff Leader của các campus liên quan chỉ được thấy Visitor sau khi HO đã duyệt/release đơn.
-
-#### 5.2.1 Multi-campus đang chờ HO duyệt
-
-Điều kiện request:
-
-```text
-visit_requests.visit_scope = MULTI_CAMPUS
-visit_requests.status = PENDING_APPROVAL
-```
-
-Kết quả:
-
-```text
-Staff Leader các campus liên quan KHÔNG thấy Visitor.
-```
-
-Lý do: multi-campus pending chỉ HO thấy và xử lý request tổng. Campus con chưa được release dữ liệu.
-
-#### 5.2.2 Multi-campus bị HO từ chối
-
-Điều kiện request:
-
-```text
-visit_requests.visit_scope = MULTI_CAMPUS
-visit_requests.status = REJECTED
-```
-
-Kết quả:
-
-```text
-Staff Leader các campus liên quan KHÔNG thấy Visitor.
-```
-
-Lý do: HO đã từ chối, đơn không được release xuống các campus.
-
-#### 5.2.3 Multi-campus đã được HO duyệt
-
-Điều kiện request:
-
-```text
-visit_requests.visit_scope = MULTI_CAMPUS
-visit_requests.status = APPROVED
-visit_request_campuses.campus_id = currentStaffLeader.primary_campus_id
-visit_request_campuses.status <> WAITING_REQUEST_APPROVAL
-```
-
-Kết quả:
-
-```text
-Staff Leader của từng campus trong đơn được thấy Visitor.
-Staff Leader campus không nằm trong đơn không thấy Visitor.
-```
-
-Ví dụ:
-
-```text
-Visitor C gửi đơn MULTI_CAMPUS tới HN + HCM.
-HO chưa duyệt → Staff Leader HN/HCM chưa thấy Visitor C.
-HO từ chối → Staff Leader HN/HCM không thấy Visitor C.
-HO duyệt → Staff Leader HN thấy Visitor C, Staff Leader HCM thấy Visitor C, Staff Leader DN không thấy.
-```
-
-#### 5.2.4 Multi-campus đã từng được duyệt rồi sau đó bị hủy
-
-Nếu request đã từng được HO duyệt/release, sau đó chuyển `CANCELLED`, có thể giữ Visitor trong tab như dữ liệu lịch sử read-only.
-
-Điều kiện khuyến nghị:
-
-```text
-visit_requests.visit_scope = MULTI_CAMPUS
-visit_requests.status = CANCELLED
-visit_request_campuses.campus_id = currentStaffLeader.primary_campus_id
-visit_request_campuses.status <> WAITING_REQUEST_APPROVAL
-```
-
-Không được hiển thị case `REJECTED` vì rejected nghĩa là không release xuống campus.
+Visitor có nhiều request tới cùng campus vẫn chỉ hiện **một dòng**. `relatedRequestCount` đếm **DISTINCT `visit_request_id`**, không đếm số campus instance.
 
 ---
 
@@ -288,8 +223,9 @@ Không được hiển thị case `REJECTED` vì rejected nghĩa là không rele
     → visit_request_campuses.campus_id = currentStaffLeader.primary_campus_id
 
 [S] Step 8. Backend áp dụng visibility:
-    - SINGLE_CAMPUS: cùng campus Staff Leader.
-    - MULTI_CAMPUS: chỉ khi HO đã duyệt/release, không lấy pending/rejected.
+    - Chỉ cần có campus instance thuộc campus của Staff Leader (mọi visit_scope,
+      mọi request status, mọi instance status).
+    - Chỉ lấy user đúng shape VISITOR (role VISITOR, không campus/department/sub_role).
 
 [S] Step 9. Backend áp dụng keyword/search/filter/paging/sort.
 
@@ -347,24 +283,26 @@ Nếu muốn che sự tồn tại của account.
 
 ---
 
-### AF-03 — Multi-campus pending HO
+### AF-03 — Multi-campus còn chờ duyệt
 
-Không hiển thị Visitor.
+**Vẫn hiển thị** Visitor (quy tắc cũ “ẩn cho tới khi HO release” đã bị bỏ).
 
 ```text
 visit_scope = MULTI_CAMPUS
-status = PENDING_APPROVAL
+status = PENDING_APPROVAL hoặc PARTIALLY_APPROVED
+visit_request_campuses.status = WAITING_REQUEST_APPROVAL
+→ Staff Leader của campus đó thấy Visitor ngay
 ```
 
 ---
 
-### AF-04 — Multi-campus bị HO từ chối
+### AF-04 — Đơn bị từ chối hoặc bị hủy
 
-Không hiển thị Visitor.
+**Vẫn hiển thị** Visitor như dữ liệu lịch sử read-only: campus đã thực sự nhận yêu cầu này.
 
 ```text
-visit_scope = MULTI_CAMPUS
-status = REJECTED
+status = REJECTED hoặc CANCELLED (request level hoặc campus level)
+→ Staff Leader của campus đó vẫn thấy Visitor
 ```
 
 ---
@@ -506,6 +444,28 @@ GET /api/accounts/staff-leader/related-visitors/{visitorUserId}
 
 Dù dùng endpoint nào, backend bắt buộc check lại scope relation.
 
+### Nationality options endpoint (đã triển khai)
+
+Dropdown quốc tịch có endpoint riêng, KHÔNG suy ra từ một trang của list:
+
+```http
+GET /api/accounts/staff-leader/related-visitors/nationalities
+```
+
+```json
+{ "items": ["Bồ Đào Nha", "Hàn Quốc", "Nhật Bản", "Pháp", "Singapore"] }
+```
+
+Không tham số: options phải phủ **toàn bộ** Visitor liên quan, và campus scope do server tự quyết. Backend trim, bỏ null/rỗng/chỉ-khoảng-trắng, distinct không phân biệt hoa thường, sort ổn định theo vi-VN. Không hardcode danh sách quốc gia ở bất kỳ tầng nào.
+
+**Route thực tế đã triển khai** (khớp `RelatedVisitorScope.VisibleInstances` với list + detail):
+
+```text
+GET /api/accounts/related-visitors                                → list
+GET /api/accounts/related-visitor-details?visitorUserId=...       → detail
+GET /api/accounts/staff-leader/related-visitors/nationalities     → nationality options
+```
+
 ---
 
 ## 10. Request query params
@@ -513,8 +473,9 @@ Dù dùng endpoint nào, backend bắt buộc check lại scope relation.
 ```text
 page: number, default 1, min 1
 pageSize: number, default 20, max 100
-keyword: optional string, trim, search full_name/email/phone/nationality/request_code/delegation_name nếu cần
+keyword: optional string, trim, search full_name/email/phone/nationality
 status: optional ACTIVE/INACTIVE/LOCKED
+nationality: optional, so khớp sau khi trim + không phân biệt hoa thường cả hai phía
 sortBy: optional, default lastRelatedRequestAt
 sortDirection: asc/desc, default desc
 ```
@@ -630,21 +591,9 @@ visible_visitor_requests AS (
         ON vrc.campus_id = csl.primary_campus_id
     JOIN visit_requests vr
         ON vr.visit_request_id = vrc.visit_request_id
+    -- Chỉ cần có campus instance thuộc campus này. KHÔNG lọc theo visit_scope,
+    -- request status hay instance status (xem Mục 5).
     WHERE vr.visitor_user_id IS NOT NULL
-      AND (
-            -- SINGLE_CAMPUS: cùng campus thì Staff Leader thấy
-            vr.visit_scope = 'SINGLE_CAMPUS'
-
-            OR
-
-            -- MULTI_CAMPUS: chỉ sau khi HO approve/release.
-            -- REJECTED/PENDING_APPROVAL không được thấy.
-            (
-                vr.visit_scope = 'MULTI_CAMPUS'
-                AND vr.status IN ('APPROVED', 'CANCELLED')
-                AND vrc.status <> 'WAITING_REQUEST_APPROVAL'
-            )
-      )
     GROUP BY vr.visitor_user_id
 )
 SELECT
@@ -707,14 +656,6 @@ visible_visitors AS (
     JOIN visit_requests vr
         ON vr.visit_request_id = vrc.visit_request_id
     WHERE vr.visitor_user_id IS NOT NULL
-      AND (
-            vr.visit_scope = 'SINGLE_CAMPUS'
-            OR (
-                vr.visit_scope = 'MULTI_CAMPUS'
-                AND vr.status IN ('APPROVED', 'CANCELLED')
-                AND vrc.status <> 'WAITING_REQUEST_APPROVAL'
-            )
-      )
 )
 SELECT COUNT(*) AS total_count
 FROM visible_visitors vv
@@ -763,14 +704,6 @@ WHERE visitor.user_id = @VisitorUserId
         AND current_user.sub_role = 'LEADER'
         AND current_user.status = 'ACTIVE'
         AND vr.visitor_user_id = visitor.user_id
-        AND (
-              vr.visit_scope = 'SINGLE_CAMPUS'
-              OR (
-                  vr.visit_scope = 'MULTI_CAMPUS'
-                  AND vr.status IN ('APPROVED', 'CANCELLED')
-                  AND vrc.status <> 'WAITING_REQUEST_APPROVAL'
-              )
-            )
   );
 ```
 
@@ -811,11 +744,14 @@ Không sửa dynamic permissions vì v10 không dùng permissions/role_permissio
 [ ] Resolve current user và validate STAFF + LEADER + ACTIVE.
 [ ] Lấy currentUser.primary_campus_id từ CurrentUser service/session.
 [ ] Query Visitor qua visit_requests + visit_request_campuses.
-[ ] Áp dụng single-campus/multi-campus visibility rule.
-[ ] Thêm paging/filter/sort.
+[ ] Dùng MỘT shared predicate (RelatedVisitorScope.VisibleInstances) cho list + detail + nationalities.
+[ ] Không lọc theo visit_scope / request status / instance status / HO release.
+[ ] Thêm paging/filter/sort — phân trang SAU khi xong scope + filter + sort.
+[ ] Nationality: endpoint riêng, trim + distinct không phân biệt hoa thường + sort ổn định.
+[ ] Nationality filter trên list: normalize cả hai phía (trim + lower), không dựa vào collation.
 [ ] Mapping DTO read-only.
 [ ] View detail check lại EXISTS scope.
-[ ] Viết test/manual verification cho pending/rejected/approved multi-campus.
+[ ] Viết test/manual verification cho multi-campus pending/partially-approved/rejected.
 [ ] Build backend.
 ```
 
@@ -844,27 +780,42 @@ Không sửa những file này theo tên cứng nếu repo thực tế khác. Ph
 
 ### 16.1 UI behavior
 
-Trong trang Account Management của Staff Leader, thêm tab:
+> **Cập nhật 2026-08-01** — chế độ được chọn bằng bộ lọc **loại tài khoản**, không phải tab riêng.
+
+Bộ lọc loại tài khoản của Staff Leader chỉ có đúng hai lựa chọn:
 
 ```text
-Tài khoản nội bộ
-Visitor liên quan
+Tài khoản nội bộ   ← mặc định khi mở trang
+Tài khoản khách
 ```
 
-Hoặc nếu UI đang có tab/filter sẵn, thêm tab riêng:
+Không còn option `Tất cả tài khoản`: nội bộ và khách là hai nguồn dữ liệu, hai bộ quyền và hai bảng khác nhau, không gộp được vào một danh sách phân trang.
+
+Subtitle động ngay dưới tiêu đề "Quản lý tài khoản" (chỉ hiện với Staff Leader):
 
 ```text
-Visitor liên quan
+INTERNAL → Quản lý tài khoản của nhân sự phòng IC, trưởng phòng của các phòng ban khác và sinh viên trong cơ sở
+VISITOR  → Tất cả tài khoản của khách đã từng đến thăm cơ sở
 ```
 
-Tab này chỉ hiện với:
+Tách biệt hai chế độ:
+
+```text
+INTERNAL → chỉ gọi API account nội bộ; hiện role filter, card thống kê, nút tạo tài khoản; ẩn nationality filter.
+VISITOR  → chỉ gọi related-visitors + related-visitors/nationalities; hiện nationality filter;
+           ẩn role/department/MSSV/campus filter, card thống kê, nút tạo tài khoản và mọi action quản trị.
+```
+
+Filter state, trang hiện tại và `totalItems`/`totalPages` của hai chế độ hoàn toàn riêng — không dùng chéo.
+
+Chế độ khách chỉ hiện với:
 
 ```text
 role_code = STAFF
 sub_role = LEADER
 ```
 
-Không hiện cho role khác.
+Không hiện cho role khác. ADMIN/HO giữ nguyên UI cũ.
 
 ### 16.2 Cột bảng đề xuất
 
@@ -950,33 +901,34 @@ When Staff Leader HN mở tab Visitor liên quan
 Then Visitor B không xuất hiện
 ```
 
-### AC-03 — Multi-campus pending HO không hiển thị
+### AC-03 — Multi-campus còn chờ duyệt vẫn hiển thị
 
 ```text
 Given Visitor C gửi MULTI_CAMPUS request tới HN + HCM
-And request đang PENDING_APPROVAL
+And request đang PENDING_APPROVAL, cả hai campus instance còn WAITING_REQUEST_APPROVAL
 When Staff Leader HN mở tab Visitor liên quan
-Then Visitor C không xuất hiện
+Then Visitor C xuất hiện ngay
+And Staff Leader HCM cũng thấy Visitor C
+And Staff Leader DN không thấy vì DN không nằm trong request
 ```
 
-### AC-04 — Multi-campus bị HO từ chối không hiển thị
+### AC-04 — Đơn bị từ chối vẫn giữ quan hệ lịch sử
 
 ```text
 Given Visitor D gửi MULTI_CAMPUS request tới HN + HCM
-And HO đã reject request, status = REJECTED
+And request đã REJECTED
 When Staff Leader HN mở tab Visitor liên quan
-Then Visitor D không xuất hiện
+Then Visitor D vẫn xuất hiện (read-only, dữ liệu lịch sử)
 ```
 
-### AC-05 — Multi-campus sau HO approve mới hiển thị
+### AC-05 — PARTIALLY_APPROVED hiển thị cho mọi campus trong đơn
 
 ```text
 Given Visitor C gửi MULTI_CAMPUS request tới HN + HCM
-And HO đã approve request, status = APPROVED
-When Staff Leader HN mở tab Visitor liên quan
-Then Visitor C xuất hiện
-And Staff Leader HCM cũng thấy Visitor C
-And Staff Leader DN không thấy nếu DN không nằm trong request
+And HN đã duyệt, HCM đã từ chối → request status = PARTIALLY_APPROVED
+When Staff Leader HN và Staff Leader HCM mở tab Visitor liên quan
+Then cả hai đều thấy Visitor C
+And Visitor C chỉ chiếm một dòng ở mỗi campus dù có nhiều request
 ```
 
 ### AC-06 — Detail ngoài scope bị chặn
@@ -1012,12 +964,18 @@ Then request này không tạo row account Visitor trong tab
 ```text
 [ ] Staff Leader HN mở tab Visitor liên quan: chỉ thấy Visitor có request liên quan HN.
 [ ] Staff Leader HN không thấy Visitor chỉ liên quan HCM.
-[ ] Multi-campus PENDING_APPROVAL: Staff Leader campus con không thấy Visitor.
-[ ] Multi-campus REJECTED: Staff Leader campus con không thấy Visitor.
-[ ] Multi-campus APPROVED: Staff Leader campus con trong request thấy Visitor.
+[ ] Multi-campus PENDING_APPROVAL: Staff Leader campus trong đơn THẤY Visitor.
+[ ] Multi-campus PARTIALLY_APPROVED: mọi Staff Leader campus trong đơn đều thấy Visitor.
+[ ] Multi-campus REJECTED/CANCELLED: vẫn thấy Visitor (lịch sử read-only).
 [ ] Staff Leader campus không nằm trong multi-campus request không thấy Visitor.
+[ ] Visitor có nhiều request cùng campus: chỉ một dòng, relatedRequestCount đếm DISTINCT request.
+[ ] visitor_user_id NULL hoặc user không còn shape VISITOR: không hiển thị.
 [ ] View detail Visitor trong scope: success.
 [ ] View detail Visitor ngoài scope: 403/404.
+[ ] Dropdown quốc tịch lấy từ endpoint riêng, có Visitor thứ >100 với quốc tịch mới vẫn xuất hiện.
+[ ] Quốc tịch khác casing/thừa khoảng trắng gộp thành một option; filter vẫn khớp.
+[ ] Bộ lọc loại tài khoản của Staff Leader chỉ có 2 option, mặc định "Tài khoản nội bộ".
+[ ] Ở chế độ khách: không gọi API account nội bộ, ẩn nút tạo tài khoản và card thống kê.
 [ ] UI tab Visitor liên quan chỉ có View detail.
 [ ] Gọi API disable/update role/reset password Visitor bằng Staff Leader: 403.
 [ ] Backend/frontend build pass.
@@ -1033,8 +991,12 @@ Triển khai chức năng này theo hướng:
 Thêm tab “Visitor liên quan” trong Account Management của Staff Leader.
 Danh sách Visitor được lấy bằng quan hệ visit_requests + visit_request_campuses.
 Staff Leader chỉ thấy Visitor có request liên quan đến campus của mình.
-Multi-campus chỉ hiển thị sau khi HO approve/release; pending hoặc rejected không hiển thị.
+Quan hệ tính bằng visit_request_campuses của campus đó, không phụ thuộc visit_scope,
+request status hay instance status — kể cả pending, rejected và cancelled.
 Tab Visitor liên quan chỉ read-only: list + detail, không có action quản trị account.
+Bộ lọc loại tài khoản của Staff Leader chỉ có "Tài khoản nội bộ" và "Tài khoản khách",
+mặc định nội bộ; hai chế độ dùng hai API, hai bộ filter và hai pagination tách biệt.
+Dropdown quốc tịch lấy từ endpoint riêng phủ toàn bộ Visitor liên quan.
 ```
 
 Không triển khai theo hướng:
@@ -1044,4 +1006,7 @@ Staff Leader xem toàn bộ Visitor toàn hệ thống.
 Staff Leader quản lý trạng thái/role/password của Visitor.
 Lọc Visitor bằng primary_campus_id.
 Tin campusId do frontend gửi lên.
+Tái tạo logic HO approval/release cũ.
+Suy danh sách quốc tịch từ một trang của API list, hoặc hardcode danh sách quốc gia.
+Gộp dữ liệu nội bộ và Visitor vào cùng một paginated response.
 ```

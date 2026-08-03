@@ -168,6 +168,52 @@ export const delegationsApi = {
     return { blob: response.data as Blob, fileName };
   },
 
+  /**
+   * Prepares (or re-opens) the Host's "Gửi cập nhật chuẩn bị" draft. The backend renders the message,
+   * resolves the recipients and generates the mandatory Schedule Report — the client sends only the
+   * language and whether an existing draft may be re-opened.
+   */
+  async prepareSetupProgressEmailDraft(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    languageCode: 'vi' | 'en' = 'vi',
+    reuseExistingDraft = true,
+  ): Promise<import('../types/delegations.types').SetupProgressEmailDraft> {
+    const { data } = await httpClient.post(
+      API_ENDPOINTS.delegations.setupProgressEmailDraft(visitRequestId, visitInstanceId),
+      { languageCode, reuseExistingDraft },
+    );
+    return data;
+  },
+
+  /** Regenerates the attached report from current data. Recipients, subject and body are untouched. */
+  async refreshSetupProgressEmailReport(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    draftId: number,
+    languageCode?: 'vi' | 'en',
+  ): Promise<import('../types/delegations.types').SetupProgressEmailReport> {
+    const { data } = await httpClient.post(
+      API_ENDPOINTS.delegations.setupProgressEmailRefreshReport(visitRequestId, visitInstanceId, draftId),
+      { languageCode: languageCode ?? null },
+    );
+    return data;
+  },
+
+  /**
+   * Sends the setup-progress draft through its own endpoint, which re-checks host and stage at send
+   * time. The generic draft-send would accept it on ownership alone.
+   */
+  async sendSetupProgressEmailDraft(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    draftId: number,
+  ): Promise<{ emailDraftId: number; sentEmailId: number; status: string; success: boolean; draftStatus: string; message: string }> {
+    const { data } = await httpClient.post(
+      API_ENDPOINTS.delegations.setupProgressEmailSend(visitRequestId, visitInstanceId, draftId));
+    return data;
+  },
+
   /** VisitProcess "Thành phần tham gia": the instance's host snapshot + invited supporters. */
   async getInstanceParticipants(visitInstanceId: number | string): Promise<VisitParticipantListItem[]> {
     const { data } = await httpClient.get<VisitParticipantListItem[]>(
@@ -361,17 +407,6 @@ export const delegationsApi = {
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.saveAgenda(visitRequestId, visitInstanceId), { items, plannedStartAt, plannedEndAt });
-    return data;
-  },
-
-  /** Emails the campus's operational contact (Host only, prep window) the current agenda so both
-   * sides can discuss/confirm it. Reply-To + Cc go to the assigned Host. */
-  async sendVisitAgendaEmail(
-    visitRequestId: number | string,
-    visitInstanceId: number | string,
-  ): Promise<{ status: string; sentAt: string | null; message: string }> {
-    const { data } = await httpClient.post<{ status: string; sentAt: string | null; message: string }>(
-      API_ENDPOINTS.delegations.sendAgendaEmail(visitRequestId, visitInstanceId), {});
     return data;
   },
 

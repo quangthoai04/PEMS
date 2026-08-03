@@ -29,7 +29,8 @@ import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitProcessPermission, VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
+import type { VisitProcessPermission, VisitProcessDetail, SetupProgressEmailDraft } from '../../../features/delegations/types/delegations.types';
+import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
 import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
@@ -94,10 +95,12 @@ export function VisitProcess() {
 
   const [activeTab, setActiveTab] = useState(isReceptionDetail ? 'before' : (location.state?.defaultTab || 'before'));
   const isPrep = (currentStatus === 'Đang chuẩn bị' || currentStatus === 'Trước tiếp khách') && !isClosed;
-  // Vào tab "Trước tiếp khách" ưu tiên mở "1. Thông tin chung" (bản đăng ký gốc của khách,
-  // chỉ đọc); "2. Chuẩn bị chi tiết" không mở mặc định. Effect bên dưới đồng bộ lại khi đổi tab.
+  // Vào tab "Trước tiếp khách" mở sẵn cả "1. Thông tin chung" (kèm ba mục con) lẫn
+  // "2. Chuẩn bị chi tiết": Host cần nhìn thấy toàn bộ phần chuẩn bị ngay khi vào trang thay vì
+  // phải bung từng khối. Thu gọn thủ công vẫn giữ nguyên — đây chỉ là trạng thái mặc định.
+  // Effect bên dưới đặt lại đúng năm trạng thái này mỗi lần quay lại tab.
   const [isInfoExpanded, setIsInfoExpanded] = useState(true);
-  const [isSetupExpanded, setIsSetupExpanded] = useState(false);
+  const [isSetupExpanded, setIsSetupExpanded] = useState(true);
   const [isAlbumExpanded, setIsAlbumExpanded] = useState(false);
   const [isNewsExpanded, setIsNewsExpanded] = useState(false);
   
@@ -106,21 +109,22 @@ export function VisitProcess() {
   const [isSection3Expanded, setIsSection3Expanded] = useState(true);
   const [isSection4Expanded, setIsSection4Expanded] = useState(true);
 
-  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(false);
-  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(false);
+  const [isInfoSection1Expanded, setIsInfoSection1Expanded] = useState(true);
+  const [isInfoSection2Expanded, setIsInfoSection2Expanded] = useState(true);
   const [isInfoSection3Expanded, setIsInfoSection3Expanded] = useState(true);
 
   const [isInfoEditableState, setIsInfoEditable] = useState(false);
 
-  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mặc định đóng mục 1 (Thông tin người tạo)
-  // và mục 2 (Thông tin đoàn khách), đồng thời mở mặc định mục 3 (Thiết lập & Điều phối sự kiện)
-  // để người dùng dễ dàng thao tác chuẩn bị sự kiện.
+  // Mỗi khi vào (hoặc quay lại) tab "Trước tiếp khách": mở lại cả năm khối — "1. Thông tin chung"
+  // với ba mục con (Thông tin người tạo / Thông tin đoàn khách / Thiết lập & Điều phối sự kiện) và
+  // "2. Chuẩn bị chi tiết". Rời tab rồi quay lại là một lần vào mới, nên trạng thái thu gọn thủ
+  // công của lần trước không được giữ lại.
   useEffect(() => {
     if (activeTab === 'before') {
       setIsInfoExpanded(true);
-      setIsSetupExpanded(false);
-      setIsInfoSection1Expanded(false);
-      setIsInfoSection2Expanded(false);
+      setIsSetupExpanded(true);
+      setIsInfoSection1Expanded(true);
+      setIsInfoSection2Expanded(true);
       setIsInfoSection3Expanded(true);
     }
   }, [activeTab]);
@@ -302,6 +306,38 @@ export function VisitProcess() {
     link.remove();
   };
 
+  // ── "Gửi cập nhật chuẩn bị" (Host only) ────────────────────────────────────
+  // The backend builds the whole draft: rendered message, default recipients and the mandatory
+  // Schedule Report. This screen only asks for a language, opens the composer on the draft it gets
+  // back, and lets the Host edit everything before previewing and sending. The button is rendered
+  // from the backend flag alone — never from roleCode, because Staff Leader and HO read this same
+  // page and can pull the same report without being allowed to write to the guest as its host.
+  const [setupEmail, setSetupEmail] = useState<{
+    picking: boolean;
+    preparing: boolean;
+    error: string | null;
+    draft: SetupProgressEmailDraft | null;
+  }>({ picking: false, preparing: false, error: null, draft: null });
+
+  const prepareSetupProgressEmail = async (language: 'vi' | 'en', reuseExistingDraft = true) => {
+    if (!perm || setupEmail.preparing) return;
+    setSetupEmail(prev => ({ ...prev, preparing: true, error: null }));
+    try {
+      const draft = await delegationsApi.prepareSetupProgressEmailDraft(
+        perm.visitRequestId, perm.visitInstanceId, language, reuseExistingDraft);
+      setSetupEmail({ picking: false, preparing: false, error: null, draft });
+    } catch (e: any) {
+      setSetupEmail(prev => ({
+        ...prev,
+        preparing: false,
+        error: apiErrorMessage(e, 'Không chuẩn bị được email cập nhật. Vui lòng thử lại sau.'),
+      }));
+    }
+  };
+
+  const closeSetupEmail = () =>
+    setSetupEmail({ picking: false, preparing: false, error: null, draft: null });
+
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
   // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
   // Each row keeps the FULL local wall-clock datetime (YYYY-MM-DDTHH:mm), not just HH:mm — agenda
@@ -323,7 +359,6 @@ export function VisitProcess() {
   const [detailLoadError, setDetailLoadError] = useState(false);
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
   const [isSavingAgenda, setIsSavingAgenda] = useState(false);
-  const [isSendingAgendaEmail, setIsSendingAgendaEmail] = useState(false);
   const [remindersLoadFailed, setRemindersLoadFailed] = useState(false);
   // ── Planned visit window (visit_request_campuses.planned_start_at/end_at), editable from this tab.
   // Draft only takes effect once "Lưu lịch trình" is pressed — same as every agenda row edit. ──
@@ -369,15 +404,6 @@ export function VisitProcess() {
       return `${t} ${day}/${m}/${y}`;
     };
     return `${fmt(startLocal)} → ${fmt(endLocal)}`;
-  };
-
-  // "HH:mm dd/MM/yyyy" for the "Đã gửi lúc ..." hint under the send-agenda button.
-  const formatSentAt = (value?: string | null): string | null => {
-    const d = getDatePart(value);
-    const t = getTimePart(value);
-    if (!d || !t) return null;
-    const [y, m, day] = d.split('-');
-    return `${t} ${day}/${m}/${y}`;
   };
 
   const isSingleDayVisit = React.useMemo(() => {
@@ -616,27 +642,6 @@ export function VisitProcess() {
       }
     } finally {
       setIsSavingAgenda(false);
-    }
-  };
-
-  // Emails the campus's operational contact the current (saved) agenda so both sides can discuss and
-  // confirm it. Reply-To/Cc go to the Host (backend-resolved) — no recipient chosen from the frontend.
-  const sendAgendaEmail = async () => {
-    if (!perm || !detail || isSendingAgendaEmail) return;
-    try {
-      setIsSendingAgendaEmail(true);
-      const res = await delegationsApi.sendVisitAgendaEmail(perm.visitRequestId, perm.visitInstanceId);
-      pushToast(res.status === 'FAILED' ? 'error' : 'success', res.message || 'Đã gửi lịch trình.');
-      await loadDetail();
-    } catch (e: any) {
-      const status = e?.response?.status;
-      if (status === 403) {
-        pushToast('error', 'Bạn không có quyền gửi lịch trình của chuyến này.');
-      } else {
-        pushToast('error', apiErrorMessage(e, 'Không thể gửi lịch trình. Vui lòng thử lại.'));
-      }
-    } finally {
-      setIsSendingAgendaEmail(false);
     }
   };
 
@@ -965,6 +970,7 @@ export function VisitProcess() {
             <AnimatePresence>
               {isInfoExpanded && (
                 <motion.div
+                  data-testid="before-info-body"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -993,6 +999,7 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection1Expanded && (
                           <motion.div
+                            data-testid="before-registrant-body"
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
@@ -1027,6 +1034,7 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection2Expanded && (
                           <motion.div
+                            data-testid="before-delegation-body"
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
@@ -1054,6 +1062,7 @@ export function VisitProcess() {
                       <AnimatePresence>
                         {isInfoSection3Expanded && (
                           <motion.div
+                            data-testid="before-setup-body"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -1389,23 +1398,6 @@ export function VisitProcess() {
                                   {isSavingAgenda ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                                   {isSavingAgenda ? 'Đang lưu...' : 'Lưu lịch trình'}
                                 </button>
-                                {hasCurrentAgenda && (
-                                  <div className="flex flex-col gap-0.5">
-                                    <button type="button"
-                                      disabled={isSendingAgendaEmail || !detail?.operationalContactEmail}
-                                      onClick={sendAgendaEmail}
-                                      title={!detail?.operationalContactEmail ? 'Cơ sở này chưa có email đầu mối liên hệ.' : undefined}
-                                      className="inline-flex items-center gap-2 rounded-xl border border-[#004c91] bg-white px-5 py-2 text-sm font-bold text-[#004c91] hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed outline-none">
-                                      {isSendingAgendaEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                                      {isSendingAgendaEmail ? 'Đang gửi...' : 'Gửi lịch trình'}
-                                    </button>
-                                    {detail?.agendaEmailLastSentAt && (
-                                      <span className="text-xs text-slate-400">
-                                        Đã gửi lúc {formatSentAt(detail.agendaEmailLastSentAt)}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
                               </div>
                             )}
                           </div>
@@ -1602,6 +1594,7 @@ export function VisitProcess() {
             <AnimatePresence>
               {isSetupExpanded && (
                 <motion.div
+                  data-testid="before-prep-body"
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
@@ -1711,8 +1704,10 @@ export function VisitProcess() {
         </div>
       )}
 
+      {/* Action row — deliberately OUTSIDE the collapsible panels above: a send button that
+          disappears when the Host folds a section is a button they cannot find. */}
       {perm && (
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
           <button
             type="button"
             disabled={scheduleReportModal.loading}
@@ -1722,6 +1717,19 @@ export function VisitProcess() {
             {scheduleReportModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {scheduleReportModal.loading ? 'Đang tạo báo cáo...' : 'Báo cáo Lịch trình'}
           </button>
+
+          {perm.canSendSetupProgressEmail && (
+            <button
+              type="button"
+              data-testid="send-setup-progress-email"
+              disabled={setupEmail.preparing}
+              onClick={() => setSetupEmail(prev => ({ ...prev, picking: true, error: null }))}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#013565] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {setupEmail.preparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              {setupEmail.preparing ? 'Đang chuẩn bị email...' : 'Gửi cập nhật chuẩn bị'}
+            </button>
+          )}
         </div>
       )}
 
@@ -1968,6 +1976,96 @@ export function VisitProcess() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* "Gửi cập nhật chuẩn bị" — step 1: the language, asked BEFORE the draft is built.
+          The template and the attached report must be produced in the same language, and both are
+          rendered server-side at prepare time, so this cannot be a toggle inside the composer
+          without re-rendering over whatever the Host has already written. */}
+      {setupEmail.picking && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4" data-testid="setup-email-language">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeSetupEmail} />
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h3 className="flex items-center gap-2 text-base font-bold text-[#004c91]">
+                <Mail className="w-5 h-5" /> Gửi cập nhật chuẩn bị
+              </h3>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-gray-600">
+                Chọn ngôn ngữ cho nội dung email và Báo cáo Lịch trình đính kèm. Sau bước này anh/chị
+                vẫn sửa được người nhận, tiêu đề và nội dung trước khi gửi.
+              </p>
+              {setupEmail.error && (
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {setupEmail.error}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={setupEmail.preparing}
+                  onClick={() => { void prepareSetupProgressEmail('vi'); }}
+                  className="flex-1 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#013565] disabled:opacity-60"
+                >
+                  Tiếng Việt
+                </button>
+                <button
+                  type="button"
+                  disabled={setupEmail.preparing}
+                  onClick={() => { void prepareSetupProgressEmail('en'); }}
+                  className="flex-1 rounded-xl border border-[#004c91] bg-white px-4 py-2.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-60"
+                >
+                  English
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end border-t border-gray-100 px-6 py-4">
+              <button type="button" onClick={closeSetupEmail}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100">
+                Huỷ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: the shared composer, opened on the draft the backend just built. Keyed by draft id
+          so a second draft never inherits the first one's form state. */}
+      {perm && setupEmail.draft && (
+        <EmailComposeModal
+          key={`setup-progress-${setupEmail.draft.draftId}`}
+          open
+          onClose={closeSetupEmail}
+          onSent={closeSetupEmail}
+          pushToast={pushToast}
+          contextTitle="Gửi cập nhật chuẩn bị"
+          initialDraftId={setupEmail.draft.draftId}
+          // The body as generated. The composer compares the draft it loads against this to know
+          // whether the Host has edited it, and so whether a sync must warn before overwriting.
+          initialBodyHtml={setupEmail.draft.bodyHtml}
+          relatedType="VISIT_INSTANCE"
+          relatedId={Number(perm.visitInstanceId)}
+          lockedTemplate
+          lockedAttachmentFileIds={[setupEmail.draft.reportFileId]}
+          notices={setupEmail.draft.warnings}
+          onRefreshRequiredAttachment={async () => {
+            const fresh = await delegationsApi.refreshSetupProgressEmailReport(
+              perm.visitRequestId, perm.visitInstanceId, setupEmail.draft!.draftId);
+            setSetupEmail(prev => prev.draft
+              ? { ...prev, draft: { ...prev.draft, reportFileId: fresh.reportFileId, reportFileName: fresh.reportFileName, reportGeneratedAt: fresh.reportGeneratedAt } }
+              : prev);
+            // The body comes back too: it and the PDF are one snapshot, so the composer replaces both.
+            return {
+              fileId: fresh.reportFileId,
+              name: fresh.reportFileName,
+              generatedAt: fresh.reportGeneratedAt,
+              bodyHtml: fresh.bodyHtml,
+            };
+          }}
+          sendDraftOverride={(draftId) =>
+            delegationsApi.sendSetupProgressEmailDraft(perm.visitRequestId, perm.visitInstanceId, draftId)}
+        />
+      )}
 
       {/* Toasts (top-right) */}
       {toasts.length > 0 && (

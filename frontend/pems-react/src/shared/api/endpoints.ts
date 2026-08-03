@@ -61,6 +61,10 @@ export const API_ENDPOINTS = {
     // Staff Leader "Visitor liên quan" tab (read-only): list + detail of related Visitor accounts.
     relatedVisitors: '/accounts/related-visitors',
     relatedVisitorDetails: '/accounts/related-visitor-details',
+    // Nationality filter options, built server-side from EVERY related Visitor of the campus.
+    // Its own endpoint on purpose: deriving the options from the first page of the list above
+    // would drop any nationality that only appears further down.
+    relatedVisitorNationalities: '/accounts/staff-leader/related-visitors/nationalities',
   },
   // Department Leader personnel management (/dashboard/my-department). Every route is scoped to the
   // caller's OWN department server-side — deliberately no departmentId parameter anywhere, which is
@@ -234,11 +238,20 @@ export const API_ENDPOINTS = {
     // "Báo cáo Lịch trình" PDF — same scope as processDetail (403 in the handler otherwise).
     scheduleReportPdf: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/schedule-report/pdf`,
+    // "Gửi cập nhật chuẩn bị" — current host only; every route re-derives host + prep window
+    // server-side, so a handover between opening the composer and sending is refused.
+    setupProgressEmailDraft: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/draft`,
+    setupProgressEmailRefreshReport: (
+      visitRequestId: string | number, visitInstanceId: string | number, draftId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/drafts/${draftId}/refresh-report`,
+    // Deliberately NOT the generic /Emails/drafts/{id}/send: that one asks only "is this your draft",
+    // which stays true for a host who has since been replaced.
+    setupProgressEmailSend: (
+      visitRequestId: string | number, visitInstanceId: string | number, draftId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/drafts/${draftId}/send`,
     saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
-    // Emails the campus's operational contact the current agenda (Host only, prep window).
-    sendAgendaEmail: (visitRequestId: string | number, visitInstanceId: string | number) =>
-      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda/send-email`,
     // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).
     agendaResponsibleCandidates: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/agenda-responsible-candidates`,

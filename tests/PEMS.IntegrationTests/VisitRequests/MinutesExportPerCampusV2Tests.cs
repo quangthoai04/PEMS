@@ -94,6 +94,18 @@ public sealed class MinutesExportPerCampusV2Tests
         public Task CreateAsync(CreateNotificationRequest r, CancellationToken ct) => Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Archiving the export to Drive is best-effort and deliberately outside what this suite measures
+    /// (which campus may export whose minute). Doing nothing here keeps the assertions about the
+    /// returned bytes rather than about a Drive round-trip.
+    /// </summary>
+    private sealed class SilentReportArchive : PEMS.Application.Reports.Common.IReportArchiveService
+    {
+        public Task ArchiveAsync(byte[] content, string fileName, string contentType,
+            string documentCategory, ulong? campusId, ulong userId, CancellationToken ct)
+            => Task.CompletedTask;
+    }
+
     private static readonly PerCampusFormV2Options ReadOn = new() { Enabled = true };
     private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };
 
@@ -264,13 +276,15 @@ public sealed class MinutesExportPerCampusV2Tests
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     new ExportMinutesPdfQueryHandler(
-                            db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Leader, CampusHn))
+                            db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Leader, CampusHn),
+                            new SilentReportArchive())
                         .Handle(new ExportMinutesPdfQuery { MinutesId = hcmMinute }, CancellationToken.None));
 
             // HO (no fixed campus) may export it, and the PDF bytes come out non-empty.
             using (var db = NewContext())
             {
-                var pdf = await new ExportMinutesPdfQueryHandler(db, new FakeUser(500, RoleCodes.Ho))
+                var pdf = await new ExportMinutesPdfQueryHandler(
+                        db, new FakeUser(500, RoleCodes.Ho), new SilentReportArchive())
                     .Handle(new ExportMinutesPdfQuery { MinutesId = hcmMinute }, CancellationToken.None);
                 Assert.NotEmpty(pdf);
             }

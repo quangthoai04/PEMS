@@ -72,6 +72,20 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Reports.Common.IReportArchiveService,
             PEMS.Application.Reports.Common.ReportArchiveService>();
 
+        // "Báo cáo Lịch trình" for one campus instance — shared by the VisitProcess download and the
+        // setup-progress email, so the two can never render a different document from the same data.
+        services.AddScoped<PEMS.Application.Delegations.Queries.ExportScheduleReport.IScheduleReportArtifactService,
+            PEMS.Application.Delegations.Queries.ExportScheduleReport.ScheduleReportArtifactService>();
+
+        // Default TO/CC/BCC of the Host's setup-progress email, derived from the instance rather than
+        // from whatever the compose screen had loaded.
+        services.AddScoped<PEMS.Application.Delegations.SetupProgressEmail.IVisitSetupProgressRecipientResolver,
+            PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressRecipientResolver>();
+
+        // One draft-send pipeline behind both the generic compose screen and the setup-progress send.
+        services.AddScoped<PEMS.Application.Emails.Common.IEmailDraftDispatcher,
+            PEMS.Application.Emails.Common.EmailDraftDispatcher>();
+
         return services;
     }
 }

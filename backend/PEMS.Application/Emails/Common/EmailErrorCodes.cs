@@ -196,6 +196,20 @@ public static class EmailErrorCodes
     public const string TemplateActionBlockRequired = "EMAIL_TEMPLATE_ACTION_BLOCK_REQUIRED";
 
     /// <summary>
+    /// The stored body of a template whose content IS a trusted block no longer contains that block's
+    /// placeholder, so the block the caller built had nowhere to go.
+    ///
+    /// <para>
+    /// Its own code because the failure is a data defect with a known repair — the database row has
+    /// fallen behind the canonical template and must be re-synced — and not a fault in the sending code
+    /// or the caller's variables. Without it this went out silently: substitution has nothing to replace,
+    /// the unresolved-placeholder guard sees no leftover braces, and the recipient gets a covering
+    /// sentence announcing an update that is not in the mail.
+    /// </para>
+    /// </summary>
+    public const string TemplateRequiredBlockNotInBody = "EMAIL_TEMPLATE_REQUIRED_BLOCK_NOT_IN_BODY";
+
+    /// <summary>
     /// A create, delete, clone or status change was attempted against the system template catalog. The
     /// catalog is fixed in code: a template code exists because a caller in a release sends it, so one
     /// invented through the API would be a row nothing can ever address.

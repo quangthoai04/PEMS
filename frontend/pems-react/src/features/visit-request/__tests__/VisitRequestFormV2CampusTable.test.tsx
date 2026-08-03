@@ -121,6 +121,12 @@ describe('VisitRequestFormV2 — campus limit and member tables', () => {
   it('renders guests and support members as tables with the v1 column set', () => {
     render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
 
+    // A card opens with one guest row and NO support row, and an empty support list is drawn as a
+    // placeholder rather than a headerless table (commit f172e531). Add one so there is a table to
+    // check — the column set is the assertion, and it only exists once the section has a row.
+    expect(screen.getByText('visitRequestV2:person.noSupportTeam')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText('visitRequestV2:card.addSupport')[0]);
+
     for (const kind of ['visitors', 'supportTeam']) {
       const table = screen.getByTestId(`v2-${kind}-table`);
       const headers = within(table).getAllByRole('columnheader').map(h => h.textContent);
@@ -147,7 +153,9 @@ describe('VisitRequestFormV2 — campus limit and member tables', () => {
     expect(ordinals()).toEqual(['1', '2', '3']);
 
     // Remove the FIRST row — the remaining rows must be renumbered, not keep 2 and 3.
-    fireEvent.click(within(table).getAllByLabelText('visitRequestV2:card.removeRow')[0]);
+    // The desktop table labels this button per section (person.removeGuest / person.removeSupport);
+    // card.removeRow survives only on the stacked mobile variant, which is not the table queried here.
+    fireEvent.click(within(table).getAllByLabelText('visitRequestV2:person.removeGuest')[0]);
     expect(ordinals()).toEqual(['1', '2']);
   });
 

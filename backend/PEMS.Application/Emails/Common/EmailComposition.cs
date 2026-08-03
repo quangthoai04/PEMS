@@ -61,11 +61,25 @@ public static class EmailComposition
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
-    public static string DetailLinkBlock(string detailUrl, string label = "Mở yêu cầu để xử lý")
-        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+    /// <summary>
+    /// A single login-required link. <paramref name="note"/> is the sentence printed under the button and
+    /// MUST describe what this particular recipient can do there — the default names the Department
+    /// Leader's options because that is the flow this block was written for, and it is wrong for every
+    /// other caller. The expense reminder passes its own; a caller that has nothing to add passes "".
+    /// </summary>
+    public static string DetailLinkBlock(
+        string detailUrl,
+        string label = "Mở yêu cầu để xử lý",
+        string note = "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.")
+    {
+        var noteHtml = string.IsNullOrWhiteSpace(note)
+            ? string.Empty
+            : $@"<p style=""color:#6b7280;font-size:12px;margin-top:8px"">{HE(note)}</p>";
+
+        return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.</p>");
+        </div>{noteHtml}");
+    }
 
     public static string LogisticsActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Hành động khác")
     {
@@ -111,41 +125,6 @@ public static class EmailComposition
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xem chi tiết chuyến tiếp khách</a>
         </div>
         <p style=""color:#6b7280;font-size:12px"">Liên kết yêu cầu đăng nhập hệ thống PEMS.</p>");
-
-    /// <summary>
-    /// The agenda table injected into VISIT_AGENDA_PROPOSAL ({{agendaBlock}}). Unlike the blocks above this
-    /// is NOT wrapped in <see cref="WrapActionBlock"/> — there is no one-time token to strip from the email
-    /// history here (the template is registered with <c>HasSensitiveAction: false</c>, so the history keeps
-    /// the full body anyway). Every field is Host-typed free text, so each one is HTML-encoded via
-    /// <see cref="HE"/> before it reaches the markup — this is the one place in this email where
-    /// unescaped user input could otherwise land in a raw HTML message.
-    /// </summary>
-    public static string AgendaListBlock(
-        IReadOnlyList<(string Time, string Title, string? Location, string? Responsible)> items)
-    {
-        var rows = new StringBuilder();
-        foreach (var it in items)
-        {
-            rows.Append($@"<tr>
-                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;font-weight:bold;white-space:nowrap;vertical-align:top"">{HE(it.Time)}</td>
-                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top"">{HE(it.Title)}</td>
-                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top"">{HE(it.Location ?? "")}</td>
-                <td style=""padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top"">{HE(it.Responsible ?? "")}</td>
-            </tr>");
-        }
-
-        return $@"<table style=""width:100%;border-collapse:collapse;margin:16px 0;font-size:13px"">
-            <thead>
-                <tr style=""background:#f3f4f6;text-align:left"">
-                    <th style=""padding:8px 10px"">Thời gian</th>
-                    <th style=""padding:8px 10px"">Nội dung</th>
-                    <th style=""padding:8px 10px"">Địa điểm</th>
-                    <th style=""padding:8px 10px"">Người phụ trách</th>
-                </tr>
-            </thead>
-            <tbody>{rows}</tbody>
-        </table>";
-    }
 
     // ── Account action blocks ──
     // The URL is built by the backend from App:FrontendBaseUrl and, for confirmation, carries a
@@ -236,6 +215,32 @@ public static class EmailComposition
 
         return $@"<div style=""text-align:center;margin:24px 0"">
             <span style=""display:inline-block;border:1px dashed #9aa6b2;color:#6b7280;font-size:13px;padding:12px 22px;border-radius:10px"">{HE(text)}</span>
+        </div>";
+    }
+
+    /// <summary>
+    /// Stand-in for the setup-progress tables in a preview.
+    ///
+    /// <para>
+    /// A preview has no visit, so there is no setup to tabulate — and inventing one would show an
+    /// operator a delegation, guests and a schedule that do not exist, which is worse than showing
+    /// nothing: it reads as real data and invites edits to content the template does not control.
+    /// This says where the tables go and where they come from, and stops there.
+    /// </para>
+    /// <para>
+    /// It must be supplied even though it is inert. Without it the placeholder stays unresolved and the
+    /// renderer fails the preview closed, so the template-management screen would refuse to preview the
+    /// one template that uses it.
+    /// </para>
+    /// </summary>
+    public static string DisabledSetupSummaryBlock(string language)
+    {
+        var text = EmailLanguages.Normalize(language) == EmailLanguages.En
+            ? "Setup tables — visit overview, delegation members, FPT participants, schedule and preparation status. The system builds them from the visit's data when the email is sent."
+            : "Bảng thông tin chuẩn bị — thông tin chung, danh sách khách, thành phần phía FPT, lịch trình và trạng thái chuẩn bị. Hệ thống dựng từ dữ liệu chuyến thăm khi gửi email thật.";
+
+        return $@"<div style=""margin:18px 0"">
+            <span style=""display:block;border:1px dashed #9aa6b2;color:#6b7280;font-size:13px;padding:14px 18px;border-radius:10px"">{HE(text)}</span>
         </div>";
     }
 

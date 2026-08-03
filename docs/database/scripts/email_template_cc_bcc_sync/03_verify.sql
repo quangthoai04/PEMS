@@ -8,7 +8,7 @@
 --
 -- Two kinds of check live here, and the difference matters:
 --
---   INTRINSIC — true of the end state on its own ("all 30 canonical codes are ACTIVE", "no legacy
+--   INTRINSIC — true of the end state on its own ("all 31 canonical codes are ACTIVE", "no legacy
 --   code is ACTIVE", "variables_text matches the placeholders actually used"). Every one of these
 --   reports PASS or FAIL in the `verdict` column, and section Z fails the whole run if any did.
 --
@@ -54,7 +54,8 @@ INSERT INTO _pems_canonical_codes (template_code) VALUES
   ('LOGISTICS_REQUEST_TO_DEPARTMENT'),('LOGISTICS_ASSIGNEE_ASSIGNMENT'),
   ('LOGISTICS_CHANGE_PROPOSAL_TO_HOST'),('LOGISTICS_EXPENSE_REPORT_REMINDER'),
   ('REPORT_CAMPUS_OPERATION'),('REPORT_DEPARTMENT_COLLABORATION'),
-  ('REPORT_DEPARTMENT_INVOICE'),('REPORT_PERSONNEL_PERFORMANCE');
+  ('REPORT_DEPARTMENT_INVOICE'),('REPORT_PERSONNEL_PERFORMANCE'),
+  ('VISIT_SETUP_PROGRESS_UPDATE');
 
 DROP TEMPORARY TABLE IF EXISTS _pems_legacy_codes;
 CREATE TEMPORARY TABLE _pems_legacy_codes (template_code VARCHAR(100) PRIMARY KEY) ENGINE=InnoDB;
@@ -67,7 +68,7 @@ INSERT INTO _pems_legacy_codes (template_code) VALUES
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'A1', 'every canonical code exists (no caller without a template)',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
-       IF(COUNT(*) = 0, '30 codes present', CONCAT('missing: ', GROUP_CONCAT(c.template_code)))
+       IF(COUNT(*) = 0, '31 codes present', CONCAT('missing: ', GROUP_CONCAT(c.template_code)))
 FROM _pems_canonical_codes c
 LEFT JOIN email_templates t ON t.template_code = c.template_code
 WHERE t.email_template_id IS NULL;
@@ -139,7 +140,7 @@ SELECT '── D. Canonical rows carry both languages ────────�
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'D1', 'no canonical template missing VI or EN',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
-       IF(COUNT(*) = 0, 'all 30 bilingual', CONCAT('incomplete: ', GROUP_CONCAT(t.template_code)))
+       IF(COUNT(*) = 0, 'all 31 bilingual', CONCAT('incomplete: ', GROUP_CONCAT(t.template_code)))
 FROM _pems_canonical_codes c
 JOIN email_templates t ON t.template_code = c.template_code
 WHERE t.subject_vi IS NULL OR t.subject_vi = '' OR t.body_vi IS NULL OR t.body_vi = ''
@@ -148,9 +149,17 @@ WHERE t.subject_vi IS NULL OR t.subject_vi = '' OR t.body_vi IS NULL OR t.body_v
 
 SELECT '── E. variables_text matches the placeholders actually used ────' AS ``;
 
--- Both sides expanded to rows, then compared as sets. {{actionBlock}} is excluded on the text side:
--- the backend injects it as trusted HTML and it is deliberately not an editable variable, so a
--- template that uses it must NOT list it.
+-- Both sides expanded to rows, then compared as sets. TRUSTED BLOCKS are excluded on the text side:
+-- the backend injects them as trusted HTML and they are deliberately not editable variables, so a
+-- template that uses one must NOT list it.
+--
+-- The set must stay in step with EmailTrustedBlocks in the backend (PEMS.Application.Common.Interfaces):
+--   actionBlock       — accept/decline/detail buttons carrying real one-time tokens
+--   setupSummaryBlock — the setup-progress tables (overview, guests, participants, schedule,
+--                       preparation status) built from VisitSetupSnapshot
+-- A block missing from this list makes E1 report the template as having an "unlisted" variable, and
+-- adding it to variables_text to silence that would be the wrong fix: it would offer an operator a
+-- field they must never be able to supply.
 DROP TEMPORARY TABLE IF EXISTS _pems_used_vars;
 CREATE TEMPORARY TABLE _pems_used_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
 
@@ -173,7 +182,8 @@ WITH RECURSIVE scan AS (
 )
 SELECT DISTINCT template_code, var_name
 FROM scan
-WHERE var_name IS NOT NULL AND var_name <> '' AND var_name <> 'actionBlock';
+WHERE var_name IS NOT NULL AND var_name <> ''
+  AND var_name NOT IN ('actionBlock', 'setupSummaryBlock');
 
 DROP TEMPORARY TABLE IF EXISTS _pems_listed_vars;
 CREATE TEMPORARY TABLE _pems_listed_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
@@ -227,15 +237,18 @@ FROM _pems_used_vars
 -- would match every name, and BINARY casts to the binary charset, which REGEXP_LIKE rejects.
 WHERE REGEXP_LIKE(var_name, '^[A-Z]', 'c');
 
--- E4: no token/OTP/action-URL variable may be an editable template variable. Those are minted per
--- send and injected as {{actionBlock}}; making one editable would let a template move or forge it.
+-- E4: no token/OTP/action-URL variable, and no trusted block, may be an editable template variable.
+-- Those are produced per send and injected by the backend; making one editable would let a template
+-- move or forge it. setupSummaryBlock is included for the same reason as actionBlock: listing it
+-- would offer an operator a field whose value is the shareable-data allow-list itself.
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
 SELECT 'E4', 'no token/URL variable is editable content',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'none',
           CONCAT('offenders: ', GROUP_CONCAT(CONCAT(template_code, '.', var_name))))
 FROM _pems_listed_vars
-WHERE LOWER(var_name) IN ('actionblock','actionurl','token','rawtoken','confirmurl','reseturl','link','url');
+WHERE LOWER(var_name) IN ('actionblock','setupsummaryblock','actionurl','token','rawtoken',
+                          'confirmurl','reseturl','link','url');
 
 SELECT u.template_code, COUNT(*) AS placeholders_used
 FROM _pems_used_vars u GROUP BY u.template_code ORDER BY u.template_code;

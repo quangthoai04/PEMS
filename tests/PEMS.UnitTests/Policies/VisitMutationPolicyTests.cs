@@ -182,13 +182,28 @@ public class VisitMutationPolicyTests
         Assert.True(asLeader.Allowed);
     }
 
+    /// <summary>
+    /// Deciding a proposal is campus governance: the Staff Leader who owns the campus approves or
+    /// rejects it. Both directions are asserted because the interesting exclusion is the HOST — the
+    /// proposals that matter most are the ones that alter the Host's own visit, so a Host who could
+    /// approve them would be reviewing themself. The requester is excluded for the obvious reason.
+    /// </summary>
     [Fact]
     public void ApproveAmendment_RequiresTheCampusLeader()
     {
+        var asLeader = Evaluate(
+            VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.CampusLeader);
+        Assert.True(asLeader.Allowed);
+
         var asRequester = Evaluate(
             VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.Requester);
         Assert.False(asRequester.Allowed);
         Assert.Equal(VisitMutationErrorCodes.RelationNotAllowed, asRequester.ErrorCode);
+
+        var asHost = Evaluate(
+            VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.Host);
+        Assert.False(asHost.Allowed);
+        Assert.Equal(VisitMutationErrorCodes.RelationNotAllowed, asHost.ErrorCode);
     }
 
     [Fact]

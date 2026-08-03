@@ -156,14 +156,6 @@ public sealed class GetVisitProcessDetailQueryHandler
             }
         }
 
-        // ── "Gửi lịch trình" (VISIT_AGENDA_PROPOSAL) — most recent send, for the "Đã gửi lúc ..." hint. ──
-        var lastAgendaEmail = await _db.SentEmails
-            .Where(e => e.RelatedType == "VISIT_INSTANCE" && e.RelatedId == instance.VisitInstanceId
-                        && e.EmailTemplate != null && e.EmailTemplate.TemplateCode == SystemEmailTemplates.VisitAgendaProposal)
-            .OrderByDescending(e => e.CreatedAt)
-            .Select(e => new { e.CreatedAt, e.Status })
-            .FirstOrDefaultAsync(cancellationToken);
-
         // ── INSTANCE-LEVEL form content (this screen is keyed by visit_instance_id, so a MIXED request
         // still returns 200). Pure V2: source ONLY the TARGET instance's detail + its own member links,
         // never a sibling campus — there is no global snapshot left to fall back to. ──
@@ -342,10 +334,6 @@ public sealed class GetVisitProcessDetailQueryHandler
             Relation = relation,
             CanEditBefore = canEditBefore,
             PreparationNote = instance.PreparationNote,
-            OperationalContactFullName = d.OperationalContact.FullName,
-            OperationalContactEmail = d.OperationalContact.Email,
-            AgendaEmailLastSentAt = lastAgendaEmail?.CreatedAt,
-            AgendaEmailLastSentStatus = lastAgendaEmail?.Status,
             Agenda = agenda,
             RequestSummary = requestSummary,
             Host = hostDto,
