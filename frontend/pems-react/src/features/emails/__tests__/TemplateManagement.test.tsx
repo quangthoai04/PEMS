@@ -14,6 +14,8 @@ const getEmailTemplateDetail = vi.fn();
 const getEmailTemplateContract = vi.fn();
 const updateEmailTemplate = vi.fn();
 const restoreEmailTemplateDefault = vi.fn();
+const getEmailContactSettings = vi.fn();
+const updateEmailContactSettings = vi.fn();
 
 vi.mock('../../../features/emails/api/emailsApi', () => ({
   emailsApi: {
@@ -22,6 +24,8 @@ vi.mock('../../../features/emails/api/emailsApi', () => ({
     getEmailTemplateContract: (...a: unknown[]) => getEmailTemplateContract(...a),
     updateEmailTemplate: (...a: unknown[]) => updateEmailTemplate(...a),
     restoreEmailTemplateDefault: (...a: unknown[]) => restoreEmailTemplateDefault(...a),
+    getEmailContactSettings: (...a: unknown[]) => getEmailContactSettings(...a),
+    updateEmailContactSettings: (...a: unknown[]) => updateEmailContactSettings(...a),
   },
 }));
 
@@ -75,10 +79,62 @@ const DETAIL = {
   hasShippedDefault: true,
 };
 
+/**
+ * What the API answers for a row that is NOT a registered system template — a template from the
+ * pre-registry catalog that survives because sent emails still point at it. Every list is empty,
+ * exactly as `EmailTemplateContractDto` leaves them when `EmailTemplateContracts.Describe` returns
+ * null. Those empty lists are the trap this fixture exists to reproduce.
+ */
+const HISTORICAL_CONTRACT = {
+  templateCode: 'VISIT_REQUEST_APPROVED',
+  module: '',
+  isSystemTemplate: false,
+  variables: [],
+  allowedVariables: [],
+  requiredVariables: [],
+  optionalVariables: [],
+  sensitiveVariables: [],
+  forbiddenInSubject: [],
+  requiresActionBlock: false,
+  carriesSecret: false,
+  allowCc: false,
+  allowBcc: false,
+  securityClassification: 'STANDARD',
+  editableFields: [],
+};
+
+/** A real row from the legacy seed, PascalCase variables and all. */
+const HISTORICAL_DETAIL = {
+  emailTemplateId: 2,
+  templateCode: 'VISIT_REQUEST_APPROVED',
+  name: 'Thông báo duyệt đơn thăm',
+  description: 'Gửi khi request được HO hoặc Staff Leader duyệt.',
+  subjectVi: '[PEMS] Đơn thăm {{RequestCode}} đã được duyệt',
+  bodyVi: '<p>Chào {{RecipientName}}, đoàn {{DelegationName}} đã được duyệt. {{DecisionNote}}</p>',
+  subjectEn: '[PEMS] Visit request {{RequestCode}} approved',
+  bodyEn: '<p>Hello {{RecipientName}}, {{DelegationName}} was approved. {{DecisionNote}}</p>',
+  status: 'ACTIVE',
+  createdAt: '2026-01-01T08:00:00+07:00',
+  updatedAt: null,
+  revision: 1,
+  hasShippedDefault: false,
+};
+
 const pushToast = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getEmailContactSettings.mockResolvedValue({
+    data: {
+      templateCode: 'ACCOUNT_EMAIL_CONFIRMATION', requirement: 'NONE', contactSource: 'SENDER',
+      showEmail: true, showPhone: true, showDepartment: false, showCampus: false, showSender: false,
+      headingVi: '', headingEn: '', replyToSource: 'NONE',
+      blockPlaceholder: '{{contactInformationBlock}}',
+      bodyCarriesBlockVi: false, bodyCarriesBlockEn: false, isDefault: true,
+      availableRequirements: ['NONE', 'OPTIONAL', 'REQUIRED'],
+      availableSources: ['HOST', 'SENDER'], availableReplyToSources: ['NONE', 'CONTACT', 'SENDER'],
+    },
+  });
   getEmailTemplateList.mockResolvedValue({
     data: { items: [{ emailTemplateId: 7, templateCode: 'ACCOUNT_EMAIL_CONFIRMATION', name: 'Xác nhận email tài khoản', status: 'ACTIVE' }] },
   });
@@ -515,5 +571,107 @@ describe('TemplateManagement — the whole catalog is loaded', () => {
     await screen.findByText('TEMPLATE_01');
 
     expect(screen.queryByTestId('catalog-truncated')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Historical rows — templates that are in `email_templates` but not in the code registry.
+ *
+ * The reported symptom was VISIT_REQUEST_APPROVED opening with an error on every variable it uses.
+ * The cause: the contract API answers for an unregistered code with `isSystemTemplate: false` and
+ * EMPTY variable lists, and the screen validated against those lists all the same — so every
+ * placeholder in the body was "not part of this template", and the resulting blocking issues also
+ * disabled the save button. An operator could not tell that apart from a corrupt template.
+ */
+describe('TemplateManagement — historical (non-system) templates', () => {
+  // Both rows, because that is what an upgraded database looks like: canonical templates alongside
+  // the legacy ones their sent history still points at. It also lets a test open one after the other
+  // without a refetch, which is exactly the state-leak case worth covering.
+  const MIXED_CATALOG = {
+    data: {
+      items: [
+        { emailTemplateId: 2, templateCode: 'VISIT_REQUEST_APPROVED', name: 'Thông báo duyệt đơn thăm', status: 'ACTIVE' },
+        { emailTemplateId: 7, templateCode: 'ACCOUNT_EMAIL_CONFIRMATION', name: 'Xác nhận email tài khoản', status: 'ACTIVE' },
+      ],
+    },
+  };
+
+  const openHistorical = async () => {
+    getEmailTemplateList.mockResolvedValue(MIXED_CATALOG);
+    getEmailTemplateDetail.mockResolvedValue({ data: HISTORICAL_DETAIL });
+    getEmailTemplateContract.mockResolvedValue({ data: HISTORICAL_CONTRACT });
+
+    render(<TemplateManagement pushToast={pushToast} />);
+    fireEvent.click(await screen.findByLabelText('Chỉnh sửa VISIT_REQUEST_APPROVED'));
+    await screen.findByTestId('contract-not-system');
+  };
+
+  it('does not mark every variable in the body as unknown', async () => {
+    await openHistorical();
+
+    // Asserted on the issue lists and on the error copy, not on the placeholders themselves: the
+    // preview legitimately renders {{RequestCode}} verbatim, because a historical template has no
+    // samples to substitute into it. Seeing the text is not the defect; being told it is WRONG is.
+    expect(screen.queryByText(/EMAIL_TEMPLATE_VARIABLE_UNKNOWN/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/không thuộc mẫu/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('issues-bodyVi')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('issues-subjectVi')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('issues-bodyEn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('issues-subjectEn')).not.toBeInTheDocument();
+  });
+
+  it('says what the row is, in place of the warnings', async () => {
+    await openHistorical();
+
+    const notice = screen.getByTestId('contract-not-system');
+    expect(notice).toHaveTextContent('chỉ xem');
+    expect(notice).toHaveTextContent('không còn thuộc danh mục mẫu hệ thống');
+    // Names the reason the variables are unchecked, rather than leaving it to be inferred.
+    expect(notice).toHaveTextContent('không thể kiểm tra biến');
+  });
+
+  it('presents the content read-only, matching what the API will accept', async () => {
+    await openHistorical();
+
+    expect(screen.getByLabelText('Tên mẫu *')).toBeDisabled();
+    expect(screen.getByLabelText('Mô tả quản trị')).toBeDisabled();
+    expect(screen.getByLabelText('Tiêu đề (Subject)')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Cập nhật/ })).toBeDisabled();
+  });
+
+  it('never calls the update endpoint for a historical row', async () => {
+    await openHistorical();
+
+    // The button is disabled, so reach the handler the way a keyboard user would.
+    fireEvent.submit(screen.getByLabelText('Tên mẫu *').closest('form')!);
+
+    await waitFor(() => expect(pushToast).toHaveBeenCalledWith('error', expect.stringContaining('lịch sử')));
+    expect(updateEmailTemplate).not.toHaveBeenCalled();
+  });
+
+  it('does not offer contact settings for a code no sender uses', async () => {
+    await openHistorical();
+
+    expect(screen.queryByText('4. Cấu hình thông tin liên hệ')).not.toBeInTheDocument();
+    expect(getEmailContactSettings).not.toHaveBeenCalled();
+  });
+
+  it('still fails closed on a system template opened afterwards', async () => {
+    await openHistorical();
+
+    // Going back to the list and opening a registered template must restore full validation — the
+    // read-only state belongs to the row, not to the screen.
+    getEmailTemplateDetail.mockResolvedValue({
+      data: { ...DETAIL, bodyVi: '<p>Chào {{fullName}} — {{logisticsTitle}}</p>' },
+    });
+    getEmailTemplateContract.mockResolvedValue({ data: ACCOUNT_CONTRACT });
+
+    fireEvent.click(screen.getByLabelText('Đóng'));
+    fireEvent.click(await screen.findByLabelText('Chỉnh sửa ACCOUNT_EMAIL_CONFIRMATION'));
+
+    const issues = await screen.findByTestId('issues-bodyVi');
+    expect(issues).toHaveTextContent('logisticsTitle');
+    expect(screen.getByRole('button', { name: /Cập nhật/ })).toBeDisabled();
+    expect(screen.queryByTestId('contract-not-system')).not.toBeInTheDocument();
   });
 });

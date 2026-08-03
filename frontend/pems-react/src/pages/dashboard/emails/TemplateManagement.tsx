@@ -136,6 +136,13 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     [localIssues, serverIssues],
   );
 
+  /**
+   * A row kept only because a sent email or draft still points at it, rather than a registered system
+   * template. The API refuses to save one (EMAIL_TEMPLATE_CATALOG_FIXED), so the editor presents it
+   * read-only instead of letting an operator type into fields whose save cannot succeed.
+   */
+  const isHistorical = contract.status === 'ready' && !contract.contract.isSystemTemplate;
+
   const issuesForField = useCallback(
     (field: TemplateContentField) => issues.filter(i => i.field === field),
     [issues],
@@ -231,6 +238,12 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    // Reachable with the button disabled: Enter in a text input submits the form.
+    if (isHistorical) {
+      pushToast('error', 'Mẫu lịch sử không thuộc danh mục mẫu hệ thống nên không thể chỉnh sửa.');
+      return;
+    }
 
     if (!formData.name.trim()) {
       pushToast('error', 'Vui lòng nhập tên mẫu');
@@ -454,8 +467,22 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
+          {/*
+            Two explicit columns rather than three-with-a-span, and `items-start` rather than the
+            default stretch.
+
+            The aside used to be a stretched grid item whose first card carried `h-full`. That card
+            then took the whole row height — set by the much taller editor column — and the contact
+            card below it was laid out PAST the bottom of the column, over the action bar. Padding
+            alone would only have moved that collision, so the stretch is what is removed: each card
+            is now as tall as its own content, and the column is sized in px instead of a fraction so
+            a long template code or a wide select cannot widen it at the editor's expense.
+
+            `pb-24` reserves the action bar's height beneath the last card, which is what lets the bar
+            be sticky without covering anything.
+          */}
+          <div className="grid grid-cols-1 gap-6 pb-24 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+            <div className="min-w-0 space-y-6">
               {/* 1. Thông tin chung */}
               <div className="bg-gray-50/50 p-5 rounded-lg border border-gray-200">
                 <h3 className="font-bold text-gray-800 mb-4 text-base border-b border-gray-200 pb-2">1. Thông tin chung</h3>
@@ -469,7 +496,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor="tpl-name">Tên mẫu *</label>
-                    <input id="tpl-name" type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91]" />
+                    <input id="tpl-name" type="text" value={formData.name} disabled={isHistorical} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Trạng thái</label>
@@ -480,7 +507,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor="tpl-desc">Mô tả quản trị</label>
-                    <input id="tpl-desc" type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91]" />
+                    <input id="tpl-desc" type="text" value={formData.description} disabled={isHistorical} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500" />
                   </div>
                 </div>
               </div>
@@ -511,8 +538,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       ref={subjectInputRef}
                       type="text"
                       value={formData[subjectField]}
+                      disabled={isHistorical}
                       onChange={e => setFormData({...formData, [subjectField]: e.target.value})}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91]"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500"
                     />
                     {renderIssueList(subjectField)}
                   </div>
@@ -523,6 +551,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                         ref={quillRef}
                         theme="snow"
                         value={formData[bodyField]}
+                        readOnly={isHistorical}
                         onChange={v => setFormData(prev => ({ ...prev, [bodyField]: v }))}
                         modules={QUILL_MODULES}
                         className="min-h-[250px]"
@@ -559,9 +588,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               </div>
             </div>
 
-            <div className="lg:col-span-1 space-y-6">
-              {/* 3. Biến của mẫu này */}
-              <div className="bg-[#f8fbff] p-5 rounded-lg border border-[#cce0ff] h-full flex flex-col">
+            <aside className="min-w-0 space-y-6">
+              {/* 3. Biến của mẫu này. No `h-full`: see the grid comment above — it was the cause of
+                  the contact card overflowing onto the action bar. The card is as tall as its own
+                  content, and the variable list below keeps its own scroll. */}
+              <div className="bg-[#f8fbff] p-5 rounded-lg border border-[#cce0ff] flex flex-col">
                 <h3 className="font-bold text-[#004c91] mb-1 text-base border-b border-[#cce0ff] pb-2">
                   3. Biến của mẫu này
                 </h3>
@@ -582,8 +613,18 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                 )}
 
                 {ready && !ready.isSystemTemplate && (
-                  <div className="text-xs text-gray-700 bg-gray-100 border-l-4 border-gray-400 p-3 rounded" data-testid="contract-not-system">
-                    Mẫu này không thuộc danh mục mẫu hệ thống. Bản ghi được giữ lại vì lịch sử email hoặc bản nháp còn tham chiếu đến nó.
+                  <div className="text-xs text-gray-700 bg-gray-100 border-l-4 border-gray-400 p-3 rounded space-y-2" data-testid="contract-not-system">
+                    <p className="font-bold">Mẫu lịch sử — chỉ xem, không sửa được.</p>
+                    <p>
+                      Mẫu này không còn thuộc danh mục mẫu hệ thống. Bản ghi được giữ lại vì lịch sử
+                      email hoặc bản nháp còn tham chiếu đến nó.
+                    </p>
+                    {/* Said plainly because the alternative is worse: the screen used to check this
+                        template's variables against an empty list and mark every one of them sai. */}
+                    <p>
+                      Hệ thống không quản lý danh sách biến cho mẫu này, nên không thể kiểm tra biến
+                      trong tiêu đề và nội dung. Các biến hiển thị bên dưới được giữ nguyên như đã lưu.
+                    </p>
                   </div>
                 )}
 
@@ -649,7 +690,10 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                 This screen is HO-only (EmailManagement renders it only for HO) and the API enforces that
                 independently, so passing canEdit is presentation, not protection.
               */}
-              {formData.templateCode && (
+              {/* Withheld for a historical row: contact policy is keyed on a registered template code,
+                  so offering the panel here would present settings that resolve to nothing at send
+                  time — this template has no sender in any release. */}
+              {formData.templateCode && !isHistorical && (
                 <div className="bg-white p-5 rounded-lg border border-gray-200">
                   <h3 className="font-bold text-[#004c91] mb-1 text-base border-b border-gray-200 pb-2">
                     4. Cấu hình thông tin liên hệ
@@ -661,9 +705,16 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   <ContactSettingsPanel templateCode={formData.templateCode} canEdit />
                 </div>
               )}
-            </div>
+            </aside>
           </div>
-          <div className="flex items-center justify-between gap-3 pt-4">
+          {/*
+            The action bar sits OUTSIDE the content grid and stays in normal flow — `sticky`, not
+            `fixed`. Sticky degrades to a plain block if an ancestor ever gains `overflow: hidden`,
+            which leaves the bar at the end of the form; `fixed` in that situation would leave it
+            floating over an unrelated part of the page. `-mx-6 px-6` bleeds it to the card's edges
+            against the card's own `p-6`.
+          */}
+          <div className="sticky bottom-0 z-30 -mx-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white/95 px-6 py-4 backdrop-blur">
             {/*
               Restore lives on the left, away from the save button, because it discards work rather than
               saving it. Offered only when the backend says a shipped default exists for this code
@@ -686,11 +737,14 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               </button>
             ) : <span />}
 
-            <div className="flex justify-end gap-3">
+            {/* `ml-auto` keeps the pair on the right even when the bar wraps on a narrow viewport,
+                where `justify-between` alone would leave them under the restore button on the left. */}
+            <div className="ml-auto flex justify-end gap-3">
               <button type="button" onClick={handleCancel} className="px-4 py-2 font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">Hủy</button>
               <button
                 type="submit"
-                disabled={submitting || restoring || contract.status === 'loading' || blockingIssues.length > 0}
+                disabled={submitting || restoring || contract.status === 'loading' || blockingIssues.length > 0 || isHistorical}
+                title={isHistorical ? 'Mẫu lịch sử không nằm trong danh mục hệ thống nên không sửa được.' : undefined}
                 className="flex items-center gap-2 px-4 py-2 font-bold text-white bg-[#004c91] rounded-lg hover:bg-[#013565] disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}

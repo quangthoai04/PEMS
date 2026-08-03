@@ -117,6 +117,19 @@ export function validateContent(
   contract: TemplateContract,
   content: Record<TemplateContentField, string>,
 ): TemplateContentIssue[] {
+  // A historical row has no contract to validate against. The API answers one for it anyway — so the
+  // editor can say what the row IS rather than showing a failed request — but with empty variable
+  // lists, and validating against those declares every placeholder in the body unknown. Opening
+  // VISIT_REQUEST_APPROVED, a template from the pre-registry catalog, produced four ERROR rows for
+  // {{RequestCode}}, {{RecipientName}}, {{DelegationName}} and {{DecisionNote}} — every variable it
+  // legitimately uses — and those errors then disabled the save button, which read as "this template
+  // is broken" rather than "this template is not ours to check".
+  //
+  // Returning nothing is not a relaxation: the backend refuses to save a non-system template outright
+  // with EMAIL_TEMPLATE_CATALOG_FIXED, so there is no content this could wave through. The screen
+  // states the row's status instead; see the notice in TemplateManagement.
+  if (!contract.isSystemTemplate) return [];
+
   const issues: TemplateContentIssue[] = [];
   const fields: TemplateContentField[] = ['subjectVi', 'bodyVi', 'subjectEn', 'bodyEn'];
 
