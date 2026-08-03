@@ -38,6 +38,7 @@ import {
 import { isVehicleHandover, buildDefaultVehicleChecklist, buildDefaultGenericChecklist, type VehicleChecklistRow } from '../../department-reception-tasks/constants/vehicleHandover';
 import { LogisticsExpensePanel } from '../../../pages/dashboard/departments/LogisticsExpensePanel';
 import { toVietnamDateTimeLocalInput, vietnamNowDateTimeLocal } from '../../../shared/utils/vietnamTime';
+import { buildLogisticsEmailContext } from '../utils/logisticsEmailContext';
 
 type ToastFn = (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 
@@ -160,21 +161,10 @@ function fmtDateTime(value?: string | null): string {
   return hm ? `${hm} ${day}/${m}/${y}` : `${day}/${m}/${y}`;
 }
 
-/**
- * The response deadline the BACKEND will compute for a SYSTEM_REQUEST: 24h before the usage window
- * opens (PrepareVisitLogisticsCommandHandler). The Host no longer sets a due date — the field was
- * removed from the request — so the preview reproduces the server's rule rather than echoing an input
- * that no longer exists. Showing a placeholder here would preview a different email from the one sent.
- */
-function deadlineFor(usageStartAt?: string | null): string | null {
-  if (!usageStartAt) return null;
-  const start = new Date(usageStartAt.replace(' ', 'T'));
-  if (Number.isNaN(start.getTime())) return null;
-  start.setHours(start.getHours() - 24);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
-    + `T${pad(start.getHours())}:${pad(start.getMinutes())}`;
-}
+// A `deadlineFor` helper used to live here, reproducing the server's "usage start minus 24h" rule so
+// the preview could fill {{dueAt}}. The message no longer prints a response deadline — the Host sets
+// none, so stating one committed the department to a date nobody agreed — and the server still derives
+// due_at for its own scheduling. Nothing in the browser needs to recompute it.
 
 export function LogisticsRequestSection({
   visitInstanceId, relation, instanceStatus, delegationName, campusName, hostName,
@@ -316,21 +306,24 @@ export function LogisticsRequestSection({
   const activeItem = (itemType: LogisticsItemType, title: string): VisitInstanceLogisticsItem | null =>
     items.find((i) => i.itemType === itemType && i.title === title && isActive(i)) ?? null;
 
-  // Exactly the nine variables LOGISTICS_REQUEST_TO_DEPARTMENT declares. The preview shares the send's
+  // Exactly the eight variables LOGISTICS_REQUEST_TO_DEPARTMENT declares. The preview shares the send's
   // renderer, which rejects an undeclared or missing key instead of substituting a placeholder — so the
   // display value for an empty field is decided here, by the caller, and is the same wording the send
   // would use.
-  const ctxFor = (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null) => ({
-    departmentLeaderName: dept?.leaderName || 'Trưởng phòng',
-    requesterName: hostName,
-    logisticsTitle: payload.title,
-    logisticsItemType: ITEM_TYPE_LABEL[payload.itemType] ?? payload.itemType,
-    quantity: payload.quantity != null ? String(payload.quantity) : 'Chưa nhập',
-    usageStartAt: fmtDateTime(payload.usageStartAt) || 'Chưa chọn thời gian',
-    usageEndAt: fmtDateTime(payload.usageEndAt) || 'Chưa chọn thời gian',
-    dueAt: fmtDateTime(deadlineFor(payload.usageStartAt)) || 'Chưa đặt hạn',
-    coordinationNote: payload.offlineCoordinationNote || 'Không có ghi chú phối hợp.',
-  });
+  //
+  // Every value below must be what PrepareVisitLogisticsCommandHandler would pass for the SAME request,
+  // or the preview is a preview of a different email. That is not hypothetical: this context used to
+  // send `coordinationNote: payload.offlineCoordinationNote`, which is ALWAYS undefined on a
+  // SYSTEM_REQUEST (only the "đã trao đổi bên ngoài" form sets it, and that form sends no email), so the
+  // preview reliably showed "Không có ghi chú phối hợp." while the send put the Host's description in
+  // that same slot. The description now travels under its own name on both sides.
+  const ctxFor = (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null) =>
+    buildLogisticsEmailContext(payload, {
+      leaderName: dept?.leaderName,
+      requesterName: hostName,
+      itemTypeLabel: (t) => ITEM_TYPE_LABEL[t as LogisticsItemType] ?? t,
+      formatDateTime: fmtDateTime,
+    });
 
   const submitRequest = async (key: string, payload: PrepareVisitLogisticsPayload): Promise<boolean> => {
     setBusyKey(key);

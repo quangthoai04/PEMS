@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Info, Loader2, Save } from 'lucide-react';
+import { AlertTriangle, Ban, Info, Loader2, Save, ShieldAlert } from 'lucide-react';
 import {
   emailsApi,
+  type EmailContactPolicyLevel,
   type EmailContactSettings,
   type EmailContactSettingsPayload,
 } from '../api/emailsApi';
+import { TEMPLATE_ERROR_CODES, errorCodeOf } from '../types/templateContract';
 import { getApiErrorMessage } from '../../../shared/utils/toast';
 
 /**
@@ -48,17 +50,127 @@ const REPLY_TO_LABELS: Record<string, string> = {
   SENDER: 'Thư trả lời gửi về người bấm gửi',
 };
 
+const LEVEL_LABELS: Record<EmailContactPolicyLevel, string> = {
+  TEMPLATE: 'riêng của mẫu này',
+  CAMPUS: 'cấu hình cơ sở',
+  DEPARTMENT: 'cấu hình phòng ban',
+  SYSTEM: 'cấu hình hệ thống',
+  SHIPPED_DEFAULT: 'mặc định cài sẵn',
+};
+
+/**
+ * Why the settings could not be loaded, in terms of what the operator has to DO about it.
+ *
+ * Every one of these used to arrive as "Không tìm thấy dữ liệu cần xử lý." — the generic 404 sentence
+ * from the toast helper's HTTP-status table. That sentence was not merely unhelpful, it was misleading:
+ * the failure it described most often was a running API built before this endpoint existed, where
+ * nothing is missing from the data at all and the fix is to restart the API. Routing 404s carry no
+ * body, so there is no `errorCode` to read and the ABSENCE of one is itself the evidence.
+ */
+type LoadFailure = { title: string; detail: string; action: string; kind: string };
+
+function classifyLoadFailure(err: unknown): LoadFailure {
+  const status = (err as { response?: { status?: number } })?.response?.status;
+  const code = errorCodeOf(err);
+
+  if (status === 401) {
+    return {
+      kind: 'unauthenticated',
+      title: 'Phiên đăng nhập đã hết hạn',
+      detail: 'Máy chủ từ chối yêu cầu vì chưa có phiên đăng nhập hợp lệ.',
+      action: 'Đăng nhập lại rồi mở lại màn hình này.',
+    };
+  }
+
+  if (status === 403) {
+    return {
+      kind: 'forbidden',
+      title: 'Không có quyền xem cấu hình liên hệ',
+      detail: 'Chỉ tài khoản Head Office được xem và sửa cấu hình khối liên hệ của mẫu email.',
+      action: 'Nếu anh/chị cần quyền này, đề nghị Head Office cấp.',
+    };
+  }
+
+  if (code === TEMPLATE_ERROR_CODES.contactPolicyStoreUnavailable) {
+    return {
+      kind: 'store-unavailable',
+      title: 'Database chưa có bảng chính sách liên hệ',
+      detail: 'Máy chủ đọc được yêu cầu nhưng không truy vấn được bảng email_contact_policies.',
+      action: 'Chạy patch docs/database/scripts/patches/'
+        + '2026-08-03_email_contact_information_block.sql trên database đang dùng, rồi tải lại.',
+    };
+  }
+
+  if (code === TEMPLATE_ERROR_CODES.templateNotFound) {
+    return {
+      kind: 'template-not-catalogued',
+      title: 'Mẫu email này không có trong danh mục hệ thống',
+      detail: 'Dòng template trong database không khớp mã nào mà ứng dụng đăng ký, nên không có chính '
+        + 'sách liên hệ nào áp cho nó.',
+      action: 'Chạy patch docs/database/scripts/patches/'
+        + '2026-08-03_email_template_catalog_alignment.sql để đưa danh mục về đúng 31 mẫu canonical.',
+    };
+  }
+
+  // A 404 with no error code is a ROUTING 404: the request never reached a handler. Distinguished from
+  // every "not found" above by the absence of a body, which is exactly what an old binary produces.
+  if (status === 404) {
+    return {
+      kind: 'endpoint-missing',
+      title: 'API đang chạy chưa có chức năng này',
+      detail: 'Đường dẫn /api/email-templates/{mã}/contact-settings trả về 404 mà không kèm mã lỗi — '
+        + 'nghĩa là bản build đang chạy được tạo trước khi endpoint này tồn tại. Dữ liệu không thiếu gì.',
+      action: 'Build lại backend và khởi động lại API, rồi tải lại trang.',
+    };
+  }
+
+  return {
+    kind: 'server-error',
+    title: 'Máy chủ gặp lỗi khi đọc cấu hình liên hệ',
+    detail: getApiErrorMessage(err, 'Không có thông tin chi tiết từ máy chủ.'),
+    action: 'Xem log của API để biết nguyên nhân; nếu lặp lại, báo lại kèm mã lỗi ở trên.',
+  };
+}
+
+/** Marks one field as coming from somewhere other than this template's own row. */
+function InheritedFrom({ level }: { level: EmailContactPolicyLevel }) {
+  if (level === 'TEMPLATE') return null;
+
+  return (
+    <span
+      className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold
+                 text-amber-800 align-middle"
+      data-testid="contact-settings-inherited"
+      title={`Giá trị này chưa được đặt riêng cho mẫu — đang lấy từ ${LEVEL_LABELS[level]}.`}
+    >
+      Đang kế thừa · {LEVEL_LABELS[level]}
+    </span>
+  );
+}
+
 interface Props {
   templateCode: string;
   /** HO only. Everyone else sees the settings read-only. */
   canEdit: boolean;
+  /** VI or EN — the preview follows the language tab being edited. */
+  language?: string;
+  /**
+   * Receives the contact block rendered from the CURRENT draft, so the editor's preview pane updates as
+   * toggles change rather than only after a save. '' means this policy renders no block.
+   */
+  onBlockPreviewChange?: (html: string) => void;
 }
 
-export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
+export function ContactSettingsPanel({
+  templateCode,
+  canEdit,
+  language = 'VI',
+  onBlockPreviewChange,
+}: Props) {
   const [settings, setSettings] = useState<EmailContactSettings | null>(null);
   const [draft, setDraft] = useState<EmailContactSettingsPayload | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [message, setMessage] = useState('');
+  const [failure, setFailure] = useState<LoadFailure | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -72,12 +184,42 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
       setDraft(toPayload(data));
       setStatus('ready');
     } catch (err) {
-      setMessage(getApiErrorMessage(err, 'Không tải được cấu hình thông tin liên hệ.'));
+      setFailure(classifyLoadFailure(err));
       setStatus('error');
     }
   }, [templateCode]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /**
+   * Re-render the block whenever the draft changes.
+   *
+   * Debounced because typing a heading would otherwise fire a request per keystroke. Rendering happens
+   * on the backend deliberately: the block's markup and its field-visibility rules live in
+   * EmailContactHtmlRenderer, and a copy of them in this component would be a second implementation
+   * that drifts — with the operator having no way to tell which one the recipient gets.
+   *
+   * A failed preview clears the pane rather than leaving the previous policy's block on screen, which
+   * would show toggles that are no longer set.
+   */
+  useEffect(() => {
+    if (!onBlockPreviewChange) return;
+    if (!draft) return;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await emailsApi.previewEmailContactBlock(templateCode, { ...draft, language });
+          if (!cancelled) onBlockPreviewChange(res.data.html ?? '');
+        } catch {
+          if (!cancelled) onBlockPreviewChange('');
+        }
+      })();
+    }, 250);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [draft, templateCode, language, onBlockPreviewChange]);
 
   const save = async () => {
     if (!draft) return;
@@ -106,10 +248,32 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
   }
 
   if (status === 'error' || !settings || !draft) {
+    const f = failure ?? {
+      kind: 'unknown',
+      title: 'Không tải được cấu hình thông tin liên hệ',
+      detail: '',
+      action: 'Thử tải lại.',
+    };
+
     return (
-      <div className="text-xs text-orange-800 bg-orange-50 border-l-4 border-orange-400 p-3 rounded"
-           data-testid="contact-settings-error">
-        {message}
+      <div className="text-xs text-orange-900 bg-orange-50 border-l-4 border-orange-400 p-3 rounded space-y-1.5"
+           data-testid="contact-settings-error"
+           data-failure-kind={f.kind}>
+        <div className="flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+          <span className="font-semibold">{f.title}</span>
+        </div>
+        {f.detail && <p className="pl-6 text-orange-800">{f.detail}</p>}
+        <p className="pl-6"><strong>Cần làm:</strong> {f.action}</p>
+        <div className="pl-6 pt-1">
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded border border-orange-400 px-2 py-1 text-[11px] font-semibold hover:bg-orange-100"
+          >
+            Tải lại
+          </button>
+        </div>
       </div>
     );
   }
@@ -119,6 +283,17 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(toPayload(settings));
   const showsBlock = draft.requirement !== 'NONE';
+
+  // Only levels that ACTUALLY supplied something. Derived from the per-field labels rather than from
+  // "does this template have a row", which the seed makes true for all 31 catalogued templates and
+  // which therefore never distinguished an inherited value from an explicitly configured one.
+  const inheritedLevels = [...new Set(
+    ([
+      settings.requirementSource, settings.contactSourceSource, settings.showEmailSource,
+      settings.showPhoneSource, settings.showDepartmentSource, settings.showCampusSource,
+      settings.showSenderSource, settings.replyToSourceSource, settings.headingSource,
+    ] as EmailContactPolicyLevel[]).filter(level => level !== 'TEMPLATE'),
+  )];
 
   // Warn BEFORE a save is attempted. The backend refuses this combination too, but a warning that
   // appears while the operator is choosing is worth more than a refusal after they press save.
@@ -135,13 +310,34 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
           Hệ thống tự điền họ tên, email và số điện thoại của đầu mối khi gửi. Ở đây chỉ chọn{' '}
           <strong>lấy đầu mối từ đâu</strong> và <strong>hiển thị những trường nào</strong> — không nhập
           tay được địa chỉ liên hệ.
-          {settings.isDefault && <span className="block mt-1 text-gray-500">Đang dùng cấu hình mặc định của hệ thống.</span>}
+          {inheritedLevels.length > 0 && (
+            <span className="block mt-1 text-amber-800" data-testid="contact-settings-inherit-summary">
+              {inheritedLevels.length} trường chưa đặt riêng cho mẫu này, đang kế thừa từ{' '}
+              {inheritedLevels.map(l => LEVEL_LABELS[l]).join(', ')}. Lưu lại sẽ ghi thành cấu hình
+              riêng của mẫu.
+            </span>
+          )}
         </span>
       </div>
 
+      {draft.requirement === 'NONE' && (
+        <div className="flex items-start gap-2 text-xs text-gray-700 bg-gray-50 border border-gray-200
+                        rounded p-3"
+             data-testid="contact-settings-no-contact">
+          <Ban className="w-4 h-4 shrink-0 mt-0.5 text-gray-500" />
+          <span>
+            <strong>Không hiển thị thông tin liên hệ.</strong> Mẫu này gửi đi không kèm khối liên hệ nào
+            — đúng với các email mang mã dùng một lần hoặc email mà chính người phụ trách là người nhận.
+            Chọn <em>Tùy chọn</em> hoặc <em>Bắt buộc</em> ở trên nếu muốn bật khối.
+          </span>
+        </div>
+      )}
+
       {/* Mức bắt buộc */}
       <fieldset disabled={!canEdit} className="space-y-1.5">
-        <legend className="block text-sm font-bold text-gray-700 mb-1">Mức hiển thị</legend>
+        <legend className="block text-sm font-bold text-gray-700 mb-1">
+          Mức hiển thị<InheritedFrom level={settings.requirementSource} />
+        </legend>
         {settings.availableRequirements.map(value => (
           <label key={value}
                  className="flex items-start gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50">
@@ -178,7 +374,7 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
         <>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`source-${templateCode}`}>
-              Lấy đầu mối từ
+              Lấy đầu mối từ<InheritedFrom level={settings.contactSourceSource} />
             </label>
             <select
               id={`source-${templateCode}`}
@@ -197,15 +393,15 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
             <legend className="block text-sm font-bold text-gray-700 mb-1">Hiển thị trường</legend>
             <div className="grid grid-cols-2 gap-1.5">
               {([
-                ['showEmail', 'Email công việc'],
-                ['showPhone', 'Số điện thoại'],
-                ['showDepartment', 'Phòng ban'],
-                ['showCampus', 'Cơ sở'],
-                ['showSender', 'Dòng “Được gửi bởi”'],
-              ] as const).map(([key, label]) => (
+                ['showEmail', 'Email công việc', settings.showEmailSource],
+                ['showPhone', 'Số điện thoại', settings.showPhoneSource],
+                ['showDepartment', 'Phòng ban', settings.showDepartmentSource],
+                ['showCampus', 'Cơ sở', settings.showCampusSource],
+                ['showSender', 'Dòng “Được gửi bởi”', settings.showSenderSource],
+              ] as const).map(([key, label, level]) => (
                 <label key={key} className="flex items-center gap-2 text-xs text-gray-700">
                   <input type="checkbox" checked={draft[key]} onChange={e => set(key, e.target.checked)} />
-                  {label}
+                  {label}<InheritedFrom level={level} />
                 </label>
               ))}
             </div>
@@ -220,7 +416,7 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`heading-vi-${templateCode}`}>
-                Tiêu đề khối (VI)
+                Tiêu đề khối (VI)<InheritedFrom level={settings.headingSource} />
               </label>
               <input
                 id={`heading-vi-${templateCode}`}
@@ -250,7 +446,7 @@ export function ContactSettingsPanel({ templateCode, canEdit }: Props) {
 
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`replyto-${templateCode}`}>
-              Reply-To
+              Reply-To<InheritedFrom level={settings.replyToSourceSource} />
             </label>
             <select
               id={`replyto-${templateCode}`}

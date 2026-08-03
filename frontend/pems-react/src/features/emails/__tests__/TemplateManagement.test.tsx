@@ -7,7 +7,7 @@
  *   - the catalog is fixed, so there is no "Thêm mẫu mới" and no per-row status toggle.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 const getEmailTemplateList = vi.fn();
 const getEmailTemplateDetail = vi.fn();
@@ -50,9 +50,19 @@ const ACCOUNT_CONTRACT = {
     { name: 'fullName', label: 'Họ tên người nhận', sample: 'Nguyễn Văn An', required: false, sensitive: false, forbiddenInSubject: false },
     { name: 'roleName', label: 'Vai trò', sample: 'Cán bộ', required: false, sensitive: false, forbiddenInSubject: false },
   ],
-  allowedVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours', 'actionBlock'],
+  // Data variables only — the blocks live in their own lists below, which is what stops a block from
+  // being judged (and refused) as if it were a variable.
+  allowedVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours'],
   requiredVariables: [],
-  optionalVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours', 'actionBlock'],
+  optionalVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours'],
+  requiredSystemBlocks: [],
+  optionalSystemBlocks: ['actionBlock'],
+  // As the backend sends it: `<span>` buttons built by the same helpers the send uses, no href.
+  systemBlockPreviews: {
+    actionBlock:
+      '<div style="text-align:center"><span style="background:#9aa6b2">Chấp nhận</span>'
+      + '<span style="background:#9aa6b2">Từ chối</span></div>',
+  },
   sensitiveVariables: [],
   forbiddenInSubject: ['actionBlock'],
   requiresActionBlock: false,
@@ -264,7 +274,97 @@ describe('TemplateManagement — the variable contract (G11-J)', () => {
     await openEditor();
     await screen.findByText('Họ tên người nhận');
 
-    expect(screen.queryByText('actionBlock')).not.toBeInTheDocument();
+    // Not in the VARIABLE sidebar. It is listed in the system-block notice instead, which says the
+    // backend fills it in — a different claim from "here is a field you may supply".
+    const sidebar = screen.getByTestId('variable-sidebar');
+    expect(within(sidebar).queryByText('actionBlock')).not.toBeInTheDocument();
+  });
+
+  /**
+   * System blocks are shown as protected regions, with the block's own name and what fills it.
+   *
+   * Only {{actionBlock}} was ever named on this screen, so {{contactInformationBlock}} — mandatory on
+   * fourteen templates — appeared nowhere: an operator rewording a paragraph deleted it without being
+   * told it existed, and met the refusal afterwards.
+   */
+  it('shows every system block as a protected region, required ones marked', async () => {
+    getEmailTemplateContract.mockResolvedValue({
+      data: {
+        ...ACCOUNT_CONTRACT,
+        requiredSystemBlocks: ['contactInformationBlock'],
+        optionalSystemBlocks: ['actionBlock'],
+      },
+    });
+
+    await openEditor();
+
+    const notice = await screen.findByTestId('system-blocks-notice');
+    expect(notice).toHaveTextContent('{{contactInformationBlock}}');
+    expect(notice).toHaveTextContent('bắt buộc giữ');
+    expect(notice).toHaveTextContent('{{actionBlock}}');
+    expect(notice).toHaveTextContent('tùy chọn');
+
+    expect(screen.getByTestId('system-block-required-contactInformationBlock')).toBeInTheDocument();
+    expect(screen.getByTestId('system-block-optional-actionBlock')).toBeInTheDocument();
+  });
+
+  /**
+   * The editor and the preview answer different questions, so they show different things.
+   *
+   * The operator needs the PLACEHOLDER in the content — it is the only handle they have on where the
+   * block sits — and the RENDERED buttons in the preview, because that is what a recipient receives.
+   * Substituting in the editor would delete their handle; leaving the raw braces in the preview reads
+   * as an unresolved variable, which is the confusion this whole change removes.
+   */
+  it('keeps the placeholder in the editor and shows the sample button in the preview', async () => {
+    await openEditor();
+    await screen.findByText('Họ tên người nhận');
+
+    fireEvent.change(screen.getByTestId('quill'), {
+      target: { value: '<p>Chào {{fullName}}.</p>{{actionBlock}}' },
+    });
+
+    // Editor: the placeholder survives, untouched.
+    await waitFor(() =>
+      expect((screen.getByTestId('quill') as HTMLTextAreaElement).value).toContain('{{actionBlock}}'));
+
+    // Preview: the button markup, and no placeholder left behind.
+    const preview = screen.getByTestId('preview-body');
+    await waitFor(() => {
+      expect(preview.innerHTML).toContain('Chấp nhận');
+      expect(preview.innerHTML).toContain('Từ chối');
+      expect(preview.textContent).not.toContain('{{actionBlock}}');
+    });
+
+    // A preview mints nothing: no anchor, so a click cannot navigate anywhere.
+    expect(preview.querySelector('a')).toBeNull();
+    expect(preview.innerHTML).not.toMatch(/https?:\/\//i);
+  });
+
+  /**
+   * The reported defect itself, at the screen: a legal block must not be reported as an unknown
+   * VARIABLE. Before the split this produced "Biến {{contactInformationBlock}} không tồn tại trong hệ
+   * thống" on a template where the block is required.
+   */
+  it('does not flag a legal system block written into the body', async () => {
+    getEmailTemplateContract.mockResolvedValue({
+      data: {
+        ...ACCOUNT_CONTRACT,
+        requiredSystemBlocks: [],
+        optionalSystemBlocks: ['actionBlock', 'contactInformationBlock'],
+      },
+    });
+
+    await openEditor();
+    await screen.findByText('Họ tên người nhận');
+
+    fireEvent.change(screen.getByTestId('quill'), {
+      target: { value: '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}' },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('issues-bodyVi')).not.toBeInTheDocument();
+    });
   });
 
   it('flags a variable from another module, naming the field and the variable', async () => {

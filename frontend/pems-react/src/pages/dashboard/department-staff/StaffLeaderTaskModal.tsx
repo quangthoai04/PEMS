@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { TaskHandoverModal } from '../departments/TaskHandoverModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { EMPTY_DESCRIPTION_TEXT, LOADING_DESCRIPTION_TEXT, resolveLogisticsDescription } from '../../../features/department-reception-tasks/components/LogisticsWorkContent';
 import { timeAgo } from '../../../features/notifications/components/NotificationBellButton';
 import type { NotificationItem } from '../../../features/notifications/types/notification.types';
 import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
@@ -197,8 +198,21 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
   const detailTitle = detail?.title || item?.title || '';
   const delegationName = detail?.delegationName || item?.delegationName || '';
   const senderName = detail?.senderName || item?.host || 'Hệ thống';
-  const contentText = detail?.description || detail?.note || item?.purpose || detailTitle;
   const isRequest = item?.itemType === 'REQUEST';
+  // A logistics request's work content is `description`, full stop. The old chain fell through to
+  // `item?.purpose` — the CALENDAR event's field, which holds "Yêu cầu: " + the item title because the
+  // calendar feed carries no description — and then to the title itself, so a request whose description
+  // had not loaded (or was genuinely blank) showed its own name back as though that were the
+  // instructions. An invitation keeps the chain: its content really does live in `note`.
+  const requestDescription = resolveLogisticsDescription(loadingDetail ? null : detail);
+  const contentText = isRequest
+    ? (requestDescription.state === 'text' ? requestDescription.text : '')
+    : (detail?.description || detail?.note || item?.purpose || detailTitle);
+  const contentLabel = isRequest ? 'Nội dung chi tiết công việc' : 'Nội dung / Ghi chú';
+  // Still fetching is not the same as "there is none", and must not flash the empty state.
+  const contentFallback = !isRequest
+    ? '—'
+    : (requestDescription.state === 'loading' ? LOADING_DESCRIPTION_TEXT : EMPTY_DESCRIPTION_TEXT);
   const canAct = effectiveStatus === 'ASSIGNED' && (item?.canAccept ?? true);
   const canDecline = effectiveStatus === 'ASSIGNED' && (item?.canDecline ?? true);
   const canPropose = isRequest
@@ -464,8 +478,12 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
 
                 {/* Nội dung / ghi chú */}
                 <div className="mt-2 pt-3 border-t border-slate-100">
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Nội dung / Ghi chú</p>
-                  <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{contentText || '—'}</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">{contentLabel}</p>
+                  {contentText ? (
+                    <p className="text-sm text-slate-700 whitespace-pre-line break-words leading-relaxed">{contentText}</p>
+                  ) : (
+                    <p className="text-sm italic text-slate-400 leading-relaxed">{contentFallback}</p>
+                  )}
                 </div>
 
                 {/* Form đề xuất thay đổi (mở từ footer) */}

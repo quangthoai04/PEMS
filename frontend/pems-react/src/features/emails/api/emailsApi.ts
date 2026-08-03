@@ -148,7 +148,26 @@ export const emailsApi = {
       data,
     );
   },
+  /**
+   * Renders the contact block as an UNSAVED policy would produce it, with sample data. A POST because
+   * the draft policy travels in the body; nothing is stored.
+   */
+  previewEmailContactBlock: (
+    templateCode: string,
+    data: EmailContactSettingsPayload & { language?: string },
+  ) => {
+    return httpClient.post<EmailContactBlockPreview>(
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings/preview`,
+      data,
+    );
+  },
 };
+
+export interface EmailContactBlockPreview {
+  /** Rendered block, or '' when this policy renders nothing. Empty is a valid answer, not a failure. */
+  html: string;
+  rendersBlock: boolean;
+}
 
 /**
  * How a template's reply-contact block behaves.
@@ -175,12 +194,33 @@ export interface EmailContactSettings {
   blockPlaceholder: string;
   bodyCarriesBlockVi: boolean;
   bodyCarriesBlockEn: boolean;
-  /** False once somebody has saved an override for this template. */
-  isDefault: boolean;
+  /**
+   * Whether a TEMPLATE-scope row exists at all. This is a plain fact, NOT "these are the defaults":
+   * the seed writes a row for every catalogued template, so it is true almost everywhere and says
+   * nothing about whether any given value was inherited. Read the per-field `*Source` labels for that.
+   */
+  hasOwnPolicyRow: boolean;
+  requirementSource: EmailContactPolicyLevel;
+  contactSourceSource: EmailContactPolicyLevel;
+  showEmailSource: EmailContactPolicyLevel;
+  showPhoneSource: EmailContactPolicyLevel;
+  showDepartmentSource: EmailContactPolicyLevel;
+  showCampusSource: EmailContactPolicyLevel;
+  showSenderSource: EmailContactPolicyLevel;
+  replyToSourceSource: EmailContactPolicyLevel;
+  /** The two headings share one label: they are stored on one row and edited as a pair. */
+  headingSource: EmailContactPolicyLevel;
   availableRequirements: string[];
   availableSources: string[];
   availableReplyToSources: string[];
 }
+
+/**
+ * Which cascade level supplied one field's effective value. Per field, because the cascade is applied
+ * per field — a campus row that only hides telephone numbers changes one label and leaves the rest.
+ */
+export type EmailContactPolicyLevel =
+  | 'TEMPLATE' | 'CAMPUS' | 'DEPARTMENT' | 'SYSTEM' | 'SHIPPED_DEFAULT';
 
 export type EmailContactSettingsPayload = Pick<
   EmailContactSettings,

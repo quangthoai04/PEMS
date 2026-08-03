@@ -19,11 +19,57 @@ export const TEMPLATE_ERROR_CODES = {
   runtimeVariableMissing: 'EMAIL_TEMPLATE_RUNTIME_VARIABLE_MISSING',
   subjectForbiddenSensitive: 'EMAIL_TEMPLATE_SUBJECT_FORBIDDEN_SENSITIVE_VARIABLE',
   actionBlockRequired: 'EMAIL_TEMPLATE_ACTION_BLOCK_REQUIRED',
+  requiredBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_BLOCK_NOT_IN_BODY',
+  requiredContactBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY',
+  systemBlockNotAllowed: 'EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED',
+  contactPolicyStoreUnavailable: 'EMAIL_CONTACT_POLICY_STORE_UNAVAILABLE',
+  templateNotFound: 'EMAIL_TEMPLATE_NOT_FOUND',
   catalogFixed: 'EMAIL_TEMPLATE_CATALOG_FIXED',
   fieldImmutable: 'EMAIL_TEMPLATE_FIELD_IMMUTABLE',
   concurrencyConflict: 'EMAIL_TEMPLATE_CONCURRENCY_CONFLICT',
   defaultUnavailable: 'EMAIL_TEMPLATE_DEFAULT_UNAVAILABLE',
 } as const;
+
+/**
+ * Every trusted block the backend can inject, mirroring `EmailTrustedBlocks.All`.
+ *
+ * Needed as a standalone list — not merely derived from the open contract — so that a block written
+ * into the WRONG template can be told apart from a mistyped variable. Without it, pasting
+ * `{{setupSummaryBlock}}` into an account notice answers "biến không tồn tại trong hệ thống" about a
+ * placeholder that exists and is mandatory two templates away, which sends the operator looking for a
+ * variable to define instead of a block to delete.
+ *
+ * `systemBlockNamesMatchBackend` in the tests pins this against the contract the API serves, so a block
+ * added on the backend cannot quietly fall through to the variable path here.
+ */
+export const SYSTEM_BLOCK_NAMES = [
+  'actionBlock',
+  'setupSummaryBlock',
+  'contactInformationBlock',
+] as const;
+
+export type SystemBlockName = (typeof SYSTEM_BLOCK_NAMES)[number];
+
+/** True when the placeholder names a backend-built block rather than a data variable. */
+export function isSystemBlock(name: string): name is SystemBlockName {
+  return (SYSTEM_BLOCK_NAMES as readonly string[]).includes(name);
+}
+
+/** Human wording for each block, used wherever one is shown as a protected region. */
+export const SYSTEM_BLOCK_LABELS: Record<string, { title: string; hint: string }> = {
+  actionBlock: {
+    title: 'Khu vực nút thao tác',
+    hint: 'Hệ thống gắn các nút (đồng ý / từ chối / xem chi tiết) kèm liên kết thật khi gửi.',
+  },
+  setupSummaryBlock: {
+    title: 'Bảng thông tin chuẩn bị',
+    hint: 'Hệ thống dựng các bảng khách, thành phần, lịch trình và trạng thái chuẩn bị khi gửi.',
+  },
+  contactInformationBlock: {
+    title: 'Khối thông tin liên hệ',
+    hint: 'Hệ thống điền đầu mối liên hệ theo cấu hình ở mục 4 khi gửi.',
+  },
+};
 
 /** The four editable content fields, matching the API's property names. */
 export type TemplateContentField = 'subjectVi' | 'subjectEn' | 'bodyVi' | 'bodyEn';
@@ -52,9 +98,30 @@ export interface TemplateContract {
    */
   isSystemTemplate: boolean;
   variables: TemplateContractVariable[];
+  /**
+   * DATA VARIABLES ONLY — a system block is never listed here. A placeholder is checked against this
+   * list only after it has been established that it is not a block; see `validateContent`.
+   */
   allowedVariables: string[];
   requiredVariables: string[];
   optionalVariables: string[];
+  /**
+   * System blocks the body must keep. The backend builds their markup, so an operator may move one but
+   * can neither author its contents nor supply a value — they are shown as protected regions, not as
+   * variables.
+   */
+  requiredSystemBlocks: string[];
+  /** System blocks this template may legally carry but does not have to. */
+  optionalSystemBlocks: string[];
+  /**
+   * Inert sample markup per block, from the backend — the same helpers the send uses, so the preview
+   * carries the real labels and styling. The buttons are `<span>`s with no href at all, so a click
+   * cannot navigate and no token or business URL exists to leak.
+   *
+   * `contactInformationBlock` is absent: it depends on the contact policy being edited, including
+   * unsaved toggles, and comes from the contact-block preview endpoint instead.
+   */
+  systemBlockPreviews: Record<string, string>;
   sensitiveVariables: string[];
   forbiddenInSubject: string[];
   /** The body must keep `{{actionBlock}}`. */
@@ -137,6 +204,39 @@ export function validateContent(
     const isSubject = field === 'subjectVi' || field === 'subjectEn';
 
     for (const name of extractPlaceholders(content[field])) {
+      // A system block is judged as a block, before any variable rule can reach it — mirroring
+      // EmailTemplateContentValidator. Checking it against `allowedVariables` was how a legal, and in
+      // some templates REQUIRED, {{contactInformationBlock}} came to be reported as a variable that
+      // "does not belong to this template": true of the variable list, and irrelevant, because the
+      // block was never in it and was never supposed to be.
+      if (isSystemBlock(name)) {
+        if (!contract.requiredSystemBlocks.includes(name)
+            && !contract.optionalSystemBlocks.includes(name)) {
+          issues.push({
+            field,
+            code: TEMPLATE_ERROR_CODES.systemBlockNotAllowed,
+            variableName: name,
+            messageVi: `Khối hệ thống {{${name}}} không dùng được ở mẫu ${contract.templateCode}; khi gửi sẽ không có gì thay thế vào chỗ này.`,
+            messageEn: `System block {{${name}}} is not available on ${contract.templateCode}.`,
+            severity: 'ERROR',
+          });
+          continue;
+        }
+
+        if (isSubject) {
+          issues.push({
+            field,
+            code: TEMPLATE_ERROR_CODES.subjectForbiddenSensitive,
+            variableName: name,
+            messageVi: `Khối hệ thống {{${name}}} không được đặt trong tiêu đề: khối sinh ra HTML và có thể chứa liên kết dùng một lần, trong khi tiêu đề được lưu lại trong lịch sử email.`,
+            messageEn: `System block {{${name}}} may not appear in a subject.`,
+            severity: 'ERROR',
+          });
+        }
+
+        continue;
+      }
+
       if (!contract.allowedVariables.includes(name)) {
         issues.push({
           field,
@@ -179,25 +279,99 @@ export function validateContent(
     for (const required of contract.requiredVariables) {
       if (present.includes(required)) continue;
 
-      const isActionBlock = required === 'actionBlock';
       issues.push({
         field: body,
-        code: isActionBlock
-          ? TEMPLATE_ERROR_CODES.actionBlockRequired
-          : TEMPLATE_ERROR_CODES.requiredVariableMissing,
+        code: TEMPLATE_ERROR_CODES.requiredVariableMissing,
         variableName: required,
-        messageVi: isActionBlock
-          ? 'Mẫu này cần {{actionBlock}} — khu vực nút thao tác do hệ thống gắn khi gửi. Bỏ nó đi thì người nhận không có nút nào để bấm.'
-          : `Mẫu này bắt buộc phải chứa biến {{${required}}}.`,
-        messageEn: isActionBlock
-          ? 'This template needs {{actionBlock}} — the action area the system attaches when sending.'
-          : `This template must contain {{${required}}}.`,
+        messageVi: `Mẫu này bắt buộc phải chứa biến {{${required}}}.`,
+        messageEn: `This template must contain {{${required}}}.`,
+        severity: 'ERROR',
+      });
+    }
+
+    // Each missing block reports under the code that names ITS repair. Reporting them all as
+    // "action block required" was survivable while the action block was the only one an operator could
+    // delete; with three blocks it would tell somebody who removed the contact card to go restore a
+    // button they never touched.
+    for (const required of contract.requiredSystemBlocks) {
+      if (present.includes(required)) continue;
+
+      issues.push({
+        field: body,
+        code: blockMissingCode(required),
+        variableName: required,
+        messageVi: blockMissingMessageVi(required),
+        messageEn: blockMissingMessageEn(required),
         severity: 'ERROR',
       });
     }
   }
 
   return issues;
+}
+
+function blockMissingCode(block: string): string {
+  if (block === 'actionBlock') return TEMPLATE_ERROR_CODES.actionBlockRequired;
+  if (block === 'contactInformationBlock') return TEMPLATE_ERROR_CODES.requiredContactBlockMissing;
+  return TEMPLATE_ERROR_CODES.requiredBlockMissing;
+}
+
+function blockMissingMessageVi(block: string): string {
+  switch (block) {
+    case 'actionBlock':
+      return 'Mẫu này cần {{actionBlock}} — khu vực nút thao tác do hệ thống gắn khi gửi. Bỏ nó đi thì người nhận không có nút nào để bấm.';
+    case 'setupSummaryBlock':
+      return 'Mẫu này cần {{setupSummaryBlock}} — các bảng thông tin chuẩn bị do hệ thống dựng khi gửi. Bỏ nó đi thì email chỉ còn câu dẫn, không có nội dung cập nhật nào.';
+    case 'contactInformationBlock':
+      return 'Mẫu này cần {{contactInformationBlock}} — khối đầu mối liên hệ do hệ thống điền khi gửi. Nội dung email có câu bảo người nhận liên hệ, nên bỏ khối này thì họ được yêu cầu liên hệ mà không có địa chỉ nào. Nếu không muốn hiển thị, hãy đổi mức bắt buộc ở mục 4.';
+    default:
+      return `Mẫu này bắt buộc phải chứa khối hệ thống {{${block}}}.`;
+  }
+}
+
+function blockMissingMessageEn(block: string): string {
+  switch (block) {
+    case 'actionBlock':
+      return 'This template needs {{actionBlock}} — the action area the system attaches when sending.';
+    case 'setupSummaryBlock':
+      return 'This template needs {{setupSummaryBlock}} — the setup tables the system builds when sending.';
+    case 'contactInformationBlock':
+      return 'This template needs {{contactInformationBlock}} — the reply-contact card the system fills in when sending. To leave it out, change the requirement level in contact settings.';
+    default:
+      return `This template must contain the system block {{${block}}}.`;
+  }
+}
+
+/**
+ * Substitutes system blocks with the inert sample markup the backend supplied, so the preview pane
+ * shows the action buttons and the contact card a recipient would see instead of the literal text
+ * `{{actionBlock}}`.
+ *
+ * The EDITOR keeps the placeholder — an operator has to be able to see and move it — so this runs only
+ * on the copy being previewed. A block with no sample renders as nothing rather than as raw braces:
+ * leaving `{{contactInformationBlock}}` visible in a preview reads as an unresolved variable, which is
+ * the very confusion this work removes.
+ *
+ * @param extra Blocks resolved outside the contract, keyed by name — the contact block, whose markup
+ *              depends on the policy toggles currently on screen.
+ */
+export function applySystemBlocks(
+  contract: TemplateContract,
+  content: string,
+  extra: Record<string, string> = {},
+): string {
+  let out = content;
+  const samples = { ...contract.systemBlockPreviews, ...extra };
+
+  for (const name of SYSTEM_BLOCK_NAMES) {
+    const pattern = new RegExp(`(?:\\{\\{|%7B%7B)\\s*${name}\\s*(?:\\}\\}|%7D%7D)`, 'g');
+    if (!pattern.test(out)) continue;
+
+    pattern.lastIndex = 0;
+    out = out.replace(pattern, samples[name] ?? '');
+  }
+
+  return out;
 }
 
 /** Substitutes the contract's samples so the operator sees the shape of a real message. */

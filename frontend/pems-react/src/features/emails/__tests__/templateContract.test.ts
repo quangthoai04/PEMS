@@ -7,10 +7,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  SYSTEM_BLOCK_NAMES,
   TEMPLATE_ERROR_CODES,
   applySamples,
+  applySystemBlocks,
   errorCodeOf,
   extractPlaceholders,
+  isSystemBlock,
   issuesFromError,
   validateContent,
   type TemplateContract,
@@ -27,9 +30,16 @@ const accountContract: TemplateContract = {
     { name: 'campusName', label: 'Cơ sở', sample: 'FPTU Hà Nội', required: false, sensitive: false, forbiddenInSubject: false },
     { name: 'expiresInHours', label: 'Hiệu lực (giờ)', sample: '24', required: false, sensitive: false, forbiddenInSubject: false },
   ],
-  allowedVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours', 'actionBlock'],
+  allowedVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours'],
   requiredVariables: [],
-  optionalVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours', 'actionBlock'],
+  optionalVariables: ['fullName', 'roleName', 'campusName', 'expiresInHours'],
+  requiredSystemBlocks: [],
+  optionalSystemBlocks: ['actionBlock'],
+  // What the backend sends: `<span>` buttons, no href, so a click cannot navigate.
+  systemBlockPreviews: {
+    actionBlock: '<div><span style="background:#9aa6b2">Chấp nhận</span>'
+      + '<span style="background:#9aa6b2">Từ chối</span></div>',
+  },
   sensitiveVariables: [],
   forbiddenInSubject: ['actionBlock'],
   requiresActionBlock: false,
@@ -50,9 +60,11 @@ const otpContract: TemplateContract = {
     { name: 'otpCode', label: 'Mã OTP', sample: '000000', required: true, sensitive: true, forbiddenInSubject: true },
     { name: 'expireMinutes', label: 'Hiệu lực (phút)', sample: '10', required: false, sensitive: false, forbiddenInSubject: false },
   ],
-  allowedVariables: ['fullName', 'otpCode', 'expireMinutes', 'actionBlock'],
+  allowedVariables: ['fullName', 'otpCode', 'expireMinutes'],
   requiredVariables: ['otpCode'],
-  optionalVariables: ['fullName', 'expireMinutes', 'actionBlock'],
+  optionalVariables: ['fullName', 'expireMinutes'],
+  requiredSystemBlocks: [],
+  optionalSystemBlocks: ['actionBlock'],
   sensitiveVariables: ['otpCode'],
   forbiddenInSubject: ['otpCode', 'actionBlock'],
 };
@@ -65,10 +77,31 @@ const invitationContract: TemplateContract = {
   variables: [
     { name: 'recipientName', label: 'Tên người nhận', sample: 'Nguyễn Văn An', required: false, sensitive: false, forbiddenInSubject: false },
   ],
-  allowedVariables: ['recipientName', 'actionBlock'],
-  requiredVariables: ['actionBlock'],
+  allowedVariables: ['recipientName'],
+  requiredVariables: [],
   optionalVariables: ['recipientName'],
+  requiredSystemBlocks: ['actionBlock'],
+  optionalSystemBlocks: [],
   requiresActionBlock: true,
+};
+
+/**
+ * A stand-in for VISIT_SETUP_PROGRESS_UPDATE — the one template carrying TWO required blocks, whose
+ * content IS its tables and whose text tells the guest to contact the Host.
+ */
+const setupProgressContract: TemplateContract = {
+  ...accountContract,
+  templateCode: 'VISIT_SETUP_PROGRESS_UPDATE',
+  module: 'VISIT_SETUP',
+  variables: [
+    { name: 'recipientName', label: 'Tên người nhận', sample: 'Nguyễn Văn An', required: false, sensitive: false, forbiddenInSubject: false },
+  ],
+  allowedVariables: ['recipientName'],
+  requiredVariables: [],
+  optionalVariables: ['recipientName'],
+  requiredSystemBlocks: ['setupSummaryBlock', 'contactInformationBlock'],
+  optionalSystemBlocks: ['actionBlock'],
+  forbiddenInSubject: ['actionBlock', 'setupSummaryBlock', 'contactInformationBlock'],
 };
 
 const content = (over: Partial<Record<'subjectVi' | 'bodyVi' | 'subjectEn' | 'bodyEn', string>>) => ({
@@ -205,6 +238,179 @@ describe('validateContent', () => {
     expect(issues).toHaveLength(1);
     expect(issues[0].field).toBe('bodyEn');
     expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredVariableMissing);
+  });
+});
+
+/**
+ * System blocks are not variables and must never be judged by the variable rules.
+ *
+ * The defect these pin: `{{contactInformationBlock}}` — legal on fourteen templates and MANDATORY on
+ * them — was checked against `allowedVariables`, which by design never contained it, and so came back
+ * as EMAIL_TEMPLATE_VARIABLE_UNKNOWN: "biến không tồn tại trong hệ thống". Every one of these fails
+ * against the pre-split contract.
+ */
+describe('system blocks are judged as blocks, not variables', () => {
+  it('accepts a required contact block without calling it an unknown variable', () => {
+    const issues = validateContent(setupProgressContract, content({
+      subjectVi: 'Cập nhật chuẩn bị',
+      bodyVi: '<p>Chào {{recipientName}}.</p>{{setupSummaryBlock}}{{contactInformationBlock}}',
+    }));
+
+    expect(issues).toEqual([]);
+  });
+
+  it('accepts an optional action block on a template that does not require one', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}.</p>{{actionBlock}}',
+    }));
+
+    expect(issues).toEqual([]);
+  });
+
+  it('never reports a system block under the unknown-VARIABLE code', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>{{contactInformationBlock}}{{setupSummaryBlock}}</p>',
+    }));
+
+    expect(issues).not.toHaveLength(0);
+    for (const issue of issues) {
+      expect(issue.code).not.toBe(TEMPLATE_ERROR_CODES.variableUnknown);
+      expect(issue.code).toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
+    }
+  });
+
+  /** The other half of the contract: a block in the wrong template is still refused. */
+  it('refuses a block the template cannot resolve', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}.</p>{{setupSummaryBlock}}',
+    }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
+    expect(issues[0].variableName).toBe('setupSummaryBlock');
+  });
+
+  /** An ordinary variable outside the contract must STILL be unknown — the split is not a relaxation. */
+  it('still reports a non-block variable outside the contract as unknown', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}, xe {{vehicleInfo}}.</p>',
+    }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.variableUnknown);
+    expect(issues[0].variableName).toBe('vehicleInfo');
+  });
+
+  it('reports a missing contact block under its own code, not the action-block one', () => {
+    const issues = validateContent(setupProgressContract, content({
+      subjectVi: 'Cập nhật chuẩn bị',
+      bodyVi: '<p>Chào {{recipientName}}.</p>{{setupSummaryBlock}}',
+    }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredContactBlockMissing);
+    expect(issues[0].variableName).toBe('contactInformationBlock');
+  });
+
+  it('keeps a block out of the subject, where it would be stored in history', () => {
+    const issues = validateContent(setupProgressContract, content({
+      subjectVi: 'Liên hệ {{contactInformationBlock}}',
+      bodyVi: '<p>x</p>{{setupSummaryBlock}}{{contactInformationBlock}}',
+    }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].field).toBe('subjectVi');
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.subjectForbiddenSensitive);
+  });
+
+  /**
+   * The editor is not the preview. The placeholder has to survive in the content an operator edits —
+   * they must be able to see where the block sits and move it — while the PREVIEW shows the rendered
+   * sample. Substituting in the editor would delete the only handle they have on the block's position.
+   */
+  it('leaves the placeholder untouched in the editable content', () => {
+    const body = '<p>Chào {{fullName}}.</p>{{actionBlock}}';
+
+    // applySamples is what the editor path runs; it must not consume blocks.
+    expect(applySamples(accountContract, body)).toContain('{{actionBlock}}');
+  });
+
+  it('turns the placeholder into the sample button markup in the preview', () => {
+    const out = applySystemBlocks(
+      accountContract,
+      '<p>Chào Nguyễn Văn An.</p>{{actionBlock}}',
+    );
+
+    expect(out).not.toContain('{{actionBlock}}');
+    expect(out).toContain('Chấp nhận');
+    expect(out).toContain('Từ chối');
+  });
+
+  /** A preview mints nothing: no anchor, so a click cannot navigate, and no token to leak. */
+  it('produces no link, token or business URL in the preview', () => {
+    const out = applySystemBlocks(accountContract, '{{actionBlock}}');
+
+    expect(out).not.toMatch(/<a\s/i);
+    expect(out).not.toMatch(/href=/i);
+    expect(out).not.toMatch(/https?:\/\//i);
+    expect(out).not.toMatch(/token|otp|acceptUrl|declineUrl/i);
+  });
+
+  /** The sample comes from the backend per language, so VI and EN differ without a table in here. */
+  it('follows the language the backend rendered the sample in', () => {
+    const en: TemplateContract = {
+      ...accountContract,
+      systemBlockPreviews: { actionBlock: '<div><span>Accept</span><span>Decline</span></div>' },
+    };
+
+    expect(applySystemBlocks(en, '{{actionBlock}}')).toContain('Accept');
+    expect(applySystemBlocks(accountContract, '{{actionBlock}}')).toContain('Chấp nhận');
+  });
+
+  /**
+   * A template with no sample for a block renders nothing rather than raw braces. Leaving
+   * `{{actionBlock}}` visible in a preview reads as an unresolved variable — the exact confusion this
+   * whole change removes.
+   */
+  it('renders nothing for a block the backend supplied no sample for', () => {
+    const bare: TemplateContract = { ...accountContract, systemBlockPreviews: {} };
+    const out = applySystemBlocks(bare, '<p>x</p>{{actionBlock}}');
+
+    expect(out).toBe('<p>x</p>');
+  });
+
+  it('substitutes the contact block from the live draft, not from the contract', () => {
+    const out = applySystemBlocks(
+      setupProgressContract,
+      '<p>x</p>{{contactInformationBlock}}',
+      { contactInformationBlock: '<table><tr><td>Điện thoại</td><td>0900 000 000</td></tr></table>' },
+    );
+
+    expect(out).toContain('0900 000 000');
+    expect(out).not.toContain('{{contactInformationBlock}}');
+  });
+
+  /** NO_CONTACT: the backend answers with an empty block, and the preview simply has no card. */
+  it('renders no contact card when the policy renders nothing', () => {
+    const out = applySystemBlocks(
+      setupProgressContract,
+      '<p>x</p>{{contactInformationBlock}}',
+      { contactInformationBlock: '' },
+    );
+
+    expect(out).toBe('<p>x</p>');
+  });
+
+  it('recognises exactly the blocks the backend registers', () => {
+    expect([...SYSTEM_BLOCK_NAMES].sort()).toEqual(
+      ['actionBlock', 'contactInformationBlock', 'setupSummaryBlock'],
+    );
+    expect(isSystemBlock('contactInformationBlock')).toBe(true);
+    expect(isSystemBlock('fullName')).toBe(false);
   });
 });
 

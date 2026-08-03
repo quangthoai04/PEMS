@@ -21,6 +21,7 @@ import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
 import { PhoneField } from '../shared/PhoneField';
 import { CountrySelect } from '../shared/CountrySelect';
+import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
 import { OtpVerificationModal } from '../OtpVerificationModal';
@@ -217,11 +218,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   const syncContactFromRegistrant = () => {
     const reg = form.getValues('registerInfo');
-    form.setValue(
-      'contactPoint',
-      { fullName: reg.fullName, organization: reg.organization, phone: reg.phone, email: reg.email },
-      { shouldValidate: true, shouldDirty: true },
-    );
+    const fields = ['fullName', 'organization', 'phone', 'email'] as const;
+    for (const f of fields) {
+      const path = `contactPoint.${f}` as any;
+      form.setValue(path, reg[f], { shouldDirty: true, shouldTouch: true });
+      form.clearErrors(path);
+    }
   };
 
   const watchedReg = form.watch('registerInfo');
@@ -525,7 +527,21 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             <input {...register('contactPoint.fullName')} className={inputCls(!!cpErr?.fullName, false, false)} />
           </FormField>
           <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.organization')} required error={cpErr?.organization?.message} showValidIcon={false}>
-            <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
+            <Controller
+              name="contactPoint.organization"
+              control={form.control}
+              render={({ field }) => (
+                <OrganizationCombobox
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  hasError={!!cpErr?.organization}
+                  placeholder={t('visitRequestV2:person.organization')}
+                  ariaLabel={t('visitRequestV2:person.organization')}
+                  testId="v2-contact-org"
+                />
+              )}
+            />
           </FormField>
           <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:card.phone')} error={cpErr?.phone?.message} showValidIcon={false}>
             <PhoneField

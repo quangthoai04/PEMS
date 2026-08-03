@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
+import { LogisticsWorkContent } from '../../../features/department-reception-tasks/components/LogisticsWorkContent';
 import { notificationsApi } from '../../../features/notifications/api/notificationsApi';
 import { useNotifications } from '../../../features/notifications/context/NotificationsContext';
 import { getNotificationLink } from '../../../features/notifications/components/NotificationBellButton';
@@ -861,17 +862,36 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                   <span className={`text-[11px] font-black px-3 py-1 rounded-full border ${getStatusBadge(activeEvent.status)}`}>{statusLabel(activeEvent.status)}</span>
                   <span className="text-[11px] font-bold text-slate-400">{activeEvent.itemType === 'INVITATION' ? 'Thư mời tham gia' : 'Đơn yêu cầu hỗ trợ'}</span>
                 </div>
-                {activeEvent.purpose && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <FileText className="w-4 h-4" />
-                      <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết</span>
+                {/* A REQUEST's detail comes from the request detail's `description`. `activeEvent.purpose`
+                    is derived from the calendar feed, which carries no description — its value is the
+                    item TITLE — so reading it here printed the request's own name under this heading.
+                    An invitation has no such detail field and keeps using `purpose`. */}
+                {(() => {
+                  const isRequest = activeEvent.itemType === 'REQUEST';
+                  // An invitation has no request-detail description and keeps using `purpose`.
+                  if (!isRequest) {
+                    return activeEvent.purpose ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <FileText className="w-4 h-4" />
+                          <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết</span>
+                        </div>
+                        <p className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-slate-700">
+                          {activeEvent.purpose}
+                        </p>
+                      </div>
+                    ) : null;
+                  }
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <FileText className="w-4 h-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
+                      </div>
+                      <LogisticsWorkContent detail={eventDetail} className="text-sm font-medium text-slate-700" />
                     </div>
-                    <div className="text-sm font-medium text-slate-700 leading-relaxed">
-                      {activeEvent.purpose.split('\n').map((line, idx) => <p key={idx} className="mb-1.5">{line}</p>)}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
 
               {/* Decline reason from detail */}

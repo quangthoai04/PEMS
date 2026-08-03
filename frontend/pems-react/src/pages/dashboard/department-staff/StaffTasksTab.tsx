@@ -93,7 +93,10 @@ function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
     time,
     location: item.organizationName || 'Hòa Lạc',
     host: item.currentResponsibleName || 'Hệ thống',
-    purpose: item.description || item.title,
+    // The assignments feed DOES carry the real description, so there is no reason to fall back to the
+    // title — doing so turned "no description yet" into a line that read like one, and the modal this
+    // feeds then had nothing to tell the two cases apart.
+    purpose: item.description || '',
     canAccept: item.canAccept,
     canDecline: item.canDecline,
     canProposeChange: item.canProposeChange,

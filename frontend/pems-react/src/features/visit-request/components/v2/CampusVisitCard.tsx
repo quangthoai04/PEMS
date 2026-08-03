@@ -231,7 +231,9 @@ export const CampusVisitCard: React.FC<Props> = ({
     // Per-field setValue on THIS card only — a whole-object set on a shared path would have leaked
     // into the other campus cards, which are independent snapshots by design.
     for (const f of QUICK_FILL_FIELDS) {
-      form.setValue(`${base}.operationalContact.${f}`, v[f], { shouldDirty: true, shouldValidate: true });
+      const fieldPath = `${base}.operationalContact.${f}` as any;
+      form.setValue(fieldPath, v[f], { shouldDirty: true, shouldTouch: true });
+      form.clearErrors(fieldPath);
     }
     setQuickFilledFrom(kind);
     setPendingQuickFill(null);

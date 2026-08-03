@@ -7,8 +7,10 @@ import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import { ContactSettingsPanel } from '../../../features/emails/components/ContactSettingsPanel';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import {
+  SYSTEM_BLOCK_LABELS,
   TEMPLATE_ERROR_CODES,
   applySamples,
+  applySystemBlocks,
   errorCodeOf,
   issuesFromError,
   validateContent,
@@ -100,6 +102,13 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const [submitting, setSubmitting] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [varSearch, setVarSearch] = useState('');
+
+  /**
+   * The contact block as card 4's CURRENT draft would render it — empty string when the policy renders
+   * nothing (NONE, or both channels hidden), which the preview shows as the block simply not being
+   * there. Owned here rather than inside the panel because the pane that displays it is up here.
+   */
+  const [contactBlockPreview, setContactBlockPreview] = useState('');
   const [contract, setContract] = useState<ContractState>({ status: 'idle' });
   const [serverIssues, setServerIssues] = useState<TemplateContentIssue[]>([]);
   const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
@@ -159,6 +168,13 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
     try {
       const res = await emailsApi.getEmailTemplateContract(templateCode, 'VI');
+      // An API built before the contract was split answers without the block lists. Treated as "this
+      // template declares no blocks" rather than allowed to reach the renderer as undefined, where
+      // reading .length would blank the whole screen — the same class of failure as the contact card's,
+      // and not one to reintroduce while fixing it.
+      res.data.requiredSystemBlocks ??= [];
+      res.data.optionalSystemBlocks ??= [];
+      res.data.systemBlockPreviews ??= {};
       if (requestId !== contractRequestId.current) return;   // superseded
       setContract({ status: 'ready', templateCode, contract: res.data });
     } catch {
@@ -448,7 +464,20 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   if (showForm) {
     const ready = contract.status === 'ready' ? contract.contract : null;
     const previewSubject = ready ? applySamples(ready, formData[subjectField]) : formData[subjectField];
-    const previewBody = ready ? applySamples(ready, formData[bodyField]) : formData[bodyField];
+
+    // Variables first, then blocks. Order matters only in that a block's sample markup is trusted and
+    // must not itself be scanned for variables — substituting it last means it never is.
+    //
+    // The contact block comes from card 4's live draft rather than the contract, so unticking a toggle
+    // changes this pane immediately; the rest of the samples were built by the backend with the same
+    // helpers the send uses.
+    const previewBody = ready
+      ? applySystemBlocks(
+          ready,
+          applySamples(ready, formData[bodyField]),
+          contactBlockPreview ? { contactInformationBlock: contactBlockPreview } : {},
+        )
+      : formData[bodyField];
     const visibleVariables = (ready?.variables ?? []).filter(v =>
       v.label.toLowerCase().includes(varSearch.toLowerCase()) ||
       v.name.toLowerCase().includes(varSearch.toLowerCase()));
@@ -581,7 +610,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       plugin is not installed — but it is markup that says "restyle this", and the one
                       thing a preview of an email must not do is restyle it. Replaced by the isolation
                       class, which only undoes inherited layout and lets a wide table scroll. */}
-                  <div className="pems-email-body max-w-none" dangerouslySetInnerHTML={{
+                  <div className="pems-email-body max-w-none" data-testid="preview-body" dangerouslySetInnerHTML={{
                     __html: sanitizeHtml(previewBody || '<span class="text-gray-400 italic">Chưa có nội dung...</span>')
                   }} />
                 </div>
@@ -637,12 +666,44 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       </div>
                     )}
 
-                    {ready.requiresActionBlock && (
-                      <div className="mb-3 flex items-start gap-1.5 text-[11px] text-blue-900 bg-blue-50 border border-blue-200 rounded p-2">
-                        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                        <span>
-                          Nội dung phải giữ <span className="font-mono font-bold">{'{{actionBlock}}'}</span> — khu vực nút thao tác hệ thống tự gắn khi gửi.
-                        </span>
+                    {/*
+                      System blocks, listed as blocks. They are NOT in the variable list below and must
+                      not be: the backend builds their markup and an operator can neither author it nor
+                      supply a value. Previously only {{actionBlock}} was named here, so the contact
+                      block — mandatory on fourteen templates — appeared nowhere on this screen at all,
+                      and an operator who deleted it learnt of its existence from a refusal.
+                    */}
+                    {(ready.requiredSystemBlocks.length > 0 || ready.optionalSystemBlocks.length > 0) && (
+                      <div className="mb-3 text-[11px] text-blue-900 bg-blue-50 border border-blue-200 rounded p-2"
+                           data-testid="system-blocks-notice">
+                        <div className="flex items-start gap-1.5 mb-1">
+                          <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                          <span className="font-semibold">Khối hệ thống — nội dung do hệ thống dựng</span>
+                        </div>
+                        <ul className="pl-5 space-y-1">
+                          {ready.requiredSystemBlocks.map(block => (
+                            <li key={block} data-testid={`system-block-required-${block}`}>
+                              <span className="font-mono font-bold">{`{{${block}}}`}</span>{' '}
+                              <span className="rounded bg-blue-100 px-1 py-0.5 font-semibold">bắt buộc giữ</span>
+                              <span className="block text-blue-800">
+                                {SYSTEM_BLOCK_LABELS[block]?.hint ?? 'Hệ thống điền nội dung khi gửi.'}
+                              </span>
+                            </li>
+                          ))}
+                          {ready.optionalSystemBlocks.map(block => (
+                            <li key={block} data-testid={`system-block-optional-${block}`}>
+                              <span className="font-mono font-bold">{`{{${block}}}`}</span>{' '}
+                              <span className="rounded bg-gray-100 px-1 py-0.5 text-gray-700">tùy chọn</span>
+                              <span className="block text-blue-800">
+                                {SYSTEM_BLOCK_LABELS[block]?.hint ?? 'Hệ thống điền nội dung khi gửi.'}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="pl-5 mt-1 text-blue-800">
+                          Có thể di chuyển vị trí khối trong nội dung, nhưng không sửa được bên trong và
+                          không nhập tay giá trị thay thế.
+                        </p>
                       </div>
                     )}
 
@@ -658,7 +719,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       />
                     </div>
 
-                    <div className="space-y-2 overflow-y-auto flex-1 pr-2 pb-4">
+                    <div className="space-y-2 overflow-y-auto flex-1 pr-2 pb-4"
+                         data-testid="variable-sidebar">
                       {visibleVariables.length === 0 && (
                         <div className="text-xs text-gray-400 italic">Không tìm thấy biến</div>
                       )}
@@ -702,7 +764,12 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                     Quyết định người nhận <span className="font-mono">{formData.templateCode}</span> nên
                     liên hệ với ai, và email được hiển thị những gì về họ.
                   </p>
-                  <ContactSettingsPanel templateCode={formData.templateCode} canEdit />
+                  <ContactSettingsPanel
+                    templateCode={formData.templateCode}
+                    canEdit
+                    language={language}
+                    onBlockPreviewChange={setContactBlockPreview}
+                  />
                 </div>
               )}
             </aside>
