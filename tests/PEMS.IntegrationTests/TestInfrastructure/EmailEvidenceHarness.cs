@@ -94,8 +94,43 @@ public sealed class EmailEvidenceHarness : IDisposable
             Options.Create(new EmailRecipientOptions()));
     }
 
+    /// <summary>
+    /// A dispatcher built the way the container builds one — including the reply-contact resolver.
+    ///
+    /// <para>
+    /// The resolver is an OPTIONAL constructor argument, and leaving it out is silent: the dispatcher
+    /// simply contributes no <c>{{contactInformationBlock}}</c>, and the renderer then refuses the
+    /// message with "còn placeholder chưa thay thế". Every end-to-end test of the fourteen templates
+    /// whose policy is REQUIRED failed that way — sixty-five of them — describing a defect that exists
+    /// only in the harness, because <c>DependencyInjection</c> registers the resolver and production
+    /// therefore always has one.
+    /// </para>
+    ///
+    /// <para>
+    /// It is the REAL resolver and the REAL policy store over the test database, not a stub. A stub
+    /// would make these tests agree with themselves rather than with the cascade an operator configures,
+    /// and the fail-closed behaviour for a REQUIRED template with no reachable contact is exactly the
+    /// thing worth proving end to end.
+    /// </para>
+    /// </summary>
     public SystemEmailDispatcher Dispatcher(ApplicationDbContext db, string? brokenHost = null)
-        => new(db, new EmailTemplateRenderer(db), Sender(brokenHost));
+        => new(db, new EmailTemplateRenderer(db), Sender(brokenHost),
+               recipientOptions: null, contacts: Contacts(db));
+
+    /// <summary>The contact resolver, over the same context, with the support contact tests rely on.</summary>
+    public static PEMS.Application.Emails.Contact.IEmailContactResolver Contacts(ApplicationDbContext db)
+        => new PEMS.Application.Emails.Contact.EmailContactResolver(
+            db,
+            new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db),
+            Options.Create(new PEMS.Application.Emails.Contact.EmailSupportContactOptions
+            {
+                // A last-resort address for the templates whose policy is SUPPORT_CONTACT. Present so a
+                // REQUIRED template can resolve at all; the tests that care about the fail-closed path
+                // set their own options rather than relying on this one being absent.
+                Name = "PEMS Support",
+                Email = "support@pems.test",
+                Phone = "1900 0000",
+            }));
 
     public string[] Messages()
         => Directory.Exists(PickupDirectory) ? Directory.GetFiles(PickupDirectory, "*.eml") : Array.Empty<string>();

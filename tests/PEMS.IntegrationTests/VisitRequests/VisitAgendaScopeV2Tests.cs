@@ -255,11 +255,16 @@ public sealed class VisitAgendaScopeV2Tests
 
                 // …and the values the report/email templates interpolate come from that same row, so the
                 // guest-facing "dự kiến từ … đến …" follows the save rather than the original booking.
+                // hostEmail is no longer a variable of this template: {{contactInformationBlock}}
+                // carries the Host's address, along with the role and telephone number a bare variable
+                // could not, and it resolves from the visit instance rather than from whatever the
+                // caller passed. What this test is about — that the times follow the saved row — is
+                // unchanged.
                 var variables = PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressEmailGuard
-                    .BuildVariables(instance, "Đoàn dời giờ", "FPT Hà Nội", "Host HN", "host.hn@fpt.edu.vn");
+                    .BuildVariables(instance, "Đoàn dời giờ", "FPT Hà Nội", "Host HN");
                 Assert.Equal(movedStart.ToString("HH:mm dd/MM/yyyy"), variables["plannedStart"]);
                 Assert.Equal(movedEnd.ToString("HH:mm dd/MM/yyyy"), variables["plannedEnd"]);
-                Assert.Equal("host.hn@fpt.edu.vn", variables["hostEmail"]);
+                Assert.DoesNotContain("hostEmail", variables.Keys);
             }
         }
         finally { await CleanupAsync(requestId); }

@@ -224,13 +224,38 @@ public sealed class EmailTemplateCatalogTests : IDisposable
     /// <summary>The concurrency token an editor would have loaded: the row's current revision.</summary>
     private static uint TokenOf(EmailTemplate t) => t.Revision;
 
+    /// <summary>
+    /// The body an operator could actually save: every trusted block this template's contract REQUIRES
+    /// is kept.
+    ///
+    /// <para>
+    /// The handler refuses content that drops one — <c>ACCOUNT_ACTIVATED</c> tells the recipient to get
+    /// in touch, so its body must carry <c>{{contactInformationBlock}}</c> or the message would ask for
+    /// contact and give no address. The tests below are about persistence, the update whitelist and the
+    /// concurrency token, so they satisfy that requirement rather than route around it; hard-coding the
+    /// block in each literal instead would mean editing them again the next time a policy moves.
+    /// </para>
+    /// </summary>
+    private static string Editable(string templateCode, string bodyVi)
+    {
+        var body = bodyVi;
+
+        foreach (var (block, _) in EmailTemplateContracts.RequiredBlocksFor(templateCode))
+        {
+            var placeholder = "{{" + block + "}}";
+            if (!body.Contains(placeholder, StringComparison.Ordinal)) body += placeholder;
+        }
+
+        return body;
+    }
+
     private static UpdateEmailTemplateCommand ContentEdit(EmailTemplate t, string bodyVi) => new()
     {
         EmailTemplateId = t.EmailTemplateId,
         Name = t.Name,
         Description = t.Description,
         SubjectVi = t.SubjectVi ?? "Tiêu đề",
-        BodyVi = bodyVi,
+        BodyVi = Editable(t.TemplateCode, bodyVi),
         SubjectEn = t.SubjectEn,
         BodyEn = t.BodyEn,
         ExpectedRevision = TokenOf(t),
@@ -283,14 +308,17 @@ public sealed class EmailTemplateCatalogTests : IDisposable
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.AccountActivated)!;
         foreach (var declared in contract.AllowedVariables)
         {
-            if (declared == PEMS.Application.Common.Interfaces.EmailTrustedBlocks.ActionBlock) continue;
+            // Every trusted block is skipped, not just the action block. The contact block joined them
+            // when contact information became a block, and testing against one name meant this assertion
+            // started demanding a value that the handler is specifically written to leave out.
+            if (PEMS.Application.Common.Interfaces.EmailTrustedBlocks.All.Contains(declared)) continue;
             Assert.Contains(declared, after.VariablesText ?? "");
         }
 
-        // The trusted block is deliberately NOT listed: variables_text describes what a CALLER supplies,
-        // and the action block is minted by the backend. Listing it would invite a caller to pass one.
-        Assert.DoesNotContain(
-            PEMS.Application.Common.Interfaces.EmailTrustedBlocks.ActionBlock, after.VariablesText ?? "");
+        // Trusted blocks are deliberately NOT listed: variables_text describes what a CALLER supplies,
+        // and a block is minted by the backend. Listing one would invite a caller to pass it.
+        foreach (var block in PEMS.Application.Common.Interfaces.EmailTrustedBlocks.All)
+            Assert.DoesNotContain(block, after.VariablesText ?? "");
     }
 
     [Fact]
@@ -308,7 +336,9 @@ public sealed class EmailTemplateCatalogTests : IDisposable
         Assert.NotNull(response.UpdatedAt);
 
         await using var fresh = EmailEvidenceHarness.NewContext();
-        Assert.Equal(marker, (await LoadAsync(fresh, SystemEmailTemplates.AccountActivated)).BodyVi);
+        Assert.Equal(
+            Editable(SystemEmailTemplates.AccountActivated, marker),
+            (await LoadAsync(fresh, SystemEmailTemplates.AccountActivated)).BodyVi);
     }
 
     // ── Content validation reaches the handler ───────────────────────────────
@@ -386,7 +416,9 @@ public sealed class EmailTemplateCatalogTests : IDisposable
         Assert.Equal(EmailErrorCodes.TemplateConcurrencyConflict, ex.ErrorCode);
 
         await using var fresh = EmailEvidenceHarness.NewContext();
-        Assert.Equal(firstBody, (await LoadAsync(fresh, SystemEmailTemplates.AccountActivated)).BodyVi);
+        Assert.Equal(
+            Editable(SystemEmailTemplates.AccountActivated, firstBody),
+            (await LoadAsync(fresh, SystemEmailTemplates.AccountActivated)).BodyVi);
     }
 
     [Fact]
