@@ -39,7 +39,7 @@ public static class SensitiveEmailVariables
     public static readonly IReadOnlySet<string> KnownNonSensitive =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            "assigneeName", "campusName", "contactFullName", "coordinationNote", "currentContactName",
+            "assigneeName", "campusName", "contactFullName", "currentContactName",
             "delegationName", "departmentLeaderName", "departmentName", "dueAt", "effectiveDate",
             // hostEmail is gone: the Host's address is no longer a template variable at all. It now
             // arrives inside {{contactInformationBlock}}, resolved from the visit instance. The
@@ -47,6 +47,11 @@ public static class SensitiveEmailVariables
             // guest is being told to write to authorises nothing, so it may stay in the stored body and
             // in the email history — but there is no variable left here to classify.
             "expireMinutes", "expiresInHours", "fullName", "hostMessage", "hostName", "itemTitle",
+            // The Host's instructions for the logistics item — what to prepare, how, and any caveat.
+            // Operational content of exactly the kind `proposedDescription` already is: it authorises
+            // nothing and unlocks nothing, so the request email keeps a stored body and stays readable
+            // in the history, which is where a department goes to re-read what it agreed to do.
+            "logisticsDescription",
             "logisticsItemType", "logisticsTitle", "newRoleName", "oldEmailMasked", "oldRoleName",
             "originalQuantity", "periodFrom", "periodTo", "personName", "plannedEnd", "plannedStart",
             "plannedTime",

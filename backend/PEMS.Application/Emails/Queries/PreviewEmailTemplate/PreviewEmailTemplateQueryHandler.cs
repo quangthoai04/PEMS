@@ -63,14 +63,7 @@ public sealed class PreviewEmailTemplateQueryHandler
         // A detail-link template shows the label its real send uses. Before this the stand-in always read
         // "Mở yêu cầu để xử lý", which is the Department flow's wording — an operator editing the visit
         // reminder saw a button promising an action that template does not offer.
-        var disabled = spec is null
-            ? EmailComposition.DisabledUnspecifiedActionBlock(language)
-            : spec.HasLogisticsAction
-                ? EmailComposition.DisabledLogisticsActionBlock()
-                : spec.HasDetailLink
-                    ? EmailComposition.DisabledDetailLinkBlock(
-                        EmailActionTemplates.DetailLinkLabelFor(code) ?? "Mở yêu cầu để xử lý")
-                    : EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
+        var disabled = EmailActionTemplates.DisabledBlockFor(code, language);
 
         var trustedBlocks = new Dictionary<string, string>
         {

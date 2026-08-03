@@ -17,7 +17,31 @@ public sealed record EmailContractVariable(
 /// <summary>
 /// Everything the editor, the validator and the preview need to know about ONE template, resolved from
 /// the backend registry rather than assembled per screen.
+///
+/// <para>
+/// <b>Variables and system blocks are two different things and are carried separately.</b> A variable is
+/// a value an operator may write and the caller supplies at send time; a system block is markup the
+/// BACKEND builds and injects, which an operator may position but never author or fill in. They were
+/// previously merged into one <c>AllowedVariables</c> list so that the editor would not reject a body
+/// containing <c>{{actionBlock}}</c> — which worked, but made every question about a block get answered
+/// by variable machinery. The visible cost was that a legal block in a legal place could still be
+/// reported as <c>EMAIL_TEMPLATE_VARIABLE_UNKNOWN</c> ("biến không tồn tại") whenever the two lists
+/// disagreed, which names the wrong thing, points at the wrong fix, and is not even true: a block is not
+/// a variable and its absence from a variable list says nothing about whether it is allowed.
+/// </para>
 /// </summary>
+/// <param name="AllowedVariables">
+/// Data variables only — never a trusted block. This is the list a placeholder is checked against before
+/// being called unknown.
+/// </param>
+/// <param name="RequiredSystemBlocks">
+/// Blocks whose removal from the body makes the message not worth sending. Reported under the code that
+/// names the block's own repair, never under a missing-variable code.
+/// </param>
+/// <param name="OptionalSystemBlocks">
+/// Blocks this template may legally carry. A block outside both lists is refused where it was written —
+/// it can never resolve on this template, so admitting it would only defer the discovery to send time.
+/// </param>
 public sealed record EmailTemplateContract(
     string TemplateCode,
     string Module,
@@ -25,6 +49,8 @@ public sealed record EmailTemplateContract(
     IReadOnlyList<string> AllowedVariables,
     IReadOnlyList<string> RequiredVariables,
     IReadOnlyList<string> OptionalVariables,
+    IReadOnlyList<string> RequiredSystemBlocks,
+    IReadOnlyList<string> OptionalSystemBlocks,
     IReadOnlyList<string> SensitiveVariables,
     IReadOnlyList<string> ForbiddenInSubject,
     bool RequiresActionBlock,
@@ -32,7 +58,21 @@ public sealed record EmailTemplateContract(
     bool AllowCc,
     bool AllowBcc,
     string SecurityClassification,
-    IReadOnlyList<string> EditableFields);
+    IReadOnlyList<string> EditableFields)
+{
+    /// <summary>Every system block this template may carry, required or not.</summary>
+    public IReadOnlyList<string> AllowedSystemBlocks =>
+        RequiredSystemBlocks.Concat(OptionalSystemBlocks).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>True when the name is a registered trusted block — on ANY template, not just this one.</summary>
+    public static bool IsSystemBlock(string placeholderName)
+        => EmailTrustedBlocks.All.Contains(placeholderName);
+
+    /// <summary>True when this template may carry the given block.</summary>
+    public bool AllowsSystemBlock(string placeholderName)
+        => RequiredSystemBlocks.Contains(placeholderName, StringComparer.Ordinal)
+           || OptionalSystemBlocks.Contains(placeholderName, StringComparer.Ordinal);
+}
 
 /// <summary>
 /// Resolves the per-template contract that <see cref="SystemEmailTemplates"/>,
@@ -139,22 +179,31 @@ public static class EmailTemplateContracts
         var carriesSecret = SensitiveEmailVariables.CarriesSecret(template);
         var sensitive = SensitiveEmailVariables.DeclaredBy(template);
 
-        // The action block is not a variable an operator supplies — it is a trusted block the backend
-        // injects — but the editor has to know the placeholder is legal.
-        //
-        // ALLOWED on every template, REQUIRED only where the registry declares an action spec. Fourteen
-        // of the thirty canonical templates write {{actionBlock}} in their body and only five are
-        // registered; allowing it solely for those five would have made the other nine impossible to
-        // save at all, which is the same false refusal this whole contract exists to remove — just
-        // pointed at a different set of templates. Whether a given template's send can actually resolve
-        // the block is a send-time question, and it stays fail-closed there (R-106).
-        var requiresActionBlock = spec is not null;
-
-        var allowed = new List<string>(template.DeclaredVariables) { EmailTrustedBlocks.ActionBlock };
+        // ── Data variables ───────────────────────────────────────────────────
+        // Only what an operator may write and a caller supplies. A trusted block declared here by
+        // accident would re-merge the two categories this split exists to keep apart, so it is filtered
+        // out rather than trusted.
+        var allowed = template.DeclaredVariables
+            .Where(v => !EmailTrustedBlocks.All.Contains(v))
+            .ToList();
 
         // Narrow by design; see the class remarks.
         var required = new List<string>(sensitive);
-        if (requiresActionBlock) required.Add(EmailTrustedBlocks.ActionBlock);
+        var optional = allowed.Where(v => !required.Contains(v, StringComparer.Ordinal)).ToList();
+
+        // ── System blocks ────────────────────────────────────────────────────
+        // The action block is ALLOWED on every template, REQUIRED only where the registry declares an
+        // action spec. Fourteen of the canonical templates write {{actionBlock}} in their body and only
+        // five are registered; allowing it solely for those five would have made the other nine
+        // impossible to save at all — the same false refusal this contract exists to remove, pointed at
+        // a different set of templates. Whether a given send can actually resolve the block is a
+        // send-time question, and it stays fail-closed there (R-106).
+        var requiresActionBlock = spec is not null;
+
+        var requiredBlocks = new List<string>();
+        var optionalBlocks = new List<string>();
+
+        (requiresActionBlock ? requiredBlocks : optionalBlocks).Add(EmailTrustedBlocks.ActionBlock);
 
         // Any other trusted block is allowed ONLY on the template that needs it. The blanket allowance
         // above is specific to the action block and rests on a fact that holds for nothing else: many
@@ -162,10 +211,7 @@ public static class EmailTemplateContracts
         // everywhere would only let an operator paste it somewhere it can never resolve and discover
         // that at send time. Refused at save instead, where the mistake was made.
         if (RequiredTrustedBlockByTemplate.TryGetValue(template.TemplateCode, out var mustHaveBlock))
-        {
-            allowed.Add(mustHaveBlock);
-            required.Add(mustHaveBlock);
-        }
+            requiredBlocks.Add(mustHaveBlock);
 
         // The contact block is allowed wherever the policy renders one and required where the policy is
         // REQUIRED, so the editor refuses a body that drops it at SAVE time — where the operator made the
@@ -173,15 +219,18 @@ public static class EmailTemplateContracts
         var contactPolicy = Contact.EmailContactPolicyDefaults.For(template.TemplateCode);
         if (contactPolicy.RendersBlock)
         {
-            allowed.Add(EmailTrustedBlocks.ContactInformationBlock);
-            if (contactPolicy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED)
-                required.Add(EmailTrustedBlocks.ContactInformationBlock);
+            var isRequired = contactPolicy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED;
+            (isRequired ? requiredBlocks : optionalBlocks).Add(EmailTrustedBlocks.ContactInformationBlock);
         }
 
-        var optional = allowed.Where(v => !required.Contains(v, StringComparer.Ordinal)).ToList();
-
+        // Computed over variables AND blocks: a trusted block is the only route by which markup — and
+        // therefore a live one-time URL — enters a rendered message, so a subject that interpolates one
+        // is storing a link by construction. Splitting the lists must not lose that rule.
         var forbiddenInSubject = allowed
+            .Concat(requiredBlocks)
+            .Concat(optionalBlocks)
             .Where(SensitiveEmailVariables.ForbiddenInSubject)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
 
         return new EmailTemplateContract(
@@ -191,6 +240,8 @@ public static class EmailTemplateContracts
             allowed,
             required,
             optional,
+            requiredBlocks,
+            optionalBlocks,
             sensitive,
             forbiddenInSubject,
             requiresActionBlock,

@@ -26,7 +26,16 @@ namespace PEMS.Application.Emails.Contact;
 /// Whether the stored body actually has it, per language — so the screen can warn BEFORE a save is
 /// attempted instead of only relaying the refusal afterwards.
 /// </param>
-/// <param name="IsDefault">False once an operator has saved an override for this template.</param>
+/// <param name="HasOwnPolicyRow">
+/// Whether a TEMPLATE-scope row exists for this template at all. Reported as the plain fact it is —
+/// NOT as "these are the defaults". The seed writes a row for every catalogued template, so this is true
+/// almost everywhere and says nothing about whether any particular value was inherited; the per-field
+/// <c>*Source</c> labels below are what answer that.
+/// </param>
+/// <param name="RequirementSource">
+/// Which cascade level supplied this field: TEMPLATE / CAMPUS / DEPARTMENT / SYSTEM / SHIPPED_DEFAULT.
+/// One label per field because the cascade is applied per field.
+/// </param>
 /// <param name="AvailableRequirements">Legal values, from the backend rather than a list in the screen.</param>
 public sealed record EmailContactSettingsDto(
     string TemplateCode,
@@ -43,10 +52,29 @@ public sealed record EmailContactSettingsDto(
     string BlockPlaceholder,
     bool BodyCarriesBlockVi,
     bool BodyCarriesBlockEn,
-    bool IsDefault,
+    bool HasOwnPolicyRow,
+    string RequirementSource,
+    string ContactSourceSource,
+    string ShowEmailSource,
+    string ShowPhoneSource,
+    string ShowDepartmentSource,
+    string ShowCampusSource,
+    string ShowSenderSource,
+    string ReplyToSourceSource,
+    string HeadingSource,
     IReadOnlyList<string> AvailableRequirements,
     IReadOnlyList<string> AvailableSources,
-    IReadOnlyList<string> AvailableReplyToSources);
+    IReadOnlyList<string> AvailableReplyToSources)
+{
+    /// <summary>True when at least one field is not this template's own — the only honest trigger for an
+    /// "inheriting" notice on the screen.</summary>
+    public bool HasInheritedField =>
+        new[]
+        {
+            RequirementSource, ContactSourceSource, ShowEmailSource, ShowPhoneSource,
+            ShowDepartmentSource, ShowCampusSource, ShowSenderSource, ReplyToSourceSource, HeadingSource,
+        }.Any(level => level != EmailContactPolicyLevels.Template);
+}
 
 public sealed class GetEmailContactSettingsQuery : IRequest<EmailContactSettingsDto>
 {
@@ -78,9 +106,10 @@ public sealed class GetEmailContactSettingsQueryHandler
         // Resolved WITHOUT a campus or department: the template screen edits the template level, and
         // showing a value that only applies inside one campus would misdescribe what the operator is
         // about to change.
-        var policy = await _policies.ResolveAsync(code, null, null, cancellationToken);
+        var (policy, provenance) =
+            await _policies.ResolveWithProvenanceAsync(code, null, null, cancellationToken);
 
-        var hasOverride = await _db.EmailContactPolicies
+        var hasOwnRow = await _db.EmailContactPolicies
             .AsNoTracking()
             .AnyAsync(p => p.ScopeType == EmailContactScopeType.TEMPLATE && p.ScopeKey == code, cancellationToken);
 
@@ -107,7 +136,16 @@ public sealed class GetEmailContactSettingsQueryHandler
             marker,
             bodies?.BodyVi?.Contains(marker, StringComparison.Ordinal) ?? false,
             bodies?.BodyEn?.Contains(marker, StringComparison.Ordinal) ?? false,
-            !hasOverride,
+            hasOwnRow,
+            provenance.Requirement,
+            provenance.ContactSource,
+            provenance.ShowEmail,
+            provenance.ShowPhone,
+            provenance.ShowDepartment,
+            provenance.ShowCampus,
+            provenance.ShowSender,
+            provenance.ReplyToSource,
+            provenance.Heading,
             Enum.GetNames<EmailContactRequirement>(),
             Enum.GetNames<EmailContactSource>(),
             Enum.GetNames<EmailReplyToSource>());

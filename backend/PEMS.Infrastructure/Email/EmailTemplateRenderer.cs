@@ -212,11 +212,40 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
             if (values.TryGetValue(name, out var value))
             {
                 value ??= string.Empty;
-                return encodeValues ? WebUtility.HtmlEncode(value) : value;
+                return encodeValues ? EncodeForHtmlBody(value) : value;
             }
 
             return match.Value;
         });
+
+    /// <summary>
+    /// A variable value as it must appear inside an HTML body: encoded first, then its line breaks turned
+    /// into <c>&lt;br /&gt;</c>.
+    ///
+    /// <para>
+    /// The order is the whole point and is not interchangeable. Encoding first means anything the user
+    /// typed — <c>&lt;script&gt;</c>, an <c>onclick=</c>, a stray <c>&amp;</c> — is already inert text by
+    /// the time a tag is introduced, and the only tag that can exist in the result is the one this method
+    /// wrote. Inserting the break first would put a real tag into a string that is about to be encoded,
+    /// and the recipient would read the characters "&amp;lt;br /&amp;gt;".
+    /// </para>
+    /// <para>
+    /// Without this, a multi-line value collapsed to one line: HTML treats a newline as whitespace, so a
+    /// logistics description written as three instructions arrived as one run-on sentence. Values with no
+    /// newline are returned exactly as before. This never runs on a subject — that path passes
+    /// <c>encodeValues: false</c>, and a subject is a header where a line break is an injection, not
+    /// formatting.
+    /// </para>
+    /// </summary>
+    private static string EncodeForHtmlBody(string value)
+    {
+        var encoded = WebUtility.HtmlEncode(value);
+
+        // Normalise CRLF and CR to LF first so a Windows-authored value does not emit two breaks.
+        return encoded.IndexOf('\n') < 0 && encoded.IndexOf('\r') < 0
+            ? encoded
+            : encoded.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "<br />");
+    }
 
     /// <summary>
     /// Refuses a subject that would interpolate a credential. Runs on the RAW subject, so the rejection

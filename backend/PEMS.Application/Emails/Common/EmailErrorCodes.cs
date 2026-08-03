@@ -210,6 +210,21 @@ public static class EmailErrorCodes
     public const string TemplateRequiredBlockNotInBody = "EMAIL_TEMPLATE_REQUIRED_BLOCK_NOT_IN_BODY";
 
     /// <summary>
+    /// A trusted block was written into a template that has no such block to inject — e.g.
+    /// <c>{{setupSummaryBlock}}</c> pasted into an account notice.
+    ///
+    /// <para>
+    /// Its own code because the previous answer was <see cref="TemplateVariableUnknown"/>, which says
+    /// "biến không tồn tại trong hệ thống" about a placeholder that certainly does exist and is required
+    /// elsewhere. That named the wrong thing and implied the wrong repair (define the variable, or wait
+    /// for a catalog fix) when the actual repair is to delete the block from this template's body. A
+    /// block is refused at SAVE, where the operator can still see what they pasted, rather than at send
+    /// time where nothing would be substituted for it.
+    /// </para>
+    /// </summary>
+    public const string TemplateSystemBlockNotAllowed = "EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED";
+
+    /// <summary>
     /// A create, delete, clone or status change was attempted against the system template catalog. The
     /// catalog is fixed in code: a template code exists because a caller in a release sends it, so one
     /// invented through the API would be a row nothing can ever address.
@@ -271,4 +286,19 @@ public static class EmailErrorCodes
     /// lie as a contact line with no address.
     /// </summary>
     public const string ReplyToInvalid = "EMAIL_REPLY_TO_INVALID";
+
+    /// <summary>
+    /// The contact-policy store could not be read at all — <c>email_contact_policies</c> is missing from
+    /// this database, or the query against it failed.
+    ///
+    /// <para>
+    /// Distinct from every "not found" above, and that distinction is the point. A database that has not
+    /// had <c>2026-08-03_email_contact_information_block.sql</c> applied answers the settings screen with
+    /// a failure that is indistinguishable, from the client, from a mistyped template code or a route
+    /// that does not exist — all three arrived as one generic sentence, and the operator was left to
+    /// guess which of "run the patch", "fix the code" or "restart the API" they needed. This code names
+    /// the first of those three so the screen can say it.
+    /// </para>
+    /// </summary>
+    public const string ContactPolicyStoreUnavailable = "EMAIL_CONTACT_POLICY_STORE_UNAVAILABLE";
 }

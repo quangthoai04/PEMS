@@ -131,10 +131,18 @@ public static class EmailComposition
     // one-time token. Neither ever appears in the editable template body — a template author must not be
     // able to move, delete or fabricate the button that activates an account.
 
-    /// <summary>Confirm-email button plus the same link in plain text, for clients that strip buttons.</summary>
-    public static string ConfirmEmailBlock(string confirmUrl)
+    /// <summary>
+    /// Confirm-email button plus the same link in plain text, for clients that strip buttons.
+    ///
+    /// <para>
+    /// The label comes from <c>EmailActionTemplates.ConfirmEmailLabel</c> so the send and the editor's
+    /// preview cannot disagree about what the button says. It defaults here rather than being required,
+    /// so the eight existing call sites keep working unchanged.
+    /// </para>
+    /// </summary>
+    public static string ConfirmEmailBlock(string confirmUrl, string? label = null)
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(confirmUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xác nhận email &amp; kích hoạt tài khoản</a>
+            <a href=""{HE(confirmUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(label ?? EmailActionTemplates.ConfirmEmailLabel(EmailLanguages.Vi))}</a>
         </div>
         <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(confirmUrl)}</p>");
 
@@ -159,10 +167,13 @@ public static class EmailComposition
 
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
 
-    /// <summary>Preview stand-in for <see cref="ConfirmEmailBlock"/> — no token is minted.</summary>
-    public static string DisabledConfirmEmailBlock()
-        => @"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xác nhận email &amp; kích hoạt tài khoản</span>
+    /// <summary>
+    /// Preview stand-in for <see cref="ConfirmEmailBlock"/> — no token is minted, and no anchor exists,
+    /// so a click has nowhere to go.
+    /// </summary>
+    public static string DisabledConfirmEmailBlock(string? label = null)
+        => $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(label ?? EmailActionTemplates.ConfirmEmailLabel(EmailLanguages.Vi))}</span>
         </div>";
 
     /// <summary>Preview stand-in for <see cref="LoginBlock"/>.</summary>

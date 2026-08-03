@@ -100,8 +100,20 @@ public static class EmailVariableCatalog
               "Dùng phòng A105 thay cho A201", "Use room A105 instead of A201"),
             V("proposalNote", "Ghi chú đề xuất", "Proposal note",
               "Phòng A201 đã có lịch trùng.", "Room A201 is already booked."),
-            V("coordinationNote", "Ghi chú phối hợp", "Coordination note",
-              "Liên hệ trước 1 ngày để nhận thiết bị.", "Please collect the equipment one day in advance."),
+            // coordinationNote used to live here. It described visit_logistics_items.offline_coordination_note
+            // but was only ever wired to LOGISTICS_REQUEST_TO_DEPARTMENT, where it carried the Host's
+            // DESCRIPTION under the wrong heading — and where a real coordination note can never appear,
+            // because an OFFLINE_COORDINATED item is recorded DONE and sends no email. No template
+            // declares it now, and the catalog may not describe a variable no template declares.
+            //
+            // The Host's "Mô tả chi tiết" on the logistics request — the original work content, as
+            // opposed to proposedDescription, which is what a department counter-offers against it.
+            // The sample is deliberately multi-line: this is the one logistics variable whose real
+            // values wrap, and a preview that never wraps hides the line-break handling from whoever
+            // is editing the template.
+            V("logisticsDescription", "Nội dung chi tiết công việc", "Detailed work content",
+              "Chuẩn bị teabreak cho 20 khách, gồm trà, cà phê, nước suối và bánh ngọt.\nBố trí trước giờ họp 15 phút.",
+              "Tea break for 20 guests: tea, coffee, water and pastries.\nSet up 15 minutes before the meeting."),
             V("dueAt", "Hạn xử lý", "Due at", "17:00 ngày 18/08/2026", "18 Aug 2026, 17:00"),
 
             // ── reporting ────────────────────────────────────────────────────────

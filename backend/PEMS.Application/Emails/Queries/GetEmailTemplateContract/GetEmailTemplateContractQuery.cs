@@ -47,9 +47,40 @@ public sealed class EmailTemplateContractDto
     public IReadOnlyList<EmailTemplateContractVariableDto> Variables { get; set; } =
         new List<EmailTemplateContractVariableDto>();
 
+    /// <summary>Data variables only. A trusted block is never listed here — see the two block lists.</summary>
     public IReadOnlyList<string> AllowedVariables { get; set; } = new List<string>();
     public IReadOnlyList<string> RequiredVariables { get; set; } = new List<string>();
     public IReadOnlyList<string> OptionalVariables { get; set; } = new List<string>();
+
+    /// <summary>
+    /// System blocks the body must keep. The editor shows these as protected regions rather than as
+    /// variables: the backend builds their markup, so an operator may move one but can neither author
+    /// its contents nor supply a value for it.
+    /// </summary>
+    public IReadOnlyList<string> RequiredSystemBlocks { get; set; } = new List<string>();
+
+    /// <summary>System blocks this template may legally carry but does not have to.</summary>
+    public IReadOnlyList<string> OptionalSystemBlocks { get; set; } = new List<string>();
+
+    /// <summary>
+    /// Inert sample markup for each block this template allows, keyed by block name — what the editor's
+    /// preview pane substitutes for the placeholder.
+    ///
+    /// <para>
+    /// Built here, by the same <c>EmailComposition</c> helpers the send and the preview modal use, so the
+    /// buttons carry the labels and styling a recipient will actually see. Reproducing them in the screen
+    /// would be a second implementation that starts correct and drifts — and the operator would have no
+    /// way to know which of the two the recipient gets. Every URL is <c>#</c>: a preview mints no tokens.
+    /// </para>
+    /// <para>
+    /// <c>contactInformationBlock</c> is NOT here. Its appearance depends on the contact policy the
+    /// operator is editing, including unsaved toggles, so it is fetched from the contact-block preview
+    /// endpoint whenever that draft changes.
+    /// </para>
+    /// </summary>
+    public IReadOnlyDictionary<string, string> SystemBlockPreviews { get; set; } =
+        new Dictionary<string, string>();
+
     public IReadOnlyList<string> SensitiveVariables { get; set; } = new List<string>();
     public IReadOnlyList<string> ForbiddenInSubject { get; set; } = new List<string>();
 

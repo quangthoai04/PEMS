@@ -106,6 +106,43 @@ public static class EmailTemplateContentValidator
                 continue;
             }
 
+            // A system block is judged as a BLOCK, before any variable rule can reach it. It is not a
+            // variable, it is not absent from the variable catalog because somebody mistyped it, and
+            // reporting it as an unknown variable told an operator that {{contactInformationBlock}} —
+            // the very thing the contact settings had just required them to keep — "does not exist in
+            // the system". The block lists are the authority here; the variable lists have no opinion.
+            if (EmailTemplateContract.IsSystemBlock(name))
+            {
+                if (!contract.AllowsSystemBlock(name))
+                {
+                    issues.Add(new EmailTemplateIssue(
+                        field, EmailErrorCodes.TemplateSystemBlockNotAllowed, name,
+                        $"Khối hệ thống {{{{{name}}}}} không dùng được ở mẫu {contract.TemplateCode}; "
+                        + "khi gửi sẽ không có gì thay thế vào chỗ này. Hãy xoá khối khỏi nội dung.",
+                        $"System block {{{{{name}}}}} is not available on {contract.TemplateCode}; nothing "
+                        + "would be substituted for it when sending. Remove it from the content.",
+                        EmailTemplateIssueSeverity.Error));
+                    continue;
+                }
+
+                if (isSubject)
+                {
+                    // A block is the only route by which markup — and therefore a live one-time URL —
+                    // enters a message, and subjects are stored in sent_emails and shown in history.
+                    issues.Add(new EmailTemplateIssue(
+                        field, EmailErrorCodes.TemplateSubjectForbiddenSensitiveVariable, name,
+                        $"Khối hệ thống {{{{{name}}}}} không được đặt trong tiêu đề: khối sinh ra HTML và "
+                        + "có thể chứa liên kết dùng một lần, trong khi tiêu đề được lưu lại và hiển thị "
+                        + "trong lịch sử email.",
+                        $"System block {{{{{name}}}}} may not appear in a subject: a block produces HTML "
+                        + "and may carry a one-time link, while subjects are stored and shown in the "
+                        + "email history.",
+                        EmailTemplateIssueSeverity.Error));
+                }
+
+                continue;
+            }
+
             if (!contract.AllowedVariables.Contains(name, StringComparer.Ordinal))
             {
                 var known = EmailVariableCatalog.Find(name) is not null;
@@ -155,7 +192,10 @@ public static class EmailTemplateContentValidator
             EmailTemplateVariables.NormalizeEncodedBraces(subject ?? ""),
             EmailTemplateVariables.NormalizeEncodedBraces(body ?? ""));
 
-        foreach (var required in contract.RequiredVariables)
+        // Variables and blocks are required for different reasons and repaired by different people, but
+        // "it must be in the body and it is not" is one check. Iterating both lists here is what keeps a
+        // required block enforced now that it is no longer smuggled inside RequiredVariables.
+        foreach (var required in contract.RequiredVariables.Concat(contract.RequiredSystemBlocks))
         {
             if (present.Contains(required)) continue;
 

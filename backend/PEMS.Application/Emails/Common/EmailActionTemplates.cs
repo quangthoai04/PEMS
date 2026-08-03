@@ -1,3 +1,5 @@
+using PEMS.Application.Common.Interfaces;
+
 namespace PEMS.Application.Emails.Common;
 
 /// <summary>
@@ -12,7 +14,13 @@ public sealed record EmailTemplateActionSpec(
     bool HasDetailLink,
     bool HasLogisticsAction,
     string SystemActionDescription,
-    string[] RequiredActionPlaceholders);
+    string[] RequiredActionPlaceholders,
+    /// <summary>
+    /// A single confirm-email button around a one-time activation token. Its own kind rather than a
+    /// detail link: a detail link asks the recipient to sign in to a page they already have access to,
+    /// while this one IS the credential that activates the account.
+    /// </summary>
+    bool HasConfirmAction = false);
 
 public static class EmailActionTemplates
 {
@@ -48,8 +56,34 @@ public static class EmailActionTemplates
         "Nút \"Mở biên bản để kê khai chi phí\" (yêu cầu đăng nhập) sẽ được hệ thống tự gắn khi gửi email. " +
         "Nhắc kê khai không mang liên kết dùng một lần.";
 
+    public const string AccountEmailConfirmation = "ACCOUNT_EMAIL_CONFIRMATION";
+
+    private const string ConfirmEmailDesc =
+        "Nút \"Xác nhận email\" (kèm liên kết một lần) sẽ được hệ thống tự gắn khi gửi email. " +
+        "Liên kết kích hoạt tài khoản và chỉ dùng được một lần.";
+
+    /// <summary>
+    /// The words on the confirm-email button, in the requested language.
+    ///
+    /// <para>
+    /// Metadata rather than a literal inside the block builder, because the SAME label has to reach two
+    /// places that must never disagree: the real send and the editor's preview. It lived only in
+    /// <c>EmailComposition.ConfirmEmailBlock</c> before, so the preview had no way to read it and fell
+    /// back to a neutral "action area" — an operator editing this template could not see which button
+    /// their words sit above.
+    /// </para>
+    /// </summary>
+    public static string ConfirmEmailLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Confirm email" : "Xác nhận email";
+
     public static EmailTemplateActionSpec? For(string templateCode) => templateCode switch
     {
+        // Registered so the preview shows the real button. This changes NO token or route logic: the
+        // confirm URL is still minted by IAccountEmailConfirmationService and injected as a trusted
+        // block by the send path — the registry only says which button that block draws.
+        AccountEmailConfirmation => new(true, false, false, false, false, ConfirmEmailDesc,
+            System.Array.Empty<string>(), HasConfirmAction: true),
+
         ParticipantInvitation or StudentInvitation => new(true, true, false, false, false, AcceptDeclineDesc,
             new[] { "{{acceptUrl}}", "{{declineUrl}}" }),
         DepartmentLeaderInvitation => new(true, true, true, false, false, AcceptDeclineAssignDesc,
@@ -80,4 +114,29 @@ public static class EmailActionTemplates
         LogisticsRequestToDepartment => "Mở yêu cầu để xử lý",
         _ => null,
     };
+
+    /// <summary>
+    /// The inert action block a preview shows for this template — no live URL, no token.
+    ///
+    /// <para>
+    /// The single place this choice is made. It was previously written out three times — in the preview
+    /// modal's handler, in the contract the editor fetches, and again in the tests — which is how the
+    /// editor's pane and the preview modal could show different buttons for the same template while every
+    /// test agreed with whichever copy it had been written against. One helper, one answer.
+    /// </para>
+    /// </summary>
+    public static string DisabledBlockFor(string templateCode, string language)
+    {
+        var spec = For(templateCode);
+
+        if (spec is null) return EmailComposition.DisabledUnspecifiedActionBlock(language);
+        if (spec.HasConfirmAction)
+            return EmailComposition.DisabledConfirmEmailBlock(ConfirmEmailLabel(language));
+        if (spec.HasLogisticsAction) return EmailComposition.DisabledLogisticsActionBlock();
+        if (spec.HasDetailLink)
+            return EmailComposition.DisabledDetailLinkBlock(
+                DetailLinkLabelFor(templateCode) ?? "Mở yêu cầu để xử lý");
+
+        return EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
+    }
 }

@@ -146,5 +146,41 @@ public static class EmailContactHtmlRenderer
         </div>";
     }
 
+    /// <summary>
+    /// The block as a given policy would render it, filled with obviously-fake data, for the template
+    /// screen's live preview.
+    ///
+    /// <para>
+    /// This goes through <see cref="Render"/> rather than building its own markup, which is the whole
+    /// point: an operator toggling "Số điện thoại" has to see the row disappear from the SAME renderer
+    /// the send uses, not from a mock-up that agrees with it today. It also means the policy rules come
+    /// along for free — NONE renders nothing, and a policy with both channels hidden renders nothing
+    /// rather than a heading over an unreachable name.
+    /// </para>
+    /// <para>
+    /// The values are deliberately not plausible. Addresses use the reserved <c>.invalid</c> TLD
+    /// (RFC 2606), which can never resolve, and every field is marked as sample data in the operator's
+    /// language. Showing a realistic-looking person here would put an invented name and mailbox in front
+    /// of an operator and invite them to "correct" details this screen does not control — and a preview
+    /// that reads as real is one screenshot away from being taken for a real recipient's data.
+    /// </para>
+    /// </summary>
+    public static string SampleBlock(EmailContactPolicyResolution policy, string language)
+    {
+        var en = EmailLanguages.Normalize(language) == EmailLanguages.En;
+
+        var sample = new EmailContactInformation(
+            Source: policy.ContactSource,
+            DisplayName: en ? "Sample Contact (preview)" : "Nguyễn Văn A (dữ liệu mẫu)",
+            RoleLabel: en ? "Host" : "Người phụ trách tiếp đón",
+            DepartmentName: en ? "Administration Office" : "Phòng Hành chính",
+            CampusName: en ? "FPTU Hanoi" : "FPTU Hà Nội",
+            Email: "lien.he.mau@example.invalid",
+            Phone: "0900 000 000");
+
+        return Render(sample, policy, language,
+            senderName: en ? "Sample sender (preview)" : "Người gửi mẫu");
+    }
+
     private static string Esc(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 }

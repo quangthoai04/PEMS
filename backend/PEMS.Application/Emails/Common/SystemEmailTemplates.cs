@@ -181,9 +181,21 @@ public static class SystemEmailTemplates
                 "recipientName", "delegationName", "campusName", "plannedStart", "plannedEnd"),
 
             // LOGISTICS — the first three carry one-time accept/decline/approve links.
+            //
+            // logisticsDescription is the Host's "Mô tả chi tiết" — the work content the department has
+            // to act on. It used to travel as "coordinationNote", which is a DIFFERENT field
+            // (visit_logistics_items.offline_coordination_note) and could never legitimately appear
+            // here: an OFFLINE_COORDINATED item is recorded DONE and sends no email at all, so on this
+            // template that variable only ever carried the description under the wrong label, or the
+            // "no coordination note" filler when the preview supplied it instead.
+            //
+            // dueAt is gone too. The Host has no response-deadline field any more — the server derives
+            // due_at as usage-start minus 24h for its own scheduling — so printing "Hạn phản hồi" stated
+            // a commitment nobody made. The column and its server-side logic are untouched; it is only
+            // no longer shown to the department.
             Single(LogisticsRequestToDepartment, EmailTemplatePurposes.Logistics, sensitive: true,
                 "departmentLeaderName", "requesterName", "logisticsTitle", "logisticsItemType", "quantity",
-                "usageStartAt", "usageEndAt", "dueAt", "coordinationNote"),
+                "usageStartAt", "usageEndAt", "logisticsDescription"),
             Single(LogisticsAssigneeAssignment, EmailTemplatePurposes.Logistics, sensitive: true,
                 "assigneeName", "logisticsTitle", "dueAt", "campusName", "delegationName"),
             // A proposal is a counter-offer, so the mail states WHAT is proposed against what was asked

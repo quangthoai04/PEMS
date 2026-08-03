@@ -234,13 +234,24 @@ public sealed class PrepareVisitLogisticsCommandHandler
                             ["departmentLeaderName"] = leaderName ?? string.Empty,
                             ["requesterName"] = requesterName,
                             ["logisticsTitle"] = item.Title,
-                            ["logisticsItemType"] = item.ItemType,
+                            // The label the request screen shows, not the column's code: "Suất ăn /
+                            // Teabreak", never "MEAL".
+                            ["logisticsItemType"] = LogisticsItemTypeText.Label(item.ItemType),
                             ["quantity"] = item.Quantity?.ToString() ?? "Chưa nhập",
                             ["usageStartAt"] = FormatMoment(usageStart) ?? "Chưa chọn thời gian",
                             ["usageEndAt"] = FormatMoment(usageEnd) ?? "Chưa chọn thời gian",
-                            ["dueAt"] = FormatMoment(dueAt) ?? "Chưa đặt hạn",
-                            ["coordinationNote"] = string.IsNullOrWhiteSpace(item.Description)
-                                ? "Không có ghi chú phối hợp."
+                            // The Host's "Mô tả chi tiết", verbatim. It travels under its own name now:
+                            // it used to be passed as "coordinationNote" and printed under the heading
+                            // "Ghi chú phối hợp", which is a different field entirely — so the one piece
+                            // of the request that says WHAT to prepare arrived labelled as something
+                            // else, and the preview, which supplies the real coordination note (always
+                            // absent on a SYSTEM_REQUEST), showed "Không có ghi chú phối hợp." where the
+                            // send would show the description. Same variable, two meanings, two outputs.
+                            //
+                            // An item saved without a description is a legacy row or a Host who left the
+                            // field blank; say so plainly rather than printing an empty heading.
+                            ["logisticsDescription"] = string.IsNullOrWhiteSpace(item.Description)
+                                ? "Chưa có mô tả chi tiết."
                                 : item.Description!,
                         },
                         TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>

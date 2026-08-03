@@ -88,9 +88,22 @@ public static class AccountEmailVariables
             ["reason"] = reason,
         };
 
-    /// <summary>The confirm-email button, built by the backend around a one-time token.</summary>
-    public static Dictionary<string, string> ConfirmationBlocks(string confirmUrl)
-        => new() { [EmailTrustedBlocks.ActionBlock] = EmailComposition.ConfirmEmailBlock(confirmUrl) };
+    /// <summary>
+    /// The confirm-email button, built by the backend around a one-time token.
+    ///
+    /// <para>
+    /// The label is read from <c>EmailActionTemplates</c> — the same metadata the editor's preview reads
+    /// — so what an operator sees while editing is what the recipient gets. The language defaults to VI,
+    /// matching <c>SystemEmailRequest.Language</c>, so all eight call sites keep their behaviour.
+    /// </para>
+    /// </summary>
+    public static Dictionary<string, string> ConfirmationBlocks(
+        string confirmUrl, string language = EmailLanguages.Vi)
+        => new()
+        {
+            [EmailTrustedBlocks.ActionBlock] = EmailComposition.ConfirmEmailBlock(
+                confirmUrl, EmailActionTemplates.ConfirmEmailLabel(language)),
+        };
 
     /// <summary>The sign-in button on the activated-account notice.</summary>
     public static Dictionary<string, string> LoginBlocks(string loginUrl)

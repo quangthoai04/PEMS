@@ -112,6 +112,32 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// Renders the contact block as the supplied DRAFT policy would produce it, with sample data.
+        ///
+        /// <para>
+        /// A POST because the policy travels in the body, and a read because nothing is stored: the
+        /// operator has not saved these toggles and may never. It exists so the preview pane can answer
+        /// "what will this look like" from the same renderer the send uses, instead of the screen
+        /// growing its own copy of the block's markup and visibility rules.
+        /// </para>
+        /// <para>
+        /// HO only, matching the settings it previews — the sample data is inert, but the endpoint
+        /// reports what a template's contact configuration would produce and belongs behind the same gate.
+        /// </para>
+        /// </summary>
+        [HttpPost("{templateCode}/contact-settings/preview")]
+        [RoleAuthorize(EffectiveRole.Ho)]
+        public async Task<IActionResult> PreviewContactBlock(
+            string templateCode,
+            [FromBody] PEMS.Application.Emails.Contact.PreviewEmailContactBlockQuery query,
+            CancellationToken cancellationToken)
+        {
+            query.TemplateCode = templateCode;
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetList([FromQuery] PEMS.Application.Emails.Queries.ViewEmailTemplateList.ViewEmailTemplateListQuery query, CancellationToken cancellationToken)
         {
