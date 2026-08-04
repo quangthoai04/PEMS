@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
   Trash2, UserPlus, RefreshCw, Calendar, Building2, CheckCircle2, AlertCircle, Info,
-  CheckSquare, Square,
+  CheckSquare, Square, Eye, Mail,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
@@ -134,6 +134,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const [draftContent, setDraftContent] = useState('');
   const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
   const [draftActionItems, setDraftActionItems] = useState<DraftActionItem[]>([]);
+  const [previewEmailItem, setPreviewEmailItem] = useState<DraftActionItem | null>(null);
   // "Người phụ trách" picker for action items — Host + ACCEPTED IC_SUPPORT/DEPT_SUPPORT/STUDENT
   // participants of this instance (never guests). Reuses the endpoint built for the Agenda editor.
   const [responsibleCandidates, setResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
@@ -847,6 +848,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   ) : (
                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${meta.cls}`}>{meta.label}</span>
                                   )}
+                                  <button type="button" onClick={() => setPreviewEmailItem(a)}
+                                    title="Xem trước / Xem email công việc"
+                                    className="text-slate-400 hover:text-[#004c91] p-1.5 rounded-lg hover:bg-slate-100 transition-colors shrink-0">
+                                    <Eye className="w-4 h-4" />
+                                  </button>
                                   {editing && (
                                     <button type="button" onClick={() => removeActionItem(a._key)}
                                       disabled={a.actionItemId > 0 && a.status === 'DONE'}
@@ -903,6 +909,144 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
               )}
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Xem trước / Xem Email công việc */}
+      <AnimatePresence>
+        {previewEmailItem && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-[#004c91]/10 text-[#004c91]">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Xem trước / Chi tiết Email công việc</h3>
+                    <p className="text-xs text-gray-500">Mô phỏng nội dung thư gửi người phụ trách đầu mục</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewEmailItem(null)}
+                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-sm bg-slate-50/50">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-xs font-semibold text-gray-400">TRẠNG THÁI EMAIL:</span>
+                    {previewEmailItem.status === 'DONE' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Email đã gửi
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <Clock className="w-3.5 h-3.5" /> Xem trước (Chưa gửi)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs">
+                    <div>
+                      <span className="font-semibold text-gray-500">Người gửi: </span>
+                      <span className="font-medium text-gray-800">Ban quản trị PEMS &lt;no-reply@mail.pems-fpt.site&gt;</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500">Người nhận: </span>
+                      <span className="font-bold text-[#004c91]">
+                        {previewEmailItem.assignedToUserId
+                          ? (previewEmailItem.assignedToUserName
+                              ?? responsibleCandidates.find((c) => c.userId === previewEmailItem.assignedToUserId)?.fullName
+                              ?? `Người dùng #${previewEmailItem.assignedToUserId}`)
+                          : 'Chưa xác định (Cần chọn người phụ trách)'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500">Tiêu đề: </span>
+                      <span className="font-bold text-gray-900">
+                        [PEMS] Phân công đầu mục công việc — {previewEmailItem.title || '(Chưa nhập nội dung công việc)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simulated Email Content */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-[#004c91] text-white px-5 py-4 font-bold text-base flex items-center justify-between">
+                    <span>PEMS System Notification</span>
+                    <span className="text-xs font-normal opacity-80">Chuyến thăm: {data?.title || 'Biên bản cuộc họp'}</span>
+                  </div>
+                  <div className="p-5 space-y-4 text-gray-700">
+                    <p className="font-semibold">
+                      Kính gửi{' '}
+                      <strong className="text-gray-900">
+                        {previewEmailItem.assignedToUserId
+                          ? (previewEmailItem.assignedToUserName
+                              ?? responsibleCandidates.find((c) => c.userId === previewEmailItem.assignedToUserId)?.fullName
+                              ?? `Anh/Chị phụ trách`)
+                          : 'Anh/Chị'}
+                      </strong>,
+                    </p>
+                    <p className="text-sm leading-relaxed">
+                      Bạn vừa được phân công một đầu mục công việc trong biên bản cuộc họp đợt công tác{' '}
+                      <strong>{data?.title || 'Đợt công tác'}</strong>. Chi tiết như sau:
+                    </p>
+
+                    <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500">NỘI DUNG CÔNG VIỆC:</span>
+                        <span className="font-bold text-sm text-[#004c91]">{previewEmailItem.title || 'Chưa nhập nội dung'}</span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500">HẠN HOÀN THÀNH:</span>
+                        <span className="font-bold text-orange-600">{previewEmailItem.dueDate ? formatDateTime(previewEmailItem.dueDate) : 'Chưa đặt hạn'}</span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500">TRẠNG THÁI:</span>
+                        <span className="font-bold text-gray-800">{ACTION_STATUS_META[previewEmailItem.status]?.label ?? 'Chưa làm'}</span>
+                      </div>
+                      {previewEmailItem.note && (
+                        <div className="pt-1">
+                          <span className="font-bold text-gray-500 block mb-1">GHI CHÚ:</span>
+                          <p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{previewEmailItem.note}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-gray-500">
+                      Vui lòng truy cập hệ thống PEMS để cập nhật tiến độ công việc trước thời hạn quy định.
+                    </p>
+                    <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">
+                      Trân trọng,<br />
+                      <strong>Ban quản trị Hệ thống PEMS — FPT University</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setPreviewEmailItem(null)}
+                  className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  Đóng
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
