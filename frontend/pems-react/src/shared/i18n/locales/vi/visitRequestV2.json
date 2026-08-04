@@ -589,7 +589,16 @@
     "reviewForm": "Xem lại thông tin đơn",
     "reviewBannerTitle": "Mã xác minh đã được gửi đến {{email}}.",
     "reviewBannerBody": "Anh/chị có thể kiểm tra lại đơn rồi tiếp tục nhập mã. Mã cũ vẫn còn hiệu lực.",
-    "continueVerification": "Tiếp tục xác minh OTP"
+    "continueVerification": "Tiếp tục xác minh OTP",
+    "rateLimit": {
+      "atTime": "lúc {{time}}",
+      "inSeconds": "sau {{count}} giây",
+      "shortly": "sau ít phút",
+      "tooSoon": "Bạn vừa yêu cầu mã. Vui lòng thử lại {{when}}.",
+      "standard": "Bạn đã yêu cầu quá nhiều mã trong một giờ. Có thể thử lại {{when}}.",
+      "recovery": "Bạn đã dùng hết lượt khôi phục mã trong giờ này. Có thể thử lại {{when}}.",
+      "absolute": "Tạm thời không thể cấp thêm mã xác thực. Có thể thử lại {{when}}."
+    }
   },
   "uncertain": {
     "title": "Chưa thể xác nhận kết quả tạo đơn",

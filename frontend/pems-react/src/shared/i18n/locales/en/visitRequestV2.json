@@ -589,7 +589,16 @@
     "reviewForm": "Review the request details",
     "reviewBannerTitle": "A verification code was sent to {{email}}.",
     "reviewBannerBody": "Check the request and then carry on entering the code — the code you already have is still valid.",
-    "continueVerification": "Continue verification"
+    "continueVerification": "Continue verification",
+    "rateLimit": {
+      "atTime": "at {{time}}",
+      "inSeconds": "in {{count}} seconds",
+      "shortly": "in a few minutes",
+      "tooSoon": "You have just requested a code. Please try again {{when}}.",
+      "standard": "You have requested too many codes in one hour. You can try again {{when}}.",
+      "recovery": "You have used up this hour's code recovery attempts. You can try again {{when}}.",
+      "absolute": "No more verification codes can be issued right now. You can try again {{when}}."
+    }
   },
   "uncertain": {
     "title": "The result could not be confirmed",

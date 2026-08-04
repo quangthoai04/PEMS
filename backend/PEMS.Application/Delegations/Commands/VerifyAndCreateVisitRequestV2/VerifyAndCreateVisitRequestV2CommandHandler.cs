@@ -310,11 +310,15 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             OtpErrorCodes.Expired                   => (400, "Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới."),
             OtpErrorCodes.NotFound                  => (400, "Không tìm thấy phiên xác thực. Vui lòng yêu cầu mã mới."),
             OtpErrorCodes.SessionInvalid            => (400, "Phiên xác thực không còn hiệu lực. Vui lòng yêu cầu mã mới."),
-            OtpErrorCodes.RetryLater                => (429, "Bạn thao tác quá nhanh. Vui lòng chờ trước khi thử lại."),
-            OtpErrorCodes.ResendTooSoon             => (429, "Temporarily unable to issue another verification code."),
-            OtpErrorCodes.StandardRateLimited       => (429, "Temporarily unable to issue another verification code."),
-            OtpErrorCodes.RecoveryRateLimited       => (429, "Temporarily unable to issue another verification code."),
-            OtpErrorCodes.AbsoluteRateLimited       => (429, "Temporarily unable to issue another verification code."),
+            // The four rate-limit codes and the cooldown share one message builder with the issue path
+            // (OtpService), so the sentence a user reads does not depend on which endpoint refused them.
+            // All five carry the wait the policy already computed; they used to carry one English
+            // sentence that carried neither the reason nor the time.
+            OtpErrorCodes.RetryLater                => (429, RateLimitMessage(result, OtpErrorCodes.RetryLater)),
+            OtpErrorCodes.ResendTooSoon             => (429, RateLimitMessage(result, OtpErrorCodes.ResendTooSoon)),
+            OtpErrorCodes.StandardRateLimited       => (429, RateLimitMessage(result, OtpErrorCodes.StandardRateLimited)),
+            OtpErrorCodes.RecoveryRateLimited       => (429, RateLimitMessage(result, OtpErrorCodes.RecoveryRateLimited)),
+            OtpErrorCodes.AbsoluteRateLimited       => (429, RateLimitMessage(result, OtpErrorCodes.AbsoluteRateLimited)),
             OtpErrorCodes.HumanVerificationRequired => (428, "Bạn đã nhập sai quá nhiều lần. Vui lòng xác minh bạn không phải robot để nhận mã mới."),
             _                                       => (400, "Xác thực OTP thất bại.")
         };
@@ -328,4 +332,11 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             retryAt: result.RetryAt,
             humanVerificationRequired: result.HumanVerificationRequired);
     }
+
+    /// <summary>The shared Vietnamese wording for a wait, fed the same metadata the response carries.</summary>
+    private static string RateLimitMessage(OtpChallengeVerification result, string code)
+        => PEMS.Application.Common.Security.OtpRateLimitMessages.Describe(
+            code,
+            result.RetryAfterSeconds > 0 ? result.RetryAfterSeconds : null,
+            result.RetryAt);
 }

@@ -384,10 +384,13 @@ public sealed class OtpService : IOtpService
 
         if (!decision.Allowed)
         {
+            // No token row is written on this path — the throw happens before CreateChallengeCore's
+            // insert loop — so a blocked request costs the caller nothing against their own quota.
+            var code = decision.ErrorCode ?? OtpErrorCodes.ResendRateLimited;
             throw new OtpChallengeException(
                 StatusCodes.Status429TooManyRequests,
-                decision.ErrorCode ?? OtpErrorCodes.ResendRateLimited,
-                "Temporarily unable to issue another verification code.",
+                code,
+                OtpRateLimitMessages.Describe(code, decision.RetryAfterSeconds, decision.RetryAt),
                 retryAfterSeconds: decision.RetryAfterSeconds,
                 retryAt: decision.RetryAt);
         }

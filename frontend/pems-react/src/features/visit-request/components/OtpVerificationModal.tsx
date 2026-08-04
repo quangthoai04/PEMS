@@ -115,8 +115,19 @@ export const OtpVerificationModal: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [humanVerificationRequired]);
 
+  /**
+   * True while the SERVER says another code cannot be issued yet.
+   *
+   * The local `resendCountdown` is seeded from `resendAfterSeconds` and restarts on every resend, so
+   * on its own it expires after ~60s no matter what the server said. When a resend is refused with an
+   * hour-long quota the button came straight back to life, and every press earned another 429 — which
+   * on the absolute limit is a request that pushes the reset time further out.
+   */
+  const serverBlockedResend = retryCountdown > 0 || rateLimitCountdown > 0;
+  const resendDisabled = resendCountdown > 0 || serverBlockedResend || isResending || isVerifying;
+
   const handleResend = () => {
-    if (resendCountdown > 0 || isResending || isVerifying) return;
+    if (resendDisabled) return;
     onResend();
     setResendCountdown(resendAfterSeconds);
     setCode('');
@@ -345,7 +356,8 @@ export const OtpVerificationModal: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={handleResend}
-                  disabled={resendCountdown > 0 || isResending}
+                  data-testid="otp-resend"
+                  disabled={resendDisabled}
                   className="font-bold text-[#f37021] hover:text-[#d9601a] disabled:text-gray-400 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
                 >
                   {isResending ? (

@@ -41,6 +41,7 @@ import {
 } from '../api/visitRequestV2Api';
 import { getApiErrorMessage, showInfoToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
+import { parseApiDate } from '../../../shared/utils/vietnamTime';
 
 /** Machine-readable backend error code (response.errorCode), if present. */
 function getApiErrorCode(error: unknown): string | null {
@@ -86,6 +87,64 @@ function getOtpErrorMeta(error: unknown): OtpErrorMeta {
 }
 
 const OTP_HUMAN_VERIFICATION_REQUIRED = 'OTP_HUMAN_VERIFICATION_REQUIRED';
+
+/**
+ * The four per-email quota codes, plus the per-attempt cooldown. All five arrive as 429 carrying
+ * `retryAfterSeconds` and/or `retryAt`.
+ */
+const OTP_RATE_LIMIT_CODES = new Set([
+  'OTP_RESEND_TOO_SOON',
+  'OTP_STANDARD_RATE_LIMITED',
+  'OTP_RECOVERY_RATE_LIMITED',
+  'OTP_ABSOLUTE_RATE_LIMITED',
+  'OTP_RESEND_RATE_LIMITED',
+  'OTP_RETRY_LATER',
+]);
+
+/**
+ * The sentence shown for a rate-limited OTP request, built from the code and the retry metadata
+ * rather than taken from `response.data.message`.
+ *
+ * <p>Four different quota rules used to arrive as one English sentence — "Temporarily unable to issue
+ * another verification code." — which `getApiErrorMessage` then displayed verbatim on a Vietnamese
+ * screen. The backend now sends Vietnamese, but the message still cannot be the source of truth here:
+ * the user picks the UI language, the server does not know it, and only the client knows how much of
+ * the wait has already elapsed while this screen has been open.</p>
+ *
+ * <p>Returns null when the error is not a rate limit, so the caller falls through to its normal
+ * handling instead of this function having to guess at unrelated failures.</p>
+ */
+function otpRateLimitMessage(
+  code: string | null,
+  meta: OtpErrorMeta,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string | null {
+  if (!code || !OTP_RATE_LIMIT_CODES.has(code)) return null;
+
+  const seconds = meta.retryAfterSeconds;
+  const at = meta.retryAt ? parseApiDate(meta.retryAt) : null;
+  // "lúc 15:04" for an hourly quota, "sau 42 giây" for a short cooldown. A quota that resets in
+  // 3.412 seconds is not information anybody can use.
+  const when = at
+    ? t('visitRequestV2:otpFlow.rateLimit.atTime', {
+        time: at.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      })
+    : seconds && seconds > 0
+      ? t('visitRequestV2:otpFlow.rateLimit.inSeconds', { count: seconds })
+      : t('visitRequestV2:otpFlow.rateLimit.shortly');
+
+  switch (code) {
+    case 'OTP_RESEND_TOO_SOON':
+    case 'OTP_RETRY_LATER':
+      return t('visitRequestV2:otpFlow.rateLimit.tooSoon', { when });
+    case 'OTP_RECOVERY_RATE_LIMITED':
+      return t('visitRequestV2:otpFlow.rateLimit.recovery', { when });
+    case 'OTP_ABSOLUTE_RATE_LIMITED':
+      return t('visitRequestV2:otpFlow.rateLimit.absolute', { when });
+    default:
+      return t('visitRequestV2:otpFlow.rateLimit.standard', { when });
+  }
+}
 /**
  * The backend's answer when a submissionId already belongs to a request with different content.
  * The only way to reach it is a stored intent that outlived its request (a create that committed
@@ -658,7 +717,10 @@ export const useVisitRequestFormV2 = (
           setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
           setStage('CREATE_FAILED');
         } else {
-          setOtpError(getApiErrorMessage(error, t('toast:common.defaultError')));
+          setOtpError(
+            otpRateLimitMessage(code, meta, t)
+            ?? getApiErrorMessage(error, t('toast:common.defaultError')),
+          );
           // Still a live challenge with the modal open — not a terminal failure.
           setStage('OTP_PENDING');
         }
@@ -754,11 +816,22 @@ export const useVisitRequestFormV2 = (
       saveOtpChallengeToken(submissionId, res.sessionToken, draftNamespace);
       showSuccessToast(t('visitRequestV2:otpFlow.codeResent'), 'v2-otp-resent');
     } catch (error) {
+      const code = getApiErrorCode(error);
       const meta = getOtpErrorMeta(error);
-      if (meta.humanVerificationRequired || getApiErrorCode(error) === OTP_HUMAN_VERIFICATION_REQUIRED) {
+      if (meta.humanVerificationRequired || code === OTP_HUMAN_VERIFICATION_REQUIRED) {
         setHumanVerificationRequired(true);
       }
-      setOtpError(getApiErrorMessage(error, t('toast:visitRequest.otpResendFailed')));
+      // A refused RESEND is the commonest way to meet a quota, and this branch used to throw its
+      // retry metadata away: only `humanVerificationRequired` was read, so `retryAt` never reached
+      // state, the cooldown screen never appeared, and the resend button re-enabled after its own
+      // local 60s timer regardless of the hour-long wait the server had just described.
+      if (meta.remainingAttempts !== null) setRemainingAttempts(meta.remainingAttempts);
+      setRetryAfterSeconds(meta.retryAfterSeconds);
+      setRetryAt(meta.retryAt);
+      setOtpError(
+        otpRateLimitMessage(code, meta, t)
+        ?? getApiErrorMessage(error, t('toast:visitRequest.otpResendFailed')),
+      );
     } finally {
       setIsResending(false);
     }
@@ -778,7 +851,15 @@ export const useVisitRequestFormV2 = (
         setRemainingAttempts(res.maxAttempts ?? null);
         setResendAfterSeconds(res.resendAfterSeconds ?? 60);
       } catch (error) {
-        setOtpError(getApiErrorMessage(error, t('toast:common.defaultError')));
+        // Recovery has its own hourly quota (OTP_RECOVERY_RATE_LIMITED), so it needs the same
+        // treatment as resend: keep the wait, and say which limit was reached.
+        const meta = getOtpErrorMeta(error);
+        setRetryAfterSeconds(meta.retryAfterSeconds);
+        setRetryAt(meta.retryAt);
+        setOtpError(
+          otpRateLimitMessage(getApiErrorCode(error), meta, t)
+          ?? getApiErrorMessage(error, t('toast:common.defaultError')),
+        );
       } finally {
         setIsRecoveringOtp(false);
       }
