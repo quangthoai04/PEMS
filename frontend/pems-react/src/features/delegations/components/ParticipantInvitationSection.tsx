@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
+import type { EmailContactContext, EmailContactPreviewResult } from '../types/delegations.types';
 import { stripLegacyActionHtml } from '../../emails/utils/actionLinks';
 import { SentEmailsModal } from './SentEmailsModal';
 import type {
@@ -200,11 +201,15 @@ export function ParticipantInvitationSection({
     templateCode: string; subject: string; body: string;
     isActionTemplate: boolean; systemActionDescription: string | null; lockedActionBlockHtml: string | null;
     target: PreviewTarget | null;
+    /** The Host card the invitation will carry, resolved from THIS instance by the backend. */
+    contact: EmailContactPreviewResult | null;
+    contactContext: EmailContactContext | null;
   };
   const EMPTY_PREVIEW: PreviewState = {
     open: false, loading: false, sending: false, restoring: false, error: null,
     templateCode: '', subject: '', body: '',
     isActionTemplate: false, systemActionDescription: null, lockedActionBlockHtml: null, target: null,
+    contact: null, contactContext: null,
   };
   const [preview, setPreview] = useState<PreviewState>(EMPTY_PREVIEW);
 
@@ -232,20 +237,35 @@ export function ParticipantInvitationSection({
     };
   };
 
-  const applyTemplate = (res: import('../types/delegations.types').PreviewEmailTemplateResult) =>
+  const applyTemplate = (
+    res: import('../types/delegations.types').PreviewEmailTemplateResult,
+    contactContext: EmailContactContext | null,
+  ) =>
     setPreview((p) => ({
       ...p, open: true, loading: false, restoring: false, error: null,
       subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
       isActionTemplate: res.isActionTemplate,
       systemActionDescription: res.systemActionDescription ?? null,
       lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+      contact: res.contact ?? null,
+      contactContext,
     }));
 
   const loadPreview = async (templateCode: string, target: PreviewTarget | null) => {
     setPreview((p) => ({ ...p, open: true, loading: true, error: null, templateCode, target }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({ templateCode, context: previewContext(target) });
-      applyTemplate(res);
+      // Only a preview BOUND to a candidate is a real message. The panel-header "xem mẫu" links have no
+      // recipient and nothing to send, so they stay a plain template render with no contact panel —
+      // resolving a Host there would show a card the host cannot act on from that screen.
+      const contactContext: EmailContactContext | null =
+        target ? { templateCode, visitInstanceId } : null;
+
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode,
+        context: previewContext(target),
+        visitInstanceId: contactContext?.visitInstanceId ?? null,
+      });
+      applyTemplate(res, contactContext);
     } catch (e: any) {
       setPreview((p) => ({ ...p, open: true, loading: false, error: apiError(e, 'Không thể tải bản xem trước email.') }));
     }
@@ -261,8 +281,14 @@ export function ParticipantInvitationSection({
     if (!preview.templateCode) return;
     setPreview((p) => ({ ...p, restoring: true, error: null }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({ templateCode: preview.templateCode, context: previewContext(preview.target) });
-      applyTemplate(res);
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode: preview.templateCode,
+        context: previewContext(preview.target),
+        visitInstanceId: preview.contactContext?.visitInstanceId ?? null,
+      });
+      // "Khôi phục mẫu gốc" restores the WORDING. The contact panel comes back with it because this is a
+      // fresh preview of the same message — which is also the honest reading of "restore the template".
+      applyTemplate(res, preview.contactContext);
       pushToast('success', 'Đã khôi phục nội dung email theo mẫu gốc.');
     } catch {
       setPreview((p) => ({ ...p, restoring: false }));
@@ -279,7 +305,11 @@ export function ParticipantInvitationSection({
     try {
       const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, {
         ...preview.target.payload,
-        emailOverride: { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
+        emailOverride: {
+          useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml,
+          attachments: payload.attachments,
+          contactOverride: payload.contactOverride ?? null,
+        },
       });
       {
         const who = res.emailRecipient ? `${preview.target.displayName} (${res.emailRecipient})` : preview.target.displayName;
@@ -561,6 +591,8 @@ export function ParticipantInvitationSection({
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}
         recipient={preview.target?.recipient ?? null}
+        contactContext={preview.contactContext}
+        contact={preview.contact}
         canSend={!!preview.target}
         sendLabel="Mời với nội dung này"
         pushToast={pushToast}

@@ -31,6 +31,11 @@ import type {
   SaveVisitReminderSettingsResult,
   PreviewEmailTemplatePayload,
   PreviewEmailTemplateResult,
+  EmailContactContext,
+  EmailContactOverrideInput,
+  EmailOverridePayload,
+  EmailContactPreviewResult,
+  EmailContactCandidate,
   PrepareVisitLogisticsPayload,
   PrepareVisitLogisticsResult,
   GetVisitInstanceLogisticsResult,
@@ -310,6 +315,48 @@ export const delegationsApi = {
   async previewEmailTemplate(payload: PreviewEmailTemplatePayload): Promise<PreviewEmailTemplateResult> {
     const { data } = await httpClient.post<PreviewEmailTemplateResult>(
       API_ENDPOINTS.emailTemplates.preview, payload);
+    return data;
+  },
+
+  /**
+   * Re-resolves ONLY the reply-contact panel of a message being composed.
+   *
+   * Deliberately not another `previewEmailTemplate` call: that returns a fresh subject and body, so
+   * using it to refresh a contact would throw away whatever the host had written every time they
+   * changed their mind about who to name.
+   */
+  async previewEmailContact(
+    context: EmailContactContext,
+    contactOverride?: EmailContactOverrideInput | null,
+  ): Promise<EmailContactPreviewResult> {
+    const { data } = await httpClient.post<EmailContactPreviewResult>(
+      API_ENDPOINTS.emailTemplates.contactPreview(context.templateCode),
+      {
+        language: context.language,
+        visitInstanceId: context.visitInstanceId ?? null,
+        campusId: context.campusId ?? null,
+        departmentId: context.departmentId ?? null,
+        contactOverride: contactOverride ?? null,
+      });
+    return data;
+  },
+
+  /** The people the signed-in user may name as the reply contact on this message. */
+  async searchEmailContactCandidates(
+    context: EmailContactContext, term: string, take = 10,
+  ): Promise<EmailContactCandidate[]> {
+    const { data } = await httpClient.get<EmailContactCandidate[]>(
+      API_ENDPOINTS.emailTemplates.contactCandidates(context.templateCode),
+      {
+        params: {
+          language: context.language,
+          visitInstanceId: context.visitInstanceId ?? undefined,
+          campusId: context.campusId ?? undefined,
+          departmentId: context.departmentId ?? undefined,
+          term: term || undefined,
+          take,
+        },
+      });
     return data;
   },
 
@@ -631,12 +678,7 @@ export const delegationsApi = {
       participantId: string | number,
       departmentStaffUserId: number,
       note: string,
-      emailOverride?: {
-        useEditedContent: boolean;
-        subject: string;
-        bodyHtml: string;
-        attachments?: { fileId: number; attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE'; contentId?: string | null; displayName?: string | null; displayOrder?: number }[];
-      },
+      emailOverride?: EmailOverridePayload,
     ): Promise<any> {
       const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note, emailOverride });
       return data;

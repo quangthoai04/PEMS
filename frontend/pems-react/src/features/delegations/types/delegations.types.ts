@@ -778,6 +778,92 @@ export interface EmailOverridePayload {
   bodyHtml?: string;
   /** File + inline-image references for the rich editor (validated + sent as real MIME parts). */
   attachments?: EmailAttachmentRefInput[];
+  /**
+   * Who THIS message tells the recipient to contact. Structured data only — never the block's HTML,
+   * which the backend refuses from a caller and builds itself from the resolved contact.
+   */
+  contactOverride?: EmailContactOverrideInput | null;
+}
+
+/** The three ways one message can answer "who should the recipient contact?". */
+export type EmailContactOverrideMode = 'TEMPLATE_DEFAULT' | 'SYSTEM_USER' | 'MANUAL';
+
+/** Where replies to this one message should go. */
+export type EmailContactReplyToMode = 'POLICY_DEFAULT' | 'CONTACT' | 'SENDER' | 'NONE';
+
+/**
+ * A per-message change to the reply contact (mirrors backend EmailContactOverrideInput).
+ *
+ * The mode decides which fields may be present, and the backend REJECTS the others rather than
+ * ignoring them: `SYSTEM_USER` carries `userId` and nothing else, because the name, address and
+ * telephone shown to the recipient are read from the chosen person's own record.
+ */
+export interface EmailContactOverrideInput {
+  mode: EmailContactOverrideMode;
+  /** SYSTEM_USER only. */
+  userId?: number | null;
+  /** MANUAL only — somebody with no PEMS account. */
+  displayName?: string | null;
+  roleLabel?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  departmentName?: string | null;
+  campusName?: string | null;
+  replyToMode?: EmailContactReplyToMode | null;
+  /** OPTIONAL templates only; a REQUIRED one refuses it. */
+  hideForThisEmail?: boolean | null;
+  /** Required for MANUAL. */
+  reason?: string | null;
+}
+
+/**
+ * The reply-contact panel of one preview: what the send will produce, and what the sender may change.
+ *
+ * `lockedContactBlockHtml` is displayed READ-ONLY and never sent back. It is deliberately not part of
+ * `bodyHtml` — merging the two is what previously put a preview placeholder into the message and let
+ * the backend append the real card underneath it.
+ */
+export interface EmailContactPreviewResult {
+  supported: boolean;
+  requirement: 'NONE' | 'OPTIONAL' | 'REQUIRED';
+  mode: EmailContactOverrideMode;
+  source?: string | null;
+  lockedContactBlockHtml?: string | null;
+  contactDisplayName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  /** The address a reply would go to, or null when the message sets no Reply-To. */
+  replyToDisplay?: string | null;
+  hidden: boolean;
+  canOverride: boolean;
+  canHide: boolean;
+  availableModes: EmailContactOverrideMode[];
+  availableReplyToModes: EmailContactReplyToMode[];
+  /** Set when the contact could not be resolved — shown in the panel, blocks send. */
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  hasError?: boolean;
+}
+
+/** One account the signed-in user may name as the reply contact. */
+export interface EmailContactCandidate {
+  userId: number;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  departmentName?: string | null;
+  campusName?: string | null;
+  hasEmail: boolean;
+}
+
+/** Identifies the message a contact panel belongs to — the scope every contact call needs. */
+export interface EmailContactContext {
+  templateCode: string;
+  /** The PER-CAMPUS visit id. A request id would resolve another campus's Host. */
+  visitInstanceId?: number | null;
+  campusId?: number | null;
+  departmentId?: number | null;
+  language?: 'VI' | 'EN';
 }
 
 /** A file/inline-image reference carried by the rich email editor (mirrors backend EmailAttachmentRefInput). */
@@ -1588,6 +1674,15 @@ export interface PreviewEmailTemplatePayload {
   templateCode: string;
   context?: Record<string, string>;
   language?: 'VI' | 'EN';
+  /**
+   * Supplying any of these switches the backend from "show an operator the wording" to "show a sender
+   * the message about to go out": the reply contact is then resolved for real instead of drawn as a
+   * dashed stand-in, and comes back in `contact` rather than inside `bodyHtml`.
+   */
+  visitInstanceId?: number | null;
+  campusId?: number | null;
+  departmentId?: number | null;
+  contactOverride?: EmailContactOverrideInput | null;
 }
 
 export interface PreviewEmailTemplateResult {
@@ -1605,4 +1700,6 @@ export interface PreviewEmailTemplateResult {
   editable: boolean;
   /** Body format of the source template: 'PLAIN_TEXT' | 'HTML' (email_templates.body_format). */
   bodyFormat: EmailBodyFormat;
+  /** Present only for an operational preview (one that supplied a visit/campus/department). */
+  contact?: EmailContactPreviewResult | null;
 }

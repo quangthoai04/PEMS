@@ -314,6 +314,12 @@ export const API_ENDPOINTS = {
   // Email template preview (read-only render for the "Xem trước email" modal — never sends).
   emailTemplates: {
     preview: '/email-templates/preview',
+    /** Re-resolves ONLY the reply-contact panel, so refreshing it never overwrites the host's edits. */
+    contactPreview: (templateCode: string) =>
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-preview`,
+    /** Server-side search: the scope rule lives where it cannot be edited. */
+    contactCandidates: (templateCode: string) =>
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-candidates`,
   },
   // Phase 3: meeting minutes (biên bản) — 1 per visit_instance with an edit-lock workflow.
   meetingMinutes: {

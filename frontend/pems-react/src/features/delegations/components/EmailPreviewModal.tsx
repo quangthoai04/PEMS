@@ -19,7 +19,13 @@ import { Eye, X, Loader2, AlertCircle, Send, Mail, RotateCcw, Paperclip, Trash2,
 import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
-import type { EmailAttachmentRefInput } from '../types/delegations.types';
+import type {
+  EmailAttachmentRefInput,
+  EmailContactContext,
+  EmailContactOverrideInput,
+  EmailContactPreviewResult,
+} from '../types/delegations.types';
+import { EmailContactOverrideSection } from './EmailContactOverrideSection';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import { FileAttachmentItem } from '../../../shared/components/files/FileAttachmentItem';
 import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
@@ -42,6 +48,11 @@ export interface EmailPreviewSendPayload {
   subject: string;
   bodyHtml: string;
   attachments: EmailAttachmentRefInput[];
+  /**
+   * Who this message should tell the recipient to contact, as STRUCTURED data — never the contact
+   * block's HTML. Null when the sender left the configured policy alone.
+   */
+  contactOverride?: EmailContactOverrideInput | null;
 }
 
 interface FileAttachment {
@@ -66,6 +77,14 @@ export interface EmailPreviewModalProps {
   lockedActionBlockHtml?: string | null;
   /** Recipient block shown at the top (omit for the generic, recipient-less preview). */
   recipient?: EmailPreviewRecipient | null;
+  /**
+   * Identifies the message for the reply-contact panel. Omit for a preview with no real message behind
+   * it (the "xem mẫu" links) — the panel then does not appear, because there is no visit to resolve a
+   * Host from and nothing a sender could usefully change.
+   */
+  contactContext?: EmailContactContext | null;
+  /** The contact panel as the parent's preview call resolved it (`result.contact`). */
+  contact?: EmailContactPreviewResult | null;
   /** When true, the primary "send" button is shown (a concrete target is bound). */
   canSend: boolean;
   /** Label for the primary send button, e.g. "Mời với nội dung này" / "Gửi với nội dung này". */
@@ -97,11 +116,16 @@ function formatBytes(bytes?: number | null): string {
 
 export function EmailPreviewModal({
   open, loading, sending, restoring, error, subject, body, isActionTemplate,
-  systemActionDescription, lockedActionBlockHtml, recipient, canSend, sendLabel, pushToast,
+  systemActionDescription, lockedActionBlockHtml, recipient, contactContext, contact,
+  canSend, sendLabel, pushToast,
   onSubjectChange, onBodyChange, onClose, onRestore, onSend,
 }: EmailPreviewModalProps) {
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  // The sender's committed contact choice, and whether the panel is in a state that must stop the send.
+  // Held here rather than in the parent so all three call sites get the same behaviour from one place.
+  const [contactOverride, setContactOverride] = useState<EmailContactOverrideInput | null>(null);
+  const [contactBlocked, setContactBlocked] = useState(false);
   /** One shared preview for the whole strip; opening it leaves the composed body untouched. */
   const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
   const quillRef = useRef<any>(null);
@@ -114,6 +138,10 @@ export function EmailPreviewModal({
     setAttachments([]);
     setUploading(false);
     setPreviewFile(null);
+    // An override belongs to ONE message. Reopening the modal for the next recipient must start from the
+    // template's policy again, never from the colleague the previous send named.
+    setContactOverride(null);
+    setContactBlocked(false);
     inlineMapRef.current = new Map();
   }, [open]);
 
@@ -201,8 +229,14 @@ export function EmailPreviewModal({
     const inlineAtts: EmailAttachmentRefInput[] = inline.map((im, i) => ({
       fileId: im.fileId, attachmentType: 'INLINE_IMAGE', contentId: im.contentId, displayOrder: 1000 + i,
     }));
-    onSend({ subject: subject.trim(), bodyHtml: html, attachments: [...fileAtts, ...inlineAtts] });
-  }, [finalizeBody, body, attachments, subject, onSend]);
+    onSend({
+      subject: subject.trim(), bodyHtml: html, attachments: [...fileAtts, ...inlineAtts],
+      // Structured only. The contact block's HTML is never in `html`: it is rendered outside the editor
+      // and the backend builds its own from the resolved contact, which is what keeps one message from
+      // carrying two contact cards.
+      contactOverride,
+    });
+  }, [finalizeBody, body, attachments, subject, contactOverride, onSend]);
 
   if (!open) return null;
   return (
@@ -312,6 +346,17 @@ export function EmailPreviewModal({
                 )}
               </div>
 
+              {/* The reply contact: shown read-only, changed through a form, never edited as HTML. */}
+              <EmailContactOverrideSection
+                context={contactContext ?? null}
+                initial={contact ?? null}
+                disabled={sending || restoring}
+                onChange={({ contactOverride: next, blocked }) => {
+                  setContactOverride(next);
+                  setContactBlocked(blocked);
+                }}
+              />
+
               {isActionTemplate && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700">
@@ -350,7 +395,11 @@ export function EmailPreviewModal({
             <button
               type="button"
               onClick={handleSend}
-              disabled={loading || sending || restoring || uploading || !!error}
+              // A contact panel in error is a send that would be refused: the REQUIRED template has
+              // nobody to name, or the chosen colleague is out of scope. Stopping here keeps the
+              // sender's subject, body and attachments in front of them instead of trading them for a
+              // 400 they would have to retype everything to recover from.
+              disabled={loading || sending || restoring || uploading || !!error || contactBlocked}
               className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-5 py-2 text-sm font-bold text-white outline-none hover:bg-[#013565] disabled:opacity-50"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
