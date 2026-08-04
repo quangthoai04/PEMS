@@ -298,7 +298,9 @@ public class EmailContactPolicyTests
         // the document would not balance.
         var cells = Parse(html).Descendants("tbody").Elements("tr").ToList();
         Assert.NotEmpty(cells);
-        foreach (var row in cells) Assert.Equal(2, row.Elements("td").Count());
+        // Counted by column span, not by cell count: the heading is now one full-width cell in the
+        // same row group (it was <thead>/<th>, which the composer's editor silently drops).
+        foreach (var row in cells) Assert.Equal(2, row.Elements("td").Sum(ColumnSpan));
     }
 
     /// <summary>The block is a table with declared widths, for the same reason the setup tables are.</summary>
@@ -311,9 +313,30 @@ public class EmailContactPolicyTests
         Assert.Contains("table-layout:fixed", (string?)table.Attribute("style"));
         Assert.Equal(2, table.Elements("colgroup").Elements("col").Count());
 
-        foreach (var cell in table.Descendants("td"))
+        // A cell that spans every column has no column of its own to size, so the heading is exempt.
+        foreach (var cell in table.Descendants("td").Where(td => ColumnSpan(td) == 1))
             Assert.False(string.IsNullOrEmpty((string?)cell.Attribute("width")));
     }
+
+    /// <summary>
+    /// The heading must not go back to being <c>&lt;thead&gt;</c>/<c>&lt;th&gt;</c>. This block is
+    /// injected into email bodies the Host can reopen in the rich-text composer, whose document model
+    /// drops both tags while keeping their text — which lifts the heading out of the table and runs it
+    /// into the first row. Same rule, and same reason, as VisitSetupEmailHtml.
+    /// </summary>
+    [Fact]
+    public void The_block_uses_no_table_header_markup()
+    {
+        var html = EmailContactHtmlRenderer.Render(Host(), HostPolicy, "vi");
+
+        Assert.DoesNotContain("<thead", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<th ", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(Parse(html).Descendants("th"));
+    }
+
+    /// <summary>How many columns a cell occupies — 1 unless it declares a colspan.</summary>
+    private static int ColumnSpan(XElement cell) =>
+        int.TryParse((string?)cell.Attribute("colspan"), out var span) && span > 0 ? span : 1;
 
     [Fact]
     public void The_sender_line_appears_only_when_the_policy_asks_for_it()

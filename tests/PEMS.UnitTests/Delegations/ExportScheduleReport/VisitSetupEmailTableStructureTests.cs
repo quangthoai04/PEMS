@@ -105,6 +105,10 @@ public class VisitSetupEmailTableStructureTests
 
     private static string StyleOf(XElement el) => (string?)el.Attribute("style") ?? "";
 
+    /// <summary>How many columns a cell occupies — 1 unless it declares a colspan.</summary>
+    private static int ColumnSpan(XElement cell) =>
+        int.TryParse((string?)cell.Attribute("colspan"), out var span) && span > 0 ? span : 1;
+
     // ── 1. Column count agrees everywhere ───────────────────────────────────
 
     [Theory]
@@ -121,13 +125,13 @@ public class VisitSetupEmailTableStructureTests
             var declared = table.Elements("colgroup").Elements("col").Count();
             Assert.True(declared > 0, "A table declared no <colgroup>; automatic layout is what broke it.");
 
-            // A header is optional (the overview is a key/value table), but when present it must match.
-            var headerCells = table.Descendants("thead").Descendants("th").ToList();
-            if (headerCells.Count > 0)
-                Assert.Equal(declared, headerCells.Count);
-
-            foreach (var row in table.Descendants("tbody").Elements("tr"))
-                Assert.Equal(declared, row.Elements("td").Count());
+            // Every row — the header row included, since it is now an ordinary <tr> of styled <td>s —
+            // must render exactly the declared number of columns. This is the check that would have
+            // caught the collapsed header had the header been inside <tbody> at the time.
+            var rows = table.Descendants("tbody").Elements("tr").ToList();
+            Assert.NotEmpty(rows);
+            foreach (var row in rows)
+                Assert.Equal(declared, row.Elements("td").Sum(td => ColumnSpan(td)));
         }
     }
 
@@ -300,17 +304,75 @@ public class VisitSetupEmailTableStructureTests
         var html = VisitSetupEmailHtml.Render(Snapshot(), language);
 
         var people = Tables(html).First(t =>
-            t.Descendants("th").Any(th => th.Value == (en ? "Organisation" : "Đơn vị")));
+            t.Descendants("td").Any(td => td.Value == (en ? "Organisation" : "Đơn vị")));
 
-        var headers = people.Descendants("th").Select(th => th.Value).ToList();
+        var rows = people.Descendants("tbody").Elements("tr").ToList();
+
+        // The header is the first row, made of styled <td>s — see the <th> regression test below.
+        var headers = rows[0].Elements("td").Select(td => td.Value).ToList();
         Assert.Equal(en
             ? new[] { "Name", "Organisation", "Role" }
             : new[] { "Họ tên", "Đơn vị", "Vai trò" }, headers);
 
-        var firstRow = people.Descendants("tbody").Elements("tr").First().Elements("td").ToList();
+        var firstRow = rows[1].Elements("td").ToList();
         Assert.Equal("Tanaka Hiro", firstRow[0].Value);
         Assert.Equal("Kyoto Univ.", firstRow[1].Value);
         Assert.Equal("Khách mời", firstRow[2].Value);
+    }
+
+    /// <summary>
+    /// No table header markup, anywhere, in either language.
+    ///
+    /// <para>
+    /// The reported defect: the Host opened "Gửi cập nhật chuẩn bị" and the header row of every
+    /// multi-column table had collapsed into one cell — "Họ tênĐơn vịVai trò", "Thời gianNội dungĐịa
+    /// điểmPhụ trách" — while the data rows below kept their columns. This block is written into a draft
+    /// the Host then edits in the rich-text editor, and the editor's document model has no table header:
+    /// it drops &lt;thead&gt; and &lt;th&gt; and keeps the text that was inside them, so three header
+    /// cells became one run of text. &lt;td&gt; is understood, which is why only the header broke and
+    /// why it looked like a styling problem rather than a lost tag.
+    /// </para>
+    /// <para>
+    /// Asserted as an absolute rather than by re-checking the rendering, because the semantic markup is
+    /// the natural thing to reach for and nothing else in the file would object to it coming back.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("vi")]
+    [InlineData("en")]
+    public void No_table_uses_thead_or_th_because_the_composer_editor_drops_them(string language)
+    {
+        var html = VisitSetupEmailHtml.Render(Snapshot(), language);
+
+        Assert.DoesNotContain("<thead", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<th ", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<th>", html, StringComparison.OrdinalIgnoreCase);
+
+        foreach (var table in Tables(html))
+        {
+            Assert.Empty(table.Descendants("th"));
+            Assert.Empty(table.Descendants("thead"));
+        }
+    }
+
+    /// <summary>
+    /// The header row must still LOOK like a header. Dropping &lt;th&gt; is only safe because the
+    /// styling that made it read as a header lives on the cell.
+    /// </summary>
+    [Fact]
+    public void The_header_row_still_carries_header_styling()
+    {
+        var html = VisitSetupEmailHtml.Render(Snapshot(), "vi");
+
+        var people = Tables(html).First(t => t.Descendants("td").Any(td => td.Value == "Đơn vị"));
+        var headerRow = people.Descendants("tbody").Elements("tr").First();
+
+        foreach (var cell in headerRow.Elements("td"))
+        {
+            var style = StyleOf(cell);
+            Assert.Contains("font-weight:bold", style);
+            Assert.Contains("background:", style);
+        }
     }
 
     [Fact]

@@ -81,14 +81,20 @@ public static class EmailContactHtmlRenderer
           .Append($"border:1px solid {Border};background:{Bg}\">");
         sb.Append("<colgroup><col style=\"width:34%\" width=\"34%\"/><col style=\"width:66%\" width=\"66%\"/></colgroup>");
 
-        sb.Append("<thead><tr>")
-          .Append("<th colspan=\"2\" align=\"left\" ")
+        sb.Append("<tbody>");
+
+        // The heading is a styled <td>, not <thead>/<th>. This block is injected into bodies that a Host
+        // can reopen in the rich-text editor, whose document model has no table header: it drops the tag
+        // and keeps the text, which lifts the heading out of the table and leaves it running into the
+        // first row. Styled cells are also the more reliable choice across mail clients — Outlook's Word
+        // engine ignores much of what is set on <th>. The table is role="presentation" either way, so no
+        // semantics are lost. Same reasoning as VisitSetupEmailHtml.Head.
+        sb.Append("<tr>")
+          .Append("<td colspan=\"2\" align=\"left\" ")
           .Append($"style=\"border-bottom:1px solid {Border};padding:8px 10px;font-size:13px;")
           .Append($"font-weight:bold;color:{Navy};word-break:break-word;overflow-wrap:break-word\">")
           .Append(Esc(policy.Heading(language)))
-          .Append("</th></tr></thead>");
-
-        sb.Append("<tbody>");
+          .Append("</td></tr>");
 
         // The name is the block's subject, so it leads and is not conditional on the policy.
         Row(sb, en ? "Contact" : "Người phụ trách", contact.DisplayName, strong: true);

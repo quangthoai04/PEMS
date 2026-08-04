@@ -75,7 +75,6 @@ public static class VisitSetupEmailHtml
         // ── 1. Overview ──────────────────────────────────────────────────────
         Section(sb, en ? "1. Visit overview" : "1. Thông tin chung");
         OpenTable(sb, KeyValueWidths);
-        sb.Append("<tbody>");
         KeyValue(sb, en ? "Delegation" : "Tên đoàn", s.Report.DelegationName);
         KeyValue(sb, en ? "Campus" : "Cơ sở tiếp đón", s.CampusName);
         KeyValue(sb, en ? "Time" : "Thời gian", Window(s.Report.PlannedStartAt, s.Report.PlannedEndAt));
@@ -84,7 +83,6 @@ public static class VisitSetupEmailHtml
             KeyValue(sb, en ? "Purpose" : "Mục đích tham quan", s.Report.Purpose!);
         if (!string.IsNullOrWhiteSpace(s.WorkingContent))
             KeyValue(sb, en ? "Working content" : "Nội dung làm việc", s.WorkingContent!);
-        sb.Append("</tbody>");
         CloseTable(sb);
 
         // ── 2. Guest side ────────────────────────────────────────────────────
@@ -114,7 +112,6 @@ public static class VisitSetupEmailHtml
                 ? new[] { "Time", "Activity", "Venue", "Party in charge" }
                 : new[] { "Thời gian", "Nội dung", "Địa điểm", "Phụ trách" },
                 AgendaWidths);
-            sb.Append("<tbody>");
             foreach (var a in s.Report.Agenda)
             {
                 var activity = Esc(a.Title);
@@ -123,7 +120,6 @@ public static class VisitSetupEmailHtml
                 Row(sb, new[] { Esc(Window(a.StartTime, a.EndTime)), activity, Esc(a.Venue), Esc(a.Responsible) },
                     AgendaWidths, preEscaped: true);
             }
-            sb.Append("</tbody>");
             CloseTable(sb);
         }
 
@@ -140,7 +136,6 @@ public static class VisitSetupEmailHtml
                 ? new[] { "Item", "Quantity", "Needed", "Status" }
                 : new[] { "Hạng mục", "Số lượng", "Thời gian cần", "Trạng thái" },
                 LogisticsWidths);
-            sb.Append("<tbody>");
             foreach (var l in s.Logistics)
             {
                 Row(sb, new[]
@@ -151,7 +146,6 @@ public static class VisitSetupEmailHtml
                     StatusLabel(l.Status, en),
                 }, LogisticsWidths);
             }
-            sb.Append("</tbody>");
             CloseTable(sb);
         }
 
@@ -160,9 +154,7 @@ public static class VisitSetupEmailHtml
         {
             Section(sb, en ? "6. Additional requests" : "6. Yêu cầu bổ sung");
             OpenTable(sb, KeyValueWidths);
-            sb.Append("<tbody>");
             KeyValue(sb, en ? "Transport" : "Di chuyển", s.TransportationNote!);
-            sb.Append("</tbody>");
             CloseTable(sb);
         }
 
@@ -199,17 +191,42 @@ public static class VisitSetupEmailHtml
         sb.Append("<colgroup>");
         foreach (var w in widths) sb.Append($"<col style=\"width:{w}\" width=\"{w}\"/>");
         sb.Append("</colgroup>");
+
+        // The single row group every table uses. Opened here rather than by each caller so a table can
+        // never end up with a row outside one — see Head() for why that stopped being survivable.
+        sb.Append("<tbody>");
     }
 
-    private static void CloseTable(StringBuilder sb) => sb.Append("</table>");
+    private static void CloseTable(StringBuilder sb) => sb.Append("</tbody></table>");
 
+    /// <summary>
+    /// The header row — a normal <c>&lt;tr&gt;</c> of <c>&lt;td&gt;</c>s carrying the header styling,
+    /// NOT <c>&lt;thead&gt;</c>/<c>&lt;th&gt;</c>.
+    ///
+    /// <para>
+    /// It used to be the semantic markup, and that broke the composer. This block is written into an
+    /// email draft that the Host then opens in the rich-text editor, and the editor's document model has
+    /// no notion of a table header: it drops <c>&lt;thead&gt;</c> and <c>&lt;th&gt;</c> while keeping the
+    /// text inside them, so the header cells collapsed into one run — "Họ tênĐơn vịVai trò" — sitting in
+    /// a single cell above a body that still had its columns. The data rows were unaffected because
+    /// <c>&lt;td&gt;</c> is understood, which is exactly what made the fault look like a styling glitch
+    /// rather than a lost tag.
+    /// </para>
+    /// <para>
+    /// Styled cells are also the safer choice for the email itself: Outlook's Word renderer treats
+    /// <c>&lt;th&gt;</c> inconsistently and ignores much of what is set on it, so header formatting
+    /// carried by the cell's own style survives more clients than the semantic tag would. Nothing is
+    /// lost in meaning here — the table is already <c>role="presentation"</c>, i.e. declared to assistive
+    /// technology as layout rather than data.
+    /// </para>
+    /// </summary>
     private static void Head(StringBuilder sb, IReadOnlyList<string> cells, IReadOnlyList<string> widths)
     {
-        sb.Append("<thead><tr>");
+        sb.Append("<tr>");
         for (var i = 0; i < cells.Count; i++)
-            sb.Append($"<th align=\"left\" width=\"{widths[i]}\" style=\"{HeadCell(widths[i])}\">")
-              .Append(Esc(cells[i])).Append("</th>");
-        sb.Append("</tr></thead>");
+            sb.Append($"<td align=\"left\" width=\"{widths[i]}\" style=\"{HeadCell(widths[i])}\">")
+              .Append(Esc(cells[i])).Append("</td>");
+        sb.Append("</tr>");
     }
 
     private static void Row(
@@ -235,10 +252,8 @@ public static class VisitSetupEmailHtml
         OpenTable(sb, PeopleWidths);
         Head(sb, en ? new[] { "Name", "Organisation", "Role" } : new[] { "Họ tên", "Đơn vị", "Vai trò" },
             PeopleWidths);
-        sb.Append("<tbody>");
         foreach (var p in people)
             Row(sb, new[] { p.FullName, p.Organization ?? "—", p.RoleLabel ?? "—" }, PeopleWidths);
-        sb.Append("</tbody>");
         CloseTable(sb);
     }
 
