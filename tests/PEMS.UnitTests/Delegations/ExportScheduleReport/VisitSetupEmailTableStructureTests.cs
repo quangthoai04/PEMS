@@ -171,9 +171,15 @@ public class VisitSetupEmailTableStructureTests
             {
                 var style = StyleOf(cell);
                 // Under a fixed layout an unbreakable token cannot widen its column, so without this it
-                // would overflow the border instead.
-                Assert.Contains("word-break:break-word", style);
+                // would overflow the border instead. `overflow-wrap` is the property that does it.
                 Assert.Contains("overflow-wrap:break-word", style);
+                // And ordinary text must NOT be broken anywhere. `break-word` (the previous value) and
+                // `break-all` both wrap Vietnamese mid-syllable, which is the defect this pins against
+                // — "Phòng Hợp tác Quốc tế" split as "Phòng Hợp tá" / "c Quốc tế".
+                Assert.Contains("word-break:normal", style);
+                Assert.DoesNotContain("word-break:break-all", style);
+                // A cell that inherits `nowrap` stops wrapping altogether and blows its column out.
+                Assert.Contains("white-space:normal", style);
                 // Padding on the cell, because cellpadding is the attribute Outlook applies unevenly.
                 Assert.Contains("padding:", style);
             }
@@ -385,5 +391,133 @@ public class VisitSetupEmailTableStructureTests
 
         foreach (var table in Tables(html))
             Assert.NotEmpty(table.Descendants("tbody").Elements("tr"));
+    }
+
+    // ── The schedule table, specifically ────────────────────────────────────
+    //
+    // Reported as "the schedule has a stray FPT University cell and the columns are off". Two separate
+    // faults sat behind it: an unassigned "Phụ trách" printed the literal "FPT University" on every such
+    // row, and the activity's title and description were laid out as if they were separate things.
+
+    /// <summary>The agenda table, found by its own header rather than by position among the six.</summary>
+    private static XElement AgendaTable(string html, string language) =>
+        Tables(html).First(t => t.Descendants("td")
+            .Any(td => td.Value == (language == "en" ? "Party in charge" : "Phụ trách")));
+
+    [Theory]
+    [InlineData("vi", new[] { "Thời gian", "Nội dung", "Địa điểm", "Phụ trách" })]
+    [InlineData("en", new[] { "Time", "Activity", "Venue", "Party in charge" })]
+    public void The_schedule_has_exactly_four_columns(string language, string[] expectedHeaders)
+    {
+        var table = AgendaTable(VisitSetupEmailHtml.Render(Snapshot(), language), language);
+
+        Assert.Equal(4, table.Elements("colgroup").Elements("col").Count());
+
+        var rows = table.Descendants("tbody").Elements("tr").ToList();
+        Assert.Equal(expectedHeaders, rows[0].Elements("td").Select(td => td.Value).ToArray());
+
+        // Every data row too: a fifth cell is what "an extra FPT University column" would look like.
+        foreach (var row in rows)
+            Assert.Equal(4, row.Elements("td").Sum(ColumnSpan));
+    }
+
+    [Fact]
+    public void The_schedule_columns_keep_the_agreed_ratio()
+    {
+        var table = AgendaTable(VisitSetupEmailHtml.Render(Snapshot(), "vi"), "vi");
+
+        var widths = table.Elements("colgroup").Elements("col")
+            .Select(c => (string?)c.Attribute("style")).ToList();
+
+        Assert.Equal(
+            new[] { "width:18%", "width:42%", "width:22%", "width:18%" },
+            widths);
+    }
+
+    /// <summary>
+    /// Title and description are ONE cell. Splitting them is what produced a row that no longer agreed
+    /// with its header, and the reason they now share a cell is that they describe one activity.
+    /// </summary>
+    [Fact]
+    public void The_activity_title_and_its_description_share_one_cell()
+    {
+        var table = AgendaTable(VisitSetupEmailHtml.Render(Snapshot(), "vi"), "vi");
+        var dataRow = table.Descendants("tbody").Elements("tr").Skip(1).First();
+        var contentCell = dataRow.Elements("td").ElementAt(1);
+
+        Assert.Equal("Đón đoàn tại sảnh", contentCell.Element("strong")?.Value);
+        Assert.Equal("Chụp ảnh lưu niệm", contentCell.Element("div")?.Value);
+    }
+
+    [Fact]
+    public void An_activity_with_no_description_renders_the_title_alone()
+    {
+        var html = VisitSetupEmailHtml.Render(Snapshot(agenda: new[]
+        {
+            new ScheduleReportAgendaRowDto
+            {
+                StartTime = new DateTime(2026, 8, 20, 9, 0, 0),
+                Title = "Đón đoàn",
+                Description = null,
+                Venue = "Sảnh Beta",
+                Responsible = "Phòng IC",
+            },
+        }), "vi");
+
+        var dataRow = AgendaTable(html, "vi").Descendants("tbody").Elements("tr").Skip(1).First();
+        var contentCell = dataRow.Elements("td").ElementAt(1);
+
+        Assert.Equal("Đón đoàn", contentCell.Element("strong")?.Value);
+        Assert.Null(contentCell.Element("div"));
+        // Still four cells: an absent description must not remove a column.
+        Assert.Equal(4, dataRow.Elements("td").Count());
+    }
+
+    /// <summary>
+    /// The defect in one assertion: an item nobody is running says so, rather than naming the university.
+    /// </summary>
+    [Fact]
+    public void An_unassigned_item_shows_a_dash_rather_than_FPT_University()
+    {
+        var html = VisitSetupEmailHtml.Render(Snapshot(agenda: new[]
+        {
+            new ScheduleReportAgendaRowDto
+            {
+                StartTime = new DateTime(2026, 8, 20, 9, 0, 0),
+                Title = "Tham quan khuôn viên",
+                Venue = "Khuôn viên",
+                // What ScheduleReportDataBuilder now produces when the Host left "Phụ trách" blank.
+                Responsible = string.Empty,
+            },
+        }), "vi");
+
+        var table = AgendaTable(html, "vi");
+        var dataRow = table.Descendants("tbody").Elements("tr").Skip(1).First();
+
+        Assert.Equal("—", dataRow.Elements("td").ElementAt(3).Value);
+
+        // Scoped to the schedule. The overview's "Địa điểm" row legitimately says FPT University — that
+        // is the visit's location, one value, stated once; the defect was the schedule repeating it as a
+        // per-activity answer.
+        Assert.DoesNotContain("FPT University", table.ToString());
+    }
+
+    [Fact]
+    public void A_named_party_in_charge_is_shown_as_entered()
+    {
+        var html = VisitSetupEmailHtml.Render(Snapshot(), "vi");
+        var dataRow = AgendaTable(html, "vi").Descendants("tbody").Elements("tr").Skip(1).First();
+
+        Assert.Equal("Phòng Hợp tác Quốc tế", dataRow.Elements("td").ElementAt(3).Value);
+    }
+
+    [Fact]
+    public void Every_table_uses_the_one_border_colour()
+    {
+        var html = VisitSetupEmailHtml.Render(Snapshot(), "vi");
+
+        foreach (var table in Tables(html))
+        foreach (var cell in table.Descendants("td"))
+            Assert.Contains("border:1px solid #374151", StyleOf(cell));
     }
 }

@@ -74,7 +74,16 @@ public static class ScheduleReportDataBuilder
             }
         }
 
-        // ── Agenda — exactly what the Host set up, "Party in Charge" is always FPT University ──
+        // ── Agenda — exactly what the Host set up ──
+        //
+        // "Phụ trách" is left EMPTY when nobody has been assigned. It used to fall back to
+        // "FPT University", which is not a fallback but a claim: it named a party as running an item that
+        // has no owner, on every unassigned row, so the column said the same thing everywhere and told a
+        // guest nothing about who to look for. The renderers show the same placeholder they use for every
+        // other absent value.
+        //
+        // The VENUE keeps its fallback. That one is true — an activity with no stated room does take
+        // place at the university — and it answers the question the column asks.
         var agenda = instance.Agendas
             .OrderBy(a => a.SequenceOrder).ThenBy(a => a.StartTime)
             .Select(a => new ScheduleReportAgendaRowDto
@@ -84,7 +93,7 @@ public static class ScheduleReportDataBuilder
                 Title = a.Title,
                 Description = a.Description,
                 Venue = string.IsNullOrWhiteSpace(a.Location) ? DefaultLocation : a.Location!,
-                Responsible = string.IsNullOrWhiteSpace(a.ResponsibleName) ? DefaultLocation : a.ResponsibleName!.Trim(),
+                Responsible = string.IsNullOrWhiteSpace(a.ResponsibleName) ? string.Empty : a.ResponsibleName!.Trim(),
             })
             .ToList();
 

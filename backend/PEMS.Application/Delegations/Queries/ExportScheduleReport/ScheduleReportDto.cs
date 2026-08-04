@@ -50,15 +50,15 @@ public sealed class ScheduleReportAgendaRowDto
     public string Venue { get; set; } = default!;
 
     /// <summary>
-    /// Who runs this item — the free-typed name the Host entered, falling back to "FPT University"
-    /// when they left it blank.
+    /// Who runs this item — the free-typed name the Host entered, or EMPTY when they left it blank.
     ///
     /// <para>
-    /// The PDF's "Party in Charge" column used to print the literal string "FPT University" on every
-    /// row, so a guest reading the schedule could not tell who to look for at any point in the day.
-    /// It is a field now because the setup-progress email renders the same agenda as an HTML table
-    /// and has to show the same answer the PDF does.
+    /// Empty rather than "FPT University". The PDF's "Party in Charge" column used to print that literal
+    /// on every row, so a guest reading the schedule could not tell who to look for at any point in the
+    /// day; the fallback then survived into the setup-progress email's HTML table, where it read as a
+    /// stray cell in an otherwise per-activity row. Both renderers now show their own "no value"
+    /// placeholder, which is what the rest of their columns already do.
     /// </para>
     /// </summary>
-    public string Responsible { get; set; } = "FPT University";
+    public string Responsible { get; set; } = string.Empty;
 }

@@ -35,7 +35,13 @@ namespace PEMS.Application.Delegations.SetupProgressEmail;
 /// </summary>
 public static class VisitSetupEmailHtml
 {
-    private const string Border = "#d1d5db";
+    /// <summary>
+    /// The one border colour every table uses. Darkened from the old <c>#d1d5db</c>: at that value the
+    /// grid all but disappeared in clients that render on an off-white background, so a table read as a
+    /// run of unaligned text rather than as a table.
+    /// </summary>
+    private const string Border = "#374151";
+
     private const string HeadBg = "#f3f4f6";
     private const string Muted = "#6b7280";
 
@@ -47,23 +53,48 @@ public static class VisitSetupEmailHtml
     private const string CellPad = "padding:6px 8px";
 
     /// <summary>
-    /// Wrapping that is safe in a fixed layout. Two properties for one behaviour because the older
-    /// <c>word-break</c> is what Outlook and legacy webmail understand, while <c>overflow-wrap</c> is the
-    /// standard one; a long unbroken value (an address, a pasted URL) has to break rather than push the
-    /// column wider, since under a fixed layout it cannot push and would simply overflow the border.
+    /// Wrapping that is safe in a fixed layout, stated as three properties because each answers a
+    /// different question.
+    ///
+    /// <para>
+    /// <c>overflow-wrap:break-word</c> is the one that does the work: a long unbroken value (an address, a
+    /// pasted URL) breaks rather than pushing the column wider, which under a fixed layout it cannot do
+    /// and would instead overflow the border.
+    /// </para>
+    /// <para>
+    /// <c>word-break:normal</c> is stated EXPLICITLY, and is a change from the previous
+    /// <c>word-break:break-word</c>. The old value let a break fall anywhere, so ordinary Vietnamese wrapped
+    /// mid-syllable — "Phòng Hợp tác Quốc tế" coming out as "Phòng Hợp tá"/"c Quốc tế" — for no benefit,
+    /// since <c>overflow-wrap</c> already covers the only case that needs forcing. (<c>break-all</c> is the
+    /// same fault, harder: it is never used here.)
+    /// </para>
+    /// <para>
+    /// <c>white-space:normal</c> undoes a <c>nowrap</c> some clients inherit onto table cells, which would
+    /// otherwise stop wrapping altogether and blow the column out.
+    /// </para>
     /// </summary>
-    private const string Wrap = "word-break:break-word;overflow-wrap:break-word";
+    private const string Wrap = "white-space:normal;overflow-wrap:break-word;word-break:normal";
 
     private static string DataCell(string width) =>
-        $"border:1px solid {Border};{CellPad};vertical-align:top;{Wrap};width:{width}";
+        $"border:1px solid {Border};{CellPad};text-align:left;vertical-align:top;{Wrap};width:{width}";
 
     private static string HeadCell(string width) =>
         $"border:1px solid {Border};background:{HeadBg};{CellPad};font-size:12px;font-weight:bold;"
-        + $"vertical-align:top;{Wrap};width:{width}";
+        + $"text-align:left;vertical-align:top;{Wrap};width:{width}";
 
     // Column allocations. They sum to 100% in every table so a fixed layout has nothing left to guess at.
     private static readonly string[] PeopleWidths = { "32%", "43%", "25%" };
-    private static readonly string[] AgendaWidths = { "20%", "44%", "18%", "18%" };
+
+    /// <summary>
+    /// Thời gian / Nội dung / Địa điểm / Phụ trách — four columns, and only ever four.
+    ///
+    /// <para>
+    /// "Nội dung" is the widest because it carries the activity title AND its description in one cell;
+    /// "Địa điểm" was widened from 18% because a venue is a phrase ("Hội trường tầng 3, toà Beta") and at
+    /// the old share it wrapped onto three lines beside a half-empty description column.
+    /// </para>
+    /// </summary>
+    private static readonly string[] AgendaWidths = { "18%", "42%", "22%", "18%" };
     private static readonly string[] LogisticsWidths = { "34%", "12%", "30%", "24%" };
     private static readonly string[] KeyValueWidths = { "34%", "66%" };
 
@@ -114,10 +145,21 @@ public static class VisitSetupEmailHtml
                 AgendaWidths);
             foreach (var a in s.Report.Agenda)
             {
-                var activity = Esc(a.Title);
+                // Title and description are ONE cell, not two columns: they are one activity, and
+                // splitting them produced a row whose cell count no longer matched the header.
+                // <strong> + <div> rather than <br/> + <span> so the description is its own block —
+                // Outlook collapses the margin on an inline run and the two ran together as one line.
+                var activity = $"<strong>{Esc(a.Title)}</strong>";
                 if (!string.IsNullOrWhiteSpace(a.Description))
-                    activity += $"<br/><span style=\"color:{Muted};font-size:12px\">{Esc(a.Description!)}</span>";
-                Row(sb, new[] { Esc(Window(a.StartTime, a.EndTime)), activity, Esc(a.Venue), Esc(a.Responsible) },
+                    activity += $"<div style=\"color:{Muted};font-size:12px;margin-top:2px\">{Esc(a.Description!)}</div>";
+
+                Row(sb, new[]
+                    {
+                        Esc(Window(a.StartTime, a.EndTime)),
+                        activity,
+                        Esc(Fallback(a.Venue)),
+                        Esc(Fallback(a.Responsible)),
+                    },
                     AgendaWidths, preEscaped: true);
             }
             CloseTable(sb);
@@ -279,6 +321,20 @@ public static class VisitSetupEmailHtml
         "REJECTED" or "CANCELLED" => en ? "Not arranged" : "Không bố trí",
         _ => en ? "Being coordinated" : "Đang phối hợp",
     };
+
+    /// <summary>
+    /// The one placeholder for "nobody has filled this in yet", matching what every other table in this
+    /// block already renders for an absent value.
+    ///
+    /// <para>
+    /// It replaces a literal <c>"FPT University"</c> that <see cref="Queries.ExportScheduleReport"/> used
+    /// to substitute for a blank "Phụ trách". That was not a fallback but an assertion: it told the guest
+    /// that a named party was running an item nobody had been assigned to, on every unassigned row of the
+    /// schedule, so the column carried no information and looked like a stray cell in a table that was
+    /// otherwise per-activity.
+    /// </para>
+    /// </summary>
+    private static string Fallback(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value!;
 
     private static string Esc(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 }

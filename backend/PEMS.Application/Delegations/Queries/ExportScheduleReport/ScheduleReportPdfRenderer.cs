@@ -184,7 +184,11 @@ public static class ScheduleReportPdfRenderer
                 });
 
                 GridCell(table, bg).Text(a.Venue).FontSize(9);
-                GridCell(table, bg).Text(a.Responsible).FontSize(9);
+                // An unassigned item shows the same dash the rest of the report uses for an absent
+                // value. It used to print "FPT University" — the builder's fallback — on every row that
+                // had no owner, which named a party for work nobody had been given.
+                GridCell(table, bg)
+                    .Text(string.IsNullOrWhiteSpace(a.Responsible) ? "—" : a.Responsible).FontSize(9);
             }
 
             if (rows.Count == 0)
