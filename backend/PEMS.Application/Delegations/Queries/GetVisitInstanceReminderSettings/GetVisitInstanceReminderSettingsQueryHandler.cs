@@ -50,6 +50,7 @@ public sealed class GetVisitInstanceReminderSettingsQueryHandler
                 ReminderTime = $"{r.ReminderTime.Hours:D2}:{r.ReminderTime.Minutes:D2}",
                 ScheduledAt = r.ScheduledAt.ToString("yyyy-MM-ddTHH:mm:ss"),
                 Status = r.Status.ToString(),
+                ErrorMessage = r.ErrorMessage,
             }).ToList(),
         };
     }

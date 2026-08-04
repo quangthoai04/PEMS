@@ -292,6 +292,135 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         finally { await CleanupAsync(); }
     }
 
+    // ── A due reminder with nobody left to remind (§7) ──────────────────────
+
+    /// <summary>
+    /// The reminder comes due, the people it was for are gone, and the row must say so.
+    ///
+    /// <para>
+    /// Before this, the claim moved the row to SENT and nothing moved it back, so a reminder that was
+    /// delivered to nobody was on record as sent — indistinguishable, afterwards, from one that
+    /// reached everybody. It is now CANCELLED with the reason, and no provider is called.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_reminder_that_comes_due_with_nobody_to_remind_is_cancelled_with_the_reason()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            // PARTICIPANTS with no participant seeded: the Host exists (the schema requires one on an
+            // operational instance) but is not in the target group, so nobody is resolved.
+            await SeedAsync(VisitReminderTargetGroup.PARTICIPANTS);
+
+            using (var db = EmailEvidenceHarness.NewContext())
+                await Service(db).DispatchDueAsync();
+
+            using var verify = EmailEvidenceHarness.NewContext();
+            var reminder = await verify.VisitInstanceReminderSettings.AsNoTracking()
+                .SingleAsync(r => r.ReminderSettingId == _reminderId);
+
+            Assert.Equal(VisitReminderStatus.CANCELLED, reminder.Status);
+            Assert.Equal(
+                "NO_ELIGIBLE_RECIPIENTS: Đã hủy nhắc lịch vì không còn người nhận đủ điều kiện.",
+                reminder.ErrorMessage);
+            // When it was processed, so an operator can place it against the schedule.
+            Assert.NotNull(reminder.LastDispatchedAt);
+
+            // Nothing was sent, and nothing pretends it was: no message, and no history row at all —
+            // a SENT or FAILED sent_emails row here would record a delivery that never happened.
+            await AwaitMessagesToAsync(_h.Marker, 0);
+            Assert.Empty(await verify.SentEmails.AsNoTracking()
+                .Where(e => e.RelatedType == "VISIT_INSTANCE" && e.RelatedId == _visitInstanceId)
+                .ToListAsync());
+        }
+        finally { await CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// Re-running the job leaves a cancelled reminder exactly as it was — no send, no history, and
+    /// the original reason and timestamp intact.
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_reminder_is_left_untouched_by_the_next_tick()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            await SeedAsync(VisitReminderTargetGroup.PARTICIPANTS);
+
+            using (var db = EmailEvidenceHarness.NewContext())
+                await Service(db).DispatchDueAsync();
+
+            DateTime? firstStamp;
+            string? firstReason;
+            using (var first = EmailEvidenceHarness.NewContext())
+            {
+                var row = await first.VisitInstanceReminderSettings.AsNoTracking()
+                    .SingleAsync(r => r.ReminderSettingId == _reminderId);
+                Assert.Equal(VisitReminderStatus.CANCELLED, row.Status);
+                firstStamp = row.LastDispatchedAt;
+                firstReason = row.ErrorMessage;
+            }
+
+            // A participant turns up after the fact. The reminder is still not sent: it is no longer
+            // PENDING, and the moment it was about has passed.
+            using (var db = EmailEvidenceHarness.NewContext())
+            {
+                db.VisitParticipants.Add(new VisitParticipant
+                {
+                    VisitInstanceId = _visitInstanceId,
+                    UserId = _hostUserId,
+                    ParticipantRole = "IC_SUPPORT",
+                    IsHost = false,
+                    Status = "ACCEPTED",
+                    CreatedAt = DateTime.Now,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            using (var db = EmailEvidenceHarness.NewContext())
+                await Service(db).DispatchDueAsync();
+
+            using var verify = EmailEvidenceHarness.NewContext();
+            var after = await verify.VisitInstanceReminderSettings.AsNoTracking()
+                .SingleAsync(r => r.ReminderSettingId == _reminderId);
+
+            Assert.Equal(VisitReminderStatus.CANCELLED, after.Status);
+            Assert.Equal(firstReason, after.ErrorMessage);
+            Assert.Equal(firstStamp, after.LastDispatchedAt);
+            await AwaitMessagesToAsync(_h.Marker, 0);
+            Assert.Empty(await verify.SentEmails.AsNoTracking()
+                .Where(e => e.RelatedType == "VISIT_INSTANCE" && e.RelatedId == _visitInstanceId)
+                .ToListAsync());
+        }
+        finally { await CleanupAsync(); }
+    }
+
+    /// <summary>A reminder that still has somebody is unaffected by any of the above.</summary>
+    [Fact]
+    public async Task A_reminder_that_still_has_a_recipient_is_sent_and_marked_sent()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            await SeedAsync(VisitReminderTargetGroup.HOST);
+            await AssertReadyToDispatchAsync(_hostUserId);
+
+            using (var db = EmailEvidenceHarness.NewContext())
+                await Service(db).DispatchDueAsync();
+
+            await AwaitMessagesToAsync(_h.Marker, 1);
+
+            using var verify = EmailEvidenceHarness.NewContext();
+            var reminder = await verify.VisitInstanceReminderSettings.AsNoTracking()
+                .SingleAsync(r => r.ReminderSettingId == _reminderId);
+            Assert.Equal(VisitReminderStatus.SENT, reminder.Status);
+            Assert.Null(reminder.ErrorMessage);
+        }
+        finally { await CleanupAsync(); }
+    }
+
     [Fact]
     public async Task Every_recipient_of_one_reminder_gets_their_own_message()
     {

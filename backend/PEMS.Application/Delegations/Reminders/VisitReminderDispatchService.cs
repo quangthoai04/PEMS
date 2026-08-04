@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Notifications.Common;
@@ -31,11 +32,46 @@ public interface IVisitReminderDispatchService
         VisitInstanceReminderSetting reminder, CancellationToken cancellationToken = default);
 }
 
-/// <summary>What one reminder produced. <paramref name="SafeError"/> is null when nothing failed.</summary>
-public sealed record ReminderDispatchOutcome(int Messages, string? SafeError)
+/// <summary>
+/// Why a due reminder was cancelled instead of sent. These codes are written into
+/// <c>visit_instance_reminder_settings.error_message</c>, which is one free-text column — so the code
+/// goes in front of the sentence, machine-readable prefix first, rather than in a column of its own.
+/// </summary>
+public static class ReminderCancelReasons
+{
+    /// <summary>Nobody was left to remind: no Host, no eligible participant, no usable address.</summary>
+    public const string NoEligibleRecipients = "NO_ELIGIBLE_RECIPIENTS";
+
+    public const string NoEligibleRecipientsMessageVi =
+        "Đã hủy nhắc lịch vì không còn người nhận đủ điều kiện.";
+
+    public const string NoEligibleRecipientsMessageEn =
+        "The reminder was cancelled because no eligible recipients remained.";
+
+    /// <summary>What the row stores: <c>CODE: message</c>, so an operator and a parser both read it.</summary>
+    public static string Record(string code) => code switch
+    {
+        NoEligibleRecipients => $"{NoEligibleRecipients}: {NoEligibleRecipientsMessageVi}",
+        _ => code,
+    };
+}
+
+/// <summary>
+/// What one reminder produced. <paramref name="SafeError"/> is null when nothing failed;
+/// <paramref name="CancelReasonCode"/> is set when there was nothing to send and the reminder must
+/// NOT be left claiming it went out.
+/// </summary>
+public sealed record ReminderDispatchOutcome(int Messages, string? SafeError, string? CancelReasonCode = null)
 {
     public bool Succeeded => SafeError is null;
+
+    /// <summary>Nothing failed, but nothing was sent either — the row belongs in CANCELLED.</summary>
+    public bool Cancelled => CancelReasonCode is not null;
+
     public static readonly ReminderDispatchOutcome Nothing = new(0, null);
+
+    public static readonly ReminderDispatchOutcome NoEligibleRecipients =
+        new(0, null, ReminderCancelReasons.NoEligibleRecipients);
 }
 
 /// <inheritdoc />
@@ -49,19 +85,22 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
     private readonly IDateTimeService _clock;
     private readonly IEmailActionTokenService _urls;
     private readonly INotificationService _notifications;
+    private readonly ILogger<VisitReminderDispatchService>? _logger;
 
     public VisitReminderDispatchService(
         IApplicationDbContext db,
         ISystemEmailDispatcher dispatcher,
         IDateTimeService clock,
         IEmailActionTokenService urls,
-        INotificationService notifications)
+        INotificationService notifications,
+        ILogger<VisitReminderDispatchService>? logger = null)
     {
         _db = db;
         _dispatcher = dispatcher;
         _clock = clock;
         _urls = urls;
         _notifications = notifications;
+        _logger = logger;
     }
 
     public async Task<int> DispatchDueAsync(CancellationToken cancellationToken = default)
@@ -98,9 +137,20 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             }
 
             if (!outcome.Succeeded)
+            {
                 await MarkFailedAsync(reminder.ReminderSettingId, outcome.SafeError!, now, cancellationToken);
+            }
+            else if (outcome.Cancelled)
+            {
+                // Nothing failed and nothing was sent. Leaving the claim's SENT in place would have the
+                // row assert a delivery that never happened, so it is moved to CANCELLED with the reason.
+                await MarkCancelledAsync(
+                    reminder.ReminderSettingId, outcome.CancelReasonCode!, now, cancellationToken);
+            }
             else
+            {
                 dispatched++;
+            }
         }
 
         return dispatched;
@@ -147,6 +197,36 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
                     .SetProperty(r => r.UpdatedAt, now),
                 ct);
 
+    /// <summary>
+    /// Records a reminder that had nothing to send.
+    ///
+    /// <para>
+    /// The row is left alone once it is already CANCELLED, so a second pass cannot rewrite the reason
+    /// or the timestamp of the first one. It cannot be picked up again in any case — the due query
+    /// only ever looks at PENDING rows — so this is belt-and-braces against a caller that dispatches a
+    /// reminder directly. No email is sent, no <c>sent_emails</c> row is written, and nothing is
+    /// retried: there is no failure here to retry.
+    /// </para>
+    /// </summary>
+    private Task MarkCancelledAsync(ulong reminderSettingId, string reasonCode, DateTime now, CancellationToken ct)
+    {
+        // No recipient, template or message content is logged — the reminder id is enough to
+        // investigate with, and the alternative puts mailboxes in the application log.
+        _logger?.LogInformation(
+            "Visit reminder {ReminderSettingId} cancelled: {ReasonCode}.", reminderSettingId, reasonCode);
+
+        return _db.VisitInstanceReminderSettings
+            .Where(r => r.ReminderSettingId == reminderSettingId
+                        && r.Status != VisitReminderStatus.CANCELLED)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(r => r.Status, VisitReminderStatus.CANCELLED)
+                    .SetProperty(r => r.LastDispatchedAt, now)
+                    .SetProperty(r => r.ErrorMessage, ReminderCancelReasons.Record(reasonCode))
+                    .SetProperty(r => r.UpdatedAt, now),
+                ct);
+    }
+
     public async Task<ReminderDispatchOutcome> DispatchOneAsync(
         VisitInstanceReminderSetting reminder, CancellationToken cancellationToken = default)
     {
@@ -157,7 +237,10 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             ?? throw new InvalidOperationException($"Visit instance {reminder.VisitInstanceId} not found.");
 
         var recipients = await ResolveRecipientsAsync(instance, reminder.TargetGroup, cancellationToken);
-        if (recipients.Count == 0) return ReminderDispatchOutcome.Nothing;
+        // Nobody left to remind — the Host was cleared, the participants withdrew, or none of them has
+        // a usable address. The provider is never called and no sent_emails row is written, because
+        // there was no send attempt to record; the caller moves the row to CANCELLED with the reason.
+        if (recipients.Count == 0) return ReminderDispatchOutcome.NoEligibleRecipients;
 
         // The reminder targets ONE campus instance, so every value comes from THAT instance — never
         // from a sibling campus of the same request, which would tell people the wrong time and place.

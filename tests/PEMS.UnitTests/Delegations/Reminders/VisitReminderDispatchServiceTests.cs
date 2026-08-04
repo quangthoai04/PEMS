@@ -274,10 +274,78 @@ public class VisitReminderDispatchServiceTests
 
         var outcome = await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.PARTICIPANTS), default);
 
+        // Nothing FAILED — there was no send to fail. But there was nothing to send either, which is
+        // its own outcome and must not be mistaken for a delivery.
         Assert.True(outcome.Succeeded);
+        Assert.True(outcome.Cancelled);
+        Assert.Equal(ReminderCancelReasons.NoEligibleRecipients, outcome.CancelReasonCode);
         Assert.Equal(0, outcome.Messages);
         Assert.Empty(dispatcher.Requests);
         Assert.Empty(db.SentEmails);
+    }
+
+    // ── Nobody left to remind, per target group (§7) ────────────────────────
+    //
+    // These stay at the DispatchOneAsync level on purpose: the claim and the CANCELLED write are
+    // ExecuteUpdate statements, which the InMemory provider does not implement, so what the ROW ends
+    // up looking like is asserted against a real MySQL row in
+    // PEMS.IntegrationTests VisitReminderDispatchIdempotencyTests. What belongs here is the decision —
+    // that resolving nobody produces the cancel outcome and touches no provider.
+
+    [Fact]
+    public async Task A_host_without_a_usable_address_leaves_nobody_to_remind()
+    {
+        var (db, service, _, dispatcher) = CreateSut();
+        db.Users.Single(u => u.UserId == DelegationsTestData.HostUserId).Email = "   ";
+        db.SaveChanges();
+
+        var outcome = await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.HOST), default);
+
+        Assert.True(outcome.Cancelled);
+        Assert.Equal(ReminderCancelReasons.NoEligibleRecipients, outcome.CancelReasonCode);
+        Assert.Empty(dispatcher.Requests);
+        Assert.Empty(db.SentEmails);
+    }
+
+    [Fact]
+    public async Task A_participant_who_is_no_longer_accepted_leaves_nobody_to_remind()
+    {
+        var (db, service, _, dispatcher) = CreateSut();
+        foreach (var p in db.VisitParticipants) p.Status = ParticipantStatuses.Declined;
+        db.SaveChanges();
+
+        var outcome = await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.PARTICIPANTS), default);
+
+        Assert.True(outcome.Cancelled);
+        Assert.Empty(dispatcher.Requests);
+        Assert.Empty(db.SentEmails);
+    }
+
+    [Fact]
+    public async Task A_reminder_that_still_has_somebody_is_not_cancelled()
+    {
+        var (_, service, _, dispatcher) = CreateSut();
+
+        var outcome = await service.DispatchOneAsync(
+            Reminder(VisitReminderTargetGroup.HOST_AND_PARTICIPANTS), default);
+
+        Assert.False(outcome.Cancelled);
+        Assert.Null(outcome.CancelReasonCode);
+        Assert.Equal(3, outcome.Messages);
+        Assert.Equal(3, dispatcher.Requests.Count);
+    }
+
+    /// <summary>The wording an operator and the screen read, pinned so a rename cannot quietly change it.</summary>
+    [Fact]
+    public void The_cancel_reason_is_recorded_as_a_code_followed_by_a_readable_sentence()
+    {
+        var recorded = ReminderCancelReasons.Record(ReminderCancelReasons.NoEligibleRecipients);
+
+        Assert.StartsWith("NO_ELIGIBLE_RECIPIENTS:", recorded);
+        Assert.Contains("Đã hủy nhắc lịch vì không còn người nhận đủ điều kiện.", recorded);
+        Assert.Equal(
+            "The reminder was cancelled because no eligible recipients remained.",
+            ReminderCancelReasons.NoEligibleRecipientsMessageEn);
     }
 
     // ── Channels stay separate ─────────────────────────────────────────────
