@@ -129,9 +129,6 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitExpenseReportEvent>();
         // Face tags are NOT pruned: the photo-folder search matches a delegation by the name of a
         // person tagged in one of its photos.
-        modelBuilder.Ignore<EmailDraft>();
-        modelBuilder.Ignore<EmailDraftRecipient>();
-        modelBuilder.Ignore<EmailDraftAttachment>();
         // Notifications are NOT pruned: the management-list query reads them to work out what has
         // changed on a row since the caller last looked, so by this slice's own rule ("map what these
         // handlers use") they belong in the model.
@@ -262,9 +259,6 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
-    DbSet<EmailDraft> IApplicationDbContext.EmailDrafts => Set<EmailDraft>();
-    DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
-    DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<Notification> IApplicationDbContext.Notifications => Set<Notification>();
     DbSet<CalendarEvent> IApplicationDbContext.CalendarEvents => CalendarEvents;
     DbSet<ApiConfiguration> IApplicationDbContext.ApiConfigurations => Set<ApiConfiguration>();

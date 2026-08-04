@@ -202,9 +202,6 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();
     DbSet<SentEmailRecipient> IApplicationDbContext.SentEmailRecipients => Set<SentEmailRecipient>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
-    public DbSet<EmailDraft> EmailDrafts => Set<EmailDraft>();
-    public DbSet<EmailDraftRecipient> EmailDraftRecipients => Set<EmailDraftRecipient>();
-    public DbSet<EmailDraftAttachment> EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
     DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<EmailContactPolicy> IApplicationDbContext.EmailContactPolicies => Set<EmailContactPolicy>();

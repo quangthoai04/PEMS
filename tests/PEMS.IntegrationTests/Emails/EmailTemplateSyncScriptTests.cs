@@ -17,8 +17,8 @@ namespace PEMS.IntegrationTests.Emails;
 /// <para>
 /// The interesting case is never the empty database. It is the one that has been running for months:
 /// some canonical templates missing, some carrying stale content, the nine retired codes still ACTIVE,
-/// history and drafts holding foreign keys into them, and templates an operator wrote by hand that the
-/// sync has no business touching. This class builds exactly that and then measures.
+/// history holding foreign keys into them, and templates an operator wrote by hand that the sync has
+/// no business touching. This class builds exactly that and then measures.
 /// </para>
 ///
 /// <para>
@@ -98,7 +98,7 @@ public sealed class EmailTemplateSyncScriptTests : IClassFixture<EmailTemplateSy
         /// <summary>
         /// Turns the freshly-imported canonical database into a plausible "existing deployment":
         /// three canonical templates absent, four stale or wrongly deactivated, the nine retired codes
-        /// ACTIVE, history and drafts referencing them, and two operator-authored templates.
+        /// ACTIVE, history referencing two of them, and two operator-authored templates.
         /// </summary>
         private void ApplyExistingDeploymentFixture()
         {
@@ -154,16 +154,24 @@ VALUES
   (900001,'legacy.bcc@fpt.edu.vn','Legacy BCC','BCC','SENT','2026-03-01 09:00:00','2026-03-01 09:00:00'),
   (900002,'canon.to@fpt.edu.vn','Canon TO','TO','SENT','2026-03-02 09:00:00','2026-03-02 09:00:00');
 
-INSERT INTO email_drafts
-  (email_draft_id, email_template_id, related_type, related_id, subject, body_content,
-   body_format, status, created_by, last_edited_by, created_at)
-SELECT 800001, t.email_template_id, 'USER', 3, 'Draft bound to a legacy template',
-       '<p>unsent work</p>','HTML','DRAFT',1,1,'2026-03-04 09:00:00'
+-- A second, different legacy code that something still points at. This used to be an email_drafts
+-- row; with the draft tables gone, history is the only thing left that holds a foreign key into
+-- email_templates, so the reference lives here instead. Keeping two distinct legacy codes referenced
+-- is the point — check B2 (""a referenced legacy row is deactivated, not deleted"") would still pass
+-- on a script that special-cased one code.
+INSERT INTO sent_emails
+  (sent_email_id, email_template_id, related_type, related_id, subject, body_snapshot,
+   provider_thread_id, provider_message_id, retry_count, status, sent_by, sent_at, created_at)
+SELECT 900003, t.email_template_id, 'USER', 5, 'History on a second legacy template',
+       '<p>third history snapshot</p>', 'thread-legacy-2','msg-legacy-2', 0, 'SENT', 1,
+       '2026-03-04 09:00:00','2026-03-04 09:00:00'
 FROM email_templates t WHERE t.template_code='LOGISTICS_REQUEST';
 
-INSERT INTO email_draft_recipients (email_draft_id, recipient_email, recipient_name, recipient_type, display_order)
-VALUES (800001,'draft.to@fpt.edu.vn','Draft TO','TO',0),
-       (800001,'draft.bcc@fpt.edu.vn','Draft BCC','BCC',1);");
+INSERT INTO sent_email_recipients
+  (sent_email_id, recipient_email, recipient_name, recipient_type, delivery_status, sent_at, created_at)
+VALUES
+  (900003,'legacy2.to@fpt.edu.vn','Legacy2 TO','TO','SENT','2026-03-04 09:00:00','2026-03-04 09:00:00'),
+  (900003,'legacy2.bcc@fpt.edu.vn','Legacy2 BCC','BCC','SENT','2026-03-04 09:00:00','2026-03-04 09:00:00');");
         }
 
         public void Execute(string sql)
@@ -236,16 +244,8 @@ SELECT CONCAT_WS('|','RCPT',sent_email_id,recipient_type,recipient_email,deliver
 FROM sent_email_recipients ORDER BY sent_email_id,recipient_type,recipient_email;")) parts.Add(r["line"]!.ToString()!);
 
             foreach (var r in Query(@"
-SELECT CONCAT_WS('|','DRAFT',email_draft_id,IFNULL(email_template_id,'~'),status,
-  SHA2(CONCAT_WS('',IFNULL(subject,'~'),IFNULL(body_content,'~')),256)) AS line
-FROM email_drafts ORDER BY email_draft_id;")) parts.Add(r["line"]!.ToString()!);
-
-            foreach (var r in Query(@"
-SELECT CONCAT_WS('|','DRCPT',email_draft_id,recipient_type,recipient_email) AS line
-FROM email_draft_recipients ORDER BY email_draft_id,recipient_type,recipient_email;")) parts.Add(r["line"]!.ToString()!);
-
-            foreach (var r in Query(@"
 SELECT CONCAT_WS('|','COUNT','email_action_tokens',COUNT(*)) AS line FROM email_action_tokens
+UNION ALL SELECT CONCAT_WS('|','COUNT','email_send_idempotency',COUNT(*)) FROM email_send_idempotency
 UNION ALL SELECT CONCAT_WS('|','COUNT','sent_email_attachments',COUNT(*)) FROM sent_email_attachments
 UNION ALL SELECT CONCAT_WS('|','COUNT','users',COUNT(*)) FROM users
 UNION ALL SELECT CONCAT_WS('|','COUNT','visit_requests',COUNT(*)) FROM visit_requests
@@ -473,7 +473,7 @@ UNION ALL SELECT CONCAT_WS('|','COUNT','gallery_items',COUNT(*)) FROM gallery_it
     }
 
     [Fact]
-    public void Sync_leaves_history_drafts_and_everything_outside_email_templates_untouched()
+    public void Sync_leaves_history_and_everything_outside_email_templates_untouched()
     {
         static string NonTemplate(string snapshot) =>
             string.Join("\n", snapshot.Split('\n').Where(l => !l.StartsWith("TEMPLATE|", StringComparison.Ordinal)));
@@ -753,7 +753,7 @@ SELECT GROUP_CONCAT(line ORDER BY line SEPARATOR '\n') FROM (
     }
 
     [Fact]
-    public void Sync_script_never_touches_history_drafts_or_tokens()
+    public void Sync_script_never_touches_history_reservations_or_tokens()
     {
         var sql = File.ReadAllText(Path.Combine(_db.ScriptsDirectory, "02_sync_templates.sql"));
         var body = string.Join("\n", sql.Split('\n').Where(l => !l.TrimStart().StartsWith("--")));
@@ -761,7 +761,7 @@ SELECT GROUP_CONCAT(line ORDER BY line SEPARATOR '\n') FROM (
         foreach (var table in new[]
         {
             "sent_emails", "sent_email_recipients", "sent_email_attachments",
-            "email_drafts", "email_draft_recipients", "email_action_tokens", "files",
+            "email_send_idempotency", "email_action_tokens", "files",
         })
         {
             foreach (var verb in new[] { "INSERT INTO", "UPDATE", "DELETE FROM" })

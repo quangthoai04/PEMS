@@ -241,9 +241,9 @@ public class EmailSendIdempotencyContractTests
             .Where(t => typeof(IIdempotentEmailSend).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false })
             .ToList();
 
-        // Eight TYPES, nine codes: ReplytoEmailCommand answers to two of them, because Reply and Reply All
+        // Nine TYPES, ten codes: ReplytoEmailCommand answers to two of them, because Reply and Reply All
         // address different people and must not share a reservation.
-        Assert.Equal(8, declared.Count);
+        Assert.Equal(9, declared.Count);
 
         var codes = declared
             .Select(t => ((IIdempotentEmailSend)Activator.CreateInstance(t)!).OperationCode)

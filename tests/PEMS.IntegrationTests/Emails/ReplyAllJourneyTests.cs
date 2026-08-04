@@ -125,7 +125,7 @@ public sealed class ReplyAllJourneyTests : IDisposable
     private ManualEmailSender Sender(ApplicationDbContext db) => new(db, _h.Sender());
 
     private SendEmailCommandHandler Compose(ApplicationDbContext db, ICurrentUserService user)
-        => new(user, Sanitizer, Sender(db), Normalizer(db), Recipients);
+        => new(user, new DirectEmailSender(db, Sanitizer, Storage(), Sender(db), Normalizer(db), Recipients));
 
     private ReplytoEmailCommandHandler Reply(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, Sanitizer, Sender(db), Recipients);

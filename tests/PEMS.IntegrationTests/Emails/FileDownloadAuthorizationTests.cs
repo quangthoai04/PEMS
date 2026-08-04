@@ -343,7 +343,6 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
     private static Task CleanupRowsAsync(ApplicationDbContext db)
         => FixtureCleanup.For(db)
             .Root("sent_emails", $"sent_by BETWEEN {Base} AND {Base + 100}")
-            .Root("email_drafts", $"created_by BETWEEN {Base} AND {Base + 100}")
             .Root("files", $"uploaded_by BETWEEN {Base} AND {Base + 100}")
             .Root("visit_requests", $"visit_request_id = {VisitRequestId}")
             .Root("users", $"user_id BETWEEN {Base} AND {Base + 100}")
@@ -428,72 +427,6 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
         await CleanupRowsAsync(db);
     }
 
-    // ── C. Draft attachments ─────────────────────────────────────────────────
-
-    [Fact]
-    public async Task A_draft_attachment_belongs_to_the_person_writing_the_draft()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedWorldAsync(db);
-
-        var fileId = await SeedFileAsync(db, SenderA, FilePurposeDbValues.Other);
-
-        await db.Database.ExecuteSqlRawAsync(
-            "INSERT INTO email_drafts (subject, body_content, body_format, status, created_by, "
-            + $"last_edited_by, created_at) VALUES ('Nháp', '<p>x</p>', 'HTML', 'DRAFT', {SenderA}, "
-            + $"{SenderA}, NOW())");
-        var draftId = await db.EmailDrafts.AsNoTracking()
-            .Where(d => d.CreatedBy == SenderA).OrderByDescending(d => d.EmailDraftId)
-            .Select(d => d.EmailDraftId).FirstAsync();
-        await db.Database.ExecuteSqlRawAsync(
-            "INSERT INTO email_draft_attachments (email_draft_id, file_id, attachment_type, display_name, "
-            + "display_order, created_at) VALUES ({0}, {1}, 'ATTACHMENT', 'tai-lieu.pdf', 0, NOW())",
-            draftId, fileId);
-
-        Assert.True(await CanDownload(db, Viewer(SenderA), fileId));
-
-        // An unsent draft is the most private thing in the module. No colleague, no leader, no HO.
-        Assert.False(await CanDownload(db, Viewer(RecipientB), fileId));
-        Assert.False(await CanDownload(db, Viewer(OutsiderG), fileId));
-        Assert.False(await CanDownload(db, Ho, fileId));
-        Assert.False(await CanDownload(db, StaffLeader, fileId));
-
-        await CleanupRowsAsync(db);
-    }
-
-    [Fact]
-    public async Task Sending_the_draft_grants_the_recipients_the_file_without_widening_the_draft()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedWorldAsync(db);
-
-        var fileId = await SeedFileAsync(db, SenderA, FilePurposeDbValues.Other);
-
-        await db.Database.ExecuteSqlRawAsync(
-            "INSERT INTO email_drafts (subject, body_content, body_format, status, created_by, "
-            + $"last_edited_by, created_at) VALUES ('Nháp', '<p>x</p>', 'HTML', 'SENT', {SenderA}, "
-            + $"{SenderA}, NOW())");
-        var draftId = await db.EmailDrafts.AsNoTracking()
-            .Where(d => d.CreatedBy == SenderA).OrderByDescending(d => d.EmailDraftId)
-            .Select(d => d.EmailDraftId).FirstAsync();
-        await db.Database.ExecuteSqlRawAsync(
-            "INSERT INTO email_draft_attachments (email_draft_id, file_id, attachment_type, display_name, "
-            + "display_order, created_at) VALUES ({0}, {1}, 'ATTACHMENT', 'tai-lieu.pdf', 0, NOW())",
-            draftId, fileId);
-        await SeedEmailAsync(db, fileId);
-
-        // Each reference grants on its own terms: the author through the draft, the addressees through
-        // the message. Neither reference lends its rights to the other.
-        Assert.True(await CanDownload(db, Viewer(SenderA), fileId));
-        Assert.True(await CanDownload(db, Viewer(RecipientB), fileId));
-        Assert.True(await CanDownload(db, Viewer(BlindD), fileId));
-        Assert.False(await CanDownload(db, Viewer(OutsiderG), fileId));
-        Assert.False(await CanDownload(db, Ho, fileId));
-
-        await CleanupRowsAsync(db);
-    }
 
     // ── D. IDOR ──────────────────────────────────────────────────────────────
 

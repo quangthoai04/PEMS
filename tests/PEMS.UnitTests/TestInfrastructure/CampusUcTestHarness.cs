@@ -100,9 +100,6 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<SentEmail>();
         modelBuilder.Ignore<SentEmailRecipient>();
         modelBuilder.Ignore<SentEmailAttachment>();
-        modelBuilder.Ignore<EmailDraft>();
-        modelBuilder.Ignore<EmailDraftRecipient>();
-        modelBuilder.Ignore<EmailDraftAttachment>();
         modelBuilder.Ignore<EmailActionToken>();
         modelBuilder.Ignore<EmailSendIdempotency>();
         modelBuilder.Ignore<AccountEmailConfirmation>();
@@ -190,9 +187,6 @@ public sealed class CampusTestDbContext : DbContext, IApplicationDbContext
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();
     DbSet<SentEmailRecipient> IApplicationDbContext.SentEmailRecipients => Set<SentEmailRecipient>();
     DbSet<SentEmailAttachment> IApplicationDbContext.SentEmailAttachments => Set<SentEmailAttachment>();
-    DbSet<EmailDraft> IApplicationDbContext.EmailDrafts => Set<EmailDraft>();
-    DbSet<EmailDraftRecipient> IApplicationDbContext.EmailDraftRecipients => Set<EmailDraftRecipient>();
-    DbSet<EmailDraftAttachment> IApplicationDbContext.EmailDraftAttachments => Set<EmailDraftAttachment>();
     DbSet<EmailActionToken> IApplicationDbContext.EmailActionTokens => Set<EmailActionToken>();
     DbSet<EmailSendIdempotency> IApplicationDbContext.EmailSendIdempotencies => Set<EmailSendIdempotency>();
     DbSet<EmailContactPolicy> IApplicationDbContext.EmailContactPolicies => Set<EmailContactPolicy>();

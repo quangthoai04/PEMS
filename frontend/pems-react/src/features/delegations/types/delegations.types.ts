@@ -780,7 +780,7 @@ export interface EmailOverridePayload {
   attachments?: EmailAttachmentRefInput[];
 }
 
-/** A file/inline-image reference carried by the rich email editor (mirrors backend EmailDraftAttachmentInput). */
+/** A file/inline-image reference carried by the rich email editor (mirrors backend EmailAttachmentRefInput). */
 export interface EmailAttachmentRefInput {
   fileId: number;
   /** ATTACHMENT | INLINE_IMAGE (defaults to ATTACHMENT). */
@@ -1480,7 +1480,6 @@ export interface GetVisitInstanceLogisticsResult {
 // ── Email rich-editor shared enums (mirror SQL v10 email_rich_editor). ──
 export type EmailBodyFormat = 'PLAIN_TEXT' | 'HTML';
 export type EmailAttachmentType = 'ATTACHMENT' | 'INLINE_IMAGE';
-export type EmailDraftStatus = 'DRAFT' | 'SENT' | 'DISCARDED';
 
 // ── "Xem mail đã gửi" (sent_emails + sent_email_recipients + sent_email_attachments). ──
 export interface SentEmailRecipientItem {

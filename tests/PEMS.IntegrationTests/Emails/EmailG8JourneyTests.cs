@@ -111,7 +111,7 @@ public sealed class EmailG8JourneyTests : IDisposable
 
     private SendEmailCommandHandler Compose(ApplicationDbContext db, ICurrentUserService user,
         IOptions<EmailRecipientOptions> recipients)
-        => new(user, Sanitizer, ManualSender(db), Normalizer(db), recipients);
+        => new(user, new DirectEmailSender(db, Sanitizer, Storage(), ManualSender(db), Normalizer(db), recipients));
 
     private ReplytoEmailCommandHandler Reply(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, Sanitizer, ManualSender(db), Options.Create(new EmailRecipientOptions()));
@@ -181,8 +181,6 @@ public sealed class EmailG8JourneyTests : IDisposable
         await db.Database.ExecuteSqlRawAsync(
             "DELETE FROM sent_emails WHERE related_type = {0} AND related_id IN ({1}, {2})",
             EmailActionTargetTypes.VisitParticipant, ParticipantAId, ParticipantBId);
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM email_drafts WHERE created_by IN ({AuthorId}, {PartnerId})");
         await db.Database.ExecuteSqlRawAsync(
             $"DELETE FROM files WHERE uploaded_by IN ({AuthorId}, {PartnerId})");
         await db.Database.ExecuteSqlRawAsync($"DELETE FROM users WHERE user_id IN ({AuthorId}, {PartnerId})");

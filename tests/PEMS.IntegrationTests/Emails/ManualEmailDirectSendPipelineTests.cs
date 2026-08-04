@@ -11,14 +11,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
-using PEMS.Application.Emails.Commands.CreateEmailDraft;
-using PEMS.Application.Emails.Commands.DiscardEmailDraft;
 using PEMS.Application.Emails.Commands.ReplytoEmail;
 using PEMS.Application.Emails.Commands.SendEmail;
-using PEMS.Application.Emails.Commands.SendEmailDraft;
-using PEMS.Application.Emails.Commands.UpdateEmailDraft;
 using PEMS.Application.Emails.Common;
-using PEMS.Application.Emails.Queries.GetEmailDraft;
 using PEMS.Infrastructure.FileStorage;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Security;
@@ -28,7 +23,7 @@ using Xunit;
 namespace PEMS.IntegrationTests.Emails;
 
 /// <summary>
-/// Giai đoạn 5 — manual mail run for real: real handlers, a real database, and real MIME on disk.
+/// Manual mail run for real: real handlers, a real database, and real MIME on disk.
 ///
 /// <para>
 /// All three manual paths used to loop the recipient list and call SMTP once per address, so a message
@@ -37,28 +32,44 @@ namespace PEMS.IntegrationTests.Emails;
 /// alone, so the record claimed delivery to people who received nothing. Both are the kind of defect only
 /// a real send can disprove, which is why nothing below is mocked.
 /// </para>
+/// <para>
+/// This is <c>ManualEmailPipelineTests</c> after the draft row was removed. Every send here goes through
+/// <see cref="SendEmailCommandHandler"/>, which is now the only way a manually composed message leaves
+/// PEMS. Four groups of the original coverage were about the ROW rather than the send — the draft
+/// round-trip, the update-replaces-envelope rule, draft ownership, and the DRAFT → SENT claim that made a
+/// double click one message. The first three have no subject any more. The fourth moved wholesale to
+/// <c>Idempotency-Key</c> and is covered against this same database by
+/// <see cref="EmailSendIdempotencyTests"/>, including the two-concurrent-requests case; repeating it here
+/// would assert the same reservation table twice.
+/// </para>
+/// <para>
+/// One thing got BETTER and is covered below for the first time: an attachment used to reach a message
+/// only by being written onto a draft row, so a message composed through this handler silently went out
+/// without the file the author had attached. Attachments are part of the command now.
+/// </para>
 /// </summary>
-public sealed class ManualEmailPipelineTests : IDisposable
+public sealed class ManualEmailDirectSendPipelineTests : IDisposable
 {
-    private readonly EmailEvidenceHarness _h = new("g5-evidence@partner.example.com");
+    private readonly EmailEvidenceHarness _h = new("g5d-evidence@partner.example.com");
     private readonly string _storageRoot =
-        Path.Combine(Path.GetTempPath(), "pems-g5-files-" + Guid.NewGuid().ToString("N"));
+        Path.Combine(Path.GetTempPath(), "pems-g5d-files-" + Guid.NewGuid().ToString("N"));
 
     /// <summary>Suite-private id range, high enough that it cannot collide with any other suite.</summary>
-    private const ulong Base = 991_100;
+    private const ulong Base = 991_400;
     private const ulong CampusId = Base + 1;
     private const ulong AuthorId = Base + 2;
     private const ulong PartnerId = Base + 3;
+    private const ulong AttachmentFileId = Base + 4;
 
-    private const string MailPrefix = "g5-";
+    private const string MailPrefix = "g5d-";
     private const string MailDomain = "@partner.example.com";
     private static string Mail(ulong userId) => $"{MailPrefix}{userId}{MailDomain}";
 
-    private const string ToA = "g5-to-a@partner.example.com";
-    private const string ToB = "g5-to-b@partner.example.com";
-    private const string CcA = "g5-cc-a@partner.example.com";
-    private const string BccA = "g5-bcc-a@partner.example.com";
-    private const string BccB = "g5-bcc-b@partner.example.com";
+    private const string ToA = "g5d-to-a@partner.example.com";
+    private const string ToB = "g5d-to-b@partner.example.com";
+    private const string CcA = "g5d-cc-a@partner.example.com";
+    private const string BccA = "g5d-bcc-a@partner.example.com";
+    private const string BccB = "g5d-bcc-b@partner.example.com";
 
     public void Dispose()
     {
@@ -121,28 +132,17 @@ public sealed class ManualEmailPipelineTests : IDisposable
     private ManualEmailSender Sender(ApplicationDbContext db, string? brokenHost = null)
         => new(db, _h.Sender(brokenHost));
 
-    private CreateEmailDraftCommandHandler CreateDraft(ApplicationDbContext db, ICurrentUserService user)
-        => new(db, user, Sanitizer, Recipients);
-
-    private UpdateEmailDraftCommandHandler UpdateDraft(ApplicationDbContext db, ICurrentUserService user)
-        => new(db, user, Sanitizer, Recipients);
-
     /// <summary>
-    /// The validate/claim/send/link pipeline moved into EmailDraftDispatcher when the setup-progress
-    /// send needed the same one. The real dispatcher is built here rather than a stub, so these tests
-    /// keep measuring the actual send path — only the ownership guard is left in the handler.
+    /// The real <see cref="DirectEmailSender"/> rather than a stub: it is the pipeline these tests are
+    /// about — content validation, the envelope rules, the send-time attachment re-check, and one MIME
+    /// message per send.
     /// </summary>
-    private PEMS.Application.Emails.Common.EmailDraftDispatcher Dispatcher(
-        ApplicationDbContext db, string? brokenHost = null)
+    private DirectEmailSender Direct(ApplicationDbContext db, string? brokenHost = null)
         => new(db, Sanitizer, Storage(), Sender(db, brokenHost), Normalizer(db), Recipients);
-
-    private SendEmailDraftCommandHandler SendDraft(
-        ApplicationDbContext db, ICurrentUserService user, string? brokenHost = null)
-        => new(db, user, Dispatcher(db, brokenHost));
 
     private SendEmailCommandHandler Compose(
         ApplicationDbContext db, ICurrentUserService user, string? brokenHost = null)
-        => new(user, Sanitizer, Sender(db, brokenHost), Normalizer(db), Recipients);
+        => new(user, Direct(db, brokenHost));
 
     private ReplytoEmailCommandHandler Reply(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, Sanitizer, Sender(db), Recipients);
@@ -159,13 +159,13 @@ public sealed class ManualEmailPipelineTests : IDisposable
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO campuses (campus_id, campus_code, name, status) VALUES ({0}, {1}, {2}, 'ACTIVE')",
-            CampusId, "G5", "PEMS G5 Campus");
+            CampusId, "G5D", "PEMS G5D Campus");
 
         // A STAFF account needs an IC department — a database trigger enforces both that and the campus.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO departments (department_id, campus_id, name, department_type, status) "
             + "VALUES ({0}, {1}, {2}, 'IC', 'ACTIVE')",
-            CampusId, CampusId, "PEMS G5 Văn phòng IC");
+            CampusId, CampusId, "PEMS G5D Văn phòng IC");
 
         async Task User(ulong id, string name)
             => await db.Database.ExecuteSqlRawAsync(
@@ -174,19 +174,17 @@ public sealed class ManualEmailPipelineTests : IDisposable
                 + $"{CampusId}, 'ACTIVE')",
                 name, Mail(id));
 
-        await User(AuthorId, "PEMS G5 Người soạn");
-        await User(PartnerId, "PEMS G5 Đối tác");
+        await User(AuthorId, "PEMS G5D Người soạn");
+        await User(PartnerId, "PEMS G5D Đối tác");
     }
 
     private sealed record RoleRow(ulong RoleId, string RoleCode);
 
     private static async Task CleanupRowsAsync(ApplicationDbContext db)
     {
-        // sent_email_recipients / _attachments cascade from sent_emails; drafts are removed by owner.
+        // sent_email_recipients / _attachments cascade from sent_emails.
         await db.Database.ExecuteSqlRawAsync(
             $"DELETE FROM sent_emails WHERE sent_by IN ({AuthorId}, {PartnerId})");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM email_drafts WHERE created_by IN ({AuthorId}, {PartnerId})");
         await db.Database.ExecuteSqlRawAsync(
             $"DELETE FROM files WHERE uploaded_by IN ({AuthorId}, {PartnerId})");
         await db.Database.ExecuteSqlRawAsync($"DELETE FROM users WHERE user_id IN ({AuthorId}, {PartnerId})");
@@ -194,160 +192,34 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await db.Database.ExecuteSqlRawAsync($"DELETE FROM campuses WHERE campus_id = {CampusId}");
     }
 
-    private static CreateEmailDraftCommand FullEnvelopeDraft() => new()
+    /// <summary>The whole envelope, in one composed message: two TO, one CC, two BCC.</summary>
+    private static SendEmailCommand FullEnvelope() => new()
     {
         Subject = "Mời phối hợp đón đoàn",
-        BodyContent = "<p>Kính gửi anh chị,</p><p>Nhờ hỗ trợ đón đoàn ngày 12/08.</p>",
         BodyFormat = "HTML",
-        Recipients = new List<EmailComposeRecipientInput>
+        Body = "<p>Kính gửi anh chị,</p><p>Nhờ hỗ trợ đón đoàn ngày 12/08.</p>",
+        To = new List<EmailRecipientDto>
         {
-            new() { Email = ToA, Name = "Người nhận A", RecipientType = "TO", DisplayOrder = 0 },
-            new() { Email = ToB, RecipientType = "TO", DisplayOrder = 1 },
-            new() { Email = CcA, RecipientType = "CC", DisplayOrder = 0 },
-            new() { Email = BccA, RecipientType = "BCC", DisplayOrder = 0 },
-            new() { Email = BccB, RecipientType = "BCC", DisplayOrder = 1 },
+            new() { Email = ToA, Name = "Người nhận A" },
+            new() { Email = ToB },
         },
+        Cc = new List<EmailRecipientDto> { new() { Email = CcA } },
+        Bcc = new List<EmailRecipientDto> { new() { Email = BccA }, new() { Email = BccB } },
     };
 
-    // ── A. Draft round-trip ──────────────────────────────────────────────────
+    // ── One message for the whole envelope ───────────────────────────────────
 
     [Fact]
-    public async Task A_draft_round_trip_keeps_every_group_exactly_as_entered()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-
-        var loaded = await new GetEmailDraftQueryHandler(db, Author)
-            .Handle(new GetEmailDraftQuery(created.EmailDraftId), CancellationToken.None);
-
-        Assert.Equal(new[] { ToA, ToB }, loaded.To.Select(r => r.RecipientEmail));
-        Assert.Equal(new[] { CcA }, loaded.Cc.Select(r => r.RecipientEmail));
-        Assert.Equal(new[] { BccA, BccB }, loaded.Bcc.Select(r => r.RecipientEmail));
-        Assert.Equal("Người nhận A", loaded.To[0].RecipientName);
-
-        // The rows themselves carry the group, so nothing downstream has to guess.
-        var rows = await db.EmailDraftRecipients.AsNoTracking()
-            .Where(r => r.EmailDraftId == created.EmailDraftId).ToListAsync();
-        Assert.Equal(2, rows.Count(r => r.RecipientType == "TO"));
-        Assert.Equal(1, rows.Count(r => r.RecipientType == "CC"));
-        Assert.Equal(2, rows.Count(r => r.RecipientType == "BCC"));
-
-        await CleanupRowsAsync(db);
-    }
-
-    [Fact]
-    public async Task An_update_replaces_the_envelope_without_leaving_the_old_one_behind()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-
-        var updated = await UpdateDraft(db, Author).Handle(new UpdateEmailDraftCommand
-        {
-            EmailDraftId = created.EmailDraftId,
-            Subject = "Mời phối hợp đón đoàn (cập nhật)",
-            BodyContent = "<p>Nội dung mới.</p>",
-            BodyFormat = "HTML",
-            Recipients = new List<EmailComposeRecipientInput>
-            {
-                new() { Email = ToB, RecipientType = "TO" },
-                new() { Email = BccA, RecipientType = "BCC" },
-            },
-        }, CancellationToken.None);
-
-        Assert.Equal(new[] { ToB }, updated.To.Select(r => r.RecipientEmail));
-        Assert.Empty(updated.Cc);
-        Assert.Equal(new[] { BccA }, updated.Bcc.Select(r => r.RecipientEmail));
-
-        var remaining = await db.EmailDraftRecipients.AsNoTracking()
-            .Where(r => r.EmailDraftId == created.EmailDraftId).Select(r => r.RecipientEmail).ToListAsync();
-        Assert.DoesNotContain(ToA, remaining);
-        Assert.DoesNotContain(BccB, remaining);
-
-        await CleanupRowsAsync(db);
-    }
-
-    [Fact]
-    public async Task A_rejected_update_leaves_the_saved_envelope_untouched()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-
-        // The same mailbox in TO and BCC: accepting it would expose the blind copy the moment the To
-        // header is read.
-        var bad = new UpdateEmailDraftCommand
-        {
-            EmailDraftId = created.EmailDraftId,
-            Subject = "Hỏng",
-            BodyContent = "<p>x</p>",
-            Recipients = new List<EmailComposeRecipientInput>
-            {
-                new() { Email = ToA, RecipientType = "TO" },
-                new() { Email = ToA.ToUpperInvariant(), RecipientType = "BCC" },
-            },
-        };
-
-        var error = await Assert.ThrowsAsync<ValidationException>(
-            () => UpdateDraft(db, Author).Handle(bad, CancellationToken.None));
-        Assert.Equal(EmailErrorCodes.RecipientCrossGroupDuplicate, error.ErrorCode);
-
-        db.ChangeTracker.Clear();
-        var rows = await db.EmailDraftRecipients.AsNoTracking()
-            .Where(r => r.EmailDraftId == created.EmailDraftId).ToListAsync();
-        Assert.Equal(5, rows.Count);
-
-        await CleanupRowsAsync(db);
-    }
-
-    [Fact]
-    public async Task A_draft_belongs_to_its_author_alone()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        var id = created.EmailDraftId;
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => new GetEmailDraftQueryHandler(db, Partner)
-            .Handle(new GetEmailDraftQuery(id), CancellationToken.None));
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => UpdateDraft(db, Partner).Handle(
-            new UpdateEmailDraftCommand { EmailDraftId = id, Subject = "Chiếm quyền", BodyContent = "<p>x</p>" },
-            CancellationToken.None));
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => new DiscardEmailDraftCommandHandler(db, Partner)
-            .Handle(new DiscardEmailDraftCommand(id), CancellationToken.None));
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => SendDraft(db, Partner)
-            .Handle(new SendEmailDraftCommand(id), CancellationToken.None));
-
-        await CleanupRowsAsync(db);
-    }
-
-    // ── B. One message for the whole envelope ────────────────────────────────
-
-    [Fact]
-    public async Task Sending_a_draft_produces_one_message_and_one_history_row()
+    public async Task A_composed_message_reaches_every_group_as_one_message_and_one_history_row()
     {
         EmailEvidenceHarness.RequireDb();
         using var db = EmailEvidenceHarness.NewContext();
         await SeedAsync(db);
         _h.ClearMessages();
 
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        var result = await SendDraft(db, Author)
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
+        var result = await Compose(db, Author).Handle(FullEnvelope(), CancellationToken.None);
 
-        // FIVE addressees, ONE message. The previous handler produced five.
+        // FIVE addressees, ONE message. The handler this replaced produced five.
         var eml = _h.OnlyMessage();
 
         Assert.Equal("SENT", result.Status);
@@ -383,9 +255,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await SeedAsync(db);
         _h.ClearMessages();
 
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        await SendDraft(db, Author)
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
+        await Compose(db, Author).Handle(FullEnvelope(), CancellationToken.None);
 
         var eml = _h.OnlyMessage();
 
@@ -424,9 +294,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await SeedAsync(db);
         _h.ClearMessages();
 
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        var result = await SendDraft(db, Author)
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
+        var result = await Compose(db, Author).Handle(FullEnvelope(), CancellationToken.None);
 
         var sent = await db.SentEmails.AsNoTracking()
             .FirstAsync(e => e.SentEmailId == result.SentEmailId);
@@ -450,9 +318,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await SeedAsync(db);
         _h.ClearMessages();
 
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        var result = await SendDraft(db, Author)
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
+        var result = await Compose(db, Author).Handle(FullEnvelope(), CancellationToken.None);
 
         var sent = await db.SentEmails.AsNoTracking().FirstAsync(e => e.SentEmailId == result.SentEmailId);
         var eml = _h.OnlyMessage();
@@ -467,7 +333,83 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await CleanupRowsAsync(db);
     }
 
-    // ── C. Status truthfulness ───────────────────────────────────────────────
+    // ── Attachments now travel with the command ──────────────────────────────
+
+    /// <summary>
+    /// A file attached in the composer arrives as a real MIME part.
+    ///
+    /// <para>
+    /// This is new coverage rather than a port. Attachments used to reach a message only through a draft
+    /// row, and this command hard-coded an empty list — so a person could attach a document, press send,
+    /// and have the message go out without it, with nothing reporting the omission.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_file_attached_in_the_composer_arrives_as_a_real_MIME_part()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        await SeedAsync(db);
+        _h.ClearMessages();
+
+        await StoreAttachmentAsync(db, "ke-hoach-don-doan.pdf");
+
+        var command = FullEnvelope();
+        command.Attachments = new List<EmailComposeAttachmentInput>
+        {
+            new() { FileId = AttachmentFileId, DisplayName = "ke-hoach-don-doan.pdf", DisplayOrder = 0 },
+        };
+
+        var result = await Compose(db, Author).Handle(command, CancellationToken.None);
+
+        Assert.Equal("SENT", result.Status);
+        var eml = _h.OnlyMessage();
+        Assert.Contains("ke-hoach-don-doan.pdf", eml.Raw);
+
+        var attachments = await db.SentEmailAttachments.AsNoTracking()
+            .Where(a => a.SentEmailId == result.SentEmailId).ToListAsync();
+        Assert.Equal(AttachmentFileId, Assert.Single(attachments).FileId);
+
+        await CleanupRowsAsync(db);
+    }
+
+    /// <summary>
+    /// One unreadable file refuses the whole send, and nothing is recorded. The alternative that was in
+    /// place — dropping the part and reporting success — told the author their document had gone.
+    /// </summary>
+    [Fact]
+    public async Task An_attachment_whose_bytes_are_gone_refuses_the_send_and_records_nothing()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        await SeedAsync(db);
+        _h.ClearMessages();
+
+        // A files row with no object behind it: the shape a purged upload leaves.
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO files (file_id, storage_provider, object_key, original_filename, mime_type, "
+            + "file_size, uploaded_by, uploaded_at) VALUES ({0}, 'LOCAL', {1}, {2}, 'application/pdf', "
+            + "1024, {3}, NOW())",
+            AttachmentFileId, $"objects/{AttachmentFileId}-missing", "da-bi-xoa.pdf", AuthorId);
+
+        var command = FullEnvelope();
+        command.Attachments = new List<EmailComposeAttachmentInput>
+        {
+            new() { FileId = AttachmentFileId, DisplayName = "da-bi-xoa.pdf", DisplayOrder = 0 },
+        };
+
+        var error = await Assert.ThrowsAsync<ValidationException>(
+            () => Compose(db, Author).Handle(command, CancellationToken.None));
+
+        Assert.Equal(EmailErrorCodes.AttachmentUnreadable, error.ErrorCode);
+        Assert.Contains("da-bi-xoa.pdf", error.Message);
+        Assert.Empty(_h.Messages());
+        Assert.Equal(0, await db.SentEmails.AsNoTracking().Where(e => e.SentBy == AuthorId).CountAsync());
+
+        await CleanupRowsAsync(db);
+    }
+
+    // ── Status truthfulness ──────────────────────────────────────────────────
 
     [Fact]
     public async Task Provider_acceptance_is_recorded_as_SENT_and_never_as_DELIVERED()
@@ -477,9 +419,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await SeedAsync(db);
         _h.ClearMessages();
 
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        var result = await SendDraft(db, Author)
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
+        var result = await Compose(db, Author).Handle(FullEnvelope(), CancellationToken.None);
 
         var sent = await db.SentEmails.AsNoTracking().FirstAsync(e => e.SentEmailId == result.SentEmailId);
         var rows = await db.SentEmailRecipients.AsNoTracking()
@@ -503,10 +443,8 @@ public sealed class ManualEmailPipelineTests : IDisposable
         using var db = EmailEvidenceHarness.NewContext();
         await SeedAsync(db);
 
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-
-        var result = await SendDraft(db, Author, brokenHost: "127.0.0.1")
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
+        var result = await Compose(db, Author, brokenHost: "127.0.0.1")
+            .Handle(FullEnvelope(), CancellationToken.None);
 
         Assert.Equal("FAILED", result.Status);
         Assert.False(result.Success);
@@ -525,114 +463,12 @@ public sealed class ManualEmailPipelineTests : IDisposable
         Assert.DoesNotContain("SmtpException", sent.ErrorMessage ?? "");
         Assert.DoesNotContain("127.0.0.1", sent.ErrorMessage ?? "");
 
-        // The attempt happened and is on the record; the draft is not silently returned to DRAFT.
-        var draft = await db.EmailDrafts.AsNoTracking()
-            .FirstAsync(d => d.EmailDraftId == created.EmailDraftId);
-        Assert.Equal(PEMS.Domain.Enums.EmailDraftStatus.SENT, draft.Status);
-        Assert.Equal(result.SentEmailId, draft.SentEmailId);
-
+        // The attempt happened and is on the record. With no draft to revert, the failed attempt IS the
+        // record — and the composer still holds the message, so the author retries rather than rewrites.
         await CleanupRowsAsync(db);
     }
 
-    // ── D. Concurrency ───────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Two_simultaneous_sends_of_one_draft_produce_exactly_one_message()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-        _h.ClearMessages();
-
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-
-        // Separate contexts, as two HTTP requests would have.
-        using var dbA = EmailEvidenceHarness.NewContext();
-        using var dbB = EmailEvidenceHarness.NewContext();
-
-        var results = await Task.WhenAll(
-            Attempt(dbA, created.EmailDraftId),
-            Attempt(dbB, created.EmailDraftId));
-
-        Assert.Equal(1, results.Count(r => r.Sent));
-        Assert.Equal(1, results.Count(r => !r.Sent));
-        Assert.Single(_h.Messages());
-
-        var history = await db.SentEmails.AsNoTracking()
-            .Where(e => e.SentBy == AuthorId).CountAsync();
-        Assert.Equal(1, history);
-
-        await CleanupRowsAsync(db);
-
-        async Task<(bool Sent, string? Status)> Attempt(ApplicationDbContext context, ulong draftId)
-        {
-            try
-            {
-                var r = await SendDraft(context, Author)
-                    .Handle(new SendEmailDraftCommand(draftId), CancellationToken.None);
-                return (true, r.Status);
-            }
-            catch (ConflictException)
-            {
-                return (false, null);
-            }
-        }
-    }
-
-    [Fact]
-    public async Task A_sent_draft_cannot_be_sent_again()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-        _h.ClearMessages();
-
-        var created = await CreateDraft(db, Author).Handle(FullEnvelopeDraft(), CancellationToken.None);
-        await SendDraft(db, Author).Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None);
-
-        db.ChangeTracker.Clear();
-        await Assert.ThrowsAsync<ConflictException>(() => SendDraft(db, Author)
-            .Handle(new SendEmailDraftCommand(created.EmailDraftId), CancellationToken.None));
-
-        Assert.Single(_h.Messages());
-
-        await CleanupRowsAsync(db);
-    }
-
-    // ── E. Manual compose ────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Manual_compose_sends_one_message_for_all_three_groups()
-    {
-        EmailEvidenceHarness.RequireDb();
-        using var db = EmailEvidenceHarness.NewContext();
-        await SeedAsync(db);
-        _h.ClearMessages();
-
-        var result = await Compose(db, Author).Handle(new SendEmailCommand
-        {
-            Subject = "Thông báo lịch tiếp đoàn",
-            Body = "<p>Kính gửi anh chị,</p>",
-            To = new List<EmailRecipientDto> { new() { Email = ToA }, new() { Email = ToB } },
-            Cc = new List<EmailRecipientDto> { new() { Email = CcA } },
-            Bcc = new List<EmailRecipientDto> { new() { Email = BccA } },
-        }, CancellationToken.None);
-
-        Assert.Equal("SENT", result.Status);
-        var eml = _h.OnlyMessage();
-        Assert.Contains(ToA, eml.Header("To"));
-        Assert.Contains(CcA, eml.Header("Cc"));
-        Assert.DoesNotContain(BccA, eml.Header("To"));
-        Assert.DoesNotContain(BccA, eml.Header("Cc"));
-
-        var rows = await db.SentEmailRecipients.AsNoTracking()
-            .Where(r => r.SentEmailId == result.SentEmailId).ToListAsync();
-        Assert.Equal(2, rows.Count(r => r.RecipientType == "TO"));
-        Assert.Equal(1, rows.Count(r => r.RecipientType == "CC"));
-        Assert.Equal(1, rows.Count(r => r.RecipientType == "BCC"));
-
-        await CleanupRowsAsync(db);
-    }
+    // ── Manual compose ───────────────────────────────────────────────────────
 
     [Fact]
     public async Task Manual_compose_refuses_an_envelope_with_no_TO_and_records_nothing()
@@ -657,7 +493,36 @@ public sealed class ManualEmailPipelineTests : IDisposable
         await CleanupRowsAsync(db);
     }
 
-    // ── F. Reply ─────────────────────────────────────────────────────────────
+    /// <summary>
+    /// The same mailbox in TO and BCC leaks the blind copy the moment the TO header is read. It is
+    /// refused at the send, which is now the only place it can be refused — there is no earlier save to
+    /// catch it on.
+    /// </summary>
+    [Fact]
+    public async Task Manual_compose_refuses_the_same_address_in_TO_and_BCC()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        await SeedAsync(db);
+        _h.ClearMessages();
+
+        var error = await Assert.ThrowsAsync<ValidationException>(() => Compose(db, Author).Handle(
+            new SendEmailCommand
+            {
+                Subject = "Trùng nhóm",
+                Body = "<p>x</p>",
+                To = new List<EmailRecipientDto> { new() { Email = ToA } },
+                Bcc = new List<EmailRecipientDto> { new() { Email = ToA.ToUpperInvariant() } },
+            }, CancellationToken.None));
+
+        Assert.Equal(EmailErrorCodes.RecipientCrossGroupDuplicate, error.ErrorCode);
+        Assert.Empty(_h.Messages());
+        Assert.Equal(0, await db.SentEmails.AsNoTracking().Where(e => e.SentBy == AuthorId).CountAsync());
+
+        await CleanupRowsAsync(db);
+    }
+
+    // ── Reply ────────────────────────────────────────────────────────────────
 
     /// <summary>Sends one message from the Partner to the Author, to be replied to.</summary>
     private async Task<ulong> SeedIncomingAsync(ApplicationDbContext db)
@@ -803,5 +668,21 @@ public sealed class ManualEmailPipelineTests : IDisposable
         Assert.Equal(beforeCount, await db.SentEmails.AsNoTracking().CountAsync());
 
         await CleanupRowsAsync(db);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>Puts real bytes in the local store and the matching <c>files</c> row behind them.</summary>
+    private async Task StoreAttachmentAsync(ApplicationDbContext db, string fileName)
+    {
+        var stored = await Storage().SaveAsync(
+            new MemoryStream(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D }),   // "%PDF-"
+            fileName, "application/pdf", "emails", CancellationToken.None);
+
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO files (file_id, storage_provider, object_key, original_filename, mime_type, "
+            + "file_size, uploaded_by, uploaded_at) VALUES ({0}, 'LOCAL', {1}, {2}, 'application/pdf', "
+            + "{3}, {4}, NOW())",
+            AttachmentFileId, stored.ObjectKey, fileName, 5, AuthorId);
     }
 }

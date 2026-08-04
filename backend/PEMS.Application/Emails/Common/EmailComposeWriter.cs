@@ -120,7 +120,7 @@ public static class EmailComposeWriter
             .Select(a => a.ContentId!.Trim())
             .ToList();
         if (contentIds.Count != contentIds.Distinct(StringComparer.OrdinalIgnoreCase).Count())
-            throw new ValidationException("Content-ID của ảnh inline bị trùng trong cùng một email/draft.");
+            throw new ValidationException("Content-ID của ảnh inline bị trùng trong cùng một email.");
 
         var fileIds = attachments.Select(a => a.FileId).Distinct().ToList();
         var files = await db.Files

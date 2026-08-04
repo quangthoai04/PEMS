@@ -859,7 +859,7 @@ public sealed class EmailSendIdempotencyTests : IDisposable
         foreach (var table in new[]
         {
             "email_templates", "sent_emails", "sent_email_recipients", "sent_email_attachments",
-            "email_drafts", "email_action_tokens", "files", "users",
+            "email_action_tokens", "files", "users",
         })
         {
             foreach (var verb in new[] { "INSERT INTO", "UPDATE", "DELETE FROM" })
