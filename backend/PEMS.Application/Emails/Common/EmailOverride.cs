@@ -18,7 +18,7 @@ public sealed record EmailOverride(
     string? Subject,
     string? BodyHtml,
     string? BodyText = null,
-    System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput>? Attachments = null);
+    System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput>? Attachments = null);
 
 public static class EmailOverrideLimits
 {

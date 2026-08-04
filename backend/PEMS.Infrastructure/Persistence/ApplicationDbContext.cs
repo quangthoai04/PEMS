@@ -119,9 +119,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<SentEmail> SentEmails { get; set; }
     public DbSet<SentEmailRecipient> SentEmailRecipients { get; set; }
     public DbSet<SentEmailAttachment> SentEmailAttachments { get; set; }
-    public DbSet<EmailDraft> EmailDrafts { get; set; }
-    public DbSet<EmailDraftRecipient> EmailDraftRecipients { get; set; }
-    public DbSet<EmailDraftAttachment> EmailDraftAttachments { get; set; }
     public DbSet<EmailActionToken> EmailActionTokens { get; set; }
     public DbSet<EmailSendIdempotency> EmailSendIdempotencies { get; set; }
     public DbSet<EmailContactPolicy> EmailContactPolicies { get; set; }
@@ -934,49 +931,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .IsUnique().HasDatabaseName("uq_sent_email_attachments_content");
             b.HasIndex(a => new { a.SentEmailId, a.AttachmentType })
                 .HasDatabaseName("idx_sent_email_attachments_type");
-        });
-
-        // email_drafts → template (SET NULL), sent_email (SET NULL), created_by/last_edited_by (SET NULL)
-        modelBuilder.Entity<EmailDraft>(b =>
-        {
-            b.Property(d => d.BodyFormat).HasConversion<string>();
-            b.Property(d => d.Status).HasConversion<string>();
-            b.HasOne(d => d.EmailTemplate).WithMany()
-                .HasForeignKey(d => d.EmailTemplateId).OnDelete(DeleteBehavior.SetNull);
-            b.HasOne(d => d.SentEmail).WithMany()
-                .HasForeignKey(d => d.SentEmailId).OnDelete(DeleteBehavior.SetNull);
-            b.HasOne<User>().WithMany()
-                .HasForeignKey(d => d.CreatedBy).OnDelete(DeleteBehavior.SetNull);
-            b.HasOne<User>().WithMany()
-                .HasForeignKey(d => d.LastEditedBy).OnDelete(DeleteBehavior.SetNull);
-            b.HasIndex(d => new { d.Status, d.UpdatedAt }).HasDatabaseName("idx_email_drafts_status_updated");
-            b.HasIndex(d => new { d.CreatedBy, d.Status }).HasDatabaseName("idx_email_drafts_created_by_status");
-            b.HasIndex(d => new { d.RelatedType, d.RelatedId }).HasDatabaseName("idx_email_drafts_related");
-        });
-
-        // email_draft_recipients → email_drafts (CASCADE)
-        modelBuilder.Entity<EmailDraftRecipient>(b =>
-        {
-            b.HasOne(r => r.EmailDraft).WithMany(d => d.Recipients)
-                .HasForeignKey(r => r.EmailDraftId).OnDelete(DeleteBehavior.Cascade);
-            // SQL: UNIQUE KEY uq_email_draft_recipients_unique (email_draft_id, recipient_email, recipient_type)
-            b.HasIndex(r => new { r.EmailDraftId, r.RecipientEmail, r.RecipientType })
-                .IsUnique().HasDatabaseName("uq_email_draft_recipients_unique");
-        });
-
-        // email_draft_attachments → email_drafts (CASCADE), files (RESTRICT)
-        modelBuilder.Entity<EmailDraftAttachment>(b =>
-        {
-            b.Property(a => a.AttachmentType).HasConversion<string>();
-            b.HasOne(a => a.EmailDraft).WithMany(d => d.Attachments)
-                .HasForeignKey(a => a.EmailDraftId).OnDelete(DeleteBehavior.Cascade);
-            b.HasOne(a => a.File).WithMany()
-                .HasForeignKey(a => a.FileId).OnDelete(DeleteBehavior.Restrict);
-            // SQL: UNIQUE KEY uq_email_draft_attachments_content (email_draft_id, content_id)
-            b.HasIndex(a => new { a.EmailDraftId, a.ContentId })
-                .IsUnique().HasDatabaseName("uq_email_draft_attachments_content");
-            b.HasIndex(a => new { a.EmailDraftId, a.AttachmentType })
-                .HasDatabaseName("idx_email_draft_attachments_type");
         });
 
         // EmailActionToken (v10) → RecipientUser, SentEmail, SentEmailRecipient

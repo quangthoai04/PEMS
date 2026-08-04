@@ -25,6 +25,47 @@ export interface SendEmailPayload {
   to: EmailRecipientInput[];
   cc: EmailRecipientInput[];
   bcc: EmailRecipientInput[];
+  /**
+   * Files and inline images by `fileId`, uploaded before the send.
+   *
+   * The composer used to reach attachments onto a message by writing them to a draft row; this route
+   * accepted none, so the "direct" send it offered would silently post the message without them.
+   */
+  attachments?: EmailComposeAttachmentInput[];
+  /** What the message is about, for the history. Omitted means GENERAL. */
+  relatedType?: string | null;
+  relatedId?: number | null;
+}
+
+/** A file or inline image on a composed message — the camelCase form of `EmailComposeAttachmentInput`. */
+export interface EmailComposeAttachmentInput {
+  fileId: number;
+  attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE';
+  /** Required when attachmentType = INLINE_IMAGE (the cid the HTML body references). */
+  contentId?: string | null;
+  displayName?: string | null;
+  displayOrder?: number;
+}
+
+/** The preview payload: the same message the send would take. */
+export type PreviewEmailPayload = Omit<SendEmailPayload, 'templateId'>;
+
+/**
+ * What the backend says would go out.
+ *
+ * `body` is the SANITISED body — what the recipient will actually receive. The composer used to preview
+ * its local state through the frontend sanitiser, whose allow-list is not the backend's, so a message
+ * could preview cleanly and be delivered with parts of it removed.
+ */
+export interface PreviewEmailResult {
+  subject: string;
+  body: string;
+  isHtml: boolean;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  /** Named attachments. Reaching this list means every one of them was readable. */
+  attachments: string[];
 }
 
 /**
@@ -87,14 +128,23 @@ export const emailsApi = {
     return httpClient.get('/Emails/unprocessed-count');
   },
   /**
-   * Direct manual send — no draft. Requires `Idempotency-Key` for the same reason reply does.
+   * Manual send. Requires `Idempotency-Key`.
    *
-   * No screen currently calls this: the compose modal saves a draft and sends that, which is protected by
-   * the DRAFT→SENT claim instead. It is kept and protected because it is a live API route, and an
-   * unprotected send route is unprotected whether or not the current UI happens to use it.
+   * This is now the compose screen's only send path. It used to be a route no screen called — the modal
+   * saved a draft and sent that, protected by the DRAFT → SENT claim. With the draft gone, the
+   * reservation behind this header IS the double-click protection, so the key is not optional decoration.
    */
   sendEmail: (data: SendEmailPayload, idempotencyKey: string) => {
     return httpClient.post('/Emails/sendemail', data, idempotent(idempotencyKey));
+  },
+  /**
+   * What the message would look like going out, checked by the same code that would send it.
+   *
+   * No idempotency key: nothing is written and nothing reaches a provider, so a repeated preview is
+   * simply a repeated question.
+   */
+  previewEmail: (data: PreviewEmailPayload) => {
+    return httpClient.post<PreviewEmailResult>('/Emails/preview', data);
   },
   getEmailTemplateList: (params?: { keyword?: string; status?: string; purpose?: string; page?: number; pageSize?: number; mode?: string }) => {
     return httpClient.get('/email-templates', { params });

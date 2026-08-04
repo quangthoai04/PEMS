@@ -82,7 +82,10 @@ public sealed class FileAccessAuthorizationService : IFileAccessAuthorizationSer
         if (await IsInternallyBrowsableAsync(fileId, cancellationToken)) return true;
 
         if (await CanReadEmailAttachmentAsync(fileId, cancellationToken)) return true;
-        if (await IsOwnDraftAttachmentAsync(fileId, userId, cancellationToken)) return true;
+        // A rule for "my own draft's attachment" used to sit here. With no drafts, a file picked in the
+        // composer is referenced by nothing until the message is sent, so the uploader fallback below is
+        // what lets the author see their own attachment back — which is the same answer, reached by the
+        // branch that already existed for exactly this situation.
         if (await CanReadVisitFileAsync(fileId, cancellationToken)) return true;
 
         // Last: a file nothing references yet. The person who uploaded it is mid-flow (composing an
@@ -216,17 +219,6 @@ public sealed class FileAccessAuthorizationService : IFileAccessAuthorizationSer
         return false;
     }
 
-    /// <summary>
-    /// A draft is private to the person writing it — no exception for a Staff Leader, an HO or an Admin.
-    /// The status is not consulted: a discarded draft's attachment stays readable by its own author, and
-    /// a sent draft's file is additionally reachable through the message it produced, via the email rule
-    /// above. Neither route widens the other.
-    /// </summary>
-    private async Task<bool> IsOwnDraftAttachmentAsync(ulong fileId, ulong userId, CancellationToken ct)
-        => await _db.EmailDraftAttachments.AsNoTracking()
-            .AnyAsync(a => a.FileId == fileId
-                && _db.EmailDrafts.Any(d => d.EmailDraftId == a.EmailDraftId && d.CreatedBy == userId), ct);
-
     // ── Visit ────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -277,7 +269,6 @@ public sealed class FileAccessAuthorizationService : IFileAccessAuthorizationSer
     /// </summary>
     private async Task<bool> IsUnreferencedAsync(ulong fileId, CancellationToken ct)
         => !await _db.SentEmailAttachments.AsNoTracking().AnyAsync(a => a.FileId == fileId, ct)
-        && !await _db.EmailDraftAttachments.AsNoTracking().AnyAsync(a => a.FileId == fileId, ct)
         && !await _db.VisitPhotos.AsNoTracking().AnyAsync(p => p.FileId == fileId, ct)
         && !await _db.PhotoFaceTags.AsNoTracking().AnyAsync(t => t.FileId == fileId, ct)
         && !await _db.VisitPhotoFaceScans.AsNoTracking().AnyAsync(s => s.FileId == fileId, ct)

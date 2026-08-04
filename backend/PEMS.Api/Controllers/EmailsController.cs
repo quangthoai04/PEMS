@@ -118,6 +118,24 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// What the message would look like going out, checked by the same code that would send it.
+        ///
+        /// <para>
+        /// It takes the send's own payload and returns the body AFTER sanitising and the envelope AFTER the
+        /// address rules — so a body that previews cleanly is one that will be delivered as previewed. The
+        /// composer used to preview from local state through a frontend sanitiser whose allow-list is not
+        /// the backend's, which is how a message could look right on screen and arrive with parts of it
+        /// removed. Nothing is written and nothing reaches a provider.
+        /// </para>
+        /// </summary>
+        [HttpPost("preview")]
+        public async Task<IActionResult> PreviewEmail([FromBody] PEMS.Application.Emails.Commands.PreviewEmail.PreviewEmailCommand command, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+
         [HttpGet("viewemail")]
 
         public async Task<IActionResult> ViewEmail([FromQuery] PEMS.Application.Emails.Queries.ViewEmail.ViewEmailQuery query, CancellationToken cancellationToken)
@@ -166,57 +184,8 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        // ── Editable email drafts / autosave (DB-backed, owner-scoped) ────────
-        // Draft → Sent/Discarded; never hard-deleted. Recipients/attachments stored in
-        // email_draft_recipients / email_draft_attachments; the handlers enforce owner + status rules.
-
-        [HttpPost("drafts")]
-        public async Task<IActionResult> CreateDraft([FromBody] PEMS.Application.Emails.Commands.CreateEmailDraft.CreateEmailDraftCommand command, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        /// <summary>
-        /// The caller's own unsent drafts, for the "Nháp" tab. Ownership is enforced inside the
-        /// handler, not by this controller's role attribute.
-        /// </summary>
-        [HttpGet("drafts")]
-        public async Task<IActionResult> ListDrafts(
-            [FromQuery] PEMS.Application.Emails.Queries.ListEmailDrafts.ListEmailDraftsQuery query,
-            CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpGet("drafts/{draftId}")]
-        public async Task<IActionResult> GetDraft(ulong draftId, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(new PEMS.Application.Emails.Queries.GetEmailDraft.GetEmailDraftQuery(draftId), cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPut("drafts/{draftId}")]
-        public async Task<IActionResult> UpdateDraft(ulong draftId, [FromBody] PEMS.Application.Emails.Commands.UpdateEmailDraft.UpdateEmailDraftCommand command, CancellationToken cancellationToken)
-        {
-            command.EmailDraftId = draftId; // route is authoritative
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPatch("drafts/{draftId}/discard")]
-        public async Task<IActionResult> DiscardDraft(ulong draftId, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(new PEMS.Application.Emails.Commands.DiscardEmailDraft.DiscardEmailDraftCommand(draftId), cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("drafts/{draftId}/send")]
-        public async Task<IActionResult> SendDraft(ulong draftId, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(new PEMS.Application.Emails.Commands.SendEmailDraft.SendEmailDraftCommand(draftId), cancellationToken);
-            return Ok(result);
-        }
+        // There are no draft routes. A composed message lives in the browser until it is sent — see
+        // SendEmailCommandHandler for why the round trip through email_drafts was removed rather than
+        // repaired.
     }
 }

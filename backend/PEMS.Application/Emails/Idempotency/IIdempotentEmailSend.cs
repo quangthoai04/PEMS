@@ -64,6 +64,18 @@ public static class EmailSendOperations
     /// </summary>
     public const string ManualReplyAll = "MANUAL_REPLY_ALL";
 
+    /// <summary>
+    /// The Host's "Gửi cập nhật chuẩn bị".
+    ///
+    /// <para>
+    /// Added when the flow stopped going through <c>email_drafts</c>. The draft was what made a double
+    /// click safe: the dispatcher moved the row DRAFT → SENT in one statement and only the request that
+    /// won the update proceeded. With no row to claim, a second click is an ordinary second request, and
+    /// this is the reservation that stops it — a duplicate here mails a delegation's guests twice.
+    /// </para>
+    /// </summary>
+    public const string VisitSetupProgress = "VISIT_SETUP_PROGRESS";
+
     /// <summary>The six report/invoice routes, for the tests that assert that contract.</summary>
     public static readonly string[] Reports =
     {
@@ -75,8 +87,12 @@ public static class EmailSendOperations
         DeptLeaderInvoiceToStaffLeader,
     };
 
-    /// <summary>The manual, client-addressed sends.</summary>
-    public static readonly string[] Manual = { ManualCompose, ManualReply, ManualReplyAll };
+    /// <summary>
+    /// The client-addressed sends — the ones where the CALLER supplies the recipients and the content, so
+    /// a duplicate delivers a second human-written message to named people.
+    /// </summary>
+    public static readonly string[] Manual =
+        { ManualCompose, ManualReply, ManualReplyAll, VisitSetupProgress };
 
     /// <summary>Every code. The reservation table stores exactly these.</summary>
     public static readonly string[] All =
@@ -90,5 +106,6 @@ public static class EmailSendOperations
         ManualCompose,
         ManualReply,
         ManualReplyAll,
+        VisitSetupProgress,
     };
 }

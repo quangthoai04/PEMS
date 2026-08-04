@@ -87,9 +87,6 @@ public interface IApplicationDbContext
     DbSet<SentEmail> SentEmails { get; }
     DbSet<SentEmailRecipient> SentEmailRecipients { get; }
     DbSet<SentEmailAttachment> SentEmailAttachments { get; }
-    DbSet<EmailDraft> EmailDrafts { get; }
-    DbSet<EmailDraftRecipient> EmailDraftRecipients { get; }
-    DbSet<EmailDraftAttachment> EmailDraftAttachments { get; }
     DbSet<EmailActionToken> EmailActionTokens { get; }
 
     /// <summary>Send reservations for the six report/invoice actions (G11 / R-103).</summary>

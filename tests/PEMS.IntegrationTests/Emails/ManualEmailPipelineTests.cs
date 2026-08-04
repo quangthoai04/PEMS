@@ -199,7 +199,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
         Subject = "Mời phối hợp đón đoàn",
         BodyContent = "<p>Kính gửi anh chị,</p><p>Nhờ hỗ trợ đón đoàn ngày 12/08.</p>",
         BodyFormat = "HTML",
-        Recipients = new List<EmailDraftRecipientInput>
+        Recipients = new List<EmailComposeRecipientInput>
         {
             new() { Email = ToA, Name = "Người nhận A", RecipientType = "TO", DisplayOrder = 0 },
             new() { Email = ToB, RecipientType = "TO", DisplayOrder = 1 },
@@ -253,7 +253,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
             Subject = "Mời phối hợp đón đoàn (cập nhật)",
             BodyContent = "<p>Nội dung mới.</p>",
             BodyFormat = "HTML",
-            Recipients = new List<EmailDraftRecipientInput>
+            Recipients = new List<EmailComposeRecipientInput>
             {
                 new() { Email = ToB, RecipientType = "TO" },
                 new() { Email = BccA, RecipientType = "BCC" },
@@ -288,7 +288,7 @@ public sealed class ManualEmailPipelineTests : IDisposable
             EmailDraftId = created.EmailDraftId,
             Subject = "Hỏng",
             BodyContent = "<p>x</p>",
-            Recipients = new List<EmailDraftRecipientInput>
+            Recipients = new List<EmailComposeRecipientInput>
             {
                 new() { Email = ToA, RecipientType = "TO" },
                 new() { Email = ToA.ToUpperInvariant(), RecipientType = "BCC" },

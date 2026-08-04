@@ -82,9 +82,15 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.Delegations.SetupProgressEmail.IVisitSetupProgressRecipientResolver,
             PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressRecipientResolver>();
 
-        // One draft-send pipeline behind both the generic compose screen and the setup-progress send.
-        services.AddScoped<PEMS.Application.Emails.Common.IEmailDraftDispatcher,
-            PEMS.Application.Emails.Common.EmailDraftDispatcher>();
+        // Renders the setup-progress message + its Schedule Report from one read, for both "mở soạn thư"
+        // and "đồng bộ" — so a refresh cannot produce a body the prepare would not have produced.
+        services.AddScoped<PEMS.Application.Delegations.SetupProgressEmail.IVisitSetupProgressComposer,
+            PEMS.Application.Delegations.SetupProgressEmail.VisitSetupProgressComposer>();
+
+        // One send pipeline behind every manual path — compose, reply and the setup-progress send — so
+        // the content, envelope and attachment rules are one implementation rather than three.
+        services.AddScoped<PEMS.Application.Emails.Common.IDirectEmailSender,
+            PEMS.Application.Emails.Common.DirectEmailSender>();
 
         return services;
     }

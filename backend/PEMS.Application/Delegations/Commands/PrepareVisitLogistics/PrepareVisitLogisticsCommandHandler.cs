@@ -134,7 +134,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
             ? SystemEmailContent.FromTemplate.Instance
             : await ResolveContentAsync(request.EmailOverride, cancellationToken);
         var attachInputs = offline
-            ? System.Array.Empty<EmailDraftAttachmentInput>()
+            ? System.Array.Empty<EmailComposeAttachmentInput>()
             : OutboundEmailAttachments.From(request.EmailOverride);
         await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
@@ -366,7 +366,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
     }
 
     /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
-    private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput> inputs, DateTime now)
+    private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput> inputs, DateTime now)
     {
         var order = 0;
         foreach (var a in inputs)
@@ -375,7 +375,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
             {
                 SentEmailId = sentEmailId,
                 FileId = a.FileId,
-                AttachmentType = EmailDraftWriter.ParseAttachmentType(a.AttachmentType),
+                AttachmentType = EmailComposeWriter.ParseAttachmentType(a.AttachmentType),
                 ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId!.Trim(),
                 DisplayName = a.DisplayName,
                 DisplayOrder = a.DisplayOrder > 0 ? (uint)a.DisplayOrder : (uint)order,

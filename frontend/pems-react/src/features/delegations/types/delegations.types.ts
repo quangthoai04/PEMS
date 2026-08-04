@@ -278,43 +278,73 @@ export interface VisitProcessPermission {
   canSendSetupProgressEmail: boolean;
 }
 
-/** Response of preparing (or re-opening) the Host's setup-progress email draft. */
-export interface SetupProgressEmailDraft {
-  draftId: number;
-  /** True when an unsent draft was re-opened instead of a second one being created. */
-  reusedExistingDraft: boolean;
+/** One default recipient of the setup-progress message, carrying the group it belongs to. */
+export interface SetupProgressEmailRecipient {
+  email: string;
+  name?: string | null;
+  recipientType: 'TO' | 'CC' | 'BCC';
+}
+
+/**
+ * The Host's setup-progress message, rendered and returned — not saved.
+ *
+ * There is no `draftId`. The message lives in the composer until it is sent, which is what removed the
+ * class of failure where a composer opened on a dead id showed a form full of generated text that looked
+ * exactly like a loaded draft.
+ */
+export interface SetupProgressEmailMessage {
+  subject: string;
+  /** The body as generated, which the composer opens on and may then edit. */
+  bodyHtml: string;
   /** vi | en — the language BOTH the message and the attached report were produced in. */
   languageCode: string;
   /** The mandatory Schedule Report; the composer marks this attachment undeletable. */
   reportFileId: number;
   reportFileName: string;
-  /** Vietnam wall-clock moment the attached report was rendered from live data. */
+  /** Vietnam wall-clock moment the report — and the body's tables — were built from. */
   reportGeneratedAt: string;
-  /**
-   * The body as generated. Empty when an existing draft was re-opened, because whether that draft was
-   * edited is not recorded — the composer then treats it as edited and warns before a sync overwrites it.
-   */
-  bodyHtml: string;
+  /** The default envelope, derived from the instance. The Host may change it. */
+  recipients: SetupProgressEmailRecipient[];
   /** Informational — a missing guest address, a fallback recipient. Not a send gate. */
   warnings: string[];
 }
 
 /**
- * Response of re-syncing an existing setup-progress draft from current setup data.
+ * Response of re-syncing the setup-progress message from current setup data.
  *
  * The report and the tables in the body are two renderings of ONE snapshot, so this rebuilds both;
  * `reportGeneratedAt` is the moment that snapshot was taken and is stated in the body too.
  */
-export interface SetupProgressEmailReport {
-  draftId: number;
+export interface SetupProgressEmailRefresh {
   reportFileId: number;
   reportFileName: string;
   reportGeneratedAt: string;
   languageCode: string;
+  subject: string;
   /** The rebuilt body. The composer puts this in the editor, replacing any manual edits. */
   bodyHtml: string;
   /** Always true; stated explicitly so a client cannot mistake the rebuild for an additive update. */
   bodyRewritten: boolean;
+}
+
+/** The whole message, as the setup-progress send endpoint takes it. */
+export interface SendSetupProgressEmailPayload {
+  subject: string;
+  bodyHtml: string;
+  languageCode?: string | null;
+  recipients: Array<{
+    email: string;
+    name?: string | null;
+    recipientType: 'TO' | 'CC' | 'BCC';
+    displayOrder: number;
+  }>;
+  attachments: Array<{
+    fileId: number;
+    attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE';
+    contentId?: string | null;
+    displayName?: string | null;
+    displayOrder?: number;
+  }>;
 }
 
 /** One agenda (lịch trình) item of a campus instance. */

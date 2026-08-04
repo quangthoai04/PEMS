@@ -314,7 +314,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
                 ov.Subject, EmailComposition.ResolveEditableHtml(ov), _sanitizer);
 
     /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
-    private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailDraftAttachmentInput> inputs, DateTime now)
+    private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput> inputs, DateTime now)
     {
         var order = 0;
         foreach (var a in inputs)
@@ -323,7 +323,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             {
                 SentEmailId = sentEmailId,
                 FileId = a.FileId,
-                AttachmentType = EmailDraftWriter.ParseAttachmentType(a.AttachmentType),
+                AttachmentType = EmailComposeWriter.ParseAttachmentType(a.AttachmentType),
                 ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId!.Trim(),
                 DisplayName = a.DisplayName,
                 DisplayOrder = a.DisplayOrder > 0 ? (uint)a.DisplayOrder : (uint)order,

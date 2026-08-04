@@ -241,16 +241,14 @@ export const API_ENDPOINTS = {
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/schedule-report/pdf`,
     // "Gửi cập nhật chuẩn bị" — current host only; every route re-derives host + prep window
     // server-side, so a handover between opening the composer and sending is refused.
-    setupProgressEmailDraft: (visitRequestId: string | number, visitInstanceId: string | number) =>
-      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/draft`,
-    setupProgressEmailRefreshReport: (
-      visitRequestId: string | number, visitInstanceId: string | number, draftId: string | number) =>
-      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/drafts/${draftId}/refresh-report`,
-    // Deliberately NOT the generic /Emails/drafts/{id}/send: that one asks only "is this your draft",
-    // which stays true for a host who has since been replaced.
-    setupProgressEmailSend: (
-      visitRequestId: string | number, visitInstanceId: string | number, draftId: string | number) =>
-      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/drafts/${draftId}/send`,
+    setupProgressEmailPrepare: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/prepare`,
+    setupProgressEmailRefresh: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/refresh`,
+    // Deliberately NOT the generic /Emails/sendemail: that one asks only "are you signed in", which
+    // stays true for a host who has since been replaced.
+    setupProgressEmailSend: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/setup-progress-email/send`,
     saveAgenda: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/agenda`,
     // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).

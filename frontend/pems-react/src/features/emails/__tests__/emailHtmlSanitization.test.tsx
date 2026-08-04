@@ -65,7 +65,7 @@ const expectNeutralised = (container: HTMLElement) => {
 };
 
 describe('EmailComposeModal preview', () => {
-  const createDraft = vi.fn();
+  const previewEmail = vi.fn();
   const getRecipientLimits = vi.fn();
   const getEmailTemplateList = vi.fn();
 
@@ -74,17 +74,23 @@ describe('EmailComposeModal preview', () => {
     vi.clearAllMocks();
     getRecipientLimits.mockResolvedValue({ data: { maxRecipients: 50 } });
     getEmailTemplateList.mockResolvedValue({ data: { items: [] } });
-    createDraft.mockResolvedValue({ emailDraftId: 1, recipients: [], attachments: [] });
   });
 
-  it('sanitises the composed body before showing it', async () => {
-    vi.doMock('../api/emailDraftsApi', () => ({
-      emailDraftsApi: {
-        createDraft, updateDraft: vi.fn(), sendDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(),
-      },
-    }));
+  /**
+   * The preview body now comes from the server, so the hostile markup is injected through the RESPONSE
+   * rather than through local state.
+   *
+   * That is the more honest test of this boundary anyway: the backend sanitiser is the authority on what
+   * goes in the email, and this one governs what THIS browser executes while rendering the answer. A
+   * compromised or simply older backend must not be able to run script in the composer, and the only way
+   * to assert that is to have it try.
+   */
+  it('sanitises the previewed body before showing it', async () => {
+    previewEmail.mockResolvedValue({
+      data: { subject: 'Chủ đề', body: XSS, isHtml: true, to: ['to@fpt.vn'], cc: [], bcc: [], attachments: [] },
+    });
     vi.doMock('../api/emailsApi', () => ({
-      emailsApi: { getRecipientLimits, getEmailTemplateList },
+      emailsApi: { previewEmail, sendEmail: vi.fn(), getRecipientLimits, getEmailTemplateList },
     }));
     vi.doMock('../../../shared/api/filesApi', () => ({ filesApi: { upload: vi.fn() } }));
     vi.doMock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 't' } }));

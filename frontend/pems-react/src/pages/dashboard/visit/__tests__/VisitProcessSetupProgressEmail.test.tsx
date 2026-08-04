@@ -3,7 +3,7 @@
  *
  * Two things are worth guarding here and they are both about not deciding locally: the button is
  * rendered from the backend flag alone (a Staff Leader reading this page must not get it just because
- * the page rendered for them), and the draft is built by the server before the composer opens (the
+ * the page rendered for them), and the message is rendered by the server before the composer opens (the
  * screen never assembles recipients from what it happens to have loaded).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -13,26 +13,27 @@ import userEvent from '@testing-library/user-event';
 const getVisitProcessPermissions = vi.fn();
 const getVisitProcessDetail = vi.fn();
 const getReminderSettings = vi.fn();
-const prepareSetupProgressEmailDraft = vi.fn();
-const refreshSetupProgressEmailReport = vi.fn();
-const sendSetupProgressEmailDraft = vi.fn();
+const prepareSetupProgressEmail = vi.fn();
+const refreshSetupProgressEmail = vi.fn();
+const sendSetupProgressEmail = vi.fn();
 
 vi.mock('../../../../features/delegations/api/delegationsApi', () => ({
   delegationsApi: {
     getVisitProcessPermissions: (...a: unknown[]) => getVisitProcessPermissions(...a),
     getVisitProcessDetail: (...a: unknown[]) => getVisitProcessDetail(...a),
     getReminderSettings: (...a: unknown[]) => getReminderSettings(...a),
-    prepareSetupProgressEmailDraft: (...a: unknown[]) => prepareSetupProgressEmailDraft(...a),
-    refreshSetupProgressEmailReport: (...a: unknown[]) => refreshSetupProgressEmailReport(...a),
-    sendSetupProgressEmailDraft: (...a: unknown[]) => sendSetupProgressEmailDraft(...a),
+    prepareSetupProgressEmail: (...a: unknown[]) => prepareSetupProgressEmail(...a),
+    refreshSetupProgressEmail: (...a: unknown[]) => refreshSetupProgressEmail(...a),
+    sendSetupProgressEmail: (...a: unknown[]) => sendSetupProgressEmail(...a),
   },
 }));
 
-// The composer has its own suite; here it only has to announce that it opened, and on which draft.
+// The composer has its own suite; here it only has to announce that it opened, and on what.
 vi.mock('../../../../features/emails/components/EmailComposeModal', () => ({
-  EmailComposeModal: ({ initialDraftId, lockedAttachmentFileIds, lockedTemplate }: any) => (
+  EmailComposeModal: ({ initialSubject, initialEnvelope, lockedAttachmentFileIds, lockedTemplate }: any) => (
     <div data-testid="compose-modal"
-      data-draft-id={initialDraftId}
+      data-subject={initialSubject}
+      data-envelope={JSON.stringify(initialEnvelope)}
       data-locked-files={JSON.stringify(lockedAttachmentFileIds)}
       data-locked-template={String(lockedTemplate)} />
   ),
@@ -109,13 +110,21 @@ const DETAIL = {
   requestSummary: {},
 };
 
-const DRAFT = {
-  draftId: 77,
-  reusedExistingDraft: false,
+/**
+ * The message the prepare endpoint returns. No `draftId`: nothing is persisted between choosing a
+ * language and pressing send — the composer holds the message and posts it whole.
+ */
+const PREPARED = {
+  subject: 'Cập nhật công tác chuẩn bị',
+  bodyHtml: '<p>noi dung</p>',
   languageCode: 'vi',
   reportFileId: 900,
   reportFileName: 'PEMS_Schedule_Report_VR-9001.pdf',
   reportGeneratedAt: '2026-08-01T14:30:00',
+  recipients: [
+    { email: 'guest@partner.example', name: 'Guest', recipientType: 'TO' },
+    { email: 'ic@fpt.edu.vn', name: 'IC', recipientType: 'CC' },
+  ],
   warnings: [],
 };
 
@@ -130,7 +139,7 @@ beforeEach(() => {
   getVisitProcessPermissions.mockResolvedValue(PERMISSION);
   getVisitProcessDetail.mockResolvedValue(DETAIL);
   getReminderSettings.mockResolvedValue({ items: [] });
-  prepareSetupProgressEmailDraft.mockResolvedValue(DRAFT);
+  prepareSetupProgressEmail.mockResolvedValue(PREPARED);
 });
 
 describe('Gửi cập nhật chuẩn bị', () => {
@@ -152,7 +161,7 @@ describe('Gửi cập nhật chuẩn bị', () => {
     expect(screen.queryByTestId('send-setup-progress-email')).toBeNull();
   });
 
-  it('asks for the language, then opens the composer on the draft the backend built', async () => {
+  it('asks for the language, then opens the composer on the message the backend rendered', async () => {
     const user = userEvent.setup();
     render(<VisitProcess />);
     await waitFor(() => expect(screen.getByTestId('send-setup-progress-email')).toBeTruthy());
@@ -161,15 +170,23 @@ describe('Gửi cập nhật chuẩn bị', () => {
     expect(screen.getByTestId('setup-email-language')).toBeTruthy();
     // Nothing is prepared until a language is chosen: the message and the attached report have to be
     // produced in the same one.
-    expect(prepareSetupProgressEmailDraft).not.toHaveBeenCalled();
+    expect(prepareSetupProgressEmail).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Tiếng Việt' }));
 
-    await waitFor(() => expect(prepareSetupProgressEmailDraft).toHaveBeenCalledWith(9001, 501, 'vi', true));
+    await waitFor(() => expect(prepareSetupProgressEmail).toHaveBeenCalledWith(9001, 501, 'vi'));
     const modal = await screen.findByTestId('compose-modal');
-    expect(modal.getAttribute('data-draft-id')).toBe('77');
+    expect(modal.getAttribute('data-subject')).toBe(PREPARED.subject);
     expect(modal.getAttribute('data-locked-template')).toBe('true');
     expect(modal.getAttribute('data-locked-files')).toBe('[900]');
+
+    // The envelope is passed through GROUPED. The screen never assembles it from what it happens to
+    // have loaded, and a CC the backend chose has to stay a CC.
+    const envelope = JSON.parse(modal.getAttribute('data-envelope') ?? '[]');
+    expect(envelope).toEqual([
+      { email: 'guest@partner.example', name: 'Guest', recipientType: 'TO', displayOrder: 0 },
+      { email: 'ic@fpt.edu.vn', name: 'IC', recipientType: 'CC', displayOrder: 1 },
+    ]);
   });
 
   it('passes the chosen language through', async () => {
@@ -180,12 +197,12 @@ describe('Gửi cập nhật chuẩn bị', () => {
     await user.click(screen.getByTestId('send-setup-progress-email'));
     await user.click(screen.getByRole('button', { name: 'English' }));
 
-    await waitFor(() => expect(prepareSetupProgressEmailDraft).toHaveBeenCalledWith(9001, 501, 'en', true));
+    await waitFor(() => expect(prepareSetupProgressEmail).toHaveBeenCalledWith(9001, 501, 'en'));
   });
 
   it('reports a failed preparation and lets the host try again', async () => {
     const user = userEvent.setup();
-    prepareSetupProgressEmailDraft.mockRejectedValueOnce({
+    prepareSetupProgressEmail.mockRejectedValueOnce({
       response: { data: { message: 'Chuyến thăm đã qua giai đoạn chuẩn bị.' } },
     });
 

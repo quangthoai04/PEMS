@@ -29,7 +29,7 @@ import { VisitDuringTab } from './VisitDuringTab';
 import { VisitAfterTab } from './VisitAfterTab';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { VisitProcessPermission, VisitProcessDetail, SetupProgressEmailDraft } from '../../../features/delegations/types/delegations.types';
+import type { VisitProcessPermission, VisitProcessDetail, SetupProgressEmailMessage } from '../../../features/delegations/types/delegations.types';
 import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
 import { AgendaSetupPanel } from '../../../features/agenda-templates/components/AgendaSetupPanel';
 import { ParticipantInvitationSection } from '../../../features/delegations/components/ParticipantInvitationSection';
@@ -304,41 +304,43 @@ export function VisitProcess() {
   };
 
   // ── "Gửi cập nhật chuẩn bị" (Host only) ────────────────────────────────────
-  // The backend builds the whole draft: rendered message, default recipients and the mandatory
-  // Schedule Report. This screen only asks for a language, opens the composer on the draft it gets
-  // back, and lets the Host edit everything before previewing and sending. The button is rendered
-  // from the backend flag alone — never from roleCode, because Staff Leader and HO read this same
-  // page and can pull the same report without being allowed to write to the guest as its host.
+  // The backend renders the whole message: subject, body, default recipients and the mandatory
+  // Schedule Report. This screen only asks for a language, opens the composer on what it gets back,
+  // and lets the Host edit everything before previewing and sending. The button is rendered from the
+  // backend flag alone — never from roleCode, because Staff Leader and HO read this same page and can
+  // pull the same report without being allowed to write to the guest as its host.
+  //
+  // Nothing is persisted between the two steps: the message is held by the composer and posted whole.
   const [setupEmail, setSetupEmail] = useState<{
     picking: boolean;
     preparing: boolean;
     error: string | null;
-    draft: SetupProgressEmailDraft | null;
-  }>({ picking: false, preparing: false, error: null, draft: null });
+    message: SetupProgressEmailMessage | null;
+  }>({ picking: false, preparing: false, error: null, message: null });
 
-  const prepareSetupProgressEmail = async (language: 'vi' | 'en', reuseExistingDraft = true) => {
+  const prepareSetupProgressEmail = async (language: 'vi' | 'en') => {
     if (!perm || setupEmail.preparing) return;
     setSetupEmail(prev => ({ ...prev, preparing: true, error: null }));
     try {
-      const draft = await delegationsApi.prepareSetupProgressEmailDraft(
-        perm.visitRequestId, perm.visitInstanceId, language, reuseExistingDraft);
-      setSetupEmail({ picking: false, preparing: false, error: null, draft });
+      const message = await delegationsApi.prepareSetupProgressEmail(
+        perm.visitRequestId, perm.visitInstanceId, language);
+      setSetupEmail({ picking: false, preparing: false, error: null, message });
     } catch (e: any) {
       setSetupEmail(prev => ({
         ...prev,
         preparing: false,
         // Back to the language step, which is where the error is readable and where the retry lives.
-        // Without this a failed rebuild left picking=false and draft=null, so the reason was written
+        // Without this a failed render left picking=false and message=null, so the reason was written
         // into state that nothing on screen was rendering — the modal simply closed.
         picking: true,
-        draft: null,
+        message: null,
         error: apiErrorMessage(e, 'Không chuẩn bị được email cập nhật. Vui lòng thử lại sau.'),
       }));
     }
   };
 
   const closeSetupEmail = () =>
-    setSetupEmail({ picking: false, preparing: false, error: null, draft: null });
+    setSetupEmail({ picking: false, preparing: false, error: null, message: null });
 
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
   // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
@@ -2002,10 +2004,9 @@ export function VisitProcess() {
                   className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   <p>{setupEmail.error}</p>
                   {/* The language buttons below ARE the retry, so this says so rather than adding a
-                      third button that would have to ask which language all over again. Nothing was
-                      created on a failed prepare, so retrying cannot duplicate a draft or a report. */}
+                      third button that would have to ask which language all over again. */}
                   <p className="mt-1 text-xs text-red-600/80">
-                    Chưa có bản nháp nào được tạo. Chọn lại ngôn ngữ bên dưới để thử lại, hoặc bấm Huỷ.
+                    Chưa có email nào được gửi. Chọn lại ngôn ngữ bên dưới để thử lại, hoặc bấm Huỷ.
                   </p>
                 </div>
               )}
@@ -2038,37 +2039,39 @@ export function VisitProcess() {
         </div>
       )}
 
-      {/* Step 2: the shared composer, opened on the draft the backend just built. Keyed by draft id
-          so a second draft never inherits the first one's form state. */}
-      {perm && setupEmail.draft && (
+      {/* Step 2: the shared composer, opened on the message the backend just rendered. Keyed by the
+          report's file id so a re-prepare (a language change, a retry) mounts a fresh composer rather
+          than leaving the previous message's form state behind. */}
+      {perm && setupEmail.message && (
         <EmailComposeModal
-          key={`setup-progress-${setupEmail.draft.draftId}`}
+          key={`setup-progress-${setupEmail.message.reportFileId}`}
           open
           onClose={closeSetupEmail}
           onSent={closeSetupEmail}
           pushToast={pushToast}
           contextTitle="Gửi cập nhật chuẩn bị"
-          initialDraftId={setupEmail.draft.draftId}
-          // The body as generated. The composer compares the draft it loads against this to know
-          // whether the Host has edited it, and so whether a sync must warn before overwriting.
-          initialBodyHtml={setupEmail.draft.bodyHtml}
+          initialSubject={setupEmail.message.subject}
+          // The body as generated. The composer compares the editor against this to know whether the
+          // Host has edited it, and so whether a sync must warn before overwriting.
+          initialBodyHtml={setupEmail.message.bodyHtml}
+          // Grouped, so a CC the backend chose arrives as a CC. A flat string could not have said so.
+          initialEnvelope={setupEmail.message.recipients.map((r, i) => ({
+            email: r.email,
+            name: r.name ?? null,
+            recipientType: r.recipientType,
+            displayOrder: i,
+          }))}
           relatedType="VISIT_INSTANCE"
           relatedId={Number(perm.visitInstanceId)}
           lockedTemplate
-          lockedAttachmentFileIds={[setupEmail.draft.reportFileId]}
-          notices={setupEmail.draft.warnings}
-          // The draft this composer holds turned out not to exist. Rebuild it from the same language,
-          // with reuse OFF — reuse is what would hand the dead id straight back.
-          onRecreateDraft={async () => {
-            const language = setupEmail.draft?.languageCode === 'en' ? 'en' : 'vi';
-            setSetupEmail(prev => ({ ...prev, draft: null }));
-            await prepareSetupProgressEmail(language, false);
-          }}
+          lockedAttachmentFileIds={[setupEmail.message.reportFileId]}
+          notices={setupEmail.message.warnings}
           onRefreshRequiredAttachment={async () => {
-            const fresh = await delegationsApi.refreshSetupProgressEmailReport(
-              perm.visitRequestId, perm.visitInstanceId, setupEmail.draft!.draftId);
-            setSetupEmail(prev => prev.draft
-              ? { ...prev, draft: { ...prev.draft, reportFileId: fresh.reportFileId, reportFileName: fresh.reportFileName, reportGeneratedAt: fresh.reportGeneratedAt } }
+            const language = setupEmail.message?.languageCode === 'en' ? 'en' : 'vi';
+            const fresh = await delegationsApi.refreshSetupProgressEmail(
+              perm.visitRequestId, perm.visitInstanceId, language);
+            setSetupEmail(prev => prev.message
+              ? { ...prev, message: { ...prev.message, reportFileId: fresh.reportFileId, reportFileName: fresh.reportFileName, reportGeneratedAt: fresh.reportGeneratedAt } }
               : prev);
             // The body comes back too: it and the PDF are one snapshot, so the composer replaces both.
             return {
@@ -2078,8 +2081,17 @@ export function VisitProcess() {
               bodyHtml: fresh.bodyHtml,
             };
           }}
-          sendDraftOverride={(draftId) =>
-            delegationsApi.sendSetupProgressEmailDraft(perm.visitRequestId, perm.visitInstanceId, draftId)}
+          onSend={(payload, idempotencyKey) =>
+            delegationsApi.sendSetupProgressEmail(
+              perm.visitRequestId, perm.visitInstanceId,
+              {
+                subject: payload.subject,
+                bodyHtml: payload.bodyHtml,
+                languageCode: setupEmail.message?.languageCode ?? 'vi',
+                recipients: payload.recipients,
+                attachments: payload.attachments,
+              },
+              idempotencyKey)}
         />
       )}
 

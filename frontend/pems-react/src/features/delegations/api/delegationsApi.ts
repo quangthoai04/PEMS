@@ -169,48 +169,59 @@ export const delegationsApi = {
   },
 
   /**
-   * Prepares (or re-opens) the Host's "Gửi cập nhật chuẩn bị" draft. The backend renders the message,
-   * resolves the recipients and generates the mandatory Schedule Report — the client sends only the
-   * language and whether an existing draft may be re-opened.
+   * Opens the Host's "Gửi cập nhật chuẩn bị" composer. The backend renders the message, resolves the
+   * default recipients and generates the mandatory Schedule Report — the client sends only the language.
+   *
+   * Nothing is saved: the message comes back and the composer holds it. There is no draft id to fetch,
+   * to reuse, or to fail to find.
    */
-  async prepareSetupProgressEmailDraft(
+  async prepareSetupProgressEmail(
     visitRequestId: number | string,
     visitInstanceId: number | string,
     languageCode: 'vi' | 'en' = 'vi',
-    reuseExistingDraft = true,
-  ): Promise<import('../types/delegations.types').SetupProgressEmailDraft> {
+  ): Promise<import('../types/delegations.types').SetupProgressEmailMessage> {
     const { data } = await httpClient.post(
-      API_ENDPOINTS.delegations.setupProgressEmailDraft(visitRequestId, visitInstanceId),
-      { languageCode, reuseExistingDraft },
+      API_ENDPOINTS.delegations.setupProgressEmailPrepare(visitRequestId, visitInstanceId),
+      { languageCode },
     );
     return data;
   },
 
-  /** Regenerates the attached report from current data. Recipients, subject and body are untouched. */
-  async refreshSetupProgressEmailReport(
+  /**
+   * Rebuilds the body AND the attached report from one fresh read. Recipients and the author's subject
+   * are untouched; the body is REPLACED, which is why the composer asks first.
+   */
+  async refreshSetupProgressEmail(
     visitRequestId: number | string,
     visitInstanceId: number | string,
-    draftId: number,
     languageCode?: 'vi' | 'en',
-  ): Promise<import('../types/delegations.types').SetupProgressEmailReport> {
+  ): Promise<import('../types/delegations.types').SetupProgressEmailRefresh> {
     const { data } = await httpClient.post(
-      API_ENDPOINTS.delegations.setupProgressEmailRefreshReport(visitRequestId, visitInstanceId, draftId),
+      API_ENDPOINTS.delegations.setupProgressEmailRefresh(visitRequestId, visitInstanceId),
       { languageCode: languageCode ?? null },
     );
     return data;
   },
 
   /**
-   * Sends the setup-progress draft through its own endpoint, which re-checks host and stage at send
-   * time. The generic draft-send would accept it on ownership alone.
+   * Sends the setup-progress message through its own endpoint, which re-checks host and stage at send
+   * time and requires the Schedule Report among the attachments. The generic send would accept it on
+   * "you are signed in" alone.
+   *
+   * The `Idempotency-Key` is required, not optional: with no draft row to claim DRAFT → SENT, the
+   * reservation behind this header is the only thing standing between a double click and a delegation's
+   * guests being mailed twice.
    */
-  async sendSetupProgressEmailDraft(
+  async sendSetupProgressEmail(
     visitRequestId: number | string,
     visitInstanceId: number | string,
-    draftId: number,
-  ): Promise<{ emailDraftId: number; sentEmailId: number; status: string; success: boolean; draftStatus: string; message: string }> {
+    payload: import('../types/delegations.types').SendSetupProgressEmailPayload,
+    idempotencyKey: string,
+  ): Promise<{ sentEmailId: number | null; status: string; success: boolean; message: string }> {
     const { data } = await httpClient.post(
-      API_ENDPOINTS.delegations.setupProgressEmailSend(visitRequestId, visitInstanceId, draftId));
+      API_ENDPOINTS.delegations.setupProgressEmailSend(visitRequestId, visitInstanceId),
+      payload,
+      { headers: { 'Idempotency-Key': idempotencyKey } });
     return data;
   },
 

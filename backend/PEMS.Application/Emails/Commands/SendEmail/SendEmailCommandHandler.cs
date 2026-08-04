@@ -1,47 +1,40 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using Microsoft.Extensions.Options;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
-using PEMS.Application.Common.Security;
 using PEMS.Application.Emails.Common;
 
 namespace PEMS.Application.Emails.Commands.SendEmail;
 
 /// <summary>
-/// Manual compose. Validates what the sender wrote, then hands the whole envelope to the shared manual
-/// pipeline, which records one <c>sent_emails</c> row and sends exactly one MIME message.
+/// Manual compose, sent directly.
 ///
 /// <para>
-/// What this handler no longer does: loop the recipients and call SMTP once each (which turned every
-/// addressee into a lone TO), hard-code <c>recipient_type = 'TO'</c> for all of them, mark them
-/// <c>DELIVERED</c> on the strength of provider acceptance, or write the raw exception text into
-/// <c>error_message</c>.
+/// There is no draft in this path any more, and the compose screen never needed one: the message is held
+/// in the browser while it is written and posted whole. What that removes is a class of failure rather
+/// than a feature — a composer opened on a draft id that no longer existed used to present a form full of
+/// generated text and then, on send, quietly create a NEW draft to send from, so a failed load produced a
+/// real email backed by nothing the author had asked for.
+/// </para>
+/// <para>
+/// Every rule the draft path enforced still runs, in <see cref="IDirectEmailSender"/>: content validation
+/// and sanitising, the envelope rules, attachment scope re-checked against the database, and a
+/// fail-closed refusal if an attachment's bytes cannot be read. Protection against a double click moved
+/// from the DRAFT → SENT claim to <c>Idempotency-Key</c>, which this command declares through
+/// <c>IIdempotentEmailSend</c>.
 /// </para>
 /// </summary>
 public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, SendEmailResponse>
 {
     private readonly ICurrentUserService _currentUserService;
-    private readonly IHtmlSanitizerService _sanitizer;
-    private readonly IManualEmailSender _sender;
-    private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
-    private readonly EmailRecipientOptions _recipientOptions;
+    private readonly IDirectEmailSender _sender;
 
-    public SendEmailCommandHandler(
-        ICurrentUserService currentUserService,
-        IHtmlSanitizerService sanitizer,
-        IManualEmailSender sender,
-        PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-        IOptions<EmailRecipientOptions> recipientOptions)
+    public SendEmailCommandHandler(ICurrentUserService currentUserService, IDirectEmailSender sender)
     {
         _currentUserService = currentUserService;
-        _sanitizer = sanitizer;
         _sender = sender;
-        _normalizer = normalizer;
-        _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
     }
 
     public async Task<SendEmailResponse> Handle(SendEmailCommand request, CancellationToken cancellationToken)
@@ -49,26 +42,8 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
         if (!_currentUserService.IsAuthenticated || _currentUserService.UserId is not { } userId)
             throw new ForbiddenException();
 
-        // Content and envelope are both checked BEFORE any row is written, so a rejected message leaves
-        // nothing behind in the history.
-        var format = EmailDraftWriter.ParseBodyFormat(request.BodyFormat);
-        var content = ManualEmailContent.Validate(request.Subject, request.Body, format, _sanitizer);
-
-        var envelope = EmailRecipientValidator.Validate(
-            Map(request.To), Map(request.Cc), Map(request.Bcc), _recipientOptions.MaxRecipients);
-
-        var body = content.IsHtml
-            ? await _normalizer.NormalizeHtmlAsync(content.Body, cancellationToken)
-            : content.Body;
-
-        var result = await _sender.SendAsync(new ManualEmailMessage(
-            SenderUserId: userId,
-            Subject: content.Subject,
-            Body: body,
-            BodyFormat: format,
-            Envelope: envelope,
-            Attachments: new List<ManualEmailAttachment>(),
-            RelatedType: "GENERAL"), cancellationToken);
+        var result = await _sender.SendAsync(
+            SendEmailRequestMapper.ToDirectRequest(request), userId, cancellationToken);
 
         return new SendEmailResponse
         {
@@ -78,11 +53,50 @@ public sealed class SendEmailCommandHandler : IRequestHandler<SendEmailCommand, 
             Message = result.Message,
         };
     }
+}
 
-    private static List<EmailRecipient> Map(List<EmailRecipientDto>? source)
-        => source is null
-            ? new List<EmailRecipient>()
-            : source.Where(r => r is not null)
-                    .Select(r => new EmailRecipient(r.Email ?? string.Empty, r.Name))
-                    .ToList();
+/// <summary>
+/// Turns the compose command into the shared send request.
+///
+/// <para>
+/// Shared with the preview handler on purpose: a preview that mapped the payload its own way could show
+/// the author a message the send then assembled differently, which is the one thing a preview must not do.
+/// </para>
+/// </summary>
+internal static class SendEmailRequestMapper
+{
+    public static DirectEmailRequest ToDirectRequest(SendEmailCommand request)
+    {
+        var recipients = new List<EmailComposeRecipientInput>();
+        var order = 0;
+
+        Add(request.To, EmailRecipientTypes.To);
+        Add(request.Cc, EmailRecipientTypes.Cc);
+        Add(request.Bcc, EmailRecipientTypes.Bcc);
+
+        return new DirectEmailRequest(
+            Subject: request.Subject,
+            BodyContent: request.Body,
+            BodyFormat: request.BodyFormat,
+            Recipients: recipients,
+            Attachments: request.Attachments,
+            // GENERAL is what a message composed from the mailbox screen is about: nothing in particular.
+            RelatedType: string.IsNullOrWhiteSpace(request.RelatedType) ? "GENERAL" : request.RelatedType,
+            RelatedId: request.RelatedId);
+
+        void Add(List<EmailRecipientDto>? group, string type)
+        {
+            foreach (var r in group ?? new List<EmailRecipientDto>())
+            {
+                if (r is null) continue;
+                recipients.Add(new EmailComposeRecipientInput
+                {
+                    Email = r.Email ?? string.Empty,
+                    Name = r.Name,
+                    RecipientType = type,
+                    DisplayOrder = order++,
+                });
+            }
+        }
+    }
 }

@@ -24,11 +24,11 @@ public class EmailDraftRecipientContractTests
 {
     private const int Limit = 50;
 
-    private static EmailDraftRecipientInput In(string email, string type = "TO", string? name = null, int order = 0)
+    private static EmailComposeRecipientInput In(string email, string type = "TO", string? name = null, int order = 0)
         => new() { Email = email, RecipientType = type, Name = name, DisplayOrder = order };
 
-    private static ValidatedEnvelope Validate(IEnumerable<EmailDraftRecipientInput> inputs, bool requireTo = false)
-        => EmailDraftWriter.ValidateRecipients(inputs.ToList(), Limit, requireTo);
+    private static ValidatedEnvelope Validate(IEnumerable<EmailComposeRecipientInput> inputs, bool requireTo = false)
+        => EmailComposeWriter.ValidateRecipients(inputs.ToList(), Limit, requireTo);
 
     private static string CodeOf(Action act)
         => Assert.Throws<ValidationException>(act).ErrorCode ?? string.Empty;
@@ -54,7 +54,7 @@ public class EmailDraftRecipientContractTests
     [Fact]
     public void A_missing_recipient_type_reads_as_TO()
     {
-        var envelope = Validate(new[] { new EmailDraftRecipientInput { Email = "host@fpt.edu.vn" } });
+        var envelope = Validate(new[] { new EmailComposeRecipientInput { Email = "host@fpt.edu.vn" } });
 
         Assert.Single(envelope.To);
         Assert.Empty(envelope.Bcc);
@@ -151,7 +151,7 @@ public class EmailDraftRecipientContractTests
             In("cc2@fpt.edu.vn", "CC"),
         });
 
-        var rows = EmailDraftWriter.ToDraftRows(42, envelope, new DateTime(2026, 7, 27, 9, 0, 0)).ToList();
+        var rows = EmailComposeWriter.ToDraftRows(42, envelope, new DateTime(2026, 7, 27, 9, 0, 0)).ToList();
 
         Assert.All(rows, r => Assert.Equal(42ul, r.EmailDraftId));
 
@@ -171,7 +171,7 @@ public class EmailDraftRecipientContractTests
     public void Original_casing_is_stored_even_though_matching_ignores_it()
     {
         var envelope = Validate(new[] { In("Ha.Nguyen@fpt.edu.vn") });
-        var rows = EmailDraftWriter.ToDraftRows(1, envelope, DateTime.Now).ToList();
+        var rows = EmailComposeWriter.ToDraftRows(1, envelope, DateTime.Now).ToList();
 
         Assert.Equal("Ha.Nguyen@fpt.edu.vn", rows.Single().RecipientEmail);
     }

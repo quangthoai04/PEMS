@@ -1,33 +1,27 @@
 /**
- * G6.3 — the compose modal on its real path: EmailComposeModal → emailDraftsApi.
+ * G6.3 — the compose modal on its real path: EmailComposeModal → emailsApi (preview, then send).
  *
  * These assert the payload that actually leaves the component, because the defect this replaces was
  * invisible in the UI: the screen could show a CC while the request stamped every recipient 'TO'.
  * Rendering alone would not have caught it; only the payload does.
+ *
+ * The path changed when drafts were removed — the payload used to go to `emailDraftsApi.createDraft`
+ * and be sent by id — but the rule being protected did not: a CC the screen collected must leave as a
+ * CC. The draft-restore and autosave suites that used to sit here are gone with the feature they
+ * described; what remains is what still has to be true.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-const createDraft = vi.fn();
-const updateDraft = vi.fn();
-const sendDraft = vi.fn();
-const getDraft = vi.fn();
-const discardDraft = vi.fn();
+const sendEmail = vi.fn();
+const previewEmail = vi.fn();
 const getRecipientLimits = vi.fn();
 const getEmailTemplateList = vi.fn();
 
-vi.mock('../api/emailDraftsApi', () => ({
-  emailDraftsApi: {
-    createDraft: (...a: unknown[]) => createDraft(...a),
-    updateDraft: (...a: unknown[]) => updateDraft(...a),
-    sendDraft: (...a: unknown[]) => sendDraft(...a),
-    getDraft: (...a: unknown[]) => getDraft(...a),
-    discardDraft: (...a: unknown[]) => discardDraft(...a),
-  },
-}));
-
 vi.mock('../api/emailsApi', () => ({
   emailsApi: {
+    sendEmail: (...a: unknown[]) => sendEmail(...a),
+    previewEmail: (...a: unknown[]) => previewEmail(...a),
     getRecipientLimits: (...a: unknown[]) => getRecipientLimits(...a),
     getEmailTemplateList: (...a: unknown[]) => getEmailTemplateList(...a),
   },
@@ -40,7 +34,7 @@ vi.mock('../../../components/modals/ConfirmModal', () => ({
   ConfirmModal: ({ isOpen, onConfirm }: { isOpen: boolean; onConfirm: () => void }) =>
     isOpen ? <button type="button" onClick={onConfirm}>__confirm__</button> : null,
 }));
-vi.mock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 'test-token' } }));
+vi.mock('../../../shared/auth/authStorage', () => ({ authStorage: { getAccessToken: () => 'test-token' } }));
 
 // The rich-text editor is not what these tests are about; a plain textarea keeps them fast and stable.
 vi.mock('react-quill-new', () => ({
@@ -72,9 +66,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   getRecipientLimits.mockResolvedValue({ data: { maxRecipients: 50 } });
   getEmailTemplateList.mockResolvedValue({ data: { items: [] } });
-  createDraft.mockResolvedValue({ emailDraftId: 7, recipients: [], attachments: [] });
-  updateDraft.mockResolvedValue({ emailDraftId: 7, recipients: [], attachments: [] });
-  sendDraft.mockResolvedValue({ emailDraftId: 7, sentEmailId: 9, status: 'SENT', success: true, draftStatus: 'SENT', message: 'ok' });
+  previewEmail.mockResolvedValue({
+    data: { subject: 'Chủ đề', body: '<p>x</p>', isHtml: true, to: [], cc: [], bcc: [], attachments: [] },
+  });
+  sendEmail.mockResolvedValue({ data: { sentEmailId: 9, status: 'SENT', success: true, message: 'ok' } });
 });
 
 describe('recipient groups', () => {
@@ -121,15 +116,11 @@ describe('recipient groups', () => {
 });
 
 describe('payload', () => {
-  /**
-   * Drives the real send: preview → confirm → handleSend. Asserting here rather than on the debounced
-   * autosave keeps the test deterministic (autosave fires after 1200ms, which a default waitFor would
-   * race) and exercises the create/update/send path the requirement is actually about.
-   */
+  /** Drives the real send: preview → confirm → handleSend. */
   const send = async () => {
     fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'Chủ đề' } });
-    fireEvent.click(screen.getByRole('button', { name: /Xem trước/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận gửi' }));
+    fireEvent.click(screen.getByTestId('preview-email'));
+    fireEvent.click(await screen.findByTestId('confirm-send'));
     fireEvent.click(await screen.findByRole('button', { name: '__confirm__' }));
   };
 
@@ -144,34 +135,46 @@ describe('payload', () => {
     addRecipient('BCC', 'bcc@fpt.vn');
     await send();
 
-    await waitFor(() => expect(createDraft).toHaveBeenCalled());
+    await waitFor(() => expect(sendEmail).toHaveBeenCalled());
 
-    const payload = createDraft.mock.calls.at(-1)![0] as any;
-    const byType = Object.fromEntries(payload.recipients.map((r: any) => [r.email, r.recipientType]));
-    expect(byType).toEqual({
-      'to@fpt.vn': 'TO',
-      'cc@fpt.vn': 'CC',
-      'bcc@fpt.vn': 'BCC',
-    });
-    await waitFor(() => expect(sendDraft).toHaveBeenCalledWith(7));
+    const payload = sendEmail.mock.calls.at(-1)![0] as any;
+    expect(payload.to.map((r: any) => r.email)).toEqual(['to@fpt.vn']);
+    expect(payload.cc.map((r: any) => r.email)).toEqual(['cc@fpt.vn']);
+    expect(payload.bcc.map((r: any) => r.email)).toEqual(['bcc@fpt.vn']);
   });
 
-  it('gives recipients a stable display order across the three groups', async () => {
+  it('previews the same envelope it would send', async () => {
     renderModal();
     await flushLimit();
 
-    addRecipient('Đến', 'a@fpt.vn');
-    openGroup('Thêm BCC');
-    addRecipient('BCC', 'b@fpt.vn');
+    addRecipient('Đến', 'to@fpt.vn');
+    openGroup('Thêm CC');
+    addRecipient('CC', 'cc@fpt.vn');
+    fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'Chủ đề' } });
+    fireEvent.click(screen.getByTestId('preview-email'));
+
+    await waitFor(() => expect(previewEmail).toHaveBeenCalled());
+    const payload = previewEmail.mock.calls.at(-1)![0] as any;
+    // A preview built from a different mapping could show an envelope the send would not produce.
+    expect(payload.to.map((r: any) => r.email)).toEqual(['to@fpt.vn']);
+    expect(payload.cc.map((r: any) => r.email)).toEqual(['cc@fpt.vn']);
+  });
+
+  it('carries an idempotency key on the send', async () => {
+    renderModal();
+    await flushLimit();
+    addRecipient('Đến', 'to@fpt.vn');
     await send();
 
-    await waitFor(() => expect(createDraft).toHaveBeenCalled());
-    const payload = createDraft.mock.calls.at(-1)![0] as any;
-    expect(payload.recipients.map((r: any) => r.displayOrder)).toEqual([0, 1]);
+    await waitFor(() => expect(sendEmail).toHaveBeenCalled());
+    const key = sendEmail.mock.calls.at(-1)![1];
+    // With no DRAFT → SENT claim left, this header is the double-click protection.
+    expect(typeof key).toBe('string');
+    expect((key as string).length).toBeGreaterThan(0);
   });
 
   it('keeps the composed content when the server rejects the envelope', async () => {
-    createDraft.mockRejectedValue({
+    sendEmail.mockRejectedValue({
       response: { data: { errorCode: 'EMAIL_RECIPIENT_INVALID', message: "Địa chỉ email không hợp lệ ở mục CC: 'x'." } },
     });
 
@@ -182,7 +185,8 @@ describe('payload', () => {
     addRecipient('CC', 'cc@fpt.vn');
     await send();
 
-    // The rejection is shown on the CC field, and nothing the sender typed is lost.
+    // The rejection is shown on the CC field, and nothing the sender typed is lost. There is no draft
+    // behind this screen any more, so losing it here would lose it for good.
     expect(await screen.findByText(/không hợp lệ ở mục CC/)).toBeInTheDocument();
     expect(screen.getByTestId('chip-TO')).toHaveTextContent('to@fpt.vn');
     expect(screen.getByTestId('chip-CC')).toHaveTextContent('cc@fpt.vn');
@@ -190,7 +194,7 @@ describe('payload', () => {
   });
 
   it('shows an unattributable server error at form level rather than guessing a field', async () => {
-    createDraft.mockRejectedValue({ response: { data: { message: 'Lỗi hệ thống.' } } });
+    sendEmail.mockRejectedValue({ response: { data: { message: 'Lỗi hệ thống.' } } });
 
     renderModal();
     await flushLimit();
@@ -202,295 +206,20 @@ describe('payload', () => {
 
   it('does not start a second send while one is in flight', async () => {
     let release: (v: unknown) => void = () => {};
-    createDraft.mockReturnValue(new Promise(resolve => { release = resolve; }));
+    sendEmail.mockReturnValue(new Promise(resolve => { release = resolve; }));
 
     renderModal();
     await flushLimit();
     addRecipient('Đến', 'to@fpt.vn');
     await send();
 
-    await waitFor(() => expect(createDraft).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(sendEmail).toHaveBeenCalledTimes(1));
 
     // A second confirm while the first request is still open must not issue another one.
     const confirmAgain = screen.queryByRole('button', { name: '__confirm__' });
     if (confirmAgain) fireEvent.click(confirmAgain);
-    expect(createDraft).toHaveBeenCalledTimes(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
 
-    release({ emailDraftId: 7, recipients: [], attachments: [] });
-  });
-});
-
-describe('draft restore', () => {
-  it('puts each stored recipient back in the group its recipient_type names, with the display name', async () => {
-    getDraft.mockResolvedValue({
-      emailDraftId: 42,
-      subject: 'Đã lưu',
-      bodyContent: '<p>xin chào</p>',
-      bodyFormat: 'HTML',
-      status: 'DRAFT',
-      recipients: [
-        { emailDraftRecipientId: 1, recipientEmail: 'to@fpt.vn', recipientName: 'Người Nhận', recipientType: 'TO', displayOrder: 0 },
-        { emailDraftRecipientId: 2, recipientEmail: 'cc@fpt.vn', recipientName: null, recipientType: 'CC', displayOrder: 1 },
-        { emailDraftRecipientId: 3, recipientEmail: 'bcc@fpt.vn', recipientName: null, recipientType: 'BCC', displayOrder: 2 },
-      ],
-      attachments: [],
-    });
-
-    renderModal({ initialDraftId: 42 });
-    await waitFor(() => expect(getDraft).toHaveBeenCalledWith(42));
-
-    // Groups holding data are revealed, not left hidden behind a toggle.
-    await waitFor(() => expect(screen.getByTestId('chip-CC')).toBeInTheDocument());
-    expect(screen.getByTestId('chip-TO')).toHaveTextContent('Người Nhận <to@fpt.vn>');
-    expect(screen.getByTestId('chip-BCC')).toHaveTextContent('bcc@fpt.vn');
-    expect(screen.getByDisplayValue('Đã lưu')).toBeInTheDocument();
-  });
-
-  describe('a recipient type that is none of TO/CC/BCC', () => {
-    const corruptDraft = {
-      emailDraftId: 43, subject: 'Nháp hỏng', bodyContent: '<p>x</p>', bodyFormat: 'HTML', status: 'DRAFT',
-      recipients: [
-        { emailDraftRecipientId: 1, recipientEmail: 'ok@fpt.vn', recipientType: 'TO', displayOrder: 0 },
-        { emailDraftRecipientId: 2, recipientEmail: 'weird@fpt.vn', recipientType: 'WAT', displayOrder: 1 },
-      ],
-      attachments: [],
-    };
-
-    it('does not place it in TO, CC or BCC', async () => {
-      getDraft.mockResolvedValue(corruptDraft);
-      renderModal({ initialDraftId: 43 });
-      await screen.findByTestId('draft-blocked');
-
-      // The classifiable row is still shown; the unclassifiable one is in no group at all.
-      expect(screen.getByTestId('chip-TO')).toHaveTextContent('ok@fpt.vn');
-      expect(screen.queryByText(/weird@fpt\.vn/)).not.toBeInTheDocument();
-      expect(screen.queryByTestId('chip-CC')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('chip-BCC')).not.toBeInTheDocument();
-    });
-
-    it('reports it as a draft-level fault naming the offending type', async () => {
-      getDraft.mockResolvedValue(corruptDraft);
-      renderModal({ initialDraftId: 43 });
-
-      const blocked = await screen.findByTestId('draft-blocked');
-      expect(blocked).toHaveTextContent('không hợp lệ');
-      expect(blocked).toHaveTextContent('WAT');
-    });
-
-    it('refuses to preview or send it', async () => {
-      getDraft.mockResolvedValue(corruptDraft);
-      renderModal({ initialDraftId: 43 });
-      await screen.findByTestId('draft-blocked');
-
-      const preview = screen.getByRole('button', { name: /Xem trước/ });
-      expect(preview).toBeDisabled();
-
-      fireEvent.click(preview);
-      expect(screen.queryByRole('button', { name: 'Xác nhận gửi' })).not.toBeInTheDocument();
-      expect(sendDraft).not.toHaveBeenCalled();
-    });
-
-    it('never writes the draft back, so the rows it could not classify are not deleted', async () => {
-      vi.useFakeTimers();
-      try {
-        getDraft.mockResolvedValue(corruptDraft);
-        renderModal({ initialDraftId: 43 });
-        await vi.waitFor(() => expect(getDraft).toHaveBeenCalled());
-
-        // Edit something, then run past the autosave debounce.
-        fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'sửa' } });
-        await vi.advanceTimersByTimeAsync(5000);
-
-        expect(createDraft).not.toHaveBeenCalled();
-        expect(updateDraft).not.toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  });
-});
-
-describe('hydration guard', () => {
-  /**
-   * The failure this prevents: the composer mounts empty, the autosave debounce fires before
-   * `getDraft` resolves, and the empty form is PUT over the draft being restored. "Reopen my draft"
-   * would erase it.
-   */
-  it('does not autosave while the draft is still loading', async () => {
-    vi.useFakeTimers();
-    try {
-      let resolveDraft: (v: unknown) => void = () => {};
-      getDraft.mockReturnValue(new Promise(resolve => { resolveDraft = resolve; }));
-
-      renderModal({ initialDraftId: 55 });
-      await vi.waitFor(() => expect(getDraft).toHaveBeenCalledWith(55));
-
-      // Type into the still-empty form and run well past the 1200ms debounce.
-      fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'x' } });
-      await vi.advanceTimersByTimeAsync(5000);
-
-      expect(createDraft).not.toHaveBeenCalled();
-      expect(updateDraft).not.toHaveBeenCalled();
-
-      resolveDraft({
-        emailDraftId: 55, subject: 'Nội dung thật', bodyContent: '<p>b</p>', bodyFormat: 'HTML',
-        status: 'DRAFT', recipients: [], attachments: [],
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('enables autosave only after hydration succeeds', async () => {
-    vi.useFakeTimers();
-    try {
-      getDraft.mockResolvedValue({
-        emailDraftId: 55, subject: 'Nội dung thật', bodyContent: '<p>b</p>', bodyFormat: 'HTML',
-        status: 'DRAFT',
-        recipients: [{ emailDraftRecipientId: 1, recipientEmail: 'to@fpt.vn', recipientType: 'TO', displayOrder: 0 }],
-        attachments: [],
-      });
-
-      renderModal({ initialDraftId: 55 });
-      await vi.waitFor(() => expect(screen.getByTestId('chip-TO')).toBeInTheDocument());
-
-      fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'đã sửa' } });
-      await vi.advanceTimersByTimeAsync(1500);
-
-      await vi.waitFor(() => expect(updateDraft).toHaveBeenCalled());
-      const [draftId, payload] = updateDraft.mock.calls.at(-1)! as [number, any];
-      expect(draftId).toBe(55);
-      expect(payload.subject).toBe('đã sửa');
-      expect(createDraft).not.toHaveBeenCalled();   // never forks a second draft
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('creates nothing and updates nothing when the draft cannot be loaded', async () => {
-    vi.useFakeTimers();
-    try {
-      getDraft.mockRejectedValue(new Error('boom'));
-
-      renderModal({ initialDraftId: 55 });
-      await vi.waitFor(() => expect(getDraft).toHaveBeenCalled());
-
-      fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'gõ tiếp' } });
-      await vi.advanceTimersByTimeAsync(5000);
-
-      expect(createDraft).not.toHaveBeenCalled();
-      expect(updateDraft).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('says the draft could not be loaded instead of presenting a working empty composer', async () => {
-    getDraft.mockRejectedValue(new Error('boom'));
-
-    renderModal({ initialDraftId: 55 });
-
-    expect(await screen.findByText(/Không tải được email nháp/)).toBeInTheDocument();
-  });
-});
-
-/**
- * Autosave coverage, driven by fake timers rather than by waiting out the real 1200ms debounce.
- * Kept separate from the send-path tests so both the create and update payloads are asserted.
- */
-describe('autosave payload', () => {
-  it('creates the draft with each recipient type and a continuous display order', async () => {
-    vi.useFakeTimers();
-    try {
-      renderModal();
-      await vi.waitFor(() => expect(getRecipientLimits).toHaveBeenCalled());
-
-      addRecipient('Đến', 'to@fpt.vn');
-      openGroup('Thêm CC');
-      addRecipient('CC', 'cc@fpt.vn');
-      openGroup('Thêm BCC');
-      addRecipient('BCC', 'bcc@fpt.vn');
-
-      await vi.advanceTimersByTimeAsync(1500);
-      await vi.waitFor(() => expect(createDraft).toHaveBeenCalled());
-
-      const payload = createDraft.mock.calls.at(-1)![0] as any;
-      expect(payload.recipients).toEqual([
-        { email: 'to@fpt.vn', name: null, recipientType: 'TO', displayOrder: 0 },
-        { email: 'cc@fpt.vn', name: null, recipientType: 'CC', displayOrder: 1 },
-        { email: 'bcc@fpt.vn', name: null, recipientType: 'BCC', displayOrder: 2 },
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('updates an existing draft without collapsing the groups', async () => {
-    vi.useFakeTimers();
-    try {
-      renderModal();
-      await vi.waitFor(() => expect(getRecipientLimits).toHaveBeenCalled());
-
-      addRecipient('Đến', 'to@fpt.vn');
-      await vi.advanceTimersByTimeAsync(1500);
-      await vi.waitFor(() => expect(createDraft).toHaveBeenCalled());
-
-      // Second edit goes to update, not create, and keeps the new group.
-      openGroup('Thêm BCC');
-      addRecipient('BCC', 'bcc@fpt.vn');
-      await vi.advanceTimersByTimeAsync(1500);
-      await vi.waitFor(() => expect(updateDraft).toHaveBeenCalled());
-
-      const [draftId, payload] = updateDraft.mock.calls.at(-1)! as [number, any];
-      expect(draftId).toBe(7);
-      expect(payload.recipients.map((r: any) => r.recipientType)).toEqual(['TO', 'BCC']);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe('recipient limit', () => {
-  it('shows the ceiling the server reported, not a hard-coded one', async () => {
-    getRecipientLimits.mockResolvedValue({ data: { maxRecipients: 3 } });
-    renderModal();
-    await waitFor(() => expect(screen.getByTestId('recipient-counter')).toHaveTextContent('0/3'));
-  });
-
-  it('says the limit is unknown when the request fails, and still keeps the draft usable', async () => {
-    getRecipientLimits.mockRejectedValue(new Error('network'));
-    renderModal();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('recipient-counter')).toHaveTextContent('chưa tải được giới hạn'));
-
-    addRecipient('Đến', 'a@fpt.vn');
-    expect(screen.getByTestId('chip-TO')).toBeInTheDocument();   // draft not lost
-  });
-
-  it('treats a non-positive configured limit as unusable instead of rendering 0', async () => {
-    getRecipientLimits.mockResolvedValue({ data: { maxRecipients: 0 } });
-    renderModal();
-    await waitFor(() =>
-      expect(screen.getByTestId('recipient-counter')).toHaveTextContent('chưa tải được giới hạn'));
-    expect(screen.getByTestId('recipient-counter')).not.toHaveTextContent('/0');
-  });
-
-  it('blocks the send when the total exceeds the served ceiling', async () => {
-    getRecipientLimits.mockResolvedValue({ data: { maxRecipients: 1 } });
-    renderModal();
-    await flushLimit();
-
-    addRecipient('Đến', 'a@fpt.vn');
-    openGroup('Thêm CC');
-    addRecipient('CC', 'b@fpt.vn');
-    fireEvent.change(screen.getByPlaceholderText('Tiêu đề email…'), { target: { value: 'x' } });
-
-    createDraft.mockClear();
-    sendDraft.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Xem trước/ }));
-
-    expect(await screen.findByText(/vượt quá giới hạn/)).toBeInTheDocument();
-    expect(sendDraft).not.toHaveBeenCalled();
+    release({ data: { sentEmailId: 9, status: 'SENT', success: true, message: 'ok' } });
   });
 });

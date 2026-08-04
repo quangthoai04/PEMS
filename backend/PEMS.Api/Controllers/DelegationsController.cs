@@ -198,39 +198,44 @@ namespace PEMS.Api.Controllers
         // Report attached. All three routes re-derive host + prep-window from the database, so a
         // handover or a stage change between opening the composer and sending refuses.
 
-        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/draft")]
-        public async Task<IActionResult> PrepareSetupProgressEmailDraft(
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/prepare")]
+        public async Task<IActionResult> PrepareSetupProgressEmail(
             ulong visitRequestId, ulong visitInstanceId,
-            [FromBody] PrepareSetupProgressEmailDraftBody? body, CancellationToken cancellationToken)
+            [FromBody] SetupProgressEmailLanguageBody? body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new PrepareVisitSetupProgressEmailDraftCommand(
-                    visitRequestId, visitInstanceId,
-                    body?.LanguageCode,
-                    body?.ReuseExistingDraft ?? true),
+                new PrepareVisitSetupProgressEmailCommand(visitRequestId, visitInstanceId, body?.LanguageCode),
                 cancellationToken);
             return Ok(result);
         }
 
-        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/drafts/{draftId}/refresh-report")]
-        public async Task<IActionResult> RefreshSetupProgressEmailReport(
-            ulong visitRequestId, ulong visitInstanceId, ulong draftId,
-            [FromBody] RefreshSetupProgressEmailReportBody? body, CancellationToken cancellationToken)
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/refresh")]
+        public async Task<IActionResult> RefreshSetupProgressEmail(
+            ulong visitRequestId, ulong visitInstanceId,
+            [FromBody] SetupProgressEmailLanguageBody? body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new RefreshVisitSetupProgressEmailReportCommand(
-                    visitRequestId, visitInstanceId, draftId, body?.LanguageCode),
+                new RefreshVisitSetupProgressEmailCommand(visitRequestId, visitInstanceId, body?.LanguageCode),
                 cancellationToken);
             return Ok(result);
         }
 
-        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/drafts/{draftId}/send")]
-        public async Task<IActionResult> SendSetupProgressEmailDraft(
-            ulong visitRequestId, ulong visitInstanceId, ulong draftId, CancellationToken cancellationToken)
+        /// <summary>
+        /// Sends the message the composer is holding. Requires <c>Idempotency-Key</c>: with no draft row to
+        /// claim DRAFT → SENT, the reservation is the only thing standing between a double click and a
+        /// delegation's guests being mailed twice.
+        /// </summary>
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/setup-progress-email/send")]
+        public async Task<IActionResult> SendSetupProgressEmail(
+            ulong visitRequestId, ulong visitInstanceId,
+            [FromBody] SendVisitSetupProgressEmailCommand command, CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(
-                new SendVisitSetupProgressEmailDraftCommand(visitRequestId, visitInstanceId, draftId),
-                cancellationToken);
+            // The route is authoritative. A body that named a different visit would otherwise send this
+            // Host's guards over somebody else's delegation.
+            command.VisitRequestId = visitRequestId;
+            command.VisitInstanceId = visitInstanceId;
+
+            var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
         }
 
@@ -742,14 +747,13 @@ namespace PEMS.Api.Controllers
     public sealed record SaveReminderSettingsBody(List<SaveVisitReminderSettingItem>? Items);
 
     /// <summary>
-    /// Request body for preparing the setup-progress draft. Both fields are optional — an omitted body
-    /// means Vietnamese and re-open-if-one-exists, which is what the button does on a first click.
+    /// The only thing "mở soạn thư" and "đồng bộ" need from the client. An omitted body means Vietnamese.
+    ///
+    /// <para>
+    /// It used to also carry <c>reuseExistingDraft</c>, which existed so a second click did not leave a
+    /// second draft row and a second archived PDF behind. Nothing is persisted now, so a second click
+    /// simply renders again.
+    /// </para>
     /// </summary>
-    public sealed record PrepareSetupProgressEmailDraftBody(string? LanguageCode, bool? ReuseExistingDraft);
-
-    /// <summary>
-    /// Request body for regenerating the attached report. A null language keeps the one the draft was
-    /// built with, so refreshing cannot swap an English attachment onto a Vietnamese message.
-    /// </summary>
-    public sealed record RefreshSetupProgressEmailReportBody(string? LanguageCode);
+    public sealed record SetupProgressEmailLanguageBody(string? LanguageCode);
 }

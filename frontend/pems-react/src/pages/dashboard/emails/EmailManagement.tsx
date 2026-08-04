@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Search, Plus, Eye, Edit2, ChevronLeft, ChevronRight, Check, ArrowUpDown, Send } from 'lucide-react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { EmailComposeModal } from '../../../features/emails/components/EmailComposeModal';
-import { DraftsPanel } from '../../../features/emails/components/DraftsPanel';
 import { TemplateManagement } from './TemplateManagement';
 
 import { emailsApi } from '../../../features/emails/api/emailsApi';
@@ -55,10 +54,7 @@ export function EmailManagement() {
   const [pageSent, setPageSent] = useState(initialPage);
   const [itemsPerPageSent, setItemsPerPageSent] = useState(10);
   const [searchQuerySent, setSearchQuerySent] = useState(initialSearch);
-  const [mailboxFilter, setMailboxFilter] = useState(initialMailbox); // all, sent, received, drafts
-  /** Draft the composer should reopen. Null means "compose a new one". */
-  const [openDraftId, setOpenDraftId] = useState<number | null>(null);
-  const [draftsRefreshToken, setDraftsRefreshToken] = useState(0);
+  const [mailboxFilter, setMailboxFilter] = useState(initialMailbox); // all, sent, received
   const [relatedTypeFilter, setRelatedTypeFilter] = useState(initialRelated); // VISIT_REQUEST, GENERAL
   const [startDate, setStartDate] = useState(initialStart);
   const [endDate, setEndDate] = useState(initialEnd);
@@ -88,8 +84,6 @@ export function EmailManagement() {
   };
 
   const fetchEmails = React.useCallback(async () => {
-    // Drafts are not sent mail and come from their own endpoint; DraftsPanel loads them.
-    if (mailboxFilter === 'drafts') { setIsLoadingEmails(false); return; }
     setIsLoadingEmails(true);
     try {
       const params: any = {
@@ -209,7 +203,6 @@ export function EmailManagement() {
               <option value="all">Tất cả email</option>
               <option value="sent">Đã gửi</option>
               <option value="received">Đã nhận</option>
-              <option value="drafts">Nháp</option>
             </select>
 
             <select 
@@ -266,20 +259,6 @@ export function EmailManagement() {
             )}
           </div>
 
-          {/* Drafts have their own shape and their own endpoint, so they get their own list rather
-              than being forced through the sent-email table. */}
-          {mailboxFilter === 'drafts' ? (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <DraftsPanel
-                refreshToken={draftsRefreshToken}
-                onOpenDraft={(draftId) => {
-                  setComposeInitialData({ subject: '', bodyHtml: '', templateId: null });
-                  setOpenDraftId(draftId);
-                  setShowCompose(true);
-                }}
-              />
-            </div>
-          ) : (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse min-w-[1000px]">
@@ -353,10 +332,7 @@ export function EmailManagement() {
               </table>
             </div>
           </div>
-          )}
 
-          {/* Pagination for Emails — the drafts list paginates on its own endpoint */}
-          {mailboxFilter !== 'drafts' && (
           <div className="flex justify-end items-center mt-6">
             <div className="flex items-center gap-1.5">
                <button 
@@ -378,31 +354,23 @@ export function EmailManagement() {
               </button>
             </div>
           </div>
-          )}
         </>
       ) : activeTab === 'templates' && userRole === 'HO' ? (
         <TemplateManagement pushToast={showPageToast} />
       ) : null}
 
-      {/* Rich compose (react-quill + attachments + inline images + autosave draft) */}
+      {/* Rich compose (react-quill + attachments + inline images), previewed and sent directly. */}
       <EmailComposeModal
         open={showCompose}
         onClose={() => {
           setShowCompose(false);
           setComposeInitialData({ subject: '', bodyHtml: '', templateId: null });
-          // Clear the draft id on close: a stale id left in state would silently reopen an old draft
-          // the next time "Soạn email" is pressed.
-          setOpenDraftId(null);
-          setDraftsRefreshToken(t => t + 1);
         }}
         initialSubject={composeInitialData.subject}
         initialBodyHtml={composeInitialData.bodyHtml}
         emailTemplateId={composeInitialData.templateId}
-        initialDraftId={openDraftId}
         pushToast={(type, msg) => showPageToast(type === 'warning' ? 'info' : type, msg)}
         onSent={() => {
-          setOpenDraftId(null);
-          setDraftsRefreshToken(t => t + 1);
           setMailboxFilter('sent');
           setPageSent(1);
         }}
