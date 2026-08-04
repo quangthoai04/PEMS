@@ -98,6 +98,18 @@ public sealed class VisitSetupProgressEmailApiTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // The database rows go before the factory that owns the connection pool they are read through.
+        try
+        {
+            using var scope = _factory.Services.CreateScope();
+            await CleanupAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        }
+        catch (Exception)
+        {
+            // Cleanup must never turn a green suite red — the leak it is here to prevent is visible in
+            // the next run's row counts, which is where a regression should be reported.
+        }
+
         // Released explicitly: an undisposed factory keeps its connection pool open, and this suite is
         // one of several running in parallel against one MySQL server.
         if (_configured is not null) await _configured.DisposeAsync();
@@ -106,6 +118,45 @@ public sealed class VisitSetupProgressEmailApiTests : IAsyncLifetime
         try { if (Directory.Exists(_pickup)) Directory.Delete(_pickup, recursive: true); }
         catch (IOException) { /* a leftover temp dir must never fail a run */ }
     }
+
+    /// <summary>
+    /// Removes what this suite created.
+    ///
+    /// <para>
+    /// There was no cleanup here at all, and it showed: every run left its visit requests behind, and
+    /// with them the schedule-report PDFs the product writes as a <c>files</c> row plus a
+    /// <c>documents</c> row pointing at it. Measured across four leftover throw-away databases the
+    /// leak tracked this suite exactly — 23 requests / 17 documents, 23 / 17, 11 / 8, 0 / 0 — and all
+    /// seventeen documents named a <c>UT-SETUPMAIL-</c> request in their filename. Those
+    /// <c>documents</c> rows are what later made unrelated suites fail in setup: the constraint from
+    /// <c>documents.file_id</c> to <c>files</c> is ON DELETE RESTRICT, so a stale row blocks any other
+    /// fixture trying to delete the file it points at.
+    /// </para>
+    /// <para>
+    /// Roots rather than statements, so a foreign key added later is covered without anyone editing
+    /// this method — see <see cref="FixtureCleanup"/>. The rows carry no fixed id range (their keys are
+    /// auto-increment), so each root is identified by a marker this suite alone writes.
+    /// </para>
+    /// <para>
+    /// The users are deliberately NOT a root: they come from <see cref="DatabaseResetHelper"/> and are
+    /// shared with other suites. <c>files</c> is declared before the visit requests because
+    /// <c>files.uploaded_by</c> is ON DELETE SET NULL — identifying those rows by the filename marker
+    /// rather than by their uploader is what keeps them findable no matter what ran first.
+    /// </para>
+    /// </summary>
+    private static Task CleanupAsync(ApplicationDbContext db)
+        => FixtureCleanup.For(db)
+            // Identified through their recipients, so the ids are resolved before those recipients go.
+            .Root("sent_emails",
+                "sent_email_id IN (SELECT sent_email_id FROM sent_email_recipients "
+                + "WHERE recipient_email LIKE 'setupprog-%@partner.example.com')")
+            // Reaches the documents rows: they reference files, so the traversal deletes them first.
+            .Root("files", $"original_filename LIKE '%{RequestCodePrefix}%'")
+            .Root("visit_requests", $"request_code LIKE '{RequestCodePrefix}%'")
+            .RunAsync();
+
+    /// <summary>Marks every row this suite creates, in the request code and in the report filename.</summary>
+    private const string RequestCodePrefix = "UT-SETUPMAIL-";
 
     // ── Rig ─────────────────────────────────────────────────────────────────
 
@@ -184,7 +235,7 @@ public sealed class VisitSetupProgressEmailApiTests : IAsyncLifetime
 
         var visit = new VisitRequest
         {
-            RequestCode = $"UT-SETUPMAIL-{Guid.NewGuid().ToString("N")[..6]}",
+            RequestCode = $"{RequestCodePrefix}{Guid.NewGuid().ToString("N")[..6]}",
             VisitorUserId = _outsiderId,
             RegistrantUserId = _outsiderId,
             PrimaryContactAccessStatus = "ACTIVE",
@@ -390,6 +441,41 @@ public sealed class VisitSetupProgressEmailApiTests : IAsyncLifetime
         yield return InternalOfflineNote;
         yield return InternalNoteToFptu;
         yield return InternalMediaNote;
+    }
+
+    // ── This suite takes its rows away with it ──────────────────────────────
+
+    /// <summary>
+    /// Preparing a report writes a <c>files</c> row and a <c>documents</c> row pointing at it, and this
+    /// suite used to leave both behind on every run.
+    ///
+    /// <para>
+    /// That is not a tidiness question. <c>documents.file_id</c> is ON DELETE RESTRICT, so one stale
+    /// row makes the database refuse to delete the file it names — which is how an unrelated fixture
+    /// ends up failing in setup, a long way from the suite that caused it. This test asserts the rows
+    /// exist first, so it cannot pass by preparing nothing.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Cleanup_removes_the_report_files_and_documents_this_suite_created()
+    {
+        var (requestId, instanceId) = await SeedAsync();
+        var reportFileId = (await PrepareAsync(requestId, instanceId))
+            .GetProperty("reportFileId").GetUInt64();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.True(await db.Files.AsNoTracking().AnyAsync(f => f.FileId == reportFileId));
+        Assert.True(await db.Documents.AsNoTracking().AnyAsync(d => d.FileId == reportFileId));
+
+        await CleanupAsync(db);
+
+        Assert.False(await db.Files.AsNoTracking().AnyAsync(f => f.FileId == reportFileId));
+        Assert.False(await db.Documents.AsNoTracking().AnyAsync(d => d.FileId == reportFileId));
+        // …and the request that owned them, so nothing is left pointing at a campus or a user either.
+        Assert.False(await db.VisitRequests.AsNoTracking()
+            .AnyAsync(v => v.VisitRequestId == requestId));
     }
 
     // ── Prepare ─────────────────────────────────────────────────────────────
