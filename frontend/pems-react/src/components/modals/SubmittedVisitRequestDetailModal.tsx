@@ -26,6 +26,7 @@ import { formatVietnamDateTime } from '../../shared/utils/vietnamTime';
 interface Props {
   isOpen: boolean;
   visitRequestId: number | null;
+  title?: string;
   onClose: () => void;
   onApprove?: (data: SubmittedVisitRequestFormDetail) => void;
   onReject?: (data: SubmittedVisitRequestFormDetail) => void;
@@ -56,14 +57,15 @@ const statusLabel = (status: string) => {
   }
 };
 
-const headerTitle = (status?: string) => {
+const headerTitle = (status?: string, customTitle?: string) => {
+  if (customTitle) return customTitle;
   if (status === 'REJECTED') return 'Chi tiết đơn bị từ chối';
   if (status === 'PENDING_APPROVAL') return 'Xem đơn đăng ký tham quan';
-  return 'Chi tiết đơn đăng ký tham quan';
+  return 'Chi tiết đoàn khách';
 };
 
 export function SubmittedVisitRequestDetailModal({
-  isOpen, visitRequestId, onClose, onApprove, onReject, onAssignHost,
+  isOpen, visitRequestId, title, onClose, onApprove, onReject, onAssignHost,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +167,7 @@ export function SubmittedVisitRequestDetailModal({
           {/* Header — compact 1 vùng mỏng */}
           <div className="flex-none px-4 sm:px-6 py-3 flex items-start justify-between text-white bg-[#004c91]">
             <div className="pr-8 min-w-0">
-              <h2 className="text-base sm:text-lg font-bold tracking-tight">{headerTitle(data?.requestStatus)}</h2>
+              <h2 className="text-base sm:text-lg font-bold tracking-tight">{headerTitle(data?.requestStatus, title)}</h2>
               {data && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-semibold">
                   <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5">Mã đơn: {data.requestCode || '-'}</span>

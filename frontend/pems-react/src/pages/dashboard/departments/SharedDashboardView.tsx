@@ -195,6 +195,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [candidates, setCandidates] = useState<any[]>([]);
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
+  const userRoleCode = (user?.roleCode || user?.role || (authUser as any)?.roleCode || (authUser as any)?.role || '').toUpperCase();
+  const canSeeRegistrantInfo = userRoleCode === 'STAFF' || userRoleCode === 'HO' || userRoleCode === 'ADMIN';
   const { markAsRead: markNotificationRead } = useNotifications();
   // Thông báo chưa đọc liên quan tới các đơn/thư mời — dùng cho chấm đỏ nháy trên lịch
   // và danh sách "Thay đổi mới" trong modal chi tiết.
@@ -1184,6 +1186,72 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     }
   };
 
+  // Xem / Sửa / Xóa lịch cá nhân
+  const [personalEventModal, setPersonalEventModal] = useState<{
+    open: boolean; eventId?: number | string; title: string; description: string;
+    date: string; startTime: string; endTime: string; submitting: boolean; error?: string | null; isEditing?: boolean;
+  }>({ open: false, title: '', description: '', date: '', startTime: '', endTime: '', submitting: false });
+
+  const openPersonalEventModal = (ev: any) => {
+    const rawId = ev.rawId || ev.id;
+    const timeParts = (ev.time || '09:00 - 10:00').split(' - ');
+    const startTimeStr = timeParts[0]?.trim() || '09:00';
+    const endTimeStr = timeParts[1]?.trim() || '10:00';
+    setPersonalEventModal({
+      open: true,
+      eventId: rawId,
+      title: (ev.title || '').replace(' (đã hủy)', ''),
+      description: ev.description || ev.purpose || '',
+      date: ev.date || todayStr,
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      submitting: false,
+      error: null,
+      isEditing: false,
+    });
+  };
+
+  const submitUpdatePersonalEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!personalEventModal.eventId) return;
+    setPersonalEventModal((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await departmentReceptionTasksApi.updatePersonalEvent(
+        personalEventModal.eventId,
+        personalEventModal.title.trim(),
+        personalEventModal.description.trim(),
+        personalEventModal.date,
+        personalEventModal.startTime,
+        personalEventModal.endTime
+      );
+      toast.success('Đã cập nhật lịch cá nhân.');
+      setPersonalEventModal((s) => ({ ...s, open: false, submitting: false }));
+      await fetchCalendarEvents();
+    } catch (err: any) {
+      setPersonalEventModal((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi cập nhật lịch cá nhân.',
+      }));
+    }
+  };
+
+  const handleDeletePersonalEvent = async () => {
+    if (!personalEventModal.eventId) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa lịch cá nhân này?')) return;
+    setPersonalEventModal((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await departmentReceptionTasksApi.deletePersonalEvent(personalEventModal.eventId);
+      toast.success('Đã xóa lịch cá nhân.');
+      setPersonalEventModal((s) => ({ ...s, open: false, submitting: false }));
+      await fetchCalendarEvents();
+    } catch (err: any) {
+      setPersonalEventModal((s) => ({
+        ...s, submitting: false,
+        error: err?.response?.data?.message || err?.response?.data?.title || 'Lỗi khi xóa lịch cá nhân.',
+      }));
+    }
+  };
+
   const handleDeleteEvent = (id: string) => {
     setEvents(p => p.filter(e => e.id !== id));
     if (activePopoverEvent?.id === id) {
@@ -2021,7 +2089,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setSelectedCellDate(cell.dateString);
-                                          setActivePopoverEvent(ev);
+                                          if (ev.itemType === 'PERSONAL') {
+                                            openPersonalEventModal(ev);
+                                          } else {
+                                            setActivePopoverEvent(ev);
+                                          }
                                         }}
                                         className={`relative px-2 py-1.5 rounded-lg border text-[10px] font-normal leading-tight cursor-pointer transition-all truncate selection:bg-transparent ${hasChanges ? 'pr-5' : ''} ${ev.color} ${ev.hoverColor} ${isHighlighted ? 'ring-2 ring-orange-500/10 border-orange-400 shadow-sm' : ''
                                           }`}
@@ -2117,7 +2189,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedCellDate(cell.dateString);
-                                      setActivePopoverEvent(ev);
+                                      if (ev.itemType === 'PERSONAL') {
+                                        openPersonalEventModal(ev);
+                                      } else {
+                                        setActivePopoverEvent(ev);
+                                      }
                                     }}
                                     className={`relative px-2 py-2 rounded-lg border text-[10px] font-normal leading-tight cursor-pointer transition-all ${hasChanges ? 'pr-5' : ''} ${ev.color} ${ev.hoverColor} ${isHighlighted ? 'ring-2 ring-[#f37021]/30 border-[#f37021] shadow-sm scale-[1.01]' : ''
                                       }`}
@@ -2205,7 +2281,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             return (
                               <div
                                 key={ev.id}
-                                onClick={() => setActivePopoverEvent(ev)}
+                                onClick={() => {
+                                  if (ev.itemType === 'PERSONAL') {
+                                    openPersonalEventModal(ev);
+                                  } else {
+                                    setActivePopoverEvent(ev);
+                                  }
+                                }}
                                 className={`p-4 rounded-xl border transition-all cursor-pointer relative ${ev.color} ${ev.hoverColor} ${isHighlighted ? 'ring-2 ring-[#f37021] border-[#f37021] scale-[1.002]' : 'border-slate-100'
                                   }`}
                               >
@@ -2587,7 +2669,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             key={ev.id}
                             onClick={() => {
                               setSelectedCellDate(ev.date);
-                              setActivePopoverEvent(ev);
+                              if (ev.itemType === 'PERSONAL') {
+                                openPersonalEventModal(ev);
+                              } else {
+                                setActivePopoverEvent(ev);
+                              }
                             }}
                             className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${isSelected
                                 ? 'bg-orange-50/90 border-[#f37021] ring-1 ring-[#f37021] text-slate-800'
@@ -2740,6 +2826,126 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           </div>
         )}
 
+        {/* Modal Xem/Sửa/Xóa Lịch Cá Nhân */}
+        {personalEventModal.open && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick">
+              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-4 text-white flex justify-between items-center">
+                <h3 className="font-extrabold text-sm flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-purple-200" />
+                  Chi tiết lịch cá nhân
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setPersonalEventModal((s) => ({ ...s, open: false }))}
+                  className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={submitUpdatePersonalEvent} className="p-6 space-y-4 text-xs text-slate-800">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Tiêu đề sự kiện *</label>
+                  <input
+                    type="text"
+                    required
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.title}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, title: e.target.value }))}
+                    className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700 font-bold"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Ngày *</label>
+                    <input
+                      type="date"
+                      required
+                      disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                      value={personalEventModal.date}
+                      onChange={(e) => setPersonalEventModal((s) => ({ ...s, date: e.target.value }))}
+                      className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Bắt đầu *</label>
+                    <input
+                      type="time"
+                      required
+                      disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                      value={personalEventModal.startTime}
+                      onChange={(e) => setPersonalEventModal((s) => ({ ...s, startTime: e.target.value }))}
+                      className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Kết thúc *</label>
+                    <input
+                      type="time"
+                      required
+                      disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                      value={personalEventModal.endTime}
+                      min={personalEventModal.startTime}
+                      onChange={(e) => setPersonalEventModal((s) => ({ ...s, endTime: e.target.value }))}
+                      className="w-full text-xs px-2.5 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Nội dung</label>
+                  <textarea
+                    rows={3}
+                    disabled={!personalEventModal.isEditing || personalEventModal.submitting}
+                    value={personalEventModal.description}
+                    onChange={(e) => setPersonalEventModal((s) => ({ ...s, description: e.target.value }))}
+                    className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:border-purple-500 outline-none resize-none font-sans bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
+                  />
+                </div>
+                {personalEventModal.error && <p className="text-red-500 text-xs font-semibold">{personalEventModal.error}</p>}
+                <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handleDeletePersonalEvent}
+                    disabled={personalEventModal.submitting}
+                    className="px-3.5 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Xóa lịch
+                  </button>
+                  <div className="flex gap-2">
+                    {!personalEventModal.isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => setPersonalEventModal((s) => ({ ...s, isEditing: true }))}
+                        className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Chỉnh sửa
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPersonalEventModal((s) => ({ ...s, isEditing: false }))}
+                          className="px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={personalEventModal.submitting}
+                          className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {personalEventModal.submitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* Wide Horizontal Table Modal representing Giai đoạn 1: Trước tiếp khách */}
         {activePopoverEvent && (
           <>
@@ -2858,40 +3064,42 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <div className="mt-4 bg-white border border-orange-100 rounded-2xl shadow-sm overflow-hidden animate-fade-in-quick text-sm">
 
                       {/* 1. Thông tin người tạo */}
-                      <div className="p-5 border-b border-orange-100">
-                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">1</span>
-                          Thông tin người tạo
-                        </h4>
-                        <p className="text-xs text-slate-500 mb-4">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
-                          <div>
-                            <p className="text-slate-500 mb-1">Họ và tên</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantFullName || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Email</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantEmail || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Đơn vị công tác</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantOrganization || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Chức danh</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantJobTitle || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Số điện thoại (SĐT)</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantPhone || 'N/A'}</p>
+                      {canSeeRegistrantInfo && (
+                        <div className="p-5 border-b border-orange-100">
+                          <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">1</span>
+                            Thông tin người tạo
+                          </h4>
+                          <p className="text-xs text-slate-500 mb-4">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
+                            <div>
+                              <p className="text-slate-500 mb-1">Họ và tên</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantFullName || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Email</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantEmail || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Đơn vị công tác</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantOrganization || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Chức danh</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantJobTitle || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Số điện thoại (SĐT)</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantPhone || 'N/A'}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* 2. Thông tin đoàn khách */}
                       <div className="p-5 border-b border-orange-100">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">2</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '2' : '1'}</span>
                           Thông tin đoàn khách
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
@@ -2928,7 +3136,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       {/* 3. Setup */}
                       <div className="p-5 border-b border-orange-100">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">3</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '3' : '2'}</span>
                           Setup
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
@@ -2968,7 +3176,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       {/* 4. Detail setup */}
                       <div className="p-5 bg-orange-50/50">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">4</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '4' : '3'}</span>
                           Detail setup
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>

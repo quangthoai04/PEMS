@@ -11,8 +11,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, Download, FileText, Globe2, Loader2, RefreshCw, Send, Star, Users, XCircle,
+  ChevronUp, Download, FileText, Globe2, Loader2, RefreshCw, Send, Star, Users, XCircle, Eye, Mail, Clock, X,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -97,7 +98,7 @@ function Section({ index, title, subtitle, open, onToggle, children }: {
 
 export function HoReportManagement() {
   // ── Phần 1: bộ lọc thời gian (chung cho cả trang) ──
-  const [filters, setFilters] = useState<HoV2Filters>({ preset: 'THIS_YEAR', fromDate: '', toDate: '' });
+  const [filters, setFilters] = useState<HoV2Filters>({ preset: 'THIS_MONTH', fromDate: '', toDate: '' });
   const [data, setData] = useState<HoReportV2 | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +160,8 @@ export function HoReportManagement() {
 
   // ── Gửi email báo cáo từng campus ──
   const [campusNotes, setCampusNotes] = useState<Record<number, string>>({});
+  const [previewCampusRow, setPreviewCampusRow] = useState<HoV2CampusRow | null>(null);
+  const [sentCampusMap, setSentCampusMap] = useState<Record<number, string>>({});
   const campusSend = useGuardedSend<number>();
   // Same key across a retry of the SAME send; a new key only when the attempt is over (G11 / R-103).
   const idem = useIdempotentSend();
@@ -176,6 +179,8 @@ export function HoReportManagement() {
         }, idem.keyFor('ho-campus-report', row.campusId));
         // Success ends the attempt, so the next click is a NEW send with a new key.
         idem.complete('ho-campus-report', row.campusId);
+        const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('vi-VN');
+        setSentCampusMap((prev) => ({ ...prev, [row.campusId]: nowStr }));
         toast.success(res.message || 'Đã gửi báo cáo.');
       } catch (e: any) {
         // A timeout keeps the key: the retry must be recognisable as the same attempt.
@@ -289,7 +294,11 @@ export function HoReportManagement() {
             <button
               key={pr.value}
               type="button"
-              onClick={() => setFilters((f) => ({ ...f, preset: pr.value }))}
+              onClick={() => {
+                const nextFilters = { preset: pr.value, fromDate: '', toDate: '' };
+                setFilters(nextFilters);
+                if (pr.value !== 'CUSTOM') fetchReport(nextFilters);
+              }}
               className={`px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${
                 filters.preset === pr.value ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
               }`}
@@ -317,10 +326,14 @@ export function HoReportManagement() {
         </button>
         <button
           type="button"
-          onClick={() => fetchReport(filters)}
+          onClick={() => {
+            const defaultFilters = { preset: 'THIS_MONTH' as const, fromDate: '', toDate: '' };
+            setFilters(defaultFilters);
+            fetchReport(defaultFilters);
+          }}
           disabled={loading}
           className="ml-auto p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
-          title="Tải lại"
+          title="Đặt lại về mặc định (Tháng này)"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" /> : <RefreshCw className="w-4 h-4" />}
         </button>
@@ -437,16 +450,26 @@ export function HoReportManagement() {
                           />
                         </td>
                         <td className={`${tdClass} whitespace-nowrap`}>
-                          <button
-                            type="button"
-                            onClick={() => sendCampusReport(row)}
-                            disabled={campusSend.isSending(row.campusId)}
-                            title={`Gửi báo cáo qua email cho Staff Leader ${row.name}`}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {campusSend.isSending(row.campusId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Gửi
-                          </button>
+                          <div className="inline-flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => sendCampusReport(row)}
+                              disabled={campusSend.isSending(row.campusId)}
+                              title={`Gửi báo cáo qua email cho Staff Leader ${row.name}`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-l-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              {campusSend.isSending(row.campusId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              Gửi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewCampusRow(row)}
+                              title={`Xem trước / Xem email báo cáo cho ${row.name}`}
+                              className="inline-flex items-center justify-center p-1.5 bg-blue-100 hover:bg-blue-200 text-[#004c91] text-xs font-bold rounded-r-lg border border-l-0 border-blue-200 transition-colors cursor-pointer outline-none"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -559,6 +582,151 @@ export function HoReportManagement() {
           </Section>
         </>
       )}
+      {/* Modal Xem trước / Chi tiết Email Báo cáo Campus */}
+      <AnimatePresence>
+        {previewCampusRow && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-[#004c91]/10 text-[#004c91]">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Xem trước / Chi tiết Email Báo cáo Campus</h3>
+                    <p className="text-xs text-gray-500">Mô phỏng báo cáo tổng hợp gửi tới Staff Leader cơ sở {previewCampusRow.name}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewCampusRow(null)}
+                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-sm bg-slate-50/50">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-xs font-semibold text-gray-400">TRẠNG THÁI EMAIL:</span>
+                    {sentCampusMap[previewCampusRow.campusId] ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi báo cáo ({sentCampusMap[previewCampusRow.campusId]})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <Clock className="w-3.5 h-3.5" /> Xem trước (Chưa gửi)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs">
+                    <div>
+                      <span className="font-semibold text-gray-500">Người gửi: </span>
+                      <span className="font-medium text-gray-800">Ban Quản trị Head Office &lt;ho-reports@mail.pems-fpt.site&gt;</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500">Người nhận: </span>
+                      <span className="font-bold text-[#004c91]">Staff Leader — {previewCampusRow.name}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500">Tiêu đề: </span>
+                      <span className="font-bold text-gray-900">
+                        [PEMS] Báo cáo hoạt động tiếp khách đợt công tác — {previewCampusRow.name}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Email Content Visual */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-[#004c91] text-white px-5 py-4 font-bold text-base flex items-center justify-between">
+                    <span>PEMS System Report</span>
+                    <span className="text-xs font-normal opacity-80">Cơ sở: {previewCampusRow.name}</span>
+                  </div>
+                  <div className="p-5 space-y-4 text-gray-700">
+                    <p className="font-semibold">
+                      Kính gửi <strong className="text-gray-900">Ban quản lý Staff Leader — {previewCampusRow.name}</strong>,
+                    </p>
+                    <p className="text-sm leading-relaxed">
+                      Head Office xin gửi báo cáo tổng hợp chỉ số hoạt động tiếp khách và hợp tác đối tác của cơ sở trong kỳ:
+                    </p>
+
+                    <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
+                      <div className="flex justify-between border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500">TỔNG SỐ ĐOÀN KHÁCH:</span>
+                        <span className="font-bold text-sm text-[#004c91]">{previewCampusRow.totalVisits} đoàn</span>
+                      </div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500">TỔNG SỐ ĐỐI TÁC:</span>
+                        <span className="font-bold text-gray-800">{previewCampusRow.totalPartners} đối tác</span>
+                      </div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span>
+                        <span className="font-bold text-amber-600">
+                          {previewCampusRow.feedbackAverage ? `${previewCampusRow.feedbackAverage.toFixed(1)} ★ (${previewCampusRow.feedbackCount} lượt)` : 'Chưa có'}
+                        </span>
+                      </div>
+                      <div className="pt-1">
+                        <span className="font-bold text-gray-500 block mb-1">GHI CHÚ CHỈ ĐẠO TỪ HO (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {!sentCampusMap[previewCampusRow.campusId] ? (
+                          <textarea
+                            value={campusNotes[previewCampusRow.campusId] || ''}
+                            onChange={(e) => setCampusNotes((s) => ({ ...s, [previewCampusRow.campusId]: e.target.value }))}
+                            placeholder="Nhập/chỉnh sửa nội dung ghi chú chỉ đạo từ HO gửi kèm email báo cáo..."
+                            rows={3}
+                            className="w-full text-xs p-2.5 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white text-gray-800 shadow-xs"
+                          />
+                        ) : (
+                          <p className="italic text-gray-600 bg-white p-2.5 rounded-lg border border-blue-100">{campusNotes[previewCampusRow.campusId] || '(Không có ghi chú)'}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">
+                      Trân trọng,<br />
+                      <strong>Ban Quản trị Head Office — FPT University System</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setPreviewCampusRow(null)}
+                  className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  Đóng
+                </button>
+                {!sentCampusMap[previewCampusRow.campusId] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const row = previewCampusRow;
+                      setPreviewCampusRow(null);
+                      sendCampusReport(row);
+                    }}
+                    disabled={campusSend.isSending(previewCampusRow.campusId)}
+                    className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {campusSend.isSending(previewCampusRow.campusId) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Gửi email ngay
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

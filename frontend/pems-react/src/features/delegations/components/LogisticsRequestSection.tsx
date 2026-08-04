@@ -1760,7 +1760,7 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
               Đề xuất: {it.proposedQuantity}
             </span>
           )}
-          {it.proposalResponse && finalQty != null && (
+          {!['REJECTED', 'CANCELLED', 'DECLINED'].includes(it.status) && it.proposalResponse === 'ACCEPTED' && finalQty != null && (
             <span className="inline-flex items-center text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
               Chốt: {finalQty}
             </span>

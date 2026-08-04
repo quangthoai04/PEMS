@@ -118,24 +118,40 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
       : (VISIT_TYPE_LABELS[data.visitType] ?? data.visitType);
   const sourceLabel = CREATED_SOURCE_LABELS[data.createdSource] ?? data.createdSource;
 
+  const canSeeRegistrantInfo = (() => {
+    try {
+      const userStr = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null;
+      if (!userStr) return false;
+      const user = JSON.parse(userStr);
+      const roleCode = (user?.roleCode || user?.role || '').toUpperCase();
+      return roleCode === 'STAFF' || roleCode === 'HO' || roleCode === 'ADMIN';
+    } catch {
+      return false;
+    }
+  })();
+
+  let sectionCounter = 0;
+
   return (
     <div className="space-y-5">
-      {/* 1. Người đăng ký */}
-      <section>
-        <SectionTitle index={1}>Thông tin người đăng ký</SectionTitle>
-        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
-          <KV label="Họ và tên" value={data.registrant.fullName} />
-          <KV label="Quốc tịch" value={data.registrant.nationality} />
-          <KV label="Đơn vị công tác" value={data.registrant.organization} />
-          <KV label="Chức danh" value={data.registrant.jobTitle} />
-          <KV label="Số điện thoại" value={data.registrant.phone} />
-          <KV label="Email" value={data.registrant.email} />
-        </div>
-      </section>
+      {/* 1. Người đăng ký (Chỉ IC role xem) */}
+      {canSeeRegistrantInfo && (
+        <section>
+          <SectionTitle index={++sectionCounter}>Thông tin người đăng ký</SectionTitle>
+          <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+            <KV label="Họ và tên" value={data.registrant.fullName} />
+            <KV label="Quốc tịch" value={data.registrant.nationality} />
+            <KV label="Đơn vị công tác" value={data.registrant.organization} />
+            <KV label="Chức danh" value={data.registrant.jobTitle} />
+            <KV label="Số điện thoại" value={data.registrant.phone} />
+            <KV label="Email" value={data.registrant.email} />
+          </div>
+        </section>
+      )}
 
-      {/* 2. Thông tin chuyến thăm */}
+      {/* Thông tin chuyến thăm */}
       <section>
-        <SectionTitle index={2}>Thông tin chuyến thăm</SectionTitle>
+        <SectionTitle index={++sectionCounter}>Thông tin chuyến thăm</SectionTitle>
         <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
           <KV label="Tên đoàn khách" value={data.delegationName} />
           <KV label="Phạm vi" value={scopeLabel} />
@@ -148,9 +164,9 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         </div>
       </section>
 
-      {/* 3. Cơ sở & thời gian dự kiến */}
+      {/* Cơ sở & thời gian dự kiến */}
       <section>
-        <SectionTitle index={3}>Cơ sở &amp; thời gian dự kiến</SectionTitle>
+        <SectionTitle index={++sectionCounter}>Cơ sở &amp; thời gian dự kiến</SectionTitle>
         {data.campuses.length ? (
           <div className="overflow-x-auto rounded-md border border-slate-200">
             <table className="w-full min-w-[640px] border-collapse text-[13px]">
@@ -193,32 +209,38 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         )}
       </section>
 
-      {/* 4. Danh sách khách */}
-      <section>
-        <SectionTitle index={4}>Danh sách khách</SectionTitle>
-        <MemberTable members={data.guestMembers} emptyText="Chưa có dữ liệu khách" />
-      </section>
+      {/* Danh sách khách (Chỉ IC role xem) */}
+      {canSeeRegistrantInfo && (
+        <section>
+          <SectionTitle index={++sectionCounter}>Danh sách khách</SectionTitle>
+          <MemberTable members={data.guestMembers} emptyText="Chưa có dữ liệu khách" />
+        </section>
+      )}
 
-      {/* 5. Team hỗ trợ khách */}
-      <section>
-        <SectionTitle index={5}>Team hỗ trợ khách</SectionTitle>
-        <MemberTable members={data.externalSupportMembers} emptyText="Không có team hỗ trợ" />
-      </section>
+      {/* Team hỗ trợ khách (Chỉ IC role xem) */}
+      {canSeeRegistrantInfo && (
+        <section>
+          <SectionTitle index={++sectionCounter}>Team hỗ trợ khách</SectionTitle>
+          <MemberTable members={data.externalSupportMembers} emptyText="Không có team hỗ trợ" />
+        </section>
+      )}
 
-      {/* 6. Đầu mối liên hệ */}
-      <section>
-        <SectionTitle index={6}>Đầu mối liên hệ</SectionTitle>
-        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
-          <KV label="Họ và tên" value={data.contactPerson.fullName} />
-          <KV label="Đơn vị công tác" value={data.contactPerson.organization} />
-          <KV label="Số điện thoại" value={data.contactPerson.phone} />
-          <KV label="Email" value={data.contactPerson.email} />
-        </div>
-      </section>
+      {/* Đầu mối liên hệ (Chỉ IC role xem) */}
+      {canSeeRegistrantInfo && (
+        <section>
+          <SectionTitle index={++sectionCounter}>Đầu mối liên hệ</SectionTitle>
+          <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+            <KV label="Họ và tên" value={data.contactPerson.fullName} />
+            <KV label="Đơn vị công tác" value={data.contactPerson.organization} />
+            <KV label="Số điện thoại" value={data.contactPerson.phone} />
+            <KV label="Email" value={data.contactPerson.email} />
+          </div>
+        </section>
+      )}
 
-      {/* 7. Yêu cầu & Xác nhận bổ sung */}
+      {/* Yêu cầu & nội dung biên bản công việc */}
       <section>
-        <SectionTitle index={7}>Yêu cầu &amp; xác nhận bổ sung</SectionTitle>
+        <SectionTitle index={++sectionCounter}>Yêu cầu &amp; nội dung biên bản công việc</SectionTitle>
         <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
           <KV label="Ngôn ngữ làm việc" value={workingLanguageLabel(data.workingLanguage)} />
           <KV label="Dùng hình ảnh & thông tin" value={mediaConsentLabel(data.mediaConsentStatus)} />
@@ -226,7 +248,7 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         <div className="mt-1.5 space-y-1.5">
           <KVBlock label="Nhận diện phương tiện di chuyển tới FPTU" value={data.transportationNote} />
           {data.mediaConsentNote ? <KVBlock label="Ghi chú về sử dụng hình ảnh" value={data.mediaConsentNote} /> : null}
-          <KVBlock label="Ghi chú cho FPTU" value={data.noteToFptu} />
+          <KVBlock label="Nội dung biên bản &amp; ghi chú cho FPTU" value={data.noteToFptu || data.workingContent} />
         </div>
       </section>
     </div>

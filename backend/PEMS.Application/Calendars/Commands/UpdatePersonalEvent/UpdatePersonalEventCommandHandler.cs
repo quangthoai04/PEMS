@@ -42,7 +42,7 @@ namespace PEMS.Application.Calendars.Commands.UpdatePersonalEvent
             if (endAt <= startAt) throw new ValidationException("Thời gian kết thúc phải lớn hơn thời gian bắt đầu");
 
             var hasOverlap = await ScheduleConflictChecker.HasConflictAsync(
-                _context, userId, startAt, endAt, request.CalendarEventId, null, cancellationToken);
+                _context, userId, startAt, endAt, null, null, cancellationToken, request.CalendarEventId);
 
             if (hasOverlap)
             {
