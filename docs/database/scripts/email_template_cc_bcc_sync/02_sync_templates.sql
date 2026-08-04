@@ -49,16 +49,16 @@
 --
 -- What it does, and just as importantly what it does not:
 --   * upserts the 31 canonical templates BY template_code — never by numeric
---     email_template_id, so an existing row keeps its id and every sent_emails / email_drafts
---     foreign key pointing at it stays valid;
+--     email_template_id, so an existing row keeps its id and every sent_emails foreign key
+--     pointing at it stays valid;
 --   * updates an existing row only where a column actually differs, so re-running does not churn
 --     updated_at and does not write rows the binlog will replicate for no reason;
 --   * flips the 9 legacy codes of DL-03 to INACTIVE. It does NOT delete them: seeded
 --     sent_emails rows may still hold a foreign key to them, and history must stay readable;
 --   * leaves every other row alone. A template an operator authored in the admin UI is neither
 --     deactivated nor deleted nor rewritten;
---   * never touches sent_emails, sent_email_recipients, sent_email_attachments, email_drafts,
---     email_draft_recipients, email_action_tokens, files, or anything outside email_templates.
+--   * never touches sent_emails, sent_email_recipients, sent_email_attachments,
+--     email_action_tokens, files, or anything outside email_templates.
 --
 -- Idempotent: running it twice changes nothing the second time (asserted by 03_verify.sql).
 -- =====================================================================

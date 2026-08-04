@@ -386,8 +386,26 @@ public static class CanonicalSqlScript
     /// Verified by the import the suite performs: the disposable-database manager runs this exact script
     /// into a fresh database before any test executes, so a script MySQL would not accept cannot produce
     /// a green run.
+    ///
+    /// EIGHTEENTH BUMP — the three email draft tables are gone.
+    ///
+    /// A schema change, and a deliberate one: <c>email_drafts</c>, <c>email_draft_recipients</c> and
+    /// <c>email_draft_attachments</c> lose their <c>CREATE TABLE</c> blocks, their <c>DROP</c> entries and
+    /// the one <c>UPDATE email_drafts</c> the seed used to null their template/sent-email links. The
+    /// composer holds a message in the browser until it is sent, so there is no half-written record on
+    /// the server to store; double-click protection moved from the atomic DRAFT → SENT claim to
+    /// <c>Idempotency-Key</c>, whose reservations live in <c>email_send_idempotency</c> and are untouched.
+    ///
+    /// The in-script <c>merged_runtime_table_count</c> assertion moves 83 → 81 in the same edit. That is
+    /// two changes in one number: three tables removed, and a pre-existing off-by-one corrected — it read
+    /// 83 while the script produced 84, so every import had been reporting a permanent issue_count of 1.
+    ///
+    /// Verified against MySQL 8.0.46 by a fresh import into a disposable database: exit 0, 81 base
+    /// tables, 32 triggers, 250 foreign keys, 31 email_templates, zero <c>email_draft*</c> tables, and
+    /// <c>03_verify.sql</c> reporting 16 PASS / 0 FAIL (including the new F2, which now asserts the three
+    /// tables are ABSENT rather than that their rows resolve).
     public const string ExpectedSha256 =
-        "6c6541660fc633527287bbc3e32639334cd8a22e97097291c79951c60d6bada8";
+        "48dc6a6d12601f68aa3c807624e0b2ad8e669368cdc6034a6619025563a75d6e";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

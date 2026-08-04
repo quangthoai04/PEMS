@@ -128,11 +128,11 @@ COMMIT;
 
 Two things not to do while cleaning up:
 
-* **Do not `DELETE FROM email_templates` wholesale.** `sent_emails.email_template_id` and
-  `email_drafts.email_template_id` are foreign keys with `ON DELETE SET NULL`. A blanket delete will
-  not error — it will quietly null out the template link on every historical email and every draft,
-  and no restore of `email_templates` afterwards puts those links back. Losing history's link to its
-  template is a worse outcome than the wrong template content.
+* **Do not `DELETE FROM email_templates` wholesale.** `sent_emails.email_template_id` is a foreign
+  key with `ON DELETE SET NULL`. A blanket delete will not error — it will quietly null out the
+  template link on every historical email, and no restore of `email_templates` afterwards puts those
+  links back. Losing history's link to its template is a worse outcome than the wrong template
+  content.
 * **Do not delete "templates that were not there before".** The three or four rows the sync inserted
   are indistinguishable, after the fact, from templates an operator created in the admin UI in the
   same window. Restore by `template_code` from your dump, never by "id greater than N" or
@@ -150,7 +150,7 @@ check them; run it after any manual restore.
 | `sent_emails.subject` and `body_snapshot` | This is what was actually sent. It is a record, not a cache — rewriting it to match a new template is falsifying history. |
 | `sent_email_recipients` | Includes BCC rows. Deleting and re-deriving them from anywhere would change who the record says was copied. |
 | `sent_email_attachments` and the `files` rows they point at | An attachment row without its file is a download that 500s; a file without its row is an orphan nobody can reach. |
-| `email_drafts` and `email_draft_recipients` | Unsent user work. There is no other copy. |
+| `email_send_idempotency` | The reservation table that replaced the draft's DRAFT → SENT claim as double-click protection. Dropping it does not fail anything loudly; it just means the next double click sends twice. |
 | `email_action_tokens` | Live accept/decline/confirm links people are holding in their inbox. Deleting them silently breaks every outstanding invitation. |
 | Templates outside the catalog | Operator-authored. Nothing in the schema distinguishes them from ours after the fact, so if you remove one it does not come back. |
 

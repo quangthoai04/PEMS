@@ -1457,17 +1457,11 @@ PEMS/
 │   │   │   └── GetEmailActionInfoQueryHandler.cs
 │   │   ├── Emails/
 │   │   │   ├── Commands/
-│   │   │   │   ├── CreateEmailDraft/
-│   │   │   │   │   ├── CreateEmailDraftCommand.cs
-│   │   │   │   │   └── CreateEmailDraftCommandHandler.cs
 │   │   │   │   ├── CreateEmailTemplate/
 │   │   │   │   │   ├── CreateEmailTemplateCommand.cs
 │   │   │   │   │   ├── CreateEmailTemplateCommandHandler.cs
 │   │   │   │   │   ├── CreateEmailTemplateCommandValidator.cs
 │   │   │   │   │   └── CreateEmailTemplateResponse.cs
-│   │   │   │   ├── DiscardEmailDraft/
-│   │   │   │   │   ├── DiscardEmailDraftCommand.cs
-│   │   │   │   │   └── DiscardEmailDraftCommandHandler.cs
 │   │   │   │   ├── EditEmailContent/
 │   │   │   │   │   ├── EditEmailContentCommand.cs
 │   │   │   │   │   ├── EditEmailContentCommandHandler.cs
@@ -1486,16 +1480,10 @@ PEMS/
 │   │   │   │   │   ├── SendEmailCommandHandler.cs
 │   │   │   │   │   ├── SendEmailCommandValidator.cs
 │   │   │   │   │   └── SendEmailResponse.cs
-│   │   │   │   ├── SendEmailDraft/
-│   │   │   │   │   ├── SendEmailDraftCommand.cs
-│   │   │   │   │   └── SendEmailDraftCommandHandler.cs
 │   │   │   │   ├── ToggleEmailTemplateStatus/
 │   │   │   │   │   ├── ToggleEmailTemplateStatusCommand.cs
 │   │   │   │   │   ├── ToggleEmailTemplateStatusCommandHandler.cs
 │   │   │   │   │   └── ToggleEmailTemplateStatusResponse.cs
-│   │   │   │   ├── UpdateEmailDraft/
-│   │   │   │   │   ├── UpdateEmailDraftCommand.cs
-│   │   │   │   │   └── UpdateEmailDraftCommandHandler.cs
 │   │   │   │   └── UpdateEmailTemplate/
 │   │   │   │       ├── UpdateEmailTemplateCommand.cs
 │   │   │   │       ├── UpdateEmailTemplateCommandHandler.cs
@@ -1504,17 +1492,14 @@ PEMS/
 │   │   │   ├── Common/
 │   │   │   │   ├── EmailActionTemplates.cs
 │   │   │   │   ├── EmailAttachmentLoader.cs
+│   │   │   │   ├── EmailComposeModels.cs
+│   │   │   │   ├── EmailComposeWriter.cs
 │   │   │   │   ├── EmailComposition.cs
-│   │   │   │   ├── EmailDraftMapper.cs
-│   │   │   │   ├── EmailDraftModels.cs
-│   │   │   │   ├── EmailDraftWriter.cs
+│   │   │   │   ├── DirectEmailSender.cs
 │   │   │   │   ├── EmailOverride.cs
 │   │   │   │   ├── LogisticsPriorityText.cs
 │   │   │   │   └── OutboundEmailAttachments.cs
 │   │   │   ├── Queries/
-│   │   │   │   ├── GetEmailDraft/
-│   │   │   │   │   ├── GetEmailDraftQuery.cs
-│   │   │   │   │   └── GetEmailDraftQueryHandler.cs
 │   │   │   │   ├── GetSentEmailsHistory/
 │   │   │   │   ├── GetUnprocessedEmailCount/
 │   │   │   │   │   ├── GetUnprocessedEmailCountQuery.cs
@@ -2193,9 +2178,6 @@ PEMS/
 │   │   │   │   └── UploadedFile.cs
 │   │   │   ├── Emails/
 │   │   │   │   ├── EmailActionToken.cs
-│   │   │   │   ├── EmailDraft.cs
-│   │   │   │   ├── EmailDraftAttachment.cs
-│   │   │   │   ├── EmailDraftRecipient.cs
 │   │   │   │   ├── EmailTemplate.cs
 │   │   │   │   ├── SentEmail.cs
 │   │   │   │   ├── SentEmailAttachment.cs
@@ -2251,7 +2233,6 @@ PEMS/
 │   │   │   ├── DepartmentStatus.cs
 │   │   │   ├── EmailAttachmentType.cs
 │   │   │   ├── EmailBodyFormat.cs
-│   │   │   ├── EmailDraftStatus.cs
 │   │   │   ├── FaqVisibilityStatus.cs
 │   │   │   ├── Gender.cs
 │   │   │   ├── LogisticsItemStatus.cs
@@ -2982,13 +2963,11 @@ PEMS/
 │       │   │   │   ├── adapters/
 │       │   │   │   │   └── emailsAdapter.ts
 │       │   │   │   ├── api/
-│       │   │   │   │   ├── emailDraftsApi.ts
 │       │   │   │   │   └── emailsApi.ts
 │       │   │   │   ├── components/
 │       │   │   │   │   └── EmailComposeModal.tsx
 │       │   │   │   ├── hooks/
-│       │   │   │   │   ├── useEmails.ts
-│       │   │   │   │   └── useLocalEmailDraft.ts
+│       │   │   │   │   └── useEmails.ts
 │       │   │   │   ├── types/
 │       │   │   │   │   └── emails.types.ts
 │       │   │   │   └── utils/

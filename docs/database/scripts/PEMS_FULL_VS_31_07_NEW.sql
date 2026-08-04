@@ -411,9 +411,6 @@ DROP TABLE IF EXISTS `account_email_confirmations`;
 -- Child of both `users` and `sent_emails`, so it drops before either of them (G11 / R-103).
 DROP TABLE IF EXISTS `email_send_idempotency`;
 DROP TABLE IF EXISTS `email_action_tokens`;
-DROP TABLE IF EXISTS `email_draft_attachments`;
-DROP TABLE IF EXISTS `email_draft_recipients`;
-DROP TABLE IF EXISTS `email_drafts`;
 DROP TABLE IF EXISTS `sent_email_attachments`;
 DROP TABLE IF EXISTS `sent_email_recipients`;
 DROP TABLE IF EXISTS `sent_emails`;
@@ -3189,84 +3186,6 @@ CREATE TABLE sent_email_attachments (
     ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Files/images attached to sent emails; binary content is stored in files/external storage';
-
-CREATE TABLE email_drafts (
-  email_draft_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  email_template_id BIGINT UNSIGNED NULL,
-  related_type VARCHAR(80) NULL,
-  related_id BIGINT UNSIGNED NULL,
-  subject VARCHAR(255) NULL,
-  body_content LONGTEXT NULL,
-  body_format ENUM('PLAIN_TEXT','HTML') NOT NULL DEFAULT 'HTML',
-  status ENUM('DRAFT','SENT','DISCARDED') NOT NULL DEFAULT 'DRAFT',
-  sent_email_id BIGINT UNSIGNED NULL,
-  created_by BIGINT UNSIGNED NULL,
-  last_edited_by BIGINT UNSIGNED NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  discarded_at DATETIME NULL,
-  sent_at DATETIME NULL,
-  PRIMARY KEY (email_draft_id),
-  KEY idx_email_drafts_template (email_template_id),
-  KEY idx_email_drafts_related (related_type, related_id),
-  KEY idx_email_drafts_status_updated (status, updated_at),
-  KEY idx_email_drafts_created_by_status (created_by, status),
-  KEY idx_email_drafts_sent_email (sent_email_id),
-  CONSTRAINT fk_email_drafts_template
-    FOREIGN KEY (email_template_id) REFERENCES email_templates(email_template_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_email_drafts_sent_email
-    FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_email_drafts_created_by
-    FOREIGN KEY (created_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_email_drafts_last_edited_by
-    FOREIGN KEY (last_edited_by) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Editable email drafts/autosave before sending, similar to mail compose draft';
-
-CREATE TABLE email_draft_recipients (
-  email_draft_recipient_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  email_draft_id BIGINT UNSIGNED NOT NULL,
-  recipient_email VARCHAR(150) NOT NULL,
-  recipient_name VARCHAR(150) NULL,
-  recipient_type ENUM('TO','CC','BCC') NOT NULL DEFAULT 'TO',
-  display_order INT UNSIGNED NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (email_draft_recipient_id),
-  UNIQUE KEY uq_email_draft_recipients_unique (email_draft_id, recipient_email, recipient_type),
-  KEY idx_email_draft_recipients_draft (email_draft_id),
-  KEY idx_email_draft_recipients_email (recipient_email),
-  CONSTRAINT fk_email_draft_recipients_draft
-    FOREIGN KEY (email_draft_id) REFERENCES email_drafts(email_draft_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Recipients of editable email drafts';
-
-CREATE TABLE email_draft_attachments (
-  email_draft_attachment_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  email_draft_id BIGINT UNSIGNED NOT NULL,
-  file_id BIGINT UNSIGNED NOT NULL,
-  attachment_type ENUM('ATTACHMENT','INLINE_IMAGE') NOT NULL DEFAULT 'ATTACHMENT',
-  content_id VARCHAR(120) NULL,
-  display_name VARCHAR(255) NULL,
-  display_order INT UNSIGNED NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (email_draft_attachment_id),
-  UNIQUE KEY uq_email_draft_attachments_content (email_draft_id, content_id),
-  KEY idx_email_draft_attachments_draft (email_draft_id),
-  KEY idx_email_draft_attachments_file (file_id),
-  KEY idx_email_draft_attachments_type (email_draft_id, attachment_type),
-  CONSTRAINT fk_email_draft_attachments_draft
-    FOREIGN KEY (email_draft_id) REFERENCES email_drafts(email_draft_id)
-    ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT fk_email_draft_attachments_file
-    FOREIGN KEY (file_id) REFERENCES files(file_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Files/images attached to email drafts before sending';
 
 CREATE TABLE email_action_tokens (
   email_action_token_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -14997,8 +14916,11 @@ WHERE table_schema = DATABASE()
   AND table_name = 'visit_request_fingerprint_guards'
   AND table_type = 'BASE TABLE';
 
+-- 81 since the three email_draft* tables were dropped (compose no longer persists a draft).
+-- This assertion also stops being off by one: it read 83 while the script produced 84, so every
+-- import reported a permanent issue_count of 1.
 SELECT 'merged_runtime_table_count' AS check_name,
-       CASE WHEN COUNT(*) = 83 THEN 0 ELSE ABS(COUNT(*) - 83) END AS issue_count
+       CASE WHEN COUNT(*) = 81 THEN 0 ELSE ABS(COUNT(*) - 81) END AS issue_count
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
   AND table_type = 'BASE TABLE';
@@ -15847,9 +15769,6 @@ INSERT INTO faq_translations (faq_id, language_code, question, answer, translati
 -- delivery history with the 30 template codes registered by the application.
 -- This is a full rebuild script, so the global cleanup below affects seed data
 -- only. Every new automated history row later resolves its template by code.
-UPDATE email_drafts
-SET email_template_id=NULL, sent_email_id=NULL
-WHERE email_template_id IS NOT NULL OR sent_email_id IS NOT NULL;
 DELETE FROM email_action_tokens;
 DELETE FROM sent_email_attachments;
 DELETE FROM sent_email_recipients;

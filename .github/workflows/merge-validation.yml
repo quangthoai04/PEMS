@@ -144,11 +144,17 @@ jobs:
           dups=$(q "SELECT COUNT(*) FROM (SELECT template_code FROM $DB.email_templates GROUP BY template_code HAVING COUNT(*)>1) d")
           echo "tables=$tables triggers=$triggers fks=$fks templates=$templates duplicate_codes=$dups"
 
-          # 83/32/255 measured by a fresh import of the canonical script, and 83 is what the test
-          # suite's own DisposableDatabaseManager.ExpectedBaseTableCount already required — this shell
-          # assertion had been left at the pre-G11 82/252 and so contradicted the code contract it is
-          # meant to mirror. Verified against both this branch and Cảnh-Iter1: identical shape.
-          [ "$tables" -eq 83 ] && [ "$triggers" -eq 32 ] && [ "$fks" -eq 255 ] && [ "$dups" -eq 0 ]
+          # 81/32/250, measured by a fresh import of the canonical script into a disposable database on
+          # MySQL 8.0.46 — the same numbers DisposableDatabaseManager.ExpectedBaseTableCount and the
+          # script's own merged_runtime_table_count assertion now require.
+          #
+          # Down from 83/255 for two reasons at once. Three tables and five foreign keys went with the
+          # email draft schema (email_drafts, email_draft_recipients, email_draft_attachments): the
+          # composer holds a message in the browser until it is sent, so nothing half-written is stored.
+          # The other table is an off-by-one this line inherited — it asserted 83 while a fresh import
+          # produced 84, so it had been passing only because CI never reached a state where it mattered.
+          # Both counts are now measured rather than reasoned about.
+          [ "$tables" -eq 81 ] && [ "$triggers" -eq 32 ] && [ "$fks" -eq 250 ] && [ "$dups" -eq 0 ]
 
   integration:
     name: integration tests

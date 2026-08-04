@@ -28,8 +28,10 @@ public static class DisposableDatabaseManager
     /// only reached by an import now that the statement splitting the catalog INSERT is repaired. The
     /// table had been in the script all along; every import simply stopped at ERROR 1064 before
     /// creating it, which is why this constant still agreed with reality while it was wrong.
+    /// 81 since the three <c>email_draft*</c> tables were dropped: the composer holds a message in the
+    /// browser until it is sent, so there is no half-written record on the server to store.
     /// </remarks>
-    public const int ExpectedBaseTableCount = 84;
+    public const int ExpectedBaseTableCount = 81;
 
     /// <summary>Number of triggers the canonical schema must produce.</summary>
     public const int ExpectedTriggerCount = 32;

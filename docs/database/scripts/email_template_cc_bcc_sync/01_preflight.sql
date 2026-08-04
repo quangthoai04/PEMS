@@ -43,9 +43,7 @@ SELECT t.required_object,
 FROM (
   SELECT 'email_templates'         AS required_object UNION ALL
   SELECT 'sent_emails'                                UNION ALL
-  SELECT 'sent_email_recipients'                      UNION ALL
-  SELECT 'email_drafts'                               UNION ALL
-  SELECT 'email_draft_recipients'
+  SELECT 'sent_email_recipients'
 ) t
 LEFT JOIN information_schema.tables i
        ON i.table_schema = DATABASE() AND i.table_name = t.required_object
@@ -184,22 +182,16 @@ SELECT 'sent_emails total'                       AS metric, COUNT(*) AS value FR
 UNION ALL SELECT 'sent_emails with template FK',  COUNT(*) FROM sent_emails WHERE email_template_id IS NOT NULL
 UNION ALL SELECT 'sent_emails with body_snapshot',COUNT(*) FROM sent_emails WHERE body_snapshot IS NOT NULL
 UNION ALL SELECT 'sent_email_recipients total',   COUNT(*) FROM sent_email_recipients
-UNION ALL SELECT 'sent_email_recipients BCC',     COUNT(*) FROM sent_email_recipients WHERE recipient_type = 'BCC'
-UNION ALL SELECT 'email_drafts total',            COUNT(*) FROM email_drafts
-UNION ALL SELECT 'email_drafts status DRAFT',     COUNT(*) FROM email_drafts WHERE status = 'DRAFT'
-UNION ALL SELECT 'email_drafts with template FK', COUNT(*) FROM email_drafts WHERE email_template_id IS NOT NULL
-UNION ALL SELECT 'email_draft_recipients total',  COUNT(*) FROM email_draft_recipients;
+UNION ALL SELECT 'sent_email_recipients BCC',     COUNT(*) FROM sent_email_recipients WHERE recipient_type = 'BCC';
 
--- Templates that history or drafts still point at. Deleting any of these would orphan a reference,
--- which is exactly why the sync deactivates legacy codes instead of removing them.
+-- Templates that history still points at. Deleting any of these would orphan a reference, which is
+-- exactly why the sync deactivates legacy codes instead of removing them.
 SELECT t.template_code, t.status,
-       COUNT(DISTINCT s.sent_email_id)  AS referencing_sent_emails,
-       COUNT(DISTINCT d.email_draft_id) AS referencing_drafts
+       COUNT(DISTINCT s.sent_email_id)  AS referencing_sent_emails
 FROM email_templates t
 LEFT JOIN sent_emails  s ON s.email_template_id = t.email_template_id
-LEFT JOIN email_drafts d ON d.email_template_id = t.email_template_id
 GROUP BY t.template_code, t.status
-HAVING referencing_sent_emails > 0 OR referencing_drafts > 0
+HAVING referencing_sent_emails > 0
 ORDER BY referencing_sent_emails DESC, t.template_code;
 
 
@@ -208,8 +200,7 @@ SELECT '── 5. Preservation checksums (record these) ────────
 -- 03_verify.sql prints the same six checksums after the sync. Identical output proves the sync
 -- touched none of these tables. Different output is not automatically wrong — a live system keeps
 -- sending mail while you work — but it is something to explain rather than skip past.
-CHECKSUM TABLE sent_emails, sent_email_recipients, sent_email_attachments,
-               email_drafts, email_draft_recipients, email_action_tokens;
+CHECKSUM TABLE sent_emails, sent_email_recipients, sent_email_attachments, email_action_tokens;
 
 
 SELECT '── preflight complete — nothing was written ────────────────────' AS ``;

@@ -107,21 +107,17 @@ SELECT 'B2', 'referenced legacy templates still exist (deactivated, not deleted)
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        CONCAT(COUNT(*), ' referenced legacy row(s) missing')
 FROM (
-  SELECT s.email_template_id FROM sent_emails  s WHERE s.email_template_id IS NOT NULL
-  UNION
-  SELECT d.email_template_id FROM email_drafts d WHERE d.email_template_id IS NOT NULL
+  SELECT s.email_template_id FROM sent_emails s WHERE s.email_template_id IS NOT NULL
 ) refs
 LEFT JOIN email_templates t ON t.email_template_id = refs.email_template_id
 WHERE t.email_template_id IS NULL;
 
 SELECT l.template_code,
        IFNULL(t.status, '(absent)') AS status,
-       COUNT(DISTINCT s.sent_email_id)  AS referencing_sent_emails,
-       COUNT(DISTINCT d.email_draft_id) AS referencing_drafts
+       COUNT(DISTINCT s.sent_email_id) AS referencing_sent_emails
 FROM _pems_legacy_codes l
 LEFT JOIN email_templates t ON t.template_code = l.template_code
 LEFT JOIN sent_emails  s ON s.email_template_id = t.email_template_id
-LEFT JOIN email_drafts d ON d.email_template_id = t.email_template_id
 GROUP BY l.template_code, t.status
 ORDER BY l.template_code;
 
@@ -273,12 +269,16 @@ FROM sent_emails s
 LEFT JOIN email_templates t ON t.email_template_id = s.email_template_id
 WHERE s.email_template_id IS NOT NULL AND t.email_template_id IS NULL;
 
+-- F2 used to make the same assertion about email_drafts. That table is gone: the composer holds a
+-- message in the browser until it is sent, so the only thing that can still reference a template id
+-- is history, which F1 covers. What is checked instead is that the drop actually happened — a
+-- database still carrying the tables has not had patches/2026-08-04_drop_email_drafts.sql applied.
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
-SELECT 'F2', 'no email_drafts row references a missing template',
-       IF(COUNT(*) = 0, 'PASS', 'FAIL'), CONCAT(COUNT(*), ' orphan reference(s)')
-FROM email_drafts d
-LEFT JOIN email_templates t ON t.email_template_id = d.email_template_id
-WHERE d.email_template_id IS NOT NULL AND t.email_template_id IS NULL;
+SELECT 'F2', 'the three email draft tables are gone',
+       IF(COUNT(*) = 0, 'PASS', 'FAIL'), CONCAT(COUNT(*), ' draft table(s) still present')
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name IN ('email_drafts', 'email_draft_recipients', 'email_draft_attachments');
 
 
 SELECT '── G. History is intact ────────────────────────────────────────' AS ``;
@@ -304,16 +304,16 @@ LEFT JOIN sent_emails s ON s.sent_email_id = r.sent_email_id
 WHERE s.sent_email_id IS NULL;
 
 
-SELECT '── H. Drafts survived ──────────────────────────────────────────' AS ``;
+SELECT '── H. Send reservations survived ───────────────────────────────' AS ``;
 
+-- This section used to check that unsent drafts came through the sync. With the draft tables gone,
+-- the thing that must survive a template sync is `email_send_idempotency`: it is what replaced the
+-- DRAFT -> SENT claim as double-click protection, so losing it would leave every send unguarded.
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
-SELECT 'H1', 'no orphan draft recipient rows',
-       IF(COUNT(*) = 0, 'PASS', 'FAIL'), CONCAT(COUNT(*), ' orphan draft recipient(s)')
-FROM email_draft_recipients r
-LEFT JOIN email_drafts d ON d.email_draft_id = r.email_draft_id
-WHERE d.email_draft_id IS NULL;
-
-SELECT status, COUNT(*) AS drafts FROM email_drafts GROUP BY status ORDER BY status;
+SELECT 'H1', 'email_send_idempotency is present',
+       IF(COUNT(*) = 1, 'PASS', 'FAIL'), CONCAT(COUNT(*), ' matching table(s) (expected 1)')
+FROM information_schema.tables
+WHERE table_schema = DATABASE() AND table_name = 'email_send_idempotency';
 
 
 SELECT '── I. Templates outside the catalog (informational) ────────────' AS ``;
@@ -340,14 +340,11 @@ WHERE c.template_code IS NULL AND l.template_code IS NULL;
 SELECT '── 9. Preservation checksums (compare before vs after) ─────────' AS ``;
 
 -- Identical output from 01_preflight.sql and from here means the sync touched none of it.
-CHECKSUM TABLE sent_emails, sent_email_recipients, sent_email_attachments,
-               email_drafts, email_draft_recipients, email_action_tokens;
+CHECKSUM TABLE sent_emails, sent_email_recipients, sent_email_attachments, email_action_tokens;
 
 SELECT 'sent_emails'            AS scope, COUNT(*) AS rows_now FROM sent_emails
 UNION ALL SELECT 'sent_email_recipients',  COUNT(*) FROM sent_email_recipients
 UNION ALL SELECT 'sent_email_attachments', COUNT(*) FROM sent_email_attachments
-UNION ALL SELECT 'email_drafts',           COUNT(*) FROM email_drafts
-UNION ALL SELECT 'email_draft_recipients', COUNT(*) FROM email_draft_recipients
 UNION ALL SELECT 'email_action_tokens',    COUNT(*) FROM email_action_tokens;
 
 

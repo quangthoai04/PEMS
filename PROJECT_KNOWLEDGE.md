@@ -780,9 +780,7 @@ sequenceDiagram
 | Email | `sent_emails` | `sent_email_id` | Template/related entity/subject/body/status/sender snapshot |
 | Email | `sent_email_recipients` | `sent_email_recipient_id` | To/CC/BCC, delivery/provider status |
 | Email | `sent_email_attachments` | `sent_email_attachment_id` | File/inline content ID/display order |
-| Email | `email_drafts` | `email_draft_id` | Owner/template/related/body/status/expiry/sent link |
-| Email | `email_draft_recipients` | `email_draft_recipient_id` | Recipient draft snapshot |
-| Email | `email_draft_attachments` | `email_draft_attachment_id` | Attachment draft snapshot |
+| Email | `email_send_idempotency` | `email_send_idempotency_id` | Per-send reservation (operation/key/fingerprint/result) — chống double-click |
 | Email | `email_action_tokens` | `email_action_token_id` | Token hash/intended action/target/expiry/use/result |
 | Notification | `notifications` | `notification_id` | Recipient/message/type/category/visit links/read/action/dedupe |
 | Calendar | `calendar_events` | `calendar_event_id` | Personal/visit/logistics event, owner/campus/time/status |
