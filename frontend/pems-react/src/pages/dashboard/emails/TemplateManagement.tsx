@@ -108,6 +108,48 @@ type BodyField = (typeof BODY_FIELDS)[number];
 const isBodyField = (field: string): field is BodyField =>
   field === 'bodyVi' || field === 'bodyEn';
 
+/** The two content fields each language tab owns. Used to attribute an issue to a TAB, not just a field. */
+const LANGUAGE_FIELDS: Record<EditorLanguage, { subject: TemplateContentField; body: TemplateContentField }> = {
+  VI: { subject: 'subjectVi', body: 'bodyVi' },
+  EN: { subject: 'subjectEn', body: 'bodyEn' },
+};
+
+const LANGUAGE_LABELS: Record<EditorLanguage, string> = { VI: 'Tiếng Việt', EN: 'English' };
+
+/**
+ * Which tab an issue belongs to.
+ *
+ * This is the whole fix for the invisible refusal: an issue carries a FIELD, and a field belongs to a
+ * language, but the screen only ever rendered issues under the field of the tab that happened to be
+ * open. An English body missing `{{contactInformationBlock}}` therefore disabled "Lưu thay đổi" while
+ * every message explaining why sat on a tab nobody was looking at.
+ */
+const languageOfField = (field: TemplateContentField | string): EditorLanguage | null => {
+  if (field === 'subjectVi' || field === 'bodyVi') return 'VI';
+  if (field === 'subjectEn' || field === 'bodyEn') return 'EN';
+  return null;
+};
+
+/** Where the caret was in a plain-text input. */
+type TextSelection = { start: number; end: number };
+
+/** Where the caret was in a Quill document. */
+type QuillSelection = { index: number; length: number };
+
+/**
+ * Which control the operator was last writing in, per language.
+ *
+ * Needed because clicking a variable chip takes the focus away from whatever they were editing, so by
+ * the time the insert runs neither the subject input nor the editor is focused any more. Reading
+ * `document.activeElement` at that point answers "the chip", which is why insertion used to fall
+ * through to appending at the end of the body — a variable landing three paragraphs below the sentence
+ * it was meant for.
+ *
+ * Held per language because the two tabs are two different documents: a caret remembered in the
+ * Vietnamese body must never be applied to the English one.
+ */
+type InsertTarget = 'subject' | 'body';
+
 /**
  * The differences that are NOT an edit.
  *
@@ -233,6 +275,28 @@ const getTemplateGroup = (code: string) => {
 export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' | 'error', msg: string) => void }) {
   const quillRef = useRef<any>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * The caret, remembered per language and per control, so a variable is inserted where the operator
+   * was writing rather than wherever the DOM focus happens to be when they click a chip.
+   *
+   * All three are refs: nothing renders from a caret position, and putting it in state would re-render
+   * the editor on every cursor move — which fights Quill for the caret it is trying to record.
+   */
+  const subjectSelection = useRef<Record<EditorLanguage, TextSelection | null>>({ VI: null, EN: null });
+  const bodySelection = useRef<Record<EditorLanguage, QuillSelection | null>>({ VI: null, EN: null });
+  const lastInsertTarget = useRef<Record<EditorLanguage, InsertTarget | null>>({ VI: null, EN: null });
+
+  /**
+   * A field to focus once the tab has switched.
+   *
+   * "Chuyển sang English" has to change the tab AND put the operator in the control that is wrong, and
+   * those cannot happen in one pass: the English editor does not exist in the DOM until the language
+   * state has been committed and the body editor has remounted under its new key. So the request is
+   * parked here and an effect performs it after the render.
+   */
+  const pendingFocus = useRef<InsertTarget | null>(null);
+  const bodyEditorAnchor = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<any[]>([]);
   /** Set when the server reports more templates than it returned — see `fetchData`. */
   const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
@@ -374,6 +438,77 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     () => issues.filter(i => i.severity === 'ERROR'),
     [issues],
   );
+
+  /**
+   * The blocking issues of each tab, whichever tab is open.
+   *
+   * Nothing here filters by the current language on purpose — that filtering is exactly the defect.
+   * The save button is disabled by `blockingIssues`, which spans both languages, so the explanation has
+   * to span both too or the operator is left with a dead button and a clean-looking form.
+   */
+  const blockingByLanguage = useMemo<Record<EditorLanguage, TemplateContentIssue[]>>(() => ({
+    VI: blockingIssues.filter(i => languageOfField(i.field) === 'VI'),
+    EN: blockingIssues.filter(i => languageOfField(i.field) === 'EN'),
+  }), [blockingIssues]);
+
+  /** Blocking issues that name no language (a server refusal about the template as a whole). */
+  const blockingWithoutLanguage = useMemo(
+    () => blockingIssues.filter(i => languageOfField(i.field) === null),
+    [blockingIssues],
+  );
+
+  /**
+   * Switches to the tab that is wrong and puts the caret in the control that is wrong.
+   *
+   * Nothing is inserted or corrected — the operator is taken to the problem, not relieved of it.
+   * Auto-inserting a missing block would be an edit they did not make, on content they may have written
+   * deliberately, and the two legitimate repairs (add the block back, or lower the display level) are a
+   * decision only they can take.
+   */
+  const goToIssue = useCallback((lang: EditorLanguage, issue?: TemplateContentIssue) => {
+    // The body unless the issue is specifically about a subject: most refusals are body ones, and a
+    // caret in the body is the useful place to arrive even for an issue with no field at all.
+    pendingFocus.current =
+      issue?.field === 'subjectVi' || issue?.field === 'subjectEn' ? 'subject' : 'body';
+    setLanguage(lang);
+  }, []);
+
+  /**
+   * Performs a parked focus request once the tab it belongs to has rendered.
+   *
+   * Runs on `language` rather than on the request itself: the body editor is keyed by field, so it is a
+   * NEW element after a tab switch, and focusing before that remount would put the caret in the editor
+   * being unmounted.
+   */
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    pendingFocus.current = null;
+
+    // Guarded rather than called directly: `scrollIntoView` is missing in jsdom, and an exception here
+    // would abort the focus that is the more important half of the action.
+    const reveal = (element: Element | null | undefined) =>
+      element?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+
+    // A frame later: Quill finishes attaching its own DOM inside an effect of its own, and calling
+    // focus() in the same tick lands on an editor that is not editable yet.
+    const timer = window.setTimeout(() => {
+      if (target === 'subject') {
+        reveal(subjectInputRef.current);
+        subjectInputRef.current?.focus();
+        return;
+      }
+
+      reveal(bodyEditorAnchor.current);
+      try {
+        quillRef.current?.getEditor()?.focus();
+      } catch {
+        /* an unmounted editor is not worth reporting — the tab still switched, which is the main thing */
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [language]);
 
   const loadContract = useCallback(async (templateCode: string) => {
     const requestId = ++contractRequestId.current;
@@ -927,31 +1062,112 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  /** Records where the caret is in the subject of the tab currently shown. */
+  const rememberSubjectSelection = () => {
+    const input = subjectInputRef.current;
+    if (!input) return;
+    subjectSelection.current[language] = {
+      start: input.selectionStart ?? input.value.length,
+      end: input.selectionEnd ?? input.value.length,
+    };
+    lastInsertTarget.current[language] = 'subject';
+  };
+
+  /**
+   * Records where the caret is in the body of the tab currently shown.
+   *
+   * A null range means Quill has just lost the focus — which is precisely what clicking a variable chip
+   * does — so it is IGNORED rather than stored. Storing it would erase the position the insert is about
+   * to need, one event before it needs it.
+   */
+  const rememberBodySelection = (range: QuillSelection | null) => {
+    if (!range) return;
+    bodySelection.current[language] = { index: range.index, length: range.length };
+    lastInsertTarget.current[language] = 'body';
+  };
+
+  /**
+   * Inserts a variable at the caret the operator left, in the control they left it in.
+   *
+   * <b>The old behaviour and why it was wrong.</b> This used to ask the DOM what was focused. By the time
+   * a chip's `onClick` runs, the chip is focused and neither the subject nor the editor is — so the first
+   * two branches were effectively unreachable from a mouse click and every insert fell into the third,
+   * which appended the token to the END of the body. A variable meant for the middle of a greeting
+   * arrived after the signature, and in the subject's case it went into the body instead: the wrong
+   * field entirely.
+   *
+   * What replaces it is a remembered position per language and per control, so the insert goes exactly
+   * where the caret was, replaces a selected range if there was one, and leaves the caret after the token
+   * ready for the next word. The only fallback is a body with no remembered caret — a template opened and
+   * never typed in — which inserts at the START of the body rather than the end: an obvious, visible
+   * place the operator can move, not one hidden below the fold.
+   */
   const insertVariable = (name: string) => {
     const token = `{{${name}}}`;
-    const editor = quillRef.current?.getEditor();
+    const target = lastInsertTarget.current[language] ?? 'body';
 
-    if (editor && editor.hasFocus()) {
-      // Before the insert, not after: `insertText` makes the editor emit an `api` change, and a body
-      // still waiting to absorb its normalisation would take the inserted variable into the baseline —
-      // an edit that never showed as unsaved and would have been dropped on close.
-      markBodyEdited(bodyField);
-      const range = editor.getSelection(true);
-      editor.insertText(range.index, token);
-      setFormData(prev => ({ ...prev, [bodyField]: editor.root.innerHTML }));
-    } else if (document.activeElement === subjectInputRef.current) {
-      const input = subjectInputRef.current!;
-      const start = input.selectionStart || 0;
-      const end = input.selectionEnd || 0;
-      const current = formData[subjectField];
+    if (target === 'subject') {
+      const current = formData[subjectField] ?? '';
+      const remembered = subjectSelection.current[language];
+      const start = Math.min(remembered?.start ?? current.length, current.length);
+      const end = Math.min(Math.max(remembered?.end ?? start, start), current.length);
+      const caret = start + token.length;
+
       setFormData(prev => ({
         ...prev,
-        [subjectField]: current.substring(0, start) + token + current.substring(end),
+        [subjectField]: (prev[subjectField] ?? '').substring(0, start)
+          + token
+          + (prev[subjectField] ?? '').substring(end),
       }));
-    } else {
-      markBodyEdited(bodyField);
-      setFormData(prev => ({ ...prev, [bodyField]: prev[bodyField] + token }));
+
+      // The remembered position moves with the text, so inserting two variables in a row puts the second
+      // after the first instead of back over it.
+      subjectSelection.current[language] = { start: caret, end: caret };
+
+      // After the state write, so the input holds the new value when the caret is placed. Without the
+      // deferral the caret would be set on the pre-insert string and the browser would clamp it.
+      window.setTimeout(() => {
+        const input = subjectInputRef.current;
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(caret, caret);
+      }, 0);
+      return;
     }
+
+    const editor = quillRef.current?.getEditor?.();
+    if (!editor) {
+      // No editor to insert into (the mocked editor in the unit tests, or a mount still in flight).
+      // Falls back to the head of the body, never the tail: see the note above.
+      markBodyEdited(bodyField);
+      setFormData(prev => ({ ...prev, [bodyField]: token + (prev[bodyField] ?? '') }));
+      return;
+    }
+
+    // Before the insert, not after: `insertText` makes the editor emit an `api` change, and a body
+    // still waiting to absorb its normalisation would take the inserted variable into the baseline —
+    // an edit that never showed as unsaved and would have been dropped on close.
+    markBodyEdited(bodyField);
+
+    const remembered = bodySelection.current[language]
+      // `getSelection()` without the force flag — passing true would FOCUS the editor and, on a blurred
+      // one, report position 0, quietly overwriting the caret we are trying to honour.
+      ?? (editor.getSelection?.() as QuillSelection | null)
+      ?? { index: 0, length: 0 };
+
+    const index = Math.min(remembered.index, Math.max(0, editor.getLength() - 1));
+    const length = Math.max(0, remembered.length);
+
+    // A selected range is REPLACED, which is what every other editor does with a paste.
+    if (length > 0) editor.deleteText(index, length, 'user');
+    editor.insertText(index, token, 'user');
+
+    const caret = index + token.length;
+    editor.setSelection(caret, 0, 'user');
+    bodySelection.current[language] = { index: caret, length: 0 };
+    lastInsertTarget.current[language] = 'body';
+
+    setFormData(prev => ({ ...prev, [bodyField]: editor.root.innerHTML }));
   };
 
   const filteredData = data.filter(item => {
@@ -1203,18 +1419,41 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               <div className="bg-gray-50/50 p-5 rounded-lg border border-gray-200">
                 <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-4">
                   <h3 className="font-bold text-gray-800 text-base">2. Nội dung email</h3>
+                  {/* Each tab carries its OWN error state. A red dot here is the only thing that tells
+                      an operator on the Vietnamese tab that the save is being refused by the English
+                      one — the messages themselves live under fields they cannot currently see. */}
                   <div className="flex rounded-md overflow-hidden border border-gray-300" role="group" aria-label="Ngôn ngữ">
-                    {(['VI', 'EN'] as EditorLanguage[]).map(lang => (
-                      <button
-                        key={lang}
-                        type="button"
-                        onClick={() => setLanguage(lang)}
-                        aria-pressed={language === lang}
-                        className={`px-3 py-1 text-xs font-bold transition-colors ${language === lang ? 'bg-[#004c91] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                      >
-                        {lang === 'VI' ? 'Tiếng Việt' : 'English'}
-                      </button>
-                    ))}
+                    {(['VI', 'EN'] as EditorLanguage[]).map(lang => {
+                      const errorCount = blockingByLanguage[lang].length;
+                      const active = language === lang;
+
+                      return (
+                        <button
+                          key={lang}
+                          type="button"
+                          onClick={() => setLanguage(lang)}
+                          aria-pressed={active}
+                          aria-invalid={errorCount > 0}
+                          data-testid={`language-tab-${lang}`}
+                          data-error-count={errorCount}
+                          title={errorCount > 0
+                            ? `${LANGUAGE_LABELS[lang]}: còn ${errorCount} vấn đề cần sửa trước khi lưu.`
+                            : undefined}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-colors ${active ? 'bg-[#004c91] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        >
+                          {LANGUAGE_LABELS[lang]}
+                          {errorCount > 0 && (
+                            <span
+                              data-testid={`language-tab-error-${lang}`}
+                              aria-label={`${errorCount} vấn đề`}
+                              className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-black ${active ? 'bg-white text-red-600' : 'bg-red-600 text-white'}`}
+                            >
+                              {errorCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -1226,14 +1465,24 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       type="text"
                       value={formData[subjectField]}
                       disabled={isHistorical}
-                      onChange={e => setFormData({...formData, [subjectField]: e.target.value})}
+                      onChange={e => {
+                        setFormData({...formData, [subjectField]: e.target.value});
+                        rememberSubjectSelection();
+                      }}
+                      /* `onSelect` covers every way a caret moves in a text input — click, arrow key,
+                         drag-select, Home/End — in one event, so the remembered position is current
+                         whichever of them the operator used before reaching for a chip. */
+                      onSelect={rememberSubjectSelection}
+                      onFocus={rememberSubjectSelection}
+                      onKeyUp={rememberSubjectSelection}
+                      onClick={rememberSubjectSelection}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500"
                     />
                     {renderIssueList(subjectField)}
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Nội dung (Body)</label>
-                    <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
+                    <div ref={bodyEditorAnchor} className="border border-gray-300 rounded-lg overflow-hidden bg-white">
                       {/*
                         One editor per language, not one editor re-pointed at the other body.
 
@@ -1251,6 +1500,10 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                         value={formData[bodyField]}
                         readOnly={isHistorical}
                         onChange={(v, _delta, source) => handleBodyChange(bodyField, v, source)}
+                        /* Where the caret is, reported by the editor itself. This is the only reliable
+                           source once a chip has taken the focus away: `getSelection()` on a blurred
+                           editor answers null, and forcing it answers 0. */
+                        onChangeSelection={(range: QuillSelection | null) => rememberBodySelection(range)}
                         modules={QUILL_MODULES}
                         className="min-h-[250px]"
                       />
@@ -1440,6 +1693,45 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       liên hệ với ai, và email được hiển thị những gì về họ.
                     </p>
                   )}
+                  {/*
+                    Which languages satisfy the level, both at once.
+
+                    The level is ONE setting for the whole template but it is judged against TWO bodies,
+                    and that mismatch is what made the refusal invisible: the card showed "Bắt buộc" and
+                    the open tab showed a body with the block in it, so everything on screen agreed the
+                    template was fine. Listing both languages here states the thing the level actually
+                    depends on, next to the control that sets it.
+                  */}
+                  {contactSupported && formData.contactSettings && (
+                    <ul className="mb-3 space-y-1 text-[11px]" data-testid="contact-block-checklist">
+                      {(['VI', 'EN'] as EditorLanguage[]).map(lang => {
+                        const hasBlock = containsContactInformationBlock(formData[LANGUAGE_FIELDS[lang].body]);
+                        const requirement = formData.contactSettings!.requirement;
+                        // OPTIONAL is not a test — both answers are correct — so it is reported as a
+                        // fact rather than as a tick or a cross. Marking "no block" as a failure under a
+                        // level that permits it would be a warning nobody can act on.
+                        const neutral = requirement === 'OPTIONAL';
+                        const ok = requirement === 'NONE' ? !hasBlock : hasBlock;
+
+                        return (
+                          <li
+                            key={lang}
+                            data-testid={`contact-block-status-${lang}`}
+                            data-has-block={hasBlock}
+                            className={neutral ? 'text-gray-600' : ok ? 'text-emerald-700' : 'text-red-700'}
+                          >
+                            <span aria-hidden="true" className="font-bold">
+                              {neutral ? '•' : ok ? '✓' : '✕'}
+                            </span>{' '}
+                            {LANGUAGE_LABELS[lang]}{' '}
+                            {hasBlock ? 'đã có khối thông tin liên hệ' : 'chưa có khối thông tin liên hệ'}
+                            {!neutral && !ok && requirement === 'NONE' && ' — cần xóa khỏi nội dung'}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
                   <ContactSettingsPanel
                     templateCode={formData.templateCode}
                     canEdit
@@ -1464,6 +1756,73 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               )}
             </aside>
           </div>
+          {/*
+            Why the save is refused, said WHERE the save button is and regardless of which tab is open.
+
+            This is the fix for the defect that started this work: with the contact level at "Bắt buộc"
+            and the block present in Vietnamese but missing in English, "Lưu thay đổi" went dead while
+            the Vietnamese tab — the one the operator was on — showed a perfectly clean form. Every
+            explanation existed, under the English body, on a tab they had no reason to visit.
+
+            Grouped by language rather than listed flat, because the operator's next action is per
+            language: go to that tab, fix that field. Each group carries the button that takes them there.
+          */}
+          {blockingIssues.length > 0 && !isHistorical && (
+            <div
+              role="alert"
+              data-testid="validation-summary"
+              className="mb-4 rounded-lg border border-red-300 bg-red-50 p-4"
+            >
+              <p className="mb-2 flex items-center gap-2 text-sm font-bold text-red-800">
+                <ShieldAlert className="h-4 w-4 flex-shrink-0" />
+                Không thể lưu — còn {blockingIssues.length} vấn đề cần sửa.
+              </p>
+
+              <div className="space-y-2.5">
+                {(['VI', 'EN'] as EditorLanguage[]).map(lang => {
+                  const langIssues = blockingByLanguage[lang];
+                  if (langIssues.length === 0) return null;
+
+                  return (
+                    <div key={lang} data-testid={`validation-summary-${lang}`}>
+                      <ul className="space-y-1 text-xs text-red-700">
+                        {langIssues.map((issue, idx) => (
+                          <li key={`${issue.code}-${issue.field}-${issue.variableName ?? idx}`}
+                              data-error-code={issue.code}>
+                            <span className="font-bold">{LANGUAGE_LABELS[lang]}:</span>{' '}
+                            {issue.messageVi}
+                          </li>
+                        ))}
+                      </ul>
+                      {/* Offered even for the tab already open: it still moves the caret to the field
+                          that is wrong, which on a long template is the useful half of the action. */}
+                      <button
+                        type="button"
+                        data-testid={`goto-issue-${lang}`}
+                        onClick={() => goToIssue(lang, langIssues[0])}
+                        className="mt-1.5 rounded border border-red-300 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700 hover:bg-red-100"
+                      >
+                        {language === lang
+                          ? `Đến chỗ lỗi trong ${LANGUAGE_LABELS[lang]}`
+                          : `Chuyển sang ${LANGUAGE_LABELS[lang]}`}
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* A refusal the server made about the template as a whole — it names no field, so
+                    there is nowhere to jump to and nothing but the sentence to show. */}
+                {blockingWithoutLanguage.length > 0 && (
+                  <ul className="space-y-1 text-xs text-red-700" data-testid="validation-summary-general">
+                    {blockingWithoutLanguage.map((issue, idx) => (
+                      <li key={`${issue.code}-${idx}`} data-error-code={issue.code}>{issue.messageVi}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
           {/*
             The action bar sits OUTSIDE the content grid and stays in normal flow — `sticky`, not
             `fixed`. Sticky degrades to a plain block if an ancestor ever gains `overflow: hidden`,
