@@ -141,6 +141,45 @@ public static class EmailErrorCodes
     /// </summary>
     public const string ReportDeliveryFailed = "EMAIL_REPORT_DELIVERY_FAILED";
 
+    // ── Draft attachments ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A draft was sent while one of its attachment rows had no readable bytes — the file was deleted
+    /// from storage, the share was revoked, or the row never addressed anything.
+    ///
+    /// <para>
+    /// Refused at send time rather than skipped. The attachment loader returns null for a file it cannot
+    /// read, and the dispatcher used to drop those rows and carry on: the draft was claimed SENT, the
+    /// message went out one part short, and the sender was told it had gone to N recipients. The failure
+    /// was invisible from every side — no error, no warning, no row recording the omission — and the
+    /// only party who could notice was the recipient, who would have had to know a file was meant to be
+    /// there.
+    /// </para>
+    /// </summary>
+    public const string AttachmentUnreadable = "EMAIL_ATTACHMENT_UNREADABLE";
+
+    // ── Draft lifecycle ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The draft exists but is no longer a draft — it has already been sent, or discarded.
+    ///
+    /// <para>
+    /// Its own code, separate from "not found", because the two ask the client for different things. A
+    /// draft that never existed (or was never this user's) means the id is wrong and the composer must
+    /// not open. A draft that was sent from another tab means the work IS somewhere — in the history —
+    /// and the honest screen says so instead of offering to recreate it.
+    /// </para>
+    /// </summary>
+    public const string DraftNotEditable = "EMAIL_DRAFT_NOT_EDITABLE";
+
+    /// <summary>
+    /// No draft with this id exists. Given a code because the composer must react to it rather than
+    /// merely display it: a 404 here means the id the screen is holding is dead, so the only safe
+    /// screen is one that offers to start again — not an empty composer that looks like the draft
+    /// loaded and lost its contents.
+    /// </summary>
+    public const string DraftNotFound = "EMAIL_DRAFT_NOT_FOUND";
+
     // ── Send idempotency (G11 / R-103) ───────────────────────────────────────
 
     /// <summary>

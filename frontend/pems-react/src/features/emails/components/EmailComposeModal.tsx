@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // @ts-ignore - react-quill-new ships without bundled types in this project
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { X, Loader2, Paperclip, Send, Trash2, Image as ImageIcon, Eye, ChevronLeft } from 'lucide-react';
+import { X, Loader2, Paperclip, Send, Trash2, Image as ImageIcon, Eye, ChevronLeft, AlertTriangle } from 'lucide-react';
 import {
   emailDraftsApi,
   type EmailDraftAttachmentInput,
@@ -39,6 +39,7 @@ import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../utils/inlineImages';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
+import { getApiErrorMessage } from '../../../shared/utils/toast';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import { FileAttachmentItem } from '../../../shared/components/files/FileAttachmentItem';
 import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
@@ -118,6 +119,44 @@ interface Props {
 
   /** Notices to show above the form (a missing guest address, a re-opened draft). Display only. */
   notices?: string[];
+
+  /**
+   * Builds a NEW draft from scratch, for the case where the one this composer was opened on turned out
+   * not to exist. Supplied by callers that own a prepare endpoint (setup-progress); when absent, the
+   * failure screen offers only "Đóng".
+   *
+   * <p>It must not reuse: the whole reason this screen is showing is that the id the caller was holding
+   * is dead, so a prepare that is allowed to hand the same id back would loop. The setup-progress caller
+   * passes `reuseExistingDraft = false` for exactly this.</p>
+   *
+   * <p>Deliberately behind a button rather than automatic. Creating a second draft is a write the author
+   * has not asked for, and doing it silently is indistinguishable — from the composer — from the draft
+   * having loaded normally, which is the confusion this whole screen exists to end.</p>
+   */
+  onRecreateDraft?: () => void | Promise<void>;
+}
+
+/** Why a draft could not be loaded. Each one gets a different screen, because each has a different fix. */
+type DraftLoadFailure = {
+  kind: 'NOT_FOUND' | 'FORBIDDEN' | 'NOT_EDITABLE' | 'UNKNOWN';
+  message: string;
+};
+
+/**
+ * Classifies a failed `getDraft` from the HTTP status the backend chose.
+ *
+ * The four statuses are not interchangeable and were previously collapsed into one sentence
+ * ("Không tải được email nháp… Vui lòng đóng và thử lại"), which advised a retry for the three cases
+ * where retrying cannot possibly work.
+ */
+function classifyDraftLoadFailure(error: unknown, fallbackMessage: string): DraftLoadFailure {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  const message = getApiErrorMessage(error, fallbackMessage);
+
+  if (status === 404) return { kind: 'NOT_FOUND', message };
+  if (status === 403) return { kind: 'FORBIDDEN', message };
+  if (status === 409) return { kind: 'NOT_EDITABLE', message };
+  return { kind: 'UNKNOWN', message };
 }
 
 const QUILL_MODULES_TOOLBAR = [
@@ -196,7 +235,7 @@ export function EmailComposeModal({
   relatedType, relatedId, emailTemplateId,
   initialSubject = '', initialBodyHtml = '', initialRecipients = '', initialDraftId = null,
   lockedTemplate = false, contextTitle, lockedAttachmentFileIds, sendDraftOverride,
-  onRefreshRequiredAttachment, notices,
+  onRefreshRequiredAttachment, notices, onRecreateDraft,
 }: Props) {
   const [envelope, setEnvelope] = useState<RecipientEnvelope>(() => seedEnvelopeFromString(initialRecipients));
   // CC/BCC start hidden but their data outlives the toggle — collapsing is a view concern, and a
@@ -221,6 +260,18 @@ export function EmailComposeModal({
    * running is covered too.
    */
   const [hydrating, setHydrating] = useState(initialDraftId != null);
+  /**
+   * Set when the draft this composer was opened on could not be loaded. While it is set the composer
+   * form is NOT rendered at all — a failure screen takes its place.
+   *
+   * Nothing less than replacing the form was enough. Leaving the form up with an error line above it
+   * showed the caller's `initialBodyHtml` sitting in the editor, which is the generated text and looks
+   * exactly like a draft that loaded — so the author could preview it, edit it, and press send, at
+   * which point `handleSend` found no draft id and quietly created a brand-new draft to send. A dead id
+   * therefore produced a real, sent email that no draft in the database had ever backed.
+   */
+  const [loadFailure, setLoadFailure] = useState<DraftLoadFailure | null>(null);
+  const [recreating, setRecreating] = useState(false);
   const [subject, setSubject] = useState(initialSubject);
   const [bodyHtml, setBodyHtml] = useState(initialBodyHtml);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
@@ -291,6 +342,8 @@ export function EmailComposeModal({
     setRecipientErrors({});
     setFormError(null);
     setDraftBlocked(null);
+    setLoadFailure(null);
+    setRecreating(false);
     // Reopening must never inherit a previous draft id from state — the id comes from the caller.
     setHydrating(initialDraftId != null);
     hydratingRef.current = initialDraftId != null;
@@ -324,6 +377,7 @@ export function EmailComposeModal({
 
     let cancelled = false;
     setHydrating(true);
+    setLoadFailure(null);
     hydratingRef.current = true;   // set synchronously; a debounce could fire before the re-render
 
     (async () => {
@@ -366,14 +420,23 @@ export function EmailComposeModal({
         // Autosave is enabled only now, and only on success.
         setHydrating(false);
         hydratingRef.current = false;
-      } catch {
+      } catch (error) {
         if (cancelled) return;
-        // Fail closed: no draft id is adopted, so nothing can be created or updated. The composer is
-        // NOT presented as a working empty one — that would look like a draft whose content vanished.
+        // Fail closed: no draft id is adopted, so nothing can be created or updated.
         setDraftId(null);
         draftIdRef.current = null;
         dirtyRef.current = false;
-        setFormError('Không tải được email nháp. Dữ liệu nháp trên hệ thống được giữ nguyên. Vui lòng đóng và thử lại.');
+        // And the generated body is cleared with it. Leaving it in the editor was the difference
+        // between "this draft could not be opened" and "here is your draft" — the screen looked
+        // identical to a successful load, so the author kept working in it.
+        setSubject('');
+        setBodyHtml('');
+        setAttachments([]);
+        setEnvelope(emptyEnvelope());
+        setLoadFailure(classifyDraftLoadFailure(
+          error,
+          'Không tải được email nháp. Dữ liệu nháp trên hệ thống được giữ nguyên.',
+        ));
         // hydrating stays true: autosave remains disabled for this failed attempt.
       }
     })();
@@ -567,12 +630,15 @@ export function EmailComposeModal({
 
   const handlePreview = useCallback(() => {
     if (draftBlocked) return;
+    // Unreachable while the failure screen is up (the form is not rendered), and kept anyway: a
+    // preview of a draft that does not exist would be a preview of nothing.
+    if (loadFailure) return;
     setFormError(null);
     if (!validateRecipients()) return;
     if (!subject.trim()) { pushToast?.('error', 'Tiêu đề email không được để trống.'); return; }
     if (uploading) { pushToast?.('error', 'Vui lòng đợi tệp đính kèm tải lên xong.'); return; }
     setShowPreview(true);
-  }, [validateRecipients, subject, uploading, pushToast]);
+  }, [validateRecipients, subject, uploading, pushToast, draftBlocked, loadFailure]);
 
   /** Puts a server-side rejection back on the field it belongs to, matched on the stable code. */
   const mapServerError = useCallback((error: any) => {
@@ -589,6 +655,11 @@ export function EmailComposeModal({
   const handleSend = useCallback(async () => {
     if (sending) return;               // double-submit guard, before any await
     if (draftBlocked) return;          // an unclassifiable stored recipient makes this draft unsendable
+    // The draft this composer was opened on does not exist. Sending from here would take the branch
+    // below that CREATES a draft when there is no id — turning a failed load into a real email backed
+    // by a draft the author never asked for. Making a new draft is the failure screen's button, and it
+    // goes through the caller's prepare endpoint so the flow's own rules apply to it.
+    if (loadFailure) return;
     setFormError(null);
     if (!validateRecipients()) return;
     if (!subject.trim()) { pushToast?.('error', 'Tiêu đề email không được để trống.'); return; }
@@ -627,7 +698,25 @@ export function EmailComposeModal({
     } finally {
       setSending(false);
     }
-  }, [sending, envelope, subject, buildPayload, validateRecipients, mapServerError, pushToast, onSent, onClose, sendDraftOverride]);
+  }, [sending, envelope, subject, buildPayload, validateRecipients, mapServerError, pushToast, onSent, onClose, sendDraftOverride, draftBlocked, loadFailure]);
+
+  /**
+   * "Tạo bản nháp mới" — the only write this screen offers, and only when the caller can perform it.
+   * The caller re-runs its prepare with reuse turned off and re-keys this modal on the new id, so a
+   * fresh mount hydrates normally.
+   */
+  const handleRecreateDraft = useCallback(async () => {
+    if (!onRecreateDraft || recreating) return;
+    setRecreating(true);
+    try {
+      await onRecreateDraft();
+    } catch {
+      // The caller owns its own error surface (the language modal shows the reason); nothing to add
+      // here beyond releasing the button.
+    } finally {
+      setRecreating(false);
+    }
+  }, [onRecreateDraft, recreating]);
 
   /**
    * Rebuilds the locked attachment, and the body with it when the backend returns one. The new file id
@@ -741,7 +830,59 @@ export function EmailComposeModal({
           </div>
         </div>
 
-        {showPreview ? (
+        {loadFailure ? (
+          /* ── The draft could not be loaded ──────────────────────────────────
+             Replaces the form outright. Every control that could write — autosave, preview, send,
+             discard — is simply absent, so there is no path from this state to a message going out
+             or to a second draft appearing without the author choosing it. */
+          <div className="px-6 py-8" data-testid="draft-load-failure">
+            <div className="mb-5 flex justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+                <AlertTriangle className="h-7 w-7 text-amber-600" />
+              </div>
+            </div>
+
+            <h4 className="mb-2 text-center text-base font-bold text-gray-900">
+              {loadFailure.kind === 'NOT_FOUND' && 'Không mở được email nháp'}
+              {loadFailure.kind === 'FORBIDDEN' && 'Bạn không có quyền mở email nháp này'}
+              {loadFailure.kind === 'NOT_EDITABLE' && 'Email nháp này không còn soạn được'}
+              {loadFailure.kind === 'UNKNOWN' && 'Không tải được email nháp'}
+            </h4>
+
+            <p role="alert" className="mb-2 text-center text-sm text-gray-600">
+              {loadFailure.message}
+            </p>
+            {/* Said explicitly because the first thing anyone assumes on seeing this is that their
+                work was destroyed. Nothing on this path writes to the database. */}
+            <p className="mb-6 text-center text-xs text-gray-400">
+              Dữ liệu trên hệ thống không bị thay đổi.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                data-testid="draft-load-failure-close"
+                onClick={onClose}
+                className="flex-1 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Đóng
+              </button>
+              {/* Offered only where a new draft is actually the right answer. A draft that belongs to
+                  somebody else, or one that has already been sent, is not a thing to replace. */}
+              {onRecreateDraft && loadFailure.kind === 'NOT_FOUND' && (
+                <button
+                  type="button"
+                  data-testid="draft-load-failure-recreate"
+                  disabled={recreating}
+                  onClick={() => { void handleRecreateDraft(); }}
+                  className="flex-1 rounded-xl bg-[#004c91] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#013565] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {recreating ? 'Đang tạo…' : 'Tạo bản nháp mới'}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : showPreview ? (
           <div className="flex flex-col h-full overflow-hidden">
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">

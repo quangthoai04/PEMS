@@ -66,6 +66,7 @@ vi.mock('react-router-dom', () => ({
 }));
 
 import { VisitProcess } from '../VisitProcess';
+import i18n from '../../../../shared/i18n/config';
 
 const PERMISSION = {
   visitInstanceId: 501,
@@ -119,6 +120,12 @@ const DRAFT = {
 };
 
 beforeEach(() => {
+  // These assertions are written against the Vietnamese UI, and one of them now depends on it.
+  // The screen reads errors through the shared extractor, which deliberately withholds a raw
+  // Vietnamese backend message when the UI is in English (i18n §8.1) rather than mixing languages.
+  // i18n falls back to `navigator.language` — en-US under jsdom — so without this pin the backend's
+  // sentence is correctly suppressed and the generic fallback is shown instead.
+  void i18n.changeLanguage('vi');
   vi.clearAllMocks();
   getVisitProcessPermissions.mockResolvedValue(PERMISSION);
   getVisitProcessDetail.mockResolvedValue(DETAIL);

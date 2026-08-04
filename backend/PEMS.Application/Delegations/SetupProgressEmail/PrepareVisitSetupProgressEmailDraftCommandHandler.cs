@@ -217,45 +217,66 @@ public sealed class PrepareVisitSetupProgressEmailDraftCommandHandler
             CreatedAt = now,
         };
 
-        try
+        // ── One transaction for the whole draft ────────────────────────────────
+        //
+        // The response hands the browser a draftId, and the browser's very next call is GET that id. So
+        // the id must not exist before every row that makes it a usable draft exists with it. Two
+        // SaveChanges without a transaction — which is what this was — meant the draft row committed on
+        // its own: a failure while writing the recipients or the attachment left a committed draft with
+        // no recipients and no report, and the caller either got an error after the row was already
+        // there, or (worse) a later reuse found it and offered it back as a composer that could never be
+        // sent.
+        //
+        // The report PDF is deliberately outside this: it is already on Drive by now and storage has no
+        // rollback. That asymmetry is handled by ordering — the file is archived first, so the only
+        // thing a failure can leak is an unreferenced PDF, never a draft promising a file that is not
+        // there.
+        await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
-            _db.EmailDrafts.Add(draft);
-            await _db.SaveChangesAsync(cancellationToken);
-
-            var order = 0;
-            foreach (var (recipient, type) in Flatten(envelope))
+            try
             {
-                _db.EmailDraftRecipients.Add(new EmailDraftRecipient
+                _db.EmailDrafts.Add(draft);
+                await _db.SaveChangesAsync(cancellationToken);
+
+                var order = 0;
+                foreach (var (recipient, type) in Flatten(envelope))
+                {
+                    _db.EmailDraftRecipients.Add(new EmailDraftRecipient
+                    {
+                        EmailDraftId = draft.EmailDraftId,
+                        RecipientEmail = recipient.Email,
+                        RecipientName = recipient.DisplayName,
+                        RecipientType = type,
+                        DisplayOrder = (uint)order++,
+                        CreatedAt = now,
+                    });
+                }
+
+                _db.EmailDraftAttachments.Add(new EmailDraftAttachment
                 {
                     EmailDraftId = draft.EmailDraftId,
-                    RecipientEmail = recipient.Email,
-                    RecipientName = recipient.DisplayName,
-                    RecipientType = type,
-                    DisplayOrder = (uint)order++,
+                    FileId = reportFileId,
+                    AttachmentType = EmailAttachmentType.ATTACHMENT,
+                    DisplayName = artifact.FileName,
+                    DisplayOrder = 0,
                     CreatedAt = now,
                 });
+
+                await _db.SaveChangesAsync(cancellationToken);
+                await tx.CommitAsync(cancellationToken);
             }
-
-            _db.EmailDraftAttachments.Add(new EmailDraftAttachment
+            catch (Exception ex)
             {
-                EmailDraftId = draft.EmailDraftId,
-                FileId = reportFileId,
-                AttachmentType = EmailAttachmentType.ATTACHMENT,
-                DisplayName = artifact.FileName,
-                DisplayOrder = 0,
-                CreatedAt = now,
-            });
+                await tx.RollbackAsync(CancellationToken.None);
 
-            await _db.SaveChangesAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            // Deliberately logs the instance, not the file: a storage path or a signed URL in a log is a
-            // way to reach the document without going through authorization.
-            _logger.LogError(ex,
-                "Failed to persist the setup-progress draft for visit instance {VisitInstanceId}; the generated report stays archived.",
-                instance.VisitInstanceId);
-            throw;
+                // Deliberately logs the instance, not the file: a storage path or a signed URL in a log
+                // is a way to reach the document without going through authorization.
+                _logger.LogError(ex,
+                    "Failed to persist the setup-progress draft for visit instance {VisitInstanceId}; "
+                    + "no draft was created and the generated report stays archived unreferenced.",
+                    instance.VisitInstanceId);
+                throw;
+            }
         }
 
         return new PrepareVisitSetupProgressEmailDraftResponse

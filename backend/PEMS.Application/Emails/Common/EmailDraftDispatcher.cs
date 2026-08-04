@@ -127,6 +127,8 @@ public sealed class EmailDraftDispatcher : IEmailDraftDispatcher
             attachmentRows.Select(a => (a.FileId, a.AttachmentType, a.ContentId, a.DisplayName)).ToList(),
             cancellationToken);
 
+        AssertEveryAttachmentReadable(attachmentRows, outbound);
+
         var body = content.IsHtml
             ? await _normalizer.NormalizeHtmlAsync(content.Body, cancellationToken)
             : content.Body;
@@ -186,11 +188,58 @@ public sealed class EmailDraftDispatcher : IEmailDraftDispatcher
     }
 
     /// <summary>
+    /// Refuses the send when any attachment the author can see on this draft has no readable bytes.
+    ///
+    /// <para>
+    /// This runs BEFORE <see cref="TryClaimAsync"/>, so a refusal leaves the draft in DRAFT with
+    /// everything the author wrote still on it — they fix the file and press send again.
+    /// </para>
+    /// <para>
+    /// Fail-closed, deliberately, and for every attachment rather than only the ones some flow has
+    /// marked mandatory. Until now <see cref="Pair"/> quietly dropped an unreadable file and the send
+    /// carried on: the draft was claimed SENT, the provider accepted a message with one fewer part, and
+    /// the author was told "Đã gửi email tới N người nhận." Nothing anywhere recorded that the document
+    /// was missing. A person attaches a file because the message is about the file — treating its
+    /// disappearance as a detail the sender need not hear is the one behaviour that cannot be right,
+    /// and "optional" is not a property this service can read off a draft row anyway. (The
+    /// setup-progress flow probes its mandatory report earlier and says something more specific about
+    /// it; this is the backstop under every send path, including the generic composer and reply.)
+    /// </para>
+    /// </summary>
+    private static void AssertEveryAttachmentReadable(
+        IReadOnlyList<EmailDraftAttachment> rows, IReadOnlyList<OutboundAttachment?> loaded)
+    {
+        var missing = new List<string>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (i < loaded.Count && loaded[i] is not null) continue;
+            var name = rows[i].DisplayName;
+            missing.Add(string.IsNullOrWhiteSpace(name) ? $"tệp #{rows[i].FileId}" : name!);
+        }
+
+        if (missing.Count == 0) return;
+
+        throw new ValidationException(
+            $"Không gửi được: {missing.Count} tệp đính kèm không đọc được nội dung "
+            + $"({string.Join(", ", missing)}). Tệp có thể đã bị xoá khỏi kho lưu trữ hoặc hệ thống "
+            + "không còn quyền đọc. Vui lòng gỡ tệp khỏi email nháp hoặc tải lên lại, rồi gửi lại. "
+            + "Email nháp được giữ nguyên.",
+            EmailErrorCodes.AttachmentUnreadable);
+    }
+
+    /// <summary>
     /// Matches each stored attachment row with the bytes loaded for it. <paramref name="loaded"/> is
     /// index-aligned with <paramref name="rows"/> and holds null for a file whose bytes could not be
     /// read, so a skipped file drops out here instead of sliding the following rows onto the wrong
     /// content. Sending a row with no bytes is not an option — the recipient would get an empty part
     /// carrying a real document's filename.
+    ///
+    /// <para>
+    /// With <see cref="AssertEveryAttachmentReadable"/> in front of it the null branch is now
+    /// unreachable from the dispatcher. It stays because the alignment contract is what makes the
+    /// null-skip safe at all, and a future caller that chooses to tolerate a missing file must still
+    /// not get the shifted-name defect this method was written to prevent.
+    /// </para>
     /// </summary>
     private static IReadOnlyList<ManualEmailAttachment> Pair(
         IReadOnlyList<EmailDraftAttachment> rows, IReadOnlyList<OutboundAttachment?> loaded)

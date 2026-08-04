@@ -37,6 +37,7 @@ import { LogisticsRequestSection } from '../../../features/delegations/component
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 import { VisitorVisitDetailPage } from './VisitorVisitDetailPage';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
+import { getApiErrorMessage } from '../../../shared/utils/toast';
 import { StaleDataBanner } from '../../../shared/components/state';
 import { canSubmitReminders } from './visitProcessGuards';
 
@@ -163,20 +164,16 @@ export function VisitProcess() {
     setToasts((prev) => [...prev, { id: tid, type, msg }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== tid)), 4500);
   };
-  const apiErrorMessage = (e: any, fallback: string): string => {
-    const data = e?.response?.data;
-    if (!data) return fallback;
-    if (typeof data === 'string' && data.trim()) return data;
-    if (data.message) return data.message;
-    if (data.error) return data.error;
-    if (data.errors) {
-      const flat = Array.isArray(data.errors) ? data.errors : Object.values(data.errors).flat();
-      const first = (flat as any[]).find((x) => typeof x === 'string' && x.trim());
-      if (first) return first;
-    }
-    if (data.title) return data.title;
-    return fallback;
-  };
+  /**
+   * Delegates to the shared extractor rather than re-reading `response.data` here.
+   *
+   * The local copy this replaces skipped `errorCode` entirely and took `data.message` first, so a
+   * backend that had classified a failure precisely — GOOGLE_DRIVE_TOKEN_EXPIRED, say — was rendered
+   * as whatever prose happened to be attached to it, in whatever language the server wrote it. The
+   * shared helper resolves the code against `errors:api.*` first, which is where the Vietnamese and
+   * English wordings for these codes live, and masks credentials on the way out.
+   */
+  const apiErrorMessage = (e: any, fallback: string): string => getApiErrorMessage(e, fallback);
 
   // Before-tab setup/agenda/logistics/participants are NOT yet backed by a persistence API
   // (PrepareVisitLogistics / UpdateVisitLogistics and the agenda/participant saves are still
@@ -330,6 +327,11 @@ export function VisitProcess() {
       setSetupEmail(prev => ({
         ...prev,
         preparing: false,
+        // Back to the language step, which is where the error is readable and where the retry lives.
+        // Without this a failed rebuild left picking=false and draft=null, so the reason was written
+        // into state that nothing on screen was rendering — the modal simply closed.
+        picking: true,
+        draft: null,
         error: apiErrorMessage(e, 'Không chuẩn bị được email cập nhật. Vui lòng thử lại sau.'),
       }));
     }
@@ -1996,9 +1998,16 @@ export function VisitProcess() {
                 vẫn sửa được người nhận, tiêu đề và nội dung trước khi gửi.
               </p>
               {setupEmail.error && (
-                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  {setupEmail.error}
-                </p>
+                <div role="alert" data-testid="setup-email-error"
+                  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <p>{setupEmail.error}</p>
+                  {/* The language buttons below ARE the retry, so this says so rather than adding a
+                      third button that would have to ask which language all over again. Nothing was
+                      created on a failed prepare, so retrying cannot duplicate a draft or a report. */}
+                  <p className="mt-1 text-xs text-red-600/80">
+                    Chưa có bản nháp nào được tạo. Chọn lại ngôn ngữ bên dưới để thử lại, hoặc bấm Huỷ.
+                  </p>
+                </div>
               )}
               <div className="flex gap-3">
                 <button
@@ -2048,6 +2057,13 @@ export function VisitProcess() {
           lockedTemplate
           lockedAttachmentFileIds={[setupEmail.draft.reportFileId]}
           notices={setupEmail.draft.warnings}
+          // The draft this composer holds turned out not to exist. Rebuild it from the same language,
+          // with reuse OFF — reuse is what would hand the dead id straight back.
+          onRecreateDraft={async () => {
+            const language = setupEmail.draft?.languageCode === 'en' ? 'en' : 'vi';
+            setSetupEmail(prev => ({ ...prev, draft: null }));
+            await prepareSetupProgressEmail(language, false);
+          }}
           onRefreshRequiredAttachment={async () => {
             const fresh = await delegationsApi.refreshSetupProgressEmailReport(
               perm.visitRequestId, perm.visitInstanceId, setupEmail.draft!.draftId);
