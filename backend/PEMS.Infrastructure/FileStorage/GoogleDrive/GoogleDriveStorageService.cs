@@ -15,10 +15,16 @@ namespace PEMS.Infrastructure.FileStorage.GoogleDrive;
 /// <see cref="IHttpClientFactory"/>. Mints a short-lived access token from the configured
 /// long-lived <c>RefreshToken</c>, then uploads/downloads/deletes files. Used for user avatars.
 ///
-/// Errors are surfaced as <see cref="BusinessRuleException"/> with stable error codes so the UI
-/// can react: <c>GOOGLE_DRIVE_NOT_CONNECTED</c> (no refresh token configured),
-/// <c>GOOGLE_DRIVE_TOKEN_EXPIRED</c> (Google returned <c>invalid_grant</c>),
-/// <c>UPLOAD_AVATAR_FAILED</c> (any other Drive failure).
+/// Errors are surfaced as <see cref="BusinessRuleException"/> carrying a
+/// <see cref="GoogleDriveErrorCodes"/> value for connection/write failures and a
+/// <see cref="StorageErrorCodes"/> value for per-file read failures. The split matters: the first group
+/// is about the integration (configuration, token, reachability) and the second is about one document.
+///
+/// <para>
+/// No failure may borrow another's code. "Không thể kết nối Google Drive. Vui lòng thử lại." was the
+/// answer to a missing network, a rejected client secret, a 500 from Google and a malformed token
+/// response alike, and it is honest advice for only one of them.
+/// </para>
 /// </summary>
 public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
 {
@@ -76,23 +82,20 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             response = await client.SendAsync(request, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Google Drive avatar upload request failed.");
+            // The token was already minted, so this is transport — not authentication.
+            _logger.LogError(ex, "Google Drive avatar upload could not reach the upload endpoint.");
             throw new BusinessRuleException(
-                "Không thể kết nối hoặc tải ảnh lên Google Drive (Authentication/Network failed).", "GOOGLE_DRIVE_AUTH_FAILED");
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Google Drive upload returned {Status}: {Body}", (int)response.StatusCode, body);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                throw new BusinessRuleException("Thư mục Google Drive không tồn tại hoặc không có quyền truy cập.", "GOOGLE_DRIVE_FOLDER_NOT_FOUND_OR_NO_PERMISSION");
-            }
-            throw new BusinessRuleException(
-                "Không thể tải ảnh lên Google Drive.", "GOOGLE_DRIVE_UPLOAD_FAILED");
+            throw ClassifyUploadFailure(response.StatusCode, body, "ảnh");
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -155,23 +158,19 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             response = await client.SendAsync(request, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Google Drive file upload request failed.");
+            _logger.LogError(ex, "Google Drive file upload could not reach the upload endpoint.");
             throw new BusinessRuleException(
-                "Không thể kết nối hoặc tải tệp lên Google Drive (Authentication/Network failed).", "GOOGLE_DRIVE_AUTH_FAILED");
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Google Drive upload returned {Status}: {Body}", (int)response.StatusCode, body);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound || body.Contains("notFound"))
-            {
-                throw new BusinessRuleException("Thư mục Google Drive không tồn tại hoặc không có quyền truy cập.", "GOOGLE_DRIVE_FOLDER_NOT_FOUND_OR_NO_PERMISSION");
-            }
-            throw new BusinessRuleException(
-                $"Không thể tải tệp lên Google Drive.", "GOOGLE_DRIVE_UPLOAD_FAILED");
+            throw ClassifyUploadFailure(response.StatusCode, body, "tệp");
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -252,12 +251,14 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             request.Dispose();
-            _logger.LogError(ex, "Google Drive range download request failed.");
+            // Same code as every other unreachable-storage path, so a caller (and StoredFileProbe) can
+            // tell "we could not ask" from "the file is gone" without knowing which method it called.
+            _logger.LogError(ex, "Google Drive range download could not reach the files endpoint.");
             throw new BusinessRuleException(
-                "Không thể tải tệp từ Google Drive.", "GOOGLE_DRIVE_DOWNLOAD_FAILED");
+                "Không kết nối được tới Google Drive để tải tệp.", StorageErrorCodes.Unavailable);
         }
 
         if (!response.IsSuccessStatusCode)
@@ -318,6 +319,40 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
     /// state as fact something this code cannot know.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Maps a rejected Drive WRITE onto one of the <see cref="GoogleDriveErrorCodes"/>. Shared by the
+    /// avatar and generic upload paths, which previously answered the same status differently and both
+    /// answered <c>UPLOAD_FAILED</c> for a 401 and a 503 — one of which means the connection is broken
+    /// and one of which means try again in a minute.
+    /// </summary>
+    private static BusinessRuleException ClassifyUploadFailure(
+        System.Net.HttpStatusCode status, string body, string what)
+    {
+        if (status == System.Net.HttpStatusCode.NotFound
+            || body.Contains("notFound", StringComparison.OrdinalIgnoreCase))
+            return new BusinessRuleException(
+                "Thư mục lưu trữ trên Google Drive không tồn tại hoặc tài khoản không có quyền truy cập.",
+                GoogleDriveErrorCodes.FolderNotFoundOrNoPermission);
+
+        if (status == System.Net.HttpStatusCode.Unauthorized)
+            return new BusinessRuleException(
+                "Kết nối Google Drive đã hết hạn. Vui lòng kết nối lại Google Drive.",
+                GoogleDriveErrorCodes.TokenExpired);
+
+        if (status == System.Net.HttpStatusCode.Forbidden)
+            return new BusinessRuleException(
+                "Google Drive từ chối ghi vào thư mục lưu trữ (thiếu quyền hoặc đã vượt hạn mức).",
+                GoogleDriveErrorCodes.FolderNotFoundOrNoPermission);
+
+        if ((int)status >= 500 || status == System.Net.HttpStatusCode.TooManyRequests)
+            return new BusinessRuleException(
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
+
+        return new BusinessRuleException(
+            $"Không thể tải {what} lên Google Drive.", GoogleDriveErrorCodes.UploadFailed);
+    }
+
     private static BusinessRuleException DownloadFailure(
         System.Net.HttpStatusCode status, string externalFileId) => status switch
         {
@@ -507,18 +542,28 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         }
     }
 
-    /// <summary>Exchanges the configured refresh token for a short-lived access token.</summary>
+    /// <summary>
+    /// Exchanges the configured refresh token for a short-lived access token.
+    ///
+    /// <para>
+    /// Every failure here is classified into one of the <see cref="GoogleDriveErrorCodes"/> because they
+    /// ask four different people to do four different things: fix the configuration, reconnect the
+    /// account, fix the OAuth client, or simply wait. They used to share one code and one sentence —
+    /// "Không thể kết nối Google Drive. Vui lòng thử lại." — which is only true advice for the last of
+    /// the four, and which is what the Host saw for all of them.
+    /// </para>
+    /// </summary>
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.RefreshToken))
             throw new BusinessRuleException(
                 "Google Drive chưa được kết nối. Vui lòng liên hệ người phụ trách cấu hình.",
-                "GOOGLE_DRIVE_CONFIG_MISSING");
+                GoogleDriveErrorCodes.ConfigMissing);
 
         if (string.IsNullOrWhiteSpace(_options.ClientId) || string.IsNullOrWhiteSpace(_options.ClientSecret))
             throw new BusinessRuleException(
                 "Google Drive chưa được cấu hình đầy đủ (ClientId/ClientSecret).",
-                "GOOGLE_DRIVE_CONFIG_MISSING");
+                GoogleDriveErrorCodes.ConfigMissing);
 
         var client = _httpClientFactory.CreateClient();
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -534,11 +579,14 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             response = await client.PostAsync(TokenEndpoint, form, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Google Drive token request failed.");
+            // Nothing was answered, so nothing is known about the credentials. Calling this an auth
+            // failure — as it did — sent every network incident to whoever owns the OAuth client.
+            _logger.LogError(ex, "Google Drive token request could not reach the token endpoint.");
             throw new BusinessRuleException(
-                "Không thể kết nối Google Drive. Vui lòng thử lại.", "GOOGLE_DRIVE_AUTH_FAILED");
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -547,26 +595,78 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
             // invalid_grant ⇒ the refresh token was revoked or expired (Drive "Testing" apps: ~7 days).
             if (body.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Google Drive refresh token expired/revoked: {Body}", body);
+                _logger.LogWarning(
+                    "Google Drive refresh token expired/revoked (token endpoint {Status}, error={Error}).",
+                    (int)response.StatusCode, DescribeTokenError(body));
                 throw new BusinessRuleException(
-                    "Token Google Drive đã hết hạn. Vui lòng kết nối lại Google Drive.",
-                    "GOOGLE_DRIVE_TOKEN_EXPIRED");
+                    "Kết nối Google Drive đã hết hạn. Vui lòng kết nối lại Google Drive.",
+                    GoogleDriveErrorCodes.TokenExpired);
             }
 
-            _logger.LogError("Google Drive token endpoint returned {Status}: {Body}", (int)response.StatusCode, body);
-            throw new BusinessRuleException(
-                "Không thể kết nối Google Drive. Vui lòng thử lại.", "GOOGLE_DRIVE_AUTH_FAILED");
+            // 5xx and 429 are Google having a bad moment; 4xx is our credentials being wrong. The first
+            // is worth retrying and the second never is, so they must not arrive as the same code.
+            var transient = (int)response.StatusCode >= 500
+                            || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
+
+            _logger.LogError(
+                "Google Drive token endpoint returned {Status} (error={Error}).",
+                (int)response.StatusCode, DescribeTokenError(body));
+
+            throw transient
+                ? new BusinessRuleException(
+                    "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                    GoogleDriveErrorCodes.Unavailable)
+                : new BusinessRuleException(
+                    "Không thể xác thực với Google Drive. Vui lòng kiểm tra cấu hình kết nối Google Drive.",
+                    GoogleDriveErrorCodes.AuthFailed);
         }
 
-        using var doc = JsonDocument.Parse(body);
-        if (!doc.RootElement.TryGetProperty("access_token", out var tokenEl)
-            || tokenEl.GetString() is not { Length: > 0 } accessToken)
+        string? accessToken = null;
+        try
         {
-            _logger.LogError("Google Drive token response missing access_token: {Body}", body);
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("access_token", out var tokenEl))
+                accessToken = tokenEl.GetString();
+        }
+        catch (JsonException ex)
+        {
+            // A 200 that is not JSON is a captive portal or a proxy, not a credential problem.
+            _logger.LogError(ex, "Google Drive token response was not valid JSON.");
             throw new BusinessRuleException(
-                "Không thể kết nối Google Drive. Vui lòng thử lại.", "UPLOAD_AVATAR_FAILED");
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
+        }
+
+        if (string.IsNullOrEmpty(accessToken))
+        {
+            // Deliberately does not log the body: on this path it parsed as JSON, and a token response
+            // is the one payload from Google that carries a credential. Answered as UNAVAILABLE rather
+            // than as an auth failure because Google accepted the credentials — it is the response that
+            // is malformed. (This throw used to carry the code "UPLOAD_AVATAR_FAILED", inherited from
+            // the avatar feature this client was first written for, on a path every Drive upload shares.)
+            _logger.LogError("Google Drive token response contained no access_token.");
+            throw new BusinessRuleException(
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
         }
 
         return accessToken;
+    }
+
+    /// <summary>
+    /// The <c>error</c> field of an OAuth error body ("invalid_grant", "invalid_client", …) — enough to
+    /// diagnose, without copying the whole payload of a credential endpoint into the log.
+    /// </summary>
+    private static string DescribeTokenError(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("error", out var el) ? el.GetString() ?? "?" : "?";
+        }
+        catch (JsonException)
+        {
+            return "(unparseable)";
+        }
     }
 }
