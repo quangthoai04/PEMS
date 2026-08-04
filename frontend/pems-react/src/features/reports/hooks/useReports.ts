@@ -15,7 +15,7 @@ import type {
 } from '../types/staffLeaderReports.types';
 
 export const DEFAULT_HO_FILTERS: HoReportFilters = {
-  preset: 'THIS_YEAR',
+  preset: 'THIS_MONTH',
   fromDate: undefined,
   toDate: undefined,
   campusId: undefined,
@@ -132,7 +132,7 @@ export function useHoReport() {
 export const useReports = useHoReport;
 
 export const DEFAULT_STAFF_LEADER_FILTERS: StaffLeaderReportFilters = {
-  preset: 'THIS_YEAR',
+  preset: 'THIS_MONTH',
   fromDate: undefined,
   toDate: undefined,
   visitStatus: 'ALL',

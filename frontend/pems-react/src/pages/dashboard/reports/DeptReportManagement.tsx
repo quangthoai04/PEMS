@@ -183,7 +183,7 @@ export function DeptReportManagement() {
   const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && !isDeptLeader;
 
   // ── Bộ lọc thời gian (chung cho cả 3 phần) ──
-  const [filters, setFilters] = useState<DeptLeaderV2Filters>({ preset: 'THIS_YEAR', fromDate: '', toDate: '' });
+  const [filters, setFilters] = useState<DeptLeaderV2Filters>({ preset: 'THIS_MONTH', fromDate: '', toDate: '' });
   const [data, setData] = useState<DeptLeaderReportV2 | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -486,7 +486,11 @@ export function DeptReportManagement() {
             <button
               key={pr.value}
               type="button"
-              onClick={() => setFilters((f) => ({ ...f, preset: pr.value }))}
+              onClick={() => {
+                const nextFilters = { preset: pr.value, fromDate: '', toDate: '' };
+                setFilters(nextFilters);
+                if (pr.value !== 'CUSTOM') fetchReport(nextFilters);
+              }}
               className={`px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${
                 filters.preset === pr.value ? 'bg-[#004c91] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
               }`}
@@ -514,10 +518,14 @@ export function DeptReportManagement() {
         </button>
         <button
           type="button"
-          onClick={() => fetchReport(filters)}
+          onClick={() => {
+            const defaultFilters = { preset: 'THIS_MONTH' as const, fromDate: '', toDate: '' };
+            setFilters(defaultFilters);
+            fetchReport(defaultFilters);
+          }}
           disabled={loading}
           className="ml-auto p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
-          title="Tải lại"
+          title="Đặt lại về mặc định (Tháng này)"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" /> : <RefreshCw className="w-4 h-4" />}
         </button>
