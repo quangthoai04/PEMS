@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Ban, Info, Loader2, Save, ShieldAlert, RotateCcw } from 'lucide-react';
-import { ConfirmModal } from '../../../components/modals/ConfirmModal';
+import { AlertTriangle, Ban, Info, Loader2, ShieldAlert } from 'lucide-react';
 import {
   emailsApi,
   type EmailContactCapability,
@@ -19,6 +18,21 @@ import { getApiErrorMessage } from '../../../shared/utils/toast';
  * resolved when the mail is sent, from the visit, the campus or the department. That is what stops a
  * template from being edited to attribute somebody else's mailbox to the Host, and it is why there is no
  * free-text field here except the two headings.
+ *
+ * <h3>Controlled, and with no buttons of its own</h3>
+ *
+ * The card used to hold its own draft, its own dirty flag, its own "Lưu cấu hình liên hệ" and its own
+ * "Phục hồi mặc định". That made four things true that should not have been: an operator had to remember
+ * two saves, a template could be left with a body and a policy contradicting each other because only one
+ * of the two calls succeeded, the close warning had to name which of two groups was unsaved, and the one
+ * rule that spans both — whether the body may carry `{{contactInformationBlock}}` — was judged by each
+ * half against the other half as STORED, so changing both at once was refused whichever way round it was
+ * done.
+ *
+ * The card now renders `value` and reports edits through `onChange`. It still fetches its own metadata —
+ * capability, the legal requirement levels, the source and Reply-To options — because that is
+ * per-template information the parent has no other reason to hold, and it hands the loaded settings up
+ * once through `onLoaded` so the editor can seed both its form and its baseline in one step.
  */
 
 const REQUIREMENT_LABELS: Record<string, { title: string; hint: string }> = {
@@ -132,57 +146,96 @@ interface Props {
   templateCode: string;
   /** HO only. Everyone else sees the settings read-only. */
   canEdit: boolean;
+  /**
+   * The capability from the template contract, when the caller already holds one.
+   *
+   * The same fact reaches this card by two routes — the contract the editor fetches and this card's own
+   * settings request — and they cannot be allowed to disagree in the unsafe direction. `false` here is
+   * final: the reason is shown at once, and the settings request is not even made, so a response that
+   * omitted `capability` (an API built before the split) can no longer produce a configuration form on a
+   * template whose policy the backend refuses to write. Left undefined, the card answers from its own
+   * response as before.
+   */
+  contactSupported?: boolean;
+  /** The contract's Vietnamese reason, used when the card renders before its own request has answered. */
+  contactReasonVi?: string;
   /** VI or EN — the preview follows the language tab being edited. */
   language?: string;
+  /**
+   * The configuration currently on screen, owned by the editor.
+   *
+   * Null while the card's own request is still in flight, and on a template with no configuration. The
+   * card renders nothing editable until this arrives, which is also what keeps the editor's baseline
+   * honest: form and baseline are seeded together by `onLoaded`, so there is no window in which the
+   * screen holds a value it has no baseline for and reports it as an unsaved change.
+   */
+  value: EmailContactSettingsPayload | null;
+  /** One field changed. The editor merges it and re-derives the single dirty flag. */
+  onChange: (next: EmailContactSettingsPayload) => void;
+  /**
+   * The settings as STORED, handed up once per template so the editor can set form and baseline in the
+   * same step. Called again after a save or restore re-seeds the card from the server's snapshot.
+   */
+  onLoaded: (settings: EmailContactSettings) => void;
+  /**
+   * Asks the editor to switch the level to NONE, which it may refuse or make conditional.
+   *
+   * The card does NOT apply that change itself, and this is the one place its "just render `value`"
+   * contract is bent on purpose. Switching to "Không hiển thị" while a body still carries the block is
+   * the one edit that needs a decision the card cannot make — the bodies are the editor's, and deleting
+   * from them silently would be an edit the operator never made and cannot see. So the intent is
+   * reported and the editor decides whether to apply it directly or to ask first.
+   */
+  onRequestHide: () => void;
   /**
    * Receives the contact block rendered from the CURRENT draft, so the editor's preview pane updates as
    * toggles change rather than only after a save. '' means this policy renders no block.
    */
   onBlockPreviewChange?: (html: string) => void;
   /**
-   * Reports whether this card holds unsaved changes.
-   *
-   * The contact settings and the template content are two separate saves against two separate endpoints,
-   * so "there are unsaved changes" is two answers, not one. The editor asks for this one so it can name
-   * which group is dirty when the screen is closed, instead of the single vague sentence that left an
-   * operator guessing which of the two buttons they had forgotten to press.
+   * A validation problem the EDITOR found that belongs on this card — today, only "the body still has the
+   * block while the level is hidden". Rendered here, next to the radio that caused it, rather than only
+   * under the body field: the operator's next action is to change one of the two, and both are on screen.
    */
-  onDirtyChange?: (dirty: boolean) => void;
-  /** Toast notification callback */
-  pushToast?: (type: 'success' | 'error', msg: string) => void;
+  crossFieldError?: { message: string; actionLabel?: string; onAction?: () => void } | null;
 }
 
 export function ContactSettingsPanel({
   templateCode,
   canEdit,
+  contactSupported,
+  contactReasonVi,
   language = 'VI',
+  value,
+  onChange,
+  onLoaded,
+  onRequestHide,
   onBlockPreviewChange,
-  onDirtyChange,
-  pushToast,
+  crossFieldError,
 }: Props) {
   const [settings, setSettings] = useState<EmailContactSettings | null>(null);
-  const [draft, setDraft] = useState<EmailContactSettingsPayload | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [failure, setFailure] = useState<LoadFailure | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [restoring, setRestoring] = useState(false);
-  const [confirmState, setConfirmState] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    variant: 'danger' as 'danger' | 'warning',
-    onConfirm: () => {},
-  });
+
+  /**
+   * Settled before anything is requested. A template that cannot carry the block has no settings to
+   * fetch: the endpoint would answer with a policy the send path ignores, and a failure of that request
+   * would be reported as a problem with a card that has nothing to show anyway.
+   */
+  const knownUnsupported = contactSupported === false;
+
+  // Held in a ref so the load effect does not re-run every time the editor re-renders with a new closure.
+  // Without this the card would re-fetch on each keystroke in the body, and each response would call
+  // onLoaded again — re-seeding the baseline from the server and quietly discarding unsaved edits.
+  const reportLoaded = useRef(onLoaded);
+  reportLoaded.current = onLoaded;
 
   const load = useCallback(async () => {
     setStatus('loading');
-    setSaveError('');
     try {
       const res = await emailsApi.getEmailContactSettings(templateCode);
-      const data = res.data;
-      setSettings(data);
-      setDraft(toPayload(data));
+      setSettings(res.data);
+      reportLoaded.current(res.data);
       setStatus('ready');
     } catch (err) {
       setFailure(classifyLoadFailure(err));
@@ -190,26 +243,10 @@ export function ContactSettingsPanel({
     }
   }, [templateCode]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  /**
-   * Whether this card holds unsaved changes — computed here, above the early returns, because the editor
-   * has to be told even while the card is loading or has failed (in both of those states the honest
-   * answer is "nothing unsaved", and a stale `true` from a previous template would warn about work that
-   * does not exist).
-   */
-  const dirty = Boolean(draft && settings)
-    && JSON.stringify(draft) !== JSON.stringify(toPayload(settings!));
-
-  const reportDirty = useRef(onDirtyChange);
-  reportDirty.current = onDirtyChange;
-
-  useEffect(() => { reportDirty.current?.(dirty); }, [dirty]);
-
-  // A card that unmounts, or moves to another template, is no longer holding anything. Without this the
-  // editor would keep warning about unsaved contact settings after the operator closed the very card
-  // that had them.
-  useEffect(() => () => reportDirty.current?.(false), [templateCode]);
+  useEffect(() => {
+    if (knownUnsupported) return;
+    void load();
+  }, [load, knownUnsupported]);
 
   /**
    * Re-render the block whenever the draft changes.
@@ -224,7 +261,14 @@ export function ContactSettingsPanel({
    */
   useEffect(() => {
     if (!onBlockPreviewChange) return;
-    if (!draft) return;
+
+    // Known unsupported before any request: the preview pane must not keep another template's block.
+    if (knownUnsupported) {
+      onBlockPreviewChange('');
+      return;
+    }
+
+    if (!value) return;
 
     // A template that cannot carry the block renders nothing, and the backend says so too — asking it
     // is a round trip whose answer is already known, and whose failure would be reported as an empty
@@ -234,11 +278,19 @@ export function ContactSettingsPanel({
       return;
     }
 
+    // Hidden renders nothing, and the preview must agree: showing a contact card over a policy of
+    // "Không hiển thị" would tell an operator their setting had not taken effect. Answered here rather
+    // than by asking the backend, because the answer is not in doubt.
+    if (value.requirement === 'NONE') {
+      onBlockPreviewChange('');
+      return;
+    }
+
     let cancelled = false;
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const res = await emailsApi.previewEmailContactBlock(templateCode, { ...draft, language });
+          const res = await emailsApi.previewEmailContactBlock(templateCode, { ...value, language });
           if (!cancelled) onBlockPreviewChange(res.data.html ?? '');
         } catch {
           if (!cancelled) onBlockPreviewChange('');
@@ -247,61 +299,49 @@ export function ContactSettingsPanel({
     }, 250);
 
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [draft, templateCode, language, onBlockPreviewChange, settings?.capability]);
+  }, [value, templateCode, language, onBlockPreviewChange, settings?.capability, knownUnsupported]);
 
-  const save = async () => {
-    if (!draft) return;
-    setSaving(true);
-    setSaveError('');
-    try {
-      const res = await emailsApi.updateEmailContactSettings(templateCode, draft);
-      setSettings(res.data);
-      setDraft(toPayload(res.data));
-      if (pushToast) pushToast('success', 'Đã cập nhật cấu hình thông tin liên hệ.');
-    } catch (err) {
-      // The backend refuses contradictory combinations by name (both channels hidden, Reply-To
-      // pointing at a hidden address, REQUIRED without the placeholder in the body). Relayed verbatim
-      // rather than replaced with "Lưu thất bại", which would hide the one sentence that says what to fix.
-      setSaveError(getApiErrorMessage(err, 'Không lưu được cấu hình thông tin liên hệ.'));
-    } finally {
-      setSaving(false);
-    }
-  };
+  /**
+   * A template that cannot carry the block gets a sentence, not a form.
+   *
+   * Every control below would be inert on one: the requirement has no legal value other than NONE, the
+   * source resolves nothing, and the toggles decide the visibility of a block that never renders. Showing
+   * them anyway is what produced the reported defect — an operator set "Tùy chọn" on
+   * ACCOUNT_EMAIL_CONFIRMATION, saved it, added the block the setting had just invited, and met
+   * EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED with nothing on screen explaining it.
+   *
+   * Checked before the loading state, because when the caller already knows the answer there is nothing
+   * being loaded — and a spinner that resolves into a form is exactly what must not happen here.
+   */
+  const capability: EmailContactCapability =
+    knownUnsupported ? 'UNSUPPORTED' : (settings?.capability ?? 'SUPPORTED');
 
-  // Named for what it DOES, not for what it might look like it does. The backend writes the shipped
-  // default values onto this template's own row; it does not delete the row to let campus/system
-  // configuration flow through again. Those are two different operations and only one of them is
-  // implemented, so the wording must not promise the other.
-  const handleRestoreDefault = () => {
-    setConfirmState({
-      isOpen: true,
-      title: 'Phục hồi về cấu hình mặc định của mẫu',
-      variant: 'danger',
-      message:
-        'Mức hiển thị, nguồn đầu mối, các trường hiển thị, tiêu đề khối và Reply-To sẽ được đặt lại '
-        + 'thành giá trị mặc định của mẫu này. Nội dung email không thay đổi.',
-      onConfirm: () => {
-        setConfirmState(prev => ({ ...prev, isOpen: false }));
-        void executeRestoreDefault();
-      },
-    });
-  };
-
-  const executeRestoreDefault = async () => {
-    setRestoring(true);
-    setSaveError('');
-    try {
-      const res = await emailsApi.restoreEmailContactSettingsDefault(templateCode);
-      setSettings(res.data);
-      setDraft(toPayload(res.data));
-      if (pushToast) pushToast('success', 'Đã phục hồi về cấu hình mặc định của mẫu.');
-      // The debounce timer in useEffect will automatically re-render the preview using the new draft.
-    } catch (err) {
-      setSaveError(getApiErrorMessage(err, 'Không phục hồi được cấu hình thông tin liên hệ.'));
-    } finally {
-      setRestoring(false);
-    }
-  };
+  if (capability === 'UNSUPPORTED' && (knownUnsupported || (status === 'ready' && settings))) {
+    return (
+      <div className="space-y-3" data-capability={capability}>
+        <div className="flex items-start gap-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded p-3"
+             data-testid="contact-settings-unsupported">
+          <Ban className="w-4 h-4 shrink-0 mt-0.5 text-gray-500" />
+          <span className="space-y-1">
+            <span className="block font-semibold">Mẫu này không dùng khối thông tin liên hệ.</span>
+            <span className="block">
+              {settings?.capabilityReasonVi
+                ?? contactReasonVi
+                ?? 'Nội dung email không kèm đầu mối liên hệ nào.'}
+            </span>
+            <span className="block text-gray-500">Không có cấu hình cần chỉnh sửa.</span>
+          </span>
+        </div>
+        {/*
+          The one thing an unsupported template still has to be able to say. There is no form here, so a
+          body that has kept the block from an older release — or from a hand edit — would otherwise be
+          reported only under the body field on the far side of the screen, where the reader has just been
+          told this card has nothing to configure. The warning and its action belong next to that sentence.
+        */}
+        {crossFieldError && <CrossFieldError {...crossFieldError} />}
+      </div>
+    );
+  }
 
   if (status === 'loading') {
     return (
@@ -311,36 +351,7 @@ export function ContactSettingsPanel({
     );
   }
 
-  /**
-   * A template that cannot carry the block gets a sentence, not a form.
-   *
-   * Every control below would be inert on one: the requirement has no legal value other than NONE, the
-   * source resolves nothing, the toggles decide the visibility of a block that never renders, and both
-   * buttons are refused by the API. Showing them anyway is what produced the reported defect — an
-   * operator set "Tùy chọn" on ACCOUNT_EMAIL_CONFIRMATION, saved it, added the block the setting had
-   * just invited, and met EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED with nothing on screen explaining it.
-   */
-  const capability: EmailContactCapability = settings?.capability ?? 'SUPPORTED';
-
-  if (status === 'ready' && settings && capability === 'UNSUPPORTED') {
-    return (
-      <div className="flex items-start gap-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded p-3"
-           data-testid="contact-settings-unsupported"
-           data-capability={capability}>
-        <Ban className="w-4 h-4 shrink-0 mt-0.5 text-gray-500" />
-        <span className="space-y-1">
-          <span className="block font-semibold">Mẫu này không dùng khối thông tin liên hệ.</span>
-          <span className="block">
-            {settings.capabilityReasonVi
-              ?? 'Nội dung email không kèm đầu mối liên hệ nào.'}
-          </span>
-          <span className="block text-gray-500">Không có cấu hình cần chỉnh sửa.</span>
-        </span>
-      </div>
-    );
-  }
-
-  if (status === 'error' || !settings || !draft) {
+  if (status === 'error' || !settings || !value) {
     const f = failure ?? {
       kind: 'unknown',
       title: 'Không tải được cấu hình thông tin liên hệ',
@@ -371,16 +382,33 @@ export function ContactSettingsPanel({
     );
   }
 
-  const set = <K extends keyof EmailContactSettingsPayload>(key: K, value: EmailContactSettingsPayload[K]) => {
-    setDraft(prev => (prev ? { ...prev, [key]: value } : prev));
+  const set = <K extends keyof EmailContactSettingsPayload>(
+    key: K, fieldValue: EmailContactSettingsPayload[K],
+  ) => {
+    onChange({ ...value, [key]: fieldValue });
   };
 
-  const showsBlock = draft.requirement !== 'NONE';
+  /**
+   * Choosing a level. NONE is routed through the editor rather than applied here.
+   *
+   * Every other level is a change to this card alone, so it is applied directly. NONE may require the
+   * bodies to change too, and the bodies are not this card's to edit — so the editor is asked, and it is
+   * the editor that decides whether to apply it at once (nothing to remove) or to confirm first.
+   */
+  const chooseRequirement = (next: string) => {
+    if (next === 'NONE') {
+      onRequestHide();
+      return;
+    }
+    set('requirement', next as EmailContactSettingsPayload['requirement']);
+  };
+
+  const showsBlock = value.requirement !== 'NONE';
 
   const missingPlaceholder =
-    draft.requirement === 'REQUIRED' && !(settings.bodyCarriesBlockVi && settings.bodyCarriesBlockEn);
+    value.requirement === 'REQUIRED' && !(settings.bodyCarriesBlockVi && settings.bodyCarriesBlockEn);
 
-  const noChannel = showsBlock && !draft.showEmail && !draft.showPhone;
+  const noChannel = showsBlock && !value.showEmail && !value.showPhone;
 
   return (
     <div className="space-y-4" data-testid="contact-settings-panel">
@@ -391,7 +419,15 @@ export function ContactSettingsPanel({
         </span>
       </div>
 
-      {draft.requirement === 'NONE' && (
+      {/*
+        The contradiction, next to the control that causes it and above the explanatory note below.
+        Message and action are separate elements — never one concatenated string — so the sentence reads
+        as a sentence and the button reads as a button. The defect this replaces rendered them joined:
+        "…EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWEDXóa khối không hợp lệ".
+      */}
+      {crossFieldError && <CrossFieldError {...crossFieldError} />}
+
+      {value.requirement === 'NONE' && !crossFieldError && (
         <div className="flex items-start gap-2 text-xs text-gray-700 bg-gray-50 border border-gray-200
                         rounded p-3"
              data-testid="contact-settings-no-contact">
@@ -416,19 +452,20 @@ export function ContactSettingsPanel({
           would only be a button that fails. The reason is stated below rather than left to be inferred
           from a missing option.
         */}
-        {settings.availableRequirements.map(value => (
-          <label key={value}
+        {settings.availableRequirements.map(level => (
+          <label key={level}
                  className="flex items-start gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50">
             <input
               type="radio"
               name={`requirement-${templateCode}`}
+              data-testid={`contact-requirement-${level}`}
               className="mt-1"
-              checked={draft.requirement === value}
-              onChange={() => set('requirement', value as EmailContactSettingsPayload['requirement'])}
+              checked={value.requirement === level}
+              onChange={() => chooseRequirement(level)}
             />
             <span className="text-xs">
-              <span className="font-semibold text-gray-800">{REQUIREMENT_LABELS[value]?.title ?? value}</span>
-              <span className="block text-gray-500">{REQUIREMENT_LABELS[value]?.hint}</span>
+              <span className="font-semibold text-gray-800">{REQUIREMENT_LABELS[level]?.title ?? level}</span>
+              <span className="block text-gray-500">{REQUIREMENT_LABELS[level]?.hint}</span>
             </span>
           </label>
         ))}
@@ -458,18 +495,21 @@ export function ContactSettingsPanel({
       {showsBlock && (
         <>
           <div>
+            {/* "Lấy đầu mối từ" until this release. What the field chooses is where the recipient's
+                contact details are read from when the mail is sent; "đầu mối" is how the policy is
+                discussed internally and does not say that on a screen. */}
             <label className="block text-sm font-bold text-gray-700 mb-1" htmlFor={`source-${templateCode}`}>
-              Lấy đầu mối từ
+              Nguồn thông tin liên hệ
             </label>
             <select
               id={`source-${templateCode}`}
               disabled={!canEdit}
-              value={draft.contactSource}
+              value={value.contactSource}
               onChange={e => set('contactSource', e.target.value as EmailContactSettingsPayload['contactSource'])}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-50"
             >
-              {settings.availableSources.map(value => (
-                <option key={value} value={value}>{SOURCE_LABELS[value] ?? value}</option>
+              {settings.availableSources.map(source => (
+                <option key={source} value={source}>{SOURCE_LABELS[source] ?? source}</option>
               ))}
             </select>
           </div>
@@ -485,7 +525,11 @@ export function ContactSettingsPanel({
                 ['showSender', 'Dòng “Được gửi bởi”'],
               ] as const).map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 text-xs text-gray-700">
-                  <input type="checkbox" checked={draft[key as keyof EmailContactSettingsPayload] as boolean} onChange={e => set(key as keyof EmailContactSettingsPayload, e.target.checked as never)} />
+                  <input
+                    type="checkbox"
+                    checked={value[key as keyof EmailContactSettingsPayload] as boolean}
+                    onChange={e => set(key as keyof EmailContactSettingsPayload, e.target.checked as never)}
+                  />
                   {label}
                 </label>
               ))}
@@ -508,7 +552,7 @@ export function ContactSettingsPanel({
                 type="text"
                 maxLength={150}
                 disabled={!canEdit}
-                value={draft.headingVi}
+                value={value.headingVi}
                 onChange={e => set('headingVi', e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-50"
               />
@@ -522,7 +566,7 @@ export function ContactSettingsPanel({
                 type="text"
                 maxLength={150}
                 disabled={!canEdit}
-                value={draft.headingEn}
+                value={value.headingEn}
                 onChange={e => set('headingEn', e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-50"
               />
@@ -536,15 +580,15 @@ export function ContactSettingsPanel({
             <select
               id={`replyto-${templateCode}`}
               disabled={!canEdit}
-              value={draft.replyToSource}
+              value={value.replyToSource}
               onChange={e => set('replyToSource', e.target.value as EmailContactSettingsPayload['replyToSource'])}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91] disabled:bg-gray-50"
             >
-              {settings.availableReplyToSources.map(value => (
-                <option key={value} value={value}>{REPLY_TO_LABELS[value] ?? value}</option>
+              {settings.availableReplyToSources.map(source => (
+                <option key={source} value={source}>{REPLY_TO_LABELS[source] ?? source}</option>
               ))}
             </select>
-            {draft.replyToSource === 'CONTACT' && !draft.showEmail && (
+            {value.replyToSource === 'CONTACT' && !value.showEmail && (
               <p className="mt-1.5 text-xs text-red-700" data-testid="contact-settings-replyto-hidden">
                 Reply-To trỏ về đầu mối nhưng email của đầu mối đang bị ẩn — người nhận sẽ không thấy thư
                 trả lời sẽ đi đâu.
@@ -553,56 +597,47 @@ export function ContactSettingsPanel({
           </div>
         </>
       )}
-
-      {saveError && (
-        <div className="text-xs text-red-800 bg-red-50 border-l-4 border-red-400 p-3 rounded"
-             data-testid="contact-settings-save-error">
-          {saveError}
-        </div>
-      )}
-
-      {dirty && (
-        <p className="text-xs font-semibold text-amber-700" data-testid="contact-settings-dirty">
-          ● Cấu hình liên hệ có thay đổi chưa lưu
-        </p>
-      )}
-
-      {canEdit && (
-        <div className="flex items-center gap-3 mt-4">
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!dirty || saving || restoring || noChannel}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#004c91] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Lưu cấu hình liên hệ
-          </button>
-          <button
-            type="button"
-            onClick={handleRestoreDefault}
-            disabled={saving || restoring}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-            Phục hồi về cấu hình mặc định của mẫu
-          </button>
-        </div>
-      )}
-
-      <ConfirmModal
-        isOpen={confirmState.isOpen}
-        title={confirmState.title}
-        message={confirmState.message}
-        variant={confirmState.variant}
-        onConfirm={confirmState.onConfirm}
-        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
-      />
     </div>
   );
 }
 
-function toPayload(s: EmailContactSettings): EmailContactSettingsPayload {
+/**
+ * One refusal: an icon, a sentence, and — separately — a button.
+ *
+ * Three elements rather than one string, which is the whole point of extracting it. The failure this
+ * replaces rendered a raw error code and an action label concatenated into a single run of text
+ * ("…EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWEDXóa khối không hợp lệ"), which is unreadable and not
+ * clickable. No code is shown here at all: a stable code is for matching in software, and the sentence
+ * beside it already says what a person has to do.
+ */
+function CrossFieldError({
+  message, actionLabel, onAction,
+}: { message: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div className="rounded border-l-4 border-red-400 bg-red-50 p-3 text-xs text-red-800 space-y-2"
+         data-testid="contact-settings-cross-field-error">
+      <div className="flex items-start gap-2">
+        <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+        <span>{message}</span>
+      </div>
+      {actionLabel && onAction && (
+        <div className="pl-6">
+          <button
+            type="button"
+            data-testid="contact-settings-remove-block"
+            onClick={onAction}
+            className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+          >
+            {actionLabel}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The ten fields a save writes, taken off the fuller response the GET returns. */
+export function toContactPayload(s: EmailContactSettings): EmailContactSettingsPayload {
   return {
     requirement: s.requirement,
     contactSource: s.contactSource,

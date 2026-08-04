@@ -178,10 +178,14 @@ const openEditor = async () => {
 };
 
 /**
- * The content save. Named "Lưu thay đổi mẫu" rather than "Cập nhật" because there are two saves on this
- * screen — this one and card 4's — and the old label named neither its scope nor its difference.
+ * The ONE save on this screen. It writes the content fields and the contact settings together, in one
+ * request the server runs as one transaction.
+ *
+ * It was "Lưu thay đổi mẫu" while card 4 carried a second save button of its own, because a bare "Lưu"
+ * next to another save named neither its scope nor its difference. With one button the qualifier is
+ * noise, and its absence is asserted below.
  */
-const saveButton = () => screen.getByRole('button', { name: /Lưu thay đổi mẫu/ });
+const saveButton = () => screen.getByRole('button', { name: /Lưu thay đổi/ });
 
 /**
  * Makes one real change to the content, which is what the save button now requires.
@@ -239,7 +243,7 @@ describe('TemplateManagement — the catalog is fixed (G11-I)', () => {
     expect(document.querySelector('input[value="ACCOUNT_EMAIL_CONFIRMATION"]')).toBeNull();
   });
 
-  it('sends only content fields plus the concurrency token', async () => {
+  it('sends the content fields, the contact settings and the concurrency token — and nothing else', async () => {
     await openEditor();
     editName();
     fireEvent.click(saveButton());
@@ -248,12 +252,40 @@ describe('TemplateManagement — the catalog is fixed (G11-I)', () => {
 
     const [, payload] = updateEmailTemplate.mock.calls[0];
     expect(Object.keys(payload).sort()).toEqual(
-      ['bodyEn', 'bodyVi', 'description', 'expectedRevision', 'name', 'subjectEn', 'subjectVi'],
+      ['bodyEn', 'bodyVi', 'contactSettings', 'description', 'expectedRevision',
+       'name', 'subjectEn', 'subjectVi'],
     );
     expect(payload).not.toHaveProperty('templateCode');
     expect(payload).not.toHaveProperty('status');
     expect(payload).not.toHaveProperty('purpose');
     expect(payload).not.toHaveProperty('variablesText');
+  });
+
+  /**
+   * §3.1 and §5 of the atomic-save prompt: one request, not two calls made to look like one.
+   *
+   * The most valuable assertion in this file, because the failure it guards against is invisible on
+   * screen — a footer with one button can perfectly well call two endpoints in a row, and then the
+   * second one failing leaves the first one written.
+   */
+  it('writes both halves through one call, and never the standalone contact endpoints', async () => {
+    await openEditor();
+    await screen.findByTestId('contact-settings-panel');
+
+    editName();
+    // A change in each half, made in one editing session. The point of the assertion below is that they
+    // leave together: two calls would mean either could land without the other.
+    fireEvent.click(screen.getByTestId('contact-requirement-OPTIONAL'));
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(updateEmailTemplate).toHaveBeenCalledTimes(1));
+
+    const [, payload] = updateEmailTemplate.mock.calls[0];
+    expect(payload.name).toBe('Tên mẫu đã sửa');
+    expect(payload.contactSettings).toMatchObject({ requirement: 'OPTIONAL' });
+
+    expect(updateEmailContactSettings).not.toHaveBeenCalled();
+    expect(restoreEmailContactSettingsDefault).not.toHaveBeenCalled();
   });
 
   /**
@@ -397,10 +429,28 @@ describe('TemplateManagement — the variable contract (G11-J)', () => {
         ...ACCOUNT_CONTRACT,
         requiredSystemBlocks: [],
         optionalSystemBlocks: ['actionBlock', 'contactInformationBlock'],
+        contactSupported: true,
+        contactRequirement: 'OPTIONAL',
+      },
+    });
+    // The LEVEL has to permit it too, not merely the capability. Under OPTIONAL a body may carry the
+    // block or drop it, which is the state this test is about; the NONE case is its own test below,
+    // because there the block IS a fault and reporting nothing would be the defect.
+    getEmailContactSettings.mockResolvedValue({
+      data: {
+        templateCode: 'ACCOUNT_EMAIL_CONFIRMATION', requirement: 'OPTIONAL', contactSource: 'SENDER',
+        showEmail: true, showPhone: true, showDepartment: false, showCampus: false, showSender: false,
+        headingVi: '', headingEn: '', replyToSource: 'NONE',
+        blockPlaceholder: '{{contactInformationBlock}}',
+        bodyCarriesBlockVi: false, bodyCarriesBlockEn: false,
+        availableRequirements: ['NONE', 'OPTIONAL', 'REQUIRED'],
+        availableSources: ['HOST', 'SENDER'], availableReplyToSources: ['NONE', 'CONTACT', 'SENDER'],
+        capability: 'SUPPORTED',
       },
     });
 
     await openEditor();
+    await screen.findByTestId('contact-settings-panel');
     await screen.findByText('Họ tên người nhận');
 
     fireEvent.change(screen.getByTestId('quill'), {
@@ -422,7 +472,11 @@ describe('TemplateManagement — the variable contract (G11-J)', () => {
 
     const issues = await screen.findByTestId('issues-bodyVi');
     expect(issues).toHaveTextContent('logisticsTitle');
-    expect(issues).toHaveTextContent('EMAIL_TEMPLATE_VARIABLE_UNKNOWN');
+    // The code is matched on the ATTRIBUTE, not in the sentence. It used to be rendered as visible text
+    // butted straight against the action button's label — "…NOT_ALLOWEDXóa khối không hợp lệ" — which is
+    // neither readable nor something an operator can act on. It stays in the DOM for tests and support.
+    expect(issues.querySelector('[data-error-code="EMAIL_TEMPLATE_VARIABLE_UNKNOWN"]')).not.toBeNull();
+    expect(issues.textContent).not.toMatch(/EMAIL_TEMPLATE_[A-Z_]+/);
   });
 
   it('disables the save button while a blocking issue is present', async () => {
@@ -534,9 +588,10 @@ describe('TemplateManagement — restore to default (G11-I)', () => {
   const openAndRestore = async () => {
     await openEditor();
     fireEvent.click(screen.getByTestId('restore-default'));
-    // The confirmation is deliberate: this discards work rather than saving it. Matched on the exact
-    // label — /Phục hồi/ would also match the button that opened the dialog.
-    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận' }));
+    // The confirmation is deliberate: this discards work rather than saving it. The dialog's button is
+    // named for the action rather than "Xác nhận", so the last thing an operator reads before losing an
+    // afternoon's wording says what they are about to do.
+    fireEvent.click(await screen.findByRole('button', { name: 'Khôi phục mặc định' }));
   };
 
   it('offers restore for a template that ships a default', async () => {
@@ -566,14 +621,37 @@ describe('TemplateManagement — restore to default (G11-I)', () => {
     // Nothing is sent until the confirmation is answered.
     expect(restoreEmailTemplateDefault).not.toHaveBeenCalled();
 
-    // The dialog names the template and says explicitly that BOTH languages are replaced — an operator
-    // who spent an afternoon on the Vietnamese copy must not discover that after the fact. The code is
-    // matched inside the dialog text rather than on the page, where it legitimately appears several
-    // times (heading, locked field, sidebar note).
-    const dialogText = await screen.findByText(/Phục hồi mẫu "ACCOUNT_EMAIL_CONFIRMATION"/);
-    expect(dialogText).toBeInTheDocument();
-    expect(dialogText.textContent).toMatch(/tiếng Việt và tiếng Anh/);
-    expect(dialogText.textContent).toMatch(/không thay đổi/);
+    // §12 of the atomic-save prompt: the dialog itemises what goes. "Restore defaults" on a screen with
+    // four groups of fields does not say which of them it means, and an operator who spent an afternoon
+    // on the Vietnamese copy must not discover the answer afterwards. The code is matched inside the
+    // dialog text rather than on the page, where it legitimately appears several times (heading, locked
+    // field, sidebar note).
+    expect(await screen.findByRole('heading', { name: 'Khôi phục toàn bộ mẫu?' })).toBeInTheDocument();
+
+    const dialogText = screen.getByText(/Thao tác này sẽ khôi phục mẫu "ACCOUNT_EMAIL_CONFIRMATION"/);
+    expect(dialogText.textContent).toMatch(/Tên và mô tả mẫu/);
+    expect(dialogText.textContent).toMatch(/Tiêu đề và nội dung tiếng Việt/);
+    expect(dialogText.textContent).toMatch(/Tiêu đề và nội dung tiếng Anh/);
+    // The fourth item, because this fixture's contract does not say the block is unsupported.
+    expect(dialogText.textContent).toMatch(/Cấu hình thông tin liên hệ và Reply-To/);
+  });
+
+  /**
+   * §8: an unsupported template has no contact configuration, so the dialog must not promise to restore
+   * one. Saying it anyway would be a promise the transaction does not keep — and would leave an operator
+   * expecting a policy change that was never possible.
+   */
+  it('says so instead when the template has no contact configuration', async () => {
+    getEmailTemplateContract.mockResolvedValue({
+      data: { ...ACCOUNT_CONTRACT, contactSupported: false },
+    });
+
+    await openEditor();
+    fireEvent.click(screen.getByTestId('restore-default'));
+
+    const dialogText = await screen.findByText(/Thao tác này sẽ khôi phục mẫu/);
+    expect(dialogText.textContent).toMatch(/không dùng khối thông tin liên hệ/);
+    expect(dialogText.textContent).not.toMatch(/• Cấu hình thông tin liên hệ và Reply-To/);
   });
 
   it('sends the template id and the revision it was shown', async () => {
@@ -587,7 +665,7 @@ describe('TemplateManagement — restore to default (G11-I)', () => {
   it('shows the restored content and keeps the new revision', async () => {
     await openAndRestore();
 
-    await waitFor(() => expect(pushToast).toHaveBeenCalledWith('success', expect.stringContaining('phục hồi')));
+    await waitFor(() => expect(pushToast).toHaveBeenCalledWith('success', expect.stringContaining('khôi phục')));
 
     // The operator's discarded text must not stay on screen next to a bumped revision — that would
     // invite them to "save" it straight back.
@@ -959,7 +1037,7 @@ describe('TemplateManagement — one description per system block (§4)', () => 
     });
 
     const issues = await screen.findByTestId('issues-bodyVi');
-    expect(issues).toHaveTextContent('EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED');
+    expect(issues.querySelector('[data-error-code="EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED"]')).not.toBeNull();
     expect(saveButton()).toBeDisabled();
   });
 });
@@ -1014,10 +1092,10 @@ describe('TemplateManagement — contact capability (§5)', () => {
     await openUnsupported();
 
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Lấy đầu mối từ')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Nguồn thông tin liên hệ')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Reply-To')).not.toBeInTheDocument();
     expect(screen.queryByText('Lưu cấu hình liên hệ')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Phục hồi về cấu hình mặc định của mẫu/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Phục hồi mặc định/)).not.toBeInTheDocument();
   });
 
   /** §5.4: the block is refused where it cannot resolve, and removing it is offered — never applied. */
@@ -1029,7 +1107,7 @@ describe('TemplateManagement — contact capability (§5)', () => {
     });
 
     const issues = await screen.findByTestId('issues-bodyVi');
-    expect(issues).toHaveTextContent('EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED');
+    expect(issues.querySelector('[data-error-code="EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED"]')).not.toBeNull();
     expect(issues).toHaveTextContent('Hãy xóa khối khỏi nội dung');
     expect(saveButton()).toBeDisabled();
 
@@ -1097,24 +1175,57 @@ describe('TemplateManagement — the admin description (§7)', () => {
 
     fireEvent.change(screen.getByLabelText('Mô tả quản trị'), { target: { value: 'Mô tả mới' } });
 
-    expect(await screen.findByTestId('content-dirty')).toBeInTheDocument();
+    expect(await screen.findByTestId('editor-dirty')).toBeInTheDocument();
     expect(saveButton()).toBeEnabled();
   });
 });
 
 /**
- * Two saves, two dirty states, two warnings (§8, §9).
+ * One save, one restore, one dirty state (§3 of the atomic-save prompt).
  *
- * The content and the contact configuration are written by different endpoints. One button labelled
- * "Cập nhật" and one sentence about "thay đổi chưa lưu" could not describe that, and an operator who had
- * changed both had no way to tell which one they had saved.
+ * There used to be two of each: the content and the contact configuration were written by different
+ * endpoints, so the footer and card 4 each carried their own button and their own warning. An operator
+ * had to remember two saves; either could succeed while the other failed; and the close dialog had to
+ * name which of two groups was pending, which is a question that should not have existed.
  */
-describe('TemplateManagement — save scope and dirty state (§8, §9)', () => {
-  it('names what the save button writes', async () => {
+describe('TemplateManagement — one save, one restore, one dirty state (§3)', () => {
+  it('offers exactly one save button and one restore button', async () => {
     await openEditor();
+    await screen.findByTestId('contact-settings-panel');
 
-    expect(saveButton()).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Lưu thay đổi/ })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /Khôi phục toàn bộ mặc định/ })).toHaveLength(1);
+
+    // And none of the four the footer and card 4 used to carry between them.
     expect(screen.queryByRole('button', { name: /^Cập nhật$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Lưu cấu hình liên hệ/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Phục hồi nội dung mẫu$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Phục hồi mặc định$/ })).not.toBeInTheDocument();
+  });
+
+  /** One indicator too. Card 4's own "● Cấu hình liên hệ có thay đổi chưa lưu" is gone. */
+  it('shows one unsaved-changes indicator, wherever the change was made', async () => {
+    await openEditor();
+    await screen.findByTestId('contact-settings-panel');
+
+    fireEvent.click(screen.getByTestId('contact-requirement-OPTIONAL'));
+
+    expect(await screen.findByTestId('editor-dirty')).toHaveTextContent('Có thay đổi chưa lưu');
+    expect(screen.queryByTestId('contact-settings-dirty')).not.toBeInTheDocument();
+    expect(saveButton()).toBeEnabled();
+  });
+
+  /**
+   * §11: restoring is not conditional on having typed something. Putting a template back to the shipped
+   * wording is a valid thing to do on a form nobody has touched — indeed it is the usual case, since the
+   * reason to restore is normally something that was saved earlier.
+   */
+  it('leaves restore enabled on a clean form', async () => {
+    await openEditor();
+    await screen.findByText('Họ tên người nhận');
+
+    expect(saveButton()).toBeDisabled();
+    expect(screen.getByTestId('restore-default')).toBeEnabled();
   });
 
   it('keeps the save disabled until something has actually changed', async () => {
@@ -1122,11 +1233,11 @@ describe('TemplateManagement — save scope and dirty state (§8, §9)', () => {
     await screen.findByText('Họ tên người nhận');
 
     expect(saveButton()).toBeDisabled();
-    expect(screen.queryByTestId('content-dirty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('editor-dirty')).not.toBeInTheDocument();
 
     editName();
 
-    expect(await screen.findByTestId('content-dirty')).toBeInTheDocument();
+    expect(await screen.findByTestId('editor-dirty')).toBeInTheDocument();
     expect(saveButton()).toBeEnabled();
   });
 
@@ -1148,50 +1259,35 @@ describe('TemplateManagement — save scope and dirty state (§8, §9)', () => {
 
     // Back to the list, with no confirmation in the way.
     await screen.findByLabelText('Chỉnh sửa ACCOUNT_EMAIL_CONFIRMATION');
-    expect(screen.queryByText(/thay đổi chưa lưu ở/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/thay đổi chưa lưu/)).not.toBeInTheDocument();
   });
 
-  it('names the content group when only the content is unsaved', async () => {
+  /**
+   * §13: one question, whichever half is pending. It used to name the group, which is a distinction
+   * that only mattered because there were two buttons to forget.
+   */
+  it('asks once when the content is unsaved', async () => {
     await openEditor();
     await screen.findByText('Họ tên người nhận');
     editName();
 
     fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
 
-    const dialog = await screen.findByText(/thay đổi chưa lưu ở/);
-    expect(dialog.textContent).toContain('Nội dung mẫu');
-    expect(dialog.textContent).not.toContain('Cấu hình thông tin liên hệ');
+    const dialog = await screen.findByText(/Rời khỏi trang sẽ làm mất các thay đổi này/);
+    expect(dialog.textContent).toMatch(/Đóng và bỏ những thay đổi này/);
   });
 
-  it('names the contact group when only the contact settings are unsaved', async () => {
+  it('asks the same question when only the contact settings are unsaved', async () => {
     await openEditor();
     await screen.findByTestId('contact-settings-panel');
 
-    // A level other than the loaded NONE, so card 4 becomes dirty and the content does not.
-    fireEvent.click(screen.getByRole('radio', { name: /Bắt buộc/ }));
-    await screen.findByTestId('contact-settings-dirty');
-    expect(screen.queryByTestId('content-dirty')).not.toBeInTheDocument();
+    // A level other than the loaded NONE, so the change is entirely in card 4.
+    fireEvent.click(screen.getByTestId('contact-requirement-OPTIONAL'));
+    await screen.findByTestId('editor-dirty');
 
     fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
 
-    const dialog = await screen.findByText(/thay đổi chưa lưu ở/);
-    expect(dialog.textContent).toContain('Cấu hình thông tin liên hệ');
-    expect(dialog.textContent).not.toContain('Nội dung mẫu');
-  });
-
-  it('names both when both are unsaved', async () => {
-    await openEditor();
-    await screen.findByTestId('contact-settings-panel');
-
-    editName();
-    fireEvent.click(screen.getByRole('radio', { name: /Bắt buộc/ }));
-    await screen.findByTestId('contact-settings-dirty');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
-
-    const dialog = await screen.findByText(/thay đổi chưa lưu ở/);
-    expect(dialog.textContent).toContain('Nội dung mẫu');
-    expect(dialog.textContent).toContain('Cấu hình thông tin liên hệ');
+    expect(await screen.findByText(/Rời khỏi trang sẽ làm mất các thay đổi này/)).toBeInTheDocument();
   });
 
   /** The corner X is the same door as "Hủy" — it used to close outright, losing the work silently. */
@@ -1202,15 +1298,324 @@ describe('TemplateManagement — save scope and dirty state (§8, §9)', () => {
 
     fireEvent.click(screen.getByLabelText('Đóng'));
 
-    expect(await screen.findByText(/thay đổi chưa lưu ở/)).toBeInTheDocument();
+    expect(await screen.findByText(/Rời khỏi trang sẽ làm mất các thay đổi này/)).toBeInTheDocument();
   });
 
-  /** §10.1: restoring the CONTENT says, in the dialog, that the contact configuration is left alone. */
-  it('scopes the restore dialog to the content', async () => {
-    await openEditor();
-    fireEvent.click(screen.getByTestId('restore-default'));
+  /**
+   * §10: a failed save leaves the work unsaved, and the screen has to go on saying so.
+   *
+   * Re-baselining on failure is how a form comes to look clean while holding changes the server has
+   * never seen — after which closing it discards them without asking.
+   */
+  it('keeps the unsaved warning when the save is refused', async () => {
+    updateEmailTemplate.mockRejectedValue({
+      response: { status: 500, data: { message: 'Máy chủ lỗi.' } },
+    });
 
-    const dialogText = await screen.findByText(/Phục hồi mẫu "ACCOUNT_EMAIL_CONFIRMATION"/);
-    expect(dialogText.textContent).toMatch(/cấu hình thông tin liên hệ không thay đổi/i);
+    await openEditor();
+    editName();
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(pushToast).toHaveBeenCalledWith('error', expect.anything()));
+
+    expect(screen.getByTestId('editor-dirty')).toBeInTheDocument();
+    expect(saveButton()).toBeEnabled();
+    expect((screen.getByLabelText('Tên mẫu *') as HTMLInputElement).value).toBe('Tên mẫu đã sửa');
+  });
+});
+
+/**
+ * The contradiction between the display level and the body (the contact-block-visibility prompt).
+ *
+ * The defect: `AllowsSystemBlock` answered from CAPABILITY alone, so a template whose administrator had
+ * switched the block off still accepted a body that carried it. The save succeeded at both layers, and
+ * the send then replaced the placeholder with an empty string — so the mail went out looking correct and
+ * the configuration mistake produced no signal anywhere.
+ */
+describe('TemplateManagement — the display level against the body', () => {
+  /** A template that CAN carry the block, currently at a level that shows it. */
+  const SUPPORTED_CONTRACT = {
+    ...ACCOUNT_CONTRACT,
+    templateCode: 'ACCOUNT_ROLE_CHANGED',
+    contactSupported: true,
+    contactRequirement: 'OPTIONAL',
+    requiredSystemBlocks: [],
+    optionalSystemBlocks: ['actionBlock', 'contactInformationBlock'],
+  };
+
+  const BODY_WITH_BLOCK_VI = '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}';
+  const BODY_WITH_BLOCK_EN = '<p>Hello {{fullName}}.</p>{{contactInformationBlock}}';
+
+  const SUPPORTED_SETTINGS = {
+    templateCode: 'ACCOUNT_ROLE_CHANGED', requirement: 'OPTIONAL', contactSource: 'CAMPUS_DEFAULT',
+    showEmail: true, showPhone: true, showDepartment: false, showCampus: true, showSender: false,
+    headingVi: 'Thông tin liên hệ', headingEn: 'Contact information', replyToSource: 'NONE',
+    blockPlaceholder: '{{contactInformationBlock}}',
+    bodyCarriesBlockVi: true, bodyCarriesBlockEn: true,
+    availableRequirements: ['NONE', 'OPTIONAL', 'REQUIRED'],
+    availableSources: ['HOST', 'CAMPUS_DEFAULT'], availableReplyToSources: ['NONE', 'CONTACT', 'SENDER'],
+    capability: 'SUPPORTED',
+    editable: true,
+  };
+
+  /** Opens a template whose bodies BOTH carry the block, under a level that permits it. */
+  const openWithBlock = async () => {
+    getEmailTemplateDetail.mockResolvedValue({
+      data: {
+        ...DETAIL, templateCode: 'ACCOUNT_ROLE_CHANGED',
+        bodyVi: BODY_WITH_BLOCK_VI, bodyEn: BODY_WITH_BLOCK_EN,
+      },
+    });
+    getEmailTemplateContract.mockResolvedValue({ data: SUPPORTED_CONTRACT });
+    getEmailContactSettings.mockResolvedValue({ data: SUPPORTED_SETTINGS });
+
+    await openEditor();
+    await screen.findByTestId('contact-settings-panel');
+  };
+
+  /** The same template with the level already hidden — the state the whole prompt is about. */
+  const openHidden = async () => {
+    getEmailTemplateDetail.mockResolvedValue({
+      data: {
+        ...DETAIL, templateCode: 'ACCOUNT_ROLE_CHANGED',
+        bodyVi: BODY_WITH_BLOCK_VI, bodyEn: BODY_WITH_BLOCK_EN,
+      },
+    });
+    getEmailTemplateContract.mockResolvedValue({
+      data: { ...SUPPORTED_CONTRACT, contactRequirement: 'NONE' },
+    });
+    getEmailContactSettings.mockResolvedValue({
+      data: { ...SUPPORTED_SETTINGS, requirement: 'NONE' },
+    });
+
+    await openEditor();
+    await screen.findByTestId('contact-settings-panel');
+  };
+
+  it('accepts the block while the level is Tùy chọn', async () => {
+    await openWithBlock();
+
+    expect(screen.queryByTestId('issues-bodyVi')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-settings-cross-field-error')).not.toBeInTheDocument();
+  });
+
+  /**
+   * §4: switching to "Không hiển thị" while the body still carries the block must ASK. The bodies are
+   * the operator's text — deleting from them silently would be an edit they never made and cannot see —
+   * and setting the level with the block in place produces a template that cannot be saved.
+   */
+  it('asks before switching to Không hiển thị when the body carries the block', async () => {
+    await openWithBlock();
+
+    fireEvent.click(screen.getByTestId('contact-requirement-NONE'));
+
+    expect(await screen.findByRole('heading', { name: /Nội dung đang có khối thông tin liên hệ/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/cả tiếng Việt và tiếng Anh/)).toBeInTheDocument();
+
+    // Nothing has happened yet: not the level, not the bodies.
+    expect((screen.getByTestId('quill') as HTMLTextAreaElement).value)
+      .toContain('{{contactInformationBlock}}');
+    expect(updateEmailTemplate).not.toHaveBeenCalled();
+  });
+
+  /** §4: "Giữ cấu hình hiện tại" changes nothing at all. */
+  it('leaves both the level and the bodies alone when the operator keeps the configuration', async () => {
+    await openWithBlock();
+
+    fireEvent.click(screen.getByTestId('contact-requirement-NONE'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Giữ cấu hình hiện tại' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: /Nội dung đang có khối/ })).not.toBeInTheDocument());
+
+    expect((screen.getByTestId('quill') as HTMLTextAreaElement).value)
+      .toContain('{{contactInformationBlock}}');
+    expect((screen.getByTestId('contact-requirement-OPTIONAL') as HTMLInputElement).checked).toBe(true);
+    // And nothing became unsaved, because nothing changed.
+    expect(screen.queryByTestId('editor-dirty')).not.toBeInTheDocument();
+  });
+
+  /** §4: the other button removes the block from BOTH bodies, sets the level, and saves nothing. */
+  it('removes the block from both languages and sets the level, without saving', async () => {
+    await openWithBlock();
+
+    fireEvent.click(screen.getByTestId('contact-requirement-NONE'));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Xóa khối và chuyển sang Không hiển thị' }));
+
+    await waitFor(() =>
+      expect((screen.getByTestId('quill') as HTMLTextAreaElement).value)
+        .not.toContain('{{contactInformationBlock}}'));
+
+    // The English body too — a level is one setting for the whole template, so clearing one language
+    // would leave a template that is still refused.
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
+    await waitFor(() =>
+      expect((screen.getByTestId('quill') as HTMLTextAreaElement).value).toContain('Hello'));
+    expect((screen.getByTestId('quill') as HTMLTextAreaElement).value)
+      .not.toContain('{{contactInformationBlock}}');
+
+    expect((screen.getByTestId('contact-requirement-NONE') as HTMLInputElement).checked).toBe(true);
+
+    // Dirty, and not saved: this is an edit like any other and waits for the save button.
+    expect(screen.getByTestId('editor-dirty')).toBeInTheDocument();
+    expect(updateEmailTemplate).not.toHaveBeenCalled();
+    expect(updateEmailContactSettings).not.toHaveBeenCalled();
+  });
+
+  /** Nothing to decide when neither body carries the block, so the level is applied straight away. */
+  it('switches to Không hiển thị without asking when there is no block to remove', async () => {
+    getEmailTemplateDetail.mockResolvedValue({
+      data: { ...DETAIL, templateCode: 'ACCOUNT_ROLE_CHANGED' },
+    });
+    getEmailTemplateContract.mockResolvedValue({ data: SUPPORTED_CONTRACT });
+    getEmailContactSettings.mockResolvedValue({
+      data: { ...SUPPORTED_SETTINGS, bodyCarriesBlockVi: false, bodyCarriesBlockEn: false },
+    });
+
+    await openEditor();
+    await screen.findByTestId('contact-settings-panel');
+
+    fireEvent.click(screen.getByTestId('contact-requirement-NONE'));
+
+    await waitFor(() =>
+      expect((screen.getByTestId('contact-requirement-NONE') as HTMLInputElement).checked).toBe(true));
+    expect(screen.queryByRole('heading', { name: /Nội dung đang có khối/ })).not.toBeInTheDocument();
+  });
+
+  /** §3: the level is already hidden and the body still has the block. Refused before a round trip. */
+  it('refuses the save and names the contradiction when the level is already hidden', async () => {
+    await openHidden();
+
+    const issues = await screen.findByTestId('issues-bodyVi');
+    expect(issues.querySelector(
+      '[data-error-code="EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN"]')).not.toBeNull();
+    expect(issues).toHaveTextContent('Không hiển thị');
+
+    // §13: the message reads as a sentence and the action is a separate button — not one run of text
+    // ending in a raw code butted against a label.
+    expect(issues.textContent).not.toMatch(/EMAIL_TEMPLATE_[A-Z_]+/);
+
+    editName();
+    expect(saveButton()).toBeDisabled();
+    expect(updateEmailTemplate).not.toHaveBeenCalled();
+  });
+
+  /** The same refusal appears on the contact card, next to the radio that caused it. */
+  it('shows the contradiction on the contact card as well as under the body', async () => {
+    await openHidden();
+
+    const onCard = await screen.findByTestId('contact-settings-cross-field-error');
+    expect(onCard).toHaveTextContent('Không hiển thị');
+    expect(within(onCard).getByRole('button', { name: 'Xóa khối khỏi nội dung' })).toBeInTheDocument();
+  });
+
+  /** §5: the action clears both languages, and leaves the level exactly where it was. */
+  it('clears both bodies from the removal action without touching the level', async () => {
+    await openHidden();
+    await screen.findByTestId('issues-bodyVi');
+
+    fireEvent.click(screen.getByTestId('remove-contact-block'));
+
+    await waitFor(() => expect(screen.queryByTestId('issues-bodyVi')).not.toBeInTheDocument());
+    expect((screen.getByTestId('quill') as HTMLTextAreaElement).value)
+      .not.toContain('{{contactInformationBlock}}');
+
+    // The level is untouched: the operator asked to remove a block, not to change a policy.
+    expect((screen.getByTestId('contact-requirement-NONE') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId('editor-dirty')).toBeInTheDocument();
+    expect(saveButton()).toBeEnabled();
+  });
+
+  /**
+   * §5: removing the block under a REQUIRED level moves the operator from one error to another, and the
+   * screen must say so rather than quietly lowering the level to make the error go away.
+   */
+  it('reports the missing block after a removal under Bắt buộc, without changing the level', async () => {
+    await openWithBlock();
+
+    fireEvent.click(screen.getByTestId('contact-requirement-REQUIRED'));
+    await waitFor(() =>
+      expect((screen.getByTestId('contact-requirement-REQUIRED') as HTMLInputElement).checked).toBe(true));
+
+    // Removed from the body directly, as an operator editing the text would.
+    fireEvent.change(screen.getByTestId('quill'), { target: { value: '<p>Chào {{fullName}}.</p>' } });
+
+    const issues = await screen.findByTestId('issues-bodyVi');
+    expect(issues.querySelector(
+      '[data-error-code="EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY"]')).not.toBeNull();
+    expect(issues).toHaveTextContent('thiếu khối thông tin liên hệ');
+
+    // NOT silently demoted to NONE to make the message disappear.
+    expect((screen.getByTestId('contact-requirement-REQUIRED') as HTMLInputElement).checked).toBe(true);
+    expect(saveButton()).toBeDisabled();
+  });
+
+  /**
+   * §12: undoing back to the baseline clears the warning. The dirty flag is derived from a comparison,
+   * never a latch that is switched on and left on.
+   */
+  it('drops the unsaved warning when the level is put back', async () => {
+    await openWithBlock();
+
+    fireEvent.click(screen.getByTestId('contact-requirement-REQUIRED'));
+    await screen.findByTestId('editor-dirty');
+
+    fireEvent.click(screen.getByTestId('contact-requirement-OPTIONAL'));
+
+    await waitFor(() => expect(screen.queryByTestId('editor-dirty')).not.toBeInTheDocument());
+    expect(saveButton()).toBeDisabled();
+  });
+
+  /** §7 of the backend half, seen from the client: a refused save is relayed against the field. */
+  it('shows the backend refusal against the field when the server catches it first', async () => {
+    updateEmailTemplate.mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          errorCode: 'EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN',
+          message: 'Không thể lưu mẫu vì mức hiển thị là “Không hiển thị” nhưng nội dung vẫn chứa khối thông tin liên hệ.',
+        },
+      },
+    });
+
+    await openWithBlock();
+    editName();
+    fireEvent.click(saveButton());
+
+    const issues = await screen.findByTestId('issues-bodyVi');
+    expect(issues.querySelector(
+      '[data-error-code="EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN"]')).not.toBeNull();
+    expect(screen.getByTestId('remove-contact-block')).toBeInTheDocument();
+
+    // A refused save leaves the work unsaved.
+    expect(screen.getByTestId('editor-dirty')).toBeInTheDocument();
+  });
+
+  /**
+   * §9: an unsupported template shows no form, and a body that has kept the block from an older release
+   * is still warned about — next to the sentence that has just said there is nothing here to configure.
+   */
+  it('warns about a stale block on a template that has no contact form', async () => {
+    getEmailTemplateDetail.mockResolvedValue({
+      data: { ...DETAIL, bodyVi: BODY_WITH_BLOCK_VI },
+    });
+    getEmailTemplateContract.mockResolvedValue({
+      data: {
+        ...ACCOUNT_CONTRACT,
+        contactSupported: false,
+        contactReasonVi: 'Email chứa liên kết dùng một lần.',
+      },
+    });
+
+    await openEditor();
+    await screen.findByTestId('contact-settings-unsupported');
+
+    const issues = await screen.findByTestId('issues-bodyVi');
+    expect(issues.querySelector(
+      '[data-error-code="EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED"]')).not.toBeNull();
+    expect(screen.getByTestId('remove-block-bodyVi-contactInformationBlock')).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
   });
 });

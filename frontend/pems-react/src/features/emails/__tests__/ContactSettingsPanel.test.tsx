@@ -1,15 +1,22 @@
 /**
  * Card 4, "Cấu hình thông tin liên hệ".
  *
- * The reported defect: the card showed "Không tìm thấy dữ liệu cần xử lý." and nothing else. That is
- * the toast helper's generic HTTP-404 sentence, reached whenever a response carries no error code —
- * and the failure it was actually describing was a running API built before this endpoint existed,
- * where no data is missing at all. Three different repairs (restart the API, run the policy patch,
- * align the catalog) arrived as one sentence that named none of them.
+ * Two rounds of defects are pinned here.
  *
- * Each test below asserts the card says which one.
+ * The first: the card showed "Không tìm thấy dữ liệu cần xử lý." and nothing else. That is the toast
+ * helper's generic HTTP-404 sentence, reached whenever a response carries no error code — and the failure
+ * it was actually describing was a running API built before this endpoint existed, where no data is
+ * missing at all. Three different repairs (restart the API, run the policy patch, align the catalog)
+ * arrived as one sentence that named none of them.
+ *
+ * The second: the card owned its own draft, its own dirty flag and its own save and restore buttons. An
+ * operator had to remember two saves; either could succeed while the other failed, leaving a body and a
+ * policy contradicting each other; and choosing "Không hiển thị" while the body still carried the block
+ * produced a state both halves refuse. The card is now controlled — it renders `value`, reports edits
+ * through `onChange`, and asks the editor before switching to NONE.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const getEmailContactSettings = vi.fn();
@@ -26,7 +33,8 @@ vi.mock('../api/emailsApi', () => ({
   },
 }));
 
-import { ContactSettingsPanel } from '../components/ContactSettingsPanel';
+import { ContactSettingsPanel, toContactPayload } from '../components/ContactSettingsPanel';
+import type { EmailContactSettings, EmailContactSettingsPayload } from '../api/emailsApi';
 
 /** A fully configured template: every field is the template's own. */
 const CONFIGURED = {
@@ -61,7 +69,7 @@ const CONFIGURED = {
   editable: true,
   capabilityReasonCode: 'OPERATOR_CHOICE',
   capabilityReasonVi: 'Mẫu này có thể kèm khối thông tin liên hệ; mức hiển thị do người quản trị chọn.',
-};
+} as unknown as EmailContactSettings;
 
 /**
  * A template that can never carry the block: the message IS a one-time credential.
@@ -82,7 +90,7 @@ const UNSUPPORTED = {
   editable: false,
   capabilityReasonCode: 'ONE_TIME_CREDENTIAL',
   capabilityReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
-};
+} as unknown as EmailContactSettings;
 
 /** An axios-shaped rejection. */
 const httpError = (status: number, data?: unknown) =>
@@ -98,8 +106,36 @@ beforeEach(() => {
   previewEmailContactBlock.mockResolvedValue({ data: { html: '<table>sample</table>', rendersBlock: true } });
 });
 
-const renderPanel = (code = 'VISIT_PARTICIPANT_INVITATION') =>
-  render(<ContactSettingsPanel templateCode={code} canEdit />);
+/**
+ * The card is controlled, so a test needs the half the editor owns.
+ *
+ * The harness is as thin as it can be and still be honest: it holds the value, applies `onChange`, and
+ * seeds itself from `onLoaded` exactly as the editor does. `onRequestHide` deliberately does NOT set the
+ * level by default — that is the editor's decision to make, and a harness that applied it silently would
+ * hide the very handoff these tests exist to pin.
+ */
+function Harness({
+  templateCode = 'VISIT_PARTICIPANT_INVITATION',
+  onRequestHide,
+  ...rest
+}: Partial<React.ComponentProps<typeof ContactSettingsPanel>> = {}) {
+  const [value, setValue] = useState<EmailContactSettingsPayload | null>(null);
+
+  return (
+    <ContactSettingsPanel
+      templateCode={templateCode}
+      canEdit
+      value={value}
+      onChange={setValue}
+      onLoaded={s => setValue(toContactPayload(s))}
+      onRequestHide={onRequestHide ?? (() => {})}
+      {...rest}
+    />
+  );
+}
+
+const renderPanel = (code = 'VISIT_PARTICIPANT_INVITATION', props = {}) =>
+  render(<Harness templateCode={code} {...props} />);
 
 describe('card 4 renders the real form', () => {
   it('shows every control the configuration needs', async () => {
@@ -109,7 +145,10 @@ describe('card 4 renders the real form', () => {
 
     // Requirement, contact source, the five visibility toggles, both headings, Reply-To.
     expect(screen.getByText('Bắt buộc')).toBeInTheDocument();
-    expect(screen.getByLabelText('Lấy đầu mối từ')).toBeInTheDocument();
+    // Named for what it chooses. "Lấy đầu mối từ" was how the policy is discussed internally, not what
+    // the field does on screen.
+    expect(screen.getByLabelText('Nguồn thông tin liên hệ')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Lấy đầu mối từ')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Email công việc')).toBeInTheDocument();
     expect(screen.getByLabelText('Số điện thoại')).toBeInTheDocument();
     expect(screen.getByLabelText('Phòng ban')).toBeInTheDocument();
@@ -122,27 +161,170 @@ describe('card 4 renders the real form', () => {
     expect(screen.queryByTestId('contact-settings-error')).not.toBeInTheDocument();
   });
 
-  it('saves a toggle and shows what came back', async () => {
-    updateEmailContactSettings.mockResolvedValue({
-      data: { ...CONFIGURED, showPhone: false, showDepartment: true },
-    });
+  it('reports a toggle upward instead of saving it', async () => {
+    const onChange = vi.fn();
+    render(
+      <Harness onChange={onChange} value={toContactPayload(CONFIGURED)} />,
+    );
 
+    await screen.findByTestId('contact-settings-panel');
+    fireEvent.click(screen.getByLabelText('Số điện thoại'));
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ showPhone: false, requirement: 'REQUIRED' }));
+    // Nothing is written from here. The editor's one save writes both halves together.
+    expect(updateEmailContactSettings).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * §3.1 / §11 of the atomic-save prompt: the card's own save and restore are gone.
+ *
+ * Asserted as an absence, and deliberately: re-introducing either would re-introduce the partial save
+ * this whole change exists to remove, so it has to be a decision rather than an accident.
+ */
+describe('the card has no buttons of its own', () => {
+  it('offers neither a save nor a restore', async () => {
     renderPanel();
     await screen.findByTestId('contact-settings-panel');
 
-    fireEvent.click(screen.getByLabelText('Số điện thoại'));
-    fireEvent.click(screen.getByText('Lưu cấu hình liên hệ'));
+    expect(screen.queryByRole('button', { name: /Lưu cấu hình liên hệ/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Phục hồi mặc định/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }))
+      .not.toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(updateEmailContactSettings).toHaveBeenCalledTimes(1));
+  it('never calls the standalone contact endpoints', async () => {
+    renderPanel();
+    await screen.findByTestId('contact-settings-panel');
 
-    const [code, payload] = updateEmailContactSettings.mock.calls[0];
-    expect(code).toBe('VISIT_PARTICIPANT_INVITATION');
-    expect(payload.showPhone).toBe(false);
+    fireEvent.click(screen.getByLabelText('Cơ sở'));
+    fireEvent.change(screen.getByLabelText('Tiêu đề khối (VI)'), { target: { value: 'Liên hệ' } });
 
-    await waitFor(() => {
-      expect((screen.getByLabelText('Số điện thoại') as HTMLInputElement).checked).toBe(false);
-      expect((screen.getByLabelText('Phòng ban') as HTMLInputElement).checked).toBe(true);
+    await new Promise(r => setTimeout(r, 400));
+    expect(updateEmailContactSettings).not.toHaveBeenCalled();
+    expect(restoreEmailContactSettingsDefault).not.toHaveBeenCalled();
+  });
+
+  /** One dirty indicator lives in the editor footer; the card no longer carries a second. */
+  it('shows no dirty indicator of its own', async () => {
+    renderPanel();
+    await screen.findByTestId('contact-settings-panel');
+
+    fireEvent.click(screen.getByLabelText('Cơ sở'));
+
+    expect(screen.queryByTestId('contact-settings-dirty')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * §4 of the visibility prompt: choosing "Không hiển thị" is reported, not applied.
+ *
+ * The bodies belong to the editor, and switching to NONE may require them to change. Applying it here
+ * would either delete from content the card does not own — an edit the operator never made and cannot
+ * see — or leave a template that cannot be saved with nothing on screen explaining why.
+ */
+describe('choosing "Không hiển thị"', () => {
+  it('asks the editor rather than setting the level itself', async () => {
+    const onRequestHide = vi.fn();
+    const onChange = vi.fn();
+
+    render(
+      <Harness
+        value={toContactPayload(CONFIGURED)}
+        onChange={onChange}
+        onRequestHide={onRequestHide}
+      />,
+    );
+
+    await screen.findByTestId('contact-settings-panel');
+    fireEvent.click(screen.getByTestId('contact-requirement-NONE'));
+
+    expect(onRequestHide).toHaveBeenCalledTimes(1);
+    // Not applied here, and specifically not applied as a level change that the editor never approved.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('applies the other two levels directly, because they need no decision', async () => {
+    const onRequestHide = vi.fn();
+    const onChange = vi.fn();
+
+    render(
+      <Harness
+        value={toContactPayload(CONFIGURED)}
+        onChange={onChange}
+        onRequestHide={onRequestHide}
+      />,
+    );
+
+    await screen.findByTestId('contact-settings-panel');
+    fireEvent.click(screen.getByTestId('contact-requirement-OPTIONAL'));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ requirement: 'OPTIONAL' }));
+    expect(onRequestHide).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * §13 of the visibility prompt: message and action are separate elements.
+ *
+ * The failure this replaces rendered them as one unbroken run of text ending in a raw error code
+ * immediately followed by the button label — "…EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWEDXóa khối không
+ * hợp lệ" — which is neither readable nor clickable.
+ */
+describe('a cross-field refusal on the card', () => {
+  const conflict = {
+    message: 'Khối thông tin liên hệ vẫn tồn tại trong nội dung, nhưng mức hiển thị đang là "Không hiển thị".',
+    actionLabel: 'Xóa khối khỏi nội dung',
+    onAction: vi.fn(),
+  };
+
+  it('renders the sentence and the button as separate elements', async () => {
+    renderPanel('VISIT_PARTICIPANT_INVITATION', { crossFieldError: conflict });
+    await screen.findByTestId('contact-settings-panel');
+
+    const box = await screen.findByTestId('contact-settings-cross-field-error');
+    expect(box).toHaveTextContent('mức hiển thị đang là "Không hiển thị"');
+
+    const button = screen.getByTestId('contact-settings-remove-block');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button).toHaveTextContent('Xóa khối khỏi nội dung');
+    // The message is not inside the button, and the button's label is not inside the message.
+    expect(button).not.toHaveTextContent('mức hiển thị');
+  });
+
+  it('shows no raw error code in the sentence', async () => {
+    renderPanel('VISIT_PARTICIPANT_INVITATION', { crossFieldError: conflict });
+    const box = await screen.findByTestId('contact-settings-cross-field-error');
+
+    expect(box.textContent).not.toMatch(/EMAIL_TEMPLATE_[A-Z_]+/);
+  });
+
+  it('runs the action when the button is pressed', async () => {
+    const onAction = vi.fn();
+    renderPanel('VISIT_PARTICIPANT_INVITATION', {
+      crossFieldError: { ...conflict, onAction },
     });
+
+    fireEvent.click(await screen.findByTestId('contact-settings-remove-block'));
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * §9: an unsupported template has no form, and that is exactly where a stale block is easiest to
+   * miss — the card has just said there is nothing here to configure.
+   */
+  it('still warns about a stale block on a template with no form', async () => {
+    getEmailContactSettings.mockResolvedValue({ data: UNSUPPORTED });
+
+    renderPanel('ACCOUNT_EMAIL_CONFIRMATION', {
+      contactSupported: false,
+      crossFieldError: conflict,
+    });
+
+    await screen.findByTestId('contact-settings-unsupported');
+    expect(await screen.findByTestId('contact-settings-cross-field-error')).toBeInTheDocument();
+    expect(screen.getByTestId('contact-settings-remove-block')).toBeInTheDocument();
   });
 });
 
@@ -158,31 +340,29 @@ describe('card 4 renders the real form', () => {
 describe('a template that cannot carry the block says so, and shows no form', () => {
   const renderUnsupported = async (props: Record<string, unknown> = {}) => {
     getEmailContactSettings.mockResolvedValue({ data: UNSUPPORTED });
-    render(<ContactSettingsPanel templateCode="ACCOUNT_EMAIL_CONFIRMATION" canEdit {...props} />);
+    render(<Harness templateCode="ACCOUNT_EMAIL_CONFIRMATION" {...props} />);
     return screen.findByTestId('contact-settings-unsupported');
   };
 
   it('states the reason rather than an error', async () => {
-    const card = await renderUnsupported();
+    await renderUnsupported();
 
-    expect(card).toHaveAttribute('data-capability', 'UNSUPPORTED');
+    const card = screen.getByTestId('contact-settings-unsupported');
+    expect(card.parentElement).toHaveAttribute('data-capability', 'UNSUPPORTED');
     expect(card).toHaveTextContent('không dùng khối thông tin liên hệ');
     expect(card).toHaveTextContent('liên kết xác nhận dùng một lần');
     expect(card).toHaveTextContent('Không có cấu hình cần chỉnh sửa');
     expect(screen.queryByTestId('contact-settings-error')).not.toBeInTheDocument();
   });
 
-  it('offers no control, no save and no restore', async () => {
+  it('offers no control at all', async () => {
     await renderUnsupported();
 
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Lấy đầu mối từ')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Nguồn thông tin liên hệ')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Email công việc')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Tiêu đề khối (VI)')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Reply-To')).not.toBeInTheDocument();
-    expect(screen.queryByText('Lưu cấu hình liên hệ')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }))
-      .not.toBeInTheDocument();
 
     expect(updateEmailContactSettings).not.toHaveBeenCalled();
     expect(restoreEmailContactSettingsDefault).not.toHaveBeenCalled();
@@ -191,19 +371,48 @@ describe('a template that cannot carry the block says so, and shows no form', ()
   /** Nothing to preview, and nothing to ask for: the block cannot render on this template. */
   it('hands up an empty block without asking the server to render one', async () => {
     const onBlockPreviewChange = vi.fn();
-    await renderUnsupported({ onBlockPreviewChange });
+    await renderUnsupported({ onBlockPreviewChange, contactSupported: false });
 
     await waitFor(() => expect(onBlockPreviewChange).toHaveBeenCalledWith(''));
     await new Promise(r => setTimeout(r, 400));
     expect(previewEmailContactBlock).not.toHaveBeenCalled();
   });
 
-  it('never reports unsaved changes, because there is nothing to change', async () => {
-    const onDirtyChange = vi.fn();
-    await renderUnsupported({ onDirtyChange });
+  /**
+   * The caller's contract settles it on its own.
+   *
+   * The two responses that carry this fact must not be able to disagree in the unsafe direction: an API
+   * built before the capability split answers the settings endpoint without `capability`, and reading
+   * that alone put the whole configuration form on a template whose policy the backend refuses to write
+   * — the reported defect. With the contract saying no, the card does not even ask.
+   */
+  it('shows the reason without a settings request when the contract already says so', async () => {
+    render(
+      <Harness
+        templateCode="ACCOUNT_EMAIL_CONFIRMATION"
+        contactSupported={false}
+        contactReasonVi="Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần."
+      />,
+    );
 
-    expect(onDirtyChange).toHaveBeenCalledWith(false);
-    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+    const card = await screen.findByTestId('contact-settings-unsupported');
+    expect(card).toHaveTextContent('liên kết xác nhận dùng một lần');
+    expect(getEmailContactSettings).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('contact-settings-loading')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-settings-panel')).not.toBeInTheDocument();
+  });
+
+  /** An API that answers without `capability` no longer decides this by itself. */
+  it('still shows no form when the settings response omits the capability', async () => {
+    const { capability, editable, ...withoutCapability } =
+      UNSUPPORTED as unknown as Record<string, unknown>;
+    void capability; void editable;
+    getEmailContactSettings.mockResolvedValue({ data: withoutCapability });
+
+    render(<Harness templateCode="ACCOUNT_EMAIL_CONFIRMATION" contactSupported={false} />);
+
+    await screen.findByTestId('contact-settings-unsupported');
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   });
 });
 
@@ -231,7 +440,7 @@ describe('a template whose text instructs the reader to make contact', () => {
     expect(radios).toHaveLength(2);
     // Asserted on the CONTROL, not on the words: the sentence explaining the omission names the level
     // it is explaining, and matching text alone would fail on the explanation itself.
-    expect(screen.queryByRole('radio', { name: /Không hiển thị/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-requirement-NONE')).not.toBeInTheDocument();
 
     expect(screen.getByTestId('contact-settings-level-locked'))
       .toHaveTextContent('phải kèm khối thông tin liên hệ');
@@ -261,6 +470,20 @@ describe('a NO_CONTACT template is a state, not a failure', () => {
     expect(radios.some(r => !r.checked)).toBe(true);
     expect(radios.every(r => !r.disabled)).toBe(true);
   });
+
+  /** The explanatory note steps aside when there is a refusal to read instead. */
+  it('yields to the conflict message when the body still has the block', async () => {
+    getEmailContactSettings.mockResolvedValue({
+      data: { ...CONFIGURED, requirement: 'NONE', capability: 'SUPPORTED' },
+    });
+
+    renderPanel('ACCOUNT_ROLE_CHANGED', {
+      crossFieldError: { message: 'Khối vẫn còn trong nội dung.', actionLabel: 'Xóa khối khỏi nội dung', onAction: vi.fn() },
+    });
+
+    await screen.findByTestId('contact-settings-cross-field-error');
+    expect(screen.queryByTestId('contact-settings-no-contact')).not.toBeInTheDocument();
+  });
 });
 
 /**
@@ -268,11 +491,7 @@ describe('a NO_CONTACT template is a state, not a failure', () => {
  *
  * They described a distinction the card can no longer act on: there is no control here for clearing a
  * field back to inheritance, so naming the level a value arrived from told an operator something true
- * and gave them nothing to do about it. What replaced them is one honest action — put this template's
- * own values back to the shipped defaults — asserted below.
- *
- * These tests therefore assert the ABSENCE deliberately, including on the payload that used to produce
- * two badges, so a re-introduction has to be a decision rather than an accident.
+ * and gave them nothing to do about it.
  */
 describe('per-field inheritance badges are not part of this card', () => {
   it('says nothing when every field is the template’s own', async () => {
@@ -301,78 +520,6 @@ describe('per-field inheritance badges are not part of this card', () => {
   });
 });
 
-describe('restoring the template’s default contact configuration', () => {
-  /**
-   * The wording is load-bearing. The endpoint WRITES the shipped defaults onto this template's own
-   * policy row; it does not delete the row so that campus/system configuration flows through again.
-   * Calling it "quay lại kế thừa" would describe an operation nothing implements.
-   */
-  it('names what it does and asks before doing it', async () => {
-    renderPanel();
-    await screen.findByTestId('contact-settings-panel');
-
-    fireEvent.click(screen.getByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }));
-
-    expect(await screen.findByRole('heading', { name: 'Phục hồi về cấu hình mặc định của mẫu' }))
-      .toBeInTheDocument();
-    expect(screen.getByText(/giá trị mặc định của mẫu này/)).toBeInTheDocument();
-    expect(screen.getByText(/Nội dung email không thay đổi/)).toBeInTheDocument();
-    expect(screen.queryByText(/kế thừa/)).not.toBeInTheDocument();
-
-    // Nothing is sent until the operator confirms.
-    expect(restoreEmailContactSettingsDefault).not.toHaveBeenCalled();
-  });
-
-  it('calls the endpoint on confirm and adopts the response', async () => {
-    const restored = { ...CONFIGURED, showPhone: false, replyToSource: 'NONE' };
-    restoreEmailContactSettingsDefault.mockResolvedValue({ data: restored });
-    const pushToast = vi.fn();
-
-    render(<ContactSettingsPanel templateCode="VISIT_PARTICIPANT_INVITATION" canEdit pushToast={pushToast} />);
-    await screen.findByTestId('contact-settings-panel');
-
-    fireEvent.click(screen.getByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận' }));
-
-    await waitFor(() =>
-      expect(restoreEmailContactSettingsDefault).toHaveBeenCalledWith('VISIT_PARTICIPANT_INVITATION'));
-
-    await waitFor(() => expect(pushToast).toHaveBeenCalledWith(
-      'success', 'Đã phục hồi về cấu hình mặc định của mẫu.'));
-
-    // The form shows the restored values, not the ones it was holding.
-    const phone = screen.getByLabelText('Số điện thoại') as HTMLInputElement;
-    expect(phone.checked).toBe(false);
-  });
-
-  /**
-   * The backend refuses this when the body no longer carries {{contactInformationBlock}} and the shipped
-   * default is REQUIRED. The refusal has to reach the card: restoring is the operator's answer to a
-   * broken configuration, so a silent failure leaves them pressing a button that appears to do nothing.
-   *
-   * Asserted on the error REGION, not on the sentence: the API answers in Vietnamese and the toast
-   * helper deliberately swaps an untranslated Vietnamese message for a status-based one when the UI is
-   * in English, so pinning the wording here would pin the locale the suite happens to run in.
-   */
-  it('reports a refusal in the card rather than swallowing it', async () => {
-    restoreEmailContactSettingsDefault.mockRejectedValue(
-      httpError(422, { message: 'Không thể phục hồi cấu hình liên hệ về mức Bắt buộc…' }));
-    const pushToast = vi.fn();
-
-    render(<ContactSettingsPanel templateCode="VISIT_PARTICIPANT_INVITATION" canEdit pushToast={pushToast} />);
-    await screen.findByTestId('contact-settings-panel');
-
-    fireEvent.click(screen.getByRole('button', { name: /Phục hồi về cấu hình mặc định của mẫu/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận' }));
-
-    const shown = await screen.findByTestId('contact-settings-save-error');
-    expect(shown.textContent?.trim()).not.toBe('');
-
-    // And it is not reported as a success.
-    expect(pushToast).not.toHaveBeenCalledWith('success', expect.anything());
-  });
-});
-
 /**
  * The preview pane has to follow the UNSAVED draft: an operator unticking "Số điện thoại" must see the
  * row leave before they commit to it. Rendering stays on the backend so the block's markup and its
@@ -382,14 +529,7 @@ describe('the contact block preview follows the draft', () => {
   it('renders the block from the loaded policy and hands it upward', async () => {
     const onBlockPreviewChange = vi.fn();
 
-    render(
-      <ContactSettingsPanel
-        templateCode="VISIT_PARTICIPANT_INVITATION"
-        canEdit
-        language="VI"
-        onBlockPreviewChange={onBlockPreviewChange}
-      />,
-    );
+    render(<Harness language="VI" onBlockPreviewChange={onBlockPreviewChange} />);
 
     await screen.findByTestId('contact-settings-panel');
     await waitFor(() => expect(onBlockPreviewChange).toHaveBeenCalledWith('<table>sample</table>'));
@@ -403,13 +543,7 @@ describe('the contact block preview follows the draft', () => {
   it('re-renders with the new toggle when one is changed', async () => {
     const onBlockPreviewChange = vi.fn();
 
-    render(
-      <ContactSettingsPanel
-        templateCode="VISIT_PARTICIPANT_INVITATION"
-        canEdit
-        onBlockPreviewChange={onBlockPreviewChange}
-      />,
-    );
+    render(<Harness onBlockPreviewChange={onBlockPreviewChange} />);
 
     await screen.findByTestId('contact-settings-panel');
     await waitFor(() => expect(previewEmailContactBlock).toHaveBeenCalledTimes(1));
@@ -428,25 +562,27 @@ describe('the contact block preview follows the draft', () => {
       expect(onBlockPreviewChange).toHaveBeenLastCalledWith('<table>no phone</table>'));
   });
 
-  /** NO_CONTACT: the backend answers with an empty block and the pane simply shows no card. */
-  it('hands up an empty block for a NO_CONTACT policy', async () => {
+  /**
+   * §10: a hidden level renders nothing, and the preview says so without asking.
+   *
+   * Answered locally rather than by a round trip because the answer is not in doubt — and because a
+   * preview showing a contact card over a policy of "Không hiển thị" would tell an operator their
+   * setting had not taken effect.
+   */
+  it('hands up an empty block for a NO_CONTACT policy without calling the server', async () => {
     getEmailContactSettings.mockResolvedValue({
       data: { ...CONFIGURED, requirement: 'NONE' },
     });
-    previewEmailContactBlock.mockResolvedValue({ data: { html: '', rendersBlock: false } });
 
     const onBlockPreviewChange = vi.fn();
 
-    render(
-      <ContactSettingsPanel
-        templateCode="AUTH_PASSWORD_RESET_OTP"
-        canEdit
-        onBlockPreviewChange={onBlockPreviewChange}
-      />,
-    );
+    render(<Harness templateCode="ACCOUNT_ROLE_CHANGED" onBlockPreviewChange={onBlockPreviewChange} />);
 
     await screen.findByTestId('contact-settings-no-contact');
     await waitFor(() => expect(onBlockPreviewChange).toHaveBeenCalledWith(''));
+
+    await new Promise(r => setTimeout(r, 400));
+    expect(previewEmailContactBlock).not.toHaveBeenCalled();
   });
 
   /**
@@ -457,13 +593,7 @@ describe('the contact block preview follows the draft', () => {
     previewEmailContactBlock.mockRejectedValue(httpError(500));
     const onBlockPreviewChange = vi.fn();
 
-    render(
-      <ContactSettingsPanel
-        templateCode="VISIT_PARTICIPANT_INVITATION"
-        canEdit
-        onBlockPreviewChange={onBlockPreviewChange}
-      />,
-    );
+    render(<Harness onBlockPreviewChange={onBlockPreviewChange} />);
 
     await screen.findByTestId('contact-settings-panel');
     await waitFor(() => expect(onBlockPreviewChange).toHaveBeenCalledWith(''));

@@ -22,6 +22,17 @@ export const TEMPLATE_ERROR_CODES = {
   requiredBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_BLOCK_NOT_IN_BODY',
   requiredContactBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY',
   systemBlockNotAllowed: 'EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED',
+  /**
+   * The body still carries the contact block while the display level is "Không hiển thị".
+   *
+   * Kept apart from `systemBlockNotAllowed` because the two ask for different repairs, and the screen
+   * offers different actions for them. "Not allowed" means this template can never carry the block and the
+   * only move is to delete it. This one means the template CAN carry it and the administrator has hidden
+   * it, so there are two ways out — delete the block, or put the level back — and the operator owns both.
+   */
+  contactBlockNotAllowedWhenHidden: 'EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN',
+  contactNotSupported: 'EMAIL_TEMPLATE_CONTACT_NOT_SUPPORTED',
+  contactConfigurationInvalid: 'EMAIL_CONTACT_CONFIGURATION_INVALID',
   contactPolicyStoreUnavailable: 'EMAIL_CONTACT_POLICY_STORE_UNAVAILABLE',
   templateNotFound: 'EMAIL_TEMPLATE_NOT_FOUND',
   catalogFixed: 'EMAIL_TEMPLATE_CATALOG_FIXED',
@@ -213,6 +224,19 @@ export interface TemplateContract {
   contactSupported?: boolean;
   /** True when the effective policy is REQUIRED, so the body may not drop the block. */
   contactRequired?: boolean;
+  /**
+   * The STORED display level — NONE / OPTIONAL / REQUIRED.
+   *
+   * Carried in full rather than as `contactRequired` alone because the editor has to tell NONE from
+   * OPTIONAL: under OPTIONAL a body may keep the block or drop it, and under NONE it may not keep it. A
+   * boolean can only express one of those two rules, which is why "hidden but the block is still there"
+   * went unnoticed by both this screen and the API.
+   *
+   * It is the stored value, so the editor overrides it with whatever the contact card currently shows —
+   * see the `contactRequirement` option on `validateContent`. Optional on the type because an API built
+   * before this field answers without it; absent reads as OPTIONAL, the previous behaviour.
+   */
+  contactRequirement?: 'NONE' | 'OPTIONAL' | 'REQUIRED' | string;
   /** False when there is nothing on the contact card an operator could change. */
   contactSettingsEditable?: boolean;
   /** Stable reason for the capability — matched on; the sentences below are for people. */
@@ -273,9 +297,23 @@ export function extractPlaceholders(...parts: (string | undefined | null)[]): st
  * instead of after a round trip. The backend re-validates and stays the authority; this never permits
  * something the backend would refuse, and it never refuses something the backend would permit.
  */
+/**
+ * What the caller knows that the fetched contract does not.
+ *
+ * The contract is fetched once, when the template is opened, so its `contactRequirement` is the level as
+ * STORED. The editor's contact card holds an unsaved draft of that level, and validation has to follow the
+ * draft — otherwise switching the level to "Không hiển thị" would raise no error until after a round trip,
+ * and switching it back would leave one on screen that no longer applies.
+ */
+export interface ValidateContentOptions {
+  /** The level currently shown on the contact card. Omitted means "use the stored one". */
+  contactRequirement?: 'NONE' | 'OPTIONAL' | 'REQUIRED' | string | null;
+}
+
 export function validateContent(
   contract: TemplateContract,
   content: Record<TemplateContentField, string>,
+  options: ValidateContentOptions = {},
 ): TemplateContentIssue[] {
   // A historical row has no contract to validate against. The API answers one for it anyway — so the
   // editor can say what the row IS rather than showing a failed request — but with empty variable
@@ -293,6 +331,15 @@ export function validateContent(
   const issues: TemplateContentIssue[] = [];
   const fields: TemplateContentField[] = ['subjectVi', 'bodyVi', 'subjectEn', 'bodyEn'];
 
+  const contactSupported = contactSupportedOf(contract);
+  const contactRequirement =
+    options.contactRequirement ?? contract.contactRequirement ?? 'OPTIONAL';
+
+  // The block is HIDDEN, not unsupported. Only meaningful on a template that could carry one — on an
+  // unsupported template the requirement has no bearing on anything and the block is refused by the
+  // capability rule below instead, with the sentence that names the real reason.
+  const contactHidden = contactSupported && contactRequirement === 'NONE';
+
   for (const field of fields) {
     const isSubject = field === 'subjectVi' || field === 'subjectEn';
 
@@ -308,7 +355,7 @@ export function validateContent(
         // nothing — so an operator who had just switched the level to Tùy chọn was refused the block that
         // setting exists to place, and the message named neither the setting nor the reason.
         const allowed = name === 'contactInformationBlock'
-          ? contactSupportedOf(contract)
+          ? contactSupported
           : contract.requiredSystemBlocks.includes(name)
             || contract.optionalSystemBlocks.includes(name);
 
@@ -323,6 +370,25 @@ export function validateContent(
             variableName: name,
             messageVi: `Khối hệ thống {{${name}}} không dùng được ở mẫu ${contract.templateCode}; khi gửi sẽ không có gì thay thế vào chỗ này. Hãy xóa khối khỏi nội dung.${why}`,
             messageEn: `System block {{${name}}} is not available on ${contract.templateCode}.`,
+            severity: 'ERROR',
+          });
+          continue;
+        }
+
+        // Permitted on this template, but switched off. Its own code and its own sentence, because the
+        // repair is a choice between two things the operator owns and neither the "not available here"
+        // wording above nor a bare "remove it" states that.
+        if (name === 'contactInformationBlock' && contactHidden) {
+          issues.push({
+            field,
+            code: TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden,
+            variableName: name,
+            messageVi:
+              `Khối thông tin liên hệ vẫn tồn tại trong ${describeFieldVi(field)}, nhưng mức hiển thị `
+              + 'đang là “Không hiển thị”. Hãy xóa khối khỏi nội dung hoặc chọn lại “Tùy chọn/Bắt buộc”.',
+            messageEn:
+              `The contact block is still present in ${describeFieldEn(field)} while the display level is `
+              + 'hidden. Remove the block from the content, or set the level back to Optional/Required.',
             severity: 'ERROR',
           });
           continue;
@@ -398,21 +464,65 @@ export function validateContent(
     // "action block required" was survivable while the action block was the only one an operator could
     // delete; with three blocks it would tell somebody who removed the contact card to go restore a
     // button they never touched.
-    for (const required of contract.requiredSystemBlocks) {
+    //
+    // The contact block is taken from the LEVEL rather than from the fetched list, because the level may
+    // have been changed on screen since the contract was fetched. Reading the stale list would keep
+    // demanding the block after somebody had lowered the level to Tùy chọn — the refusal that used to make
+    // "remove the block" and "set it to optional" impossible to do in one edit.
+    const requiredBlocks = contract.requiredSystemBlocks.filter(b => b !== 'contactInformationBlock');
+    if (contactSupported && contactRequirement === 'REQUIRED') {
+      requiredBlocks.push('contactInformationBlock');
+    }
+
+    for (const required of requiredBlocks) {
       if (present.includes(required)) continue;
 
       issues.push({
         field: body,
         code: blockMissingCode(required),
         variableName: required,
-        messageVi: blockMissingMessageVi(required),
-        messageEn: blockMissingMessageEn(required),
+        messageVi: required === 'contactInformationBlock'
+          // Named per language: an operator whose Vietnamese body is fine and whose English body is not
+          // needs to be sent to the English tab, and "this template needs the block" sends them to neither.
+          ? `${describeFieldVi(body)} thiếu khối thông tin liên hệ ({{contactInformationBlock}}). `
+            + 'Mức hiển thị đang là “Bắt buộc”, nên bỏ khối đi thì người nhận được yêu cầu liên hệ mà '
+            + 'không có địa chỉ nào. Hãy thêm lại khối, hoặc đổi mức hiển thị.'
+          : blockMissingMessageVi(required),
+        messageEn: required === 'contactInformationBlock'
+          ? `${describeFieldEn(body)} is missing the contact block ({{contactInformationBlock}}) while the `
+            + 'level is Required. Add it back, or change the level.'
+          : blockMissingMessageEn(required),
         severity: 'ERROR',
       });
     }
   }
 
   return issues;
+}
+
+/**
+ * Which field a message is about, in words. The field NAME still travels on the issue so the screen can
+ * anchor the message under the right input; this is what the SENTENCE says, and a sentence that does not
+ * name the language leaves somebody with a clean Vietnamese tab wondering what is wrong with it.
+ */
+function describeFieldVi(field: TemplateContentField | string): string {
+  switch (field) {
+    case 'subjectVi': return 'tiêu đề tiếng Việt';
+    case 'subjectEn': return 'tiêu đề tiếng Anh';
+    case 'bodyVi': return 'nội dung tiếng Việt';
+    case 'bodyEn': return 'nội dung tiếng Anh';
+    default: return 'nội dung';
+  }
+}
+
+function describeFieldEn(field: TemplateContentField | string): string {
+  switch (field) {
+    case 'subjectVi': return 'the Vietnamese subject';
+    case 'subjectEn': return 'the English subject';
+    case 'bodyVi': return 'the Vietnamese body';
+    case 'bodyEn': return 'the English body';
+    default: return 'the content';
+  }
 }
 
 function blockMissingCode(block: string): string {

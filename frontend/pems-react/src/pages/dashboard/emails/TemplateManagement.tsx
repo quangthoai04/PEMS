@@ -4,8 +4,19 @@ import { emailsApi } from '../../../features/emails/api/emailsApi';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
-import { ContactSettingsPanel } from '../../../features/emails/components/ContactSettingsPanel';
+import {
+  ContactSettingsPanel,
+  toContactPayload,
+} from '../../../features/emails/components/ContactSettingsPanel';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
+import {
+  containsContactInformationBlock,
+  removeContactInformationBlock,
+} from '../../../features/emails/utils/contactBlock';
+import type {
+  EmailContactSettings,
+  EmailContactSettingsPayload,
+} from '../../../features/emails/api/emailsApi';
 import {
   TEMPLATE_ERROR_CODES,
   applySamples,
@@ -49,24 +60,32 @@ interface TemplateForm {
   /** Whether PEMS ships a default for this code — decides whether restore is offered at all. */
   hasShippedDefault: boolean;
   updatedAt: string | null;
+  /**
+   * The contact configuration, as one more group of fields in the SAME form.
+   *
+   * Null means one of two different things and the screen tells them apart elsewhere: the card has not
+   * finished loading, or this template has no configuration at all. Neither is dirty, because the
+   * baseline is null in both cases too.
+   */
+  contactSettings: EmailContactSettingsPayload | null;
 }
 
 const EMPTY_FORM: TemplateForm = {
   templateCode: '', name: '', description: '',
   subjectVi: '', bodyVi: '', subjectEn: '', bodyEn: '',
   status: 'ACTIVE', revision: null, hasShippedDefault: false, updatedAt: null,
+  contactSettings: null,
 };
 
 /** Matches the `description` column and `UpdateEmailTemplateCommandValidator.DescriptionMaxLength`. */
 const DESCRIPTION_MAX_LENGTH = 500;
 
 /**
- * The six fields "Lưu thay đổi mẫu" writes — and nothing else.
+ * The six content fields "Lưu thay đổi" writes, alongside the contact settings.
  *
- * Named as a list because it answers two questions that must not drift apart: what the button saves, and
- * what counts as an unsaved change to the CONTENT as opposed to the contact settings. The two are
- * separate saves against separate endpoints, so one dirty flag for the screen would have to mean either
- * more or less than each button actually does.
+ * Named as a list because it answers a question that must not drift: what the one save button writes.
+ * There used to be two lists for two buttons, and an operator who changed both and pressed one was left
+ * believing they had saved everything.
  */
 const CONTENT_FIELDS = ['name', 'description', 'subjectVi', 'bodyVi', 'subjectEn', 'bodyEn'] as const;
 
@@ -80,6 +99,96 @@ const contentOf = (form: TemplateForm): ContentSnapshot => ({
   subjectEn: form.subjectEn,
   bodyEn: form.bodyEn,
 });
+
+/** The two fields the rich-text editor owns; everything else in the snapshot is plain text. */
+const BODY_FIELDS = ['bodyVi', 'bodyEn'] as const;
+
+type BodyField = (typeof BODY_FIELDS)[number];
+
+const isBodyField = (field: string): field is BodyField =>
+  field === 'bodyVi' || field === 'bodyEn';
+
+/**
+ * The differences that are NOT an edit.
+ *
+ * "Có thay đổi chưa lưu" has to mean the operator changed something, so the comparison is made between
+ * normalised values rather than between the exact strings. A body that arrives with CRLF line endings
+ * and comes back from the editor with LF is the same body; so is one the API stored as null and the form
+ * holds as ''.
+ */
+const normalizeText = (value: string | null | undefined) =>
+  (value ?? '').replace(/\r\n?/g, '\n').trim();
+
+/**
+ * As above, plus the editor's idea of "empty".
+ *
+ * An empty Quill document serialises to `<p><br></p>`, while an empty stored body is ''. Left
+ * unreconciled, clearing a body and typing it back exactly as it was would leave the screen claiming an
+ * unsaved change forever.
+ */
+const normalizeHtml = (value: string | null | undefined) => {
+  const text = normalizeText(value);
+  return /^<p>(?:\s|<br\s*\/?>)*<\/p>$/i.test(text) ? '' : text;
+};
+
+const normalizeField = (field: (typeof CONTENT_FIELDS)[number], value: string) =>
+  isBodyField(field) ? normalizeHtml(value) : normalizeText(value);
+
+/**
+ * The whole editable state of one template, reduced to a value that can be compared for equality.
+ *
+ * This is the single baseline the screen's ONE dirty flag is derived from. It replaces two independent
+ * flags — one for content, one for the contact card — which between them could not answer "does this
+ * screen have unsaved work" without the reader knowing which of two buttons they were being warned about.
+ *
+ * Everything is normalised on the way in, for the same reason the content fields always were: a
+ * difference that no save would write is not an unsaved change. Null and '' are the same heading, CRLF
+ * and LF are the same body, and an empty Quill document is the same as an empty stored one. Comparing
+ * raw values would leave the screen claiming unsaved work the moment a template was opened.
+ */
+type EditorSnapshot = {
+  content: ContentSnapshot;
+  contact: EmailContactSettingsPayload | null;
+};
+
+const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
+  const content = contentOf(form);
+
+  return {
+    content: CONTENT_FIELDS.reduce((acc, field) => {
+      acc[field] = normalizeField(field, content[field]);
+      return acc;
+    }, {} as ContentSnapshot),
+    contact: form.contactSettings
+      ? {
+          ...form.contactSettings,
+          // The headings are the only free text here, and the API trims them and treats '' as "inherit".
+          // Comparing untrimmed values would report a trailing space as an unsaved change that no save
+          // could ever clear, because the save would store the trimmed form and the next comparison would
+          // find them different again.
+          headingVi: normalizeText(form.contactSettings.headingVi),
+          headingEn: normalizeText(form.contactSettings.headingEn),
+        }
+      : null,
+  };
+};
+
+/**
+ * Structural equality over the snapshot.
+ *
+ * `JSON.stringify` would be shorter and is what the contact card used to do, but it compares KEY ORDER as
+ * well as values — so a payload rebuilt from a server response with its properties in a different order
+ * would read as an edit. The fields are enumerated instead.
+ */
+const sameSnapshot = (a: EditorSnapshot, b: EditorSnapshot): boolean => {
+  if (CONTENT_FIELDS.some(field => a.content[field] !== b.content[field])) return false;
+
+  if (a.contact === null || b.contact === null) return a.contact === b.contact;
+
+  const keys = Object.keys(a.contact) as (keyof EmailContactSettingsPayload)[];
+  return keys.length === Object.keys(b.contact).length
+    && keys.every(key => a.contact![key] === b.contact![key]);
+};
 
 /**
  * The system email template catalog (UC-42/43/44).
@@ -148,16 +257,53 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    */
   const [contactBlockPreview, setContactBlockPreview] = useState('');
   /**
-   * The content as it is STORED, so "có thay đổi chưa lưu" is a fact rather than "the operator typed
-   * something". Re-baselined after every successful save and restore — leaving the old baseline would
-   * keep the warning on screen after the work had been saved, which teaches operators to ignore it.
+   * The whole template as it is STORED — content and contact settings together — so "có thay đổi chưa
+   * lưu" is a fact rather than "the operator typed something". Re-baselined after every successful save
+   * and restore; leaving the old baseline would keep the warning on screen after the work had been saved,
+   * which teaches operators to ignore it.
+   *
+   * A ref rather than state because nothing renders from it directly: it is one half of a comparison, and
+   * holding it in state would re-render the editor a second time on every save for no visible change.
    */
-  const [savedContent, setSavedContent] = useState<ContentSnapshot>(contentOf(EMPTY_FORM));
-  /** Reported upward by card 4; the two groups save separately and are warned about separately. */
-  const [contactDirty, setContactDirty] = useState(false);
+  const baselineRef = useRef<EditorSnapshot>(normalizeEditorSnapshot(EMPTY_FORM));
+  /** Bumped whenever the baseline moves, so the dirty check recomputes. */
+  const [baselineVersion, setBaselineVersion] = useState(0);
+
+  const setBaseline = useCallback((form: TemplateForm) => {
+    baselineRef.current = normalizeEditorSnapshot(form);
+    setBaselineVersion(v => v + 1);
+  }, []);
+  /**
+   * Whether each body still has to absorb the editor's own rendering of the STORED html — the last step
+   * of hydration, and the reason this screen used to open already claiming unsaved changes.
+   *
+   * ReactQuill is controlled, so it converts whatever html it is handed into its own canonical form and
+   * reports the result through `onChange` the moment it mounts (source `api`, not `user`). The stored
+   * bodies are not in that form — `{{actionBlock}}` sits between two paragraphs as bare text, the
+   * footers carry inline `style` attributes Quill's format list does not include — so the very first
+   * thing that happened after opening a template was a change event nobody had made. The baseline was
+   * the html from the API, the form now held the editor's version of it, and the screen said "● Nội dung
+   * mẫu có thay đổi chưa lưu" before the operator had touched anything.
+   *
+   * The flag makes that one event part of hydration instead: the FIRST non-user change to a body moves
+   * the baseline with the form, so the two still agree. It is cleared as soon as anything else touches
+   * that body — typing, inserting a variable, removing a block — after which every change is the
+   * operator's and is reported as unsaved. Held per language because each editor normalises when ITS tab
+   * is first shown, which is not when the template was opened.
+   */
+  const pendingEditorNormalization = useRef<Record<BodyField, boolean>>({ bodyVi: true, bodyEn: true });
   const [contract, setContract] = useState<ContractState>({ status: 'idle' });
   const [serverIssues, setServerIssues] = useState<TemplateContentIssue[]>([]);
-  const [confirmState, setConfirmState] = useState<{isOpen: boolean; onConfirm: () => void; message: string; title: string; variant?: 'warning' | 'danger' | 'default'}>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    onConfirm: () => void;
+    message: string;
+    title: string;
+    variant?: 'warning' | 'danger' | 'default';
+    /** Named for the action, not "Xác nhận" — a dialog that discards work should say which one it is. */
+    confirmText?: string;
+    cancelText?: string;
+  }>({isOpen: false, onConfirm: () => {}, message: '', title: ''});
 
   /**
    * Guards against a stale contract landing after the operator has moved on. Without it, opening
@@ -183,18 +329,33 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    */
   const localIssues = useMemo<TemplateContentIssue[]>(() => {
     if (contract.status !== 'ready') return [];
-    return validateContent(contract.contract, contentByField);
-  }, [contract, contentByField]);
+    // The DRAFT level, not the one the contract was fetched with. Switching "Mức hiển thị" has to change
+    // what counts as valid content immediately — otherwise choosing "Không hiển thị" would raise no error
+    // until after a round trip, and choosing "Bắt buộc" back again would leave one on screen that no
+    // longer applies.
+    return validateContent(contract.contract, contentByField, {
+      contactRequirement: formData.contactSettings?.requirement ?? null,
+    });
+  }, [contract, contentByField, formData.contactSettings?.requirement]);
 
   const issues = useMemo(
     () => [...localIssues, ...serverIssues],
     [localIssues, serverIssues],
   );
 
-  /** Unsaved changes in the six fields "Lưu thay đổi mẫu" writes. */
-  const contentDirty = useMemo(
-    () => CONTENT_FIELDS.some(field => formData[field] !== savedContent[field]),
-    [formData, savedContent],
+  /**
+   * The ONE unsaved-changes answer for the whole editor — DERIVED, never a flag that is switched on and
+   * left on. An operator who undoes an edit back to what was stored has nothing unsaved, and the screen
+   * has to agree with them.
+   *
+   * `baselineVersion` is in the dependency list rather than the baseline itself because the baseline is a
+   * ref: without it the memo would keep the comparison it made against the PREVIOUS baseline and go on
+   * reporting unsaved changes after a successful save.
+   */
+  const isDirty = useMemo(
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => !sameSnapshot(normalizeEditorSnapshot(formData), baselineRef.current),
+    [formData, baselineVersion],
   );
 
   /**
@@ -292,10 +453,16 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         revision: typeof t.revision === 'number' ? t.revision : null,
         hasShippedDefault: t.hasShippedDefault === true,
         updatedAt: t.updatedAt ?? t.createdAt ?? null,
+        // Filled in by the contact card's own request, which seeds form and baseline together through
+        // `handleContactLoaded`. Null until then, and null in the baseline too, so the window before it
+        // arrives is not reported as an unsaved change.
+        contactSettings: null,
       };
       setFormData(loaded);
-      setSavedContent(contentOf(loaded));
-      setContactDirty(false);
+      setBaseline(loaded);
+      // A fresh template hydrates from scratch: the previous one's baseline, and the editors' state
+      // about it, must not survive into this one.
+      pendingEditorNormalization.current = { bodyVi: true, bodyEn: true };
       setEditingId(t.emailTemplateId || id);
       setServerIssues([]);
       setLanguage('VI');
@@ -322,9 +489,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     }
 
     // Reachable with the button disabled, the same way `isHistorical` is: Enter in a text input submits.
-    // A no-op save would still bump the revision and write an audit row saying the content changed.
-    if (!contentDirty) {
-      pushToast('error', 'Chưa có thay đổi nào ở nội dung mẫu để lưu.');
+    // A no-op save would still bump the revision and write an audit row saying the template changed.
+    if (!isDirty) {
+      pushToast('error', 'Chưa có thay đổi nào để lưu.');
       return;
     }
 
@@ -357,37 +524,106 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         subjectEn: formData.subjectEn || null,
         bodyEn: formData.bodyEn || null,
         expectedRevision: formData.revision,
+        // Omitted, not sent as an empty object, when this template has no configuration. The API treats
+        // a missing object as "leave the policy alone", which is exactly right on a template that has
+        // none — and quite different from an object full of defaults, which would write one.
+        contactSettings: formData.contactSettings,
       });
 
-      // Keep the new token: without it the editor's own next save would be refused as a conflict with
-      // the change it just made.
-      setFormData(prev => ({
-        ...prev,
-        revision: typeof res.data?.revision === 'number' ? res.data.revision : prev.revision,
-        updatedAt: res.data?.updatedAt ?? prev.updatedAt,
-      }));
-      // What was just written is now what is stored: the content is no longer unsaved. The contact
-      // settings are untouched by this call and keep whatever state they were in — that separation is
-      // the point of two buttons.
-      setSavedContent(contentOf(formData));
-      pushToast('success', 'Đã lưu thay đổi nội dung mẫu email');
+      // Re-seeded from the STORED snapshot rather than from what was typed. The two are not always the
+      // same — headings are trimmed and stripped of markup on the way in, an empty description becomes
+      // NULL, a heading equal to the shipped wording becomes "inherit" — and a baseline built from the
+      // request would report those normalisations as unsaved changes the instant the save succeeded.
+      const saved: TemplateForm = {
+        ...formData,
+        revision: typeof res.data?.revision === 'number' ? res.data.revision : formData.revision,
+        updatedAt: res.data?.updatedAt ?? formData.updatedAt,
+        name: res.data?.name ?? formData.name,
+        description: res.data?.description ?? '',
+        subjectVi: res.data?.subjectVi ?? '',
+        bodyVi: res.data?.bodyVi ?? '',
+        subjectEn: res.data?.subjectEn ?? '',
+        bodyEn: res.data?.bodyEn ?? '',
+        contactSettings: res.data?.contactSettings
+          ? toContactPayload(res.data.contactSettings)
+          : formData.contactSettings,
+      };
+
+      setFormData(saved);
+      setBaseline(saved);
+      pushToast('success', res.data?.message || 'Đã lưu thay đổi');
       closeEditor();
       fetchData();
     } catch (err: any) {
-      const code = errorCodeOf(err);
-      const fromServer = issuesFromError(err);
-
-      if (fromServer.length > 0) {
-        setServerIssues(fromServer);
-        pushToast('error', `Còn ${fromServer.length} vấn đề cần sửa trước khi lưu.`);
-      } else if (code === TEMPLATE_ERROR_CODES.concurrencyConflict) {
-        pushToast('error', err.response?.data?.message
-          ?? 'Mẫu này đã được người khác cập nhật. Vui lòng mở lại để xem nội dung mới nhất.');
-      } else {
-        pushToast('error', err.response?.data?.message || 'Có lỗi xảy ra khi lưu mẫu email');
-      }
+      // The baseline is deliberately NOT moved here. A failed save wrote nothing, so the work is still
+      // unsaved and the screen must go on saying so — re-baselining on failure is how a form comes to
+      // look clean while holding changes the server has never seen.
+      applySaveFailure(err, 'Có lỗi xảy ra khi lưu mẫu email');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /**
+   * Turns one refused save into what the operator sees.
+   *
+   * Shared by save and restore because the failures are the same set and must not be worded two ways.
+   * Every branch matches on the stable `errorCode`; none of them puts the code into the sentence — a code
+   * is for matching in software, and the message beside it already says what to do.
+   */
+  const applySaveFailure = (err: any, fallback: string) => {
+    const code = errorCodeOf(err);
+    const fromServer = issuesFromError(err);
+    const serverMessage = err?.response?.data?.message;
+
+    if (fromServer.length > 0) {
+      setServerIssues(fromServer);
+      pushToast('error', `Còn ${fromServer.length} vấn đề cần sửa trước khi lưu.`);
+      return;
+    }
+
+    switch (code) {
+      case TEMPLATE_ERROR_CODES.concurrencyConflict:
+        pushToast('error', serverMessage
+          ?? 'Mẫu này đã được người khác cập nhật. Vui lòng mở lại để xem nội dung mới nhất.');
+        return;
+
+      case TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden:
+        // Reported as a field issue as well as a toast, so the "Xóa khối khỏi nội dung" action appears
+        // next to the content it is about instead of only as a message that disappears.
+        setServerIssues([{
+          field: containsContactInformationBlock(formData.bodyVi) ? 'bodyVi' : 'bodyEn',
+          code,
+          variableName: 'contactInformationBlock',
+          messageVi: serverMessage
+            ?? 'Không thể lưu mẫu vì mức hiển thị là “Không hiển thị” nhưng nội dung vẫn chứa khối thông '
+              + 'tin liên hệ.',
+          messageEn: 'The content still carries the contact block while the level is hidden.',
+          severity: 'ERROR',
+        }]);
+        pushToast('error', 'Nội dung vẫn còn khối thông tin liên hệ trong khi mức hiển thị là “Không hiển thị”.');
+        return;
+
+      case TEMPLATE_ERROR_CODES.requiredContactBlockMissing:
+        pushToast('error', serverMessage
+          ?? 'Mức hiển thị đang là “Bắt buộc” nhưng nội dung chưa có khối thông tin liên hệ.');
+        return;
+
+      case TEMPLATE_ERROR_CODES.contactNotSupported:
+        pushToast('error', serverMessage
+          ?? 'Mẫu này không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để lưu.');
+        return;
+
+      case TEMPLATE_ERROR_CODES.contactConfigurationInvalid:
+        pushToast('error', serverMessage ?? 'Cấu hình thông tin liên hệ chưa hợp lệ.');
+        return;
+
+      case TEMPLATE_ERROR_CODES.defaultUnavailable:
+        pushToast('error', 'Mẫu này không có nội dung mặc định để phục hồi.');
+        return;
+
+      default:
+        pushToast('error', serverMessage || fallback);
     }
   };
 
@@ -402,19 +638,27 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const handleRestoreDefault = () => {
     if (!editingId || formData.revision === null) return;
 
+    const restoresContact = contract.status === 'ready' && contactSupportedOf(contract.contract);
+
     setConfirmState({
       isOpen: true,
-      title: 'Phục hồi nội dung mặc định',
+      title: 'Khôi phục toàn bộ mẫu?',
       variant: 'danger',
       message:
         // Naming the template is not decoration: this dialog is the last point at which an operator can
         // tell they are about to discard an afternoon's wording, and it is reached from a screen where
-        // several templates look alike.
-        `Phục hồi mẫu "${formData.templateCode}" về nội dung mặc định của hệ thống?\n\n` +
-        'Tên mẫu, mô tả quản trị, tiêu đề và nội dung của CẢ tiếng Việt và tiếng Anh sẽ bị thay bằng bản ' +
-        'hệ thống. Các thay đổi bạn đã lưu trước đó sẽ không còn trên mẫu (vẫn được ghi lại trong lịch ' +
-        'sử thao tác).\n\n' +
-        'Mã mẫu, phân loại, trạng thái và cấu hình thông tin liên hệ không thay đổi.',
+        // several templates look alike. The list says what goes, item by item, because "restore
+        // defaults" on a screen with four groups of fields does not say which of them it means.
+        `Thao tác này sẽ khôi phục mẫu "${formData.templateCode}" về bản hệ thống:\n` +
+        '• Tên và mô tả mẫu\n' +
+        '• Tiêu đề và nội dung tiếng Việt\n' +
+        '• Tiêu đề và nội dung tiếng Anh\n' +
+        (restoresContact
+          ? '• Cấu hình thông tin liên hệ và Reply-To\n'
+          : '• (Mẫu này không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để khôi phục)\n') +
+        '\nCác tùy chỉnh hiện tại sẽ bị thay thế (vẫn được ghi lại trong lịch sử thao tác).\n\n' +
+        'Mã mẫu, phân loại và trạng thái không thay đổi.',
+      confirmText: 'Khôi phục mặc định',
       onConfirm: () => {
         setConfirmState(prev => ({ ...prev, isOpen: false }));
         void executeRestoreDefault();
@@ -443,55 +687,168 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         bodyEn: t?.bodyEn ?? '',
         revision: typeof t?.revision === 'number' ? t.revision : formData.revision,
         updatedAt: t?.updatedAt ?? formData.updatedAt,
+        // Falls back to what is on screen rather than to null when the response omits the settings.
+        // On a template with no configuration that IS null already, so the two agree; but an API built
+        // before the combined restore answers without the field, and reading that as "there is no
+        // configuration" would blank a card that has one — leaving the panel with a loaded template and
+        // no value, which it can only render as a failure.
+        contactSettings: t?.contactSettings
+          ? toContactPayload(t.contactSettings)
+          : formData.contactSettings,
       };
 
       setFormData(restored);
-      // The restore WROTE this content, so nothing here is unsaved — and the contact settings were not
-      // touched, so their own state is left exactly as it was.
-      setSavedContent(contentOf(restored));
-      pushToast('success', 'Đã phục hồi nội dung mặc định của mẫu email. Cấu hình thông tin liên hệ được giữ nguyên.');
+      // The restore WROTE all of this, so nothing is unsaved. Both halves move together because both
+      // halves were replaced in one transaction.
+      setBaseline(restored);
+      // The bodies changed, so the editors will re-serialise them — and that re-serialisation is
+      // hydration, not an edit. Without this the screen would report unsaved changes immediately after a
+      // restore, which is the same defect the flag was introduced to fix when opening a template.
+      pendingEditorNormalization.current = { bodyVi: true, bodyEn: true };
+      setServerIssues([]);
+      pushToast('success', t?.message || 'Đã khôi phục mẫu email về bản mặc định.');
       fetchData();
     } catch (err: any) {
-      const code = errorCodeOf(err);
-      const fromServer = issuesFromError(err);
-
-      if (fromServer.length > 0) {
-        // The shipped default itself failed the contract — a seed defect, not the operator's mistake.
-        setServerIssues(fromServer);
+      if (issuesFromError(err).length > 0) {
+        // The shipped default itself failed the contract — a seed defect, not the operator's mistake, so
+        // the sentence says who can fix it rather than pointing at the fields.
+        setServerIssues(issuesFromError(err));
         pushToast('error', 'Nội dung mặc định của mẫu này không hợp lệ; chưa phục hồi. Vui lòng báo quản trị hệ thống.');
-      } else if (code === TEMPLATE_ERROR_CODES.concurrencyConflict) {
-        pushToast('error', err.response?.data?.message
-          ?? 'Mẫu này đã được người khác cập nhật. Vui lòng mở lại để xem nội dung mới nhất rồi phục hồi.');
-      } else if (code === TEMPLATE_ERROR_CODES.defaultUnavailable) {
-        pushToast('error', 'Mẫu này không có nội dung mặc định để phục hồi.');
-      } else {
-        pushToast('error', err.response?.data?.message || 'Có lỗi xảy ra khi phục hồi nội dung mặc định');
+        return;
       }
+      applySaveFailure(err, 'Có lỗi xảy ra khi khôi phục mặc định');
     } finally {
       setRestoring(false);
     }
   };
 
+  /**
+   * The contact card has loaded (or reloaded) this template's stored settings.
+   *
+   * Form AND baseline are seeded in the same step. Setting only the form would make the card's own
+   * arrival look like an edit the operator had made, and the screen would announce unsaved changes on a
+   * template nobody had touched — the same defect the rich-text editor's first change event used to cause.
+   */
+  const handleContactLoaded = useCallback((settings: EmailContactSettings) => {
+    const payload = toContactPayload(settings);
+
+    setFormData(prev => {
+      const next = { ...prev, contactSettings: payload };
+      baselineRef.current = {
+        ...baselineRef.current,
+        contact: normalizeEditorSnapshot(next).contact,
+      };
+      return next;
+    });
+    setBaselineVersion(v => v + 1);
+  }, []);
+
+  /** One field on the contact card changed. Merged into the one form; the one dirty flag re-derives. */
+  const handleContactChange = useCallback((next: EmailContactSettingsPayload) => {
+    setFormData(prev => ({ ...prev, contactSettings: next }));
+  }, []);
+
+  /**
+   * Deletes the contact block from BOTH bodies, at the operator's request.
+   *
+   * Both, always: a policy is one setting for the whole template, so removing the block from Vietnamese
+   * and leaving it in English produces a template that is still refused, having already asked the
+   * operator to fix it once. The level is left exactly as it is — a template at "Bắt buộc" that has just
+   * lost its block moves from one error to another, which is correct and is what the validator then says.
+   *
+   * Nothing is saved. This is an edit like any other: it marks the form dirty and waits for "Lưu thay đổi".
+   */
+  const removeContactBlockFromContent = useCallback(() => {
+    markBodyEdited('bodyVi');
+    markBodyEdited('bodyEn');
+
+    setFormData(prev => ({
+      ...prev,
+      bodyVi: removeContactInformationBlock(prev.bodyVi),
+      bodyEn: removeContactInformationBlock(prev.bodyEn),
+    }));
+
+    // The server's refusal was about content that no longer exists; leaving it on screen would report a
+    // problem the operator has just fixed.
+    setServerIssues(prev => prev.filter(i => i.variableName !== 'contactInformationBlock'));
+  }, []);
+
+  /**
+   * "Không hiển thị" was chosen on the contact card.
+   *
+   * Applied straight away when neither body carries the block — there is nothing to decide. When one
+   * does, the operator is asked, because the two ways out are not equivalent and neither is ours to pick:
+   * removing the block is an edit to text they wrote, and keeping the level is a decision about what the
+   * mail says. Silently deleting from the bodies would be an edit they never made and cannot see; silently
+   * setting the level and leaving the block would produce a template that cannot be saved, with no
+   * explanation of why.
+   */
+  const handleRequestHideContact = useCallback(() => {
+    const setLevelToNone = () =>
+      setFormData(prev => (prev.contactSettings
+        ? { ...prev, contactSettings: { ...prev.contactSettings, requirement: 'NONE' } }
+        : prev));
+
+    const viHasBlock = containsContactInformationBlock(formData.bodyVi);
+    const enHasBlock = containsContactInformationBlock(formData.bodyEn);
+
+    if (!viHasBlock && !enHasBlock) {
+      setLevelToNone();
+      return;
+    }
+
+    setConfirmState({
+      isOpen: true,
+      title: 'Nội dung đang có khối thông tin liên hệ',
+      variant: 'warning',
+      message:
+        'Nội dung hiện có khối {{contactInformationBlock}}'
+        + (viHasBlock && enHasBlock
+          ? ' ở cả tiếng Việt và tiếng Anh'
+          : viHasBlock ? ' ở nội dung tiếng Việt' : ' ở nội dung tiếng Anh')
+        + '.\n\n'
+        + 'Chuyển sang “Không hiển thị” yêu cầu xóa khối này khỏi cả nội dung tiếng Việt và tiếng Anh.',
+      confirmText: 'Xóa khối và chuyển sang Không hiển thị',
+      cancelText: 'Giữ cấu hình hiện tại',
+      onConfirm: () => {
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+        // Both, in one state update, so the form never passes through a state where the level says NONE
+        // and the bodies still have the block — which the validator would flag for one render.
+        markBodyEdited('bodyVi');
+        markBodyEdited('bodyEn');
+        setFormData(prev => ({
+          ...prev,
+          bodyVi: removeContactInformationBlock(prev.bodyVi),
+          bodyEn: removeContactInformationBlock(prev.bodyEn),
+          contactSettings: prev.contactSettings
+            ? { ...prev.contactSettings, requirement: 'NONE' }
+            : prev.contactSettings,
+        }));
+        setServerIssues(prev => prev.filter(i => i.variableName !== 'contactInformationBlock'));
+      },
+    });
+  }, [formData.bodyVi, formData.bodyEn]);
+
   const closeEditor = () => {
     setShowForm(false);
-    setContactDirty(false);
+    setFormData(EMPTY_FORM);
+    setBaseline(EMPTY_FORM);
+    setEditingId(null);
+    setServerIssues([]);
+    setContract({ status: 'idle' });
+    setContactBlockPreview('');
   };
 
   /**
-   * Closing names WHICH group is unsaved, and only the groups that really are.
+   * One question, asked only when there is something to lose.
    *
-   * There are two saves on this screen and they are independent, so "bỏ các thay đổi chưa lưu?" left an
-   * operator unable to tell whether they had forgotten the wording, the contact configuration, or
-   * neither — and it asked the question even when nothing was pending, which is how a confirmation stops
-   * being read. With nothing dirty the editor simply closes.
+   * It used to name which of two groups was unsaved, because there were two saves and an operator could
+   * not otherwise tell which button they had forgotten. With one save there is one answer, and the
+   * sentence is the plain one. Nothing dirty still means the editor simply closes — a confirmation that
+   * appears when there is nothing to confirm is one that stops being read.
    */
   const handleCancel = () => {
-    const pending = [
-      contentDirty ? 'Nội dung mẫu' : null,
-      contactDirty ? 'Cấu hình thông tin liên hệ' : null,
-    ].filter(Boolean) as string[];
-
-    if (pending.length === 0) {
+    if (!isDirty) {
       closeEditor();
       return;
     }
@@ -500,10 +857,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       isOpen: true,
       title: 'Đóng trình sửa',
       message:
-        'Bạn có thay đổi chưa lưu ở:\n'
-        + pending.map(group => `• ${group}`).join('\n')
-        + '\n\nĐóng và bỏ những thay đổi này?',
+        'Bạn có thay đổi chưa lưu. Rời khỏi trang sẽ làm mất các thay đổi này.\n\n'
+        + 'Đóng và bỏ những thay đổi này?',
       variant: 'danger',
+      confirmText: 'Đóng và bỏ thay đổi',
+      cancelText: 'Ở lại',
       onConfirm: () => {
         setConfirmState(prev => ({...prev, isOpen: false}));
         closeEditor();
@@ -511,11 +869,73 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     });
   };
 
+  /**
+   * The browser's own guard, for the routes this component cannot intercept: a reload, a closed tab, a
+   * typed URL, the back button.
+   *
+   * Registered only while the editor is open AND dirty. A listener that is always attached asks the
+   * question on every navigation away from the screen, including the ones where nothing was typed —
+   * which trains people to click through it, and is why the prompt is worth attaching only when it is
+   * true. `preventDefault` plus a non-empty `returnValue` is what every current browser needs; the string
+   * itself is not displayed any more, so the wording lives in the in-app dialog above where it can be.
+   */
+  useEffect(() => {
+    if (!showForm || !isDirty) return;
+
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [showForm, isDirty]);
+
+  /** This body is now the operator's; the editor's own rendering of it is no longer hydration. */
+  const markBodyEdited = (field: BodyField) => {
+    pendingEditorNormalization.current[field] = false;
+  };
+
+  /**
+   * Everything the editor reports for one language.
+   *
+   * `source` is what separates the two kinds of event: `user` is somebody typing or pasting, anything
+   * else is Quill re-serialising content it was handed. The first of the latter, per language, is the
+   * tail of hydration and moves the baseline with the form; every event after it is a change to be
+   * saved. The mocked editor in the tests passes no source, which is treated as a real edit — a change
+   * event with no editor behind it can only be the test acting as the operator.
+   */
+  const handleBodyChange = (field: BodyField, value: string, source?: string) => {
+    const isEditorNormalization = source !== undefined && source !== 'user';
+
+    if (isEditorNormalization && pendingEditorNormalization.current[field]) {
+      markBodyEdited(field);
+      setFormData(prev => ({ ...prev, [field]: value }));
+      // The baseline moves WITH the form for this one event, so the editor's own rendering of the stored
+      // html is not reported as an edit. Written straight into the ref rather than through `setBaseline`,
+      // which takes a whole form: only this one field is being re-baselined, and the rest of the form may
+      // already hold changes the operator made before switching to this language tab.
+      baselineRef.current = {
+        ...baselineRef.current,
+        content: { ...baselineRef.current.content, [field]: normalizeField(field, value) },
+      };
+      setBaselineVersion(v => v + 1);
+      return;
+    }
+
+    markBodyEdited(field);
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
   const insertVariable = (name: string) => {
     const token = `{{${name}}}`;
     const editor = quillRef.current?.getEditor();
 
     if (editor && editor.hasFocus()) {
+      // Before the insert, not after: `insertText` makes the editor emit an `api` change, and a body
+      // still waiting to absorb its normalisation would take the inserted variable into the baseline —
+      // an edit that never showed as unsaved and would have been dropped on close.
+      markBodyEdited(bodyField);
       const range = editor.getSelection(true);
       editor.insertText(range.index, token);
       setFormData(prev => ({ ...prev, [bodyField]: editor.root.innerHTML }));
@@ -529,6 +949,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         [subjectField]: current.substring(0, start) + token + current.substring(end),
       }));
     } else {
+      markBodyEdited(bodyField);
       setFormData(prev => ({ ...prev, [bodyField]: prev[bodyField] + token }));
     }
   };
@@ -556,42 +977,94 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * waits for "Lưu thay đổi mẫu" like any other edit, so it stays a change they made.
    */
   const removeBlockFromField = (field: TemplateContentField, block: string) => {
+    // A deletion the operator asked for. Marked as theirs so the editor's re-serialisation of the
+    // result cannot be mistaken for hydration and quietly folded into the baseline.
+    if (isBodyField(field)) markBodyEdited(field);
     setFormData(prev => ({ ...prev, [field]: removeSystemBlock(prev[field], block) }));
     // The refusal came from the server for content that no longer exists; keeping it on screen would
     // report a problem the operator has just fixed.
     setServerIssues(prev => prev.filter(i => !(i.field === field && i.variableName === block)));
   };
 
+  /**
+   * The issues for one field: an icon, a sentence, and — where one applies — a button on its own line.
+   *
+   * <b>Message and action are separate elements.</b> They used to be siblings inside one `<span>` with no
+   * separator, which rendered as one unbroken run of text ending in the raw error code followed
+   * immediately by the button's label: "…EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWEDXóa khối không hợp lệ".
+   * The code is gone from the visible text for the same reason — a stable code is for matching in
+   * software, and the sentence beside it already says what a person has to do. It stays in the DOM as a
+   * `data-` attribute, where the tests and a support engineer can still read it.
+   */
   const renderIssueList = (field: TemplateContentField) => {
     const fieldIssues = issuesForField(field);
     if (fieldIssues.length === 0) return null;
 
     return (
-      <ul className="mt-1.5 space-y-1" data-testid={`issues-${field}`}>
-        {fieldIssues.map((issue, idx) => (
-          <li key={`${issue.code}-${issue.variableName ?? idx}`} className="flex items-start gap-1.5 text-xs text-red-700">
-            <ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-red-500" />
-            <span>
-              {issue.variableName && (
-                <span className="font-mono font-bold">{`{{${issue.variableName}}}`}</span>
-              )}{' '}
-              {issue.messageVi}
-              <span className="ml-1 text-[10px] font-mono text-red-400">{issue.code}</span>
-              {issue.code === TEMPLATE_ERROR_CODES.systemBlockNotAllowed && issue.variableName && !isHistorical && (
-                <button
-                  type="button"
-                  data-testid={`remove-block-${field}-${issue.variableName}`}
-                  onClick={() => removeBlockFromField(field, issue.variableName!)}
-                  className="ml-2 rounded border border-red-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-50"
-                >
-                  Xóa khối không hợp lệ
-                </button>
+      <ul className="mt-1.5 space-y-1.5" data-testid={`issues-${field}`}>
+        {fieldIssues.map((issue, idx) => {
+          const action = issueAction(field, issue);
+
+          return (
+            <li
+              key={`${issue.code}-${issue.variableName ?? idx}`}
+              data-error-code={issue.code}
+              className="rounded border-l-2 border-red-300 bg-red-50/60 px-2 py-1.5 text-xs text-red-700"
+            >
+              <div className="flex items-start gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-red-500" />
+                <span>
+                  {issue.variableName && (
+                    <span className="font-mono font-bold">{`{{${issue.variableName}}} `}</span>
+                  )}
+                  {issue.messageVi}
+                </span>
+              </div>
+              {action && !isHistorical && (
+                <div className="mt-1.5 pl-5">
+                  <button
+                    type="button"
+                    data-testid={action.testId}
+                    onClick={action.onClick}
+                    className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+                  >
+                    {action.label}
+                  </button>
+                </div>
               )}
-            </span>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     );
+  };
+
+  /**
+   * The repair offered next to one issue, or none.
+   *
+   * The two block problems get different buttons because they are different problems. A block that can
+   * never live on this template is deleted from the field it was written into. A block that is legal but
+   * currently hidden has to go from BOTH bodies — the level is one setting for the whole template, so
+   * clearing one language leaves a template that is still refused.
+   */
+  const issueAction = (field: TemplateContentField, issue: TemplateContentIssue) => {
+    if (issue.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden) {
+      return {
+        label: 'Xóa khối khỏi nội dung',
+        testId: 'remove-contact-block',
+        onClick: removeContactBlockFromContent,
+      };
+    }
+
+    if (issue.code === TEMPLATE_ERROR_CODES.systemBlockNotAllowed && issue.variableName) {
+      return {
+        label: 'Xóa khối không hợp lệ',
+        testId: `remove-block-${field}-${issue.variableName}`,
+        onClick: () => removeBlockFromField(field, issue.variableName!),
+      };
+    }
+
+    return null;
   };
 
   if (showForm) {
@@ -623,14 +1096,34 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     // and the contract is the one the editor already has when it renders.
     const contactSupported = ready ? contactSupportedOf(ready) : true;
 
+    /**
+     * The one problem that belongs to the contact card AND to the body at the same time: content still
+     * carrying the block while the level says it is hidden.
+     *
+     * Rendered in both places on purpose. Under the body it says which text is at fault; on the card it
+     * sits next to the radio that made it a fault, which is the other half of the repair. Only the first
+     * such issue is passed up — the two languages produce two issues, and the action clears both, so
+     * showing the card two identical refusals would say nothing the first does not.
+     */
+    const conflictIssue = issues.find(
+      i => i.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
+
+    const contactBlockConflict = conflictIssue
+      ? {
+          message: conflictIssue.messageVi,
+          actionLabel: 'Xóa khối khỏi nội dung',
+          onAction: removeContactBlockFromContent,
+        }
+      : null;
+
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
+          {/* The heading alone. The sentence that used to sit under it repeated what the locked "Mã
+              mẫu" field below already shows — a disabled input with a padlock says "not yours to
+              change" without a paragraph explaining it. */}
           <div>
             <h2 className="text-xl font-bold text-[#004c91]">Chỉnh sửa nội dung mẫu email</h2>
-            <p className="text-xs text-gray-500 mt-1">
-              Mã mẫu <span className="font-mono font-bold">{formData.templateCode}</span> do hệ thống quản lý và không thể thay đổi.
-            </p>
           </div>
           {/* Same path as "Hủy": the X used to close outright, so the operator most likely to lose work
               — the one who reaches for the corner — was the only one never asked. */}
@@ -702,9 +1195,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       onChange={e => setFormData({...formData, description: e.target.value})}
                       className="w-full min-h-[72px] max-h-[160px] resize-y whitespace-pre-wrap break-words rounded-lg border border-gray-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-[#004c91] disabled:bg-gray-100 disabled:text-gray-500"
                     />
-                    <p className="mt-1 text-[11px] text-gray-500">
-                      Ghi chú nội bộ cho người quản trị: mẫu này gửi khi nào, cho ai. Không hiển thị cho người nhận email.
-                    </p>
                   </div>
                 </div>
               </div>
@@ -744,12 +1234,23 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Nội dung (Body)</label>
                     <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
+                      {/*
+                        One editor per language, not one editor re-pointed at the other body.
+
+                        ReactQuill loads a new `value` from inside `shouldComponentUpdate`, where its
+                        own props have not been committed yet — so the change event for the English body
+                        was delivered to the handler still bound to `bodyVi`, and switching the tab
+                        overwrote the Vietnamese content with Quill's rendering of the English one. The
+                        key remounts the editor instead, which binds the handler to the language whose
+                        content it is about to load.
+                      */}
                       <ReactQuill
+                        key={bodyField}
                         ref={quillRef}
                         theme="snow"
                         value={formData[bodyField]}
                         readOnly={isHistorical}
-                        onChange={v => setFormData(prev => ({ ...prev, [bodyField]: v }))}
+                        onChange={(v, _delta, source) => handleBodyChange(bodyField, v, source)}
                         modules={QUILL_MODULES}
                         className="min-h-[250px]"
                       />
@@ -914,10 +1415,10 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               </div>
 
               {/*
-                4. Contact settings. A separate card because it saves on its own button rather than with
-                the content form: the two are different kinds of change — one edits sentences, the other
-                decides who the recipient is told to contact — and folding the settings into the content
-                save would make every wording fix also rewrite the policy.
+                4. Contact settings. Still its own card, because it is a different KIND of decision from
+                the wording — one edits sentences, the other decides who the recipient is told to
+                contact — but no longer its own save: it is part of the same form, saved by the same
+                button, in one transaction. Two buttons meant an operator could change both and save one.
 
                 This screen is HO-only (EmailManagement renders it only for HO) and the API enforces that
                 independently, so passing canEdit is presentation, not protection.
@@ -942,10 +1443,22 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   <ContactSettingsPanel
                     templateCode={formData.templateCode}
                     canEdit
+                    /* Capability comes from the contract this editor already holds, so the card knows
+                       whether there is anything to configure without waiting for — or depending on —
+                       its own request. Two responses carry the same answer; the card must show the
+                       read-only reason if EITHER of them says the block cannot appear, never a form
+                       because one of them was silent about it. */
+                    contactSupported={ready ? contactSupported : undefined}
+                    contactReasonVi={ready?.contactReasonVi ?? undefined}
                     language={language}
+                    value={formData.contactSettings}
+                    onChange={handleContactChange}
+                    onLoaded={handleContactLoaded}
+                    onRequestHide={handleRequestHideContact}
                     onBlockPreviewChange={setContactBlockPreview}
-                    onDirtyChange={setContactDirty}
-                    pushToast={pushToast}
+                    /* The contradiction is shown on the card as well as under the body field. The
+                       operator's next move is to change one of the two, and the level is here. */
+                    crossFieldError={contactBlockConflict}
                   />
                 </div>
               )}
@@ -967,50 +1480,68 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
               for HO); the API enforces that independently, so hiding the button is presentation, not
               protection.
             */}
+            {/* `h-11` on all three buttons, and `whitespace-nowrap` on each label: the bar holds a long
+                label next to two short ones, and a button sized by its own text sits at a different
+                height from its neighbours the moment one of them wraps. Restore is deliberately NOT
+                disabled by a clean form — putting a template back to the shipped wording is a valid thing
+                to do whether or not anything has been typed since it was opened. */}
             {formData.hasShippedDefault && formData.revision !== null ? (
               <button
                 type="button"
                 data-testid="restore-default"
                 onClick={handleRestoreDefault}
                 disabled={restoring || submitting}
-                title="Phục hồi tên, mô tả, tiêu đề và nội dung VI/EN về bản hệ thống"
-                className="flex items-center gap-2 px-4 py-2 font-bold text-[#b45309] bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                title="Khôi phục tên, mô tả, tiêu đề, nội dung VI/EN và cấu hình thông tin liên hệ về bản hệ thống"
+                className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-4 font-bold text-[#b45309] hover:bg-amber-100 disabled:opacity-50"
               >
                 {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                Phục hồi nội dung mẫu
+                Khôi phục toàn bộ mặc định
               </button>
             ) : <span />}
 
             {/* `ml-auto` keeps the pair on the right even when the bar wraps on a narrow viewport,
                 where `justify-between` alone would leave them under the restore button on the left. */}
             <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-              {/* Which group is unsaved, next to the button that saves it. The contact card carries its
-                  own indicator for the same reason: two saves, two answers. */}
-              {contentDirty && (
-                <span className="text-xs font-semibold text-amber-700" data-testid="content-dirty">
-                  ● Nội dung mẫu có thay đổi chưa lưu
+              {/* ONE indicator, because there is one save. There used to be two — one here and one on the
+                  contact card — and between them they could not answer "is there unsaved work on this
+                  screen" without the reader knowing which button each referred to. */}
+              {isDirty && (
+                <span className="text-xs font-semibold text-amber-700" data-testid="editor-dirty">
+                  ● Có thay đổi chưa lưu
                 </span>
               )}
-              <button type="button" onClick={handleCancel} className="px-4 py-2 font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">Hủy</button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="inline-flex h-11 items-center whitespace-nowrap rounded-lg bg-gray-100 px-4 font-bold text-gray-600 hover:bg-gray-200"
+              >
+                Hủy
+              </button>
               {/*
-                Named for what it saves. "Cập nhật" said nothing about scope on a screen with a second
-                save button in card 4, so an operator who had changed both and pressed this one was left
-                believing the contact configuration had gone with it. It writes the six content fields
-                and nothing else — see CONTENT_FIELDS — and it is enabled only when one of them differs
-                from what is stored.
+                The only save on this screen. It writes the six content fields AND the contact
+                configuration, in one request that the server runs as one transaction — so a failure in
+                either half leaves both unchanged and the revision where it was.
+
+                Disabled while the contract is still loading, while a save is in flight, when nothing has
+                changed, and when the screen is holding a validation error it can name. The last of those
+                is what stops "Không hiển thị" from being saved over a body that still carries the block:
+                the refusal is on screen, and the button that would round-trip it is off.
               */}
               <button
                 type="submit"
-                disabled={submitting || restoring || contract.status === 'loading' || blockingIssues.length > 0 || isHistorical || !contentDirty}
+                data-testid="save-template"
+                disabled={submitting || restoring || contract.status === 'loading' || blockingIssues.length > 0 || isHistorical || !isDirty}
                 title={isHistorical
                   ? 'Mẫu lịch sử không nằm trong danh mục hệ thống nên không sửa được.'
-                  : !contentDirty
-                    ? 'Chưa có thay đổi nào ở tên mẫu, mô tả, tiêu đề hoặc nội dung.'
-                    : 'Lưu tên mẫu, mô tả quản trị, tiêu đề và nội dung VI/EN'}
-                className="flex items-center gap-2 px-4 py-2 font-bold text-white bg-[#004c91] rounded-lg hover:bg-[#013565] disabled:opacity-50"
+                  : blockingIssues.length > 0
+                    ? `Còn ${blockingIssues.length} vấn đề cần sửa trước khi lưu.`
+                    : !isDirty
+                      ? 'Chưa có thay đổi nào để lưu.'
+                      : 'Lưu tên mẫu, mô tả, tiêu đề và nội dung VI/EN, và cấu hình thông tin liên hệ'}
+                className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-lg bg-[#004c91] px-4 font-bold text-white hover:bg-[#013565] disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                Lưu thay đổi mẫu
+                Lưu thay đổi
               </button>
             </div>
           </div>
@@ -1022,6 +1553,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           title={confirmState.title}
           message={confirmState.message}
           variant={confirmState.variant}
+          confirmText={confirmState.confirmText}
+          cancelText={confirmState.cancelText}
         />
       </div>
     );

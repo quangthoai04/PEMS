@@ -113,22 +113,27 @@ export const emailsApi = {
     );
   },
   /**
-   * Content only. The command no longer carries templateCode, purpose, campusId, bodyFormat,
-   * variablesText or status — the catalog is fixed in code (G11-I) — and `expectedRevision` is the
-   * optimistic-concurrency token read back from the detail response.
+   * The ONE save the template editor makes: content and contact settings, in one atomic request.
+   *
+   * The command no longer carries templateCode, purpose, campusId, bodyFormat, variablesText or status —
+   * the catalog is fixed in code (G11-I) — and `expectedRevision` is the optimistic-concurrency token
+   * read back from the detail response. The whole request is one transaction on the server, so a failure
+   * in either half leaves both unchanged and the revision where it was.
    */
   updateEmailTemplate: (id: number | string, data: UpdateEmailTemplatePayload) => {
-    return httpClient.put(`/email-templates/${id}`, data);
+    return httpClient.put<UpdateEmailTemplateResult>(`/email-templates/${id}`, data);
   },
   /**
-   * Puts a template's content back to the wording PEMS ships (G11-I). HO only; the backend refuses
-   * anyone else, so hiding the button is presentation, not protection.
+   * Puts a template back to what PEMS ships — content AND, where the template has one, its contact
+   * configuration — in one transaction. HO only; the backend refuses anyone else, so hiding the button is
+   * presentation, not protection.
    *
-   * Carries the same `expectedRevision` as a save: restore is a full content overwrite, and restoring
-   * over a colleague's unseen edit is the same lost update as saving over it.
+   * Carries the same `expectedRevision` as a save: restore is a full overwrite, and restoring over a
+   * colleague's unseen edit is the same lost update as saving over it.
    */
   restoreEmailTemplateDefault: (id: number | string, expectedRevision: number) => {
-    return httpClient.post(`/email-templates/${id}/restore-default`, { expectedRevision });
+    return httpClient.post<RestoreEmailTemplateResult>(
+      `/email-templates/${id}/restore-default`, { expectedRevision });
   },
   /**
    * The reply-contact settings for one template: whether the block appears, where the contact comes
@@ -142,16 +147,25 @@ export const emailsApi = {
       `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
     );
   },
-  restoreEmailContactSettingsDefault: (templateCode: string) => {
-    return httpClient.post<EmailContactSettings>(
-      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings/restore-default`,
-      {}
-    );
-  },
+  /**
+   * Writes the contact policy on its own, WITHOUT touching content.
+   *
+   * Not called by the template editor any more — that screen saves both halves through
+   * `updateEmailTemplate`, because two separate calls could not be made atomic from a browser and left a
+   * body and a policy able to contradict each other. Kept because it is a live API route that does
+   * something the combined save cannot: change a policy while guaranteeing the wording is untouched.
+   */
   updateEmailContactSettings: (templateCode: string, data: EmailContactSettingsPayload) => {
     return httpClient.put<EmailContactSettings>(
       `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
       data,
+    );
+  },
+  /** As above: policy only, and not used by the editor, which restores both halves together. */
+  restoreEmailContactSettingsDefault: (templateCode: string) => {
+    return httpClient.post<EmailContactSettings>(
+      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings/restore-default`,
+      {}
     );
   },
   /**
@@ -258,7 +272,15 @@ export type EmailContactSettingsPayload = Pick<
   | 'showDepartment' | 'showCampus' | 'showSender' | 'headingVi' | 'headingEn' | 'replyToSource'
 >;
 
-/** Content fields an operator may change, plus the concurrency token they loaded with. */
+/**
+ * Everything one press of "Lưu thay đổi" writes: the content fields, the concurrency token they loaded
+ * with, and — when the template has one — the contact configuration.
+ *
+ * `contactSettings` is optional and `null` is meaningful: omitting it (or sending null) tells the API to
+ * leave the stored policy alone, which is what a caller editing only wording sends and what an
+ * unsupported template must send. It is NOT the same as sending an object full of default values, which
+ * would reset the policy on every wording fix.
+ */
 export interface UpdateEmailTemplatePayload {
   name: string;
   description?: string | null;
@@ -267,4 +289,39 @@ export interface UpdateEmailTemplatePayload {
   subjectEn?: string | null;
   bodyEn?: string | null;
   expectedRevision?: number | null;
+  contactSettings?: EmailContactSettingsPayload | null;
+}
+
+/**
+ * What the API returns after a save — the full stored snapshot, not just the new revision.
+ *
+ * The editor re-baselines its dirty check from this, so it has to be what the DATABASE now holds rather
+ * than what the client sent: headings are trimmed and stripped of markup on the way in, an empty
+ * description is stored as NULL, and a heading equal to the shipped wording is stored as "inherit". Each
+ * of those would otherwise leave the screen reporting an unsaved change the instant a save succeeded.
+ */
+export interface UpdateEmailTemplateResult {
+  emailTemplateId: number;
+  templateCode?: string | null;
+  success: boolean;
+  message?: string | null;
+  revision: number;
+  updatedAt?: string | null;
+  name?: string | null;
+  description?: string | null;
+  subjectVi?: string | null;
+  bodyVi?: string | null;
+  subjectEn?: string | null;
+  bodyEn?: string | null;
+  /** Null only on a template that cannot carry the contact block. */
+  contactSettings?: EmailContactSettings | null;
+}
+
+/** As above, for the combined restore. */
+export interface RestoreEmailTemplateResult extends UpdateEmailTemplateResult {
+  /**
+   * False on an unsupported template, where there was no policy to put back. Reported so the screen can
+   * say what was restored instead of implying it did more than it did.
+   */
+  contactSettingsRestored?: boolean;
 }

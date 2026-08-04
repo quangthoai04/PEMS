@@ -109,6 +109,11 @@ const setupProgressContract: TemplateContract = {
   requiredSystemBlocks: ['setupSummaryBlock', 'contactInformationBlock'],
   optionalSystemBlocks: ['actionBlock'],
   forbiddenInSubject: ['actionBlock', 'setupSummaryBlock', 'contactInformationBlock'],
+  // The LEVEL, which is what actually decides whether the body must keep the contact block. It appears
+  // in `requiredSystemBlocks` above because the backend derives that list from this value; the validator
+  // reads the level directly so that changing it on screen takes effect before the contract is re-fetched.
+  contactSupported: true,
+  contactRequirement: 'REQUIRED',
 };
 
 const content = (over: Partial<Record<'subjectVi' | 'bodyVi' | 'subjectEn' | 'bodyEn', string>>) => ({
@@ -590,6 +595,196 @@ describe('the contact block is judged by capability, not by the current level', 
 
     expect(issues).toHaveLength(1);
     expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.subjectForbiddenSensitive);
+  });
+});
+
+/**
+ * The visibility matrix (§2 of the contact-block-visibility prompt), as the client-side mirror enforces
+ * it.
+ *
+ * | Mức hiển thị | Block in VI/EN | Result |
+ * |---|---|---|
+ * | NONE     | absent          | valid   |
+ * | NONE     | present in either | INVALID |
+ * | OPTIONAL | absent or present | valid   |
+ * | REQUIRED | missing in either | INVALID |
+ * | REQUIRED | present in both   | valid   |
+ *
+ * The row that did not exist before this change is the second one. `AllowsSystemBlock` answered from
+ * CAPABILITY alone, so a template whose administrator had switched the block off still accepted a body
+ * carrying it — the save succeeded at both layers and the send silently replaced the placeholder with
+ * an empty string, leaving the contradiction with no way to be noticed.
+ *
+ * `contactRequirement` is passed as an OPTION rather than read off the contract, because the level the
+ * operator is looking at is the one on the contact card, which may have changed since the contract was
+ * fetched.
+ */
+describe('the contact block against the display level', () => {
+  /** A template that may carry the block; the level is supplied per test. */
+  const supported: TemplateContract = {
+    ...accountContract,
+    templateCode: 'ACCOUNT_ROLE_CHANGED',
+    contactSupported: true,
+    requiredSystemBlocks: [],
+    optionalSystemBlocks: ['actionBlock', 'contactInformationBlock'],
+  };
+
+  const withBlock = '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}';
+  const withoutBlock = '<p>Chào {{fullName}}.</p>';
+
+  it('NONE with no block anywhere is valid', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withoutBlock, subjectEn: 'x', bodyEn: withoutBlock }),
+      { contactRequirement: 'NONE' },
+    );
+
+    expect(issues).toEqual([]);
+  });
+
+  it('NONE with the block in the Vietnamese body is refused, under its own code', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withBlock }),
+      { contactRequirement: 'NONE' },
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].field).toBe('bodyVi');
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
+    expect(issues[0].variableName).toBe('contactInformationBlock');
+    // NOT the "this template cannot carry it" code: this template can, and the repair is a choice
+    // between removing the block and putting the level back.
+    expect(issues[0].code).not.toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
+    // The sentence names the language, so an operator with a clean Vietnamese tab is not left guessing.
+    expect(issues[0].messageVi).toContain('nội dung tiếng Việt');
+  });
+
+  it('NONE with the block in the English body is refused, and names English', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectEn: 'x', bodyEn: withBlock }),
+      { contactRequirement: 'NONE' },
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].field).toBe('bodyEn');
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
+    expect(issues[0].messageVi).toContain('nội dung tiếng Anh');
+  });
+
+  it('NONE with the block in both is refused twice, once per language', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withBlock, subjectEn: 'x', bodyEn: withBlock }),
+      { contactRequirement: 'NONE' },
+    );
+
+    expect(issues).toHaveLength(2);
+    expect(issues.map(i => i.field).sort()).toEqual(['bodyEn', 'bodyVi']);
+    expect(issues.every(i => i.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden)).toBe(true);
+  });
+
+  it('OPTIONAL accepts a body with the block and a body without it alike', () => {
+    expect(validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withBlock }),
+      { contactRequirement: 'OPTIONAL' },
+    )).toEqual([]);
+
+    expect(validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withoutBlock }),
+      { contactRequirement: 'OPTIONAL' },
+    )).toEqual([]);
+  });
+
+  it('REQUIRED refuses a Vietnamese body that has dropped the block', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withoutBlock }),
+      { contactRequirement: 'REQUIRED' },
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].field).toBe('bodyVi');
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredContactBlockMissing);
+    expect(issues[0].messageVi).toContain('nội dung tiếng Việt');
+  });
+
+  it('REQUIRED refuses an English body that has dropped the block', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withBlock, subjectEn: 'x', bodyEn: withoutBlock }),
+      { contactRequirement: 'REQUIRED' },
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].field).toBe('bodyEn');
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredContactBlockMissing);
+    expect(issues[0].messageVi).toContain('nội dung tiếng Anh');
+  });
+
+  it('REQUIRED accepts a template that carries the block in both languages', () => {
+    const issues = validateContent(
+      supported,
+      content({ subjectVi: 'x', bodyVi: withBlock, subjectEn: 'x', bodyEn: withBlock }),
+      { contactRequirement: 'REQUIRED' },
+    );
+
+    expect(issues).toEqual([]);
+  });
+
+  /**
+   * §9: UNSUPPORTED and NONE are two different states, and the level must not be used to simulate the
+   * capability. An unsupported template refuses the block under the code that says it can never carry
+   * one — a fact no setting will change — rather than under the one that offers a choice.
+   */
+  it('keeps UNSUPPORTED distinct from NONE', () => {
+    const unsupported: TemplateContract = {
+      ...supported,
+      templateCode: 'ACCOUNT_EMAIL_CONFIRMATION',
+      contactSupported: false,
+      contactReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
+    };
+
+    const issues = validateContent(
+      unsupported,
+      content({ subjectVi: 'x', bodyVi: withBlock }),
+      { contactRequirement: 'NONE' },
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
+    expect(issues[0].code).not.toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
+    // And it says WHY, which is the part no level can explain.
+    expect(issues[0].messageVi).toContain('liên kết xác nhận dùng một lần');
+  });
+
+  /** With no option supplied, the contract's own stored level is what applies. */
+  it('falls back to the level on the contract when none is supplied', () => {
+    const hidden: TemplateContract = { ...supported, contactRequirement: 'NONE' };
+
+    const issues = validateContent(hidden, content({ subjectVi: 'x', bodyVi: withBlock }));
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
+  });
+
+  /**
+   * An API built before `contactRequirement` existed answers without it. Absent reads as OPTIONAL —
+   * the previous behaviour — so an old backend cannot make this screen refuse content it would accept.
+   */
+  it('treats a contract with no level as OPTIONAL', () => {
+    const legacy = { ...supported } as Record<string, unknown>;
+    delete legacy.contactRequirement;
+
+    const issues = validateContent(
+      legacy as unknown as TemplateContract,
+      content({ subjectVi: 'x', bodyVi: withBlock }),
+    );
+
+    expect(issues).toEqual([]);
   });
 });
 
