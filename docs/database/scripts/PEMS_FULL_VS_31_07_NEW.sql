@@ -484,7 +484,11 @@ DROP TABLE IF EXISTS `roles`;
 DROP TABLE IF EXISTS `gallery_item_tts_audios`;
 DROP TABLE IF EXISTS `gallery_images`;
 DROP TABLE IF EXISTS `galleries`;
-
+-- Legacy email draft tables — removed from current schema.
+-- Retained in reset section to clean databases created by older versions.
+DROP TABLE IF EXISTS `email_draft_attachments`;
+DROP TABLE IF EXISTS `email_draft_recipients`;
+DROP TABLE IF EXISTS `email_drafts`;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =====================================================================
