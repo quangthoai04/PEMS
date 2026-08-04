@@ -666,12 +666,20 @@ export function HoReportManagement() {
                           {previewCampusRow.feedbackAverage ? `${previewCampusRow.feedbackAverage.toFixed(1)} ★ (${previewCampusRow.feedbackCount} lượt)` : 'Chưa có'}
                         </span>
                       </div>
-                      {campusNotes[previewCampusRow.campusId] && (
-                        <div className="pt-1">
-                          <span className="font-bold text-gray-500 block mb-1">GHI CHÚ CHỈ ĐẠO TỪ HO:</span>
-                          <p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{campusNotes[previewCampusRow.campusId]}</p>
-                        </div>
-                      )}
+                      <div className="pt-1">
+                        <span className="font-bold text-gray-500 block mb-1">GHI CHÚ CHỈ ĐẠO TỪ HO (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {!sentCampusMap[previewCampusRow.campusId] ? (
+                          <textarea
+                            value={campusNotes[previewCampusRow.campusId] || ''}
+                            onChange={(e) => setCampusNotes((s) => ({ ...s, [previewCampusRow.campusId]: e.target.value }))}
+                            placeholder="Nhập/chỉnh sửa nội dung ghi chú chỉ đạo từ HO gửi kèm email báo cáo..."
+                            rows={3}
+                            className="w-full text-xs p-2.5 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white text-gray-800 shadow-xs"
+                          />
+                        ) : (
+                          <p className="italic text-gray-600 bg-white p-2.5 rounded-lg border border-blue-100">{campusNotes[previewCampusRow.campusId] || '(Không có ghi chú)'}</p>
+                        )}
+                      </div>
                     </div>
 
                     <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">
@@ -683,7 +691,7 @@ export function HoReportManagement() {
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50">
                 <button
                   type="button"
                   onClick={() => setPreviewCampusRow(null)}
@@ -691,6 +699,21 @@ export function HoReportManagement() {
                 >
                   Đóng
                 </button>
+                {!sentCampusMap[previewCampusRow.campusId] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const row = previewCampusRow;
+                      setPreviewCampusRow(null);
+                      sendCampusReport(row);
+                    }}
+                    disabled={campusSend.isSending(previewCampusRow.campusId)}
+                    className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {campusSend.isSending(previewCampusRow.campusId) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Gửi email ngay
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

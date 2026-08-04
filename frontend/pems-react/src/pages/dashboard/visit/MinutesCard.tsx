@@ -1003,10 +1003,24 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                       <strong>{data?.title || 'Đợt công tác'}</strong>. Chi tiết như sau:
                     </p>
 
-                    <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
-                        <span className="font-bold text-gray-500">NỘI DUNG CÔNG VIỆC:</span>
-                        <span className="font-bold text-sm text-[#004c91]">{previewEmailItem.title || 'Chưa nhập nội dung'}</span>
+                    <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-3 text-xs">
+                      <div className="space-y-1 border-b border-blue-100 pb-2">
+                        <span className="font-bold text-gray-500 block">NỘI DUNG CÔNG VIỆC (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {editing ? (
+                          <input
+                            type="text"
+                            value={previewEmailItem.title || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setPreviewEmailItem((prev) => prev ? { ...prev, title: val } : null);
+                              updateActionItem(previewEmailItem._key, { title: val });
+                            }}
+                            placeholder="Nhập/chỉnh sửa nội dung công việc..."
+                            className="w-full font-bold text-xs text-[#004c91] p-2 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white shadow-xs"
+                          />
+                        ) : (
+                          <span className="font-bold text-sm text-[#004c91]">{previewEmailItem.title || 'Chưa nhập nội dung'}</span>
+                        )}
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
                         <span className="font-bold text-gray-500">HẠN HOÀN THÀNH:</span>
@@ -1016,12 +1030,24 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                         <span className="font-bold text-gray-500">TRẠNG THÁI:</span>
                         <span className="font-bold text-gray-800">{ACTION_STATUS_META[previewEmailItem.status]?.label ?? 'Chưa làm'}</span>
                       </div>
-                      {previewEmailItem.note && (
-                        <div className="pt-1">
-                          <span className="font-bold text-gray-500 block mb-1">GHI CHÚ:</span>
-                          <p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{previewEmailItem.note}</p>
-                        </div>
-                      )}
+                      <div className="space-y-1 pt-1">
+                        <span className="font-bold text-gray-500 block">GHI CHÚ HƯỚNG DẪN (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {editing ? (
+                          <textarea
+                            value={previewEmailItem.note || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setPreviewEmailItem((prev) => prev ? { ...prev, note: val } : null);
+                              updateActionItem(previewEmailItem._key, { note: val });
+                            }}
+                            placeholder="Nhập/chỉnh sửa ghi chú hướng dẫn cho người phụ trách..."
+                            rows={3}
+                            className="w-full text-xs p-2.5 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white text-gray-800 shadow-xs"
+                          />
+                        ) : (
+                          <p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{previewEmailItem.note || '(Không có ghi chú)'}</p>
+                        )}
+                      </div>
                     </div>
 
                     <p className="text-xs text-gray-500">
@@ -1036,7 +1062,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50">
                 <button
                   type="button"
                   onClick={() => setPreviewEmailItem(null)}
@@ -1044,6 +1070,15 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                 >
                   Đóng
                 </button>
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewEmailItem(null)}
+                    className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Lưu chỉnh sửa
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

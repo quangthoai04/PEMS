@@ -1236,16 +1236,42 @@ export function StaffLeaderReportManagement() {
                       <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">SỐ CHUYẾN THĂM THAM GIA:</span><span className="font-bold text-[#004c91]">{previewStaffRow.visitCount} đoàn</span></div>
                       <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG GIỜ PHỤC VỤ:</span><span className="font-bold text-gray-800">{previewStaffRow.totalHours.toFixed(1)} giờ</span></div>
                       <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ TRUNG BÌNH:</span><span className="font-bold text-amber-600">{previewStaffRow.feedbackAverage ? `${previewStaffRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
-                      {personnelNotes[previewStaffRow.userId] && (
-                        <div className="pt-1"><span className="font-bold text-gray-500 block mb-1">GHI CHÚ ĐÁNH GIÁ:</span><p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{personnelNotes[previewStaffRow.userId]}</p></div>
-                      )}
+                      <div className="pt-1">
+                        <span className="font-bold text-gray-500 block mb-1">GHI CHÚ ĐÁNH GIÁ (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {!sentStaffMap[previewStaffRow.userId] ? (
+                          <textarea
+                            value={personnelNotes[previewStaffRow.userId] || ''}
+                            onChange={(e) => setPersonnelNotes((s) => ({ ...s, [previewStaffRow.userId]: e.target.value }))}
+                            placeholder="Nhập/chỉnh sửa ghi chú đánh giá gửi nhân sự..."
+                            rows={3}
+                            className="w-full text-xs p-2.5 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white text-gray-800 shadow-xs"
+                          />
+                        ) : (
+                          <p className="italic text-gray-600 bg-white p-2.5 rounded-lg border border-blue-100">{personnelNotes[previewStaffRow.userId] || '(Không có ghi chú)'}</p>
+                        )}
+                      </div>
                     </div>
                     <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">Trân trọng,<br /><strong>Ban Quản trị Staff Leader — FPT University</strong></div>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50">
                 <button type="button" onClick={() => setPreviewStaffRow(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100">Đóng</button>
+                {!sentStaffMap[previewStaffRow.userId] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const row = previewStaffRow;
+                      setPreviewStaffRow(null);
+                      sendPersonnelReport(row);
+                    }}
+                    disabled={personnelSend.isSending(previewStaffRow.userId)}
+                    className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {personnelSend.isSending(previewStaffRow.userId) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Gửi email ngay
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>
@@ -1310,16 +1336,42 @@ export function StaffLeaderReportManagement() {
                       <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG ĐƠN ĐÃ GỬI TỚI:</span><span className="font-bold text-[#004c91]">{previewDeptRow.totalRequests} đơn</span></div>
                       <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐƠN ĐÃ HOÀN THÀNH:</span><span className="font-bold text-green-700">{previewDeptRow.completed} đơn</span></div>
                       <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span><span className="font-bold text-amber-600">{previewDeptRow.feedbackAverage ? `${previewDeptRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
-                      {deptNotes[previewDeptRow.departmentId] && (
-                        <div className="pt-1"><span className="font-bold text-gray-500 block mb-1">GHI CHÚ GỬI TRƯỞNG PHÒNG:</span><p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{deptNotes[previewDeptRow.departmentId]}</p></div>
-                      )}
+                      <div className="pt-1">
+                        <span className="font-bold text-gray-500 block mb-1">GHI CHÚ GỬI TRƯỞNG PHÒNG (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {!sentDeptMap[previewDeptRow.departmentId] ? (
+                          <textarea
+                            value={deptNotes[previewDeptRow.departmentId] || ''}
+                            onChange={(e) => setDeptNotes((s) => ({ ...s, [previewDeptRow.departmentId]: e.target.value }))}
+                            placeholder="Nhập/chỉnh sửa nội dung ghi chú gửi Trưởng phòng..."
+                            rows={3}
+                            className="w-full text-xs p-2.5 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white text-gray-800 shadow-xs"
+                          />
+                        ) : (
+                          <p className="italic text-gray-600 bg-white p-2.5 rounded-lg border border-blue-100">{deptNotes[previewDeptRow.departmentId] || '(Không có ghi chú)'}</p>
+                        )}
+                      </div>
                     </div>
                     <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">Trân trọng,<br /><strong>Ban Quản trị Staff Leader — FPT University</strong></div>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50">
                 <button type="button" onClick={() => setPreviewDeptRow(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100">Đóng</button>
+                {!sentDeptMap[previewDeptRow.departmentId] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const row = previewDeptRow;
+                      setPreviewDeptRow(null);
+                      sendDepartmentReport(row);
+                    }}
+                    disabled={departmentSend.isSending(previewDeptRow.departmentId)}
+                    className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {departmentSend.isSending(previewDeptRow.departmentId) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Gửi email ngay
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>
