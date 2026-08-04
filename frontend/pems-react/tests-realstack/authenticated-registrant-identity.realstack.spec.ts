@@ -130,7 +130,16 @@ async function completeRegistrantGaps(page: Page) {
 /** The primary contact is always an EXTERNAL guest — the backend refuses an internal one. */
 async function fillExternalContact(page: Page, email: string) {
   await page.locator('input[name="contactPoint.fullName"]').fill('Đầu Mối Đoàn');
-  await page.locator('input[name="contactPoint.organization"]').fill('ĐH Đối Tác');
+  // The contact's organization is the shared searchable combobox, not a bare text box — react-select
+  // owns the input, so it is reached through the wrapper's test id. Filling by field name matched
+  // nothing and simply waited, which is why both journeys here failed on the 120s test timeout with
+  // no assertion error to point at: the form stayed invalid and Submit never posted.
+  const org = page.getByTestId('v2-contact-org');
+  const orgInput = org.locator('input').first();
+  await orgInput.click();
+  await orgInput.fill('ĐH Đối Tác');
+  await orgInput.blur();
+  await expect(org).toContainText('ĐH Đối Tác');
   await page.locator('input[name="contactPoint.phone"]').fill('+84987654321');
   await page.locator('input[name="contactPoint.email"]').fill(email);
 }

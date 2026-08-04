@@ -63,7 +63,10 @@ const fillRegistrant = async () => {
 const fillPrimaryContact = async (container: HTMLElement) => {
   const named = (name: string) => container.querySelector(`input[name="${name}"]`)!;
   await type(named('contactPoint.fullName'), 'Đầu Mối Chính');
-  await type(named('contactPoint.organization'), 'Tổ Chức Đầu Mối');
+  // The contact's organization is the same free-solo combobox as the registrant's and the campus
+  // one — react-select owns the input, so it is reached through the wrapper's test id rather than
+  // by field name. Typing alone commits the value; that is what `input-change` does here.
+  await type(within(screen.getByTestId('v2-contact-org')).getByRole('combobox'), 'Tổ Chức Đầu Mối');
   await type(screen.getByTestId('v2-contact-phone'), '0987654321');
   await type(named('contactPoint.email'), 'contact@example.com');
 };

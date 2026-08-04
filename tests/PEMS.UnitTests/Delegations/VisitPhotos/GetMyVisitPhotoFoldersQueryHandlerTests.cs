@@ -89,6 +89,151 @@ public class GetMyVisitPhotoFoldersQueryHandlerTests
     }
 
     [Fact]
+    public async Task SearchFiltersOnFolderName()
+    {
+        var (db, handler, _) = CreateSut();
+        var folder = VisitPhotoTestSeed.AddFolder(db);
+
+        var hit = await handler.Handle(new GetMyVisitPhotoFoldersQuery { Search = folder.FolderName }, default);
+        Assert.Single(hit.Items);
+    }
+
+    /// <summary>
+    /// The search matches a person tagged in one of the delegation's photos. The tag table is a real
+    /// part of the model here: a slice that pruned it would fail the query outright rather than
+    /// report "no match", which is how this branch went unnoticed.
+    /// </summary>
+    [Fact]
+    public async Task SearchFiltersOnTaggedPersonDisplayName()
+    {
+        var (db, handler, _) = CreateSut();
+        var folder = VisitPhotoTestSeed.AddFolder(db);
+        VisitPhotoTestSeed.AddPhoto(db, folder, 910, VisitPhotoTestSeed.StudentUserId);
+        AddFaceTag(db, fileId: 910, displayName: "Nguyễn Văn Khách", personNameKey: "nguyen van khach");
+
+        Assert.Single((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Văn Khách" }, default)).Items);
+        Assert.Empty((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Không Có Ai" }, default)).Items);
+    }
+
+    /// <summary>Accent-free typing still finds the tag, via the normalized <c>person_name_key</c>.</summary>
+    [Fact]
+    public async Task SearchFiltersOnTaggedPersonNameKey()
+    {
+        var (db, handler, _) = CreateSut();
+        var folder = VisitPhotoTestSeed.AddFolder(db);
+        VisitPhotoTestSeed.AddPhoto(db, folder, 911, VisitPhotoTestSeed.StudentUserId);
+        AddFaceTag(db, fileId: 911, displayName: "Nguyễn Văn Khách", personNameKey: "nguyen van khach");
+
+        // "van khach" appears in the KEY only — the display name is accented, so a match here proves
+        // the key branch ran rather than the display-name one.
+        Assert.Single((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "van khach" }, default)).Items);
+    }
+
+    /// <summary>A tag on a photo of ANOTHER delegation must not pull this one into the results.</summary>
+    [Fact]
+    public async Task SearchOnTaggedPerson_DoesNotLeakInstancesOutOfScope()
+    {
+        var (db, handler, _) = CreateSut();
+        var folder = VisitPhotoTestSeed.AddFolder(db);
+        VisitPhotoTestSeed.AddPhoto(db, folder, 912, VisitPhotoTestSeed.StudentUserId);
+        // Photo 913 belongs to instance 11, which this student does not take part in.
+        db.VisitPhotos.Add(new PEMS.Domain.Entities.Delegations.VisitPhoto
+        {
+            VisitRequestId = folder.VisitRequestId,
+            VisitInstanceId = 11,
+            VisitPhotoFolderId = folder.VisitPhotoFolderId,
+            FileId = 913,
+            Status = "ACTIVE",
+            UploadedBy = VisitPhotoTestSeed.StudentUserId,
+            UploadedAt = new DateTime(2026, 7, 2),
+        });
+        db.SaveChanges();
+        AddFaceTag(db, fileId: 913, displayName: "Người Ngoài Phạm Vi", personNameKey: "nguoi ngoai pham vi");
+
+        Assert.Empty((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Ngoài Phạm Vi" }, default)).Items);
+    }
+
+    [Fact]
+    public async Task SearchFiltersOnGuestMemberFullName()
+    {
+        var (db, handler, _) = CreateSut();
+        AddGuestMember(db, guestMemberId: 601, fullName: "Trần Thị Đoàn Viên", organization: "Đại học Bách Khoa");
+
+        Assert.Single((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Đoàn Viên" }, default)).Items);
+        Assert.Empty((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Người Lạ" }, default)).Items);
+    }
+
+    [Fact]
+    public async Task SearchFiltersOnGuestMemberOrganization()
+    {
+        var (db, handler, _) = CreateSut();
+        AddGuestMember(db, guestMemberId: 602, fullName: "Trần Thị Đoàn Viên", organization: "Đại học Bách Khoa");
+
+        Assert.Single((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Bách Khoa" }, default)).Items);
+    }
+
+    /// <summary>A guest member linked to a campus instance the caller cannot see stays invisible.</summary>
+    [Fact]
+    public async Task SearchOnGuestMember_DoesNotLeakInstancesOutOfScope()
+    {
+        var (db, handler, _) = CreateSut();
+        AddGuestMember(db, guestMemberId: 603, fullName: "Khách Của Cơ Sở Khác",
+            organization: "Tổ Chức Khác", visitInstanceId: 11);
+
+        Assert.Empty((await handler.Handle(
+            new GetMyVisitPhotoFoldersQuery { Search = "Cơ Sở Khác" }, default)).Items);
+    }
+
+    private static void AddFaceTag(
+        DelegationsTestDbContext db, ulong fileId, string displayName, string personNameKey)
+    {
+        db.FaceTags.Add(new PEMS.Domain.Entities.Galleries.PhotoFaceTag
+        {
+            FileId = fileId,
+            DisplayName = displayName,
+            PersonNameKey = personNameKey,
+            TagStatus = "ACTIVE",
+            CreatedAt = new DateTime(2026, 7, 4),
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// A guest member plus the per-campus link row that binds it to an instance — the pair the
+    /// search joins on. Both carry the same request id, as the composite FKs require.
+    /// </summary>
+    private static void AddGuestMember(
+        DelegationsTestDbContext db, ulong guestMemberId, string fullName, string organization,
+        ulong visitInstanceId = DelegationsTestData.VisitInstanceId)
+    {
+        db.GuestMembers.Add(new PEMS.Domain.Entities.Delegations.VisitGuestMember
+        {
+            GuestMemberId = guestMemberId,
+            VisitRequestId = DelegationsTestData.VisitRequestId,
+            FullName = fullName,
+            Organization = organization,
+            JobTitle = "Trưởng đoàn",
+            Nationality = "VN",
+            CreatedAt = new DateTime(2026, 7, 1),
+        });
+        db.InstanceGuestMembers.Add(new PEMS.Domain.Entities.Delegations.VisitInstanceGuestMember
+        {
+            VisitRequestId = DelegationsTestData.VisitRequestId,
+            VisitInstanceId = visitInstanceId,
+            GuestMemberId = guestMemberId,
+            CreatedAt = new DateTime(2026, 7, 1),
+        });
+        db.SaveChanges();
+    }
+
+    [Fact]
     public async Task V2MixedRequest_ShowsEachInstanceOwnPerCampusName()
     {
         var (db, handler, formRead) = CreateSut();

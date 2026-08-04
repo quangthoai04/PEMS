@@ -59,6 +59,10 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     // Student visit photo storage slice (upload/list/remove handlers + folder service).
     public DbSet<VisitPhotoFolder> VisitPhotoFolders => Set<VisitPhotoFolder>();
     public DbSet<VisitPhoto> VisitPhotos => Set<VisitPhoto>();
+    // The folder search matches on tagged people and on the delegation's own members.
+    public DbSet<PhotoFaceTag> FaceTags => Set<PhotoFaceTag>();
+    public DbSet<VisitGuestMember> GuestMembers => Set<VisitGuestMember>();
+    public DbSet<VisitInstanceGuestMember> InstanceGuestMembers => Set<VisitInstanceGuestMember>();
     public DbSet<UploadedFile> Files => Set<UploadedFile>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
@@ -79,10 +83,11 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<PartnerContact>();
         modelBuilder.Ignore<PartnerAlias>();
         modelBuilder.Ignore<VisitGuestPartnerLink>();
-        modelBuilder.Ignore<VisitGuestMember>();
         // Pure V2: form content lives here, so the slice MUST map it — pruning it would make every
         // handler read a null detail and silently lose the delegation name / purpose.
-        modelBuilder.Ignore<VisitInstanceGuestMember>();
+        // Guest members and their per-campus links are NOT pruned either: the photo-folder search
+        // matches a delegation by the name or organization of the people in it, so a slice that
+        // cannot see them cannot tell "no match" from "the table is not in the model".
         modelBuilder.Ignore<VisitRequestIdentityChange>();
         modelBuilder.Ignore<VisitRequestIdentityChangeEvent>();
         // Amendments are NOT pruned either: the management list counts the ones awaiting a decision on
@@ -122,7 +127,8 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         // Expense reports are read by the reminder handler to work out who has not filed one yet.
         modelBuilder.Ignore<VisitExpenseItem>();
         modelBuilder.Ignore<VisitExpenseReportEvent>();
-        modelBuilder.Ignore<PhotoFaceTag>();
+        // Face tags are NOT pruned: the photo-folder search matches a delegation by the name of a
+        // person tagged in one of its photos.
         modelBuilder.Ignore<EmailDraft>();
         modelBuilder.Ignore<EmailDraftRecipient>();
         modelBuilder.Ignore<EmailDraftAttachment>();
@@ -172,6 +178,35 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
             .HasOne(t => t.SentEmailRecipient).WithMany().HasForeignKey(t => t.SentEmailRecipientId);
         modelBuilder.Entity<AuditLog>()
             .HasOne(a => a.ActorUser).WithMany().HasForeignKey(a => a.ActorUserId);
+
+        // ── Per-campus form v2 guest members + face tags ──────────────────────
+        // Same shape as the production ApplicationDbContext: the composite FKs of the link table bind
+        // member and instance to the SAME request, so they need the two alternate keys. Modelling
+        // this here (rather than pruning it) is what lets the folder-search tests exercise the guest
+        // and face-tag branches of the query instead of blowing up on an unmapped DbSet.
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasAlternateKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId });
+        modelBuilder.Entity<VisitGuestMember>()
+            .HasAlternateKey(g => new { g.VisitRequestId, g.GuestMemberId });
+        modelBuilder.Entity<VisitGuestMember>()
+            .HasOne(g => g.VisitRequest).WithMany(v => v.GuestMembers)
+            .HasForeignKey(g => g.VisitRequestId);
+        modelBuilder.Entity<VisitInstanceGuestMember>(b =>
+        {
+            b.HasKey(l => new { l.VisitInstanceId, l.GuestMemberId });
+            b.HasOne(l => l.VisitInstance).WithMany(vc => vc.GuestMemberLinks)
+                .HasForeignKey(l => new { l.VisitRequestId, l.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId });
+            b.HasOne(l => l.GuestMember).WithMany(g => g.InstanceLinks)
+                .HasForeignKey(l => new { l.VisitRequestId, l.GuestMemberId })
+                .HasPrincipalKey(g => new { g.VisitRequestId, g.GuestMemberId });
+        });
+        modelBuilder.Entity<PhotoFaceTag>()
+            .HasOne(ft => ft.File).WithMany().HasForeignKey(ft => ft.FileId);
+        modelBuilder.Entity<PhotoFaceTag>()
+            .HasOne(ft => ft.TaggedUser).WithMany().HasForeignKey(ft => ft.TaggedUserId);
+        modelBuilder.Entity<PhotoFaceTag>()
+            .HasOne(ft => ft.VisitRequest).WithMany().HasForeignKey(ft => ft.VisitRequestId);
 
         // NOTE: the DB unique keys of the visit-photo slice (one folder per request, one photo per
         // files row) are NOT modeled here — the InMemory provider only enforces primary/alternate
