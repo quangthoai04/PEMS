@@ -57,6 +57,23 @@ public sealed record SystemEmailRequest(
     /// </para>
     /// </summary>
     public EmailContactScope ContactScope { get; init; } = EmailContactScope.None;
+
+    /// <summary>
+    /// A per-message change to the reply contact, as the sender asked for it.
+    ///
+    /// <para>
+    /// Raw client input, deliberately: it is validated, authorised and resolved by the dispatcher, from
+    /// the database, at the moment of sending. Nothing a caller assembled earlier is trusted — not the
+    /// name, not the address, and above all not the rendered block — because the preview that produced it
+    /// ran in a different request, possibly minutes ago, and a chosen colleague may have been deactivated
+    /// or moved between the two.
+    /// </para>
+    /// <para>
+    /// Null for the ~30 callers that never offer the choice; they keep resolving the configured policy and
+    /// are unaffected.
+    /// </para>
+    /// </summary>
+    public Contact.EmailContactOverrideInput? ContactOverride { get; init; }
 }
 
 /// <summary>

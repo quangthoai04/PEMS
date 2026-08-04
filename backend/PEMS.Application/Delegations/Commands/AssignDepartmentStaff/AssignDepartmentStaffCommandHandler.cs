@@ -251,6 +251,9 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
                 ContactScope = new EmailContactScope(
                     VisitInstanceId: leaderParticipant.VisitInstanceId,
                     CampusId: instanceInfo?.CampusId),
+                // …or whoever the Leader named for this assignment. Their reach is their own department;
+                // the candidate service enforces that, not this handler.
+                ContactOverride = request.EmailOverride?.ContactOverride,
             },
             cancellationToken);
 

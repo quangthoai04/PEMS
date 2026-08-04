@@ -240,6 +240,9 @@ public sealed class InviteVisitParticipantCommandHandler
                     // invitee another campus's Host.
                     ContactScope = new EmailContactScope(
                         VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
+                    // …and whoever the Host named instead, for this invitation only. Re-checked against
+                    // the database here; the preview that produced it granted nothing.
+                    ContactOverride = request.EmailOverride?.ContactOverride,
                 },
                 cancellationToken);
 

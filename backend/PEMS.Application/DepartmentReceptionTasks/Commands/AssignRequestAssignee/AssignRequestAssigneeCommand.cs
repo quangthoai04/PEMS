@@ -204,6 +204,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                         SentBy: userId)
                     {
                         Content = content,
+                        // This send declared no scope at all until now, so its OPTIONAL / DEPARTMENT_DEFAULT
+                        // policy had no department to resolve, fell through to a campus it also did not
+                        // have, and shipped every assignment mail without the contact block its
+                        // configuration asks for. Silent by construction: OPTIONAL never complains.
+                        ContactScope = new EmailContactScope(
+                            VisitInstanceId: l.VisitInstanceId,
+                            DepartmentId: l.RequestedToDepartmentId),
+                        ContactOverride = request.EmailOverride?.ContactOverride,
                     },
                     cancellationToken);
 

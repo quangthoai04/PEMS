@@ -34,19 +34,29 @@ public sealed class EmailContactResolver : IEmailContactResolver
     private readonly IApplicationDbContext _db;
     private readonly IEmailContactPolicyStore _policies;
     private readonly EmailSupportContactOptions _support;
+    private readonly IEmailContactCandidateService? _candidates;
 
     public EmailContactResolver(
         IApplicationDbContext db,
         IEmailContactPolicyStore policies,
-        IOptions<EmailSupportContactOptions> support)
+        IOptions<EmailSupportContactOptions> support,
+        IEmailContactCandidateService? candidates = null)
     {
         _db = db;
         _policies = policies;
         _support = support.Value;
+        _candidates = candidates;
     }
 
-    public async Task<EmailContactResolution> ResolveAsync(
+    public Task<EmailContactResolution> ResolveAsync(
         EmailContactRequest request, CancellationToken cancellationToken = default)
+        => ResolveAsync(request, overrideInput: null, actorUserId: null, cancellationToken);
+
+    public async Task<EmailContactResolution> ResolveAsync(
+        EmailContactRequest request,
+        EmailContactOverrideInput? overrideInput,
+        ulong? actorUserId,
+        CancellationToken cancellationToken = default)
     {
         var policy = await _policies.ResolveAsync(
             request.TemplateCode, request.CampusId, request.DepartmentId, cancellationToken);
@@ -57,13 +67,38 @@ public sealed class EmailContactResolver : IEmailContactResolver
         // whole content is a one-time link. Reported as NONE rather than refused: a send is the wrong
         // place to discover a policy row is wrong, and the mail without the block is exactly the mail
         // this template is supposed to be.
-        if (!EmailContactCapabilities.Supports(request.TemplateCode))
+        var capability = EmailContactCapabilities.For(request.TemplateCode);
+        if (!capability.Supported)
             policy = policy with { Requirement = EmailContactRequirement.NONE };
+
+        // Shape first, then whether this template will take it. Both run before anything is looked up, so
+        // a refused override costs one policy read and touches nothing else.
+        var over = EmailContactOverrideValidator.Normalize(overrideInput);
+        EmailContactOverrideValidator.AssertAllowed(
+            over, request.TemplateCode, capability, policy.Requirement);
 
         if (!policy.RendersBlock)
             return new EmailContactResolution(policy, null, string.Empty, null);
 
-        var contact = await LookUpAsync(policy.ContactSource, request, cancellationToken);
+        // Asked for, allowed (AssertAllowed has already refused it on a REQUIRED template), and the
+        // message goes out without the card. Reported as hidden rather than as "nothing resolved" so the
+        // audit row and the preview can tell the two apart.
+        if (over?.HideForThisEmail == true)
+            return new EmailContactResolution(policy, null, string.Empty, null)
+            {
+                Mode = over.Mode,
+                HiddenForThisEmail = true,
+            };
+
+        var contact = over is null || over.Mode == EmailContactOverrideModes.TemplateDefault
+            ? await LookUpAsync(policy.ContactSource, request, cancellationToken)
+            : await OverriddenAsync(over, request, actorUserId, cancellationToken);
+
+        // A chosen or hand-entered contact is the sender's decision, and the fallbacks below exist to
+        // rescue a policy that resolved nobody — not to quietly replace a person somebody named. So they
+        // are skipped, and an override that produces nothing usable is refused instead.
+        if (over is not null && over.Mode != EmailContactOverrideModes.TemplateDefault)
+            return await FinishOverriddenAsync(policy, contact, over, request, cancellationToken);
 
         // Last resort, and only for a template that promises a contact: the system support address. It is
         // the bottom of the priority list in the decision record, and it is what keeps "the campus row has
@@ -95,9 +130,98 @@ public sealed class EmailContactResolver : IEmailContactResolver
 
         var html = EmailContactHtmlRenderer.Render(contact, policy, request.Language, senderName);
 
-        var replyTo = await ResolveReplyToAsync(policy, contact, request, cancellationToken);
+        var replyTo = await ResolveReplyToAsync(
+            policy, contact, request, over?.ReplyToMode, cancellationToken);
 
-        return new EmailContactResolution(policy, contact, html, replyTo);
+        return new EmailContactResolution(policy, contact, html, replyTo)
+        {
+            Mode = EmailContactOverrideModes.TemplateDefault,
+        };
+    }
+
+    // ── Per-message override ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The contact a <c>SYSTEM_USER</c> or <c>MANUAL</c> override asks for.
+    ///
+    /// <para>
+    /// The two branches differ in exactly one way, and it is the important one: a chosen account's name,
+    /// address, telephone, department and campus are READ FROM THE DATABASE and the client's copies of
+    /// them are refused by the validator, while a hand-entered contact has nothing behind it and is taken
+    /// as typed. So "the block shows what PEMS holds for this person" stays true in the first case, and
+    /// the second is marked as hand-entered everywhere it is recorded.
+    /// </para>
+    /// </summary>
+    private async Task<EmailContactInformation?> OverriddenAsync(
+        NormalizedContactOverride over,
+        EmailContactRequest request,
+        ulong? actorUserId,
+        CancellationToken ct)
+    {
+        if (over.IsManual)
+            return new EmailContactInformation(
+                // MANUAL is not one of the configured sources and must not be able to impersonate one:
+                // reporting it as HOST would put "Người phụ trách tiếp đón" beside a name nobody verified.
+                EmailContactSource.SENDER,
+                over.DisplayName!,
+                RoleLabel: over.RoleLabel,
+                DepartmentName: over.DepartmentName,
+                CampusName: over.CampusName,
+                Email: over.Email,
+                Phone: over.Phone);
+
+        // SYSTEM_USER. Both refusals below are the same sentence to the caller — see
+        // ContactOverrideUserNotAllowed for why "no such user" and "not yours" are not distinguished.
+        if (_candidates is null || actorUserId is not { } actor)
+            throw new ForbiddenException(
+                "Không xác định được người thực hiện, nên không thể đổi đầu mối liên hệ cho email này.");
+
+        return await _candidates.ResolveChoiceAsync(request, actor, over.UserId!.Value, ct)
+            ?? throw new ForbiddenException(
+                "Người được chọn làm đầu mối liên hệ không hợp lệ hoặc ngoài phạm vi bạn được phép chọn.");
+    }
+
+    /// <summary>
+    /// Renders and answers Reply-To for an override, with no fallback of any kind.
+    ///
+    /// <para>
+    /// A policy that resolves nobody falls through to the campus and then to system support, because there
+    /// the system is guessing on the sender's behalf and a true second-best is better than a dead
+    /// instruction. An override is not a guess — somebody named a person — so silently substituting a
+    /// different one would show the recipient a contact the sender never chose and never saw in the
+    /// preview they approved. It is refused instead, on OPTIONAL as well as REQUIRED templates.
+    /// </para>
+    /// </summary>
+    private async Task<EmailContactResolution> FinishOverriddenAsync(
+        EmailContactPolicyResolution policy,
+        EmailContactInformation? contact,
+        NormalizedContactOverride over,
+        EmailContactRequest request,
+        CancellationToken ct)
+    {
+        if (contact is null || !contact.IsReachable)
+            throw new BusinessRuleException(
+                "Đầu mối liên hệ được chọn cho email này không có email hoặc số điện thoại khả dụng.",
+                EmailErrorCodes.ContactOverrideInvalid);
+
+        var senderName = policy.ShowSender
+            ? await DisplayNameOfAsync(request.SenderUserId, ct)
+            : null;
+
+        var html = EmailContactHtmlRenderer.Render(contact, policy, request.Language, senderName);
+
+        // The policy's field toggles still apply — a template configured to hide telephone numbers keeps
+        // hiding them for a chosen contact too — and a policy that leaves nothing showable produces no
+        // block. Reported rather than sent silently: the sender picked somebody and would otherwise be
+        // shown a preview with an empty space where they expected a card.
+        if (string.IsNullOrEmpty(html))
+            throw new BusinessRuleException(
+                "Cấu hình khối liên hệ của mẫu email này không hiển thị trường nào của đầu mối được chọn.",
+                EmailErrorCodes.ContactOverrideInvalid);
+
+        var replyTo = await ResolveReplyToAsync(policy, contact, request, over.ReplyToMode, ct);
+
+        return new EmailContactResolution(policy, contact, html, replyTo) { Mode = over.Mode };
     }
 
     // ── Sources ─────────────────────────────────────────────────────────────
@@ -322,24 +446,50 @@ public sealed class EmailContactResolver : IEmailContactResolver
     /// with no address in it.
     /// </para>
     /// </summary>
+    /// <param name="replyToMode">
+    /// The sender's per-message choice, or null/POLICY_DEFAULT to use the configured source. It can only
+    /// ever select between the SAME four outcomes the policy chooses from — there is no mode that accepts
+    /// an address, because a client-supplied Reply-To is a header a recipient would trust and nobody
+    /// verified.
+    /// </param>
     private async Task<EmailContactAddress?> ResolveReplyToAsync(
         EmailContactPolicyResolution policy,
         EmailContactInformation contact,
         EmailContactRequest request,
+        string? replyToMode,
         CancellationToken ct)
     {
-        var (email, name) = policy.ReplyToSource switch
+        var source = replyToMode switch
+        {
+            EmailContactReplyToModes.Contact => EmailReplyToSource.CONTACT,
+            EmailContactReplyToModes.Sender => EmailReplyToSource.SENDER,
+            EmailContactReplyToModes.None => EmailReplyToSource.NONE,
+            _ => policy.ReplyToSource,
+        };
+
+        var (email, name) = source switch
         {
             EmailReplyToSource.CONTACT => (contact.Email, contact.DisplayName),
             EmailReplyToSource.SENDER => await SenderAddressAsync(request, ct),
             _ => (null, null),
         };
 
+        // "Replies go to the contact" and a contact with no address is a contradiction the sender chose,
+        // not a configuration that drifted — so it is named as their choice rather than reported as an
+        // invalid policy. The validator catches the manual case; this catches a chosen account whose
+        // record has only a telephone number.
+        if (string.IsNullOrWhiteSpace(email)
+            && source == EmailReplyToSource.CONTACT
+            && replyToMode == EmailContactReplyToModes.Contact)
+            throw new BusinessRuleException(
+                "Reply-To được đặt về đầu mối liên hệ nhưng đầu mối này không có email.",
+                EmailErrorCodes.ContactOverrideInvalid);
+
         if (string.IsNullOrWhiteSpace(email)) return null;
 
         if (!EmailRecipientValidator.IsWellFormed(email!))
             throw new BusinessRuleException(
-                $"Địa chỉ Reply-To lấy từ nguồn {policy.ReplyToSource} cho template "
+                $"Địa chỉ Reply-To lấy từ nguồn {source} cho template "
                 + $"'{request.TemplateCode}' không hợp lệ.",
                 EmailErrorCodes.ReplyToInvalid);
 

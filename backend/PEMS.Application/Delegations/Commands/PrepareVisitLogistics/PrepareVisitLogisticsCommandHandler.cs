@@ -268,6 +268,9 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         // or the requester when no Host is assigned yet (HOST_THEN_SENDER).
                         ContactScope = new EmailContactScope(
                             VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
+                        // …or somebody the Host named for this request in particular — a colleague who is
+                        // actually running the event, when the Host will not be reachable on the day.
+                        ContactOverride = request.EmailOverride?.ContactOverride,
                     },
                     cancellationToken);
 

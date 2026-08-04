@@ -43,6 +43,50 @@ namespace PEMS.Api.Controllers
         }
 
         /// <summary>
+        /// Re-resolves the reply contact for a message being composed — and nothing else.
+        ///
+        /// <para>
+        /// Its own route rather than another call to <c>preview</c>, because the compose modal calls it
+        /// every time the sender changes their mind: a full preview would return a fresh subject and body
+        /// and overwrite whatever they had written. Read-only, stores nothing, sends nothing.
+        /// </para>
+        /// <para>
+        /// Open to every composing role, like the contract and the contact settings read: the panel is
+        /// part of the compose screen, and what an individual sender may CHOOSE is decided inside by their
+        /// own campus/department, not by this attribute.
+        /// </para>
+        /// </summary>
+        [HttpPost("{templateCode}/contact-preview")]
+        public async Task<IActionResult> PreviewMessageContact(
+            string templateCode,
+            [FromBody] PEMS.Application.Emails.Contact.ResolveEmailContactPreviewQuery query,
+            CancellationToken cancellationToken)
+        {
+            query.TemplateCode = templateCode;
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// The people the signed-in user may name as the reply contact on one message.
+        ///
+        /// <para>
+        /// Searched on the server so the scope rule is enforced where it cannot be edited, and so the
+        /// compose screen never receives a directory it would then filter in the browser.
+        /// </para>
+        /// </summary>
+        [HttpGet("{templateCode}/contact-candidates")]
+        public async Task<IActionResult> SearchContactCandidates(
+            string templateCode,
+            [FromQuery] PEMS.Application.Emails.Contact.SearchEmailContactCandidatesQuery query,
+            CancellationToken cancellationToken)
+        {
+            query.TemplateCode = templateCode;
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// What a template's variables actually are (G11-J): allowed, required, sensitive, whether a
         /// subject may carry them, whether CC/BCC are permitted, and a preview sample per variable.
         ///

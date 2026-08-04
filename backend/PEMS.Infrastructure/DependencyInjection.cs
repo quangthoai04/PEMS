@@ -72,6 +72,11 @@ public static class DependencyInjection
             PEMS.Application.Emails.Contact.EmailContactPolicyStore>();
         services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactResolver,
             PEMS.Application.Emails.Contact.EmailContactResolver>();
+        // Who a given sender may name as the contact on a given message. One service behind both the
+        // picker and the send-time check, so the list a host is shown and the list the send accepts are
+        // the same list — a picker that offers somebody the send then refuses is a dead end for the user.
+        services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactCandidateService,
+            PEMS.Application.Emails.Contact.EmailContactCandidateService>();
         services.Configure<PEMS.Application.Emails.Contact.EmailSupportContactOptions>(
             configuration.GetSection(PEMS.Application.Emails.Contact.EmailSupportContactOptions.SectionName));
         // Report/invoice mail: store the PDF, record the message AND its attachment linkage, deliver, and

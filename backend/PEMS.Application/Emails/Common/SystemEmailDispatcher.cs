@@ -67,6 +67,8 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             new[] { request.To }, cc: request.Cc, bcc: null, _recipientOptions.MaxRecipients);
         EmailRecipientPolicyEnforcer.Assert(request.TemplateCode, envelope);
 
+        AssertContactBlockNotSuppliedByCaller(request);
+
         // 1b) Who the recipient should contact. Resolved HERE rather than in each of the ~30 callers, for
         //     the same reason the render is: it is the only way "preview, draft and send show the same
         //     contact" can be true without every caller remembering to do it. A REQUIRED template that
@@ -157,6 +159,8 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
         _db.SentEmails.Add(sentEmail);
         await _db.SaveChangesAsync(cancellationToken);
 
+        await RecordContactOverrideAsync(request, contactBlock, sentEmail, cancellationToken);
+
         return new PreparedSystemEmail(
             sentEmail.SentEmailId,
             sentEmail.Recipients.First().SentEmailRecipientId,
@@ -200,8 +204,118 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
                 scope.CampusId,
                 scope.DepartmentId,
                 request.SentBy),
+            request.ContactOverride,
+            // Who may be named as a contact is decided by who is sending, and the only account this layer
+            // can prove is sending is the one recorded against the message.
+            request.SentBy,
             cancellationToken);
     }
+
+    /// <summary>
+    /// Refuses a caller that tried to supply the contact card itself.
+    ///
+    /// <para>
+    /// Refused rather than overwritten, and the choice matters. Overwriting would work — the dispatcher
+    /// merges its own block last — but it would work SILENTLY, so a caller that built a contact card by
+    /// hand would keep building one, and the next reader of that code would reasonably believe it ended up
+    /// in the message. The block is the one part of an email whose values are read from <c>users</c>,
+    /// <c>campuses</c> and <c>departments</c> at send time precisely so that nobody can attribute a
+    /// hand-written address to a Host; a caller-supplied one is that attack with a shorter path.
+    /// </para>
+    /// </summary>
+    private static void AssertContactBlockNotSuppliedByCaller(SystemEmailRequest request)
+    {
+        if (request.TrustedBlocks is null) return;
+        if (!request.TrustedBlocks.ContainsKey(EmailTrustedBlocks.ContactInformationBlock)) return;
+
+        throw new BusinessRuleException(
+            $"Khối thông tin liên hệ của email '{request.TemplateCode}' do hệ thống dựng từ dữ liệu đầu "
+            + "mối; nơi gọi không được tự truyền khối này.",
+            EmailErrorCodes.ContactBlockSuppliedByCaller);
+    }
+
+    /// <summary>
+    /// Records that this message's reply contact was not the one the policy would have produced.
+    ///
+    /// <para>
+    /// Written only when something actually changed. An audit row per send would bury the fourteen
+    /// interesting ones under thousands of "the policy applied, as always", and a log nobody can search is
+    /// not a control.
+    /// </para>
+    /// <para>
+    /// What it records is the DECISION, not the message: the mode, the resolved source, the chosen account
+    /// id, whether the values were hand-entered, where replies were pointed, and the sender's stated
+    /// reason. What it deliberately does not record is the contact's address or telephone number, the
+    /// subject, the body or any action URL — <c>audit_logs</c> is read by more people than the message
+    /// was, and the contact itself is already in <c>sent_emails.body_snapshot</c> under that table's own
+    /// retention rules.
+    /// </para>
+    /// <para>
+    /// A second <c>SaveChangesAsync</c> rather than one: the row needs <c>sent_email_id</c>, which does
+    /// not exist until the first save returns. It adds no new risk to the caller's transaction — the save
+    /// immediately above has already flushed everything EF was tracking.
+    /// </para>
+    /// </summary>
+    private async Task RecordContactOverrideAsync(
+        SystemEmailRequest request,
+        Contact.EmailContactResolution? contactBlock,
+        SentEmail sentEmail,
+        CancellationToken cancellationToken)
+    {
+        if (request.ContactOverride is null || contactBlock is null) return;
+
+        var applied = contactBlock.Mode != Contact.EmailContactOverrideModes.TemplateDefault
+                      || contactBlock.HiddenForThisEmail;
+        if (!applied) return;
+
+        _db.AuditLogs.Add(new Domain.Entities.Users.AuditLog
+        {
+            ActorUserId = request.SentBy,
+            CampusId = request.ContactScope.CampusId,
+            Action = "EMAIL_CONTACT_OVERRIDE_APPLIED",
+            EntityType = "SentEmail",
+            EntityId = sentEmail.SentEmailId,
+            VisitInstanceId = request.ContactScope.VisitInstanceId,
+            // The sender's own words, kept as they wrote them. Truncated rather than refused here: the
+            // validator has already enforced the ceiling, and a send is not the place to discover a
+            // column is narrower than a check somewhere else.
+            Reason = Truncate(request.ContactOverride.Reason, Contact.EmailContactOverrideLimits.ReasonMax),
+            CreatedAt = VietnamTime.Now(),
+            Changes = new List<Domain.Entities.Users.AuditLogChange>
+            {
+                new()
+                {
+                    FieldName = "EmailContactOverride",
+                    OldValueText = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        templateCode = request.TemplateCode,
+                        source = contactBlock.Policy.ContactSource.ToString(),
+                        requirement = contactBlock.Policy.Requirement.ToString(),
+                    }),
+                    NewValueText = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        mode = contactBlock.Mode,
+                        hidden = contactBlock.HiddenForThisEmail,
+                        selectedUserId = request.ContactOverride.UserId,
+                        manual = contactBlock.Mode == Contact.EmailContactOverrideModes.Manual,
+                        replyToMode = request.ContactOverride.ReplyToMode,
+                        // The name is the one thing a later reader needs to recognise the decision, and
+                        // it is already visible to everyone who can read the message. The address and the
+                        // telephone number are not written here.
+                        contactDisplayName = contactBlock.Contact?.DisplayName,
+                        resolvedSource = contactBlock.Contact?.Source.ToString(),
+                    }),
+                },
+            },
+        });
+
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? Truncate(string? value, int max)
+        => string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim().Length <= max ? value.Trim() : value.Trim()[..max];
 
     private static EmailRecipient? ReplyToFrom(Contact.EmailContactResolution? resolution)
         => resolution?.ReplyTo is { } address

@@ -13,12 +13,29 @@ namespace PEMS.Application.Emails.Common;
 /// references (validated + streamed to real MIME parts at send time, same rules as email drafts).
 /// </para>
 /// </summary>
+/// <para>
+/// <see cref="ContactOverride"/> travels on the same object rather than as a parameter on each command,
+/// for the same reason the subject and body do: the four send paths that open the compose modal are the
+/// four that can carry it, and repeating the field on each one is how three of them end up supporting it
+/// and the fourth silently does not.
+/// </para>
 public sealed record EmailOverride(
     bool UseEditedContent,
     string? Subject,
     string? BodyHtml,
     string? BodyText = null,
-    System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput>? Attachments = null);
+    System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput>? Attachments = null,
+    /// <summary>
+    /// Who this ONE message tells the recipient to contact. Structured data only — the client never sends
+    /// the block's HTML, and the backend never accepts it (see
+    /// <c>SystemEmailDispatcher.AssertContactBlockNotSuppliedByCaller</c>).
+    ///
+    /// <para>
+    /// Independent of <see cref="UseEditedContent"/>: a sender may change the contact without touching a
+    /// word of the template, and the two are separate decisions with separate audit trails.
+    /// </para>
+    /// </summary>
+    Contact.EmailContactOverrideInput? ContactOverride = null);
 
 public static class EmailOverrideLimits
 {

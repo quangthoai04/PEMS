@@ -30,23 +30,26 @@ public sealed class PreviewEmailTemplateQueryHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IEmailTemplateRenderer _renderer;
     private readonly Contact.IEmailContactPolicyStore? _contactPolicies;
+    private readonly Contact.IEmailContactResolver? _contacts;
 
     public PreviewEmailTemplateQueryHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IEmailTemplateRenderer renderer,
-        Contact.IEmailContactPolicyStore? contactPolicies = null)
+        Contact.IEmailContactPolicyStore? contactPolicies = null,
+        Contact.IEmailContactResolver? contacts = null)
     {
         _db = db;
         _currentUser = currentUser;
         _renderer = renderer;
         _contactPolicies = contactPolicies;
+        _contacts = contacts;
     }
 
     public async Task<PreviewEmailTemplateResponse> Handle(
         PreviewEmailTemplateQuery request, CancellationToken cancellationToken)
     {
-        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is not { } actorId)
             throw new ForbiddenException();
 
         if (string.IsNullOrWhiteSpace(request.TemplateCode))
@@ -78,11 +81,42 @@ public sealed class PreviewEmailTemplateQueryHandler
             Contact.EmailContactCapabilities.Supports(code)
             && previewContactRequirement != Domain.Enums.EmailContactRequirement.NONE;
 
+        // …and the OTHER kind of preview, which the paragraph above does not describe.
+        //
+        // An OPERATIONAL preview belongs to a real message: there IS a visit, so there IS a Host, and the
+        // stand-in card is not a cautious choice there but a wrong one. It was also actively harmful,
+        // because this body goes into an editor and comes back as authored content — so the disabled card
+        // was being SENT, with the real one appended beneath it.
+        //
+        // The block is therefore resolved for real and returned SEPARATELY (see the Contact field on the
+        // response). The placeholder is substituted with empty string so the editable body carries no
+        // trace of it: no stand-in to edit, no real card to duplicate, and nothing about the contact that
+        // the client could send back.
+        var operational = request.IsOperational && _contacts is not null;
+
+        Contact.EmailContactPreviewResult? contactPreview = null;
+
+        if (operational)
+        {
+            contactPreview = await Contact.EmailContactPreview.BuildAsync(
+                _contacts!,
+                _contactPolicies,
+                new Contact.EmailContactRequest(
+                    code, language,
+                    request.VisitInstanceId, request.CampusId, request.DepartmentId,
+                    // Always the signed-in account: "Sent by" and a SENDER Reply-To must name whoever is
+                    // actually about to press send, never a value that travelled in the request body.
+                    actorId),
+                request.ContactOverride,
+                actorId,
+                cancellationToken);
+        }
+
         var trustedBlocks = new Dictionary<string, string>
         {
-            [EmailTrustedBlocks.ContactInformationBlock] = showsContactBlock
-                ? Contact.EmailContactHtmlRenderer.DisabledBlock(language)
-                : string.Empty,
+            [EmailTrustedBlocks.ContactInformationBlock] = operational || !showsContactBlock
+                ? string.Empty
+                : Contact.EmailContactHtmlRenderer.DisabledBlock(language),
 
             // Supplied unconditionally because a template that does not use the placeholder never
             // substitutes it, while a template that does would otherwise fail the preview closed on an
@@ -126,7 +160,19 @@ public sealed class PreviewEmailTemplateQueryHandler
         }
 
         var rendered = await _renderer.RenderAsync(
-            new EmailRenderRequest(code, language, context, trustedBlocks),
+            new EmailRenderRequest(code, language, context, trustedBlocks)
+            {
+                // Operational preview asserts what the SEND asserts. A stored body that has lost its
+                // contact placeholder under a REQUIRED policy, or kept one under NONE, makes the message
+                // unsendable — and a preview that rendered happily and then failed on send would tell the
+                // host their message was fine right up to the moment it was not. The template-management
+                // preview keeps the looser flags: an operator mid-edit is expected to be in that state,
+                // and the content validator reports it on the screen where it can be repaired.
+                ContactBlockRequired = operational
+                    && previewContactRequirement == Domain.Enums.EmailContactRequirement.REQUIRED,
+                ContactBlockForbidden = operational
+                    && previewContactRequirement == Domain.Enums.EmailContactRequirement.NONE,
+            },
             cancellationToken);
 
         // Whether this template actually HAS an action area is read off the rendered body rather than
@@ -142,7 +188,8 @@ public sealed class PreviewEmailTemplateQueryHandler
             return new PreviewEmailTemplateResponse(
                 rendered.TemplateCode, rendered.Subject, rendered.Body,
                 EmailComposition.HtmlToPlainText(rendered.Body),
-                false, null, null, Array.Empty<string>(), true, rendered.BodyFormat.ToString());
+                false, null, null, Array.Empty<string>(), true, rendered.BodyFormat.ToString(),
+                contactPreview);
         }
 
         // Action template: editable content is the body WITHOUT the action artifacts; the block itself
@@ -153,6 +200,7 @@ public sealed class PreviewEmailTemplateQueryHandler
             rendered.TemplateCode, rendered.Subject, editableContent,
             EmailComposition.HtmlToPlainText(editableContent),
             true, spec!.SystemActionDescription, disabledActionBlock,
-            spec.RequiredActionPlaceholders, true, rendered.BodyFormat.ToString());
+            spec.RequiredActionPlaceholders, true, rendered.BodyFormat.ToString(),
+            contactPreview);
     }
 }

@@ -375,4 +375,57 @@ public static class EmailErrorCodes
     /// </para>
     /// </summary>
     public const string ContactNotSupportedForTemplate = "EMAIL_TEMPLATE_CONTACT_NOT_SUPPORTED";
+
+    // ── Per-message contact override ─────────────────────────────────────────
+    // A sender may change WHO one message tells the recipient to contact. These codes cover the ways that
+    // request can be refused; they are deliberately separate from the configuration codes above, because
+    // an override failure is answered by the person composing the message and a configuration failure is
+    // answered by an administrator on a different screen.
+
+    /// <summary>
+    /// An override was sent for a template that cannot carry the block at all, or whose resolved level is
+    /// NONE. Both mean the same thing to the sender — there is no contact block on this message to change
+    /// — and neither is fixable from the compose screen.
+    /// </summary>
+    public const string ContactOverrideNotAllowed = "EMAIL_CONTACT_OVERRIDE_NOT_ALLOWED";
+
+    /// <summary>
+    /// The override itself is malformed: an unknown mode, a field the mode does not own, a missing name,
+    /// no contact channel at all, an unparseable address or telephone number.
+    /// </summary>
+    public const string ContactOverrideInvalid = "EMAIL_CONTACT_OVERRIDE_INVALID";
+
+    /// <summary>
+    /// A hand-entered contact was sent with no reason. Its own code because it is the one manual-mode
+    /// field whose absence is not about the message being unsendable: the block would render perfectly
+    /// well without it, and nobody reading the audit row afterwards could reconstruct why a person outside
+    /// PEMS was presented to a guest as the contact.
+    /// </summary>
+    public const string ContactOverrideReasonRequired = "EMAIL_CONTACT_OVERRIDE_REASON_REQUIRED";
+
+    /// <summary>
+    /// The sender asked to hide the block on a template whose words instruct the recipient to make
+    /// contact. Hiding it there would leave the instruction with no address — the exact defect the block
+    /// exists to remove, arrived at one message at a time.
+    /// </summary>
+    public const string ContactOverrideHideNotAllowed = "EMAIL_CONTACT_OVERRIDE_HIDE_NOT_ALLOWED";
+
+    /// <summary>
+    /// The chosen account is outside what this sender may present as a contact — another campus's staff
+    /// for a Host, another department's for a Department Leader.
+    ///
+    /// <para>
+    /// Answered as a refusal rather than as an empty search result, and it is the same answer for "no such
+    /// user" and "not yours": telling the caller which of the two it was would turn the picker into a way
+    /// to enumerate accounts by id.
+    /// </para>
+    /// </summary>
+    public const string ContactOverrideUserNotAllowed = "EMAIL_CONTACT_OVERRIDE_USER_NOT_ALLOWED";
+
+    /// <summary>
+    /// A caller passed <c>{{contactInformationBlock}}</c> in <c>TrustedBlocks</c>. The dispatcher builds
+    /// that block itself from the resolved contact; a caller-supplied one would either duplicate it or
+    /// present values no resolver produced, which is the whole thing the block is designed to prevent.
+    /// </summary>
+    public const string ContactBlockSuppliedByCaller = "EMAIL_CONTACT_BLOCK_SUPPLIED_BY_CALLER";
 }
