@@ -404,8 +404,24 @@ public static class CanonicalSqlScript
     /// tables, 32 triggers, 250 foreign keys, 31 email_templates, zero <c>email_draft*</c> tables, and
     /// <c>03_verify.sql</c> reporting 16 PASS / 0 FAIL (including the new F2, which now asserts the three
     /// tables are ABSENT rather than that their rows resolve).
+    /// NINETEENTH BUMP — the draft tables' DROP entries came back, and only those.
+    ///
+    /// The eighteenth bump removed the three <c>email_draft*</c> tables from the script entirely: no
+    /// <c>CREATE</c>, and no <c>DROP</c> either. Dropping the <c>DROP</c>s was the part that was wrong.
+    /// The reset section exists to make an import idempotent against a database created by an OLDER
+    /// version of this script, and such a database still HAS those three tables — so re-importing left
+    /// them behind, orphaned, with foreign keys into tables the reset had just dropped and recreated.
+    ///
+    /// The repair is three <c>DROP TABLE IF EXISTS</c> lines in the reset block and nothing else: no
+    /// <c>CREATE</c>, no seed row, no change to <c>merged_runtime_table_count</c>. A fresh import is
+    /// byte-for-byte the same database it was — <c>IF EXISTS</c> against a table this script never
+    /// creates is a no-op.
+    ///
+    /// The hash constant is bumped HERE rather than in the commit that changed the script, because that
+    /// commit (<c>adcae824</c>, "update SQL") did not bump it — which left every integration test in the
+    /// repository failing at startup with "Canonical SQL hash mismatch", before a single assertion ran.
     public const string ExpectedSha256 =
-        "48dc6a6d12601f68aa3c807624e0b2ad8e669368cdc6034a6619025563a75d6e";
+        "adf0a2c93538af124987a20bddb6c63c961e84d8dd1de9aab0840599500cc79e";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
