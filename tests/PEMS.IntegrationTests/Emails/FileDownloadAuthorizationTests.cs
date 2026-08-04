@@ -322,29 +322,34 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
 
     private sealed record RoleRow(ulong RoleId, string RoleCode);
 
-    private static async Task CleanupRowsAsync(ApplicationDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM sent_emails WHERE sent_by BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM email_drafts WHERE created_by BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM visit_photos WHERE visit_instance_id = {VisitInstanceId}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM visit_photo_folders WHERE visit_photo_folder_id = {Base + 40}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM visit_participants WHERE visit_instance_id = {VisitInstanceId}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM visit_request_campuses WHERE visit_instance_id = {VisitInstanceId}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM visit_requests WHERE visit_request_id = {VisitRequestId}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM files WHERE uploaded_by BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM users WHERE user_id BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM departments WHERE department_id = {IcDeptId}");
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM campuses WHERE campus_id = {CampusId}");
-    }
+    /// <summary>
+    /// Puts this suite's id band back to empty, children first.
+    ///
+    /// <para>
+    /// This was eleven DELETE statements in the order the schema happened to need when they were
+    /// written, and such a list is only correct until the next foreign key: <c>files</c> alone has
+    /// eleven referrers. It named none of them, so one <c>documents</c> row pointing at a fixture file
+    /// — ON DELETE RESTRICT — was enough to refuse the <c>files</c> delete and fail the whole class in
+    /// setup, a long way from whatever left the row. <see cref="FixtureCleanup"/> derives the order
+    /// from the live schema, so the visit tree, the photos, the drafts and the sessions below are all
+    /// reached from the roots rather than listed.
+    /// </para>
+    /// <para>
+    /// Order between roots still matters: <c>files.uploaded_by</c> and <c>sent_emails.sent_by</c>
+    /// reference <c>users</c> ON DELETE SET NULL, so removing the users first would blank the columns
+    /// these roots identify their rows by and strand them.
+    /// </para>
+    /// </summary>
+    private static Task CleanupRowsAsync(ApplicationDbContext db)
+        => FixtureCleanup.For(db)
+            .Root("sent_emails", $"sent_by BETWEEN {Base} AND {Base + 100}")
+            .Root("email_drafts", $"created_by BETWEEN {Base} AND {Base + 100}")
+            .Root("files", $"uploaded_by BETWEEN {Base} AND {Base + 100}")
+            .Root("visit_requests", $"visit_request_id = {VisitRequestId}")
+            .Root("users", $"user_id BETWEEN {Base} AND {Base + 100}")
+            .Root("departments", $"department_id = {IcDeptId}")
+            .Root("campuses", $"campus_id = {CampusId}")
+            .RunAsync();
 
     // ── B. The email-attachment matrix ───────────────────────────────────────
 
@@ -625,7 +630,9 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
         // a partner and see its logo. Scoping the file tighter than the screen would only break the screen.
         Assert.True(await CanDownload(db, Viewer(OutsiderG), fileId));
 
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM partners WHERE partner_id = {Base + 50}");
+        // No hand-written delete for the partner: partners.owner_campus_id is ON DELETE RESTRICT, so
+        // the campuses root reaches it. (Its logo_file_id is SET NULL, which is why the file root
+        // alone would not have.)
         await CleanupRowsAsync(db);
     }
 
@@ -643,7 +650,9 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
 
         Assert.True(await CanDownload(db, Viewer(OutsiderG), fileId));
 
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM documents WHERE document_id = {Base + 60}");
+        // No hand-written delete for the document row: documents.file_id is ON DELETE RESTRICT, which
+        // is exactly the edge the files root follows — and exactly the row that used to make the
+        // hand-written cleanup fail.
         await CleanupRowsAsync(db);
     }
 

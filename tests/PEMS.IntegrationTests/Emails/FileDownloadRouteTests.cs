@@ -32,7 +32,26 @@ public sealed class FileDownloadRouteTests : IClassFixture<PemsWebApplicationFac
     private readonly string _storageRoot =
         Path.Combine(Path.GetTempPath(), "pems-g5fix-http-" + Guid.NewGuid().ToString("N"));
 
-    private const ulong Base = 991_700;
+    /// <summary>
+    /// This suite's own id band, [Base, Base+100].
+    ///
+    /// <para>
+    /// It was 991_700 — the same value <see cref="FilePreviewDownloadTests"/> uses, so the two suites
+    /// claimed exactly the same hundred ids. Nothing raced, because the assembly runs serially, but
+    /// each one opens by deleting its whole band: whichever ran second wiped rows the first had left,
+    /// and either one failing part-way through left the other seeding on top of a half-deleted world.
+    /// Moved here, into space no other suite touches, rather than shrinking one of the two.
+    /// </para>
+    /// <para>
+    /// The bands in use, so the next one does not have to be found by collision:
+    /// 990_900 report e-mail · 991_100 manual pipeline · 991_300 sent-e-mail history ·
+    /// 991_400 G8 journey / reply-all / report invoice · 991_500 file-download authorization ·
+    /// 991_600…991_647 UT-RESUBMIT auto-increment · 991_700 file preview · 992_500 here ·
+    /// 993_100 fixture cleanup · 8_400_000 send idempotency.
+    /// </para>
+    /// </summary>
+    private const ulong Base = 992_500;
+
     private const ulong CampusId = Base + 1;
     private const ulong IcDeptId = Base + 2;
     private const ulong SenderA = Base + 10;
@@ -152,19 +171,32 @@ public sealed class FileDownloadRouteTests : IClassFixture<PemsWebApplicationFac
 
     private sealed record RoleRow(ulong RoleId, string RoleCode);
 
-    private static async Task CleanupAsync(ApplicationDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM sent_emails WHERE sent_by BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM user_sessions WHERE user_id BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM files WHERE uploaded_by BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync(
-            $"DELETE FROM users WHERE user_id BETWEEN {Base} AND {Base + 100}");
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM departments WHERE department_id = {IcDeptId}");
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM campuses WHERE campus_id = {CampusId}");
-    }
+    /// <summary>
+    /// Puts this suite's id band back to empty, children first.
+    ///
+    /// <para>
+    /// This was six DELETE statements in the order the schema needed on the day they were written, and
+    /// that order is only ever correct until the next foreign key. It names no referrer of
+    /// <c>files</c> at all, so a single <c>documents</c> row pointing at one of these files — the
+    /// constraint is ON DELETE RESTRICT — would refuse the delete and take the whole class down in
+    /// setup, before a line of product code ran. <see cref="FixtureCleanup"/> reads the order from the
+    /// live schema instead, which is also how <c>user_sessions</c> stops needing a line here: it is
+    /// reached from <c>users</c>.
+    /// </para>
+    /// <para>
+    /// Order between roots still matters: <c>files.uploaded_by</c> and <c>sent_emails.sent_by</c> both
+    /// reference <c>users</c> ON DELETE SET NULL, so deleting the users first would blank the very
+    /// columns these roots identify their rows by and leave them behind, unowned and invisible.
+    /// </para>
+    /// </summary>
+    private static Task CleanupAsync(ApplicationDbContext db)
+        => FixtureCleanup.For(db)
+            .Root("sent_emails", $"sent_by BETWEEN {Base} AND {Base + 100}")
+            .Root("files", $"uploaded_by BETWEEN {Base} AND {Base + 100}")
+            .Root("users", $"user_id BETWEEN {Base} AND {Base + 100}")
+            .Root("departments", $"department_id = {IcDeptId}")
+            .Root("campuses", $"campus_id = {CampusId}")
+            .RunAsync();
 
     // ── Tests ────────────────────────────────────────────────────────────────
 
