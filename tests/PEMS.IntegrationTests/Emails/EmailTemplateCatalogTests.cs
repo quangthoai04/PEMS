@@ -100,7 +100,7 @@ public sealed class EmailTemplateCatalogTests : IDisposable
     }
 
     private static UpdateEmailTemplateCommandHandler Update(ApplicationDbContext db)
-        => new(db, new HoOperator(), new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db));
+        => EmailTemplateHandlers.Update(db);
 
     private static async Task<EmailTemplate> LoadAsync(ApplicationDbContext db, string code)
         => await db.EmailTemplates.FirstAsync(t => t.TemplateCode == code);

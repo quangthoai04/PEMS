@@ -175,6 +175,9 @@ public sealed class EmailContactSettingsTests : IDisposable
     private static UpdateEmailContactSettingsCommandHandler Update(ApplicationDbContext db)
         => new(db, new HoOperator(), new GetSettingsMediator(Get(db)));
 
+    private static RestoreEmailContactSettingsCommandHandler Restore(ApplicationDbContext db)
+        => new(db, new HoOperator(), new GetSettingsMediator(Get(db)));
+
     private static Task<EmailContactSettingsDto> Load(ApplicationDbContext db, string code)
         => Get(db).Handle(new GetEmailContactSettingsQuery { TemplateCode = code }, CancellationToken.None);
 
@@ -384,6 +387,36 @@ public sealed class EmailContactSettingsTests : IDisposable
         // Its own code: an invalid CONFIGURATION is one an operator fixes by changing a value, and this
         // one has no value that would make it valid.
         Assert.Equal(EmailErrorCodes.ContactNotSupportedForTemplate, refused.ErrorCode);
+    }
+
+    /// <summary>
+    /// The other write on this card is refused the same way.
+    ///
+    /// <para>
+    /// The button is not rendered on a template that cannot carry the block, so a call reaching the
+    /// handler is either a screen left open across a release or a caller working from an assumption the
+    /// catalog does not support. Both are worth a named refusal rather than a silent no-op, which would
+    /// report success for a restore that put nothing anywhere — and the backend stays the last line
+    /// whatever the screen is doing.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Restoring_contact_settings_for_an_unsupported_template_is_refused()
+    {
+        EmailEvidenceHarness.RequireDb();
+        await using var db = EmailEvidenceHarness.NewContext();
+
+        var refused = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            Restore(db).Handle(
+                new RestoreEmailContactSettingsCommand { TemplateCode = NoContactTemplate },
+                CancellationToken.None));
+
+        Assert.Equal(EmailErrorCodes.ContactNotSupportedForTemplate, refused.ErrorCode);
+
+        // And nothing moved: the template still reports the state it had.
+        var after = await Load(db, NoContactTemplate);
+        Assert.Equal(nameof(EmailContactRequirement.NONE), after.Requirement);
+        Assert.Equal(nameof(EmailContactCapability.UNSUPPORTED), after.Capability);
     }
 
     // ── Saving ───────────────────────────────────────────────────────────────

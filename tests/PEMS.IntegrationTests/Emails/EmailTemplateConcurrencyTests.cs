@@ -96,10 +96,10 @@ public sealed class EmailTemplateConcurrencyTests : IDisposable
     // requirement, and a test that fed them the shipped default would be asserting the drift these
     // handlers were changed to remove.
     private static UpdateEmailTemplateCommandHandler Update(ApplicationDbContext db)
-        => new(db, new HoOperator(), new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db));
+        => EmailTemplateHandlers.Update(db);
 
     private static RestoreEmailTemplateCommandHandler Restore(ApplicationDbContext db)
-        => new(db, new HoOperator(), new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db));
+        => EmailTemplateHandlers.Restore(db);
 
     private static async Task<EmailTemplate> LoadAsync(ApplicationDbContext db, string code)
         => await db.EmailTemplates.AsNoTracking().FirstAsync(t => t.TemplateCode == code);

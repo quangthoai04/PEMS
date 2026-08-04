@@ -216,8 +216,26 @@ public class EmailContactCapabilityTests
         Assert.Contains("xoá khối", refusal.MessageVi, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// A supported template at NONE refuses the block — under a code of its OWN, not the unsupported one.
+    ///
+    /// <para>
+    /// This test used to assert the opposite, and the reversal is the point of the change rather than an
+    /// adjustment to it. Accepting the block here meant a template whose administrator had switched the
+    /// block off still saved a body carrying it; at send time the dispatcher substituted an empty string,
+    /// so the mail went out looking correct and the contradiction produced no signal anywhere — not on the
+    /// screen, not in the logs, not in the history.
+    /// </para>
+    /// <para>
+    /// The code has to be the hidden-level one because the two situations ask for different repairs.
+    /// UNSUPPORTED means no setting will ever make the block legal, so the only move is to delete it.
+    /// This means the template CAN carry it and an administrator has hidden it, so there are two ways out
+    /// — delete the block, or put the level back — and both belong to the operator. Reporting it as
+    /// "not available on this template" would state something false and offer neither.
+    /// </para>
+    /// </summary>
     [Fact]
-    public void The_validator_accepts_the_block_on_a_supported_template_currently_set_to_NONE()
+    public void The_validator_refuses_the_block_on_a_supported_template_set_to_NONE()
     {
         var contract = EmailTemplateContracts.For(
             SystemEmailTemplates.AccountRoleChanged, EmailContactRequirement.NONE)!;
@@ -226,6 +244,46 @@ public class EmailContactCapabilityTests
             contract,
             subjectVi: "Vai trò của bạn đã thay đổi",
             bodyVi: "<p>Chào {{fullName}}.</p>" + Marker,
+            subjectEn: null, bodyEn: null);
+
+        var refusal = Assert.Single(issues, i => i.VariableName == ContactBlock);
+        Assert.Equal(EmailErrorCodes.ContactBlockNotAllowedWhenHidden, refusal.Code);
+        Assert.NotEqual(EmailErrorCodes.TemplateSystemBlockNotAllowed, refusal.Code);
+        // Addressed to the field, and naming the language, so the screen can anchor it under the body.
+        Assert.Equal(EmailTemplateFields.BodyVi, refusal.Field);
+        Assert.Contains("Nội dung tiếng Việt", refusal.MessageVi, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same body at OPTIONAL is accepted — the level is what changed, not the capability.</summary>
+    [Fact]
+    public void The_validator_accepts_the_block_on_a_supported_template_set_to_OPTIONAL()
+    {
+        var contract = EmailTemplateContracts.For(
+            SystemEmailTemplates.AccountRoleChanged, EmailContactRequirement.OPTIONAL)!;
+
+        var issues = EmailTemplateContentValidator.Validate(
+            contract,
+            subjectVi: "Vai trò của bạn đã thay đổi",
+            bodyVi: "<p>Chào {{fullName}}.</p>" + Marker,
+            subjectEn: null, bodyEn: null);
+
+        Assert.DoesNotContain(issues, i => i.VariableName == ContactBlock);
+    }
+
+    /// <summary>
+    /// And a body WITHOUT the block is still fine at NONE, which is what the level is for. The refusal
+    /// above is about the contradiction, never about the level on its own.
+    /// </summary>
+    [Fact]
+    public void The_validator_accepts_a_body_with_no_block_at_NONE()
+    {
+        var contract = EmailTemplateContracts.For(
+            SystemEmailTemplates.AccountRoleChanged, EmailContactRequirement.NONE)!;
+
+        var issues = EmailTemplateContentValidator.Validate(
+            contract,
+            subjectVi: "Vai trò của bạn đã thay đổi",
+            bodyVi: "<p>Chào {{fullName}}.</p>",
             subjectEn: null, bodyEn: null);
 
         Assert.DoesNotContain(issues, i => i.VariableName == ContactBlock);
