@@ -147,8 +147,16 @@ public sealed class BuildFinalEmailPreviewCommandHandler
     }
 
     /// <summary>
-    /// The author's words, the locked action block, the branded shell — in that order, which is the order
-    /// the renderer and the dispatcher produce between them for an authored send.
+    /// The author's words with the locked action block at THEIR chosen position, inside the branded shell
+    /// — assembled by the same rules the renderer applies to an authored send.
+    ///
+    /// <para>
+    /// The placement logic is mirrored from <c>EmailTemplateRenderer.ApplyTrustedBlocks</c>, including its
+    /// append fallback for content that carries no node. It has to be: this preview is the thing the
+    /// sender approves, and §12 makes "what was approved is what arrives" a hard requirement. If this
+    /// method put the buttons anywhere the send would not, the parity test would be comparing a promise
+    /// against a different message.
+    /// </para>
     /// </summary>
     private static string BuildFinalHtml(
         string templateCode, string authoredBodyHtml, string language, Domain.Enums.EmailBodyFormat format)
@@ -156,14 +164,20 @@ public sealed class BuildFinalEmailPreviewCommandHandler
         var spec = EmailActionTemplates.For(templateCode);
 
         // Stripped first for the same reason the renderer strips: an author who pasted an action anchor
-        // must not end up with two, and the block's position is the system's decision.
+        // must not end up with two of them. The system node survives this — see StripActionArtifacts.
         var body = EmailComposition.StripActionArtifacts(authoredBodyHtml);
+
+        EmailSystemBlockNodes.AssertAtMostOneActionNode(body);
 
         if (spec is not null)
         {
-            body += EmailComposition.ActionBlockStart
-                    + EmailActionTemplates.DisabledBlockFor(templateCode, language)
-                    + EmailComposition.ActionBlockEnd;
+            var block = EmailComposition.ActionBlockStart
+                        + EmailActionTemplates.DisabledBlockFor(templateCode, language)
+                        + EmailComposition.ActionBlockEnd;
+
+            body = EmailSystemBlockNodes.TrySubstituteActionNode(body, block, out var placed)
+                ? placed
+                : body + block;
         }
 
         return format == Domain.Enums.EmailBodyFormat.HTML

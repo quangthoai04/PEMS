@@ -113,13 +113,17 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
             AssertNoSecretInSubject(code, authored.Subject, "người dùng soạn");
 
             // The author writes the message; the backend owns the buttons. Any action anchor or action
-            // placeholder the author pasted is removed, then the real block is appended — which is why
-            // the author is not allowed to place {{actionBlock}} and decide where it goes.
+            // placeholder the author pasted is removed, then the real block is put back where the
+            // author's system node says it belongs.
             var content = EmailComposition.StripActionArtifacts(
                 EmailTemplateVariables.NormalizeEncodedBraces(authored.BodyHtml));
 
+            // Two of them would mint the same one-time token into two buttons: the first click answers
+            // for both and the second reports an expired link to somebody who did nothing wrong.
+            EmailSystemBlockNodes.AssertAtMostOneActionNode(content);
+
             subjectSource = EmailTemplateVariables.NormalizeEncodedBraces(authored.Subject);
-            bodySource = content + TrustedBlockSuffix(trusted);
+            bodySource = ApplyTrustedBlocks(content, trusted);
         }
         else
         {
@@ -272,20 +276,48 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
     }
 
     /// <summary>
-    /// Appends the backend's trusted blocks to authored content, in registry order. Authored bodies carry
-    /// no <c>{{actionBlock}}</c> of their own (that is refused when the content is created), so appending
-    /// is the only way the block gets in — and its position is the system's decision, not the author's.
+    /// Puts the backend's trusted blocks into authored content — the action block AT THE AUTHOR'S NODE,
+    /// everything else appended in registry order.
+    ///
+    /// <para>
+    /// The two halves are treated differently because they are different kinds of thing. The action block
+    /// belongs to a sentence ("choose one of the options below"), so where it sits changes whether the
+    /// message reads correctly, and the author is the one who knows. The remaining blocks — today the
+    /// setup summary — are self-contained sections with no such relationship, and no editor offers a node
+    /// for them, so appending remains right for those.
+    /// </para>
+    /// <para>
+    /// <b>The fallback, and why it is a fallback and not a refusal.</b> When the content has no action
+    /// node the block is appended, exactly as before. Content reaches here from paths that never opened
+    /// the runtime editor and therefore never received a node, and messages composed before this
+    /// mechanism existed have none either; refusing those would break sends that are perfectly correct.
+    /// The stricter rule V4 §9.5 describes — a required action area MUST be present exactly once — can
+    /// only be enforced once the editor is the sole author of this content, because it is the editor that
+    /// guarantees the node is there to begin with.
+    /// </para>
     /// </summary>
-    private static string TrustedBlockSuffix(IReadOnlyDictionary<string, string> trusted)
+    private static string ApplyTrustedBlocks(string content, IReadOnlyDictionary<string, string> trusted)
     {
-        if (trusted.Count == 0) return string.Empty;
+        if (trusted.Count == 0) return content;
 
-        var parts = EmailTrustedBlocks.All
-            .Where(trusted.ContainsKey)
-            .Select(name => trusted[name])
-            .Where(html => !string.IsNullOrEmpty(html));
+        var body = content;
+        var appended = new System.Text.StringBuilder();
 
-        return string.Concat(parts);
+        foreach (var name in EmailTrustedBlocks.All)
+        {
+            if (!trusted.TryGetValue(name, out var html) || string.IsNullOrEmpty(html)) continue;
+
+            if (name == EmailTrustedBlocks.ActionBlock
+                && EmailSystemBlockNodes.TrySubstituteActionNode(body, html, out var placed))
+            {
+                body = placed;
+                continue;
+            }
+
+            appended.Append(html);
+        }
+
+        return body + appended.ToString();
     }
 
     /// <summary>

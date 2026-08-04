@@ -407,4 +407,156 @@ public sealed class FinalPreviewSendParityTests : IDisposable
 
         Assert.False(view.RuntimeEditable);
     }
+
+    // ── Where the buttons end up (V4 §9.1, §9.3, §12) ───────────────────────────────────────────
+
+    /// <summary>
+    /// ASCII markers on purpose: these assertions are about ORDER, and comparing positions inside a
+    /// quoted-printable part is easier to trust when the needles cannot themselves be re-encoded.
+    /// </summary>
+    private const string Intro = "PARITY-INTRO please choose one of the options below";
+    private const string Signature = "PARITY-SIGNATURE Tran Thi Ha";
+
+    /// <summary>
+    /// The action block arrives where the SENDER put it, not at the end of the message.
+    ///
+    /// <para>
+    /// <b>The defect this pins.</b> An edited body used to have its action area cut out and the real block
+    /// appended last. A message reading "please choose one of the options below" followed by the buttons
+    /// therefore arrived with that sentence pointing at a signature and the buttons underneath it — and
+    /// the sender could not correct it, because their copy of the message contained no action area to
+    /// move. Position was the system's decision, silently, and §12 forbids exactly that.
+    /// </para>
+    /// <para>
+    /// The assertion is deliberately about ORDER rather than exact markup: the block's own HTML differs
+    /// between the preview (disabled, no token) and the send (real, tokenised), so pinning the string
+    /// would test the wrong thing. What has to hold is that the buttons sit between the sentence that
+    /// introduces them and the signature that follows them, in the preview AND in the delivered bytes.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_action_block_arrives_where_the_sender_placed_it()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+            Assert.True(view.RuntimeEditable);
+
+            // The editable copy hands the sender the action area as a movable node, in the position the
+            // stored template gave it — rather than removing it and returning it separately.
+            Assert.True(
+                EmailSystemBlockNodes.HasActionNode(view.BodyHtml),
+                "the editable body carried no system-block node, so its position cannot be edited at all");
+
+            // The sender writes around the node, leaving it in the MIDDLE of the message.
+            var edited =
+                $"<p>{Intro}</p>"
+                + EmailSystemBlockNodes.ActionNodeHtml
+                + $"<p>{Signature}</p>";
+
+            var final = await Finalise(db).Handle(
+                new BuildFinalEmailPreviewCommand
+                {
+                    PreviewToken = view.PreviewToken!,
+                    Subject = "Parity: action block position",
+                    EditableBodyHtml = edited,
+                    Language = EmailLanguages.Vi,
+                },
+                CancellationToken.None);
+
+            AssertBlockSitsBetweenIntroAndSignature(
+                final.FinalPreviewHtml,
+                EmailComposition.ActionBlockStart,
+                "the FINAL PREVIEW put the action block outside the sender's chosen position");
+
+            // …and the delivered message agrees, with the real token this time.
+            var resolver = new ApprovedEmailContentResolver(
+                db, Sender, Sanitizer, Normalizer(db), EmailEvidenceHarness.PreviewTokens());
+
+            var content = await resolver.ResolveAsync(
+                new ApprovedEmailContent(final.FinalPreviewToken, final.Subject, BodyHtml: edited),
+                Template, Scope(), CancellationToken.None);
+
+            var sent = await _h.Dispatcher(db).SendAsync(new SystemEmailRequest(
+                Template,
+                new EmailRecipient(_h.Marker, "Nguyễn Văn Bình"),
+                Variables(),
+                TrustedBlocks: new Dictionary<string, string>
+                {
+                    [EmailTrustedBlocks.ActionBlock] = EmailComposition.AcceptDeclineBlock(AcceptUrl, DeclineUrl),
+                },
+                RelatedType: "VisitParticipant",
+                RelatedId: 991_502)
+            {
+                Content = content,
+                SentBy = Sender.UserId,
+            });
+
+            Assert.Equal(EmailDeliveryStatus.Sent, sent.Delivery.Status);
+
+            AssertBlockSitsBetweenIntroAndSignature(
+                _h.OnlyMessage().DecodedTextParts,
+                AcceptUrl,
+                "the DELIVERED message put the action block outside the sender's chosen position");
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// Content with no node still works, with the block appended as before.
+    ///
+    /// <para>
+    /// Every send that does not go through the runtime editor — and every message composed before the
+    /// node existed — arrives here without one. Refusing those would break sends that are perfectly
+    /// correct, so the append is kept as a fallback rather than removed. This pins that it still happens,
+    /// because a regression in it would be silent: the mail would go out with no buttons at all.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Content_without_a_node_still_receives_its_action_block()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+
+            var final = await Finalise(db).Handle(
+                new BuildFinalEmailPreviewCommand
+                {
+                    PreviewToken = view.PreviewToken!,
+                    Subject = "Parity: no node",
+                    EditableBodyHtml = $"<p>{Intro}</p><p>{Signature}</p>",
+                    Language = EmailLanguages.Vi,
+                },
+                CancellationToken.None);
+
+            Assert.Contains(EmailComposition.ActionBlockStart, final.FinalPreviewHtml);
+            // Appended: after the signature, which is the old behaviour and the right one here.
+            Assert.True(
+                final.FinalPreviewHtml.IndexOf(EmailComposition.ActionBlockStart, StringComparison.Ordinal)
+                > final.FinalPreviewHtml.IndexOf(Signature, StringComparison.Ordinal),
+                "a body with no node should get the block appended, not inserted");
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    private static void AssertBlockSitsBetweenIntroAndSignature(string haystack, string blockNeedle, string because)
+    {
+        var intro = haystack.IndexOf(Intro, StringComparison.Ordinal);
+        var block = haystack.IndexOf(blockNeedle, StringComparison.Ordinal);
+        var signature = haystack.IndexOf(Signature, StringComparison.Ordinal);
+
+        Assert.True(intro >= 0, $"{because}: the intro sentence is missing entirely.");
+        Assert.True(block >= 0, $"{because}: the action block is missing entirely.");
+        Assert.True(signature >= 0, $"{because}: the signature is missing entirely.");
+
+        Assert.True(
+            intro < block && block < signature,
+            $"{because}. intro={intro}, block={block}, signature={signature}.");
+    }
 }

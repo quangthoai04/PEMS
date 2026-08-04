@@ -35,6 +35,7 @@ import {
 import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
+import { hasSystemActionNode, renderSystemActionNode } from '../../emails/utils/systemActionNode';
 import { delegationsApi } from '../api/delegationsApi';
 import type {
   EmailAttachmentRefInput,
@@ -436,7 +437,13 @@ export function EmailPreviewModal({
                     <div
                       data-testid="view-body"
                       className="mt-1 rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-800"
-                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(body || '') }}
+                      // The action block is drawn AT ITS POSITION rather than only in the panel below, so
+                      // what this stage shows is the shape of the message the recipient gets. The copy
+                      // substituted here is the backend's DISABLED block — no anchor, no token — and the
+                      // node it replaces is empty, so nothing actionable is introduced by rendering it.
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHtml(renderSystemActionNode(body, lockedActionBlockHtml)),
+                      }}
                     />
                   </div>
                 </>
@@ -488,9 +495,14 @@ export function EmailPreviewModal({
                   <p className="mt-1 text-[12px] text-amber-700/90">
                     {systemActionDescription || 'Nút Chấp nhận/Từ chối sẽ được hệ thống tự gắn khi gửi email.'}
                   </p>
-                  {/* Not shown in FINAL_PREVIEW: the assembled body already contains it there, and
-                      printing it twice would suggest the recipient gets two sets of buttons. */}
-                  {lockedActionBlockHtml && stage !== 'FINAL_PREVIEW' && (
+                  {/* Printed here only when the body is NOT already showing it in position. In
+                      FINAL_PREVIEW the assembled body contains the real thing, and in VIEW the node is
+                      substituted inline — in either case a second copy would suggest the recipient gets
+                      two sets of buttons. EDIT still needs it: the editor does not yet render the node,
+                      so this panel is where the sender sees which buttons the message carries. */}
+                  {lockedActionBlockHtml
+                    && stage !== 'FINAL_PREVIEW'
+                    && !(stage === 'VIEW' && hasSystemActionNode(body)) && (
                     <div
                       className="mt-2 rounded-lg border border-amber-200 bg-white p-2 opacity-80 pointer-events-none select-none"
                       dangerouslySetInnerHTML={{ __html: sanitizeHtml(lockedActionBlockHtml) }}

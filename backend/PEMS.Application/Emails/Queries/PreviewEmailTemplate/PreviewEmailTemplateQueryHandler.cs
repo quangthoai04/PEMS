@@ -207,9 +207,17 @@ public sealed class PreviewEmailTemplateQueryHandler
                 replyTo, editable, previewToken, expiresAt);
         }
 
-        // Action template: editable content is the body WITHOUT the action artifacts; the block itself
-        // is returned separately so the modal can show it as read-only.
-        var editableContent = EmailComposition.StripActionArtifacts(rendered.Body);
+        // Action template: the editable content keeps the action area IN PLACE, as an inert system node.
+        //
+        // It used to be cut out entirely (StripActionArtifacts) and returned alongside, which is what made
+        // the buttons migrate to the bottom of every edited message: the author's copy had no action area
+        // at all, so the send had nowhere to put the real block except the end. Substituting the node
+        // leaves the position exactly where the stored template put it, and lets the author move it.
+        //
+        // StripActionArtifacts still runs first, and still matters: it removes any action anchor or
+        // placeholder the TEMPLATE carries outside the canonical block. Only the canonical span becomes
+        // the node.
+        var editableContent = EmailSystemBlockNodes.ReplaceInjectedBlockWithNode(rendered.Body);
 
         // previewToken/expiresAt are passed HERE too, and their absence was a real defect: this is the
         // return the editable templates actually take. Every one of the eight the capability map marks
