@@ -106,6 +106,21 @@ public sealed class EmailTemplateContractDto
     /// <summary>True when the EFFECTIVE policy is REQUIRED, so the body may not drop the block.</summary>
     public bool ContactRequired { get; set; }
 
+    /// <summary>
+    /// The effective display level in full — NONE / OPTIONAL / REQUIRED.
+    ///
+    /// <para>
+    /// <see cref="ContactRequired"/> alone cannot express the rule that matters at the other end of the
+    /// range: under OPTIONAL a body may keep the block or drop it, and under NONE it may not keep it. The
+    /// editor needs to tell those two apart to disable its save button, and could not while the only
+    /// signal was a boolean for the third state.
+    /// </para>
+    /// <para>
+    /// Empty string on a historical row, where no policy resolves and the block is refused by capability.
+    /// </para>
+    /// </summary>
+    public string ContactRequirement { get; set; } = string.Empty;
+
     /// <summary>False when there is nothing on the contact card an operator could change.</summary>
     public bool ContactSettingsEditable { get; set; }
 

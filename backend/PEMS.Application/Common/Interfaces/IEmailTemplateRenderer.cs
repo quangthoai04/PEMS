@@ -94,6 +94,27 @@ public sealed record EmailRenderRequest(
     /// </para>
     /// </summary>
     public bool ContactBlockRequired { get; init; }
+
+    /// <summary>
+    /// True when THIS send resolved a policy of NONE, so a body that still carries
+    /// <c>{{contactInformationBlock}}</c> is a configuration fault rather than something to paper over.
+    ///
+    /// <para>
+    /// The other half of <see cref="ContactBlockRequired"/>, and it exists because the send path had no
+    /// honest behaviour without it. The dispatcher supplied the contact block as a trusted block
+    /// unconditionally — an empty string when the policy rendered nothing — so a body under a NONE policy
+    /// had its placeholder silently replaced with nothing and the mail went out looking correct. The
+    /// operator who had switched the block off got the outcome they wanted by accident, and the one who
+    /// switched it off by mistake had no way to find out that a body still asked for a card.
+    /// </para>
+    /// <para>
+    /// Not the same as "the block was not supplied". A template under an OPTIONAL policy that resolves no
+    /// contact ALSO renders nothing, and that is correct and must keep working: the words never promised a
+    /// contact, so a mail without one is still true. Only NONE — an explicit decision that this template
+    /// shows no block — makes the placeholder's presence a contradiction.
+    /// </para>
+    /// </summary>
+    public bool ContactBlockForbidden { get; init; }
 }
 
 /// <summary>

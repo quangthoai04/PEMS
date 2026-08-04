@@ -73,7 +73,19 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
         //     cannot resolve one throws, before any row is written.
         var contactBlock = await ResolveContactBlockAsync(request, cancellationToken);
 
-        var trustedBlocks = contactBlock is null
+        // Whether the block is SUPPLIED at all now follows the policy, not merely whether a resolver was
+        // wired. It used to be merged unconditionally — as the empty string when the policy rendered
+        // nothing — which meant a body under a NONE policy had its placeholder quietly replaced with
+        // nothing and the mail went out looking correct. Withholding it lets the renderer see the
+        // contradiction and refuse (see AssertContactBlockIsNotInBody).
+        //
+        // OPTIONAL is deliberately on the supplying side even when nothing resolved: there the empty
+        // substitution is the intended outcome, because the words never promised a contact.
+        var contactPolicyHidesBlock =
+            contactBlock is not null
+            && contactBlock.Policy.Requirement == Domain.Enums.EmailContactRequirement.NONE;
+
+        var trustedBlocks = contactBlock is null || contactPolicyHidesBlock
             ? request.TrustedBlocks
             : Merge(request.TrustedBlocks, EmailTrustedBlocks.ContactInformationBlock, contactBlock.BlockHtml);
 
@@ -89,6 +101,7 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
                 // contradict a save the editor accepted under a policy an operator had changed.
                 ContactBlockRequired =
                     contactBlock?.Policy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED,
+                ContactBlockForbidden = contactPolicyHidesBlock,
             },
             cancellationToken);
 

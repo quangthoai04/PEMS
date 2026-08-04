@@ -139,6 +139,15 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
             AssertRequiredTrustedBlockIsInBody(
                 code, bodySource,
                 contactBlockRequired: request.ContactBlockRequired);
+
+            // 6d) …and the other direction. A body that still asks for the contact card under a policy of
+            //     NONE is refused here, before substitution, because after substitution there is nothing
+            //     left to notice: the placeholder has been replaced with empty string and every later
+            //     guard sees a perfectly ordinary message.
+            //
+            //     Authored mode is exempt for the same reason as above — the author's text is not the
+            //     stored body, and the blocks are appended rather than substituted into it.
+            AssertContactBlockIsNotInBody(code, bodySource, request.ContactBlockForbidden);
         }
 
         // 7) + 8) Substitute. Values are untrusted text everywhere; only TrustedHtmlBlocks may be markup.
@@ -400,6 +409,36 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
                 + $"{{{{{block}}}}}, nên phần nội dung do hệ thống dựng sẽ bị mất. {repair}",
                 errorCode);
         }
+    }
+
+    /// <summary>
+    /// Refuses a stored body that still carries <c>{{contactInformationBlock}}</c> while the resolved
+    /// policy is NONE.
+    ///
+    /// <para>
+    /// This is the send-side half of the rule the template editor enforces at save time, and it is here
+    /// because the editor is not the only way a row can reach this state: a policy can be lowered to NONE
+    /// through the standalone contact-settings endpoint, a body can be changed by a sync script, and both
+    /// can be edited in the database by hand. The save-time check is where the mistake is made and is the
+    /// one an operator should meet; this is the one that guarantees no recipient ever meets the result.
+    /// </para>
+    /// <para>
+    /// Fail-closed rather than substitute-empty. Substituting empty string is what the dispatcher used to
+    /// do, and it is the worse of the two failures available: the message goes out looking exactly right,
+    /// so a template whose configuration contradicts its content produces no signal at all — not to the
+    /// operator, not in the logs, not in the history. A refused send names a template and a repair.
+    /// </para>
+    /// </summary>
+    private static void AssertContactBlockIsNotInBody(string code, string bodyTemplate, bool forbidden)
+    {
+        if (!forbidden) return;
+        if (!EmailContactBlockText.Contains(bodyTemplate)) return;
+
+        throw new BusinessRuleException(
+            $"Nội dung template email '{code}' vẫn chứa {EmailContactBlockText.Marker} trong khi mức hiển thị "
+            + "thông tin liên hệ đang là “Không hiển thị”, nên khối này sẽ không có gì thay thế vào. "
+            + "Hãy xóa khối khỏi nội dung mẫu, hoặc đổi mức hiển thị sang Tùy chọn/Bắt buộc.",
+            EmailErrorCodes.ContactBlockNotAllowedWhenHidden);
     }
 
     private static void AssertNoUnresolvedPlaceholder(string code, string rendered, string part)

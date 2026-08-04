@@ -29,13 +29,18 @@ public sealed class PreviewEmailTemplateQueryHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IEmailTemplateRenderer _renderer;
+    private readonly Contact.IEmailContactPolicyStore? _contactPolicies;
 
     public PreviewEmailTemplateQueryHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IEmailTemplateRenderer renderer)
+        IApplicationDbContext db,
+        ICurrentUserService currentUser,
+        IEmailTemplateRenderer renderer,
+        Contact.IEmailContactPolicyStore? contactPolicies = null)
     {
         _db = db;
         _currentUser = currentUser;
         _renderer = renderer;
+        _contactPolicies = contactPolicies;
     }
 
     public async Task<PreviewEmailTemplateResponse> Handle(
@@ -51,22 +56,33 @@ public sealed class PreviewEmailTemplateQueryHandler
         var language = EmailLanguages.Normalize(request.Language);
         var spec = EmailActionTemplates.For(code);
 
+        // What a preview shows for the contact block, decided by the policy the SEND would use rather
+        // than by capability alone.
+        //
+        // Three states, three answers. A template that cannot carry the block, and one whose level is
+        // NONE, both render nothing — because that is what a recipient would get, and a preview that
+        // showed a contact card over a policy of "Không hiển thị" would tell an operator their setting
+        // had not taken effect. OPTIONAL and REQUIRED get the stand-in card: a preview has no visit, so
+        // there is no Host to resolve and no campus to fall back to, and inventing a plausible name and
+        // address would show a person who does not exist and invite the operator to "correct" contact
+        // details the template has no control over.
+        //
+        // Empty is still SUPPLIED rather than omitted, so a body that still carries the placeholder
+        // previews as the mail a recipient would see instead of failing closed on an unresolved
+        // placeholder — which would report the wrong fault. The RIGHT fault, that the body and the policy
+        // disagree, is reported by the content validator on the editing screen, and refused by the save.
+        var previewContactRequirement = await Contact.EffectiveContactRequirement
+            .ResolveAsync(_contactPolicies, code, cancellationToken);
+
+        var showsContactBlock =
+            Contact.EmailContactCapabilities.Supports(code)
+            && previewContactRequirement != Domain.Enums.EmailContactRequirement.NONE;
+
         var trustedBlocks = new Dictionary<string, string>
         {
-            // A preview has no visit, so there is no Host to resolve and no campus to fall back to.
-            // A stand-in says where the block goes and what fills it; inventing a plausible name and
-            // address would show an operator a person who does not exist and invite them to "correct"
-            // contact details the template has no control over.
-            //
-            // Empty on a template that cannot carry the block: its body should not contain the
-            // placeholder at all (the validator refuses one), and if a legacy row still does, the honest
-            // preview is the nothing a recipient would get — not a card promising a contact this send
-            // path never resolves. Still SUPPLIED, so such a row previews rather than failing closed on
-            // an unresolved placeholder, which would say nothing about the real fault.
-            [EmailTrustedBlocks.ContactInformationBlock] =
-                Contact.EmailContactCapabilities.Supports(code)
-                    ? Contact.EmailContactHtmlRenderer.DisabledBlock(language)
-                    : string.Empty,
+            [EmailTrustedBlocks.ContactInformationBlock] = showsContactBlock
+                ? Contact.EmailContactHtmlRenderer.DisabledBlock(language)
+                : string.Empty,
 
             // Supplied unconditionally because a template that does not use the placeholder never
             // substitutes it, while a template that does would otherwise fail the preview closed on an

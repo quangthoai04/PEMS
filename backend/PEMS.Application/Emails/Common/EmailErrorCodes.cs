@@ -313,6 +313,28 @@ public static class EmailErrorCodes
         "EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY";
 
     /// <summary>
+    /// The body still contains <c>{{contactInformationBlock}}</c> while the requirement level is NONE.
+    ///
+    /// <para>
+    /// Its own code, distinct from both <see cref="TemplateSystemBlockNotAllowed"/> and
+    /// <see cref="ContactNotSupportedForTemplate"/>, because it names a third situation with a third
+    /// repair. UNSUPPORTED means the template may never carry the block and nothing an operator does will
+    /// change that. This means the template CAN carry it and the administrator has switched it off — so the
+    /// repair is a choice between two things they own: delete the block, or move the level back to
+    /// Tùy chọn/Bắt buộc. Reporting it as "block not allowed on this template" would state the first fact,
+    /// which is false here, and offer neither option.
+    /// </para>
+    /// <para>
+    /// Refused rather than tolerated because the send path has no honest way to handle it. Substituting
+    /// empty string — which is what happened before this code existed — makes a configuration mistake
+    /// invisible: the mail goes out looking fine, and the operator who thought they had switched the block
+    /// off has no way to learn that a body somewhere still asks for one.
+    /// </para>
+    /// </summary>
+    public const string ContactBlockNotAllowedWhenHidden =
+        "EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN";
+
+    /// <summary>
     /// The resolved policy contradicts itself — e.g. REQUIRED with both email and phone hidden, which
     /// would render a heading and a name with no way to reach it. Refused when the policy is resolved,
     /// not when a recipient notices.

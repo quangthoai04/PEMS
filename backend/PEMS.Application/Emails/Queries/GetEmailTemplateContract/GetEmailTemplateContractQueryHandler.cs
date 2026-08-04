@@ -92,6 +92,7 @@ public sealed class GetEmailTemplateContractQueryHandler
             SystemActionDescription = contract.SystemActionDescription,
             ContactSupported = contract.ContactSupported,
             ContactRequired = contract.ContactRequired,
+            ContactRequirement = contract.ContactRequirement,
             ContactSettingsEditable = contract.ContactSettingsEditable,
             ContactReasonCode = contract.ContactReasonCode,
             ContactReasonVi = contract.ContactReasonVi,

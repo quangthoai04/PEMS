@@ -66,8 +66,24 @@ public sealed record EmailTemplateContract(
     bool ContactSettingsEditable = true,
     string? ContactReasonCode = null,
     string? ContactReasonVi = null,
-    string? ContactReasonEn = null)
+    string? ContactReasonEn = null,
+    string ContactRequirement = nameof(Domain.Enums.EmailContactRequirement.OPTIONAL))
 {
+    /// <summary>
+    /// True when the administrator has switched the block off on a template that could carry one.
+    ///
+    /// <para>
+    /// Deliberately NOT the same question as <c>!ContactSupported</c>. An unsupported template can never
+    /// carry the block; this one can, and does not today. They are told apart everywhere because their
+    /// repairs differ — see <see cref="EmailErrorCodes.ContactBlockNotAllowedWhenHidden"/> — and collapsing
+    /// them was how "NONE" came to be used as a stand-in for "unsupported", which then made both states
+    /// unfixable from the screen.
+    /// </para>
+    /// </summary>
+    public bool ContactHidden =>
+        ContactSupported
+        && ContactRequirement == nameof(Domain.Enums.EmailContactRequirement.NONE);
+
     /// <summary>Every system block this template may carry, required or not.</summary>
     public IReadOnlyList<string> AllowedSystemBlocks =>
         RequiredSystemBlocks.Concat(OptionalSystemBlocks).Distinct(StringComparer.Ordinal).ToList();
@@ -333,7 +349,11 @@ public static class EmailTemplateContracts
             ContactSettingsEditable: capability.Supported,
             ContactReasonCode: capability.ReasonCode,
             ContactReasonVi: capability.ReasonVi,
-            ContactReasonEn: capability.ReasonEn);
+            ContactReasonEn: capability.ReasonEn,
+            // The LEVEL, not merely "is it REQUIRED". The validator needs to tell NONE apart from
+            // OPTIONAL: under OPTIONAL a body may keep the block or drop it, and under NONE it may not
+            // keep it at all. A boolean could express only one of the two rules.
+            ContactRequirement: contactRequirement.ToString());
     }
 
     /// <summary>

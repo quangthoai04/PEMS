@@ -16,6 +16,16 @@ namespace PEMS.Application.Emails.Commands.UpdateEmailTemplate;
 /// are removed from the contract rather than merely ignored: a field the API accepts and silently drops
 /// is a promise nobody keeps.
 /// </para>
+/// <para>
+/// <b>Contact settings travel with the content.</b> They used to be a second call to a second endpoint,
+/// which meant four things could go wrong that no longer can: an operator could save the wording and
+/// forget the policy; the second call could fail and leave a body and a policy contradicting each other;
+/// each call bumped its own idea of "current"; and the one rule that spans both — whether the body may
+/// carry <c>{{contactInformationBlock}}</c> — had to be judged by each half against the other half's
+/// STORED value, so a change to both at once was refused whichever way round it was made.
+/// <see cref="ContactSettings"/> is optional: null means "leave the policy alone", which is what a caller
+/// editing only wording sends, and what an unsupported template must send.
+/// </para>
 /// </summary>
 public class UpdateEmailTemplateCommand : IRequest<UpdateEmailTemplateResponse>
 {
@@ -52,4 +62,38 @@ public class UpdateEmailTemplateCommand : IRequest<UpdateEmailTemplateResponse>
     /// </para>
     /// </summary>
     public uint? ExpectedRevision { get; set; }
+
+    /// <summary>
+    /// The contact configuration to store alongside this content, or null to leave the stored policy
+    /// untouched.
+    ///
+    /// <para>
+    /// Null and "all defaults" are deliberately different. A caller that omits the object is saying
+    /// nothing about the policy; one that sends an object with every field at its default value is saying
+    /// those exact values. Treating a missing object as a default-valued one would let a client that
+    /// simply had not implemented the field reset a template's policy on every wording fix.
+    /// </para>
+    /// </summary>
+    public UpdateEmailTemplateContactSettings? ContactSettings { get; set; }
+}
+
+/// <summary>
+/// The contact configuration as it arrives on the wire — the same field names the standalone
+/// <c>PUT /contact-settings</c> endpoint accepts, so the client has one shape to build rather than two.
+/// </summary>
+public sealed class UpdateEmailTemplateContactSettings
+{
+    public string Requirement { get; set; } = nameof(PEMS.Domain.Enums.EmailContactRequirement.OPTIONAL);
+    public string ContactSource { get; set; } = nameof(PEMS.Domain.Enums.EmailContactSource.SUPPORT_CONTACT);
+
+    public bool ShowEmail { get; set; } = true;
+    public bool ShowPhone { get; set; } = true;
+    public bool ShowDepartment { get; set; }
+    public bool ShowCampus { get; set; }
+    public bool ShowSender { get; set; }
+
+    public string? HeadingVi { get; set; }
+    public string? HeadingEn { get; set; }
+
+    public string ReplyToSource { get; set; } = nameof(PEMS.Domain.Enums.EmailReplyToSource.NONE);
 }

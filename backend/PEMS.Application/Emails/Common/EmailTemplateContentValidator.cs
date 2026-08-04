@@ -125,6 +125,28 @@ public static class EmailTemplateContentValidator
                     continue;
                 }
 
+                // The block is permitted on this template but the administrator has hidden it. Refused
+                // here rather than left to the send, where the only two available behaviours are both
+                // wrong: substituting empty string hides a configuration mistake that nobody will ever
+                // be told about, and leaving the placeholder puts literal braces in front of a recipient.
+                //
+                // Its own code and its own sentence because the repair is a CHOICE the operator owns —
+                // delete the block, or put the level back — and neither the "not available on this
+                // template" wording above nor the unsupported-template wording states it.
+                if (name == EmailTrustedBlocks.ContactInformationBlock && contract.ContactHidden)
+                {
+                    issues.Add(new EmailTemplateIssue(
+                        field, EmailErrorCodes.ContactBlockNotAllowedWhenHidden, name,
+                        $"Khối thông tin liên hệ vẫn còn trong {DescribeFieldVi(field)}, nhưng mức hiển thị "
+                        + "đang là “Không hiển thị”. Hãy xóa khối khỏi nội dung, hoặc chọn lại "
+                        + "“Tùy chọn”/“Bắt buộc” trong phần Cấu hình thông tin liên hệ.",
+                        $"The contact block is still present in {DescribeFieldEn(field)} while the display "
+                        + "level is “Không hiển thị” (hidden). Remove the block from the content, or set "
+                        + "the level back to Optional/Required in the contact settings.",
+                        EmailTemplateIssueSeverity.Error));
+                    continue;
+                }
+
                 if (isSubject)
                 {
                     // A block is the only route by which markup — and therefore a live one-time URL —
@@ -221,9 +243,12 @@ public static class EmailTemplateContentValidator
                     "Mẫu này cần {{setupSummaryBlock}} — đây là các bảng thông tin chuẩn bị do hệ thống dựng khi gửi. Bỏ nó đi thì email chỉ còn câu dẫn, không có nội dung cập nhật nào.",
                     "This template needs {{setupSummaryBlock}} — the setup tables the system builds when sending. Without it the mail is a covering sentence with no update in it."),
 
+                // Named per language, because that is the whole content of the repair: an operator whose
+                // Vietnamese body is fine and whose English body is not needs to be sent to the English
+                // tab, and "this template needs the block" sends them to neither.
                 EmailTrustedBlocks.ContactInformationBlock => (
-                    "Mẫu này cần {{contactInformationBlock}} — đây là khối đầu mối liên hệ do hệ thống điền khi gửi. Nội dung email có câu bảo người nhận liên hệ, nên bỏ khối này đi thì họ được yêu cầu liên hệ mà không có địa chỉ nào. Nếu không muốn hiển thị, hãy đổi mức bắt buộc trong phần Cấu hình thông tin liên hệ.",
-                    "This template needs {{contactInformationBlock}} — the reply-contact card the system fills in when sending. The text tells the recipient to get in touch, so without it they are asked to make contact and given no way to do so. To leave it out, change the requirement level in Contact information settings."),
+                    $"{DescribeFieldVi(field)} thiếu khối thông tin liên hệ ({{{{contactInformationBlock}}}}) — khối đầu mối do hệ thống điền khi gửi. Mức hiển thị đang là “Bắt buộc”, nên bỏ khối đi thì người nhận được yêu cầu liên hệ mà không có địa chỉ nào. Hãy thêm lại khối, hoặc đổi mức hiển thị trong phần Cấu hình thông tin liên hệ.",
+                    $"{DescribeFieldEn(field)} is missing the contact block ({{{{contactInformationBlock}}}}) — the reply-contact card the system fills in when sending. The level is Required, so without it the recipient is asked to make contact and given no way to do so. Add the block back, or change the level in the contact settings."),
 
                 _ => (
                     $"Mẫu này bắt buộc phải chứa biến {{{{{required}}}}}; bỏ nó đi thì email gửi ra sẽ thiếu thông tin người nhận cần.",
@@ -253,6 +278,30 @@ public static class EmailTemplateContentValidator
                 EmailTemplateIssueSeverity.Error));
         }
     }
+
+    /// <summary>
+    /// Which field an issue is about, in words an operator can act on — "nội dung tiếng Anh", not
+    /// "bodyEn". The field NAME still travels on the issue for the screen to anchor on; this is what the
+    /// sentence says, and a sentence that does not name the language leaves somebody with a clean
+    /// Vietnamese tab wondering what is wrong with it.
+    /// </summary>
+    private static string DescribeFieldVi(string field) => field switch
+    {
+        EmailTemplateFields.SubjectVi => "Tiêu đề tiếng Việt",
+        EmailTemplateFields.SubjectEn => "Tiêu đề tiếng Anh",
+        EmailTemplateFields.BodyVi => "Nội dung tiếng Việt",
+        EmailTemplateFields.BodyEn => "Nội dung tiếng Anh",
+        _ => "Nội dung",
+    };
+
+    private static string DescribeFieldEn(string field) => field switch
+    {
+        EmailTemplateFields.SubjectVi => "The Vietnamese subject",
+        EmailTemplateFields.SubjectEn => "The English subject",
+        EmailTemplateFields.BodyVi => "The Vietnamese body",
+        EmailTemplateFields.BodyEn => "The English body",
+        _ => "The content",
+    };
 
     /// <summary>
     /// Finds brace-shaped fragments the strict placeholder parser will not match. Anything the parser

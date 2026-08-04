@@ -27,8 +27,13 @@ namespace PEMS.Application.Emails.Contact;
 /// </summary>
 public static class EffectiveContactRequirement
 {
+    /// <param name="store">
+    /// Nullable because not every caller has one wired: the preview handler is constructed in tests
+    /// without a policy store, and the shipped default is the correct answer there. The body of the method
+    /// already treated null as "fall back to shipped"; the signature now says so.
+    /// </param>
     public static async Task<EmailContactRequirement> ResolveAsync(
-        IEmailContactPolicyStore store, string? templateCode, CancellationToken cancellationToken)
+        IEmailContactPolicyStore? store, string? templateCode, CancellationToken cancellationToken)
     {
         if (!EmailContactCapabilities.Supports(templateCode))
             return EmailContactRequirement.NONE;
