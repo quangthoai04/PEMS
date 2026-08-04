@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, Plus, Save, Trash2, DollarSign, AlertTriangle, Bell, Printer, CheckCircle2, Clock, Building2, Eye, Mail, X } from 'lucide-react';
+import { Loader2, Plus, Save, Trash2, DollarSign, AlertTriangle, Bell, Printer, CheckCircle2, Clock, Building2, Eye, Mail, X, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
 import visitExpenseService, {
@@ -53,6 +53,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
   const [reportNote, setReportNote] = useState('');
   const [showRemindEmailPreview, setShowRemindEmailPreview] = useState(false);
   const [lastRemindSent, setLastRemindSent] = useState<{ count: number; recipients: string[]; sentAt: string } | null>(null);
+  const [remindNote, setRemindNote] = useState('');
 
   const fetchAll = async () => {
     try {
@@ -662,6 +663,21 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                       ) : (
                         <p className="italic text-gray-500">Hiện tại tất cả các đơn vị đã kê khai đầy đủ chi phí.</p>
                       )}
+
+                      <div className="pt-2">
+                        <span className="font-bold text-amber-900 block mb-1">GHI CHÚ NHẮC NHỞ BỔ SUNG (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
+                        {!lastRemindSent ? (
+                          <textarea
+                            value={remindNote}
+                            onChange={(e) => setRemindNote(e.target.value)}
+                            placeholder="Nhập/chỉnh sửa nội dung ghi chú nhắc nhở gửi các phòng ban..."
+                            rows={3}
+                            className="w-full text-xs p-2.5 rounded-lg border border-amber-200 focus:border-[#004c91] outline-none bg-white text-gray-800 shadow-xs"
+                          />
+                        ) : (
+                          <p className="italic text-gray-600 bg-white p-2.5 rounded-lg border border-amber-100">{remindNote || '(Không có ghi chú bổ sung)'}</p>
+                        )}
+                      </div>
                     </div>
 
                     <p className="text-xs text-gray-500">
@@ -676,7 +692,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50">
                 <button
                   type="button"
                   onClick={() => setShowRemindEmailPreview(false)}
@@ -684,6 +700,20 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                 >
                   Đóng
                 </button>
+                {!lastRemindSent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRemindEmailPreview(false);
+                      handleRemind();
+                    }}
+                    disabled={reminding || pendingCount === 0}
+                    className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {reminding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Gửi nhắc nhở ngay
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>
