@@ -40,10 +40,29 @@ public sealed class StubEmailContactResolver : IEmailContactResolver
     /// <summary>The last request seen, so a test can assert the campus scope that was passed.</summary>
     public EmailContactRequest? LastRequest { get; private set; }
 
+    /// <summary>
+    /// The last per-message override seen. Recorded rather than acted on: this stub answers from memory,
+    /// and a test that asserts the dispatcher PASSED the sender's choice down is asking a different
+    /// question from one that asserts what the real resolver DOES with it.
+    /// </summary>
+    public EmailContactOverrideInput? LastOverride { get; private set; }
+
+    /// <summary>The acting user the dispatcher attributed the choice to.</summary>
+    public ulong? LastActorUserId { get; private set; }
+
     public Task<EmailContactResolution> ResolveAsync(
         EmailContactRequest request, CancellationToken cancellationToken = default)
+        => ResolveAsync(request, null, null, cancellationToken);
+
+    public Task<EmailContactResolution> ResolveAsync(
+        EmailContactRequest request,
+        EmailContactOverrideInput? overrideInput,
+        ulong? actorUserId,
+        CancellationToken cancellationToken = default)
     {
         LastRequest = request;
+        LastOverride = overrideInput;
+        LastActorUserId = actorUserId;
         return Task.FromResult(Resolution);
     }
 }

@@ -136,7 +136,10 @@ public sealed class EmailEvidenceHarness : IDisposable
                 Name = "PEMS Support",
                 Email = "support@pems.test",
                 Phone = "1900 0000",
-            }));
+            }),
+            // Wired so a SYSTEM_USER override resolves against real rows here rather than being refused
+            // for a missing dependency — the scope rule is part of what these tests are checking.
+            new PEMS.Application.Emails.Contact.EmailContactCandidateService(db));
 
     public string[] Messages()
         => Directory.Exists(PickupDirectory) ? Directory.GetFiles(PickupDirectory, "*.eml") : Array.Empty<string>();
