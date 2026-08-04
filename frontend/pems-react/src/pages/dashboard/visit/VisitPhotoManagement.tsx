@@ -559,63 +559,57 @@ export function VisitPhotoManagement() {
           </div>
         ) : (
           /* Mode 2: Lưới Bức Ảnh Trực Tiếp (Direct Photo Grid Mode) */
-          <div className="p-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {items.map((item) => (
-                <div
-                  key={item.visitInstanceId}
-                  onClick={() => setPhotoModalItem(item)}
-                  className="bg-white border border-gray-200 hover:border-[#004c91] rounded-2xl p-4 shadow-sm hover:shadow-md transition-all group cursor-pointer flex flex-col justify-between"
-                >
-                  <div className="space-y-2">
-                    <div className="aspect-video w-full rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center relative overflow-hidden group-hover:brightness-95 transition-all">
-                      <Folder className="w-10 h-10 text-amber-500 opacity-80" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent flex items-end p-2.5">
-                        <span className="text-[10px] font-bold text-white bg-slate-900/80 px-2 py-0.5 rounded-md backdrop-blur-sm">
-                          {item.activePhotoCount} bức ảnh
-                        </span>
-                      </div>
+          <div className="p-6 space-y-6">
+            {items.map((item) => (
+              <div key={item.visitInstanceId} className="bg-slate-50/60 rounded-2xl border border-slate-200 p-5 space-y-4 shadow-sm text-left">
+                <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[#004c91]/10 text-[#004c91] flex items-center justify-center font-bold shrink-0">
+                      <Folder className="w-4 h-4 text-amber-500" />
                     </div>
                     <div>
-                      <h4 className="font-extrabold text-slate-800 text-xs line-clamp-1 group-hover:text-[#004c91] transition-colors">
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
                         {item.delegationName}
+                        <span className="text-[11px] font-bold text-[#004c91] bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 font-normal">
+                          {INSTANCE_STATUS_LABELS[item.instanceStatus] || item.instanceStatus}
+                        </span>
                       </h4>
-                      <p className="text-[11px] text-gray-500 font-semibold truncate mt-0.5">
-                        {formatVietnamDate(item.plannedStartAt)}
+                      <p className="text-xs text-slate-500 font-medium">
+                        {item.campusName || 'Cơ sở'} · {formatVietnamDate(item.plannedStartAt)} · {item.activePhotoCount} bức ảnh
                       </p>
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    {isStudent ? (
-                      <button
-                        type="button"
-                        className="w-full py-1.5 text-white bg-[#f37021] hover:bg-[#e0611d] rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa (Thêm / Xóa ảnh)
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setPhotoModalItem(item); }}
-                          className="flex-1 py-1.5 text-white bg-[#004c91] hover:bg-[#00386b] rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> Xem ảnh
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setFaceScanModalItem(item); }}
-                          title="Quét mặt & gán danh tính"
-                          className="py-1.5 px-3 bg-orange-50 hover:bg-orange-100 text-[#f37021] border border-orange-200 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1 shrink-0"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-[#f37021]" /> Quét mặt
-                        </button>
-                      </>
-                    )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFaceScanModalItem(item)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-orange-50 hover:bg-orange-100 text-[#f37021] border border-orange-200 inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-[#f37021]" /> Quét mặt & Gán tên
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPhotoModalItem(item)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold text-white bg-[#004c91] hover:bg-[#00386b] inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Quản lý ảnh
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                {/* Direct photo grid showing photo thumbnails */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs">
+                  <VisitPhotoPanel
+                    visitInstanceId={item.visitInstanceId}
+                    mode={isStudent ? 'edit' : 'view'}
+                    showFaceTags={true}
+                    columns={4}
+                    onOpenFaceScan={() => setFaceScanModalItem(item)}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

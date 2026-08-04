@@ -73,7 +73,8 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
 }, ref) {
   const { t } = useTranslation('visitFaceScan');
 
-  const [selectedPhotoId, setSelectedPhotoId] = useState<number | null>(photos[0]?.visitPhotoId ?? null);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<number | null>(() => photos[0]?.visitPhotoId ?? null);
+  const [userSelectedPhotoId, setUserSelectedPhotoId] = useState<number | null>(null);
   const [scans, setScans] = useState<VisitPhotoFaceScan[]>([]);
   const [loadingScans, setLoadingScans] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -97,17 +98,86 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
 
   const selectedImageUrl = useAuthenticatedImage(selectedPhoto?.url ?? null);
 
-  // Keep selection valid as the real photo list changes (upload/remove).
+  const selectPhoto = (photoId: number | null) => {
+    setSelectedPhotoId(photoId);
+    setUserSelectedPhotoId(photoId);
+    if (photoId && visitInstanceId) {
+      try {
+        localStorage.setItem(`pems_facescan_selected_photo_${visitInstanceId}`, String(photoId));
+      } catch {}
+    }
+  };
+
+  // Auto-detect photo with confirmed/succeeded face tags from DB across all logins/devices
   useEffect(() => {
     if (photos.length === 0) {
       if (selectedPhotoId !== null) setSelectedPhotoId(null);
       return;
     }
-    if (!photos.some((p) => p.visitPhotoId === selectedPhotoId)) {
-      setSelectedPhotoId(photos[0].visitPhotoId);
+
+    // If user explicitly clicked a photo in this session and it's in photos list, keep it
+    if (userSelectedPhotoId && photos.some((p) => p.visitPhotoId === userSelectedPhotoId)) {
+      setSelectedPhotoId(userSelectedPhotoId);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photos]);
+
+    let cancelled = false;
+
+    const findConfirmedPhotoFromDb = async () => {
+      try {
+        const scanResults = await Promise.all(
+          photos.map(async (p) => {
+            try {
+              const list = await visitPhotosApi.getFaceScans(p.visitPhotoId);
+              return { photoId: p.visitPhotoId, scans: list };
+            } catch {
+              return { photoId: p.visitPhotoId, scans: [] };
+            }
+          })
+        );
+        if (cancelled) return;
+
+        // 1. Prefer photo with CONFIRMED status or confirmed detections in DB
+        const confirmedItem = scanResults.find((r) =>
+          r.scans.some((s) => s.status === 'CONFIRMED' || s.detections?.some((d) => d.reviewStatus === 'CONFIRMED'))
+        );
+        if (confirmedItem) {
+          setSelectedPhotoId(confirmedItem.photoId);
+          return;
+        }
+
+        // 2. Prefer photo with SUCCEEDED status & face detections
+        const succeededItem = scanResults.find((r) =>
+          r.scans.some((s) => s.status === 'SUCCEEDED' && s.detections?.length > 0)
+        );
+        if (succeededItem) {
+          setSelectedPhotoId(succeededItem.photoId);
+          return;
+        }
+      } catch {}
+
+      if (cancelled) return;
+
+      // 3. Fallback to localStorage saved ID if present in photos
+      try {
+        const saved = localStorage.getItem(`pems_facescan_selected_photo_${visitInstanceId}`);
+        const savedId = saved ? Number(saved) : null;
+        if (savedId && photos.some((p) => p.visitPhotoId === savedId)) {
+          setSelectedPhotoId(savedId);
+          return;
+        }
+      } catch {}
+
+      // 4. Default to first photo
+      setSelectedPhotoId((prev) => (prev && photos.some((p) => p.visitPhotoId === prev) ? prev : photos[0].visitPhotoId));
+    };
+
+    void findConfirmedPhotoFromDb();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [photos, visitInstanceId, userSelectedPhotoId]);
 
   // Taggable guests of THIS exact visit instance — loaded once.
   useEffect(() => {
@@ -730,7 +800,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
                       <div
                         key={photo.visitPhotoId}
                         onClick={() => {
-                          setSelectedPhotoId(photo.visitPhotoId);
+                          selectPhoto(photo.visitPhotoId);
                           setIsAlbumModalOpen(false);
                         }}
                         className={`group bg-white rounded-2xl border p-3 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md ${
