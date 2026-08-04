@@ -2,7 +2,7 @@ import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 // The shared payload rather than a structural copy of it. The copies did not carry `contactOverride`,
 // so a per-message contact choice would compile here and be silently dropped at the boundary.
-import type { EmailOverridePayload } from '../../delegations/types/delegations.types';
+import type { ApprovedEmailContentPayload } from '../../delegations/types/delegations.types';
 
 export const departmentReceptionTasksApi = {
   getCalendar: async (month: string) => {
@@ -44,9 +44,9 @@ export const departmentReceptionTasksApi = {
     participantId: number | string,
     assigneeUserId: number | string,
     note = '',
-    emailOverride?: EmailOverridePayload,
+    approvedContent?: ApprovedEmailContentPayload,
   ) => {
-    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.assignInvitation(participantId), { assigneeUserId, note, emailOverride });
+    const { data } = await httpClient.post<any>(API_ENDPOINTS.departmentReceptionTasks.assignInvitation(participantId), { assigneeUserId, note, approvedContent });
     return data;
   },
 
@@ -87,11 +87,11 @@ export const departmentReceptionTasksApi = {
   assignAssignee: async (
     logisticsItemId: number | string,
     assigneeUserId: number | string,
-    emailOverride?: EmailOverridePayload,
+    approvedContent?: ApprovedEmailContentPayload,
   ) => {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.departmentReceptionTasks.assignAssignee(logisticsItemId),
-      { assigneeUserId, emailOverride });
+      { assigneeUserId, approvedContent });
     return data;
   },
 

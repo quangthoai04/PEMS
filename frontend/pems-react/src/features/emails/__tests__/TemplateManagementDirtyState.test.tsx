@@ -22,10 +22,6 @@ const getEmailTemplateDetail = vi.fn();
 const getEmailTemplateContract = vi.fn();
 const updateEmailTemplate = vi.fn();
 const restoreEmailTemplateDefault = vi.fn();
-const getEmailContactSettings = vi.fn();
-const updateEmailContactSettings = vi.fn();
-const previewEmailContactBlock = vi.fn();
-const restoreEmailContactSettingsDefault = vi.fn();
 
 vi.mock('../../../features/emails/api/emailsApi', () => ({
   emailsApi: {
@@ -34,10 +30,6 @@ vi.mock('../../../features/emails/api/emailsApi', () => ({
     getEmailTemplateContract: (...a: unknown[]) => getEmailTemplateContract(...a),
     updateEmailTemplate: (...a: unknown[]) => updateEmailTemplate(...a),
     restoreEmailTemplateDefault: (...a: unknown[]) => restoreEmailTemplateDefault(...a),
-    getEmailContactSettings: (...a: unknown[]) => getEmailContactSettings(...a),
-    updateEmailContactSettings: (...a: unknown[]) => updateEmailContactSettings(...a),
-    previewEmailContactBlock: (...a: unknown[]) => previewEmailContactBlock(...a),
-    restoreEmailContactSettingsDefault: (...a: unknown[]) => restoreEmailContactSettingsDefault(...a),
   },
 }));
 
@@ -149,11 +141,12 @@ const CONTRACT = {
   allowBcc: false,
   securityClassification: 'SENSITIVE',
   editableFields: ['name', 'description', 'subjectVi', 'subjectEn', 'bodyVi', 'bodyEn'],
-  contactSupported: false,
-  contactRequired: false,
-  contactSettingsEditable: false,
-  contactReasonCode: 'ONE_TIME_CREDENTIAL',
-  contactReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
+  senderVariableCapability: 'NOT_AVAILABLE',
+  senderVariables: [],
+  senderVariablesAllowed: false,
+  runtimeEditable: false,
+  senderReasonCode: 'ONE_TIME_CREDENTIAL',
+  senderReasonVi: 'Mẫu này mang mã hoặc liên kết dùng một lần nên không hiển thị thông tin người gửi.',
 };
 
 const pushToast = vi.fn();
@@ -171,8 +164,6 @@ beforeEach(() => {
   });
   getEmailTemplateDetail.mockResolvedValue({ data: DETAIL });
   getEmailTemplateContract.mockResolvedValue({ data: CONTRACT });
-  getEmailContactSettings.mockRejectedValue(new Error('not asked for'));
-  previewEmailContactBlock.mockResolvedValue({ data: { html: '', rendersBlock: false } });
 });
 
 const openEditor = async (code = 'ACCOUNT_EMAIL_CONFIRMATION') => {
@@ -314,7 +305,6 @@ describe('a real edit is reported, and only while it stands', () => {
         bodyVi: DETAIL.bodyVi,
         subjectEn: DETAIL.subjectEn,
         bodyEn: DETAIL.bodyEn,
-        contactSettings: null,
       },
     });
 
@@ -334,23 +324,19 @@ describe('a real edit is reported, and only while it stands', () => {
 });
 
 /**
- * Card 4 on a template that cannot carry the block (§3.1) — decided by the contract the editor already
- * holds, so no settings request is made and no form can appear while one is in flight.
+ * A credential-bearing template offers no sender variables at all (§3.1).
+ *
+ * The picker is where that shows: the group is absent rather than present-and-refused, so an operator
+ * cannot insert a placeholder the save would then reject. This replaces the read-only "card 4" the
+ * contact feature showed for the same templates — there is no card to render, because there was never
+ * anything on it to configure.
  */
-describe('an unsupported template gets a reason, not a form', () => {
-  it('renders the read-only card without asking for settings', async () => {
+describe('a credential-bearing template offers no sender variables', () => {
+  it('shows no sender group in the variable picker', async () => {
     await openEditor();
 
-    const card = await screen.findByTestId('contact-settings-unsupported');
-    expect(card).toHaveTextContent('Không có cấu hình cần chỉnh sửa');
-    expect(getEmailContactSettings).not.toHaveBeenCalled();
-
-    expect(screen.queryByTestId('contact-settings-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('contact-settings-loading')).not.toBeInTheDocument();
-    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Nguồn thông tin liên hệ')).not.toBeInTheDocument();
-    expect(screen.queryByText('Lưu cấu hình liên hệ')).not.toBeInTheDocument();
-    expect(screen.queryByText('Phục hồi mặc định')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sender-variable-group')).not.toBeInTheDocument();
+    expect(screen.queryByText('Thông tin người gửi')).not.toBeInTheDocument();
   });
 });
 

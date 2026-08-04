@@ -1,13 +1,12 @@
 /**
- * Two defects in the template editor, pinned as behaviour.
+ * Variables appended to the end of the body — one defect, pinned as behaviour.
  *
- * <b>1. A refusal on the tab you are not looking at.</b> With the contact level at "Bắt buộc", a
- * Vietnamese body carrying `{{contactInformationBlock}}` and an English one that does not, "Lưu thay
- * đổi" went dead while the Vietnamese tab showed a clean form. The explanation existed — under the
- * English body, on a tab the operator had no reason to open. The save is refused across BOTH languages,
- * so the explanation has to be visible from both.
+ * The cross-language refusal suite that used to sit beside this one is gone with the contact block:
+ * every case in it was "the level says Bắt buộc and the OTHER language dropped the block", and there
+ * is no level any more. A sender variable is permitted or not by the template, identically in both
+ * languages, so a body cannot be legal in Vietnamese and refused in English.
  *
- * <b>2. Variables appended to the end of the body.</b> `insertVariable` asked the DOM what was focused,
+ * What remains: `insertVariable` asked the DOM what was focused,
  * but clicking a variable chip focuses the CHIP — so neither the subject nor the editor ever matched and
  * every insert fell through to `body + token`. A variable meant for the middle of a greeting arrived
  * after the signature, and one meant for the subject went into the body instead.
@@ -20,10 +19,6 @@ const getEmailTemplateDetail = vi.fn();
 const getEmailTemplateContract = vi.fn();
 const updateEmailTemplate = vi.fn();
 const restoreEmailTemplateDefault = vi.fn();
-const getEmailContactSettings = vi.fn();
-const updateEmailContactSettings = vi.fn();
-const previewEmailContactBlock = vi.fn();
-const restoreEmailContactSettingsDefault = vi.fn();
 
 vi.mock('../../../features/emails/api/emailsApi', () => ({
   emailsApi: {
@@ -32,10 +27,6 @@ vi.mock('../../../features/emails/api/emailsApi', () => ({
     getEmailTemplateContract: (...a: unknown[]) => getEmailTemplateContract(...a),
     updateEmailTemplate: (...a: unknown[]) => updateEmailTemplate(...a),
     restoreEmailTemplateDefault: (...a: unknown[]) => restoreEmailTemplateDefault(...a),
-    getEmailContactSettings: (...a: unknown[]) => getEmailContactSettings(...a),
-    updateEmailContactSettings: (...a: unknown[]) => updateEmailContactSettings(...a),
-    previewEmailContactBlock: (...a: unknown[]) => previewEmailContactBlock(...a),
-    restoreEmailContactSettingsDefault: (...a: unknown[]) => restoreEmailContactSettingsDefault(...a),
   },
 }));
 
@@ -131,32 +122,22 @@ const CONTRACT = {
   requiredVariables: [],
   optionalVariables: ['fullName', 'campusName'],
   requiredSystemBlocks: [],
-  optionalSystemBlocks: ['contactInformationBlock'],
+  optionalSystemBlocks: [],
   systemBlockPreviews: {},
   sensitiveVariables: [],
   forbiddenInSubject: [],
   actionSupported: false,
   actionRequired: false,
   systemActionDescription: null,
-  contactSupported: true,
-  contactRequirement: 'REQUIRED',
+  senderVariableCapability: 'AVAILABLE_READ_ONLY_RUNTIME',
+  senderVariables: ['senderName', 'senderRole', 'senderEmail', 'senderPhone', 'senderDepartment', 'senderCampus'],
+  senderVariablesAllowed: true,
+  runtimeEditable: false,
   carriesSecret: false,
   allowCc: true,
   allowBcc: true,
   securityClassification: 'STANDARD',
   editableFields: ['name', 'description', 'subjectVi', 'subjectEn', 'bodyVi', 'bodyEn'],
-};
-
-const SETTINGS = {
-  templateCode: 'ACCOUNT_ROLE_CHANGED', requirement: 'REQUIRED', contactSource: 'CAMPUS_DEFAULT',
-  showEmail: true, showPhone: true, showDepartment: false, showCampus: true, showSender: false,
-  headingVi: 'Thông tin liên hệ', headingEn: 'Contact information', replyToSource: 'NONE',
-  blockPlaceholder: '{{contactInformationBlock}}',
-  bodyCarriesBlockVi: true, bodyCarriesBlockEn: true,
-  availableRequirements: ['NONE', 'OPTIONAL', 'REQUIRED'],
-  availableSources: ['HOST', 'CAMPUS_DEFAULT'], availableReplyToSources: ['NONE', 'CONTACT', 'SENDER'],
-  capability: 'SUPPORTED',
-  editable: true,
 };
 
 const BASE_DETAIL = {
@@ -173,10 +154,8 @@ const BASE_DETAIL = {
   hasShippedDefault: true,
 };
 
-const WITH_BLOCK_VI = '<p>Chào bạn.</p>{{contactInformationBlock}}';
-const WITH_BLOCK_EN = '<p>Hello.</p>{{contactInformationBlock}}';
-const WITHOUT_BLOCK_VI = '<p>Chào bạn.</p>';
-const WITHOUT_BLOCK_EN = '<p>Hello.</p>';
+const BODY_VI = '<p>Chào bạn.</p>';
+const BODY_EN = '<p>Hello.</p>';
 
 const pushToast = vi.fn();
 
@@ -185,7 +164,6 @@ async function openEditor(bodyVi: string, bodyEn: string) {
   render(<TemplateManagement pushToast={pushToast} />);
   fireEvent.click(await screen.findByLabelText('Chỉnh sửa ACCOUNT_ROLE_CHANGED'));
   await screen.findByTestId('save-template');
-  await screen.findByTestId('contact-settings-panel');
 }
 
 beforeEach(() => {
@@ -195,87 +173,6 @@ beforeEach(() => {
     data: { items: [{ emailTemplateId: 7, templateCode: 'ACCOUNT_ROLE_CHANGED', name: 'Thay đổi vai trò', description: '' }], totalItems: 1 },
   });
   getEmailTemplateContract.mockResolvedValue({ data: CONTRACT });
-  getEmailContactSettings.mockResolvedValue({ data: SETTINGS });
-  previewEmailContactBlock.mockResolvedValue({ data: { html: '<div>contact</div>', rendersBlock: true } });
-});
-
-describe('TemplateManagement — a refusal in the other language is visible from this one', () => {
-  it('shows the English failure while the Vietnamese tab is open', async () => {
-    await openEditor(WITH_BLOCK_VI, WITHOUT_BLOCK_EN);
-
-    // The tab that is open is the clean one; without the summary this screen showed nothing at all.
-    const summary = await screen.findByTestId('validation-summary');
-    expect(summary).toBeInTheDocument();
-    expect(screen.getByTestId('validation-summary-EN')).toBeInTheDocument();
-    expect(screen.queryByTestId('validation-summary-VI')).not.toBeInTheDocument();
-
-    // And the save it explains is genuinely off.
-    expect(screen.getByTestId('save-template')).toBeDisabled();
-  });
-
-  it('marks the failing tab and not the clean one', async () => {
-    await openEditor(WITH_BLOCK_VI, WITHOUT_BLOCK_EN);
-    await screen.findByTestId('validation-summary');
-
-    expect(screen.getByTestId('language-tab-error-EN')).toBeInTheDocument();
-    expect(screen.queryByTestId('language-tab-error-VI')).not.toBeInTheDocument();
-    expect(screen.getByTestId('language-tab-EN')).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByTestId('language-tab-VI')).toHaveAttribute('aria-invalid', 'false');
-  });
-
-  it('reports the Vietnamese failure when English is the sound one', async () => {
-    await openEditor(WITHOUT_BLOCK_VI, WITH_BLOCK_EN);
-    await screen.findByTestId('validation-summary');
-
-    expect(screen.getByTestId('validation-summary-VI')).toBeInTheDocument();
-    expect(screen.queryByTestId('validation-summary-EN')).not.toBeInTheDocument();
-    expect(screen.getByTestId('language-tab-error-VI')).toBeInTheDocument();
-  });
-
-  it('reports both when neither language has the block', async () => {
-    await openEditor(WITHOUT_BLOCK_VI, WITHOUT_BLOCK_EN);
-    await screen.findByTestId('validation-summary');
-
-    expect(screen.getByTestId('validation-summary-VI')).toBeInTheDocument();
-    expect(screen.getByTestId('validation-summary-EN')).toBeInTheDocument();
-    expect(screen.getByTestId('language-tab-error-VI')).toBeInTheDocument();
-    expect(screen.getByTestId('language-tab-error-EN')).toBeInTheDocument();
-  });
-
-  it('switches to the failing language when the action is pressed', async () => {
-    await openEditor(WITH_BLOCK_VI, WITHOUT_BLOCK_EN);
-    await screen.findByTestId('validation-summary');
-
-    expect(screen.getByTestId('language-tab-VI')).toHaveAttribute('aria-pressed', 'true');
-
-    fireEvent.click(screen.getByTestId('goto-issue-EN'));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('language-tab-EN')).toHaveAttribute('aria-pressed', 'true'));
-    // And the field the message is about is now on screen, under the English body.
-    expect(screen.getByTestId('issues-bodyEn')).toBeInTheDocument();
-  });
-
-  it('lists both languages on the contact card, marking the one that is missing the block', async () => {
-    await openEditor(WITH_BLOCK_VI, WITHOUT_BLOCK_EN);
-
-    const vi = await screen.findByTestId('contact-block-status-VI');
-    const en = screen.getByTestId('contact-block-status-EN');
-
-    expect(vi).toHaveAttribute('data-has-block', 'true');
-    expect(en).toHaveAttribute('data-has-block', 'false');
-    expect(vi.textContent).toContain('đã có khối thông tin liên hệ');
-    expect(en.textContent).toContain('chưa có khối thông tin liên hệ');
-  });
-
-  it('says nothing when both languages satisfy the level', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
-    await screen.findByTestId('contact-settings-panel');
-
-    expect(screen.queryByTestId('validation-summary')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('language-tab-error-VI')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('language-tab-error-EN')).not.toBeInTheDocument();
-  });
 });
 
 describe('TemplateManagement — variables land at the caret', () => {
@@ -283,7 +180,7 @@ describe('TemplateManagement — variables land at the caret', () => {
   const insertFullName = () => fireEvent.click(screen.getByTitle(/^\{\{fullName\}\}/));
 
   it('inserts into the subject at the caret, not at the end', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
+    await openEditor(BODY_VI, BODY_EN);
 
     const input = subjectInput();
     expect(input.value).toBe('Vai trò của bạn đã thay đổi');
@@ -301,7 +198,7 @@ describe('TemplateManagement — variables land at the caret', () => {
   });
 
   it('replaces the selected run of subject text', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
+    await openEditor(BODY_VI, BODY_EN);
 
     const input = subjectInput();
     // Select "Vai trò" (0..7).
@@ -316,7 +213,7 @@ describe('TemplateManagement — variables land at the caret', () => {
   });
 
   it('keeps the two languages\' subject carets apart', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
+    await openEditor(BODY_VI, BODY_EN);
 
     // A caret deep in the Vietnamese subject…
     const viInput = subjectInput();
@@ -344,7 +241,7 @@ describe('TemplateManagement — variables land at the caret', () => {
   });
 
   it('inserts into the body at the remembered caret after the editor has lost focus', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
+    await openEditor(BODY_VI, BODY_EN);
     expect(liveEditor).not.toBeNull();
 
     // Caret inside the paragraph, then the chip steals the focus and Quill reports a null range.
@@ -354,11 +251,11 @@ describe('TemplateManagement — variables land at the caret', () => {
     insertFullName();
 
     await waitFor(() =>
-      expect(screen.getByTestId('quill')).toHaveValue('<p>{{fullName}}Chào bạn.</p>{{contactInformationBlock}}'));
+      expect(screen.getByTestId('quill')).toHaveValue('<p>{{fullName}}Chào bạn.</p>'));
   });
 
   it('replaces a selected run in the body', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
+    await openEditor(BODY_VI, BODY_EN);
 
     // Select "Chào" (indices 3..7).
     liveEditor!.select(3, 4);
@@ -367,11 +264,11 @@ describe('TemplateManagement — variables land at the caret', () => {
     insertFullName();
 
     await waitFor(() =>
-      expect(screen.getByTestId('quill')).toHaveValue('<p>{{fullName}} bạn.</p>{{contactInformationBlock}}'));
+      expect(screen.getByTestId('quill')).toHaveValue('<p>{{fullName}} bạn.</p>'));
   });
 
   it('does not append to the end when nothing has been focused', async () => {
-    await openEditor(WITH_BLOCK_VI, WITH_BLOCK_EN);
+    await openEditor(BODY_VI, BODY_EN);
 
     insertFullName();
 

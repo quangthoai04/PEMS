@@ -1,4 +1,4 @@
-// Status enums mirror the SQL v10 ENUMs (campus-independent approval). The request status
+﻿// Status enums mirror the SQL v10 ENUMs (campus-independent approval). The request status
 // is an AGGREGATE derived from the per-campus instance decisions; the real approve/reject
 // decision lives on each campus instance.
 
@@ -751,7 +751,8 @@ export interface InviteVisitParticipantPayload {
   departmentId?: number;
   message?: string | null;
   /** Optional host-edited email content from the "Xem trước email" modal. */
-  emailOverride?: EmailOverridePayload;
+  /** The message the sender approved in the FINAL preview. Omitted when they did not edit. */
+  approvedContent?: ApprovedEmailContentPayload;
 }
 
 export interface InviteVisitParticipantResult {
@@ -767,103 +768,27 @@ export interface InviteVisitParticipantResult {
   sentEmailId?: number;
 }
 
-/** Host-edited email content carried on send/invite commands (Part C). When useEditedContent is
- * true the backend uses this subject/body and injects the real system action block itself. */
-export interface EmailOverridePayload {
-  useEditedContent: boolean;
+/**
+ * The message a sender edited and approved in the FINAL preview, presented back on send.
+ *
+ * Replaces `EmailOverridePayload`. The difference is `finalPreviewToken`: the backend signed the exact
+ * subject, body and attachment set while the sender was looking at them, and refuses a send whose
+ * content hashes differently. Nothing here is trusted on its own — altering one character between the
+ * preview and the send is a refusal, not a silent substitution.
+ *
+ * Omitted entirely when the sender read the preview and pressed send without editing: there is nothing
+ * of theirs to approve, and the backend renders the template as it always did.
+ */
+export interface ApprovedEmailContentPayload {
+  /** Issued by POST /email-templates/final-preview. */
+  finalPreviewToken: string;
   subject: string;
-  /** Plain-text edit (legacy plain-text editor): backend converts it to safe HTML. */
+  /** Plain-text edit: the backend converts it to safe HTML. Preferred when both are present. */
   bodyText?: string;
-  /** Rich editor: sanitized HTML body (inline images already rewritten to cid:). Preferred when set. */
+  /** Rich editor: HTML body with inline images already rewritten to `cid:`. */
   bodyHtml?: string;
-  /** File + inline-image references for the rich editor (validated + sent as real MIME parts). */
+  /** File + inline-image references (validated and sent as real MIME parts). */
   attachments?: EmailAttachmentRefInput[];
-  /**
-   * Who THIS message tells the recipient to contact. Structured data only — never the block's HTML,
-   * which the backend refuses from a caller and builds itself from the resolved contact.
-   */
-  contactOverride?: EmailContactOverrideInput | null;
-}
-
-/** The three ways one message can answer "who should the recipient contact?". */
-export type EmailContactOverrideMode = 'TEMPLATE_DEFAULT' | 'SYSTEM_USER' | 'MANUAL';
-
-/** Where replies to this one message should go. */
-export type EmailContactReplyToMode = 'POLICY_DEFAULT' | 'CONTACT' | 'SENDER' | 'NONE';
-
-/**
- * A per-message change to the reply contact (mirrors backend EmailContactOverrideInput).
- *
- * The mode decides which fields may be present, and the backend REJECTS the others rather than
- * ignoring them: `SYSTEM_USER` carries `userId` and nothing else, because the name, address and
- * telephone shown to the recipient are read from the chosen person's own record.
- */
-export interface EmailContactOverrideInput {
-  mode: EmailContactOverrideMode;
-  /** SYSTEM_USER only. */
-  userId?: number | null;
-  /** MANUAL only — somebody with no PEMS account. */
-  displayName?: string | null;
-  roleLabel?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  departmentName?: string | null;
-  campusName?: string | null;
-  replyToMode?: EmailContactReplyToMode | null;
-  /** OPTIONAL templates only; a REQUIRED one refuses it. */
-  hideForThisEmail?: boolean | null;
-  /** Required for MANUAL. */
-  reason?: string | null;
-}
-
-/**
- * The reply-contact panel of one preview: what the send will produce, and what the sender may change.
- *
- * `lockedContactBlockHtml` is displayed READ-ONLY and never sent back. It is deliberately not part of
- * `bodyHtml` — merging the two is what previously put a preview placeholder into the message and let
- * the backend append the real card underneath it.
- */
-export interface EmailContactPreviewResult {
-  supported: boolean;
-  requirement: 'NONE' | 'OPTIONAL' | 'REQUIRED';
-  mode: EmailContactOverrideMode;
-  source?: string | null;
-  lockedContactBlockHtml?: string | null;
-  contactDisplayName?: string | null;
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  /** The address a reply would go to, or null when the message sets no Reply-To. */
-  replyToDisplay?: string | null;
-  hidden: boolean;
-  canOverride: boolean;
-  canHide: boolean;
-  availableModes: EmailContactOverrideMode[];
-  availableReplyToModes: EmailContactReplyToMode[];
-  /** Set when the contact could not be resolved — shown in the panel, blocks send. */
-  errorCode?: string | null;
-  errorMessage?: string | null;
-  hasError?: boolean;
-}
-
-/** One account the signed-in user may name as the reply contact. */
-export interface EmailContactCandidate {
-  userId: number;
-  fullName: string;
-  email?: string | null;
-  phone?: string | null;
-  departmentName?: string | null;
-  campusName?: string | null;
-  hasEmail: boolean;
-}
-
-/** Identifies the message a contact panel belongs to — the scope every contact call needs. */
-export interface EmailContactContext {
-  templateCode: string;
-  /** The PER-CAMPUS visit id. A request id would resolve another campus's Host. */
-  visitInstanceId?: number | null;
-  campusId?: number | null;
-  departmentId?: number | null;
-  language?: 'VI' | 'EN';
 }
 
 /** A file/inline-image reference carried by the rich email editor (mirrors backend EmailAttachmentRefInput). */
@@ -1479,7 +1404,8 @@ export interface PrepareVisitLogisticsPayload {
   coordinationMode?: LogisticsCoordinationMode | null;
   /** Required when coordinationMode = OFFLINE_COORDINATED. */
   offlineCoordinationNote?: string | null;
-  emailOverride?: EmailOverridePayload;
+  /** The message the sender approved in the FINAL preview. Omitted when they did not edit. */
+  approvedContent?: ApprovedEmailContentPayload;
 }
 
 export interface PrepareVisitLogisticsResult {
@@ -1674,15 +1600,16 @@ export interface PreviewEmailTemplatePayload {
   templateCode: string;
   context?: Record<string, string>;
   language?: 'VI' | 'EN';
-  /**
-   * Supplying any of these switches the backend from "show an operator the wording" to "show a sender
-   * the message about to go out": the reply contact is then resolved for real instead of drawn as a
-   * dashed stand-in, and comes back in `contact` rather than inside `bodyHtml`.
-   */
+  /** What the message is about. Signed into the preview token; the send re-derives and compares it. */
   visitInstanceId?: number | null;
   campusId?: number | null;
   departmentId?: number | null;
-  contactOverride?: EmailContactOverrideInput | null;
+  /**
+   * The scope this message belongs to, spelled exactly as the sending command will recompute it — e.g.
+   * `visitInstance:41|participant:907`. Build it with `emailScopeKey`, never by hand: a mismatch is a
+   * refused send, and the two spellings live in different codebases.
+   */
+  scopeKey?: string | null;
 }
 
 export interface PreviewEmailTemplateResult {
@@ -1700,6 +1627,38 @@ export interface PreviewEmailTemplateResult {
   editable: boolean;
   /** Body format of the source template: 'PLAIN_TEXT' | 'HTML' (email_templates.body_format). */
   bodyFormat: EmailBodyFormat;
-  /** Present only for an operational preview (one that supplied a visit/campus/department). */
-  contact?: EmailContactPreviewResult | null;
+  /**
+   * Where a reply would go — the sender's own address, or the system support address for automated
+   * mail. Reported as its own field rather than read out of the body, which would be guessing at
+   * something the send decides from the account.
+   */
+  replyToEmail?: string | null;
+  /** True when this template's send flow may offer "Chỉnh sửa". Decided by capability, not by wording. */
+  runtimeEditable: boolean;
+  /** Signed proof of this render, to be handed to `final-preview`. Null when not runtime-editable. */
+  previewToken?: string | null;
+  /** ISO-8601 instant after which `previewToken` stops being accepted. */
+  expiresAt?: string | null;
+}
+
+// ── Final preview ("Xem trước kết quả") ──
+
+export interface BuildFinalEmailPreviewPayload {
+  previewToken: string;
+  subject: string;
+  /** Plain-text edit. Preferred over `editableBodyHtml` when both are present, matching the send. */
+  editableBodyText?: string;
+  editableBodyHtml?: string;
+  attachments?: EmailAttachmentRefInput[];
+  language?: 'VI' | 'EN';
+}
+
+export interface BuildFinalEmailPreviewResult {
+  subject: string;
+  /** The whole message as it will arrive — sender's words, locked action block, branded shell. */
+  finalPreviewHtml: string;
+  /** Presented on send. Binds actor, template, revision, scope, content and attachments. */
+  finalPreviewToken: string;
+  replyToEmail?: string | null;
+  expiresAt: string;
 }

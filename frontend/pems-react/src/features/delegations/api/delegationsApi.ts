@@ -1,4 +1,4 @@
-import httpClient from '../../../shared/api/httpClient';
+﻿import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type {
   CancelVisitRequestPayload,
@@ -31,11 +31,11 @@ import type {
   SaveVisitReminderSettingsResult,
   PreviewEmailTemplatePayload,
   PreviewEmailTemplateResult,
-  EmailContactContext,
-  EmailContactOverrideInput,
-  EmailOverridePayload,
-  EmailContactPreviewResult,
-  EmailContactCandidate,
+  BuildFinalEmailPreviewPayload,
+  BuildFinalEmailPreviewResult,
+  ApprovedEmailContentPayload,
+
+
   PrepareVisitLogisticsPayload,
   PrepareVisitLogisticsResult,
   GetVisitInstanceLogisticsResult,
@@ -319,44 +319,17 @@ export const delegationsApi = {
   },
 
   /**
-   * Re-resolves ONLY the reply-contact panel of a message being composed.
+   * "Xem trước kết quả": the sender's edit becomes the exact message that will be delivered, and comes
+   * back with the token the send accepts as proof they approved it.
    *
-   * Deliberately not another `previewEmailTemplate` call: that returns a fresh subject and body, so
-   * using it to refresh a contact would throw away whatever the host had written every time they
-   * changed their mind about who to name.
+   * Nothing is stored — the token is signed, not persisted. Calling it again after a further edit simply
+   * supersedes the previous token; there is no draft to clean up.
    */
-  async previewEmailContact(
-    context: EmailContactContext,
-    contactOverride?: EmailContactOverrideInput | null,
-  ): Promise<EmailContactPreviewResult> {
-    const { data } = await httpClient.post<EmailContactPreviewResult>(
-      API_ENDPOINTS.emailTemplates.contactPreview(context.templateCode),
-      {
-        language: context.language,
-        visitInstanceId: context.visitInstanceId ?? null,
-        campusId: context.campusId ?? null,
-        departmentId: context.departmentId ?? null,
-        contactOverride: contactOverride ?? null,
-      });
-    return data;
-  },
-
-  /** The people the signed-in user may name as the reply contact on this message. */
-  async searchEmailContactCandidates(
-    context: EmailContactContext, term: string, take = 10,
-  ): Promise<EmailContactCandidate[]> {
-    const { data } = await httpClient.get<EmailContactCandidate[]>(
-      API_ENDPOINTS.emailTemplates.contactCandidates(context.templateCode),
-      {
-        params: {
-          language: context.language,
-          visitInstanceId: context.visitInstanceId ?? undefined,
-          campusId: context.campusId ?? undefined,
-          departmentId: context.departmentId ?? undefined,
-          term: term || undefined,
-          take,
-        },
-      });
+  async buildFinalEmailPreview(
+    payload: BuildFinalEmailPreviewPayload,
+  ): Promise<BuildFinalEmailPreviewResult> {
+    const { data } = await httpClient.post<BuildFinalEmailPreviewResult>(
+      API_ENDPOINTS.emailTemplates.finalPreview, payload);
     return data;
   },
 
@@ -678,9 +651,9 @@ export const delegationsApi = {
       participantId: string | number,
       departmentStaffUserId: number,
       note: string,
-      emailOverride?: EmailOverridePayload,
+      approvedContent?: ApprovedEmailContentPayload,
     ): Promise<any> {
-      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note, emailOverride });
+      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note, approvedContent });
       return data;
     },
   },

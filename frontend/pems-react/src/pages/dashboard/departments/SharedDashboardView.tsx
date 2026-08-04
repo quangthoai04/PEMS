@@ -44,7 +44,7 @@ import { matchCalendarChangeNotifs } from '../../../features/notifications/utils
 import { TaskHandoverModal } from './TaskHandoverModal';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
-import type { EmailContactContext, EmailContactPreviewResult } from '../../../features/delegations/types/delegations.types';
+import { participantScopeKey, logisticsAssigneeScopeKey } from '../../../features/emails/utils/emailScopeKey';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 import { formatVietnamDateTime, toVietnamCalendarDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
@@ -266,8 +266,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     open: false, loading: false, sending: false, error: null as string | null,
     subject: '', body: '', isActionTemplate: false,
     systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
-    contact: null as EmailContactPreviewResult | null,
-    contactContext: null as EmailContactContext | null,
+    replyToEmail: null as string | null,
+    runtimeEditable: false,
+    previewToken: null as string | null,
   });
   const [pendingAssign, setPendingAssign] = useState<{
     itemType: 'REQUEST' | 'INVITATION';
@@ -286,18 +287,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     setPendingAssign({ ...p, itemType: 'REQUEST' });
     setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
     try {
-      // LOGISTICS_ASSIGNEE_ASSIGNMENT resolves DEPARTMENT_DEFAULT, so the department the Leader is
-      // assigning FROM is the scope. Its send declared no scope at all before this change, which is why
-      // the mail has been going out with no contact block despite an OPTIONAL policy asking for one.
-      const contactContext: EmailContactContext = {
-        templateCode: 'LOGISTICS_ASSIGNEE_ASSIGNMENT',
-        visitInstanceId: p.visitInstanceId != null ? Number(p.visitInstanceId) : null,
-        departmentId: user?.departmentId != null ? Number(user.departmentId) : null,
-      };
+      // The scope is what AssignRequestAssigneeCommandHandler rebuilds from its own arguments: the
+      // logistics item and the assignee. Anything else here would produce a token the send refuses.
       const res = await delegationsApi.previewEmailTemplate({
         // Exactly the five variables LOGISTICS_ASSIGNEE_ASSIGNMENT declares — the preview shares the
         // send's renderer, which refuses an undeclared or missing key.
-        templateCode: contactContext.templateCode,
+        templateCode: 'LOGISTICS_ASSIGNEE_ASSIGNMENT',
         context: {
           assigneeName: p.staffName,
           logisticsTitle: p.title ?? 'hạng mục hậu cần',
@@ -305,8 +300,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           campusName: p.campusName ?? 'FPT University',
           delegationName: p.delegationName ?? 'đoàn khách',
         },
-        visitInstanceId: contactContext.visitInstanceId,
-        departmentId: contactContext.departmentId,
+        visitInstanceId: p.visitInstanceId != null ? Number(p.visitInstanceId) : null,
+        departmentId: user?.departmentId != null ? Number(user.departmentId) : null,
+        scopeKey: logisticsAssigneeScopeKey(Number(p.logisticsItemId), Number(p.staffId)),
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
@@ -314,8 +310,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
-        contact: res.contact ?? null,
-        contactContext,
+        replyToEmail: res.replyToEmail ?? null,
+        runtimeEditable: !!res.runtimeEditable,
+        previewToken: res.previewToken ?? null,
       }));
     } catch (e: any) {
       setAssignPreview((s) => ({ ...s, open: true, loading: false, error: e?.response?.data?.message || e?.message || 'Không thể tải bản xem trước email.' }));
@@ -330,13 +327,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       // screen previewed VISIT_PARTICIPANT_INVITATION instead: different wording, different variables,
       // so the Leader approved and edited a message no recipient was ever going to receive. The two
       // templates happen to share a contact policy, which is why nothing else caught it.
-      const contactContext: EmailContactContext = {
-        templateCode: 'VISIT_DEPARTMENT_STAFF_ASSIGNMENT',
-        visitInstanceId: p.visitInstanceId != null ? Number(p.visitInstanceId) : null,
-      };
       const res = await delegationsApi.previewEmailTemplate({
         // Exactly the five variables VISIT_DEPARTMENT_STAFF_ASSIGNMENT declares.
-        templateCode: contactContext.templateCode,
+        templateCode: 'VISIT_DEPARTMENT_STAFF_ASSIGNMENT',
         context: {
           recipientName: p.staffName,
           delegationName: p.delegationName ?? p.title ?? 'đoàn khách',
@@ -344,7 +337,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           plannedTime: p.plannedTime ?? 'Chưa có thông tin',
           departmentName: p.departmentName ?? user?.departmentName ?? 'Phòng ban phụ trách',
         },
-        visitInstanceId: contactContext.visitInstanceId,
+        visitInstanceId: p.visitInstanceId != null ? Number(p.visitInstanceId) : null,
+        scopeKey: participantScopeKey(
+          p.visitInstanceId != null ? Number(p.visitInstanceId) : null, Number(p.staffId)),
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
@@ -352,8 +347,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
-        contact: res.contact ?? null,
-        contactContext,
+        replyToEmail: res.replyToEmail ?? null,
+        runtimeEditable: !!res.runtimeEditable,
+        previewToken: res.previewToken ?? null,
       }));
     } catch (e: any) {
       setAssignPreview((s) => ({ ...s, open: true, loading: false, error: e?.response?.data?.message || e?.message || 'Không thể tải bản xem trước email.' }));
@@ -387,26 +383,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
   const confirmLogisticsAssign = async (payload: EmailPreviewSendPayload) => {
     if (!pendingAssign) return;
-    if (!payload.subject.trim()) { toast.error('Tiêu đề email không được để trống.'); return; }
-    if (!payload.bodyHtml.trim()) { toast.error('Nội dung email không được để trống.'); return; }
     setAssignPreview((s) => ({ ...s, sending: true }));
     try {
-      const emailOverride = {
-        useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml,
-        attachments: payload.attachments,
-        contactOverride: payload.contactOverride ?? null,
-      };
+      // Absent when the Leader sent the preview unchanged — the backend renders the template then.
+      const approvedContent = payload.approvedContent;
       if (pendingAssign.itemType === 'INVITATION') {
         await delegationsApi.visitInvitations.assignDepartmentStaff(
           pendingAssign.participantId!,
           Number(pendingAssign.staffId),
           '',
-          emailOverride,
+          approvedContent,
         );
       } else {
         await departmentReceptionTasksApi.assignAssignee(
           pendingAssign.logisticsItemId!, pendingAssign.staffId,
-          emailOverride,
+          approvedContent,
         );
       }
       toast.success('Đã phân công người phụ trách và gửi email.');
@@ -4240,8 +4231,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           isActionTemplate={assignPreview.isActionTemplate}
           systemActionDescription={assignPreview.systemActionDescription}
           lockedActionBlockHtml={assignPreview.lockedActionBlockHtml}
-          contactContext={assignPreview.contactContext}
-          contact={assignPreview.contact}
+          replyToEmail={assignPreview.replyToEmail}
+          runtimeEditable={assignPreview.runtimeEditable}
+          previewToken={assignPreview.previewToken}
           canSend
           sendLabel="Gán với nội dung này"
           pushToast={(type, msg) => { if (type === 'error') toast.error(msg); else if (type === 'success') toast.success(msg); else toast(msg); }}

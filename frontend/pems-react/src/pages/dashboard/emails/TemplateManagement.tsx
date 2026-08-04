@@ -4,24 +4,12 @@ import { emailsApi } from '../../../features/emails/api/emailsApi';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
-import {
-  ContactSettingsPanel,
-  toContactPayload,
-} from '../../../features/emails/components/ContactSettingsPanel';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
-import {
-  containsContactInformationBlock,
-  removeContactInformationBlock,
-} from '../../../features/emails/utils/contactBlock';
-import type {
-  EmailContactSettings,
-  EmailContactSettingsPayload,
-} from '../../../features/emails/api/emailsApi';
 import {
   TEMPLATE_ERROR_CODES,
   applySamples,
   applySystemBlocks,
-  contactSupportedOf,
+  isSenderVariable,
   describeSystemBlocks,
   errorCodeOf,
   issuesFromError,
@@ -60,21 +48,12 @@ interface TemplateForm {
   /** Whether PEMS ships a default for this code — decides whether restore is offered at all. */
   hasShippedDefault: boolean;
   updatedAt: string | null;
-  /**
-   * The contact configuration, as one more group of fields in the SAME form.
-   *
-   * Null means one of two different things and the screen tells them apart elsewhere: the card has not
-   * finished loading, or this template has no configuration at all. Neither is dirty, because the
-   * baseline is null in both cases too.
-   */
-  contactSettings: EmailContactSettingsPayload | null;
 }
 
 const EMPTY_FORM: TemplateForm = {
   templateCode: '', name: '', description: '',
   subjectVi: '', bodyVi: '', subjectEn: '', bodyEn: '',
   status: 'ACTIVE', revision: null, hasShippedDefault: false, updatedAt: null,
-  contactSettings: null,
 };
 
 /** Matches the `description` column and `UpdateEmailTemplateCommandValidator.DescriptionMaxLength`. */
@@ -107,12 +86,6 @@ type BodyField = (typeof BODY_FIELDS)[number];
 
 const isBodyField = (field: string): field is BodyField =>
   field === 'bodyVi' || field === 'bodyEn';
-
-/** The two content fields each language tab owns. Used to attribute an issue to a TAB, not just a field. */
-const LANGUAGE_FIELDS: Record<EditorLanguage, { subject: TemplateContentField; body: TemplateContentField }> = {
-  VI: { subject: 'subjectVi', body: 'bodyVi' },
-  EN: { subject: 'subjectEn', body: 'bodyEn' },
-};
 
 const LANGUAGE_LABELS: Record<EditorLanguage, string> = { VI: 'Tiếng Việt', EN: 'English' };
 
@@ -188,9 +161,11 @@ const normalizeField = (field: (typeof CONTENT_FIELDS)[number], value: string) =
  * and LF are the same body, and an empty Quill document is the same as an empty stored one. Comparing
  * raw values would leave the screen claiming unsaved work the moment a template was opened.
  */
+// The snapshot is content only now. It used to carry the contact settings as a second half, because
+// one "có thay đổi chưa lưu" flag had to cover a form and a configuration card saved by the same
+// button. There is one kind of thing on this screen again.
 type EditorSnapshot = {
   content: ContentSnapshot;
-  contact: EmailContactSettingsPayload | null;
 };
 
 const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
@@ -201,17 +176,6 @@ const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
       acc[field] = normalizeField(field, content[field]);
       return acc;
     }, {} as ContentSnapshot),
-    contact: form.contactSettings
-      ? {
-          ...form.contactSettings,
-          // The headings are the only free text here, and the API trims them and treats '' as "inherit".
-          // Comparing untrimmed values would report a trailing space as an unsaved change that no save
-          // could ever clear, because the save would store the trimmed form and the next comparison would
-          // find them different again.
-          headingVi: normalizeText(form.contactSettings.headingVi),
-          headingEn: normalizeText(form.contactSettings.headingEn),
-        }
-      : null,
   };
 };
 
@@ -222,15 +186,8 @@ const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
  * well as values — so a payload rebuilt from a server response with its properties in a different order
  * would read as an edit. The fields are enumerated instead.
  */
-const sameSnapshot = (a: EditorSnapshot, b: EditorSnapshot): boolean => {
-  if (CONTENT_FIELDS.some(field => a.content[field] !== b.content[field])) return false;
-
-  if (a.contact === null || b.contact === null) return a.contact === b.contact;
-
-  const keys = Object.keys(a.contact) as (keyof EmailContactSettingsPayload)[];
-  return keys.length === Object.keys(b.contact).length
-    && keys.every(key => a.contact![key] === b.contact![key]);
-};
+const sameSnapshot = (a: EditorSnapshot, b: EditorSnapshot): boolean =>
+  CONTENT_FIELDS.every(field => a.content[field] === b.content[field]);
 
 /**
  * The system email template catalog (UC-42/43/44).
@@ -319,9 +276,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * nothing (NONE, or both channels hidden), which the preview shows as the block simply not being
    * there. Owned here rather than inside the panel because the pane that displays it is up here.
    */
-  const [contactBlockPreview, setContactBlockPreview] = useState('');
   /**
-   * The whole template as it is STORED — content and contact settings together — so "có thay đổi chưa
+   * The whole template as it is STORED — so "có thay đổi chưa
    * lưu" is a fact rather than "the operator typed something". Re-baselined after every successful save
    * and restore; leaving the old baseline would keep the warning on screen after the work had been saved,
    * which teaches operators to ignore it.
@@ -393,14 +349,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    */
   const localIssues = useMemo<TemplateContentIssue[]>(() => {
     if (contract.status !== 'ready') return [];
-    // The DRAFT level, not the one the contract was fetched with. Switching "Mức hiển thị" has to change
-    // what counts as valid content immediately — otherwise choosing "Không hiển thị" would raise no error
-    // until after a round trip, and choosing "Bắt buộc" back again would leave one on screen that no
-    // longer applies.
-    return validateContent(contract.contract, contentByField, {
-      contactRequirement: formData.contactSettings?.requirement ?? null,
-    });
-  }, [contract, contentByField, formData.contactSettings?.requirement]);
+    return validateContent(contract.contract, contentByField);
+  }, [contract, contentByField]);
 
   const issues = useMemo(
     () => [...localIssues, ...serverIssues],
@@ -588,10 +538,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         revision: typeof t.revision === 'number' ? t.revision : null,
         hasShippedDefault: t.hasShippedDefault === true,
         updatedAt: t.updatedAt ?? t.createdAt ?? null,
-        // Filled in by the contact card's own request, which seeds form and baseline together through
-        // `handleContactLoaded`. Null until then, and null in the baseline too, so the window before it
-        // arrives is not reported as an unsaved change.
-        contactSettings: null,
       };
       setFormData(loaded);
       setBaseline(loaded);
@@ -659,10 +605,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         subjectEn: formData.subjectEn || null,
         bodyEn: formData.bodyEn || null,
         expectedRevision: formData.revision,
-        // Omitted, not sent as an empty object, when this template has no configuration. The API treats
-        // a missing object as "leave the policy alone", which is exactly right on a template that has
-        // none — and quite different from an object full of defaults, which would write one.
-        contactSettings: formData.contactSettings,
       });
 
       // Re-seeded from the STORED snapshot rather than from what was typed. The two are not always the
@@ -679,9 +621,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         bodyVi: res.data?.bodyVi ?? '',
         subjectEn: res.data?.subjectEn ?? '',
         bodyEn: res.data?.bodyEn ?? '',
-        contactSettings: res.data?.contactSettings
-          ? toContactPayload(res.data.contactSettings)
-          : formData.contactSettings,
       };
 
       setFormData(saved);
@@ -723,36 +662,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           ?? 'Mẫu này đã được người khác cập nhật. Vui lòng mở lại để xem nội dung mới nhất.');
         return;
 
-      case TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden:
-        // Reported as a field issue as well as a toast, so the "Xóa khối khỏi nội dung" action appears
-        // next to the content it is about instead of only as a message that disappears.
-        setServerIssues([{
-          field: containsContactInformationBlock(formData.bodyVi) ? 'bodyVi' : 'bodyEn',
-          code,
-          variableName: 'contactInformationBlock',
-          messageVi: serverMessage
-            ?? 'Không thể lưu mẫu vì mức hiển thị là “Không hiển thị” nhưng nội dung vẫn chứa khối thông '
-              + 'tin liên hệ.',
-          messageEn: 'The content still carries the contact block while the level is hidden.',
-          severity: 'ERROR',
-        }]);
-        pushToast('error', 'Nội dung vẫn còn khối thông tin liên hệ trong khi mức hiển thị là “Không hiển thị”.');
-        return;
-
-      case TEMPLATE_ERROR_CODES.requiredContactBlockMissing:
-        pushToast('error', serverMessage
-          ?? 'Mức hiển thị đang là “Bắt buộc” nhưng nội dung chưa có khối thông tin liên hệ.');
-        return;
-
-      case TEMPLATE_ERROR_CODES.contactNotSupported:
-        pushToast('error', serverMessage
-          ?? 'Mẫu này không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để lưu.');
-        return;
-
-      case TEMPLATE_ERROR_CODES.contactConfigurationInvalid:
-        pushToast('error', serverMessage ?? 'Cấu hình thông tin liên hệ chưa hợp lệ.');
-        return;
-
       case TEMPLATE_ERROR_CODES.defaultUnavailable:
         pushToast('error', 'Mẫu này không có nội dung mặc định để phục hồi.');
         return;
@@ -773,8 +682,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const handleRestoreDefault = () => {
     if (!editingId || formData.revision === null) return;
 
-    const restoresContact = contract.status === 'ready' && contactSupportedOf(contract.contract);
-
     setConfirmState({
       isOpen: true,
       title: 'Khôi phục toàn bộ mẫu?',
@@ -788,9 +695,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         '• Tên và mô tả mẫu\n' +
         '• Tiêu đề và nội dung tiếng Việt\n' +
         '• Tiêu đề và nội dung tiếng Anh\n' +
-        (restoresContact
-          ? '• Cấu hình thông tin liên hệ và Reply-To\n'
-          : '• (Mẫu này không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để khôi phục)\n') +
         '\nCác tùy chỉnh hiện tại sẽ bị thay thế (vẫn được ghi lại trong lịch sử thao tác).\n\n' +
         'Mã mẫu, phân loại và trạng thái không thay đổi.',
       confirmText: 'Khôi phục mặc định',
@@ -824,17 +728,10 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         updatedAt: t?.updatedAt ?? formData.updatedAt,
         // Falls back to what is on screen rather than to null when the response omits the settings.
         // On a template with no configuration that IS null already, so the two agree; but an API built
-        // before the combined restore answers without the field, and reading that as "there is no
-        // configuration" would blank a card that has one — leaving the panel with a loaded template and
-        // no value, which it can only render as a failure.
-        contactSettings: t?.contactSettings
-          ? toContactPayload(t.contactSettings)
-          : formData.contactSettings,
       };
 
       setFormData(restored);
-      // The restore WROTE all of this, so nothing is unsaved. Both halves move together because both
-      // halves were replaced in one transaction.
+      // The restore WROTE all of this, so nothing is unsaved.
       setBaseline(restored);
       // The bodies changed, so the editors will re-serialise them — and that re-serialisation is
       // hydration, not an edit. Without this the screen would report unsaved changes immediately after a
@@ -857,113 +754,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     }
   };
 
-  /**
-   * The contact card has loaded (or reloaded) this template's stored settings.
-   *
-   * Form AND baseline are seeded in the same step. Setting only the form would make the card's own
-   * arrival look like an edit the operator had made, and the screen would announce unsaved changes on a
-   * template nobody had touched — the same defect the rich-text editor's first change event used to cause.
-   */
-  const handleContactLoaded = useCallback((settings: EmailContactSettings) => {
-    const payload = toContactPayload(settings);
-
-    setFormData(prev => {
-      const next = { ...prev, contactSettings: payload };
-      baselineRef.current = {
-        ...baselineRef.current,
-        contact: normalizeEditorSnapshot(next).contact,
-      };
-      return next;
-    });
-    setBaselineVersion(v => v + 1);
-  }, []);
-
-  /** One field on the contact card changed. Merged into the one form; the one dirty flag re-derives. */
-  const handleContactChange = useCallback((next: EmailContactSettingsPayload) => {
-    setFormData(prev => ({ ...prev, contactSettings: next }));
-  }, []);
-
-  /**
-   * Deletes the contact block from BOTH bodies, at the operator's request.
-   *
-   * Both, always: a policy is one setting for the whole template, so removing the block from Vietnamese
-   * and leaving it in English produces a template that is still refused, having already asked the
-   * operator to fix it once. The level is left exactly as it is — a template at "Bắt buộc" that has just
-   * lost its block moves from one error to another, which is correct and is what the validator then says.
-   *
-   * Nothing is saved. This is an edit like any other: it marks the form dirty and waits for "Lưu thay đổi".
-   */
-  const removeContactBlockFromContent = useCallback(() => {
-    markBodyEdited('bodyVi');
-    markBodyEdited('bodyEn');
-
-    setFormData(prev => ({
-      ...prev,
-      bodyVi: removeContactInformationBlock(prev.bodyVi),
-      bodyEn: removeContactInformationBlock(prev.bodyEn),
-    }));
-
-    // The server's refusal was about content that no longer exists; leaving it on screen would report a
-    // problem the operator has just fixed.
-    setServerIssues(prev => prev.filter(i => i.variableName !== 'contactInformationBlock'));
-  }, []);
-
-  /**
-   * "Không hiển thị" was chosen on the contact card.
-   *
-   * Applied straight away when neither body carries the block — there is nothing to decide. When one
-   * does, the operator is asked, because the two ways out are not equivalent and neither is ours to pick:
-   * removing the block is an edit to text they wrote, and keeping the level is a decision about what the
-   * mail says. Silently deleting from the bodies would be an edit they never made and cannot see; silently
-   * setting the level and leaving the block would produce a template that cannot be saved, with no
-   * explanation of why.
-   */
-  const handleRequestHideContact = useCallback(() => {
-    const setLevelToNone = () =>
-      setFormData(prev => (prev.contactSettings
-        ? { ...prev, contactSettings: { ...prev.contactSettings, requirement: 'NONE' } }
-        : prev));
-
-    const viHasBlock = containsContactInformationBlock(formData.bodyVi);
-    const enHasBlock = containsContactInformationBlock(formData.bodyEn);
-
-    if (!viHasBlock && !enHasBlock) {
-      setLevelToNone();
-      return;
-    }
-
-    setConfirmState({
-      isOpen: true,
-      title: 'Nội dung đang có khối thông tin liên hệ',
-      variant: 'warning',
-      message:
-        'Nội dung hiện có khối {{contactInformationBlock}}'
-        + (viHasBlock && enHasBlock
-          ? ' ở cả tiếng Việt và tiếng Anh'
-          : viHasBlock ? ' ở nội dung tiếng Việt' : ' ở nội dung tiếng Anh')
-        + '.\n\n'
-        + 'Chuyển sang “Không hiển thị” yêu cầu xóa khối này khỏi cả nội dung tiếng Việt và tiếng Anh.',
-      confirmText: 'Xóa khối và chuyển sang Không hiển thị',
-      cancelText: 'Giữ cấu hình hiện tại',
-      onConfirm: () => {
-        setConfirmState(prev => ({ ...prev, isOpen: false }));
-        // Both, in one state update, so the form never passes through a state where the level says NONE
-        // and the bodies still have the block — which the validator would flag for one render.
-        markBodyEdited('bodyVi');
-        markBodyEdited('bodyEn');
-        setFormData(prev => ({
-          ...prev,
-          bodyVi: removeContactInformationBlock(prev.bodyVi),
-          bodyEn: removeContactInformationBlock(prev.bodyEn),
-          contactSettings: prev.contactSettings
-            ? { ...prev.contactSettings, requirement: 'NONE' }
-            : prev.contactSettings,
-        }));
-        setServerIssues(prev => prev.filter(i => i.variableName !== 'contactInformationBlock'));
-      },
-    });
-  }, [formData.bodyVi, formData.bodyEn]);
-
   const closeEditor = () => {
     setShowForm(false);
     setFormData(EMPTY_FORM);
@@ -971,7 +761,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     setEditingId(null);
     setServerIssues([]);
     setContract({ status: 'idle' });
-    setContactBlockPreview('');
   };
 
   /**
@@ -1258,20 +1047,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   /**
    * The repair offered next to one issue, or none.
    *
-   * The two block problems get different buttons because they are different problems. A block that can
-   * never live on this template is deleted from the field it was written into. A block that is legal but
-   * currently hidden has to go from BOTH bodies — the level is one setting for the whole template, so
-   * clearing one language leaves a template that is still refused.
+   * A block that can never live on this template is deleted from the field it was written into.
    */
   const issueAction = (field: TemplateContentField, issue: TemplateContentIssue) => {
-    if (issue.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden) {
-      return {
-        label: 'Xóa khối khỏi nội dung',
-        testId: 'remove-contact-block',
-        onClick: removeContactBlockFromContent,
-      };
-    }
-
     if (issue.code === TEMPLATE_ERROR_CODES.systemBlockNotAllowed && issue.variableName) {
       return {
         label: 'Xóa khối không hợp lệ',
@@ -1297,40 +1075,22 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       ? applySystemBlocks(
           ready,
           applySamples(ready, formData[bodyField]),
-          contactBlockPreview ? { contactInformationBlock: contactBlockPreview } : {},
         )
       : formData[bodyField];
     const visibleVariables = (ready?.variables ?? []).filter(v =>
       v.label.toLowerCase().includes(varSearch.toLowerCase()) ||
       v.name.toLowerCase().includes(varSearch.toLowerCase()));
 
+    // The sender group is listed last and under its own heading — see the picker below. Derived from the
+    // NAME rather than from the contract's `senderVariables` list so the search filter above applies to
+    // both groups identically; the two agree by construction, because the backend builds that list from
+    // the same six names.
+    const senderVariables = visibleVariables.filter(v => isSenderVariable(v.name));
+    const businessVariables = visibleVariables.filter(v => !isSenderVariable(v.name));
+
     // One entry per block, one description each. See `describeSystemBlocks`.
     const systemBlockNotices = ready ? describeSystemBlocks(ready) : [];
 
-    // Whether card 4 has anything to configure. Read from the contract rather than from the settings
-    // response so the card's own request is not what decides whether the card is shown — the two agree,
-    // and the contract is the one the editor already has when it renders.
-    const contactSupported = ready ? contactSupportedOf(ready) : true;
-
-    /**
-     * The one problem that belongs to the contact card AND to the body at the same time: content still
-     * carrying the block while the level says it is hidden.
-     *
-     * Rendered in both places on purpose. Under the body it says which text is at fault; on the card it
-     * sits next to the radio that made it a fault, which is the other half of the repair. Only the first
-     * such issue is passed up — the two languages produce two issues, and the action clears both, so
-     * showing the card two identical refusals would say nothing the first does not.
-     */
-    const conflictIssue = issues.find(
-      i => i.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
-
-    const contactBlockConflict = conflictIssue
-      ? {
-          message: conflictIssue.messageVi,
-          actionLabel: 'Xóa khối khỏi nội dung',
-          onAction: removeContactBlockFromContent,
-        }
-      : null;
 
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -1648,112 +1408,59 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       {visibleVariables.length === 0 && (
                         <div className="text-xs text-gray-400 italic">Không tìm thấy biến</div>
                       )}
-                      <div className="flex flex-wrap gap-1.5">
-                        {visibleVariables.map(v => (
-                          <button
-                            key={v.name}
-                            type="button"
-                            onClick={() => insertVariable(v.name)}
-                            className="inline-flex items-center gap-1 bg-white border border-[#004c91] text-[#004c91] hover:bg-[#004c91] hover:text-white transition-colors px-2 py-1 rounded text-[11px] font-bold outline-none"
-                            title={`{{${v.name}}} — Ví dụ: ${v.sample}${v.forbiddenInSubject ? ' (không được đặt trong tiêu đề)' : ''}`}
-                          >
-                            <Plus className="w-3 h-3" /> {v.label}
-                            {v.required && <span className="text-[9px] font-normal opacity-70">bắt buộc</span>}
-                          </button>
-                        ))}
-                      </div>
+                      {/*
+                        Two groups, and the split is not cosmetic. The business variables are values the
+                        SEND supplies about the message — a delegation name, a time, a quantity. The
+                        sender group describes WHO the message is from, and an administrator reaches for
+                        it with a different question in mind: "how do I sign this off". Mixed into one
+                        alphabetical wall, {{senderPhone}} sat between {{quantity}} and {{roleLabel}} and
+                        was found only by searching for a name nobody had told them.
+
+                        The group is absent entirely on a NOT_AVAILABLE template — the backend sends no
+                        sender variables in the contract there — so the picker offers nothing the save
+                        would refuse.
+                      */}
+                      {[
+                        { key: 'business', title: null as string | null, items: businessVariables },
+                        { key: 'sender', title: 'Thông tin người gửi', items: senderVariables },
+                      ].filter(g => g.items.length > 0).map(group => (
+                        <div key={group.key} className="space-y-1.5">
+                          {group.title && (
+                            <div
+                              data-testid="sender-variable-group"
+                              className="pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400"
+                            >
+                              {group.title}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.items.map(v => (
+                              <button
+                                key={v.name}
+                                type="button"
+                                onClick={() => insertVariable(v.name)}
+                                className="inline-flex items-center gap-1 bg-white border border-[#004c91] text-[#004c91] hover:bg-[#004c91] hover:text-white transition-colors px-2 py-1 rounded text-[11px] font-bold outline-none"
+                                title={`{{${v.name}}} — Ví dụ: ${v.sample}${v.forbiddenInSubject ? ' (không được đặt trong tiêu đề)' : ''}`}
+                              >
+                                <Plus className="w-3 h-3" /> {v.label}
+                                {v.required && <span className="text-[9px] font-normal opacity-70">bắt buộc</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </>
                 )}
               </div>
 
               {/*
-                4. Contact settings. Still its own card, because it is a different KIND of decision from
-                the wording — one edits sentences, the other decides who the recipient is told to
-                contact — but no longer its own save: it is part of the same form, saved by the same
-                button, in one transaction. Two buttons meant an operator could change both and save one.
-
-                This screen is HO-only (EmailManagement renders it only for HO) and the API enforces that
-                independently, so passing canEdit is presentation, not protection.
+                Card 4 was the contact configuration: who the recipient should be told to contact, at
+                which level, and which of their fields the block prints. It is gone with the feature.
+                There is nothing to configure any more — the sender is the account that presses send,
+                read from authentication — so what used to be a card of controls is now six ordinary
+                variables in the picker above, under "Thông tin người gửi".
               */}
-              {/* Withheld for a historical row: contact policy is keyed on a registered template code,
-                  so offering the panel here would present settings that resolve to nothing at send
-                  time — this template has no sender in any release. */}
-              {formData.templateCode && !isHistorical && (
-                <div className="bg-white p-5 rounded-lg border border-gray-200">
-                  <h3 className="font-bold text-[#004c91] mb-1 text-base border-b border-gray-200 pb-2">
-                    4. Cấu hình thông tin liên hệ
-                  </h3>
-                  {/* The lead-in describes a configuration, so it is withheld where there is none to
-                      make: on a template that cannot carry the block the card says why, and promising
-                      "quyết định người nhận nên liên hệ với ai" above that sentence would contradict it. */}
-                  {contactSupported && (
-                    <p className="text-[11px] text-gray-500 mb-3">
-                      Quyết định người nhận <span className="font-mono">{formData.templateCode}</span> nên
-                      liên hệ với ai, và email được hiển thị những gì về họ.
-                    </p>
-                  )}
-                  {/*
-                    Which languages satisfy the level, both at once.
-
-                    The level is ONE setting for the whole template but it is judged against TWO bodies,
-                    and that mismatch is what made the refusal invisible: the card showed "Bắt buộc" and
-                    the open tab showed a body with the block in it, so everything on screen agreed the
-                    template was fine. Listing both languages here states the thing the level actually
-                    depends on, next to the control that sets it.
-                  */}
-                  {contactSupported && formData.contactSettings && (
-                    <ul className="mb-3 space-y-1 text-[11px]" data-testid="contact-block-checklist">
-                      {(['VI', 'EN'] as EditorLanguage[]).map(lang => {
-                        const hasBlock = containsContactInformationBlock(formData[LANGUAGE_FIELDS[lang].body]);
-                        const requirement = formData.contactSettings!.requirement;
-                        // OPTIONAL is not a test — both answers are correct — so it is reported as a
-                        // fact rather than as a tick or a cross. Marking "no block" as a failure under a
-                        // level that permits it would be a warning nobody can act on.
-                        const neutral = requirement === 'OPTIONAL';
-                        const ok = requirement === 'NONE' ? !hasBlock : hasBlock;
-
-                        return (
-                          <li
-                            key={lang}
-                            data-testid={`contact-block-status-${lang}`}
-                            data-has-block={hasBlock}
-                            className={neutral ? 'text-gray-600' : ok ? 'text-emerald-700' : 'text-red-700'}
-                          >
-                            <span aria-hidden="true" className="font-bold">
-                              {neutral ? '•' : ok ? '✓' : '✕'}
-                            </span>{' '}
-                            {LANGUAGE_LABELS[lang]}{' '}
-                            {hasBlock ? 'đã có khối thông tin liên hệ' : 'chưa có khối thông tin liên hệ'}
-                            {!neutral && !ok && requirement === 'NONE' && ' — cần xóa khỏi nội dung'}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-
-                  <ContactSettingsPanel
-                    templateCode={formData.templateCode}
-                    canEdit
-                    /* Capability comes from the contract this editor already holds, so the card knows
-                       whether there is anything to configure without waiting for — or depending on —
-                       its own request. Two responses carry the same answer; the card must show the
-                       read-only reason if EITHER of them says the block cannot appear, never a form
-                       because one of them was silent about it. */
-                    contactSupported={ready ? contactSupported : undefined}
-                    contactReasonVi={ready?.contactReasonVi ?? undefined}
-                    language={language}
-                    value={formData.contactSettings}
-                    onChange={handleContactChange}
-                    onLoaded={handleContactLoaded}
-                    onRequestHide={handleRequestHideContact}
-                    onBlockPreviewChange={setContactBlockPreview}
-                    /* The contradiction is shown on the card as well as under the body field. The
-                       operator's next move is to change one of the two, and the level is here. */
-                    crossFieldError={contactBlockConflict}
-                  />
-                </div>
-              )}
             </aside>
           </div>
           {/*

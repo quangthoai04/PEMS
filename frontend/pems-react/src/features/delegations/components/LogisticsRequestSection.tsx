@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
-import type { EmailContactContext, EmailContactPreviewResult } from '../types/delegations.types';
+import { logisticsRequestScopeKey } from '../../emails/utils/emailScopeKey';
 import { stripLegacyActionHtml } from '../../emails/utils/actionLinks';
 import { SentEmailsModal } from './SentEmailsModal';
 import { SearchDropdown } from './ParticipantInvitationSection';
@@ -200,8 +200,9 @@ export function LogisticsRequestSection({
     recipient: null as EmailPreviewRecipient | null,
     // The reply contact this request will actually carry, resolved by the backend from THIS instance —
     // not the dashed "hệ thống sẽ điền" stand-in the preview used to draw into the editable body.
-    contact: null as EmailContactPreviewResult | null,
-    contactContext: null as EmailContactContext | null,
+    replyToEmail: null as string | null,
+    runtimeEditable: false,
+    previewToken: null as string | null,
   });
   const previewPayload = useRef<PrepareVisitLogisticsPayload | null>(null);
   const previewCtx = useRef<{ leaderName: string } | null>(null);
@@ -407,19 +408,17 @@ export function LogisticsRequestSection({
 
   const fetchPreview = async (payload: PrepareVisitLogisticsPayload, dept: SupportDepartment | null): Promise<boolean> => {
     try {
-      // The visit instance and the receiving department make this an OPERATIONAL preview: the backend
-      // resolves the real Host (HOST_THEN_SENDER for this template) instead of drawing a placeholder,
-      // and returns the block separately from the editable body.
-      const contactContext: EmailContactContext = {
-        templateCode: 'LOGISTICS_REQUEST_TO_DEPARTMENT',
-        visitInstanceId,
-        departmentId: dept ? Number(dept.departmentId) : Number(payload.departmentId),
-      };
+      // The instance and the receiving department are what the SEND will rebuild its scope from, so the
+      // same two ids go into the token here. A token prepared for one department is refused if the
+      // request is then sent to another.
+      const departmentId = dept ? Number(dept.departmentId) : Number(payload.departmentId);
+
       const res = await delegationsApi.previewEmailTemplate({
-        templateCode: contactContext.templateCode,
+        templateCode: 'LOGISTICS_REQUEST_TO_DEPARTMENT',
         context: ctxFor(payload, dept),
-        visitInstanceId: contactContext.visitInstanceId,
-        departmentId: contactContext.departmentId,
+        visitInstanceId,
+        departmentId,
+        scopeKey: logisticsRequestScopeKey(visitInstanceId, departmentId),
       });
       setPreview((p) => ({
         ...p, open: true, loading: false, restoring: false, error: null,
@@ -427,8 +426,9 @@ export function LogisticsRequestSection({
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
-        contact: res.contact ?? null,
-        contactContext,
+        replyToEmail: res.replyToEmail ?? null,
+        runtimeEditable: !!res.runtimeEditable,
+        previewToken: res.previewToken ?? null,
       }));
       return true;
     } catch (e: any) {
@@ -453,18 +453,12 @@ export function LogisticsRequestSection({
   const sendWithEditedContent = async (payload: EmailPreviewSendPayload) => {
     const pl = previewPayload.current;
     if (!pl) return;
-    if (!payload.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
-    if (!payload.bodyHtml.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
     setPreview((p) => ({ ...p, sending: true }));
     try {
+      // Absent when the Host sent the preview unchanged — the backend then renders the template.
       const res = await delegationsApi.prepareVisitLogistics({
         ...pl,
-        emailOverride: {
-          useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml,
-          attachments: payload.attachments,
-          // Structured only — the block's HTML never travels back, and the backend refuses it if it did.
-          contactOverride: payload.contactOverride ?? null,
-        },
+        approvedContent: payload.approvedContent,
       });
       setPreview((p) => ({ ...p, open: false, sending: false }));
       pushToast(res.emailStatus === 'FAILED' ? 'warning' : 'success', res.message || 'Đã gửi yêu cầu hậu cần.');
@@ -588,8 +582,9 @@ export function LogisticsRequestSection({
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}
         recipient={preview.recipient}
-        contactContext={preview.contactContext}
-        contact={preview.contact}
+        replyToEmail={preview.replyToEmail}
+        runtimeEditable={preview.runtimeEditable}
+        previewToken={preview.previewToken}
         canSend
         sendLabel="Gửi với nội dung này"
         pushToast={pushToast}
