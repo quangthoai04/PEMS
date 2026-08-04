@@ -19,12 +19,14 @@ namespace PEMS.Application.Common.Utils
             DateTime startAt,
             DateTime endAt,
             ulong? currentParticipantId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ulong? excludeCalendarEventId = null)
         {
             // 1. Personal calendar events in database
             bool personalConflict = await context.CalendarEvents.AsNoTracking().AnyAsync(e =>
                 e.OwnerUserId == targetUserId &&
                 e.Status == "ACTIVE" &&
+                (excludeCalendarEventId == null || e.CalendarEventId != excludeCalendarEventId.Value) &&
                 startAt < e.EndAt &&
                 endAt > e.StartAt, cancellationToken);
 
@@ -55,9 +57,10 @@ namespace PEMS.Application.Common.Utils
             DateTime endAt,
             ulong? currentLogisticsItemId,
             ulong? currentParticipantId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ulong? excludeCalendarEventId = null)
         {
-            return await HasInvitationConflictAsync(context, targetUserId, startAt, endAt, currentParticipantId, cancellationToken);
+            return await HasInvitationConflictAsync(context, targetUserId, startAt, endAt, currentParticipantId, cancellationToken, excludeCalendarEventId);
         }
     }
 }
