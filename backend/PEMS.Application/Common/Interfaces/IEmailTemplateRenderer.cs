@@ -32,23 +32,16 @@ public static class EmailTrustedBlocks
     /// </summary>
     public const string SetupSummaryBlock = "setupSummaryBlock";
 
-    /// <summary>
-    /// The reply-contact card: who to get in touch with, their business role, and their work email and
-    /// telephone number.
-    ///
-    /// <para>
-    /// A block rather than a set of variables for two reasons. It has to be a table to read properly in a
-    /// mail client, and a table cannot survive HTML-encoding. More importantly, it must not be possible
-    /// for an operator to type a name and an address into a template and present them as the Host's: the
-    /// policy lets them choose which FIELDS appear, while the values are read at send time from
-    /// <c>users</c>, <c>campuses</c> and <c>departments</c>. Configuring a block, never authoring one.
-    /// </para>
-    /// </summary>
-    public const string ContactInformationBlock = "contactInformationBlock";
+    // contactInformationBlock was here. It rendered a CONFIGURED THIRD PARTY — a Host, a campus mailbox,
+    // a colleague picked from a list — chosen by a four-level policy cascade and built as backend markup
+    // an operator could position but never author. It is gone, replaced by the six {{sender*}} variables,
+    // which say who the message is FROM. That is a different question with one answer, taken from
+    // authentication, so it needs no policy, no cascade and no block: ordinary variables compose into
+    // whatever layout an administrator writes, whereas a block could only ever be dropped somewhere.
 
     /// <summary>Every trusted block name — used by the contract test to exclude them from variable checks.</summary>
     public static readonly IReadOnlyList<string> All =
-        new[] { ActionBlock, SetupSummaryBlock, ContactInformationBlock };
+        new[] { ActionBlock, SetupSummaryBlock };
 }
 
 /// <summary>
@@ -79,42 +72,6 @@ public sealed record EmailRenderRequest(
     /// </summary>
     public PEMS.Application.Emails.Common.SystemEmailContent Content { get; init; }
         = PEMS.Application.Emails.Common.SystemEmailContent.FromTemplate.Instance;
-
-    /// <summary>
-    /// True when THIS send resolved a contact under a REQUIRED policy, so a body with nowhere to put the
-    /// card is unsendable rather than merely plainer.
-    ///
-    /// <para>
-    /// Stated by the caller rather than derived by the renderer, and that is the fix rather than an
-    /// implementation detail. The renderer used to answer the question from the SHIPPED policy, which
-    /// stopped being true the moment an operator lowered the level: the editor accepted a body without
-    /// the block — correctly, the stored policy said OPTIONAL — and every send was then refused citing a
-    /// requirement no screen still showed. It cannot be derived from "was a block passed in" either,
-    /// because the template PREVIEW hands one to every template it renders.
-    /// </para>
-    /// </summary>
-    public bool ContactBlockRequired { get; init; }
-
-    /// <summary>
-    /// True when THIS send resolved a policy of NONE, so a body that still carries
-    /// <c>{{contactInformationBlock}}</c> is a configuration fault rather than something to paper over.
-    ///
-    /// <para>
-    /// The other half of <see cref="ContactBlockRequired"/>, and it exists because the send path had no
-    /// honest behaviour without it. The dispatcher supplied the contact block as a trusted block
-    /// unconditionally — an empty string when the policy rendered nothing — so a body under a NONE policy
-    /// had its placeholder silently replaced with nothing and the mail went out looking correct. The
-    /// operator who had switched the block off got the outcome they wanted by accident, and the one who
-    /// switched it off by mistake had no way to find out that a body still asked for a card.
-    /// </para>
-    /// <para>
-    /// Not the same as "the block was not supplied". A template under an OPTIONAL policy that resolves no
-    /// contact ALSO renders nothing, and that is correct and must keep working: the words never promised a
-    /// contact, so a mail without one is still true. Only NONE — an explicit decision that this template
-    /// shows no block — makes the placeholder's presence a contradiction.
-    /// </para>
-    /// </summary>
-    public bool ContactBlockForbidden { get; init; }
 }
 
 /// <summary>

@@ -52,6 +52,7 @@ public sealed class InviteVisitParticipantCommandHandler
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
     private readonly PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService _formReadService;
     private readonly IUserMutationLockService _lockService;
+    private readonly PEMS.Application.Emails.Preview.IApprovedEmailContentResolver _approvedContent;
 
     public InviteVisitParticipantCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
@@ -59,8 +60,10 @@ public sealed class InviteVisitParticipantCommandHandler
         IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
         PEMS.Application.Notifications.Common.INotificationService notificationService,
         PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService formReadService,
-        IUserMutationLockService lockService)
+        IUserMutationLockService lockService,
+        PEMS.Application.Emails.Preview.IApprovedEmailContentResolver approvedContent)
     {
+        _approvedContent = approvedContent;
         _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
@@ -130,19 +133,30 @@ public sealed class InviteVisitParticipantCommandHandler
 
         var now = _clock.VietnamNow;
 
-        // ── The optional host-edited email content + attachments (Part C / rich editor) ──
-        // Validation and sanitising happen inside AuthoredByUser.Create — an unchecked instance of that
-        // type cannot exist — so a rejected edit throws here, before anything is written or sent.
-        var content = await ResolveContentAsync(request.EmailOverride, cancellationToken);
-        var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
-        await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
-
-        // Which template this message is. The invitee's role decides it; the Host never picks.
+        // Which template this message is. The invitee's role decides it; the Host never picks. Resolved
+        // BEFORE the content, because verifying an approved edit needs to know which template — and which
+        // revision of it — the Host was looking at.
         var templateCode = participantRole == ParticipantRoles.DeptSupport
             ? SystemEmailTemplates.VisitDepartmentLeaderInvitation
             : participantRole == ParticipantRoles.Student
                 ? SystemEmailTemplates.VisitStudentInvitation
                 : SystemEmailTemplates.VisitParticipantInvitation;
+
+        // ── The optional host-edited email content + attachments ──
+        // Token verified, actor checked, template revision compared, content re-hashed and sanitised. A
+        // rejected edit throws here, before anything is written or sent.
+        //
+        // The scope is built from the ids THIS handler resolved, not from anything in the request body:
+        // an approval prepared for one invitee cannot be replayed to send the same wording to another.
+        var scopeKey = PEMS.Application.Emails.Preview.EmailPreviewFingerprint.Scope(
+            ("visitInstance", instance.VisitInstanceId),
+            ("participant", targetUserId));
+
+        var content = await _approvedContent.ResolveAsync(
+            request.ApprovedContent, templateCode, scopeKey, cancellationToken);
+
+        var attachInputs = _approvedContent.AttachmentsOf(request.ApprovedContent);
+        await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
         VisitParticipant participant;
         PreparedSystemEmail prepared;
@@ -235,14 +249,6 @@ public sealed class InviteVisitParticipantCommandHandler
                     SentBy: actorId)
                 {
                     Content = content,
-                    // The invitation already names the Host; the scope is what lets the dispatcher print a
-                    // way to reach them. Scoped to THIS instance, so a multi-campus request never hands an
-                    // invitee another campus's Host.
-                    ContactScope = new EmailContactScope(
-                        VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
-                    // …and whoever the Host named instead, for this invitation only. Re-checked against
-                    // the database here; the preview that produced it granted nothing.
-                    ContactOverride = request.EmailOverride?.ContactOverride,
                 },
                 cancellationToken);
 
@@ -329,22 +335,6 @@ public sealed class InviteVisitParticipantCommandHandler
             emailQueued, recipient.Email, message, status, prepared.SentEmailId);
     }
 
-    /// <summary>
-    /// Turns the optional host edit into a content mode. No override, or an override the Host left
-    /// switched off, means the template is the content — which is the normal case and the only case
-    /// before this screen let anyone edit anything.
-    /// </summary>
-    private async Task<SystemEmailContent> ResolveContentAsync(EmailOverride? ov, CancellationToken ct)
-    {
-        if (ov is null || !ov.UseEditedContent) return SystemEmailContent.FromTemplate.Instance;
-
-        // Prefer the host-edited plain text (bodyText) → safe HTML; fall back to legacy bodyHtml. Inline
-        // images are normalised BEFORE the content is fixed, because the normaliser exists for images the
-        // Host pasted — the template body has none.
-        var rawHtml = await _normalizer.NormalizeHtmlAsync(EmailComposition.ResolveEditableHtml(ov), ct);
-
-        return SystemEmailContent.AuthoredByUser.Create(ov.Subject, rawHtml, _sanitizer);
-    }
 
     /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
     private void AttachTo(ulong sentEmailId, IReadOnlyList<EmailComposeAttachmentInput> inputs, DateTime now)

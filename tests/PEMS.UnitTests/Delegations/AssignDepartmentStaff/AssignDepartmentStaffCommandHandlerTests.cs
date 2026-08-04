@@ -3,6 +3,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 using PEMS.Domain.Constants;
 using PEMS.UnitTests.TestInfrastructure;
 
@@ -104,14 +105,15 @@ public class AssignDepartmentStaffCommandHandlerTests
         var locks = new RecordingLockService();
         var handler = new AssignDepartmentStaffCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, formRead.Object, locks);
+            mocks.Storage.Object, formRead.Object, locks,
+            new StubApprovedEmailContentResolver(mocks.Sanitizer.Object));
 
         return (db, handler, user, mocks, dispatcher, locks);
     }
 
     private static AssignDepartmentStaffCommand Command(
-        ulong staffUserId = StaffId, EmailOverride? emailOverride = null)
-        => new(LeaderParticipantId, staffUserId, "Nhờ em hỗ trợ", emailOverride);
+        ulong staffUserId = StaffId, ApprovedEmailContent? approvedContent = null)
+        => new(LeaderParticipantId, staffUserId, "Nhờ em hỗ trợ", approvedContent);
 
     // ── The message is an assignment, and says which department assigned it ──
 
@@ -194,8 +196,8 @@ public class AssignDepartmentStaffCommandHandlerTests
         var (_, handler, _, _, dispatcher, _locks) = CreateSut();
 
         await handler.Handle(
-            Command(emailOverride: new EmailOverride(
-                UseEditedContent: true,
+            Command(approvedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
                 Subject: "Em hỗ trợ đoàn Kyoto giúp anh nhé",
                 BodyHtml: "<p>Em phụ trách phần đón tiếp buổi sáng.</p>")),
             default);
@@ -218,8 +220,8 @@ public class AssignDepartmentStaffCommandHandlerTests
         var (db, handler, _, _, _, _locks) = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
-            Command(emailOverride: new EmailOverride(
-                UseEditedContent: true,
+            Command(approvedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
                 Subject: "Nhờ em",
                 BodyHtml: "<p>Bấm đây</p><!-- PEMS_ACTION_BLOCK_START --><p>giả</p><!-- PEMS_ACTION_BLOCK_END -->")),
             default));
@@ -237,8 +239,9 @@ public class AssignDepartmentStaffCommandHandlerTests
         var (db, handler, _, _, _, _locks) = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
-            Command(emailOverride: new EmailOverride(
-                UseEditedContent: true, Subject: "   ", BodyHtml: "<p>Nội dung</p>")),
+            Command(approvedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
+                Subject: "   ", BodyHtml: "<p>Nội dung</p>")),
             default));
 
         Assert.Equal(EmailErrorCodes.AuthoredSubjectRequired, ex.ErrorCode);

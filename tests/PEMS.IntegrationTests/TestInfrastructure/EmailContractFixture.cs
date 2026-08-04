@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
-using PEMS.Application.Emails.Contact;
 using PEMS.Infrastructure.Persistence;
 
 namespace PEMS.IntegrationTests.TestInfrastructure;
@@ -77,20 +76,11 @@ public static class EmailContractFixture
             ? new Dictionary<string, string>(System.StringComparer.Ordinal)
             : new Dictionary<string, string>(existing, System.StringComparer.Ordinal);
 
-        var needsContact = false;
-        foreach (var (block, _) in EmailTemplateContracts.RequiredBlocksFor(templateCode))
-            if (block == EmailTrustedBlocks.ContactInformationBlock) needsContact = true;
-
-        if (!needsContact || blocks.ContainsKey(EmailTrustedBlocks.ContactInformationBlock))
-            return blocks;
-
-        var resolution = await EmailEvidenceHarness.Contacts(db).ResolveAsync(
-            new EmailContactRequest(templateCode, language, visitInstanceId, campusId, departmentId, senderUserId),
-            cancellationToken);
-
-        if (resolution is not null)
-            blocks[EmailTrustedBlocks.ContactInformationBlock] = resolution.BlockHtml;
-
+        // There is nothing left to top up. This used to resolve the contact block for any template
+        // whose policy required one, because the block was markup a caller had to supply and a send
+        // without it failed closed. Sender information is ordinary variables, merged by the dispatcher,
+        // so a caller supplies exactly the blocks it builds itself.
+        await Task.CompletedTask;
         return blocks;
     }
 }

@@ -72,11 +72,6 @@ public sealed class EmailTemplateContractDto
     /// would be a second implementation that starts correct and drifts — and the operator would have no
     /// way to know which of the two the recipient gets. Every URL is <c>#</c>: a preview mints no tokens.
     /// </para>
-    /// <para>
-    /// <c>contactInformationBlock</c> is NOT here. Its appearance depends on the contact policy the
-    /// operator is editing, including unsaved toggles, so it is fetched from the contact-block preview
-    /// endpoint whenever that draft changes.
-    /// </para>
     /// </summary>
     public IReadOnlyDictionary<string, string> SystemBlockPreviews { get; set; } =
         new Dictionary<string, string>();
@@ -92,44 +87,39 @@ public sealed class EmailTemplateContractDto
     public string? SystemActionDescription { get; set; }
 
     /// <summary>
-    /// Whether this template may carry <c>{{contactInformationBlock}}</c> AT ALL.
+    /// One of NOT_AVAILABLE / AVAILABLE_READ_ONLY_RUNTIME / AVAILABLE_EDITABLE_RUNTIME.
     ///
     /// <para>
-    /// Not the same question as "does it show one today", which is the contact POLICY and moves between
-    /// NONE, OPTIONAL and REQUIRED under the operator's hand. This one is fixed by what the message is:
-    /// false on mail whose content is a one-time credential, and on mail addressed to the very person the
-    /// block would name. The screen shows the reason instead of the settings form when it is false.
+    /// This replaces the four contact fields the DTO used to carry (supported / required / requirement /
+    /// settings-editable). Those described a CONFIGURATION an operator moved between three levels, and the
+    /// screen needed all four to work out which of the resulting states it was in. There is no
+    /// configuration here: the capability is fixed by what the message is and how it is sent, so one value
+    /// answers every question the screen has.
     /// </para>
     /// </summary>
-    public bool ContactSupported { get; set; }
-
-    /// <summary>True when the EFFECTIVE policy is REQUIRED, so the body may not drop the block.</summary>
-    public bool ContactRequired { get; set; }
+    public string SenderVariableCapability { get; set; } = string.Empty;
 
     /// <summary>
-    /// The effective display level in full — NONE / OPTIONAL / REQUIRED.
-    ///
-    /// <para>
-    /// <see cref="ContactRequired"/> alone cannot express the rule that matters at the other end of the
-    /// range: under OPTIONAL a body may keep the block or drop it, and under NONE it may not keep it. The
-    /// editor needs to tell those two apart to disable its save button, and could not while the only
-    /// signal was a boolean for the third state.
-    /// </para>
-    /// <para>
-    /// Empty string on a historical row, where no policy resolves and the block is refused by capability.
-    /// </para>
+    /// The <c>{{sender*}}</c> names the variable picker should offer under "Thông tin người gửi", or empty
+    /// when this template may not name a sender.
     /// </summary>
-    public string ContactRequirement { get; set; } = string.Empty;
+    public IReadOnlyList<string> SenderVariables { get; set; } = new List<string>();
 
-    /// <summary>False when there is nothing on the contact card an operator could change.</summary>
-    public bool ContactSettingsEditable { get; set; }
+    /// <summary>True when the body may contain <c>{{sender*}}</c>. Convenience for the screen.</summary>
+    public bool SenderVariablesAllowed { get; set; }
+
+    /// <summary>
+    /// True when the person sending may edit this message at runtime, so the compose modal offers
+    /// "Chỉnh sửa". A property of the send flow, not of whether the body happens to mention the sender.
+    /// </summary>
+    public bool RuntimeEditable { get; set; }
 
     /// <summary>
     /// Stable reason for the capability above — matched by clients; the sentences are for people.
     /// </summary>
-    public string? ContactReasonCode { get; set; }
-    public string? ContactReasonVi { get; set; }
-    public string? ContactReasonEn { get; set; }
+    public string? SenderReasonCode { get; set; }
+    public string? SenderReasonVi { get; set; }
+    public string? SenderReasonEn { get; set; }
 
     /// <summary>True when the message carries a one-time code or a personal action link.</summary>
     public bool CarriesSecret { get; set; }

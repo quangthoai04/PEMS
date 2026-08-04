@@ -136,18 +136,7 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
             //
             // Authored mode is exempt by construction: there the block is APPENDED to the author's text
             // rather than substituted into it, so it cannot be dropped by what the row happens to say.
-            AssertRequiredTrustedBlockIsInBody(
-                code, bodySource,
-                contactBlockRequired: request.ContactBlockRequired);
-
-            // 6d) …and the other direction. A body that still asks for the contact card under a policy of
-            //     NONE is refused here, before substitution, because after substitution there is nothing
-            //     left to notice: the placeholder has been replaced with empty string and every later
-            //     guard sees a perfectly ordinary message.
-            //
-            //     Authored mode is exempt for the same reason as above — the author's text is not the
-            //     stored body, and the blocks are appended rather than substituted into it.
-            AssertContactBlockIsNotInBody(code, bodySource, request.ContactBlockForbidden);
+            AssertRequiredTrustedBlockIsInBody(code, bodySource);
         }
 
         // 7) + 8) Substitute. Values are untrusted text everywhere; only TrustedHtmlBlocks may be markup.
@@ -370,13 +359,7 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
     /// operator looking at a template screen, not the host who pressed send.
     /// </para>
     /// </summary>
-    /// <param name="contactBlockRequired">
-    /// Whether THIS send resolved a contact under a REQUIRED policy — see
-    /// <see cref="EmailRenderRequest.ContactBlockRequired"/> for why the answer comes from the caller and
-    /// not from the shipped defaults.
-    /// </param>
-    private static void AssertRequiredTrustedBlockIsInBody(
-        string code, string bodyTemplate, bool contactBlockRequired)
+    private static void AssertRequiredTrustedBlockIsInBody(string code, string bodyTemplate)
     {
         // The CONTENT blocks are checked unconditionally. The contract says they ARE this template's
         // content, so a stored body without one is unsendable no matter who is asking — and the caller
@@ -386,59 +369,20 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
         // separately (this one names the row to repair; a body that still has the placeholder falls
         // through to the unresolved-placeholder guard), because they have different repairs.
         //
-        // NONE is passed so the contact block is NOT taken from the shipped policy here; it is added
-        // immediately below, on the narrower and truer condition the caller states.
-        var required = EmailTemplateContracts
-            .RequiredBlocksFor(code, EmailContactRequirement.NONE)
-            .ToList();
-
-        if (contactBlockRequired)
-            required.Add((EmailTrustedBlocks.ContactInformationBlock,
-                EmailErrorCodes.TemplateRequiredContactBlockNotInBody));
-
-        foreach (var (block, errorCode) in required)
+        // There is no longer a second, caller-dependent branch here. The contact block was the only one:
+        // whether a body HAD to carry it depended on a policy the send resolved at run time, which is why
+        // the flag existed. Sender information is ordinary variables, so a body that omits them is simply
+        // a body that does not mention the sender — an editorial choice, not a fault to refuse.
+        foreach (var (block, errorCode) in EmailTemplateContracts.RequiredBlocksFor(code))
         {
             if (bodyTemplate.Contains("{{" + block + "}}", StringComparison.Ordinal)) continue;
 
-            var repair = errorCode == EmailErrorCodes.TemplateRequiredContactBlockNotInBody
-                ? "Hãy thêm lại khối này vào nội dung, hoặc đổi mức bắt buộc trong cấu hình thông tin liên hệ."
-                : "Hãy đồng bộ lại template này từ bản chuẩn.";
-
             throw new BusinessRuleException(
                 $"Nội dung template email '{code}' trong cơ sở dữ liệu không còn chỗ đặt khối "
-                + $"{{{{{block}}}}}, nên phần nội dung do hệ thống dựng sẽ bị mất. {repair}",
+                + $"{{{{{block}}}}}, nên phần nội dung do hệ thống dựng sẽ bị mất. "
+                + "Hãy đồng bộ lại template này từ bản chuẩn.",
                 errorCode);
         }
-    }
-
-    /// <summary>
-    /// Refuses a stored body that still carries <c>{{contactInformationBlock}}</c> while the resolved
-    /// policy is NONE.
-    ///
-    /// <para>
-    /// This is the send-side half of the rule the template editor enforces at save time, and it is here
-    /// because the editor is not the only way a row can reach this state: a policy can be lowered to NONE
-    /// through the standalone contact-settings endpoint, a body can be changed by a sync script, and both
-    /// can be edited in the database by hand. The save-time check is where the mistake is made and is the
-    /// one an operator should meet; this is the one that guarantees no recipient ever meets the result.
-    /// </para>
-    /// <para>
-    /// Fail-closed rather than substitute-empty. Substituting empty string is what the dispatcher used to
-    /// do, and it is the worse of the two failures available: the message goes out looking exactly right,
-    /// so a template whose configuration contradicts its content produces no signal at all — not to the
-    /// operator, not in the logs, not in the history. A refused send names a template and a repair.
-    /// </para>
-    /// </summary>
-    private static void AssertContactBlockIsNotInBody(string code, string bodyTemplate, bool forbidden)
-    {
-        if (!forbidden) return;
-        if (!EmailContactBlockText.Contains(bodyTemplate)) return;
-
-        throw new BusinessRuleException(
-            $"Nội dung template email '{code}' vẫn chứa {EmailContactBlockText.Marker} trong khi mức hiển thị "
-            + "thông tin liên hệ đang là “Không hiển thị”, nên khối này sẽ không có gì thay thế vào. "
-            + "Hãy xóa khối khỏi nội dung mẫu, hoặc đổi mức hiển thị sang Tùy chọn/Bắt buộc.",
-            EmailErrorCodes.ContactBlockNotAllowedWhenHidden);
     }
 
     private static void AssertNoUnresolvedPlaceholder(string code, string rendered, string part)

@@ -231,9 +231,6 @@ public sealed class UpdateBasicAccountInfoCommandHandler
             SentBy: _currentUser.UserId)
         {
             // "hãy liên hệ ngay bộ phận phụ trách tài khoản" — the owner's own campus answers that.
-            // The notice to the OLD address deliberately gets no scope: it may be reaching a stranger,
-            // and naming their campus would disclose which one the account belongs to.
-            ContactScope = new EmailContactScope(CampusId: user.PrimaryCampusId),
         }, cancellationToken);
 
         return (oldOk, newOk) switch

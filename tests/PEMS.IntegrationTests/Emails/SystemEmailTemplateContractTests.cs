@@ -191,7 +191,23 @@ public sealed class SystemEmailTemplateContractTests
             var declared = EmailTemplateVariables.ParseDeclared(t.VariablesText);
 
             var undeclared = used.Except(declared).OrderBy(x => x, StringComparer.Ordinal).ToList();
-            var unused = declared.Except(used).OrderBy(x => x, StringComparer.Ordinal).ToList();
+
+            // The sender variables are exempt from "declared but never used", and ONLY from that half.
+            //
+            // Every template whose capability permits them declares all six, because variables_text is
+            // what the editor offers an operator as "names you may write here". A template that declares
+            // only the three its shipped wording happens to print would silently refuse the other three
+            // the moment somebody added one — and adding one is the point of the feature. So the shipped
+            // bodies use senderName/senderRole/senderEmail, and senderPhone/senderDepartment/senderCampus
+            // sit declared and unused until an operator wants them. That asymmetry is deliberate.
+            //
+            // The other direction stays enforced for them exactly as for any other variable: a body that
+            // writes {{senderName}} without declaring it is still a fault, and still fails here.
+            var unused = declared
+                .Except(used)
+                .Where(v => !PEMS.Application.Emails.Sender.EmailSenderVariableNames.IsSenderVariable(v))
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .ToList();
 
             if (undeclared.Count > 0) problems.Add($"{t.TemplateCode}: used but not declared -> {string.Join(",", undeclared)}");
             if (unused.Count > 0) problems.Add($"{t.TemplateCode}: declared but never used -> {string.Join(",", unused)}");

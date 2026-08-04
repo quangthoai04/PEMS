@@ -476,15 +476,34 @@ public sealed class AuthoredEmailContentTests : IDisposable
     // ── helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>Renders an authored subject through the real pipeline, in memory, to assert on the guard.</summary>
+    /// <summary>
+    /// Calls the renderer DIRECTLY, so the variables have to be complete here.
+    ///
+    /// <para>
+    /// Everywhere else in these tests the dispatcher assembles the variables, and it is the dispatcher
+    /// that layers the six sender values in. This helper skips it to get at the renderer's own subject
+    /// rules — which means that once the invitation template began DECLARING the sender names, the
+    /// renderer's completeness check fired first and every test using this helper reported
+    /// EMAIL_TEMPLATE_VARIABLE_MISSING instead of the rule it was written to prove.
+    /// </para>
+    /// <para>
+    /// Both are refusals and neither leaks, so nothing was ever unsafe here — but a test that stops
+    /// exercising its own subject has stopped guarding it. Supplying the sender values restores that.
+    /// </para>
+    /// </summary>
     private void RenderAuthoredSubject(string subject)
     {
         using var db = EmailEvidenceHarness.NewContext();
         var renderer = new PEMS.Infrastructure.Email.EmailTemplateRenderer(db);
 
+        var variables = InvitationVariables();
+        foreach (var name in PEMS.Application.Emails.Sender.EmailSenderVariableNames.All)
+            variables[name] = "";
+
         renderer.RenderAsync(new EmailRenderRequest(
                 SystemEmailTemplates.VisitParticipantInvitation,
                 EmailLanguages.Vi,
-                InvitationVariables(),
+                variables,
                 ActionBlock())
         {
             Content = Authored(subject: subject),

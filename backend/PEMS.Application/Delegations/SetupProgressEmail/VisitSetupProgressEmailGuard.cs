@@ -81,10 +81,10 @@ public static class VisitSetupProgressEmailGuard
     /// that is what the database stores and what the guest reads; nothing here converts to UTC.
     /// </summary>
     /// <remarks>
-    /// The Host's ADDRESS is deliberately not here. It arrives through
-    /// <c>{{contactInformationBlock}}</c>, which resolves it from the visit instance together with the
-    /// role and telephone number — so it stays correct when the Host changes, and a guest is never shown
-    /// a campus's Host other than their own.
+    /// The Host's ADDRESS is deliberately not here. On this template the Host IS the sender, so it
+    /// arrives through <c>{{senderEmail}}</c> — resolved from their account at send time, together with
+    /// their role — rather than from anything a caller assembles. <c>hostName</c> stays because the body
+    /// names the Host in prose ("người phụ trách tiếp đón") independently of the signature block.
     /// </remarks>
     public static System.Collections.Generic.Dictionary<string, string> BuildVariables(
         VisitRequestCampus instance, string delegationName, string campusName, string hostName)

@@ -68,9 +68,9 @@ public sealed class EmailTemplateContentValidatorTests
         // reader to contact support — so a body without it is a real defect, and the fixture carries it.
         var issues = EmailTemplateContentValidator.Validate(
             contract, "Email đã được thay đổi",
-            "<p>Địa chỉ này không còn liên kết với tài khoản.</p>{{contactInformationBlock}}",
+            "<p>Địa chỉ này không còn liên kết với tài khoản.</p>",
             "Email changed",
-            "<p>This address is no longer linked to an account.</p>{{contactInformationBlock}}");
+            "<p>This address is no longer linked to an account.</p>");
 
         Assert.Empty(issues);
     }
@@ -193,7 +193,7 @@ public sealed class EmailTemplateContentValidatorTests
         // would raise two issues and stop saying anything about the action block in particular.
         var issues = EmailTemplateContentValidator.Validate(
             contract, "Thư mời",
-            "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>{{contactInformationBlock}}",
+            "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>",
             null, null);
 
         var issue = Assert.Single(issues);
@@ -226,7 +226,7 @@ public sealed class EmailTemplateContentValidatorTests
             contract,
             "Thư mời tham dự",
             "<p>Chào {{recipientName}}, mời bạn tham dự {{delegationName}}.</p>"
-            + "{{contactInformationBlock}}{{actionBlock}}",
+            + "{{actionBlock}}",
             null, null);
 
         Assert.Empty(issues);
@@ -444,18 +444,18 @@ public sealed class EmailTemplateContentValidatorTests
     [Fact]
     public void A_block_the_template_cannot_resolve_is_refused_under_its_own_code()
     {
-        // AUTH_PASSWORD_RESET_OTP is NO_CONTACT and has no setup tables: neither block belongs.
+        // AUTH_PASSWORD_RESET_OTP has no setup tables, so that block cannot resolve here.
         var contract = EmailTemplateContracts.For(SystemEmailTemplates.AuthPasswordResetOtp)!;
 
         var issues = EmailTemplateContentValidator.Validate(
             contract,
             subjectVi: "Mã đặt lại mật khẩu",
-            bodyVi: "<p>{{otpCode}} {{contactInformationBlock}}</p>",
+            bodyVi: "<p>{{otpCode}} {{setupSummaryBlock}}</p>",
             subjectEn: null, bodyEn: null);
 
         var issue = Assert.Single(issues);
         Assert.Equal(EmailErrorCodes.TemplateSystemBlockNotAllowed, issue.Code);
-        Assert.Equal(EmailTrustedBlocks.ContactInformationBlock, issue.VariableName);
+        Assert.Equal(EmailTrustedBlocks.SetupSummaryBlock, issue.VariableName);
     }
 
     /// <summary>
@@ -481,23 +481,23 @@ public sealed class EmailTemplateContentValidatorTests
 
     /// <summary>
     /// A missing required block reports under the code that names ITS repair. Before the split every
-    /// block travelled inside RequiredVariables and an operator who deleted the contact card was told
+    /// block travelled inside RequiredVariables and an operator who deleted the setup tables was told
     /// to restore an action button.
     /// </summary>
     [Fact]
-    public void A_missing_contact_block_does_not_report_as_a_missing_action_block()
+    public void A_missing_content_block_does_not_report_as_a_missing_action_block()
     {
-        var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitParticipantInvitation)!;
+        var contract = EmailTemplateContracts.For(SystemEmailTemplates.VisitSetupProgressUpdate)!;
 
         var issues = EmailTemplateContentValidator.Validate(
             contract,
-            subjectVi: "Thư mời",
-            bodyVi: "<p>Kính mời {{recipientName}}.</p>{{actionBlock}}",
+            subjectVi: "Cập nhật chuẩn bị",
+            bodyVi: "<p>Kính gửi Quý khách.</p>",
             subjectEn: null, bodyEn: null);
 
         var issue = Assert.Single(issues);
-        Assert.Equal(EmailErrorCodes.TemplateRequiredContactBlockNotInBody, issue.Code);
-        Assert.Equal(EmailTrustedBlocks.ContactInformationBlock, issue.VariableName);
+        Assert.Equal(EmailErrorCodes.TemplateRequiredBlockNotInBody, issue.Code);
+        Assert.Equal(EmailTrustedBlocks.SetupSummaryBlock, issue.VariableName);
     }
 
     /// <summary>A block still may not sit in a subject, which is stored and shown in history.</summary>
@@ -508,8 +508,8 @@ public sealed class EmailTemplateContentValidatorTests
 
         var issues = EmailTemplateContentValidator.Validate(
             contract,
-            subjectVi: "Thư mời {{contactInformationBlock}}",
-            bodyVi: "<p>{{recipientName}}</p>{{actionBlock}}{{contactInformationBlock}}",
+            subjectVi: "Thư mời {{actionBlock}}",
+            bodyVi: "<p>{{recipientName}}</p>{{actionBlock}}",
             subjectEn: null, bodyEn: null);
 
         var issue = Assert.Single(issues);

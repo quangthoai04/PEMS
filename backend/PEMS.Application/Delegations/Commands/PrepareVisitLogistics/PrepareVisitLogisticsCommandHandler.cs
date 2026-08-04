@@ -44,12 +44,16 @@ public sealed class PrepareVisitLogisticsCommandHandler
     private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
+    private readonly PEMS.Application.Emails.Preview.IApprovedEmailContentResolver _approvedContent;
+
     public PrepareVisitLogisticsCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
         IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-        PEMS.Application.Notifications.Common.INotificationService notificationService)
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        PEMS.Application.Emails.Preview.IApprovedEmailContentResolver approvedContent)
     {
+        _approvedContent = approvedContent;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -129,13 +133,26 @@ public sealed class PrepareVisitLogisticsCommandHandler
         if (offline && string.IsNullOrWhiteSpace(request.OfflineCoordinationNote))
             throw new ValidationException("Vui lòng nhập ghi chú trao đổi bên ngoài (bắt buộc).");
 
-        // Offline-coordinated requests don't send an email, so any email override is ignored.
+        // Offline-coordinated requests don't send an email, so any approved content is ignored.
+        //
+        // The scope names the instance and the department this request is going to — the two ids that
+        // decide who receives it — so an approval prepared for one department cannot be replayed to send
+        // the same wording to another.
+        var scopeKey = PEMS.Application.Emails.Preview.EmailPreviewFingerprint.Scope(
+            ("visitInstance", instance.VisitInstanceId),
+            ("department", requestedDeptId));
+
         var content = offline
             ? SystemEmailContent.FromTemplate.Instance
-            : await ResolveContentAsync(request.EmailOverride, cancellationToken);
+            : await _approvedContent.ResolveAsync(
+                request.ApprovedContent,
+                SystemEmailTemplates.LogisticsRequestToDepartment,
+                scopeKey,
+                cancellationToken);
+
         var attachInputs = offline
             ? System.Array.Empty<EmailComposeAttachmentInput>()
-            : OutboundEmailAttachments.From(request.EmailOverride);
+            : _approvedContent.AttachmentsOf(request.ApprovedContent);
         await OutboundEmailAttachments.ValidateAsync(_db, actorId, attachInputs, cancellationToken);
 
         // Mixed per-campus v2: the logistics email uses THIS instance's detail name.
@@ -264,13 +281,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         SentBy: actorId)
                     {
                         Content = content,
-                        // The department has to coordinate with whoever asked: the Host of this instance,
-                        // or the requester when no Host is assigned yet (HOST_THEN_SENDER).
-                        ContactScope = new EmailContactScope(
-                            VisitInstanceId: instance.VisitInstanceId, CampusId: instance.CampusId),
-                        // …or somebody the Host named for this request in particular — a colleague who is
-                        // actually running the event, when the Host will not be reachable on the day.
-                        ContactOverride = request.EmailOverride?.ContactOverride,
                     },
                     cancellationToken);
 
@@ -354,19 +364,6 @@ public sealed class PrepareVisitLogisticsCommandHandler
             true, true, item.LogisticsItemId, emailStatus, prepared.SentEmailId, message);
     }
 
-    /// <summary>
-    /// Turns the optional Host edit into a content mode. Validation and sanitising happen inside
-    /// <see cref="SystemEmailContent.AuthoredByUser.Create"/>, which is the only way to build the type.
-    /// </summary>
-    private async Task<SystemEmailContent> ResolveContentAsync(EmailOverride? ov, CancellationToken ct)
-    {
-        if (ov is null || !ov.UseEditedContent) return SystemEmailContent.FromTemplate.Instance;
-
-        // Inline images are normalised BEFORE the content is fixed — the normaliser exists for images
-        // the Host pasted, and the template body has none.
-        var rawHtml = await _normalizer.NormalizeHtmlAsync(EmailComposition.ResolveEditableHtml(ov), ct);
-        return SystemEmailContent.AuthoredByUser.Create(ov.Subject, rawHtml, _sanitizer);
-    }
 
     /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
     private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput> inputs, DateTime now)

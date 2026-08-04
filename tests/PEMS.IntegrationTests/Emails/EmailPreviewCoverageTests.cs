@@ -56,7 +56,9 @@ public sealed class EmailPreviewCoverageTests : IDisposable
     }
 
     private static PreviewEmailTemplateQueryHandler Preview(ApplicationDbContext db)
-        => new(db, new Operator(), new EmailTemplateRenderer(db));
+        => new(db, new Operator(), new EmailTemplateRenderer(db),
+               EmailEvidenceHarness.Senders(db),
+               EmailEvidenceHarness.PreviewTokens());
 
     /// <summary>Every active code in the catalog, once per language: 30 × 2.</summary>
     public static IEnumerable<object[]> EveryTemplateAndLanguage()

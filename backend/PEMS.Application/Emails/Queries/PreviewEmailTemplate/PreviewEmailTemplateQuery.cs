@@ -33,15 +33,12 @@ public sealed record PreviewEmailTemplateQuery(
     bool UseSampleData = false,
 
     /// <summary>
-    /// The PER-CAMPUS visit this message is about. Supplying it — or a campus/department — switches the
-    /// preview from "show an operator what the wording looks like" to "show a sender the message that is
-    /// about to go out", and the reply contact is then resolved for real instead of drawn as a stand-in.
+    /// The PER-CAMPUS visit this message is about, when there is one.
     ///
     /// <para>
-    /// This is the field whose absence was the defect. Without it the preview had no visit, so it drew the
-    /// dashed "hệ thống điền đầu mối…" placeholder INSIDE the body, the host edited that body and sent it
-    /// back as authored content, and the dispatcher appended the real contact card underneath — a message
-    /// carrying both a stand-in and the thing it was standing in for.
+    /// It no longer changes what the preview RENDERS — the sender is resolved from the signed-in account
+    /// either way — but it is still the thing that distinguishes "an operator is reading a template" from
+    /// "somebody is about to send this message", which the prepared-preview pipeline binds into its token.
     /// </para>
     /// </summary>
     ulong? VisitInstanceId = null,
@@ -51,22 +48,23 @@ public sealed record PreviewEmailTemplateQuery(
     ulong? DepartmentId = null,
 
     /// <summary>
-    /// A per-message change to the reply contact, so the sender sees exactly what their choice produces
-    /// before they commit to it. Re-validated and re-resolved at send time; this preview grants nothing.
+    /// What this message is about, in the form the SENDING command will recompute from its own arguments
+    /// — e.g. <c>visitInstance:41|participant:907</c>.
+    ///
+    /// <para>
+    /// Taken from the client and trusted for nothing. It is signed into the preview token, and the send
+    /// recomputes it from the ids it was itself given; a client that puts the wrong value here gets a
+    /// token every send refuses. What it buys is that one preview endpoint serves every flow without
+    /// growing a branch per flow.
+    /// </para>
     /// </summary>
-    PEMS.Application.Emails.Contact.EmailContactOverrideInput? ContactOverride = null)
+    string? ScopeKey = null)
     : IRequest<PreviewEmailTemplateResponse>
 {
     /// <summary>
     /// True when this preview is about a REAL message with a real recipient, rather than a template an
-    /// operator is editing.
-    ///
-    /// <para>
-    /// Derived from the context the caller supplied rather than from a flag it sets, because a flag can
-    /// disagree with the data. A caller that names a visit is previewing that visit's mail; one that names
-    /// nothing has nothing to resolve a Host from, and asking it to also remember to say so would make
-    /// "operational preview with the wrong contact" a reachable state.
-    /// </para>
+    /// operator is editing. Derived from the context the caller supplied rather than from a flag it sets,
+    /// because a flag can disagree with the data.
     /// </summary>
     public bool IsOperational =>
         VisitInstanceId is not null || CampusId is not null || DepartmentId is not null;
@@ -90,13 +88,23 @@ public sealed record PreviewEmailTemplateResponse(
     /// <summary>Body format of the source template: "PLAIN_TEXT" | "HTML" (from email_templates.body_format).</summary>
     string BodyFormat,
     /// <summary>
-    /// The reply contact this message will carry, resolved for real — present only for an operational
-    /// preview (see <see cref="PreviewEmailTemplateQuery.IsOperational"/>).
+    /// Where a reply to this message would go — the sender's own address, or the system support address
+    /// for mail nobody presses send on.
     ///
     /// <para>
-    /// Its <c>LockedContactBlockHtml</c> is NOT part of <see cref="BodyHtml"/> and must not be merged into
-    /// it by the client. The body is what the sender may edit and send back; the block is what the backend
-    /// will append, and the two are kept apart so a message can never carry two of them.
+    /// Reported as its own field rather than inferred from the body. The preview says "khi người nhận bấm
+    /// Trả lời, email sẽ gửi tới …", and reading that out of the rendered HTML would be guessing at
+    /// something the send decides from the account — the two could disagree and the reader would have no
+    /// way to tell which was true.
     /// </para>
     /// </summary>
-    PEMS.Application.Emails.Contact.EmailContactPreviewResult? Contact = null);
+    string? ReplyToEmail = null,
+    /// <summary>True when the send flow may offer a "Chỉnh sửa" button for this template.</summary>
+    bool RuntimeEditable = false,
+    /// <summary>
+    /// Signed proof of what this preview rendered, to be handed to <c>final-preview</c> when the sender
+    /// edits. Null when the template is not runtime-editable — there is nothing to hand anywhere.
+    /// </summary>
+    string? PreviewToken = null,
+    /// <summary>When <see cref="PreviewToken"/> stops being accepted. ISO-8601.</summary>
+    string? ExpiresAt = null);

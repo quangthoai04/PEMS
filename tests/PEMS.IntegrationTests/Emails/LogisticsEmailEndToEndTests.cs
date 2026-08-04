@@ -193,10 +193,21 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
             Assert.Contains(AcceptUrl, body);
             Assert.Contains(DeclineUrl, body);
             Assert.Contains(DetailUrl, body);
-            // The contact card the department needs to reach the Host is still rendered. Its heading is
-            // built by EmailContactHtmlRenderer, which HtmlEncodes what it injects — so this one IS
-            // entity-encoded even though it is not a template variable.
-            Assert.Contains(encoded("Thông tin liên hệ"), body);
+            // The department can still see who to reach — but it now arrives as the SENDER, not as a
+            // separately-configured reply contact.
+            //
+            // This assertion used to read Contains(encoded("Thông tin liên hệ")) and was entity-encoded
+            // because EmailContactHtmlRenderer HtmlEncoded what it injected. There is no such renderer
+            // any more: the sender is written into the template body as ordinary variables, so the
+            // heading is literal template text and the values are substituted like any other. That is
+            // the whole point of the change — the person sending can edit this text before it goes.
+            Assert.Contains("NGƯỜI GỬI", body);
+            Assert.DoesNotContain("Thông tin liên hệ", body);
+            Assert.DoesNotContain(encoded("Thông tin liên hệ"), body);
+            // …and the sender's details really did resolve, rather than rendering as a blank card. The
+            // send carries no acting user here, so this is the SYSTEM sender the harness configures —
+            // which is exactly the fallback an unattended send is supposed to print.
+            Assert.Contains("PEMS Support", body);
         }
         finally { await _h.CleanupAsync(); }
     }

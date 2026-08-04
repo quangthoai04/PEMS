@@ -1,11 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 
 namespace PEMS.Application.Emails.Queries.PreviewEmailTemplate;
 
@@ -22,28 +27,48 @@ namespace PEMS.Application.Emails.Queries.PreviewEmailTemplate;
 /// have. An operator could therefore approve a preview that could never be sent, or edit a template and
 /// see a preview that no recipient would ever receive.
 /// </para>
+/// <para>
+/// <b>The sender is resolved for real, in both kinds of preview, and substituted INTO the body.</b> The
+/// contact block it replaces could not work that way: it was markup the backend appended, so an
+/// operational preview had to return it SEPARATELY and beg the client not to merge it — because a host
+/// who edited a body containing the stand-in card sent the stand-in back as authored content and the
+/// dispatcher appended the real card underneath it. Sender variables are values, so there is one body,
+/// it already reads correctly, and editing it cannot duplicate anything.
+/// </para>
 /// </summary>
 public sealed class PreviewEmailTemplateQueryHandler
     : IRequestHandler<PreviewEmailTemplateQuery, PreviewEmailTemplateResponse>
 {
+    /// <summary>
+    /// How long a prepared preview stays usable.
+    ///
+    /// <para>
+    /// Long enough to read a message, edit it and think again; short enough that a token left in a closed
+    /// tab overnight cannot be replayed the next morning against a template somebody has since re-worded.
+    /// The revision check makes that last case a refusal rather than a wrong send, so this is a second
+    /// line rather than the only one.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(30);
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IEmailTemplateRenderer _renderer;
-    private readonly Contact.IEmailContactPolicyStore? _contactPolicies;
-    private readonly Contact.IEmailContactResolver? _contacts;
+    private readonly Sender.IEmailSenderVariableResolver _senders;
+    private readonly IEmailPreviewTokenService _tokens;
 
     public PreviewEmailTemplateQueryHandler(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
         IEmailTemplateRenderer renderer,
-        Contact.IEmailContactPolicyStore? contactPolicies = null,
-        Contact.IEmailContactResolver? contacts = null)
+        Sender.IEmailSenderVariableResolver senders,
+        IEmailPreviewTokenService tokens)
     {
         _db = db;
         _currentUser = currentUser;
         _renderer = renderer;
-        _contactPolicies = contactPolicies;
-        _contacts = contacts;
+        _senders = senders;
+        _tokens = tokens;
     }
 
     public async Task<PreviewEmailTemplateResponse> Handle(
@@ -59,65 +84,8 @@ public sealed class PreviewEmailTemplateQueryHandler
         var language = EmailLanguages.Normalize(request.Language);
         var spec = EmailActionTemplates.For(code);
 
-        // What a preview shows for the contact block, decided by the policy the SEND would use rather
-        // than by capability alone.
-        //
-        // Three states, three answers. A template that cannot carry the block, and one whose level is
-        // NONE, both render nothing — because that is what a recipient would get, and a preview that
-        // showed a contact card over a policy of "Không hiển thị" would tell an operator their setting
-        // had not taken effect. OPTIONAL and REQUIRED get the stand-in card: a preview has no visit, so
-        // there is no Host to resolve and no campus to fall back to, and inventing a plausible name and
-        // address would show a person who does not exist and invite the operator to "correct" contact
-        // details the template has no control over.
-        //
-        // Empty is still SUPPLIED rather than omitted, so a body that still carries the placeholder
-        // previews as the mail a recipient would see instead of failing closed on an unresolved
-        // placeholder — which would report the wrong fault. The RIGHT fault, that the body and the policy
-        // disagree, is reported by the content validator on the editing screen, and refused by the save.
-        var previewContactRequirement = await Contact.EffectiveContactRequirement
-            .ResolveAsync(_contactPolicies, code, cancellationToken);
-
-        var showsContactBlock =
-            Contact.EmailContactCapabilities.Supports(code)
-            && previewContactRequirement != Domain.Enums.EmailContactRequirement.NONE;
-
-        // …and the OTHER kind of preview, which the paragraph above does not describe.
-        //
-        // An OPERATIONAL preview belongs to a real message: there IS a visit, so there IS a Host, and the
-        // stand-in card is not a cautious choice there but a wrong one. It was also actively harmful,
-        // because this body goes into an editor and comes back as authored content — so the disabled card
-        // was being SENT, with the real one appended beneath it.
-        //
-        // The block is therefore resolved for real and returned SEPARATELY (see the Contact field on the
-        // response). The placeholder is substituted with empty string so the editable body carries no
-        // trace of it: no stand-in to edit, no real card to duplicate, and nothing about the contact that
-        // the client could send back.
-        var operational = request.IsOperational && _contacts is not null;
-
-        Contact.EmailContactPreviewResult? contactPreview = null;
-
-        if (operational)
-        {
-            contactPreview = await Contact.EmailContactPreview.BuildAsync(
-                _contacts!,
-                _contactPolicies,
-                new Contact.EmailContactRequest(
-                    code, language,
-                    request.VisitInstanceId, request.CampusId, request.DepartmentId,
-                    // Always the signed-in account: "Sent by" and a SENDER Reply-To must name whoever is
-                    // actually about to press send, never a value that travelled in the request body.
-                    actorId),
-                request.ContactOverride,
-                actorId,
-                cancellationToken);
-        }
-
         var trustedBlocks = new Dictionary<string, string>
         {
-            [EmailTrustedBlocks.ContactInformationBlock] = operational || !showsContactBlock
-                ? string.Empty
-                : Contact.EmailContactHtmlRenderer.DisabledBlock(language),
-
             // Supplied unconditionally because a template that does not use the placeholder never
             // substitutes it, while a template that does would otherwise fail the preview closed on an
             // unresolved variable.
@@ -148,6 +116,26 @@ public sealed class PreviewEmailTemplateQueryHandler
                 EmailTemplateContracts.PreviewSample(code, language), StringComparer.Ordinal)
             : new Dictionary<string, string>(StringComparer.Ordinal);
 
+        // The sender, resolved for real — always the SIGNED-IN account, never a value that travelled in
+        // the request body. Layered above the samples and below the caller's context: on the
+        // template-management screen it replaces the invented "Nguyễn Văn An" sample with whoever is
+        // actually looking at the screen, which is both truer and the same value their own test send
+        // would carry.
+        //
+        // Restricted to what the template declares, for the same reason the dispatcher restricts it: the
+        // renderer refuses a supplied variable a template does not declare.
+        var sender = await _senders.ResolveAsync(actorId, code, cancellationToken);
+        var declared = SystemEmailTemplates.Find(code)?.DeclaredVariables;
+
+        if (declared is not null)
+        {
+            var senderValues = sender.ToVariableValues();
+            foreach (var name in declared)
+            {
+                if (senderValues.TryGetValue(name, out var value)) context[name] = value;
+            }
+        }
+
         foreach (var pair in request.Context ?? new Dictionary<string, string>())
         {
             if (string.IsNullOrWhiteSpace(pair.Key)) continue;
@@ -156,24 +144,51 @@ public sealed class PreviewEmailTemplateQueryHandler
             // therefore a live action URL, enters a rendered message.
             if (EmailTrustedBlocks.All.Contains(pair.Key)) continue;
 
+            // …nor a sender variable. It is an ordinary variable in every other respect, but its VALUE
+            // identifies a person, and accepting one from the client would let a caller present anybody as
+            // the sender of an official message — the one thing resolving it from authentication prevents.
+            if (Sender.EmailSenderVariableNames.IsSenderVariable(pair.Key)) continue;
+
             context[pair.Key] = pair.Value;
         }
 
         var rendered = await _renderer.RenderAsync(
-            new EmailRenderRequest(code, language, context, trustedBlocks)
-            {
-                // Operational preview asserts what the SEND asserts. A stored body that has lost its
-                // contact placeholder under a REQUIRED policy, or kept one under NONE, makes the message
-                // unsendable — and a preview that rendered happily and then failed on send would tell the
-                // host their message was fine right up to the moment it was not. The template-management
-                // preview keeps the looser flags: an operator mid-edit is expected to be in that state,
-                // and the content validator reports it on the screen where it can be repaired.
-                ContactBlockRequired = operational
-                    && previewContactRequirement == Domain.Enums.EmailContactRequirement.REQUIRED,
-                ContactBlockForbidden = operational
-                    && previewContactRequirement == Domain.Enums.EmailContactRequirement.NONE,
-            },
-            cancellationToken);
+            new EmailRenderRequest(code, language, context, trustedBlocks), cancellationToken);
+
+        var replyTo = ReplyToOf(sender);
+        var editable = Sender.EmailSenderVariableCapabilities.IsRuntimeEditable(code);
+
+        // The token is issued only where an editor can be opened. A read-only template has nothing to
+        // hand to final-preview, and minting a token nobody can spend would invite a client to try.
+        string? previewToken = null;
+        string? expiresAt = null;
+
+        if (editable)
+        {
+            var revision = await _db.EmailTemplates
+                .AsNoTracking()
+                .Where(t => t.TemplateCode == code)
+                .Select(t => t.Revision)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var expiry = VietnamTime.Now().Add(PreviewLifetime);
+
+            // ContentHash is empty at this stage on purpose. What the sender approves is decided at the
+            // FINAL preview, and binding the template's wording here would refuse the ordinary case —
+            // opening the editor and changing a sentence, which is the entire point of the flow.
+            previewToken = _tokens.Issue(new EmailPreviewTokenPayload(
+                EmailPreviewPurposes.Prepare,
+                actorId,
+                code,
+                revision,
+                request.ScopeKey ?? string.Empty,
+                ContentHash: string.Empty,
+                AttachmentHash: string.Empty,
+                ReplyToEmail: replyTo,
+                ExpiresAt: expiry));
+
+            expiresAt = expiry.ToString("O", CultureInfo.InvariantCulture);
+        }
 
         // Whether this template actually HAS an action area is read off the rendered body rather than
         // guessed: the block was substituted only if the body asked for it. A registered template whose
@@ -189,18 +204,42 @@ public sealed class PreviewEmailTemplateQueryHandler
                 rendered.TemplateCode, rendered.Subject, rendered.Body,
                 EmailComposition.HtmlToPlainText(rendered.Body),
                 false, null, null, Array.Empty<string>(), true, rendered.BodyFormat.ToString(),
-                contactPreview);
+                replyTo, editable, previewToken, expiresAt);
         }
 
         // Action template: editable content is the body WITHOUT the action artifacts; the block itself
         // is returned separately so the modal can show it as read-only.
         var editableContent = EmailComposition.StripActionArtifacts(rendered.Body);
 
+        // previewToken/expiresAt are passed HERE too, and their absence was a real defect: this is the
+        // return the editable templates actually take. Every one of the eight the capability map marks
+        // AVAILABLE_EDITABLE_RUNTIME — the participant, student and department-leader invitations, the
+        // department staff assignment, the three logistics messages, the setup-progress update — carries
+        // an action block, so they all leave through this path and not the plain one above. Reporting
+        // runtimeEditable: true with no token told the modal to offer "Chỉnh sửa" and then gave it
+        // nothing to hand to final-preview, so "Xem trước kết quả" could not succeed and the message
+        // could never be sent. The edit flow was dead for precisely the templates it was built for.
         return new PreviewEmailTemplateResponse(
             rendered.TemplateCode, rendered.Subject, editableContent,
             EmailComposition.HtmlToPlainText(editableContent),
             true, spec!.SystemActionDescription, disabledActionBlock,
             spec.RequiredActionPlaceholders, true, rendered.BodyFormat.ToString(),
-            contactPreview);
+            replyTo, editable, previewToken, expiresAt);
     }
+
+    /// <summary>
+    /// The address the send would put in Reply-To, worked out the same way the dispatcher does.
+    ///
+    /// <para>
+    /// Duplicated deliberately rather than shared: the dispatcher's version produces an
+    /// <c>EmailRecipient</c> for an SMTP header and this one produces a string for a sentence on a screen.
+    /// What must not drift is the RULE, and both read it from the same resolved sender rather than from a
+    /// policy either of them interprets.
+    /// </para>
+    /// </summary>
+    private static string? ReplyToOf(Sender.EmailSenderVariables sender)
+        => !string.IsNullOrWhiteSpace(sender.Email)
+           && EmailRecipientValidator.IsWellFormed(sender.Email!)
+            ? sender.Email!.Trim()
+            : null;
 }

@@ -408,7 +408,8 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             sp.GetRequiredService<IHtmlSanitizerService>(),
             sp.GetRequiredService<IFileStorageService>(),
             sp.GetRequiredService<IVisitFormReadService>(),
-            new MySqlUserMutationLockService(db));
+            new MySqlUserMutationLockService(db),
+            sp.GetRequiredService<PEMS.Application.Emails.Preview.IApprovedEmailContentResolver>());
     }
 
     /// <summary>Fails where a missing or inactive template fails: while recording the message.</summary>

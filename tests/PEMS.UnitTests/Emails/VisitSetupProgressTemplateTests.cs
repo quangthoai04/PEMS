@@ -48,19 +48,23 @@ public class VisitSetupProgressTemplateTests
     /// Five visit facts, and nothing token-shaped.
     ///
     /// <para>
-    /// It was six until the Host's address moved out. <c>hostEmail</c> was a variable printed mid-sentence
-    /// so the guest had somewhere to write; that job now belongs to
-    /// <c>{{contactInformationBlock}}</c>, which resolves the Host from the visit INSTANCE — so a
-    /// multi-campus request cannot show a guest the wrong campus's Host — and carries the role and phone
-    /// number alongside the address.
+    /// It was six until the Host's address moved out. <c>hostEmail</c> was a variable a CALLER supplied;
+    /// the address now arrives as <c>{{senderEmail}}</c>, resolved from the Host's own account at send
+    /// time — so it stays correct when the Host changes, and no caller can pass a different one.
     /// </para>
     /// </summary>
     [Fact]
     public void It_declares_exactly_the_five_visit_facts_and_nothing_token_shaped()
     {
+        // Plus the six sender variables, which every capable template declares so an administrator can
+        // write any of them into the body without a code change. Nothing here is token-shaped.
         Assert.Equal(
-            new[] { "campusName", "delegationName", "hostName", "plannedEnd", "plannedStart" },
-            Template.DeclaredVariables.OrderBy(v => v).ToArray());
+            new[]
+            {
+                "campusName", "delegationName", "hostName", "plannedEnd", "plannedStart",
+                "senderCampus", "senderDepartment", "senderEmail", "senderName", "senderPhone", "senderRole",
+            },
+            Template.DeclaredVariables.OrderBy(v => v, System.StringComparer.Ordinal).ToArray());
     }
 
     [Fact]
@@ -110,9 +114,30 @@ public class VisitSetupProgressTemplateTests
         var used = EmailTemplateVariables.ExtractPlaceholders(
             shipped.SubjectVi, shipped.BodyVi, shipped.SubjectEn, shipped.BodyEn);
 
-        Assert.Equal(
-            Template.DeclaredVariables.OrderBy(v => v).ToArray(),
-            used.Where(v => !EmailTrustedBlocks.All.Contains(v)).OrderBy(v => v).ToArray());
+        // Every BUSINESS variable the template declares is used by the shipped wording — an unused one
+        // would be a value the send computes and nobody reads.
+        //
+        // The sender variables are deliberately exempt, and the exemption is the design rather than a
+        // gap. All six are declared on every capable template so an administrator can write any of them
+        // into a body at any time and have it resolve on the next send, with no code change and no
+        // re-seed. The shipped wording uses three of them; requiring it to use all six would force a
+        // signature block nobody asked for onto twenty-eight templates.
+        var declaredBusiness = Template.DeclaredVariables
+            .Where(v => !PEMS.Application.Emails.Sender.EmailSenderVariableNames.IsSenderVariable(v))
+            .OrderBy(v => v, System.StringComparer.Ordinal)
+            .ToArray();
+
+        var usedBusiness = used
+            .Where(v => !EmailTrustedBlocks.All.Contains(v))
+            .Where(v => !PEMS.Application.Emails.Sender.EmailSenderVariableNames.IsSenderVariable(v))
+            .OrderBy(v => v, System.StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(declaredBusiness, usedBusiness);
+
+        // …and whatever sender variables the wording DOES use must be declared, or the send fails closed.
+        foreach (var name in used.Where(PEMS.Application.Emails.Sender.EmailSenderVariableNames.IsSenderVariable))
+            Assert.Contains(name, Template.DeclaredVariables);
     }
 
     /// <summary>
@@ -166,10 +191,12 @@ public class VisitSetupProgressTemplateTests
 
         Assert.DoesNotContain("setupSummaryBlock", variablesText);
         Assert.DoesNotContain("actionBlock", variablesText);
-        // Nor the contact block, for the same reason: it is markup the backend injects, and an operator
-        // offered it as a "variable" would reasonably assume they could supply one.
-        Assert.DoesNotContain("contactInformationBlock", variablesText);
-        Assert.Equal("campusName,delegationName,hostName,plannedEnd,plannedStart",
+        // The six sender variables ARE in the column: they are ordinary variables the send supplies, so
+        // an administrator may write any of them into a body and have it resolve.
+        Assert.Contains("senderName", variablesText);
+        Assert.Equal(
+            "campusName,delegationName,hostName,plannedEnd,plannedStart,"
+            + "senderCampus,senderDepartment,senderEmail,senderName,senderPhone,senderRole",
             string.Join(",", variablesText.Split(',').OrderBy(v => v, StringComparer.Ordinal)));
     }
 

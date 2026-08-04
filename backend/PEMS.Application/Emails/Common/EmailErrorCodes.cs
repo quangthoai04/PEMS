@@ -1,4 +1,4 @@
-namespace PEMS.Application.Emails.Common;
+﻿namespace PEMS.Application.Emails.Common;
 
 /// <summary>
 /// Stable, machine-readable failure codes for the email pipeline.
@@ -286,146 +286,74 @@ public static class EmailErrorCodes
     /// <summary>The template code has no shipped default recorded, so there is nothing to restore to.</summary>
     public const string TemplateDefaultUnavailable = "EMAIL_TEMPLATE_DEFAULT_UNAVAILABLE";
 
-    // ── Reply-contact block ──────────────────────────────────────────────────
+    // ── Sender variables ─────────────────────────────────────────────────────
+    //
+    // The whole contact family of codes was removed with the feature: EMAIL_CONTACT_REQUIRED_BUT_NOT_FOUND,
+    // ..._BLOCK_NOT_ALLOWED_WHEN_HIDDEN, ..._CONFIGURATION_INVALID, ..._POLICY_STORE_UNAVAILABLE,
+    // ..._NOT_SUPPORTED, the five override codes and ..._BLOCK_SUPPLIED_BY_CALLER. Each named a way the
+    // policy cascade could contradict itself or a way a client could try to name somebody else as the
+    // contact. Neither situation exists now: there is no cascade to contradict, and the sender is read
+    // from authentication, so there is nothing for a client to assert and nothing to refuse.
 
     /// <summary>
-    /// A template whose text instructs the recipient to contact somebody could not resolve anybody to
-    /// contact, and had no fallback left.
+    /// A body or subject writes <c>{{senderName}}</c> and friends on a template whose capability is
+    /// <c>NOT_AVAILABLE</c>.
     ///
     /// <para>
-    /// Fail-closed rather than send-without: the alternative is a message that says "please contact the
-    /// host" and shows no address, which is the defect the block exists to remove. Only REQUIRED
-    /// templates reach this — an OPTIONAL one simply renders nothing.
+    /// Its own code rather than <see cref="TemplateVariableUnknown"/>, which is what the generic check
+    /// would produce. "Biến không tồn tại trong hệ thống" is false — the variable exists and works on
+    /// twenty-eight other templates — and it points an operator at a typo they did not make. The real
+    /// repair is to remove it from THIS template, because a message whose content is a one-time code must
+    /// not also carry a person's name and telephone number.
     /// </para>
     /// </summary>
-    public const string ContactRequiredButNotFound = "EMAIL_CONTACT_REQUIRED_BUT_NOT_FOUND";
+    public const string TemplateSenderVariableNotAllowed = "EMAIL_TEMPLATE_SENDER_VARIABLE_NOT_ALLOWED";
+
+    // ── Prepared preview → final preview → send ──────────────────────────────
 
     /// <summary>
-    /// The stored body of a template whose policy is REQUIRED no longer contains
-    /// <c>{{contactInformationBlock}}</c>, so the resolved contact would have nowhere to go.
+    /// A preview token was rejected: malformed, not signed by this deployment, expired, or issued to a
+    /// different account than the one presenting it.
     ///
     /// <para>
-    /// The same shape of fault as <see cref="TemplateRequiredBlockNotInBody"/> and separated from it for
-    /// the same reason: this one names a policy an operator can change, not a row to re-sync.
+    /// One code for all four on purpose. Telling the caller WHICH check failed would let somebody probe
+    /// for a valid token shape, and the answer is the same in every case: the preview is no longer usable,
+    /// open it again. The server log records which check failed.
     /// </para>
     /// </summary>
-    public const string TemplateRequiredContactBlockNotInBody =
-        "EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY";
+    public const string PreviewTokenInvalid = "EMAIL_PREVIEW_TOKEN_INVALID";
 
     /// <summary>
-    /// The body still contains <c>{{contactInformationBlock}}</c> while the requirement level is NONE.
+    /// The preview is still authentic but no longer describes what would be sent: the template has been
+    /// re-saved, the recipients have changed, or the entity has moved on since it was issued.
     ///
     /// <para>
-    /// Its own code, distinct from both <see cref="TemplateSystemBlockNotAllowed"/> and
-    /// <see cref="ContactNotSupportedForTemplate"/>, because it names a third situation with a third
-    /// repair. UNSUPPORTED means the template may never carry the block and nothing an operator does will
-    /// change that. This means the template CAN carry it and the administrator has switched it off — so the
-    /// repair is a choice between two things they own: delete the block, or move the level back to
-    /// Tùy chọn/Bắt buộc. Reporting it as "block not allowed on this template" would state the first fact,
-    /// which is false here, and offer neither option.
-    /// </para>
-    /// <para>
-    /// Refused rather than tolerated because the send path has no honest way to handle it. Substituting
-    /// empty string — which is what happened before this code existed — makes a configuration mistake
-    /// invisible: the mail goes out looking fine, and the operator who thought they had switched the block
-    /// off has no way to learn that a body somewhere still asks for one.
+    /// Distinct from <see cref="PreviewTokenInvalid"/> because the repair differs and so does the honesty
+    /// of it. An invalid token is a dead end; a stale one means the sender's own words are fine and the
+    /// world around them moved. The send is refused rather than quietly re-rendered — re-rendering would
+    /// deliver a message the sender approved a different version of, which is precisely what the final
+    /// preview exists to prevent.
     /// </para>
     /// </summary>
-    public const string ContactBlockNotAllowedWhenHidden =
-        "EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN";
+    public const string PreviewStale = "EMAIL_PREVIEW_STALE";
 
     /// <summary>
-    /// The resolved policy contradicts itself — e.g. REQUIRED with both email and phone hidden, which
-    /// would render a heading and a name with no way to reach it. Refused when the policy is resolved,
-    /// not when a recipient notices.
-    /// </summary>
-    public const string ContactConfigurationInvalid = "EMAIL_CONTACT_CONFIGURATION_INVALID";
-
-    /// <summary>
-    /// The address a Reply-To policy produced is not a usable mailbox. Refused rather than dropped:
-    /// silently sending replies to the system mailbox when the policy promised the Host is the same quiet
-    /// lie as a contact line with no address.
-    /// </summary>
-    public const string ReplyToInvalid = "EMAIL_REPLY_TO_INVALID";
-
-    /// <summary>
-    /// The contact-policy store could not be read at all — <c>email_contact_policies</c> is missing from
-    /// this database, or the query against it failed.
+    /// A send was attempted with a token that is not a FINAL-preview token — typically the prepare-stage
+    /// token, sent straight to the send endpoint.
     ///
     /// <para>
-    /// Distinct from every "not found" above, and that distinction is the point. A database that has not
-    /// had <c>2026-08-03_email_contact_information_block.sql</c> applied answers the settings screen with
-    /// a failure that is indistinguishable, from the client, from a mistyped template code or a route
-    /// that does not exist — all three arrived as one generic sentence, and the operator was left to
-    /// guess which of "run the patch", "fix the code" or "restart the API" they needed. This code names
-    /// the first of those three so the screen can say it.
+    /// Refused rather than accepted-because-it-verifies. The two tokens carry different payloads for a
+    /// reason: only the final one binds the exact subject, body and attachments a person looked at and
+    /// approved. Accepting the earlier one would let a client skip the approval step while appearing to
+    /// have passed it.
     /// </para>
     /// </summary>
-    public const string ContactPolicyStoreUnavailable = "EMAIL_CONTACT_POLICY_STORE_UNAVAILABLE";
+    public const string PreviewNotFinalized = "EMAIL_PREVIEW_NOT_FINALIZED";
 
     /// <summary>
-    /// A contact-settings write was attempted on a template that cannot carry the block at all — a
-    /// credential-bearing mail, or one addressed to the contact themselves.
-    ///
-    /// <para>
-    /// Its own code rather than <see cref="ContactConfigurationInvalid"/>, because the two ask for
-    /// different repairs: an invalid configuration is one an operator fixes by changing a value, and this
-    /// one has no value that would make it valid. The screen answers it by explaining why the template has
-    /// no contact settings, not by highlighting a field.
-    /// </para>
+    /// An edit was submitted for a template whose capability is not
+    /// <c>AVAILABLE_EDITABLE_RUNTIME</c> — a background reminder, or a credential-bearing message.
     /// </summary>
-    public const string ContactNotSupportedForTemplate = "EMAIL_TEMPLATE_CONTACT_NOT_SUPPORTED";
+    public const string TemplateNotRuntimeEditable = "EMAIL_TEMPLATE_NOT_RUNTIME_EDITABLE";
 
-    // ── Per-message contact override ─────────────────────────────────────────
-    // A sender may change WHO one message tells the recipient to contact. These codes cover the ways that
-    // request can be refused; they are deliberately separate from the configuration codes above, because
-    // an override failure is answered by the person composing the message and a configuration failure is
-    // answered by an administrator on a different screen.
-
-    /// <summary>
-    /// An override was sent for a template that cannot carry the block at all, or whose resolved level is
-    /// NONE. Both mean the same thing to the sender — there is no contact block on this message to change
-    /// — and neither is fixable from the compose screen.
-    /// </summary>
-    public const string ContactOverrideNotAllowed = "EMAIL_CONTACT_OVERRIDE_NOT_ALLOWED";
-
-    /// <summary>
-    /// The override itself is malformed: an unknown mode, a field the mode does not own, a missing name,
-    /// no contact channel at all, an unparseable address or telephone number.
-    /// </summary>
-    public const string ContactOverrideInvalid = "EMAIL_CONTACT_OVERRIDE_INVALID";
-
-    /// <summary>
-    /// A hand-entered contact was sent with no reason. Its own code because it is the one manual-mode
-    /// field whose absence is not about the message being unsendable: the block would render perfectly
-    /// well without it, and nobody reading the audit row afterwards could reconstruct why a person outside
-    /// PEMS was presented to a guest as the contact.
-    /// </summary>
-    public const string ContactOverrideReasonRequired = "EMAIL_CONTACT_OVERRIDE_REASON_REQUIRED";
-
-    /// <summary>
-    /// The sender asked to hide the block on a template whose words instruct the recipient to make
-    /// contact. Hiding it there would leave the instruction with no address — the exact defect the block
-    /// exists to remove, arrived at one message at a time.
-    /// </summary>
-    public const string ContactOverrideHideNotAllowed = "EMAIL_CONTACT_OVERRIDE_HIDE_NOT_ALLOWED";
-
-    /// <summary>
-    /// The chosen account is outside what this sender may present as a contact — another campus's staff
-    /// for a Host, another department's for a Department Leader.
-    ///
-    /// <para>
-    /// Answered as a refusal rather than as an empty search result, and it is the same answer for "no such
-    /// user" and "not yours": telling the caller which of the two it was would turn the picker into a way
-    /// to enumerate accounts by id.
-    /// </para>
-    /// </summary>
-    public const string ContactOverrideUserNotAllowed = "EMAIL_CONTACT_OVERRIDE_USER_NOT_ALLOWED";
-
-    /// <summary>
-    /// A caller passed <c>{{contactInformationBlock}}</c> in <c>TrustedBlocks</c>. The dispatcher builds
-    /// that block itself from the resolved contact; a caller-supplied one would either duplicate it or
-    /// present values no resolver produced, which is the whole thing the block is designed to prevent.
-    /// </summary>
-    public const string ContactBlockSuppliedByCaller = "EMAIL_CONTACT_BLOCK_SUPPLIED_BY_CALLER";
 }

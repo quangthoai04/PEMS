@@ -55,6 +55,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IFileStorageService _storage;
     private readonly IVisitFormReadService _formReadService;
     private readonly IUserMutationLockService _lockService;
+    private readonly PEMS.Application.Emails.Preview.IApprovedEmailContentResolver _approvedContent;
 
     public AssignDepartmentStaffCommandHandler(
         IApplicationDbContext db,
@@ -65,8 +66,10 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IHtmlSanitizerService sanitizer,
         IFileStorageService storage,
         IVisitFormReadService formReadService,
-        IUserMutationLockService lockService)
+        IUserMutationLockService lockService,
+        PEMS.Application.Emails.Preview.IApprovedEmailContentResolver approvedContent)
     {
+        _approvedContent = approvedContent;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
@@ -130,8 +133,20 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             throw new ConflictException("Người được phân công phải là tài khoản đang hoạt động.");
 
         var now = _clock.VietnamNow;
-        var content = ResolveContent(request.EmailOverride);
-        var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
+
+        // The scope names the visit instance and the staff member being assigned, so an approval prepared
+        // for one person cannot be replayed to send the same wording to a colleague.
+        var scopeKey = PEMS.Application.Emails.Preview.EmailPreviewFingerprint.Scope(
+            ("visitInstance", leaderParticipant.VisitInstanceId),
+            ("participant", request.DepartmentStaffUserId));
+
+        var content = await _approvedContent.ResolveAsync(
+            request.ApprovedContent,
+            SystemEmailTemplates.VisitDepartmentStaffAssignment,
+            scopeKey,
+            cancellationToken);
+
+        var attachInputs = _approvedContent.AttachmentsOf(request.ApprovedContent);
         await OutboundEmailAttachments.ValidateAsync(_db, userId, attachInputs, cancellationToken);
 
         var instanceInfo = await (
@@ -246,14 +261,6 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
                 SentBy: userId)
             {
                 Content = content,
-                // "Vui lòng xác nhận để người phụ trách tiếp đón nắm được" — the assignee has to be able
-                // to reach that person, so the visit instance travels with the send.
-                ContactScope = new EmailContactScope(
-                    VisitInstanceId: leaderParticipant.VisitInstanceId,
-                    CampusId: instanceInfo?.CampusId),
-                // …or whoever the Leader named for this assignment. Their reach is their own department;
-                // the candidate service enforces that, not this handler.
-                ContactOverride = request.EmailOverride?.ContactOverride,
             },
             cancellationToken);
 
@@ -306,15 +313,6 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         return assignedParticipant.ParticipantId;
     }
 
-    /// <summary>
-    /// Turns the optional Leader edit into a content mode. Validation and sanitising happen inside
-    /// <see cref="SystemEmailContent.AuthoredByUser.Create"/>, which is the only way to build the type.
-    /// </summary>
-    private SystemEmailContent ResolveContent(EmailOverride? ov)
-        => ov is null || !ov.UseEditedContent
-            ? SystemEmailContent.FromTemplate.Instance
-            : SystemEmailContent.AuthoredByUser.Create(
-                ov.Subject, EmailComposition.ResolveEditableHtml(ov), _sanitizer);
 
     /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
     private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput> inputs, DateTime now)

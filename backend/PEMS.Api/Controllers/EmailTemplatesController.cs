@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,57 +43,47 @@ namespace PEMS.Api.Controllers
         }
 
         /// <summary>
-        /// Re-resolves the reply contact for a message being composed — and nothing else.
+        /// "Xem trước kết quả" — the FINAL_PREVIEW stage. Takes the sender's edit plus the token the
+        /// read-only preview issued, and returns the exact message that will be delivered along with the
+        /// token a send will accept as proof they approved it.
         ///
         /// <para>
-        /// Its own route rather than another call to <c>preview</c>, because the compose modal calls it
-        /// every time the sender changes their mind: a full preview would return a fresh subject and body
-        /// and overwrite whatever they had written. Read-only, stores nothing, sends nothing.
+        /// Open to every composing role, like <c>preview</c>: WHICH templates may be edited is decided by
+        /// the template's own capability inside the handler, and WHO may send the resulting message is
+        /// decided by the business command that finally does it. An attribute here could only repeat one
+        /// of those two answers less accurately.
         /// </para>
         /// <para>
-        /// Open to every composing role, like the contract and the contact settings read: the panel is
-        /// part of the compose screen, and what an individual sender may CHOOSE is decided inside by their
-        /// own campus/department, not by this attribute.
+        /// Nothing is stored. The token is signed, not persisted — there is no draft row to clean up and
+        /// no second copy of the message to drift from what gets sent.
         /// </para>
         /// </summary>
-        [HttpPost("{templateCode}/contact-preview")]
-        public async Task<IActionResult> PreviewMessageContact(
-            string templateCode,
-            [FromBody] PEMS.Application.Emails.Contact.ResolveEmailContactPreviewQuery query,
+        [HttpPost("final-preview")]
+        public async Task<IActionResult> BuildFinalPreview(
+            [FromBody] PEMS.Application.Emails.Commands.BuildFinalEmailPreview.BuildFinalEmailPreviewCommand command,
             CancellationToken cancellationToken)
         {
-            query.TemplateCode = templateCode;
-            var result = await _mediator.Send(query, cancellationToken);
-            return Ok(result);
-        }
-
-        /// <summary>
-        /// The people the signed-in user may name as the reply contact on one message.
-        ///
-        /// <para>
-        /// Searched on the server so the scope rule is enforced where it cannot be edited, and so the
-        /// compose screen never receives a directory it would then filter in the browser.
-        /// </para>
-        /// </summary>
-        [HttpGet("{templateCode}/contact-candidates")]
-        public async Task<IActionResult> SearchContactCandidates(
-            string templateCode,
-            [FromQuery] PEMS.Application.Emails.Contact.SearchEmailContactCandidatesQuery query,
-            CancellationToken cancellationToken)
-        {
-            query.TemplateCode = templateCode;
-            var result = await _mediator.Send(query, cancellationToken);
+            var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
         }
 
         /// <summary>
         /// What a template's variables actually are (G11-J): allowed, required, sensitive, whether a
-        /// subject may carry them, whether CC/BCC are permitted, and a preview sample per variable.
+        /// subject may carry them, whether CC/BCC are permitted, and a preview sample per variable —
+        /// plus the sender-variable capability, which decides whether the picker offers the "Thông tin
+        /// người gửi" group and whether the send flow offers a runtime editor.
         ///
         /// <para>
         /// Open to every composing role, not just HO: the compose screen needs
         /// <c>allowCc</c>/<c>allowBcc</c> to decide whether to offer those fields, and inferring it in
         /// the client from a template's name is exactly the guess this endpoint removes.
+        /// </para>
+        /// <para>
+        /// The five <c>contact-*</c> routes that used to sit here are gone with the feature: a contact
+        /// preview, a candidate search, and three settings routes (read, write, restore) — plus a
+        /// draft-policy block preview. None has a replacement, because none has a question left to answer:
+        /// the sender is read from authentication, so there is nobody to search for, nothing to configure
+        /// and no draft policy to render.
         /// </para>
         /// </summary>
         [HttpGet("contract/{templateCode}")]
@@ -108,92 +98,6 @@ namespace PEMS.Api.Controllers
                 },
                 cancellationToken);
 
-            return Ok(result);
-        }
-
-        /// <summary>
-        /// The reply-contact settings for one template.
-        ///
-        /// <para>
-        /// Readable by every composing role for the same reason the contract is: the compose and preview
-        /// screens need to know whether a contact block will appear. Writing them is HO only, like every
-        /// other template write on this controller.
-        /// </para>
-        /// </summary>
-        [HttpGet("{templateCode}/contact-settings")]
-        public async Task<IActionResult> GetContactSettings(
-            string templateCode, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(
-                new PEMS.Application.Emails.Contact.GetEmailContactSettingsQuery
-                {
-                    TemplateCode = templateCode,
-                },
-                cancellationToken);
-
-            return Ok(result);
-        }
-
-        /// <summary>
-        /// Saves the reply-contact settings. HO only.
-        ///
-        /// <para>
-        /// The payload carries enums and booleans plus two headings — never an address, a telephone
-        /// number or a user id. Choosing WHICH fields the block shows is configuration; choosing what it
-        /// SAYS would be a way to attribute a hand-typed mailbox to somebody else, so the command has no
-        /// field for it.
-        /// </para>
-        /// </summary>
-        [HttpPut("{templateCode}/contact-settings")]
-        [RoleAuthorize(EffectiveRole.Ho)]
-        public async Task<IActionResult> UpdateContactSettings(
-            string templateCode,
-            [FromBody] PEMS.Application.Emails.Contact.UpdateEmailContactSettingsCommand command,
-            CancellationToken cancellationToken)
-        {
-            command.TemplateCode = templateCode;
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        /// <summary>
-        /// Restores the reply-contact settings for one template to the shipped defaults. HO only.
-        /// </summary>
-        [HttpPost("{templateCode}/contact-settings/restore-default")]
-        [RoleAuthorize(EffectiveRole.Ho)]
-        public async Task<IActionResult> RestoreContactSettingsDefault(
-            string templateCode,
-            [FromBody] PEMS.Application.Emails.Contact.RestoreEmailContactSettingsCommand command,
-            CancellationToken cancellationToken)
-        {
-            command.TemplateCode = templateCode;
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
-        /// <summary>
-        /// Renders the contact block as the supplied DRAFT policy would produce it, with sample data.
-        ///
-        /// <para>
-        /// A POST because the policy travels in the body, and a read because nothing is stored: the
-        /// operator has not saved these toggles and may never. It exists so the preview pane can answer
-        /// "what will this look like" from the same renderer the send uses, instead of the screen
-        /// growing its own copy of the block's markup and visibility rules.
-        /// </para>
-        /// <para>
-        /// HO only, matching the settings it previews — the sample data is inert, but the endpoint
-        /// reports what a template's contact configuration would produce and belongs behind the same gate.
-        /// </para>
-        /// </summary>
-        [HttpPost("{templateCode}/contact-settings/preview")]
-        [RoleAuthorize(EffectiveRole.Ho)]
-        public async Task<IActionResult> PreviewContactBlock(
-            string templateCode,
-            [FromBody] PEMS.Application.Emails.Contact.PreviewEmailContactBlockQuery query,
-            CancellationToken cancellationToken)
-        {
-            query.TemplateCode = templateCode;
-            var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 

@@ -3,6 +3,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 using PEMS.Domain.Constants;
 using PEMS.UnitTests.TestInfrastructure;
 
@@ -51,7 +52,8 @@ public class InviteVisitParticipantCommandHandlerTests
         var handler = new InviteVisitParticipantCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
             mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object, formRead.Object,
-            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService(),
+            new PEMS.UnitTests.TestInfrastructure.StubApprovedEmailContentResolver(mocks.Sanitizer.Object));
         return (db, handler, user, mocks, dispatcher);
     }
 
@@ -103,8 +105,8 @@ public class InviteVisitParticipantCommandHandlerTests
 
         var command = new InviteVisitParticipantCommand(
             DelegationsTestData.VisitInstanceId, "IC_SUPPORT", StaffLeaderId, null, null,
-            new PEMS.Application.Emails.Common.EmailOverride(
-                UseEditedContent: true,
+            new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
                 Subject: "Nhờ anh hỗ trợ đoàn Kyoto",
                 BodyHtml: null,
                 BodyText: "Chào anh, đoàn tới sáng thứ Ba. Nhờ anh hỗ trợ phiên dịch."));

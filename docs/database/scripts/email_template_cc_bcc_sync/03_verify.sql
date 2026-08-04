@@ -153,17 +153,28 @@ SELECT '── E. variables_text matches the placeholders actually used ──�
 --   actionBlock            — accept/decline/detail buttons carrying real one-time tokens
 --   setupSummaryBlock      — the setup-progress tables (overview, guests, participants, schedule,
 --                            preparation status) built from VisitSetupSnapshot
---   contactInformationBlock — the reply-contact block the EmailContactPolicy renders
 -- A block missing from this list makes E1 report the template as having an "unlisted" variable, and
 -- adding it to variables_text to silence that would be the wrong fix: it would offer an operator a
 -- field they must never be able to supply.
 --
--- contactInformationBlock was added 2026-08-03, and its absence had already cost something: fourteen
--- templates gained the block in patches/2026-08-03_email_template_catalog_alignment.sql, and this
--- script then reported all fourteen at once under E1. The detail string that produced overflowed
--- VARCHAR(500), so the run died with "Data too long for column 'detail'" — a verify script that
--- crashes instead of reporting. Both halves are fixed: the block is excluded here, and the detail
--- columns below are truncated rather than allowed to overflow.
+-- contactInformationBlock USED to be the third entry — the reply-contact block that EmailContactPolicy
+-- rendered. It was removed 2026-08-05 with the contact feature itself. The sender is no longer a
+-- trusted block at all: it is six ORDINARY variables ({{senderName}}, {{senderRole}}, {{senderEmail}},
+-- {{senderPhone}}, {{senderDepartment}}, {{senderCampus}}) that the dispatcher supplies per send. That
+-- is the whole point of the change — a block can only be printed where the backend puts it, whereas
+-- variables let an operator compose any wording around them, and let the person sending edit the
+-- resulting text as ordinary prose before it goes out.
+--
+-- Because they are ordinary variables they are LISTED in variables_text, and E1 therefore needs no
+-- exemption for them. E2 does; see the note there.
+--
+-- (Historical note worth keeping: when contactInformationBlock was first added to this list in
+-- 2026-08-03 its absence had already cost something — fourteen templates gained the block in
+-- patches/2026-08-03_email_template_catalog_alignment.sql, this script reported all fourteen at once
+-- under E1, and the detail string that produced overflowed VARCHAR(500), so the run died with "Data
+-- too long for column 'detail'": a verify script that crashes instead of reporting. The detail columns
+-- below are still truncated rather than allowed to overflow, which is the half of that fix that
+-- outlives the block.)
 DROP TEMPORARY TABLE IF EXISTS _pems_used_vars;
 CREATE TEMPORARY TABLE _pems_used_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
 
@@ -187,7 +198,7 @@ WITH RECURSIVE scan AS (
 SELECT DISTINCT template_code, var_name
 FROM scan
 WHERE var_name IS NOT NULL AND var_name <> ''
-  AND var_name NOT IN ('actionBlock', 'setupSummaryBlock', 'contactInformationBlock');
+  AND var_name NOT IN ('actionBlock', 'setupSummaryBlock');
 
 DROP TEMPORARY TABLE IF EXISTS _pems_listed_vars;
 CREATE TEMPORARY TABLE _pems_listed_vars (template_code VARCHAR(100), var_name VARCHAR(100)) ENGINE=InnoDB;
@@ -220,15 +231,27 @@ LEFT JOIN _pems_listed_vars l
        ON l.template_code = u.template_code AND l.var_name = u.var_name
 WHERE l.var_name IS NULL;
 
+-- The six sender names are exempt from E2, and ONLY from E2.
+--
+-- Every template whose capability permits them declares all six, because variables_text is what the
+-- editor offers an operator as "names you may write here". A template that declared only the three its
+-- shipped wording happens to print would refuse the other three the moment somebody added one — and
+-- adding one is the point of the feature. So the shipped bodies use senderName/senderRole/senderEmail,
+-- and senderPhone/senderDepartment/senderCampus sit listed and unused until an operator wants them.
+--
+-- E1 still applies to them in full: a body that writes {{senderName}} without listing it is a fault
+-- and is still reported. The exemption is one-directional on purpose.
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)
-SELECT 'E2', 'every variable listed in variables_text is actually used',
+SELECT 'E2', 'every variable listed in variables_text is actually used (sender names exempt)',
        IF(COUNT(*) = 0, 'PASS', 'FAIL'),
        IF(COUNT(*) = 0, 'no orphan variable',
           LEFT(CONCAT('unused: ', GROUP_CONCAT(CONCAT(l.template_code, '.', l.var_name))), 480))
 FROM _pems_listed_vars l
 LEFT JOIN _pems_used_vars u
        ON u.template_code = l.template_code AND u.var_name = l.var_name
-WHERE u.var_name IS NULL;
+WHERE u.var_name IS NULL
+  AND l.var_name NOT IN ('senderName', 'senderRole', 'senderEmail',
+                         'senderPhone', 'senderDepartment', 'senderCampus');
 
 -- E3: placeholders are lower camelCase by contract. A PascalCase one silently renders empty.
 INSERT INTO _pems_verify_results (check_id, check_name, verdict, detail)

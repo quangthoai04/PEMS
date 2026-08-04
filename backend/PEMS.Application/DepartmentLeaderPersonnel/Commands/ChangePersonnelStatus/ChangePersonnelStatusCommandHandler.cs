@@ -245,12 +245,7 @@ public sealed class ChangePersonnelStatusCommandHandler
                 variables,
                 RelatedType: "User",
                 RelatedId: targetUserId,
-                SentBy: actorId)
-            {
-                // "vui lòng liên hệ Trưởng phòng phụ trách" — the department this person belongs to is
-                // what turns that sentence into an address.
-                ContactScope = new EmailContactScope(DepartmentId: departmentId),
-            }, cancellationToken);
+                SentBy: actorId), cancellationToken);
 
             return result.Delivery.Status switch
             {

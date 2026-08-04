@@ -4,6 +4,7 @@ using PEMS.Application.DepartmentReceptionTasks.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssignee;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.UnitTests.TestInfrastructure;
@@ -71,14 +72,15 @@ public class AssignRequestAssigneeCommandHandlerTests
         var handler = new AssignRequestAssigneeCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
             mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object,
-            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService(),
+            new PEMS.UnitTests.TestInfrastructure.StubApprovedEmailContentResolver(mocks.Sanitizer.Object));
 
         return (db, handler, user, mocks, dispatcher);
     }
 
     private static AssignRequestAssigneeCommand Command(
-        ulong assigneeId = StaffId, EmailOverride? emailOverride = null)
-        => new() { LogisticsItemId = ItemId, AssigneeUserId = assigneeId, EmailOverride = emailOverride };
+        ulong assigneeId = StaffId, ApprovedEmailContent? approvedContent = null)
+        => new() { LogisticsItemId = ItemId, AssigneeUserId = assigneeId, ApprovedContent = approvedContent };
 
     [Fact]
     public async Task The_assignment_uses_its_own_template_and_supplies_every_declared_variable()
@@ -140,8 +142,8 @@ public class AssignRequestAssigneeCommandHandlerTests
         var (_, handler, _, _, dispatcher) = CreateSut();
 
         await handler.Handle(
-            Command(emailOverride: new EmailOverride(
-                UseEditedContent: true,
+            Command(approvedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
                 Subject: "Em phụ trách màn LED giúp anh",
                 BodyHtml: null,
                 BodyText: "Em nhận giúp anh phần màn LED sảnh A nhé.")),
@@ -162,8 +164,9 @@ public class AssignRequestAssigneeCommandHandlerTests
         var (db, handler, _, _, _) = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => handler.Handle(
-            Command(emailOverride: new EmailOverride(
-                UseEditedContent: true, Subject: "Giao việc",
+            Command(approvedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
+                Subject: "Giao việc",
                 BodyHtml: "<p>a</p><!-- PEMS_ACTION_BLOCK_START --><p>giả</p><!-- PEMS_ACTION_BLOCK_END -->")),
             default));
 

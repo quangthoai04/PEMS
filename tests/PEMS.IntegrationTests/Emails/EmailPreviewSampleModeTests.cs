@@ -49,7 +49,9 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
     }
 
     private static PreviewEmailTemplateQueryHandler Preview(ApplicationDbContext db)
-        => new(db, new FakeCurrentUser(), new EmailTemplateRenderer(db));
+        => new(db, new FakeCurrentUser(), new EmailTemplateRenderer(db),
+               EmailEvidenceHarness.Senders(db),
+               EmailEvidenceHarness.PreviewTokens());
 
     private static readonly Regex Placeholder = new(@"\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}", RegexOptions.Compiled);
 

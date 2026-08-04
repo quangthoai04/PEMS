@@ -65,20 +65,23 @@ public static class DependencyInjection
             PEMS.Application.Emails.Common.SystemEmailDispatcher>();
         services.Configure<PEMS.Application.Emails.Common.EmailRecipientOptions>(
             configuration.GetSection(PEMS.Application.Emails.Common.EmailRecipientOptions.SectionName));
-        // Reply-contact block: the policy cascade (Template → Campus → Department → System) and the
-        // resolver that turns it into a real person. Scoped for the same reason as the renderer — both
-        // read per-request database state and neither may cache a policy an operator just changed.
-        services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactPolicyStore,
-            PEMS.Application.Emails.Contact.EmailContactPolicyStore>();
-        services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactResolver,
-            PEMS.Application.Emails.Contact.EmailContactResolver>();
-        // Who a given sender may name as the contact on a given message. One service behind both the
-        // picker and the send-time check, so the list a host is shown and the list the send accepts are
-        // the same list — a picker that offers somebody the send then refuses is a dead end for the user.
-        services.AddScoped<PEMS.Application.Emails.Contact.IEmailContactCandidateService,
-            PEMS.Application.Emails.Contact.EmailContactCandidateService>();
-        services.Configure<PEMS.Application.Emails.Contact.EmailSupportContactOptions>(
-            configuration.GetSection(PEMS.Application.Emails.Contact.EmailSupportContactOptions.SectionName));
+        // Who a message is FROM: the acting account read fresh, or the configured system sender. Scoped
+        // for the same reason as the renderer — it reads per-request database state, and a sender who was
+        // moved between departments this morning must not be described by a cached row from yesterday.
+        services.AddScoped<PEMS.Application.Emails.Sender.IEmailSenderVariableResolver,
+            PEMS.Application.Emails.Sender.EmailSenderVariableResolver>();
+        // Bound from the SupportContact section, which the removed contact feature already used — no
+        // deployment has to change a setting for the sender variables to resolve.
+        services.Configure<PEMS.Application.Emails.Sender.EmailSystemSenderOptions>(
+            configuration.GetSection(PEMS.Application.Emails.Sender.EmailSystemSenderOptions.SectionName));
+        // Signed preview tokens: prepare → final preview → send. Singleton because it holds only the
+        // signing key and is otherwise stateless; nothing about it varies per request.
+        services.AddSingleton<PEMS.Application.Emails.Preview.IEmailPreviewTokenService,
+            PEMS.Infrastructure.Email.EmailPreviewTokenService>();
+        // The one place a send turns an approved preview into sendable content. Scoped: it reads the
+        // template's current revision per request, which is the staleness check.
+        services.AddScoped<PEMS.Application.Emails.Preview.IApprovedEmailContentResolver,
+            PEMS.Application.Emails.Preview.ApprovedEmailContentResolver>();
         // Report/invoice mail: store the PDF, record the message AND its attachment linkage, deliver, and
         // fail the command when delivery did not happen. Shared by all six report senders so none of them
         // can send a "see attached" message with nothing attached.

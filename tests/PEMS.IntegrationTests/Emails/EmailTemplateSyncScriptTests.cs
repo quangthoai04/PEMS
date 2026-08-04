@@ -59,12 +59,13 @@ public sealed class EmailTemplateSyncScriptTests : IClassFixture<EmailTemplateSy
             try
             {
                 var name = CanonicalSqlScript.NewDisposableDatabaseName();
-                var server = System.Text.RegularExpressions.Regex.Replace(
-                    BaseConnection, @"database=[^;]+;", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                var server = TestDatabaseTarget.ForServer(BaseConnection);
 
                 using (var conn = new MySqlConnection(server))
                 {
                     conn.Open();
+                    TestDatabaseTarget.AssertConnectedDatabaseIsNotProtected(conn, "the sync-test import");
+
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = $"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;";
@@ -79,9 +80,7 @@ public sealed class EmailTemplateSyncScriptTests : IClassFixture<EmailTemplateSy
                 }
 
                 DatabaseName = name;
-                ConnectionString = System.Text.RegularExpressions.Regex.Replace(
-                    BaseConnection, @"database=[^;]+;", $"database={name};",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                ConnectionString = TestDatabaseTarget.ForDisposable(BaseConnection, name);
 
                 ApplyExistingDeploymentFixture();
             }
@@ -614,35 +613,32 @@ SELECT GROUP_CONCAT(line ORDER BY line SEPARATOR '\n') FROM (
     {
         Sync();
 
-        const string marker = "{{contactInformationBlock}}";
-        var missing = new List<string>();
-        var unexpected = new List<string>();
+        // The synced rows must never name a sender on a credential-bearing template. This replaces the
+        // contact-block symmetry check: there is no policy to be symmetric with, but the one-directional
+        // rule still matters — a synced body that named a person on an OTP mail would be refused at every
+        // save and every send, so it would ship as a template nobody could edit.
+        var offenders = new List<string>();
 
         foreach (var code in SystemEmailTemplates.AllCodes)
         {
+            if (PEMS.Application.Emails.Sender.EmailSenderVariableCapabilities.AllowsVariables(code))
+                continue;
+
             var row = _db.Query(
                 $"SELECT body_vi, body_en FROM email_templates WHERE template_code='{code}';").Single();
             var vi = row["body_vi"]?.ToString() ?? "";
             var en = row["body_en"]?.ToString() ?? "";
 
-            var policy = PEMS.Application.Emails.Contact.EmailContactPolicyDefaults.For(code);
-
-            if (policy.Requirement == PEMS.Domain.Enums.EmailContactRequirement.REQUIRED)
+            foreach (var name in PEMS.Application.Emails.Sender.EmailSenderVariableNames.All)
             {
-                if (!vi.Contains(marker, StringComparison.Ordinal)) missing.Add(code + ".body_vi");
-                if (!en.Contains(marker, StringComparison.Ordinal)) missing.Add(code + ".body_en");
-            }
-            else if (!policy.RendersBlock &&
-                     (vi.Contains(marker, StringComparison.Ordinal) || en.Contains(marker, StringComparison.Ordinal)))
-            {
-                unexpected.Add(code);
+                var marker = "{{" + name + "}}";
+                if (vi.Contains(marker, StringComparison.Ordinal)) offenders.Add(code + ".body_vi " + marker);
+                if (en.Contains(marker, StringComparison.Ordinal)) offenders.Add(code + ".body_en " + marker);
             }
         }
 
-        Assert.True(missing.Count == 0,
-            "REQUIRED reply-contact policy with no place to put the block: " + string.Join(", ", missing));
-        Assert.True(unexpected.Count == 0,
-            "the block was added to a template whose policy renders none: " + string.Join(", ", unexpected));
+        Assert.True(offenders.Count == 0,
+            "a credential-bearing template was synced with a sender variable: " + string.Join(", ", offenders));
     }
 
     /// <summary>

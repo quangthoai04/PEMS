@@ -82,7 +82,7 @@ namespace PEMS.Api.Controllers
         [HttpPost("invitations/{participantId}/assign")]
         public async Task<IActionResult> AssignInvitation(ulong participantId, [FromBody] DepartmentInvitationAssignBody body)
         {
-            return Ok(await _mediator.Send(new AssignDepartmentStaffCommand(participantId, body.AssigneeUserId, body.Note ?? "", body.EmailOverride)));
+            return Ok(await _mediator.Send(new AssignDepartmentStaffCommand(participantId, body.AssigneeUserId, body.Note ?? "", body.ApprovedContent)));
         }
 
         [HttpGet("requests/{logisticsItemId}")]
@@ -170,5 +170,5 @@ namespace PEMS.Api.Controllers
         }
     }
 
-    public sealed record DepartmentInvitationAssignBody(ulong AssigneeUserId, string? Note, EmailOverride? EmailOverride = null);
+    public sealed record DepartmentInvitationAssignBody(ulong AssigneeUserId, string? Note, PEMS.Application.Emails.Preview.ApprovedEmailContent? ApprovedContent = null);
 }

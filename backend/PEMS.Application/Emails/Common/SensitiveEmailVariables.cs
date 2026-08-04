@@ -62,7 +62,13 @@ public static class SensitiveEmailVariables
             "proposalNote", "proposedDescription", "proposedQuantity", "proposedUsageEndAt",
             "proposedUsageStartAt",
             "quantity", "reason", "recipientName", "requestCode", "requesterName",
-            "roleLabel", "roleName", "scopeLabel", "successorName", "usageEndAt", "usageStartAt",
+            "roleLabel", "roleName", "scopeLabel",
+            // Who the message is from. A work name, role, address, telephone number, department and campus
+            // — the same class of data as `hostName` beside them. None of it grants anything: reading the
+            // sender's address lets you write to them, which is the entire point of printing it. So these
+            // templates keep a stored body and stay readable in the email history.
+            "senderCampus", "senderDepartment", "senderEmail", "senderName", "senderPhone", "senderRole",
+            "successorName", "usageEndAt", "usageStartAt",
         };
 
     /// <summary>

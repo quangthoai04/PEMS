@@ -420,8 +420,15 @@ public static class CanonicalSqlScript
     /// The hash constant is bumped HERE rather than in the commit that changed the script, because that
     /// commit (<c>adcae824</c>, "update SQL") did not bump it — which left every integration test in the
     /// repository failing at startup with "Canonical SQL hash mismatch", before a single assertion ran.
+    ///
+    /// Bumped again on 2026-08-05, for the sender-variable migration: the fourteen bodies that carried
+    /// <c>{{contactInformationBlock}}</c> now print the sender instead, <c>variables_text</c> gained the
+    /// six <c>{{sender*}}</c> names on the twenty-eight templates whose capability permits them, and the
+    /// <c>email_contact_policies</c> seed is marked deprecated in place (the table is deliberately NOT
+    /// dropped — that is a separate, separately-approved task). Verified against a real MySQL 8.0.46 by
+    /// a fresh import and by the upgrade patch, which reach byte-identical <c>email_templates</c> rows.
     public const string ExpectedSha256 =
-        "adf0a2c93538af124987a20bddb6c63c961e84d8dd1de9aab0840599500cc79e";
+        "3948112ea01a18ab3ad46024b52f1455e4bfd7882edc26c09ea71187d465009e";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
