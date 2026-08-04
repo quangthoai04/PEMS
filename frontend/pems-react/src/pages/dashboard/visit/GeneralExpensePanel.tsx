@@ -10,7 +10,8 @@
  */
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, Plus, Save, Trash2, DollarSign, AlertTriangle, Bell, Printer, CheckCircle2, Clock, Building2 } from 'lucide-react';
+import { Loader2, Plus, Save, Trash2, DollarSign, AlertTriangle, Bell, Printer, CheckCircle2, Clock, Building2, Eye, Mail, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
 import visitExpenseService, {
   VisitExpenseReport, VisitInstanceExpenseSummary, SaveExpenseReportCommand, SaveExpenseItemDto
@@ -50,6 +51,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
   const [printing, setPrinting] = useState(false);
   const [items, setItems] = useState<SaveExpenseItemDto[]>([]);
   const [reportNote, setReportNote] = useState('');
+  const [showRemindEmailPreview, setShowRemindEmailPreview] = useState(false);
+  const [lastRemindSent, setLastRemindSent] = useState<{ count: number; recipients: string[]; sentAt: string } | null>(null);
 
   const fetchAll = async () => {
     try {
@@ -174,6 +177,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
       if (res.remindedCount === 0) {
         toast('Không có đơn yêu cầu nào cần nhắc kê khai chi phí.', { icon: 'ℹ️' });
       } else {
+        const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('vi-VN');
+        setLastRemindSent({ count: res.remindedCount, recipients: res.recipients || [], sentAt: nowStr });
         toast.success(`Đã gửi nhắc nhở ${res.remindedCount} đơn (${res.recipients.join(', ')}).`);
       }
     } catch (e: any) {
@@ -406,12 +411,19 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
               placeholder="Ghi chú tổng thể (không bắt buộc)..."
               className="flex-1 min-w-[160px] px-2.5 py-1.5 text-[11px] rounded-lg border border-slate-200 outline-none focus:border-[#004c91] transition-shadow placeholder-slate-400"
             />
-            <button type="button" onClick={handleRemind} disabled={reminding}
-              title="Gửi mail + thông báo đến người phụ trách các đơn chưa kê khai chi phí"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-bold rounded-lg border border-amber-300 transition-colors cursor-pointer outline-none disabled:opacity-50">
-              {reminding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
-              Nhắc nhở{pendingCount > 0 ? ` (${pendingCount})` : ''}
-            </button>
+            <div className="inline-flex items-center">
+              <button type="button" onClick={handleRemind} disabled={reminding}
+                title="Gửi mail + thông báo đến người phụ trách các đơn chưa kê khai chi phí"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-bold rounded-l-lg border border-amber-300 transition-colors cursor-pointer outline-none disabled:opacity-50">
+                {reminding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                Nhắc nhở{pendingCount > 0 ? ` (${pendingCount})` : ''}
+              </button>
+              <button type="button" onClick={() => setShowRemindEmailPreview(true)}
+                title="Xem trước / Xem email nhắc nhở kê khai chi phí"
+                className="inline-flex items-center justify-center px-2 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 text-[11px] font-bold rounded-r-lg border border-l-0 border-amber-300 transition-colors cursor-pointer outline-none">
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <button type="button" onClick={() => setPrinting(true)}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold rounded-lg border border-slate-300 transition-colors cursor-pointer outline-none">
               <Printer className="w-3.5 h-3.5" /> Xuất thống kê
@@ -551,6 +563,132 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
         </>,
         document.body
       )}
+      {/* ── Modal Xem trước / Xem Email Nhắc nhở Kê khai Chi phí ── */}
+      <AnimatePresence>
+        {showRemindEmailPreview && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-amber-50/60 to-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-700">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Xem trước / Chi tiết Email Nhắc nhở</h3>
+                    <p className="text-xs text-gray-500">Mô phỏng thư thông báo gửi đến các đơn vị chưa kê khai chi phí</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRemindEmailPreview(false)}
+                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-sm bg-slate-50/50">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-xs font-semibold text-gray-400">TRẠNG THÁI EMAIL:</span>
+                    {lastRemindSent ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi nhắc nhở ({lastRemindSent.sentAt})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        <Clock className="w-3.5 h-3.5" /> Xem trước (Chưa gửi)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs">
+                    <div>
+                      <span className="font-semibold text-gray-500">Người gửi: </span>
+                      <span className="font-medium text-gray-800">Ban quản trị PEMS &lt;no-reply@mail.pems-fpt.site&gt;</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500">Người nhận ({lastRemindSent ? lastRemindSent.count : pendingCount} đơn vị): </span>
+                      <span className="font-bold text-[#004c91]">
+                        {lastRemindSent
+                          ? lastRemindSent.recipients.join(', ')
+                          : pendingCount > 0
+                          ? deptRows.filter(r => r.state === 'PENDING').map(r => r.item.departmentName || r.item.title || `Đơn vị #${r.item.logisticsItemId}`).join(', ')
+                          : 'Tất cả các phòng ban đã hoàn thành kê khai'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500">Tiêu đề: </span>
+                      <span className="font-bold text-gray-900">
+                        [PEMS] Nhắc nhở hoàn tất kê khai chi phí đợt công tác
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Email Content Visual */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-[#004c91] text-white px-5 py-4 font-bold text-base flex items-center justify-between">
+                    <span>PEMS Expense Reminder</span>
+                    <span className="text-xs font-normal opacity-80">Thông báo nhắc nhở kê khai chi phí</span>
+                  </div>
+                  <div className="p-5 space-y-4 text-gray-700">
+                    <p className="font-semibold">
+                      Kính gửi <strong className="text-gray-900">Người phụ trách kê khai chi phí các phòng ban</strong>,
+                    </p>
+                    <p className="text-sm leading-relaxed">
+                      Ban quản trị hệ thống PEMS trân trọng thông báo nhắc nhở các đơn vị/phòng ban chưa hoàn thành việc kê khai chi phí thực tế cho đợt tiếp khách công tác.
+                    </p>
+
+                    <div className="bg-amber-50/70 rounded-xl p-4 border border-amber-200 space-y-2 text-xs">
+                      <div className="font-bold text-amber-900 text-xs mb-2 border-b border-amber-200 pb-1">
+                        DANH SÁCH ĐƠN YÊU CẦN KÊ KHAI CHI PHÍ ({pendingCount} ĐƠN VỊ)
+                      </div>
+                      {deptRows.filter(r => r.state === 'PENDING').length > 0 ? (
+                        <ul className="space-y-1.5">
+                          {deptRows.filter(r => r.state === 'PENDING').map((r, idx) => (
+                            <li key={idx} className="flex items-center justify-between bg-white p-2 rounded border border-amber-100">
+                              <span className="font-semibold text-gray-800">{r.item.title || 'Hạng mục dịch vụ'}</span>
+                              <span className="text-gray-500">{r.item.departmentName || 'Phòng ban chuyên trách'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="italic text-gray-500">Hiện tại tất cả các đơn vị đã kê khai đầy đủ chi phí.</p>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-gray-500">
+                      Vui lòng truy cập hệ thống PEMS, chọn đợt công tác tương ứng và cập nhật bảng kê khai chi phí chung để Ban quản trị tổng hợp và nghiệm thu chi phí đoàn.
+                    </p>
+                    <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">
+                      Trân trọng,<br />
+                      <strong>Ban quản trị Hệ thống PEMS — FPT University</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setShowRemindEmailPreview(false)}
+                  className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  Đóng
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

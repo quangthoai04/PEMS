@@ -10,8 +10,9 @@ import toast from 'react-hot-toast';
 import {
   AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   ChevronUp, Download, FileText, Loader2, RefreshCw, Send, Star, TrendingDown, TrendingUp,
-  Users, X, XCircle, DollarSign, Handshake, PlusCircle, Percent, BarChart2,
+  Users, X, XCircle, DollarSign, Handshake, PlusCircle, Percent, BarChart2, Eye, Mail, Clock,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -265,8 +266,9 @@ export function StaffLeaderReportManagement() {
   }, [personnelRows, personnelSort]);
   const pagedPersonnelRows = rankedPersonnelRows.slice((personnelPage - 1) * PAGE_SIZE, personnelPage * PAGE_SIZE);
 
-  // Guarded per row: a repeat click while this row is sending does nothing, and a send started on
-  // another row no longer clears this row's flag (see useGuardedSend).
+  // ── Phần 2: ghi chú + gửi email báo cáo nhân sự IC & Student ──
+  const [previewStaffRow, setPreviewStaffRow] = useState<StaffLeaderV2PersonnelRow | null>(null);
+  const [sentStaffMap, setSentStaffMap] = useState<Record<number, string>>({});
   const sendPersonnelReport = (row: StaffLeaderV2PersonnelRow) =>
     personnelSend.send(row.userId, async () => {
       try {
@@ -277,6 +279,8 @@ export function StaffLeaderReportManagement() {
           note: personnelNotes[row.userId]?.trim() || undefined,
         }, idem.keyFor('sl-personnel-report', row.userId));
         idem.complete('sl-personnel-report', row.userId);
+        const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('vi-VN');
+        setSentStaffMap((prev) => ({ ...prev, [row.userId]: nowStr }));
         toast.success(res.message || `Đã gửi báo cáo hiệu suất qua email cho ${row.fullName}.`);
       } catch (e: any) {
         if (attemptIsOver(e)) idem.complete('sl-personnel-report', row.userId);
@@ -286,6 +290,8 @@ export function StaffLeaderReportManagement() {
 
   // ── Phần 3: ghi chú + gửi email báo cáo phối hợp cho từng phòng ban ──
   const [deptNotes, setDeptNotes] = useState<Record<number, string>>({});
+  const [previewDeptRow, setPreviewDeptRow] = useState<StaffLeaderV2DepartmentRow | null>(null);
+  const [sentDeptMap, setSentDeptMap] = useState<Record<number, string>>({});
   const departmentSend = useGuardedSend<number>();
   const [deptSort, setDeptSort] = useState<RankSort>('DEFAULT');
   const [deptPage, setDeptPage] = useState(1);
@@ -315,6 +321,8 @@ export function StaffLeaderReportManagement() {
           note: deptNotes[row.departmentId]?.trim() || undefined,
         }, idem.keyFor('sl-department-report', row.departmentId));
         idem.complete('sl-department-report', row.departmentId);
+        const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('vi-VN');
+        setSentDeptMap((prev) => ({ ...prev, [row.departmentId]: nowStr }));
         toast.success(res.message || `Đã gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}.`);
       } catch (e: any) {
         if (attemptIsOver(e)) idem.complete('sl-department-report', row.departmentId);
@@ -869,16 +877,26 @@ export function StaffLeaderReportManagement() {
                           />
                         </td>
                         <td className={`${tdClass} whitespace-nowrap`}>
-                          <button
-                            type="button"
-                            onClick={() => sendPersonnelReport(row)}
-                            disabled={personnelSend.isSending(row.userId)}
-                            title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {personnelSend.isSending(row.userId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Gửi
-                          </button>
+                          <div className="inline-flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => sendPersonnelReport(row)}
+                              disabled={personnelSend.isSending(row.userId)}
+                              title={`Gửi báo cáo hiệu suất qua email cho ${row.fullName}`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-l-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              {personnelSend.isSending(row.userId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              Gửi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewStaffRow(row)}
+                              title={`Xem trước / Xem email báo cáo hiệu suất cho ${row.fullName}`}
+                              className="inline-flex items-center justify-center p-1.5 bg-blue-100 hover:bg-blue-200 text-[#004c91] text-xs font-bold rounded-r-lg border border-l-0 border-blue-200 transition-colors cursor-pointer outline-none"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -965,16 +983,26 @@ export function StaffLeaderReportManagement() {
                           />
                         </td>
                         <td className={`${tdClass} whitespace-nowrap`}>
-                          <button
-                            type="button"
-                            onClick={() => sendDepartmentReport(row)}
-                            disabled={departmentSend.isSending(row.departmentId)}
-                            title={`Gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}`}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {departmentSend.isSending(row.departmentId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Gửi
-                          </button>
+                          <div className="inline-flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => sendDepartmentReport(row)}
+                              disabled={departmentSend.isSending(row.departmentId)}
+                              title={`Gửi báo cáo phối hợp qua email cho trưởng phòng ${row.name}`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004c91] text-xs font-bold rounded-l-lg border border-blue-200 transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              {departmentSend.isSending(row.departmentId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              Gửi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDeptRow(row)}
+                              title={`Xem trước / Xem email báo cáo phối hợp cho ${row.name}`}
+                              className="inline-flex items-center justify-center p-1.5 bg-blue-100 hover:bg-blue-200 text-[#004c91] text-xs font-bold rounded-r-lg border border-l-0 border-blue-200 transition-colors cursor-pointer outline-none"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1150,6 +1178,153 @@ export function StaffLeaderReportManagement() {
           </div>
         </div>
       )}
+      {/* Modal Xem trước / Chi tiết Email Báo cáo Hiệu suất Nhân sự */}
+      <AnimatePresence>
+        {previewStaffRow && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-[#004c91]/10 text-[#004c91]">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Xem trước / Chi tiết Email Báo cáo Hiệu suất</h3>
+                    <p className="text-xs text-gray-500">Mô phỏng thư báo cáo gửi tới nhân sự {previewStaffRow.fullName}</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setPreviewStaffRow(null)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-4 text-sm bg-slate-50/50">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-xs font-semibold text-gray-400">TRẠNG THÁI EMAIL:</span>
+                    {sentStaffMap[previewStaffRow.userId] ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi báo cáo ({sentStaffMap[previewStaffRow.userId]})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <Clock className="w-3.5 h-3.5" /> Xem trước (Chưa gửi)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs">
+                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-medium text-gray-800">Staff Leader Office &lt;staffleader-reports@mail.pems-fpt.site&gt;</span></div>
+                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-bold text-[#004c91]">{previewStaffRow.fullName} ({previewStaffRow.role})</span></div>
+                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-bold text-gray-900">[PEMS] Báo cáo hiệu suất cá nhân trong kỳ — {previewStaffRow.fullName}</span></div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-[#004c91] text-white px-5 py-4 font-bold text-base flex items-center justify-between">
+                    <span>PEMS Performance Report</span>
+                    <span className="text-xs font-normal opacity-80">{previewStaffRow.role}</span>
+                  </div>
+                  <div className="p-5 space-y-4 text-gray-700">
+                    <p className="font-semibold">Kính gửi <strong className="text-gray-900">{previewStaffRow.fullName}</strong>,</p>
+                    <p className="text-sm leading-relaxed">Staff Leader gửi đến bạn tổng hợp chỉ số hiệu suất công việc tiếp đón và phục vụ đoàn trong kỳ:</p>
+                    <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">SỐ CHUYẾN THĂM THAM GIA:</span><span className="font-bold text-[#004c91]">{previewStaffRow.visitCount} đoàn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG GIỜ PHỤC VỤ:</span><span className="font-bold text-gray-800">{previewStaffRow.totalHours.toFixed(1)} giờ</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ TRUNG BÌNH:</span><span className="font-bold text-amber-600">{previewStaffRow.feedbackAverage ? `${previewStaffRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
+                      {personnelNotes[previewStaffRow.userId] && (
+                        <div className="pt-1"><span className="font-bold text-gray-500 block mb-1">GHI CHÚ ĐÁNH GIÁ:</span><p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{personnelNotes[previewStaffRow.userId]}</p></div>
+                      )}
+                    </div>
+                    <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">Trân trọng,<br /><strong>Ban Quản trị Staff Leader — FPT University</strong></div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+                <button type="button" onClick={() => setPreviewStaffRow(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100">Đóng</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Xem trước / Chi tiết Email Báo cáo Phối hợp Phòng ban */}
+      <AnimatePresence>
+        {previewDeptRow && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-[#004c91]/10 text-[#004c91]">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Xem trước / Chi tiết Email Báo cáo Phối hợp</h3>
+                    <p className="text-xs text-gray-500">Mô phỏng thư báo cáo gửi Trưởng phòng {previewDeptRow.name}</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setPreviewDeptRow(null)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-4 text-sm bg-slate-50/50">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-xs font-semibold text-gray-400">TRẠNG THÁI EMAIL:</span>
+                    {sentDeptMap[previewDeptRow.departmentId] ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi báo cáo ({sentDeptMap[previewDeptRow.departmentId]})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <Clock className="w-3.5 h-3.5" /> Xem trước (Chưa gửi)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs">
+                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-medium text-gray-800">Staff Leader Office &lt;staffleader-reports@mail.pems-fpt.site&gt;</span></div>
+                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-bold text-[#004c91]">Trưởng phòng — {previewDeptRow.name}</span></div>
+                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-bold text-gray-900">[PEMS] Báo cáo phối hợp hỗ trợ tiếp khách — {previewDeptRow.name}</span></div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-[#004c91] text-white px-5 py-4 font-bold text-base flex items-center justify-between">
+                    <span>PEMS Coordination Report</span>
+                    <span className="text-xs font-normal opacity-80">{previewDeptRow.name}</span>
+                  </div>
+                  <div className="p-5 space-y-4 text-gray-700">
+                    <p className="font-semibold">Kính gửi <strong className="text-gray-900">Ban Trưởng phòng — {previewDeptRow.name}</strong>,</p>
+                    <p className="text-sm leading-relaxed">Staff Leader xin gửi báo cáo tổng hợp tình hình phối hợp xử lý đơn yêu cầu hậu cần và thư mời hỗ trợ đợt công tác:</p>
+                    <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG ĐƠN ĐÃ GỬI TỚI:</span><span className="font-bold text-[#004c91]">{previewDeptRow.totalRequests} đơn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐƠN ĐÃ HOÀN THÀNH:</span><span className="font-bold text-green-700">{previewDeptRow.completed} đơn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span><span className="font-bold text-amber-600">{previewDeptRow.feedbackAverage ? `${previewDeptRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
+                      {deptNotes[previewDeptRow.departmentId] && (
+                        <div className="pt-1"><span className="font-bold text-gray-500 block mb-1">GHI CHÚ GỬI TRƯỞNG PHÒNG:</span><p className="italic text-gray-600 bg-white p-2 rounded border border-blue-100">{deptNotes[previewDeptRow.departmentId]}</p></div>
+                      )}
+                    </div>
+                    <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">Trân trọng,<br /><strong>Ban Quản trị Staff Leader — FPT University</strong></div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-end px-6 py-3 border-t border-gray-100 bg-gray-50">
+                <button type="button" onClick={() => setPreviewDeptRow(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100">Đóng</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
