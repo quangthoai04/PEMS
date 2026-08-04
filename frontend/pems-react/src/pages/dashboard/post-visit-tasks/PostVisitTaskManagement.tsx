@@ -354,6 +354,7 @@ export function PostVisitTaskManagement() {
       <SubmittedVisitRequestDetailModal
         isOpen={detailVisitRequestId != null}
         visitRequestId={detailVisitRequestId}
+        title="Chi tiết đoàn khách"
         onClose={() => setDetailVisitRequestId(null)}
       />
     </div>

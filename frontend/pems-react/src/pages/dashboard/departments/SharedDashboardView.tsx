@@ -195,6 +195,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [candidates, setCandidates] = useState<any[]>([]);
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
+  const userRoleCode = (user?.roleCode || user?.role || (authUser as any)?.roleCode || (authUser as any)?.role || '').toUpperCase();
+  const canSeeRegistrantInfo = userRoleCode === 'STAFF' || userRoleCode === 'HO' || userRoleCode === 'ADMIN';
   const { markAsRead: markNotificationRead } = useNotifications();
   // Thông báo chưa đọc liên quan tới các đơn/thư mời — dùng cho chấm đỏ nháy trên lịch
   // và danh sách "Thay đổi mới" trong modal chi tiết.
@@ -3062,40 +3064,42 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <div className="mt-4 bg-white border border-orange-100 rounded-2xl shadow-sm overflow-hidden animate-fade-in-quick text-sm">
 
                       {/* 1. Thông tin người tạo */}
-                      <div className="p-5 border-b border-orange-100">
-                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">1</span>
-                          Thông tin người tạo
-                        </h4>
-                        <p className="text-xs text-slate-500 mb-4">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
-                          <div>
-                            <p className="text-slate-500 mb-1">Họ và tên</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantFullName || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Email</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantEmail || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Đơn vị công tác</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantOrganization || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Chức danh</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantJobTitle || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Số điện thoại (SĐT)</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.registrantPhone || 'N/A'}</p>
+                      {canSeeRegistrantInfo && (
+                        <div className="p-5 border-b border-orange-100">
+                          <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">1</span>
+                            Thông tin người tạo
+                          </h4>
+                          <p className="text-xs text-slate-500 mb-4">Chi tiết về người liên hệ, đơn vị phụ trách đăng ký lịch</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
+                            <div>
+                              <p className="text-slate-500 mb-1">Họ và tên</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantFullName || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Email</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantEmail || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Đơn vị công tác</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantOrganization || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Chức danh</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantJobTitle || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500 mb-1">Số điện thoại (SĐT)</p>
+                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantPhone || 'N/A'}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* 2. Thông tin đoàn khách */}
                       <div className="p-5 border-b border-orange-100">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">2</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '2' : '1'}</span>
                           Thông tin đoàn khách
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Tên cơ quan, thời gian, cơ sở hoạt động và mục đích đối ngoại</p>
@@ -3132,7 +3136,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       {/* 3. Setup */}
                       <div className="p-5 border-b border-orange-100">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">3</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '3' : '2'}</span>
                           Setup
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
@@ -3172,7 +3176,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       {/* 4. Detail setup */}
                       <div className="p-5 bg-orange-50/50">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">4</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '4' : '3'}</span>
                           Detail setup
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>

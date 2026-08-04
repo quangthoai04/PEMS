@@ -104,6 +104,18 @@ export function StaffVisitDetailModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canSeeRegistrantInfo = (() => {
+    try {
+      const userStr = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null;
+      if (!userStr) return false;
+      const user = JSON.parse(userStr);
+      const roleCode = (user?.roleCode || user?.role || '').toUpperCase();
+      return roleCode === 'STAFF' || roleCode === 'HO' || roleCode === 'ADMIN';
+    } catch {
+      return false;
+    }
+  })();
+
   useEffect(() => {
     if (!isOpen || !visitInstanceId) {
       setDetail(null);
@@ -250,19 +262,21 @@ export function StaffVisitDetailModal({
               )}
 
               {/* Người đăng ký / tổ chức */}
-              <section>
-                <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-[#f37021]" /> Người đăng ký / Tổ chức
-                </h4>
-                <div className="divide-y divide-slate-100 border-y border-slate-100">
-                  <InfoRow label="Họ tên" value={detail.registrantFullName} />
-                  <InfoRow label="Tổ chức" value={detail.registrantOrganization} />
-                  <InfoRow label="Chức danh" value={detail.registrantJobTitle} />
-                  <InfoRow label="Quốc tịch" value={detail.registrantNationality} />
-                  <InfoRow icon={<Phone className="w-3 h-3" />} label="Điện thoại" value={detail.registrantPhone} />
-                  <InfoRow icon={<Mail className="w-3 h-3" />} label="Email" value={detail.registrantEmail} />
-                </div>
-              </section>
+              {canSeeRegistrantInfo && (
+                <section>
+                  <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-[#f37021]" /> Người đăng ký / Tổ chức
+                  </h4>
+                  <div className="divide-y divide-slate-100 border-y border-slate-100">
+                    <InfoRow label="Họ tên" value={detail.registrantFullName} />
+                    <InfoRow label="Tổ chức" value={detail.registrantOrganization} />
+                    <InfoRow label="Chức danh" value={detail.registrantJobTitle} />
+                    <InfoRow label="Quốc tịch" value={detail.registrantNationality} />
+                    <InfoRow icon={<Phone className="w-3 h-3" />} label="Điện thoại" value={detail.registrantPhone} />
+                    <InfoRow icon={<Mail className="w-3 h-3" />} label="Email" value={detail.registrantEmail} />
+                  </div>
+                </section>
+              )}
 
               {/* Đầu mối liên hệ (nếu khác người đăng ký) */}
               {(detail.contactPersonFullName || detail.contactPersonEmail) && (
