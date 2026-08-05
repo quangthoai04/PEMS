@@ -24,11 +24,30 @@ namespace PEMS.Api.Controllers
     [Route("api/[controller]")]
     public class DepartmentsController : ControllerBase
     {
+        /// <summary>
+        /// What a refused management action answers, at BOTH layers.
+        ///
+        /// <para>
+        /// The role gate in front of these actions and <c>StaffLeaderDepartmentScope</c> inside their
+        /// handlers refuse the same actors for the same reason, so they must say the same thing. The
+        /// department screen maps this code to "Bạn không có quyền quản lý phòng ban."; a refusal that
+        /// arrived as the generic FORBIDDEN fell through to a vaguer sentence about "thao tác này".
+        /// </para>
+        /// <para>
+        /// The gate cannot simply be dropped in favour of the handler guard: it is what keeps a wrong
+        /// role out of the handler at all, and several actions here have no equivalent guard inside.
+        /// </para>
+        /// </summary>
+        private const string ManagementForbidden =
+            PEMS.Application.Departments.Common.DepartmentErrorCodes.DepartmentManagementForbidden;
+
+        private const string ManagementForbiddenMessage = "Bạn không có quyền quản lý phòng ban.";
+
         private readonly IMediator _mediator;
         public DepartmentsController(IMediator mediator) => _mediator = mediator;
 
         [HttpPost("addnewdepartment")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> AddNewDepartment([FromBody] PEMS.Application.Departments.Commands.AddNewDepartment.AddNewDepartmentCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
@@ -36,7 +55,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("updatedepartment")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> UpdateDepartment([FromBody] PEMS.Application.Departments.Commands.UpdateDepartment.UpdateDepartmentCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
@@ -44,7 +63,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("searchandfilterdepartments")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> SearchandFilterDepartments([FromQuery] PEMS.Application.Departments.Queries.SearchandFilterDepartments.SearchandFilterDepartmentsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -52,7 +71,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("viewdepartmentlist")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> ViewDepartmentList([FromQuery] PEMS.Application.Departments.Queries.ViewDepartmentList.ViewDepartmentListQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -60,7 +79,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("viewdepartmentdetails")]
-        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Department)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Department, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> ViewDepartmentDetails([FromQuery] PEMS.Application.Departments.Queries.ViewDepartmentDetails.ViewDepartmentDetailsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -68,7 +87,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("departmentstatusimpact")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> GetDepartmentStatusImpact([FromQuery] PEMS.Application.Departments.Queries.GetDepartmentStatusImpact.GetDepartmentStatusImpactQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -76,7 +95,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("managedepartmentstatus")]
-        [RoleAuthorize(EffectiveRole.StaffLeader)]
+        [RoleAuthorize(EffectiveRole.StaffLeader, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> ManageDepartmentStatus([FromBody] PEMS.Application.Departments.Commands.ManageDepartmentStatus.ManageDepartmentStatusCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);

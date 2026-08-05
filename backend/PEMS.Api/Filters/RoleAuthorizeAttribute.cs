@@ -23,6 +23,33 @@ public class RoleAuthorizeAttribute : Attribute, IAsyncAuthorizationFilter
         _allowedRoles = allowedRoles;
     }
 
+    /// <summary>
+    /// The <c>errorCode</c> this gate returns on a refusal, when the module publishes one of its own.
+    /// Defaults to the generic <c>FORBIDDEN</c>.
+    ///
+    /// <para>
+    /// It exists because moving a refusal EARLIER must not silently change what the refusal says. Some
+    /// modules were guarded only inside their handlers and answered with a domain code — Department
+    /// management answers <c>DEPARTMENT_MANAGEMENT_FORBIDDEN</c>, which the department screen maps to
+    /// "Bạn không có quyền quản lý phòng ban." Putting a role gate in front of those handlers is the
+    /// right change; letting it answer <c>FORBIDDEN</c> instead was an unintended one, and it reached
+    /// the user as a vaguer sentence.
+    /// </para>
+    /// <para>
+    /// Set it ONLY where the module already publishes a code and a client already reads it. A gate with
+    /// nothing to say keeps the generic answer, which is what almost every endpoint should do: inventing
+    /// a per-endpoint code for every refusal gives clients more strings to branch on and no more
+    /// information.
+    /// </para>
+    /// </summary>
+    public string? ErrorCode { get; set; }
+
+    /// <summary>
+    /// The message that accompanies <see cref="ErrorCode"/>. Ignored unless one is set, so a gate cannot
+    /// end up wording a refusal differently from the code it reports.
+    /// </summary>
+    public string? Message { get; set; }
+
     public Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
         // A method-level [AllowAnonymous] must win over a class-level [RoleAuthorize].
@@ -44,7 +71,7 @@ public class RoleAuthorizeAttribute : Attribute, IAsyncAuthorizationFilter
 
         if (string.IsNullOrEmpty(currentUserService.RoleCode))
         {
-            context.Result = Forbidden(context);
+            context.Result = Forbidden(context, ErrorCode, Message);
             return Task.CompletedTask;
         }
 
@@ -60,27 +87,31 @@ public class RoleAuthorizeAttribute : Attribute, IAsyncAuthorizationFilter
             // e.g. STAFF with no sub_role — is a data defect, not a server fault. It must
             // fail closed with 403 and never surface as a 500 (which both leaks that the
             // request got past authentication and, worse, tempts a "default to allow" fix).
-            context.Result = Forbidden(context);
+            context.Result = Forbidden(context, ErrorCode, Message);
             return Task.CompletedTask;
         }
 
         if (_allowedRoles.Length > 0 && !_allowedRoles.Contains(effectiveRole))
         {
-            context.Result = Forbidden(context);
+            context.Result = Forbidden(context, ErrorCode, Message);
         }
 
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Matches the shape ExceptionHandlingMiddleware emits so clients parse one contract.
+    /// Matches the shape ExceptionHandlingMiddleware emits for an <c>AuthBusinessException</c>, so a
+    /// refusal from this gate and a refusal from a handler are the same object to a client.
     /// </summary>
-    private static ObjectResult Forbidden(AuthorizationFilterContext context) =>
+    private static ObjectResult Forbidden(
+        AuthorizationFilterContext context, string? errorCode, string? message) =>
         new(new
         {
             success = false,
-            errorCode = "FORBIDDEN",
-            message = "Bạn không có quyền thực hiện thao tác này.",
+            errorCode = string.IsNullOrWhiteSpace(errorCode) ? "FORBIDDEN" : errorCode,
+            message = string.IsNullOrWhiteSpace(message)
+                ? "Bạn không có quyền thực hiện thao tác này."
+                : message,
             traceId = context.HttpContext.TraceIdentifier,
         })
         { StatusCode = StatusCodes.Status403Forbidden };

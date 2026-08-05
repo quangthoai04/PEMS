@@ -35,9 +35,13 @@ namespace PEMS.IntegrationTests.Departments.SearchFilterDepartments;
 /// - Keyword search matches department Name OR head user's FullName (LEFT JOIN), case-insensitive
 ///   (both sides ToLower()), trimmed. This is a real, distinct behavior from FAQ's search (which
 ///   never searches a joined user table) — worth its own test.
-/// - Same handler-only authorization as UC-101/102 (StaffLeaderDepartmentScope): no
-///   [Authorize]/[RoleAuthorize] on the controller; anonymous and wrong-role actors are rejected
-///   identically with 403 (not 401), verified here via errorCode == DepartmentManagementForbidden.
+/// - Authorization is now enforced at TWO layers, and they answer differently by design (2026-08-05):
+///   an anonymous caller is stopped by the API-wide fallback policy with 401, and an authenticated
+///   caller with the wrong role is stopped by [RoleAuthorize] with 403 +
+///   DepartmentManagementForbidden. StaffLeaderDepartmentScope still guards the handler underneath
+///   and returns the same code, so a role that slips past the gate is refused identically.
+///   Every 403 test asserts the errorCode, not just the status, so a regression that reaches a
+///   DIFFERENT 403 (campus-scope, say) cannot pass as this one.
 /// - Read-only: DepartmentListQueryExecutor always uses AsNoTracking() and never writes.
 /// </summary>
 public sealed class SearchFilterDepartmentsApiTests : IClassFixture<PemsWebApplicationFactory>, IAsyncLifetime
@@ -140,16 +144,55 @@ public sealed class SearchFilterDepartmentsApiTests : IClassFixture<PemsWebAppli
     // ---- Authorization (full matrix: Anonymous + all 7 non-StaffLeader effective roles — same
     // handler-only guard as UC-101/102) ---------------------------------------------------------
 
+    /// <summary>
+    /// A caller with no token is told to authenticate, not that they lack a permission.
+    ///
+    /// <para>
+    /// This changed on 2026-08-05 and the change is deliberate. These endpoints used to carry no
+    /// <c>[Authorize]</c> at all, so an anonymous request ran all the way into the handler and was
+    /// refused there as a wrong ACTOR — 403 with the department code. The authorization work merged
+    /// from Dev added an API-wide fallback policy requiring an authenticated user, which is what
+    /// closed eight controllers that were reachable with no token; anonymous now stops at the
+    /// authentication layer with 401.
+    /// </para>
+    /// <para>
+    /// 401 is also the answer the rest of this codebase already gave — the FAQ endpoints were
+    /// documented as differing from these — and the department screen maps it to "Phiên đăng nhập đã
+    /// hết hạn. Vui lòng đăng nhập lại.", which tells someone whose session expired what to do.
+    /// "Bạn không có quyền quản lý phòng ban." told them to give up.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task Anonymous_Forbidden()
+    public async Task Anonymous_Unauthorized()
     {
         var client = _factory.CreateClient();
+        var response = await client.GetAsync(BuildUrl());
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>
+    /// An AUTHENTICATED caller with the wrong role still gets the department code, from the role gate
+    /// in front of the handler rather than from the handler itself.
+    ///
+    /// <para>
+    /// Pinned separately because the two layers are now different code paths that must give the same
+    /// answer. Moving the refusal earlier is a security improvement; changing what it says was not
+    /// intended, and it reached the user as a vaguer sentence.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task WrongRole_KeepsTheDepartmentErrorCode()
+    {
+        var client = await CreateClientAsAsync(EffectiveRole.Ho);
         var response = await client.GetAsync(BuildUrl());
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<ErrorResponse>(JsonOptions);
         Assert.NotNull(body);
-        Assert.Equal(DepartmentErrorCodes.DepartmentManagementForbidden, body!.ErrorCode);
+        Assert.False(body!.Success);
+        Assert.Equal(DepartmentErrorCodes.DepartmentManagementForbidden, body.ErrorCode);
+        Assert.Equal("Bạn không có quyền quản lý phòng ban.", body.Message);
+        Assert.False(string.IsNullOrWhiteSpace(body.TraceId));
     }
 
     [Fact]

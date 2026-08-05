@@ -19,10 +19,12 @@ namespace PEMS.IntegrationTests.Departments.ViewDepartmentDetails;
 /// Source-confirmed facts (see ViewDepartmentDetailsQuery/Handler/Dto, StaffLeaderDepartmentScope,
 /// DepartmentErrorCodes, ExceptionHandlingMiddleware):
 /// - Real endpoint: GET /api/departments/viewdepartmentdetails?departmentId={id}.
-/// - Same handler-only authorization as UC-101/102/103/104: no [Authorize]/[RoleAuthorize] on the
-///   controller; anonymous and wrong-role actors are rejected identically with 403
-///   (DepartmentManagementForbidden). A Staff Leader whose claims never carried a campus gets 422
-///   (NoCampusAssigned).
+/// - Two authorization layers since 2026-08-05: anonymous gets 401 from the API-wide fallback
+///   policy, and an authenticated wrong-role caller gets 403 + DepartmentManagementForbidden.
+///   This endpoint's gate admits three roles (StaffLeader, DepartmentLead, Department) because the
+///   handler distinguishes them; a DepartmentLead therefore passes the gate and is refused by
+///   StaffLeaderDepartmentScope INSIDE the handler — with the same code, which is the point.
+///   A Staff Leader whose claims never carried a campus gets 422 (NoCampusAssigned).
 /// - <see cref="ViewDepartmentDetailsQuery.DepartmentId"/> is a plain <c>ulong</c> with no
 ///   FluentValidation validator: a missing querystring value binds to 0 and reaches the handler,
 ///   which then throws a generic <c>NotFoundException("Department", 0)</c> (404, no errorCode) —
@@ -160,18 +162,16 @@ public sealed class ViewDepartmentDetailsApiTests : IClassFixture<PemsWebApplica
     // ---- Authorization (full matrix: Anonymous + all 7 non-StaffLeader effective roles, plus the
     // Staff-Leader-without-campus-claim edge case) --------------------------------------------------
 
+    /// <summary>
+    /// No token means 401, not 403. See SearchFilterDepartmentsApiTests.Anonymous_Unauthorized for
+    /// why this changed on 2026-08-05.
+    /// </summary>
     [Fact]
-    public async Task Anonymous_Forbidden()
+    public async Task Anonymous_Unauthorized()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync(BuildUrl(1));
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>(JsonOptions);
-        Assert.NotNull(body);
-        Assert.False(body!.Success);
-        Assert.Equal(DepartmentErrorCodes.DepartmentManagementForbidden, body.ErrorCode);
-        Assert.False(string.IsNullOrWhiteSpace(body.TraceId));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

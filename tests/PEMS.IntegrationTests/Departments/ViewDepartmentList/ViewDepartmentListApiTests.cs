@@ -28,8 +28,8 @@ namespace PEMS.IntegrationTests.Departments.ViewDepartmentList;
 ///   not re-tested here to avoid duplication; this class focuses on default-list contract,
 ///   pagination, DTO shape, GENERAL/IC action flags, head projection, campus scope, read-only, and
 ///   parity with UC-103's shared executor).
-/// - Same handler-only authorization as UC-101/102/103: no [Authorize]/[RoleAuthorize] on the
-///   controller; anonymous and wrong-role actors are rejected identically with 403
+/// - Two authorization layers since 2026-08-05: anonymous is stopped by the API-wide fallback policy
+///   with 401; an authenticated wrong-role caller is stopped by [RoleAuthorize] with 403
 ///   (DepartmentManagementForbidden), verified via errorCode, not just status code. A Staff Leader
 ///   whose session/claims never carried a campus gets 422 (NoCampusAssigned) — verified using a
 ///   client that deliberately omits the PrimaryCampusId header rather than an internal user that
@@ -160,16 +160,17 @@ public sealed class ViewDepartmentListApiTests : IClassFixture<PemsWebApplicatio
     // ---- Authorization (full matrix: Anonymous + all 7 non-StaffLeader effective roles, plus the
     // Staff-Leader-without-campus-claim edge case — same handler-only guard as UC-101/102/103) ----
 
+    /// <summary>
+    /// No token means 401, not 403. See SearchFilterDepartmentsApiTests.Anonymous_Unauthorized for
+    /// why this changed on 2026-08-05: the API-wide fallback policy that closed eight silently-public
+    /// controllers stops an anonymous caller at authentication, before any role gate.
+    /// </summary>
     [Fact]
-    public async Task Anonymous_Forbidden()
+    public async Task Anonymous_Unauthorized()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync(BuildUrl(Url));
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>(JsonOptions);
-        Assert.NotNull(body);
-        Assert.Equal(DepartmentErrorCodes.DepartmentManagementForbidden, body!.ErrorCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
