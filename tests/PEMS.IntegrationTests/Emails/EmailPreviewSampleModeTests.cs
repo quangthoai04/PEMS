@@ -82,7 +82,7 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
                 if (Placeholder.IsMatch(response.Subject))
                     failures.Add($"{code}: unresolved placeholder in subject");
 
-                if (Placeholder.IsMatch(response.BodyHtml))
+                if (Placeholder.IsMatch(response.EditableBodyHtml))
                     failures.Add($"{code}: unresolved placeholder in body");
             }
             catch (Exception ex)
@@ -115,7 +115,7 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
                 new PreviewEmailTemplateQuery(code, null, language, UseSampleData: true),
                 CancellationToken.None);
 
-            var whole = response.Subject + "\n" + response.BodyHtml + "\n" + (response.LockedActionBlockHtml ?? "");
+            var whole = response.Subject + "\n" + response.EditableBodyHtml + "\n" + (response.LockedActionBlockHtml ?? "");
 
             if (whole.Contains("javascript:", StringComparison.OrdinalIgnoreCase))
                 failures.Add($"{code}: javascript: URL");
@@ -134,7 +134,7 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
             // RECIPIENT reads, and a code is never rendered from inside a style attribute, so dropping
             // those before scanning removes the false positive without weakening the assertion on any
             // text a person can actually see.
-            var visible = Regex.Replace(response.BodyHtml, "style=\"[^\"]*\"", string.Empty);
+            var visible = Regex.Replace(response.EditableBodyHtml, "style=\"[^\"]*\"", string.Empty);
 
             if (EmailTemplateContracts.For(code)!.SensitiveVariables.Contains("otpCode")
                 && Regex.IsMatch(visible, @"\b(?!000000)\d{6}\b"))
@@ -205,9 +205,9 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
                 UseSampleData: true),
             CancellationToken.None);
 
-        Assert.Contains(realName, response.BodyHtml);
+        Assert.Contains(realName, response.EditableBodyHtml);
         Assert.DoesNotContain(
-            EmailVariableCatalog.Sample("fullName", EmailLanguages.Vi), response.BodyHtml);
+            EmailVariableCatalog.Sample("fullName", EmailLanguages.Vi), response.EditableBodyHtml);
     }
 
     /// <summary>
@@ -231,7 +231,7 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
                 UseSampleData: true),
             CancellationToken.None);
 
-        var whole = response.Subject + response.BodyHtml + (response.LockedActionBlockHtml ?? "");
+        var whole = response.Subject + response.EditableBodyHtml + (response.LockedActionBlockHtml ?? "");
         Assert.DoesNotContain("evil.example", whole);
     }
 }

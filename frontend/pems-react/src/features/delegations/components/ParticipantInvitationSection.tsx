@@ -199,6 +199,8 @@ export function ParticipantInvitationSection({
   type PreviewState = {
     open: boolean; loading: boolean; sending: boolean; restoring: boolean; error: string | null;
     templateCode: string; subject: string; body: string;
+    /** The assembled message VIEW shows — backend-composed, shell and action block included. */
+    initialFinalPreviewHtml: string;
     isActionTemplate: boolean; systemActionDescription: string | null; lockedActionBlockHtml: string | null;
     target: PreviewTarget | null;
     /** Where a reply goes, as the backend resolved it from the sending account. */
@@ -210,7 +212,7 @@ export function ParticipantInvitationSection({
   };
   const EMPTY_PREVIEW: PreviewState = {
     open: false, loading: false, sending: false, restoring: false, error: null,
-    templateCode: '', subject: '', body: '',
+    templateCode: '', subject: '', body: '', initialFinalPreviewHtml: '',
     isActionTemplate: false, systemActionDescription: null, lockedActionBlockHtml: null, target: null,
     replyToEmail: null, runtimeEditable: false, previewToken: null,
   };
@@ -245,7 +247,9 @@ export function ParticipantInvitationSection({
   ) =>
     setPreview((p) => ({
       ...p, open: true, loading: false, restoring: false, error: null,
-      subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+      subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml),
+      // NOT stripped: this one is the assembled message, and its action block is the point of it.
+      initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
       isActionTemplate: res.isActionTemplate,
       systemActionDescription: res.systemActionDescription ?? null,
       lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -590,6 +594,7 @@ export function ParticipantInvitationSection({
         error={preview.error}
         subject={preview.subject}
         body={preview.body}
+        initialFinalPreviewHtml={preview.initialFinalPreviewHtml}
         isActionTemplate={preview.isActionTemplate}
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}

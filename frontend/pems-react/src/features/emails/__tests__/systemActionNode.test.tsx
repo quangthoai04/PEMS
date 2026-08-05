@@ -79,7 +79,7 @@ describe('EmailPreviewModal VIEW stage', () => {
   // the modal pulls in a real Quill lets the component under test and the helpers it calls resolve to
   // different copies of the same module, so the node the test wrote was not the node the component looked
   // for. Nothing here needs a mock — VIEW touches no auth and no editor.
-  const renderModal = async (body: string) => {
+  const renderModal = async (body: string, initialFinalPreviewHtml?: string) => {
     return render(
       <EmailPreviewModal
         open
@@ -88,6 +88,7 @@ describe('EmailPreviewModal VIEW stage', () => {
         error={null}
         subject="Chủ đề"
         body={body}
+        initialFinalPreviewHtml={initialFinalPreviewHtml}
         isActionTemplate
         lockedActionBlockHtml='<div><span>NUT-PHAN-HOI</span></div>'
         canSend={false}
@@ -101,8 +102,30 @@ describe('EmailPreviewModal VIEW stage', () => {
     );
   };
 
+  /**
+   * What the backend assembled, shown as-is.
+   *
+   * The editable body it is built from is passed too, and deliberately says something different: if the
+   * screen were still composing its own view out of `body`, these assertions would find the editable
+   * text instead of the assembled message and say so.
+   */
+  it('shows the backend-assembled message, not one it builds out of the editable body', async () => {
+    await renderModal(
+      `<p>BAN-SOAN-THAO</p>${SYSTEM_ACTION_NODE}`,
+      '<div>MAU-EMAIL<p>INTRO</p><span>NUT-PHAN-HOI</span><p>SIGNATURE</p></div>',
+    );
+
+    const view = await screen.findByTestId('view-body');
+
+    expect(view.innerHTML).toContain('MAU-EMAIL');
+    expect(view.innerHTML).not.toContain('BAN-SOAN-THAO');
+  });
+
   it('draws the buttons inside the message, between the words that introduce them', async () => {
-    await renderModal(`<p>INTRO</p>${SYSTEM_ACTION_NODE}<p>SIGNATURE</p>`);
+    await renderModal(
+      `<p>x</p>${SYSTEM_ACTION_NODE}`,
+      '<div><p>INTRO</p><span>NUT-PHAN-HOI</span><p>SIGNATURE</p></div>',
+    );
 
     const view = await screen.findByTestId('view-body');
     const text = view.innerHTML;
@@ -111,12 +134,38 @@ describe('EmailPreviewModal VIEW stage', () => {
     expect(text.indexOf('NUT-PHAN-HOI')).toBeLessThan(text.indexOf('SIGNATURE'));
   });
 
-  it('shows the buttons exactly once — inline, not also in the panel below', async () => {
-    const { container } = await renderModal(`<p>INTRO</p>${SYSTEM_ACTION_NODE}<p>SIGNATURE</p>`);
+  /**
+   * No technical panel in VIEW — not the caption, and not a second copy of the buttons.
+   *
+   * The panel described something already on screen, and sitting under the message it read as another
+   * set of buttons appended to the end. Both halves are asserted because removing only the duplicate
+   * markup while leaving the caption would still tell a sender their message carries a separate
+   * "system section" that no recipient will see.
+   */
+  it('shows no separate system-action section', async () => {
+    const { container } = await renderModal(
+      `<p>x</p>${SYSTEM_ACTION_NODE}`,
+      '<div><p>INTRO</p><span>NUT-PHAN-HOI</span><p>SIGNATURE</p></div>',
+    );
 
     await screen.findByTestId('view-body');
 
     expect(container.innerHTML.match(/NUT-PHAN-HOI/g) ?? []).toHaveLength(1);
+    expect(screen.queryByText(/Nút phản hồi hệ thống/i)).toBeNull();
+  });
+
+  /**
+   * A response prepared before the assembled field existed still renders a message rather than a blank
+   * panel — the buttons drawn into the node, as the screen used to do it.
+   */
+  it('falls back to composing from the body when no assembled message arrives', async () => {
+    await renderModal(`<p>INTRO</p>${SYSTEM_ACTION_NODE}<p>SIGNATURE</p>`);
+
+    const view = await screen.findByTestId('view-body');
+    const text = view.innerHTML;
+
+    expect(text.indexOf('INTRO')).toBeLessThan(text.indexOf('NUT-PHAN-HOI'));
+    expect(text.indexOf('NUT-PHAN-HOI')).toBeLessThan(text.indexOf('SIGNATURE'));
   });
 
   /**
@@ -162,14 +211,78 @@ describe('EmailPreviewModal VIEW stage', () => {
     expect(screen.queryByRole('button', { name: 'Chèn khối nút phản hồi' })).toBeNull();
   });
 
-  it('falls back to the panel when the body carries no node', async () => {
-    const { container } = await renderModal('<p>INTRO</p><p>SIGNATURE</p>');
+  /**
+   * The panel belongs to EDIT, where there is something it can explain.
+   *
+   * In EDIT the action area is an object the author may move but not reword, and that rule is invisible
+   * from the object itself. In the read-only stages the buttons are simply where the recipient will find
+   * them, so the panel repeated what was already visible — and, printed under the message, looked like a
+   * second set of buttons.
+   */
+  it('explains the locked buttons in EDIT, and only there', async () => {
+    render(
+      <EmailPreviewModal
+        open
+        loading={false}
+        sending={false}
+        error={null}
+        subject="Chủ đề"
+        body={`<p>INTRO</p>${SYSTEM_ACTION_NODE}<p>SIGNATURE</p>`}
+        initialFinalPreviewHtml="<div><p>INTRO</p><span>NUT-PHAN-HOI</span></div>"
+        isActionTemplate
+        systemActionDescription="Nút Chấp nhận/Từ chối do hệ thống gắn."
+        lockedActionBlockHtml='<div><span>NUT-PHAN-HOI</span></div>'
+        runtimeEditable
+        previewToken="tok"
+        canSend
+        sendLabel="Gửi"
+        onSubjectChange={vi.fn()}
+        onBodyChange={vi.fn()}
+        onClose={vi.fn()}
+        onSend={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
 
-    const view = await screen.findByTestId('view-body');
+    expect(screen.queryByText(/Nút phản hồi hệ thống/i)).toBeNull();
 
-    // Not in the message…
-    expect(view.innerHTML).not.toContain('NUT-PHAN-HOI');
-    // …but still shown, so the sender knows which buttons the recipient gets.
+    fireEvent.click(await screen.findByRole('button', { name: /Chỉnh sửa/ }));
+
+    expect(await screen.findByText(/Nút phản hồi hệ thống/i)).toBeTruthy();
+    expect(screen.getByText(/Nút Chấp nhận\/Từ chối do hệ thống gắn/)).toBeTruthy();
+  });
+
+  /**
+   * A body with no node cannot show the author where the buttons will land, so EDIT keeps the one copy
+   * that tells them which buttons the message carries.
+   */
+  it('keeps a copy of the buttons in EDIT when the body carries no node', async () => {
+    const { container } = render(
+      <EmailPreviewModal
+        open
+        loading={false}
+        sending={false}
+        error={null}
+        subject="Chủ đề"
+        body="<p>INTRO</p><p>SIGNATURE</p>"
+        initialFinalPreviewHtml="<div><p>INTRO</p></div>"
+        isActionTemplate
+        lockedActionBlockHtml='<div><span>NUT-PHAN-HOI</span></div>'
+        runtimeEditable
+        previewToken="tok"
+        canSend
+        sendLabel="Gửi"
+        onSubjectChange={vi.fn()}
+        onBodyChange={vi.fn()}
+        onClose={vi.fn()}
+        onSend={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Chỉnh sửa/ }));
+    await screen.findByText(/Nút phản hồi hệ thống/i);
+
     expect(container.innerHTML).toContain('NUT-PHAN-HOI');
   });
 });

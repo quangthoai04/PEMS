@@ -73,12 +73,38 @@ public sealed record PreviewEmailTemplateQuery(
 public sealed record PreviewEmailTemplateResponse(
     string TemplateCode,
     string Subject,
-    /// <summary>Editable message content as HTML (action buttons stripped for action templates). Kept
-    /// for the read-only rendered preview; the editor binds to <see cref="EditableBodyText"/>.</summary>
-    string BodyHtml,
+    /// <summary>
+    /// What the EDITOR opens on: the rendered body carrying an inert system node wherever the action
+    /// block belongs, and no branded shell.
+    ///
+    /// <para>
+    /// Named for the editor because it is only ever the editor's. It used to be the read-only preview's
+    /// too, and that is what made the first preview a different message from the one that gets sent —
+    /// the shell was missing and the browser had to draw the buttons itself. Read
+    /// <see cref="InitialFinalPreviewHtml"/> to SHOW the message; read this one to EDIT it.
+    /// </para>
+    /// </summary>
+    string EditableBodyHtml,
     /// <summary>The same editable content as readable plain text (no &lt;p&gt;/&lt;br&gt; tags) — what
     /// the host edits in the modal. Sent back as emailOverride.bodyText.</summary>
     string EditableBodyText,
+    /// <summary>
+    /// The WHOLE message, exactly as it stands before anybody edits it: the action block at its position
+    /// inside the branded shell, assembled by <see cref="EmailPreviewComposition"/> — the same composer
+    /// the final preview uses.
+    ///
+    /// <para>
+    /// This is what the eye icon shows, and what a sender who changes nothing approves. Pressing send
+    /// from there re-renders the same template through the same renderer, so there is no second assembly
+    /// step in which the approved shape could diverge from the delivered one.
+    /// </para>
+    /// <para>
+    /// Its action buttons are the DISABLED copy — inert spans, no href, no token — for the same reason
+    /// the final preview's are: a preview must not mint a credential, and a sender must not be able to
+    /// answer their own message by mis-clicking a picture of it.
+    /// </para>
+    /// </summary>
+    string InitialFinalPreviewHtml,
     bool IsActionTemplate,
     string? SystemActionDescription,
     /// <summary>Read-only (disabled) preview of the system action block, if any.</summary>

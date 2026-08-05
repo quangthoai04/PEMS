@@ -264,7 +264,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   // Editable "Xem trước email" before assigning a logistics task to a staff member.
   const [assignPreview, setAssignPreview] = useState({
     open: false, loading: false, sending: false, error: null as string | null,
-    subject: '', body: '', isActionTemplate: false,
+    subject: '', body: '', initialFinalPreviewHtml: '', isActionTemplate: false,
     systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
     replyToEmail: null as string | null,
     runtimeEditable: false,
@@ -306,7 +306,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
-        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+        subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml),
+        // NOT stripped: this one is the assembled message, and its action block is the point of it.
+        initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -343,7 +345,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
-        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+        subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml),
+        // NOT stripped: this one is the assembled message, and its action block is the point of it.
+        initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -4228,6 +4232,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           error={assignPreview.error}
           subject={assignPreview.subject}
           body={assignPreview.body}
+          initialFinalPreviewHtml={assignPreview.initialFinalPreviewHtml}
           isActionTemplate={assignPreview.isActionTemplate}
           systemActionDescription={assignPreview.systemActionDescription}
           lockedActionBlockHtml={assignPreview.lockedActionBlockHtml}

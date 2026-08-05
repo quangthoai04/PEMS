@@ -1615,10 +1615,21 @@ export interface PreviewEmailTemplatePayload {
 export interface PreviewEmailTemplateResult {
   templateCode: string;
   subject: string;
-  /** Editable message content as HTML (action buttons stripped) — for the rendered preview. */
-  bodyHtml: string;
+  /**
+   * What the EDITOR opens on: the rendered body with an inert system node where the action block goes,
+   * and no branded shell. Never render this read-only — that is `initialFinalPreviewHtml`'s job.
+   */
+  editableBodyHtml: string;
   /** The same editable content as readable plain text (no HTML tags) — bind the editor to this. */
   editableBodyText: string;
+  /**
+   * The whole message as it stands before anybody edits it — action block in position, branded shell,
+   * assembled by the same backend composer the final preview uses. This is what VIEW shows.
+   *
+   * Its buttons are inert spans with no href and no token: near enough to the real thing to approve,
+   * impossible to answer your own message with.
+   */
+  initialFinalPreviewHtml: string;
   isActionTemplate: boolean;
   systemActionDescription?: string | null;
   /** Read-only (disabled) preview of the system action block, if any. */

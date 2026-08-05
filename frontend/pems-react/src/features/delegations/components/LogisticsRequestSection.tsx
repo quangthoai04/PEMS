@@ -195,7 +195,7 @@ export function LogisticsRequestSection({
 
   const [preview, setPreview] = useState({
     open: false, loading: false, sending: false, restoring: false, error: null as string | null,
-    subject: '', body: '', isActionTemplate: false,
+    subject: '', body: '', initialFinalPreviewHtml: '', isActionTemplate: false,
     systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
     recipient: null as EmailPreviewRecipient | null,
     // The reply contact this request will actually carry, resolved by the backend from THIS instance —
@@ -422,7 +422,9 @@ export function LogisticsRequestSection({
       });
       setPreview((p) => ({
         ...p, open: true, loading: false, restoring: false, error: null,
-        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml), // editable HTML, legacy action links stripped
+        subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml), // editable HTML, legacy action links stripped
+        // NOT stripped: this one is the assembled message, and its action block is the point of it.
+        initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
@@ -578,6 +580,7 @@ export function LogisticsRequestSection({
         error={preview.error}
         subject={preview.subject}
         body={preview.body}
+        initialFinalPreviewHtml={preview.initialFinalPreviewHtml}
         isActionTemplate={preview.isActionTemplate}
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}

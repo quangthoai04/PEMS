@@ -200,9 +200,15 @@ public sealed class PreviewEmailTemplateQueryHandler
         if (!usesActionBlock)
         {
             // Plain template: the whole body is editable, no system action block.
+            //
+            // Still assembled through the shared composer rather than returned bare. A message with no
+            // buttons still has a shell, and the eye icon has to show the shell — otherwise "no action
+            // block" would quietly mean "no branded preview either", which is a different claim.
             return new PreviewEmailTemplateResponse(
                 rendered.TemplateCode, rendered.Subject, rendered.Body,
                 EmailComposition.HtmlToPlainText(rendered.Body),
+                EmailPreviewComposition.Assemble(
+                    rendered.TemplateCode, rendered.Body, language, rendered.BodyFormat),
                 false, null, null, Array.Empty<string>(), true, rendered.BodyFormat.ToString(),
                 replyTo, editable, previewToken, expiresAt);
         }
@@ -227,9 +233,17 @@ public sealed class PreviewEmailTemplateQueryHandler
         // runtimeEditable: true with no token told the modal to offer "Chỉnh sửa" and then gave it
         // nothing to hand to final-preview, so "Xem trước kết quả" could not succeed and the message
         // could never be sent. The edit flow was dead for precisely the templates it was built for.
+        // The finished message the eye icon shows. Built from the SAME editable content the editor gets,
+        // through the SAME composer the final preview runs, so "open and send" and "open, edit nothing,
+        // look at the final preview and send" cannot show two different messages. Before this the first
+        // preview had no assembled form at all and the browser pasted the buttons in itself.
+        var initialFinalPreview = EmailPreviewComposition.Assemble(
+            rendered.TemplateCode, editableContent, language, rendered.BodyFormat);
+
         return new PreviewEmailTemplateResponse(
             rendered.TemplateCode, rendered.Subject, editableContent,
             EmailComposition.HtmlToPlainText(editableContent),
+            initialFinalPreview,
             true, spec!.SystemActionDescription, disabledActionBlock,
             spec.RequiredActionPlaceholders, true, rendered.BodyFormat.ToString(),
             replyTo, editable, previewToken, expiresAt);

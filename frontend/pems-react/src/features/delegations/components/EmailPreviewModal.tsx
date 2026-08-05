@@ -1,10 +1,16 @@
 /**
  * The three-stage send modal: VIEW → EDIT → FINAL_PREVIEW.
  *
- * **VIEW** is what the eye icon opens. It shows the finished message — recipients, subject, the body
- * with every variable already substituted (including the sender's own name and address), the read-only
- * action block, attachments and Reply-To. Nothing is editable, and a sender who is happy with it may
- * send from here without passing through the other two stages.
+ * **VIEW** is what the eye icon opens, and it shows the FINISHED message: the branded shell, every
+ * variable substituted (the sender's own name and address included) and the action buttons at the
+ * position the recipient will find them — assembled by the backend, not by this file. Around it sit the
+ * things that are not part of the message: recipients, attachments, Reply-To. Nothing is editable, and a
+ * sender who is happy with it may send from here without passing through the other two stages.
+ *
+ * That last sentence is why the assembly has to be the backend's. Most messages are sent from this
+ * stage, so if VIEW drew its own approximation — a bare body with the buttons pasted underneath, which
+ * is what it did — then the common path was approving a shape no recipient receives, and the only stage
+ * that told the truth was the one you reached by editing.
  *
  * **EDIT** opens only when the sender asks for it, and only on a template whose capability allows a
  * runtime edit. The editor is seeded with the ALREADY-SUBSTITUTED body, so the sentence naming the
@@ -84,8 +90,15 @@ export interface EmailPreviewModalProps {
   restoring?: boolean;
   error: string | null;
   subject: string;
-  /** The rendered body: variables already substituted, action block stripped out. */
+  /** The rendered body the EDITOR binds to: variables substituted, action block held by an inert node. */
   body: string;
+  /**
+   * The whole assembled message VIEW shows — backend-composed, shell and action block included.
+   *
+   * Optional so a caller that has not been updated degrades to the old client-side composition rather
+   * than to a blank panel; every real caller passes it.
+   */
+  initialFinalPreviewHtml?: string | null;
   isActionTemplate: boolean;
   systemActionDescription?: string | null;
   lockedActionBlockHtml?: string | null;
@@ -113,7 +126,7 @@ export interface EmailPreviewModalProps {
 }
 
 export function EmailPreviewModal({
-  open, loading, sending, restoring, error, subject, body, isActionTemplate,
+  open, loading, sending, restoring, error, subject, body, initialFinalPreviewHtml, isActionTemplate,
   systemActionDescription, lockedActionBlockHtml, recipient, replyToEmail,
   runtimeEditable, previewToken, language,
   canSend, sendLabel, pushToast,
@@ -405,16 +418,25 @@ export function EmailPreviewModal({
                     <p className="mt-1 rounded-xl bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">{subject}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-wide text-gray-400">Nội dung</label>
+                    <label className="text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Nội dung đúng như sẽ gửi
+                    </label>
                     <div
                       data-testid="view-body"
                       className="mt-1 rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-800"
-                      // The action block is drawn AT ITS POSITION rather than only in the panel below, so
-                      // what this stage shows is the shape of the message the recipient gets. The copy
-                      // substituted here is the backend's DISABLED block — no anchor, no token — and the
-                      // node it replaces is empty, so nothing actionable is introduced by rendering it.
+                      // The BACKEND-assembled message, not a shape put together here: branded shell,
+                      // action block at its position, the same composer the final preview runs. This
+                      // browser used to build the read-only view itself out of a bare body and a
+                      // separately-returned block, and the result was a stage that showed a message no
+                      // recipient receives — which is the one thing a preview may not do.
+                      //
+                      // Falls back to substituting into the body only for a response prepared before
+                      // this field existed. Sanitised because this is the render boundary and the
+                      // string arrived over the network.
                       dangerouslySetInnerHTML={{
-                        __html: sanitizeHtml(renderSystemActionNode(body, lockedActionBlockHtml)),
+                        __html: sanitizeHtml(
+                          initialFinalPreviewHtml || renderSystemActionNode(body, lockedActionBlockHtml),
+                        ),
                       }}
                     />
                   </div>
@@ -459,7 +481,15 @@ export function EmailPreviewModal({
                 </div>
               )}
 
-              {isActionTemplate && (
+              {/* EDIT only, and that is the whole point of it.
+
+                  The read-only stages show the buttons where the recipient will find them, so a panel
+                  repeating that they exist is a technical caption describing something already on
+                  screen — and, printed under the message, it read as a second set of buttons appended
+                  to the end. In EDIT there genuinely is something to explain: the action area is a
+                  draggable object whose wording and links the author cannot change, and that rule is
+                  invisible from the object alone. */}
+              {isActionTemplate && stage === 'EDIT' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700">
                     <AlertCircle className="w-3.5 h-3.5" /> Nút phản hồi hệ thống (không sửa được)
@@ -467,15 +497,11 @@ export function EmailPreviewModal({
                   <p className="mt-1 text-[12px] text-amber-700/90">
                     {systemActionDescription || 'Nút Chấp nhận/Từ chối sẽ được hệ thống tự gắn khi gửi email.'}
                   </p>
-                  {/* Printed here only when the message is NOT already showing the action area in
-                      position: FINAL_PREVIEW carries the assembled block, VIEW substitutes it inline, and
-                      EDIT renders it as a draggable object. A second copy in any of those cases would
-                      suggest the recipient gets two sets of buttons. The panel remains the fallback for a
-                      body with no node — content prepared before the node existed, where the sender still
-                      needs to know which buttons the message carries. */}
-                  {lockedActionBlockHtml
-                    && stage !== 'FINAL_PREVIEW'
-                    && !hasSystemActionNode(body) && (
+                  {/* A body with no node cannot show the author where the buttons will land, so the
+                      panel carries the one copy that tells them which buttons the message has. When the
+                      node IS there the editor already draws it in place, and a second copy would suggest
+                      the recipient gets two sets. */}
+                  {lockedActionBlockHtml && !hasSystemActionNode(body) && (
                     <div
                       className="mt-2 rounded-lg border border-amber-200 bg-white p-2 opacity-80 pointer-events-none select-none"
                       dangerouslySetInnerHTML={{ __html: sanitizeHtml(lockedActionBlockHtml) }}

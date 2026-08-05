@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -168,7 +169,7 @@ public sealed class FinalPreviewSendParityTests : IDisposable
             Assert.False(string.IsNullOrWhiteSpace(view.PreviewToken));
             // The sender's details were substituted BEFORE the sender ever saw the text — which is what
             // makes the next step ordinary prose editing rather than template authoring.
-            Assert.DoesNotContain("{{", view.BodyHtml);
+            Assert.DoesNotContain("{{", view.EditableBodyHtml);
 
             // EDIT — the person rewrites it in their own words, including over substituted text.
             const string Edited =
@@ -448,7 +449,7 @@ public sealed class FinalPreviewSendParityTests : IDisposable
             // The editable copy hands the sender the action area as a movable node, in the position the
             // stored template gave it — rather than removing it and returning it separately.
             Assert.True(
-                EmailSystemBlockNodes.HasActionNode(view.BodyHtml),
+                EmailSystemBlockNodes.HasActionNode(view.EditableBodyHtml),
                 "the editable body carried no system-block node, so its position cannot be edited at all");
 
             // The sender writes around the node, leaving it in the MIDDLE of the message.
@@ -543,6 +544,183 @@ public sealed class FinalPreviewSendParityTests : IDisposable
                 "a body with no node should get the block appended, not inserted");
         }
         finally { await _h.CleanupAsync(); }
+    }
+
+    // ── The FIRST preview — what the eye icon opens ─────────────────────────────────────────────
+
+    /// <summary>
+    /// The preview the eye icon opens is the same message as the final preview of an untouched body.
+    ///
+    /// <para>
+    /// <b>The defect this pins.</b> The prepare endpoint returned a bare body: no shell, and the action
+    /// area held open by an empty node. The browser drew the read-only view itself by pasting the
+    /// disabled block into that node, so the first stage showed an unbranded message and, for any body
+    /// whose node had been lost, showed the buttons in a separate panel underneath the text. Most sends
+    /// go straight from that stage — so the common path was approving a shape no recipient receives, and
+    /// the only stage telling the truth was the one reached by editing.
+    /// </para>
+    /// <para>
+    /// Compared as text rather than as bytes. The final preview runs the authored pipeline — sanitiser
+    /// and image normaliser — over content that arrives from a browser, and the first preview assembles
+    /// template output that never left the server. Requiring identical markup would be asserting that
+    /// those two pipelines emit the same attribute spelling, which is not the promise; the promise is
+    /// that the sender reads the same message either way.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_first_preview_is_the_message_the_final_preview_would_build_from_an_untouched_body()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+
+            Assert.False(
+                string.IsNullOrWhiteSpace(view.InitialFinalPreviewHtml),
+                "the first preview must carry an assembled message, not leave the screen to build one");
+
+            // Hands the EDITABLE half straight back, changing nothing — which is exactly what a sender
+            // who opens the editor and presses "Xem trước kết quả" without typing does.
+            var final = await Finalise(db).Handle(
+                new BuildFinalEmailPreviewCommand
+                {
+                    PreviewToken = view.PreviewToken!,
+                    Subject = view.Subject,
+                    EditableBodyHtml = view.EditableBodyHtml,
+                    Language = EmailLanguages.Vi,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(VisibleText(final.FinalPreviewHtml), VisibleText(view.InitialFinalPreviewHtml));
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// The first preview carries the branded shell, and its action buttons sit INSIDE the message —
+    /// above the footer, not appended after it.
+    ///
+    /// <para>
+    /// Both halves matter and neither implies the other. A preview could carry the shell and still bolt
+    /// the buttons on at the end, which is precisely the old client-side rendering; and buttons in the
+    /// right place inside no shell at all is the bare body this replaced.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_first_preview_carries_the_shell_with_the_action_block_inside_it()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+            var html = view.InitialFinalPreviewHtml;
+
+            Assert.Contains("PEMS — Campus Visit", html, StringComparison.Ordinal);
+            Assert.Contains("<!DOCTYPE html>", html, StringComparison.OrdinalIgnoreCase);
+
+            var block = html.IndexOf(EmailComposition.ActionBlockStart, StringComparison.Ordinal);
+            var footer = html.IndexOf("© 2026 PEMS", StringComparison.Ordinal);
+
+            Assert.True(block >= 0, "the first preview showed no action block at all");
+            Assert.True(footer >= 0, "the first preview showed no branded footer");
+            Assert.True(
+                block < footer,
+                $"the action block must sit inside the message, not after its footer. block={block}, footer={footer}");
+
+            // Nothing pressable, and no credential: the same disabled copy the final preview shows.
+            Assert.DoesNotContain(AcceptUrl, html, StringComparison.Ordinal);
+            Assert.DoesNotContain("/public/email-actions/", html, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// A sender who changes nothing and presses send receives, at the far end, the message the first
+    /// preview showed them.
+    ///
+    /// <para>
+    /// This is the §5 promise for the path most messages take. The send carries no approved content — it
+    /// re-renders the template — so nothing links the two beyond both being assembled by the same code;
+    /// this test is what turns that into a checked fact.
+    /// </para>
+    /// <para>
+    /// Everything OUTSIDE the action block is compared. Inside it the two differ by design: the preview
+    /// holds inert spans, and the delivered message holds real one-time links plus the sentence about
+    /// when they expire. Comparing that region would be asserting that the preview leaks a credential.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Sending_from_the_first_preview_without_editing_delivers_what_it_showed()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+
+            // No Content: the plain template send, which is what "Gửi" from VIEW does.
+            var sent = await _h.Dispatcher(db).SendAsync(new SystemEmailRequest(
+                Template,
+                new EmailRecipient(_h.Marker, "Nguyễn Văn Bình"),
+                Variables(),
+                TrustedBlocks: new Dictionary<string, string>
+                {
+                    [EmailTrustedBlocks.ActionBlock] = EmailComposition.AcceptDeclineBlock(AcceptUrl, DeclineUrl),
+                },
+                RelatedType: "VisitParticipant",
+                RelatedId: 991_502)
+            {
+                SentBy = Sender.UserId,
+            });
+
+            Assert.Equal(EmailDeliveryStatus.Sent, sent.Delivery.Status);
+
+            var delivered = _h.OnlyMessage().DecodedTextParts;
+
+            Assert.Equal(
+                VisibleText(OutsideActionBlock(view.InitialFinalPreviewHtml)),
+                VisibleText(OutsideActionBlock(delivered)));
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// The readable words of an HTML message: tags dropped, entities decoded, whitespace flattened.
+    ///
+    /// <para>
+    /// Markup is not compared because two pipelines that produce the same message may legitimately spell
+    /// it differently — and a test that fails on attribute order teaches people to stop reading it.
+    /// </para>
+    /// <para>
+    /// Entities are decoded for a difference that is real and harmless: the renderer HTML-encodes every
+    /// substituted value, so the first preview carries <c>B&amp;#236;nh</c>, while the final preview has
+    /// been through the sanitiser, which normalises that back to <c>Bình</c>. Both display the same name.
+    /// Decoding happens AFTER tags are stripped, so an escaped <c>&amp;lt;p&amp;gt;</c> in somebody's
+    /// text cannot be turned into a tag and then silently removed.
+    /// </para>
+    /// </summary>
+    private static string VisibleText(string html)
+    {
+        var withoutTags = Regex.Replace(html, "<[^>]+>", " ");
+        return Regex.Replace(System.Net.WebUtility.HtmlDecode(withoutTags), @"\s+", " ").Trim();
+    }
+
+    /// <summary>Everything before the action block and everything after it, with the block itself cut out.</summary>
+    private static string OutsideActionBlock(string html)
+    {
+        var start = html.IndexOf(EmailComposition.ActionBlockStart, StringComparison.Ordinal);
+        var end = html.IndexOf(EmailComposition.ActionBlockEnd, StringComparison.Ordinal);
+
+        // Asserted rather than tolerated: a caller that lost its block would otherwise be compared whole
+        // against one that kept it, and the mismatch would be reported as a wording difference.
+        Assert.True(start >= 0 && end > start, "no action block found to cut out");
+
+        return html[..start] + html[(end + EmailComposition.ActionBlockEnd.Length)..];
     }
 
     private static void AssertBlockSitsBetweenIntroAndSignature(string haystack, string blockNeedle, string because)
